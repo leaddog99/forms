@@ -1,0 +1,35 @@
+from fastapi import FastAPI, Request, Depends
+from fastapi.templating import Jinja2Templates
+import sqlite3
+import json
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
+def get_db():
+    conn = sqlite3.connect("recipes.db", check_same_thread=False)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+@app.get("/")
+async def read_recipe(request: Request, db: sqlite3.Connection = Depends(get_db)):
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM recipes WHERE id = ?", (1,))
+    row = cursor.fetchone()
+    columns = [col[0] for col in cursor.description]
+    recipe = dict(zip(columns, row))
+    recipe['ingredients'] = json.loads(recipe.get('ingredients', '[]')) if recipe.get('ingredients') else []
+    recipe['instructions'] = json.loads(recipe.get('instructions', '[]')) if recipe.get('instructions') else []
+    recipe['breadcrumbs'] = recipe.get('breadcrumbs', '').split(' > ') if recipe.get('breadcrumbs') else []
+    # ...rest of your logic...
+    return templates.TemplateResponse("recipe.html", {"request": request, "recipe": recipe})
+
+@app.on_event("startup")
+async def show_routes():
+    print("Registered routes:")
+    for route in app.routes:
+        print(f"{route.name}: {route.path}")
