@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ recipe.title }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400&family=Roboto:wght@400;500;700&family=Work+Sans:wght@300;400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+</head>
+<body>
+  <div class="container">
+
+    <!-- Breadcrumbs -->
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      {% for crumb in recipe.breadcrumbs[:-1] %}
+        <span>{{ crumb }}</span>
+        <span class="sep">&gt;</span>
+      {% endfor %}
+      <span class="current">{{ recipe.breadcrumbs[-1] }}</span>
+    </nav>
+
+    <!-- Title and Subtitle -->
+    <h1 class="recipe-title">{{ recipe.title }}</h1>
+    <p class="subtitle">{{ recipe.subtitle }}</p>
+
+    <!-- Author, Dates -->
+    <div class="author-row">
+      <img class="author-photo" src="{{ recipe.author_image }}" alt="{{ recipe.author }}">
+      <div class="author-info">
+        <span class="author-name">BY {{ recipe.author|upper }}</span>
+        <br>
+        <span class="update-date">
+          {{ recipe.created_date }}
+          {% if recipe.modified_date and recipe.modified_date != recipe.created_date %}
+            (Updated {{ recipe.modified_date }})
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <!-- Star Rating and Ratings Count -->
+    <div class="rating-row">
+     <div class="stars-box">
+
+        {# Calculate full, half, and empty stars #}
+        {% set rating = recipe.star_rating or 0 %}
+        {% set full_stars = rating|int %}
+        {% set half_star = 1 if rating - full_stars >= 0.5 else 0 %}
+        {% set empty_stars = 5 - full_stars - half_star %}
+
+        {# Render full stars #}
+        {% for _ in range(full_stars) %}
+          <span class="star star--filled">&#9733;</span>
+        {% endfor %}
+
+        {# Render half star (optional: style with CSS or use SVG) #}
+        {% if half_star %}
+          <span class="star star--half">&#9733;</span>
+        {% endif %}
+
+        {# Render empty stars #}
+        {% for _ in range(empty_stars) %}
+          <span class="star star--empty">&#9733;</span>
+        {% endfor %}
+
+        <span class="ratings-count">{{ recipe.ratings_count }} Ratings</span>
+      </div>
+    </div>
+
+    <!-- Info Bar: Difficulty, Time, Servings, Ethnicity -->
+    <div class="info-bar">
+      {% if recipe.difficulty %}<span class="info-item">{{ recipe.difficulty }}</span>{% endif %}
+      {% if recipe.time %}<span class="info-item">&#9200; {{ recipe.time }}</span>{% endif %}
+      {% if recipe.servings %}<span class="info-item">&#128101; {{ recipe.servings }} servings</span>{% endif %}
+      {% if recipe.ethnicity %}<span class="info-item">{{ recipe.ethnicity }}</span>{% endif %}
+    </div>
+
+    <!-- Description -->
+    {% if recipe.description %}
+      <div class="desc">{{ recipe.description }}</div>
+    {% endif %}
+
+    <!-- Ingredients and Instructions -->
+    <div class="sections">
+      <div class="ingredients-block">
+        <h3>Ingredients</h3>
+        <ul class="ingredients-list">
+          {% for item in recipe.ingredients %}
+            {% if item == 'Optional' %}
+              </ul>
+              <div class="ingredients-optional-title">Optional</div>
+              <ul class="ingredients-list ingredients-list--optional">
+            {% else %}
+              <li>{{ item }}</li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="method-block">
+        <h3>Instructions</h3>
+        {% for step in recipe.instructions %}
+          <div class="instruction-step">
+            <div class="instruction-step-number-title">
+              <span class="instruction-step-number">{{ step.step_number }}.</span>
+              <span class="instruction-step-title">{{ step.title }}:</span>
+            </div>
+            {% if step.description %}
+              <div class="instruction-step-desc">{{ step.description }}</div>
+            {% endif %}
+            {% if step.image %}
+              <img class="instruction-step-image" src="{{ step.image }}" alt="Step {{ step.step_number }} image">
+            {% endif %}
+            {% if step.image_credit %}
+              <div class="instruction-step-credit">Credit: {{ step.image_credit }}</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Nutrition Block -->
+    {% if recipe.nutrition %}
+      <div class="nutrition-block">
+        <h4>Nutrition Information</h4>
+        <div class="nutrition-content">
+          {{ recipe.nutrition }}
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Tags -->
+    {% if recipe.tags %}
+      <div class="tags-block">
+        <h4>Tags</h4>
+        <div class="tags-list">
+          {% for tag in recipe.tags.split(',') %}
+            <span class="tag">{{ tag.strip() }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Notes (Display Only) -->
+    {% if recipe.notes %}
+      <div class="notes-section">
+        <h4>Notes</h4>
+        <div class="notes-content">{{ recipe.notes }}</div>
+      </div>
+    {% endif %}
+
+    <!-- Print Button (optional) -->
+    {% if recipe.print_url %}
+      <div class="button-row">
+        <a href="{{ recipe.print_url }}" target="_blank" class="action-btn print-btn">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 8H5c-1.1 0-2 .9-2 2v6h4v4h10v-4h4v-6c0-1.1-.9-2-2-2zm-6 9H9v-5h4v5zm6-11H5V4h14v2z"/>
+          </svg>
+          PRINT
+        </a>
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>

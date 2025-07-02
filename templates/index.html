@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>User List</title>
+</head>
+<body>
+
+<h1>User List</h1>
+
+<script>
+  const users = JSON.parse('{{ users_json | safe }}');
+  console.log(users);
+
+  const ul = document.createElement('ul');
+  users.forEach(username => {
+    const li = document.createElement('li');
+    li.textContent = username;
+    ul.appendChild(li);
+  });
+  document.body.appendChild(ul);
+</script>
+
+</body>
+</html>
