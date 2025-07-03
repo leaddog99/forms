@@ -1,0 +1,109 @@
+
+from typing import List, Optional, Literal
+from pydantic import BaseModel, HttpUrl, Field
+from datetime import datetime
+
+
+class Author(BaseModel):
+    type: Literal["Person"] = "Person"
+    name: str
+    image: Optional[HttpUrl] = None
+
+
+class AggregateRating(BaseModel):
+    type: Literal["AggregateRating"] = "AggregateRating"
+    ratingValue: float = Field(..., ge=0.0, le=5.0)
+    reviewCount: int
+
+
+class NutritionInformation(BaseModel):
+    type: Literal["NutritionInformation"] = "NutritionInformation"
+    calories: str
+    fatContent: str
+    carbohydrateContent: str
+    proteinContent: str
+
+
+class HowToStep(BaseModel):
+    type: Literal["HowToStep"] = "HowToStep"
+    position: int
+    name: Optional[str]
+    text: str
+    image: Optional[HttpUrl] = None
+    imageCredit: Optional[str] = None
+
+
+class Variation(BaseModel):
+    name: str
+    region: str
+    description: str
+
+
+class RelatedDish(BaseModel):
+    name: str
+    relation: str
+    description: str
+
+
+class Source(BaseModel):
+    title: str
+    url: Optional[HttpUrl]
+    type: Literal["book", "article", "oral history", "archive"]
+    author: Optional[str] = None
+    note: Optional[str] = None
+
+
+class History(BaseModel):
+    ethnicity: Optional[str]
+    originRegion: Optional[str]
+    firstDocumented: Optional[str]
+    traditionalContext: Optional[str]
+    notableVariations: Optional[List[Variation]] = []
+    relatedDishes: Optional[List[RelatedDish]] = []
+    sources: Optional[List[Source]] = []
+
+
+class AccessControl(BaseModel):
+    visibility: Literal["public", "private"]
+    sharedWith: Optional[List[str]] = []
+
+
+class SourceMeta(BaseModel):
+    type: Literal["html", "image", "diffbot", "ocr", "transcription"]
+    origin: str
+    originalUrl: HttpUrl
+
+
+class RecipeModel(BaseModel):
+    context: Literal["https://schema.org"] = "https://schema.org"
+    type: Literal["Recipe"] = "Recipe"
+    id: str
+    name: str
+    description: str
+    image: List[HttpUrl]
+    author: Author
+    datePublished: Optional[datetime]
+    dateModified: Optional[datetime]
+    recipeYield: str
+    prepTime: str
+    cookTime: str
+    totalTime: str
+    recipeCategory: str
+    recipeCuisine: str
+    keywords: List[str]
+    aggregateRating: Optional[AggregateRating]
+    nutrition: Optional[NutritionInformation]
+    recipeIngredient: List[str]
+    recipeInstructions: List[HowToStep]
+    notes: Optional[str]
+    tags: Optional[List[str]]
+    video: Optional[HttpUrl]
+    servingSuggestions: Optional[str]
+    cookingMethod: Optional[str]
+    equipment: Optional[List[str]]
+    suitableForDiet: Optional[List[str]]
+    history: Optional[History]
+    _imported_from: Optional[str]
+    _editor_version: Optional[str]
+    _access: Optional[AccessControl]
+    _source: SourceMeta

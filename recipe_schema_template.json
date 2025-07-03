@@ -1,0 +1,63 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Recipe",
+  "id": "",
+  "name": "",
+  "description": "",
+  "image": [],
+  "author": {
+    "@type": "Person",
+    "name": "",
+    "image": ""
+  },
+  "datePublished": "",
+  "dateModified": "",
+  "recipeYield": "",
+  "prepTime": "",
+  "cookTime": "",
+  "totalTime": "",
+  "recipeCategory": "",
+  "recipeCuisine": "",
+  "keywords": [],
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": 0,
+    "reviewCount": 0
+  },
+  "nutrition": {
+    "@type": "NutritionInformation",
+    "calories": "",
+    "fatContent": "",
+    "carbohydrateContent": "",
+    "proteinContent": ""
+  },
+  "recipeIngredient": [],
+  "recipeInstructions": [],
+  "notes": "",
+  "tags": [],
+  "video": null,
+  "servingSuggestions": "",
+  "cookingMethod": "",
+  "equipment": [],
+  "suitableForDiet": [],
+  "history": {
+    "ethnicity": "",
+    "originRegion": "",
+    "firstDocumented": null,
+    "traditionalContext": "",
+    "notableVariations": [],
+    "relatedDishes": [],
+    "sources": []
+  },
+  "_imported_from": "",
+  "_editor_version": "",
+  "_access": {
+    "visibility": "public",
+    "sharedWith": []
+  },
+  "_source": {
+    "type": "html",
+    "origin": "",
+    "originalUrl": ""
+  }
+}
