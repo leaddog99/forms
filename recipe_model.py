@@ -18,6 +18,7 @@ class HowToStep(BaseModel):
     imageCredit: Optional[str] = None
 
 
+
 class Author(BaseModel):
     type_: str = Field(default="Person", alias="@type")
     name: str
