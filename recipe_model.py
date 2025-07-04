@@ -8,7 +8,6 @@ class NutritionInformation(BaseModel):
     carbohydrateContent: Optional[str]
     proteinContent: Optional[str]
 
-
 class HowToStep(BaseModel):
     type_: str = Field(default="HowToStep", alias="@type")
     position: Optional[int] = None
