@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recipe Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    label { display: block; margin-top: 10px; }
+    textarea, input { width: 100%; }
+    table { border-collapse: collapse; margin-top: 2rem; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #f0f0f0; }
+    .button-row { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Recipe Form</h1>
+
+  <form id="recipeForm">
+    <label>Recipe ID (leave blank to create new)</label>
+    <input type="text" id="recipe_id" name="recipe_id" readonly />
+
+    <label>Name</label>
+    <input type="text" id="name" name="name" required />
+
+    <label>Description</label>
+    <textarea id="description" name="description"></textarea>
+
+    <label>Ingredients</label>
+    <textarea id="ingredients" name="ingredients"></textarea>
+
+    <label>Instructions</label>
+    <textarea id="instructions" name="instructions"></textarea>
+
+    <div class="button-row">
+      <button type="submit">Save Recipe</button>
+      <button type="button" onclick="clearForm()">Clear</button>
+    </div>
+  </form>
+
+  <h2>Saved Recipes</h2>
+  <table id="recipesTable">
+    <thead>
+      <tr>
+        <th>Recipe ID</th>
+        <th>Name</th>
+        <th>Updated</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    const API = "http://localhost:8008/recipes";
+
+    document.getElementById("recipeForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const formData = {
+        recipe_id: document.getElementById("recipe_id").value || undefined,
+        name: document.getElementById("name").value,
+        description: document.getElementById("description").value,
+        ingredients: document.getElementById("ingredients").value,
+        instructions: document.getElementById("instructions").value,
+      };
+
+      console.log("🔄 Submitting recipe:", formData);
+
+      const response = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("✅ Recipe saved:", result.recipe_id);
+        clearForm();
+        loadRecipes();
+      } else {
+        const error = await response.json();
+        alert("❌ Failed to save: " + error.detail);
+      }
+    });
+
+    async function loadRecipes() {
+      console.log("📥 Loading recipe list...");
+      const res = await fetch(API);
+      const recipes = await res.json();
+
+      const tbody = document.querySelector("#recipesTable tbody");
+      tbody.innerHTML = "";
+
+      recipes.forEach((entry) => {
+        const { recipe_id, updated_at, data } = entry;
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${recipe_id}</td>
+          <td>${data.name || "Unnamed"}</td>
+          <td>${updated_at}</td>
+          <td>
+            <button onclick='loadIntoForm(${JSON.stringify(entry)})'>Edit</button>
+            <button onclick='deleteRecipe("${recipe_id}")'>Delete</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      console.log("✅ Recipe list loaded.");
+    }
+
+    function loadIntoForm(entry) {
+      console.log("✏️ Editing recipe:", entry);
+      const data = entry.data;
+      document.getElementById("recipe_id").value = entry.recipe_id || "";
+      document.getElementById("name").value = data.name || "";
+      document.getElementById("description").value = data.description || "";
+      document.getElementById("ingredients").value = data.ingredients || "";
+      document.getElementById("instructions").value = data.instructions || "";
+    }
+
+    function clearForm() {
+      console.log("🧹 Clearing form...");
+      document.getElementById("recipe_id").value = "";
+      document.getElementById("name").value = "";
+      document.getElementById("description").value = "";
+      document.getElementById("ingredients").value = "";
+      document.getElementById("instructions").value = "";
+    }
+
+    async function deleteRecipe(recipe_id) {
+      console.log("🗑️ Attempting to delete:", recipe_id);
+      if (!confirm("Are you sure you want to delete this recipe?")) return;
+
+      const response = await fetch(`${API}/${recipe_id}`, { method: "DELETE" });
+
+      if (response.ok) {
+        console.log("✅ Deleted:", recipe_id);
+        loadRecipes();
+      } else {
+        const error = await response.json();
+        alert("❌ Delete failed: " + error.detail);
+      }
+    }
+
+    // Initial load
+    loadRecipes();
+  </script>
+</body>
+</html>

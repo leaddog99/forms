@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">http://localhost:63342/forms/claude_recipe_form_basic.html
+    <title>Recipe Management</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        form { 
+            background: #f4f4f4; 
+            padding: 20px; 
+            border-radius: 5px; 
+        }
+        input, textarea { 
+            width: 100%; 
+            margin-bottom: 10px; 
+            padding: 5px; 
+        }
+        ul { 
+            list-style-type: none; 
+            padding: 0; 
+        }
+        li { 
+            background: #e9e9e9; 
+            margin: 5px 0; 
+            padding: 10px; 
+            cursor: pointer; 
+            border-radius: 3px; 
+        }
+        li:hover { 
+            background: #d9d9d9; 
+        }
+        .error { 
+            color: red; 
+            margin-top: 10px; 
+        }
+    </style>
+</head>
+<body>
+    <h1>Recipe Editor</h1>
+    
+    <form id="recipeForm">
+        <input type="hidden" id="recipe_id">
+        
+        <label for="name">Recipe Name:</label>
+        <input type="text" id="name" required>
+        
+        <label for="description">Description:</label>
+        <textarea id="description" rows="4" required></textarea>
+        
+        <button type="submit">Save Recipe</button>
+    </form>
+
+    <div id="error" class="error"></div>
+
+    <h2>Existing Recipes</h2>
+    <ul id="recipeList"></ul>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('recipeForm');
+            const recipeList = document.getElementById('recipeList');
+            const errorDiv = document.getElementById('error');
+            const baseUrl = 'http://localhost:8007';
+
+            // Fetch and display recipes
+            async function loadRecipes() {
+                try {
+                    const response = await fetch(`${baseUrl}/recipes`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const recipes = await response.json();
+                    
+                    // Clear existing list
+                    recipeList.innerHTML = '';
+                    
+                    // Populate recipe list
+                    recipes.forEach(recipe => {
+                        const li = document.createElement('li');
+                        li.textContent = `${recipe.data.name} (ID: ${recipe.recipe_id})`;
+                        
+                        // Click to edit
+                        li.addEventListener('click', () => {
+                            document.getElementById('recipe_id').value = recipe.recipe_id;
+                            document.getElementById('name').value = recipe.data.name;
+                            document.getElementById('description').value = recipe.data.description;
+                        });
+                        
+                        recipeList.appendChild(li);
+                    });
+                    
+                    // Clear any previous errors
+                    errorDiv.textContent = '';
+                } catch (error) {
+                    console.error('Failed to load recipes:', error);
+                    errorDiv.textContent = `Failed to load recipes: ${error.message}`;
+                }
+            }
+
+            // Initial load of recipes
+            loadRecipes();
+
+            // Handle form submission
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                // Prepare recipe data
+                const recipe = {
+                    name: document.getElementById('name').value,
+                    description: document.getElementById('description').value
+                };
+
+                try {
+                    const response = await fetch(`${baseUrl}/recipes`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(recipe)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const savedRecipe = await response.json();
+                    console.log('Saved recipe:', savedRecipe);
+                    
+                    // Reset form
+                    form.reset();
+                    
+                    // Reload recipes
+                    loadRecipes();
+                    
+                    // Clear any previous errors
+                    errorDiv.textContent = '';
+                } catch (error) {
+                    console.error('Failed to save recipe:', error);
+                    errorDiv.textContent = `Failed to save recipe: ${error.message}`;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

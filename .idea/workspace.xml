@@ -5,7 +5,29 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ca0ac2a1-bfbe-402a-9619-9378ca137bc9" name="Changes" comment="for Joe">
+      <change afterPath="$PROJECT_DIR$/IMG_5242.jpg" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/claude_recipe_form_basic.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/extract_image_recipe.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/index.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/recipe_form.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/recipe_form2.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/recipe_form_basic.html" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/recipe_server.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/render_recipe_from_db.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/save_context_to_db.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/save_recipe_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dataSources/a8740744-9a8c-4221-907c-b72c2abde041.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources/a8740744-9a8c-4221-907c-b72c2abde041.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/forms.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/forms.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/enrich_image.py" beforeDir="false" afterPath="$PROJECT_DIR$/enrich_image.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/extract_content_image_debug.py" beforeDir="false" afterPath="$PROJECT_DIR$/extract_content_image_debug.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ingest_image.py" beforeDir="false" afterPath="$PROJECT_DIR$/ingest_image.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/recipe_model.bak" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/recipe_model.py" beforeDir="false" afterPath="$PROJECT_DIR$/recipe_model.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/recipes" beforeDir="false" afterPath="$PROJECT_DIR$/claude_server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/recipes.db" beforeDir="false" afterPath="$PROJECT_DIR$/recipes.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sanitize_recipe_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/sanitize_recipe_data.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,6 +60,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;leaddog99&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;http://github.com/leaddog99/forms&quot;,
+    &quot;accountId&quot;: &quot;598d4501-64b4-47b2-9a1a-04c86f5059c5&quot;
+  }
+}</component>
   <component name="ProblemsViewState">
     <option name="selectedTabId" value="CurrentFile" />
   </component>
@@ -54,6 +88,9 @@
   &quot;keyToString&quot;: {
     &quot;JavaScript Debug.index.html.executor&quot;: &quot;Run&quot;,
     &quot;Python.app (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python.claude_server.executor&quot;: &quot;Run&quot;,
+    &quot;Python.enrich_image.executor&quot;: &quot;Run&quot;,
+    &quot;Python.extract_image_recipe.executor&quot;: &quot;Run&quot;,
     &quot;Python.extract_with_chatgpt.executor&quot;: &quot;Run&quot;,
     &quot;Python.extract_with_chatgpt_cleaned_final.executor&quot;: &quot;Run&quot;,
     &quot;Python.extract_with_chatgpt_cleaned_v2.executor&quot;: &quot;Run&quot;,
@@ -61,8 +98,12 @@
     &quot;Python.extract_with_chatgpt_enhanced_fixed.executor&quot;: &quot;Run&quot;,
     &quot;Python.extract_with_chatgpt_enhanced_strict.executor&quot;: &quot;Run&quot;,
     &quot;Python.extract_with_chatgpt_enhanced_strict_fixed.executor&quot;: &quot;Run&quot;,
+    &quot;Python.ingest_image.executor&quot;: &quot;Run&quot;,
     &quot;Python.insertRecipe.executor&quot;: &quot;Run&quot;,
     &quot;Python.loadDB.executor&quot;: &quot;Run&quot;,
+    &quot;Python.render_recipe_from_db.executor&quot;: &quot;Run&quot;,
+    &quot;Python.save_context_to_db.executor&quot;: &quot;Run&quot;,
+    &quot;Python.save_recipe_api.executor&quot;: &quot;Run&quot;,
     &quot;Python.sqlEditor.executor&quot;: &quot;Run&quot;,
     &quot;Python.testSQL.executor&quot;: &quot;Run&quot;,
     &quot;Python.users.executor&quot;: &quot;Run&quot;,
@@ -75,7 +116,7 @@
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
     &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
@@ -89,8 +130,8 @@
       <recent name="C:\Users\john\PycharmProjects\forms\templates" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.extract_with_chatgpt_enhanced_strict_fixed">
-    <configuration name="extract_with_chatgpt_cleaned_final" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+  <component name="RunManager" selected="Python.claude_server">
+    <configuration name="claude_server" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="forms" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -104,7 +145,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/extract_with_chatgpt_cleaned_final.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/claude_server.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -113,7 +154,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="extract_with_chatgpt_enhanced" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="enrich_image" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="forms" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -127,7 +168,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/extract_with_chatgpt_enhanced.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/enrich_image.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -136,7 +177,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="extract_with_chatgpt_enhanced_fixed" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="ingest_image" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="forms" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -150,7 +191,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/extract_with_chatgpt_enhanced_fixed.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/ingest_image.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -159,7 +200,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="extract_with_chatgpt_enhanced_strict" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="render_recipe_from_db" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="forms" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -173,7 +214,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/extract_with_chatgpt_enhanced_strict.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/render_recipe_from_db.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -182,7 +223,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="extract_with_chatgpt_enhanced_strict_fixed" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="save_recipe_api" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="forms" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -196,7 +237,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/extract_with_chatgpt_enhanced_strict_fixed.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/save_recipe_api.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -207,11 +248,11 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.extract_with_chatgpt_enhanced_strict_fixed" />
-        <item itemvalue="Python.extract_with_chatgpt_enhanced_strict" />
-        <item itemvalue="Python.extract_with_chatgpt_enhanced_fixed" />
-        <item itemvalue="Python.extract_with_chatgpt_enhanced" />
-        <item itemvalue="Python.extract_with_chatgpt_cleaned_final" />
+        <item itemvalue="Python.claude_server" />
+        <item itemvalue="Python.render_recipe_from_db" />
+        <item itemvalue="Python.ingest_image" />
+        <item itemvalue="Python.save_recipe_api" />
+        <item itemvalue="Python.enrich_image" />
       </list>
     </recent_temporary>
   </component>
@@ -234,6 +275,15 @@
       <workItem from="1751162035737" duration="31048000" />
       <workItem from="1751487390310" duration="7419000" />
       <workItem from="1751646675688" duration="1485000" />
+      <workItem from="1751918832591" duration="26609000" />
+      <workItem from="1752098753552" duration="862000" />
+      <workItem from="1752099718876" duration="4476000" />
+      <workItem from="1752169589197" duration="119000" />
+      <workItem from="1752170148381" duration="13757000" />
+      <workItem from="1752606042357" duration="15226000" />
+      <workItem from="1753035717201" duration="9437000" />
+      <workItem from="1753379490218" duration="714000" />
+      <workItem from="1753388058932" duration="289000" />
     </task>
     <task id="LOCAL-00001" summary="for Joe">
       <option name="closed" value="true" />
@@ -336,15 +386,33 @@
     <MESSAGE value="for Joe" />
     <option name="LAST_COMMIT_MESSAGE" value="for Joe" />
   </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/extract_image_recipe.py</url>
+          <line>29</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/forms$insertRecipe.coverage" NAME="insertRecipe Coverage Results" MODIFIED="1751392154541" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/forms$sqlEditor.coverage" NAME="sqlEditor Coverage Results" MODIFIED="1751507000325" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$sqlEditor.coverage" NAME="sqlEditor Coverage Results" MODIFIED="1752101239897" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$extract_with_chatgpt_cleaned_v2.coverage" NAME="extract_with_chatgpt_cleaned_v2 Coverage Results" MODIFIED="1751509500405" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$save_recipe_api.coverage" NAME="save_recipe_api Coverage Results" MODIFIED="1752173156481" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$extract_with_chatgpt_enhanced.coverage" NAME="extract_with_chatgpt_enhanced Coverage Results" MODIFIED="1751510289462" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$claude_server.coverage" NAME="claude_server Coverage Results" MODIFIED="1753388329171" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$render_recipe_from_db.coverage" NAME="render_recipe_from_db Coverage Results" MODIFIED="1752176537254" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$users.coverage" NAME="users Coverage Results" MODIFIED="1751162241845" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/forms$loadDB.coverage" NAME="loadDB Coverage Results" MODIFIED="1751301286060" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$extract_image_recipe.coverage" NAME="extract_image_recipe Coverage Results" MODIFIED="1751926534804" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$loadDB.coverage" NAME="loadDB Coverage Results" MODIFIED="1752083760482" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$extract_with_chatgpt_enhanced_strict.coverage" NAME="extract_with_chatgpt_enhanced_strict Coverage Results" MODIFIED="1751510741984" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$save_context_to_db.coverage" NAME="save_context_to_db Coverage Results" MODIFIED="1752101141513" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$app__1_.coverage" NAME="app (1) Coverage Results" MODIFIED="1751302640049" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$enrich_image.coverage" NAME="enrich_image Coverage Results" MODIFIED="1752101262378" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/forms$ingest_image.coverage" NAME="ingest_image Coverage Results" MODIFIED="1752176527073" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$extract_with_chatgpt_enhanced_fixed.coverage" NAME="extract_with_chatgpt_enhanced_fixed Coverage Results" MODIFIED="1751510485095" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$extract_with_chatgpt_cleaned_final.coverage" NAME="extract_with_chatgpt_cleaned_final Coverage Results" MODIFIED="1751509627518" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/forms$testSQL.coverage" NAME="testSQL Coverage Results" MODIFIED="1751395393651" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
