@@ -123,3 +123,22 @@ class RecipeModel(BaseModel):
                 for step in self.recipeInstructions or []
             )
         )
+
+    def generate_prompt(self) -> str:
+        ingredient_sample = ", ".join(self.recipeIngredient[:3]) if self.recipeIngredient else ""
+
+        if self.prefers_dish_image():
+            base = f"A plated, fully prepared version of '{self.name}',"
+            if self.servingSuggestions and not self.is_nullish(self.servingSuggestions):
+                base += f" served with {self.servingSuggestions.strip().rstrip('.')},"
+            if self.recipeCuisine and not self.is_nullish(self.recipeCuisine):
+                base += f" in a {self.recipeCuisine} style,"
+            if ingredient_sample:
+                base += f" made with ingredients like {ingredient_sample},"
+            if self.description and not self.is_nullish(self.description):
+                base += f" {self.description.strip().rstrip('.')}"
+            return base + " — cookbook photo quality, natural lighting, minimal background."
+        else:
+            return f"Stylized flat-lay image of the key ingredients for '{self.name}': " + \
+                ", ".join(self.recipeIngredient or []) + \
+                ". Clean composition, soft shadows, cookbook illustration style."

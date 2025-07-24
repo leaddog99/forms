@@ -68,8 +68,8 @@ def extract_from_image(image_path: str) -> Any:
         sanitized["inputImage"] = os.path.basename(image_path)
         return RecipeModel.model_validate(sanitized).model_dump()
     except Exception as e:
-        print("❌ Failed to parse/validate GPT response:", e)
-        print("🧪 Raw GPT output:\n", content)
+        print("     ❌ Failed to parse/validate GPT response:", e)
+        print("     🧪 Raw GPT output:\n", content)
         return None
 
 def process_batch_context(context_path: str):
@@ -82,12 +82,12 @@ def process_batch_context(context_path: str):
             continue
         status = entry.get("current_status", "accepted")
         if status != "accepted":
-            print(f"🚫 Skipping (status not accepted): {key}")
+            print(f"     🚫 Skipping (status not accepted): {key}")
             continue
 
         image_path = entry.get("input_image")
         if not image_path:
-            print(f"⚠️ No input_image found for {key}, marking as rejected.")
+            print(f"     ⚠️ No input_image found for {key}, marking as rejected.")
             entry["current_status"] = "rejected"
             entry.setdefault("history", []).append({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -100,7 +100,7 @@ def process_batch_context(context_path: str):
             continue
 
         full_image_path = os.path.abspath(image_path)
-        print(f"📥 Extracting recipe from: {full_image_path}")
+        print(f"     📥 Extracting recipe from: {full_image_path}")
         result = extract_from_image(full_image_path)
         if result:
             entry.update(result)
@@ -126,13 +126,22 @@ def process_batch_context(context_path: str):
     if changed:
         with open(context_path, "w", encoding="utf-8") as f:
             json.dump(context, f, indent=2)
-        print("📁 Context updated:", context_path)
+        print("     📁 Context updated:", context_path)
     else:
-        print("📭 No changes made to context.")
+        print("     📭 No changes made to context.")
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:
         print("Usage: python extract_content_image_debug.py path/to/context.json")
         exit(1)
+
+    # Program start message with timestamp
+    start_time = datetime.now(timezone.utc)
+    print(f"\n>>>> Start: extract_content)image.py at {start_time.isoformat()}")
+
     process_batch_context(sys.argv[1])
+
+    # Program end message with timestamp
+    end_time = datetime.now(timezone.utc)
+    print(f">>>> End: extract_content)image.py at {end_time.isoformat()}\n")

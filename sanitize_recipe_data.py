@@ -35,13 +35,8 @@ def is_valid_aggregate_rating(obj: Any) -> bool:
     )
 
 def sanitize_recipe_data(data: dict) -> dict:
-    """
-    Fill in missing required fields with default empty values
-    to avoid Pydantic validation errors. Assumes top-level keys follow RecipeModel.
-    """
     sanitized = data.copy()
 
-    # Required top-level fields
     set_if_nullish(sanitized, "@context", "https://schema.org")
     set_if_nullish(sanitized, "@type", "Recipe")
     set_if_nullish(sanitized, "id", str(uuid.uuid4()))
@@ -66,7 +61,7 @@ def sanitize_recipe_data(data: dict) -> dict:
     if not is_valid_aggregate_rating(sanitized.get("aggregateRating")):
         sanitized["aggregateRating"] = {"@type": "AggregateRating", "ratingValue": 0, "reviewCount": 0}
 
-    # Nutrition deep patch
+    # Nutrition
     if not isinstance(sanitized.get("nutrition"), dict) or is_nullish(sanitized.get("nutrition")):
         sanitized["nutrition"] = {
             "calories": "",
@@ -82,18 +77,21 @@ def sanitize_recipe_data(data: dict) -> dict:
 
     set_if_nullish(sanitized, "recipeIngredient", [])
 
-    # Convert flat 'instructions' if 'recipeInstructions' not present
-    if "recipeInstructions" not in sanitized and "instructions" in sanitized:
-        raw_instructions = sanitized.pop("instructions", [])
+    # 🔧 FIX recipeInstructions
+    if "recipeInstructions" in sanitized:
         steps = []
-        if isinstance(raw_instructions, list):
-            for i, step in enumerate(raw_instructions):
-                if isinstance(step, str):
-                    steps.append({"@type": "HowToStep", "position": i + 1, "text": step})
-                elif isinstance(step, dict):
-                    step.setdefault("@type", "HowToStep")
-                    step.setdefault("position", i + 1)
-                    steps.append(step)
+        for i, step in enumerate(sanitized["recipeInstructions"]):
+            if isinstance(step, str):
+                steps.append({
+                    "@type": "HowToStep",
+                    "position": i + 1,
+                    "text": step
+                })
+            elif isinstance(step, dict):
+                step["@type"] = "HowToStep"
+                step.pop("type", None)
+                step.setdefault("position", i + 1)
+                steps.append(step)
         sanitized["recipeInstructions"] = steps
     else:
         set_if_nullish(sanitized, "recipeInstructions", [])
@@ -101,7 +99,6 @@ def sanitize_recipe_data(data: dict) -> dict:
     set_if_nullish(sanitized, "notes", "")
     set_if_nullish(sanitized, "tags", [])
 
-    # Strip invalid video object
     if not is_valid_video_object(sanitized.get("video")):
         sanitized["video"] = {
             "@type": "VideoObject",
@@ -117,7 +114,6 @@ def sanitize_recipe_data(data: dict) -> dict:
     set_if_nullish(sanitized, "equipment", [])
     set_if_nullish(sanitized, "suitableForDiet", [])
 
-    # History deep patch
     if not isinstance(sanitized.get("provenance"), dict) or is_nullish(sanitized.get("provenance")):
         sanitized["provenance"] = {
             "ethnicity": "",
