@@ -1,39 +1,78 @@
-from fastapi import FastAPI, HTTPException, Request
+# TODO (revisit): persist the original source image used during AI extraction.
+# Today /extract reads the upload and discards it. Consider saving it to a stable
+# location (e.g. input/ or object storage) and returning its URL so it can be
+# stored on the recipe and shown in the edit view. See matching TODOs in
+# recipe_model.py (sourceImage field) and recipe_form_styled.html (UI).
+# Decide: storage location, retention, multi-image (re-extractions), privacy.
+
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 import sqlite3
 import uuid
+import asyncio
 import json
+import time
 from datetime import datetime
 import os
 import traceback
+from pathlib import Path
+
+# In-memory staging for bookmarklet → form handoff. One-time read, TTL pruned.
+_STAGE_TTL_SECONDS = 600
+_staged_markdown: dict[str, dict] = {}
 
 # IMPORTANT: Keep the imports for the critical business logic files
 try:
     from recipe_model import RecipeModel
 
-    print("✅ RecipeModel imported successfully")
+    print("[OK] RecipeModel imported successfully")
 except Exception as e:
-    print(f"❌ Failed to import RecipeModel: {e}")
+    print(f"[ERROR] Failed to import RecipeModel: {e}")
     raise
 
 try:
     from sanitize_recipe_data import sanitize_recipe_data
 
-    print("✅ sanitize_recipe_data imported successfully")
+    print("[OK] sanitize_recipe_data imported successfully")
 except Exception as e:
-    print(f"❌ Failed to import sanitize_recipe_data: {e}")
+    print(f"[ERROR] Failed to import sanitize_recipe_data: {e}")
     raise
 
-print("🚀 Starting API setup...")
+try:
+    from to_markdown.html_to_markdown import html_to_markdown
+    from to_markdown.image_to_markdown import image_to_markdown, IMAGE_TO_MARKDOWN_PROMPT
+    from extract.markdown_to_recipe import markdown_to_recipe
+    from extract.jsonld_to_recipe import jsonld_to_recipe
+    from extract.enrich_recipe import enrich_recipe
+
+    print("[OK] new to_markdown/extract layer imported successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to import new to_markdown/extract layer: {e}")
+    raise
+
+try:
+    from input.pipeline.url_utils import normalize_url
+    from input.pipeline import (
+        ensure_metabase_url_table,
+        get_or_create_url_metadata,
+        get_metabase_url,
+    )
+
+    print("[OK] url_utils / url_scoring imported successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to import url_utils / url_scoring: {e}")
+    raise
+
+print("[START] Starting API setup...")
 
 DB_PATH = "recipes.db"
 
 
-# Ensure table exists
+# Ensure tables exist
 def init_db():
-    print("🔧 Creating database table if needed...")
+    print("[SETUP] Creating database tables if needed...")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("""
@@ -46,9 +85,10 @@ def init_db():
                     updated_at TEXT
                 );
             """)
-        print("✅ Database table ready")
+            ensure_metabase_url_table(conn)
+        print("[OK] Database tables ready")
     except Exception as e:
-        print(f"❌ Database initialization error: {e}")
+        print(f"[ERROR] Database initialization error: {e}")
         raise
 
 
@@ -56,11 +96,11 @@ def init_db():
 app = FastAPI()
 
 # Initialize DB immediately instead of using lifespan
-print("🔧 Initializing database...")
+print("[SETUP] Initializing database...")
 init_db()
-print("✅ Database initialized successfully")
+print("[OK] Database initialized successfully")
 
-print("🌐 Setting up CORS...")
+print("[NET] Setting up CORS...")
 
 # CORS for frontend interaction
 app.add_middleware(
@@ -71,30 +111,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("📁 Setting up static files...")
+print("[FILE] Setting up static files...")
 
 # Serve static HTML files (e.g., recipe_form.html)
 try:
     forms_path = os.path.dirname(__file__)  # Use the directory this file is in
     app.mount("/forms", StaticFiles(directory=forms_path), name="forms")
-    print("✅ Static files mounted successfully")
+    print("[OK] Static files mounted successfully")
 except Exception as e:
-    print(f"⚠️ Static files mount failed: {e}")
+    print(f"[WARN] Static files mount failed: {e}")
 
-print("📡 Setting up routes...")
+print("[ROUTE] Setting up routes...")
 
 
 # Health check
 @app.get("/")
 def health_check():
-    print("❤️ Health check endpoint called")
+    print("[HEALTH] Health check endpoint called")
     return {"status": "ok", "message": "Full API with error handling"}
 
 
 # List all recipes
 @app.get("/recipes")
 def list_recipes():
-    print("📋 List recipes endpoint called")
+    print("[LIST] List recipes endpoint called")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
@@ -113,47 +153,58 @@ def list_recipes():
                     }
                     result.append(recipe_entry)
                 except json.JSONDecodeError as e:
-                    print(f"⚠️ Failed to parse recipe {row[1]}: {e}")
+                    print(f"[WARN] Failed to parse recipe {row[1]}: {e}")
                     continue
 
-            print(f"✅ Returning {len(result)} recipes")
+            print(f"[OK] Returning {len(result)} recipes")
             return result
 
     except Exception as e:
-        print(f"❌ Error in list_recipes: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Error in list_recipes: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
 # Save (insert or update) a recipe
 @app.post("/recipes")
 async def save_recipe(request: Request):
-    print("💾 Save recipe endpoint called")
+    print("[SAVE] Save recipe endpoint called")
     try:
         # Get the payload
         payload = await request.json()
-        print(f"📝 Received payload: {payload}")
+        print(f"[DATA] Received payload: {payload}")
 
         # IMPORTANT: Use the critical business logic files
         cleaned = sanitize_recipe_data(payload)
-        print(f"🧹 Sanitized data: {cleaned}")
+        print(f"[CLEAN] Sanitized data: {cleaned}")
 
         recipe = RecipeModel(**cleaned)
-        print("✅ Recipe model validation passed")
+        print("[OK] Recipe model validation passed")
 
     except ValidationError as e:
-        print(f"❌ Validation error: {e}")
+        print(f"[ERROR] Validation error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        print(f"❌ Error processing request: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Error processing request: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"Bad input: {e}")
 
     recipe_id = payload.get("recipe_id") or str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     user_id = 1  # Placeholder
 
-    print(f"💾 Saving recipe with ID: {recipe_id}")
+    # Normalize the source URL one more time at save (defensive — covers
+    # recipes that were created before normalize_url existed in the extract
+    # path, or hand-edited URLs).
+    recipe_dict = recipe.model_dump(by_alias=True)
+    source = recipe_dict.get("_source") or {}
+    raw_source_url = source.get("originalUrl") or ""
+    normalized_source_url = normalize_url(raw_source_url) if raw_source_url else ""
+    if normalized_source_url and normalized_source_url != raw_source_url:
+        source["originalUrl"] = normalized_source_url
+        recipe_dict["_source"] = source
+
+    print(f"[SAVE] Saving recipe with ID: {recipe_id}")
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -166,37 +217,418 @@ async def save_recipe(request: Request):
             """, (
                 recipe_id,
                 user_id,
-                json.dumps(recipe.dict(), indent=2),
+                json.dumps(recipe_dict, indent=2),
                 now,
                 now
             ))
-            print("✅ Recipe saved to database")
+            # If the recipe has a source URL, make sure the metabase_url row
+            # exists (and bump last_accessed). Moz scoring happens inline
+            # when a brand-new URL is seen and creds are configured.
+            # We then denormalize the scores into recipe._scoring so they
+            # travel with the recipe — the metabase_url row stays canonical.
+            if normalized_source_url:
+                fallback_title = (
+                    (recipe_dict.get("_scoring") or {}).get("rawTitle")
+                    or recipe_dict.get("name")
+                    or ""
+                )
+                try:
+                    meta = get_or_create_url_metadata(conn, normalized_source_url, fallback_title=fallback_title)
+                except Exception as meta_err:
+                    meta = None
+                    print(f"[WARN] metabase_url upsert failed for {normalized_source_url}: {meta_err}")
+                if meta:
+                    scoring = recipe_dict.get("_scoring") or {}
+                    if meta.get("page_authority") is not None:
+                        scoring["pageAuthority"] = meta["page_authority"]
+                    if meta.get("domain_authority") is not None:
+                        scoring["domainAuthority"] = meta["domain_authority"]
+                    if meta.get("ou_score") is not None:
+                        scoring["ouScore"] = meta["ou_score"]
+                    if meta.get("root_domain"):
+                        scoring["rootDomain"] = meta["root_domain"]
+                    if meta.get("raw_title") and not scoring.get("rawTitle"):
+                        scoring["rawTitle"] = meta["raw_title"]
+                    recipe_dict["_scoring"] = scoring
+                    conn.execute(
+                        "UPDATE recipes SET data = ?, updated_at = ? WHERE recipe_id = ?",
+                        (json.dumps(recipe_dict, indent=2), now, recipe_id),
+                    )
+            print("[OK] Recipe saved to database")
     except Exception as e:
-        print(f"❌ Database error: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Database error: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
     return {"recipe_id": recipe_id}
 
 
+# Read-only metadata lookup for the form's collapsible metadata section.
+# URL is passed as a query param to avoid edge cases with slashes in path
+# params, and is re-normalized server-side regardless of what the client sent.
+@app.get("/url-metadata")
+def get_url_metadata(url: str):
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            ensure_metabase_url_table(conn)
+            row = get_metabase_url(conn, url)
+    except Exception as e:
+        print(f"[ERROR] url-metadata lookup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Lookup error: {e}")
+    if not row:
+        # Empty shape so the form can render placeholder fields without
+        # branching on null vs missing.
+        return {
+            "url": normalize_url(url),
+            "root_domain": "",
+            "raw_title": "",
+            "page_authority": None,
+            "domain_authority": None,
+            "ou_score": None,
+            "moz_last_scored": None,
+            "first_seen": None,
+            "last_accessed": None,
+            "exists": False,
+        }
+    row["exists"] = True
+    return row
+
+
 # Delete a recipe
 @app.delete("/recipes/{recipe_id}")
 def delete_recipe(recipe_id: str):
-    print(f"🗑️ Delete recipe endpoint called for: {recipe_id}")
+    print(f"[DELETE] Delete recipe endpoint called for: {recipe_id}")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM recipes WHERE recipe_id = ?", (recipe_id,))
             if cursor.rowcount == 0:
-                print(f"❌ Recipe {recipe_id} not found")
+                print(f"[ERROR] Recipe {recipe_id} not found")
                 raise HTTPException(status_code=404, detail="Recipe not found")
             conn.commit()
-            print(f"✅ Recipe {recipe_id} deleted successfully")
+            print(f"[OK] Recipe {recipe_id} deleted successfully")
         return {"message": "Recipe deleted successfully"}
     except Exception as e:
-        print(f"❌ Error deleting recipe: {e}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        print(f"[ERROR] Error deleting recipe: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-print("🎉 API setup complete!")
+# Extract recipe from image (no save). Image is OCR'd to markdown via the
+# vision model, then routed through the same /extract-from-markdown pipeline
+# so source_url/title plumbing and validation are handled in one place.
+@app.post("/extract-from-image")
+async def extract_from_image_endpoint(
+    image: UploadFile = File(...),
+    source_url: str = Form(""),
+    title: str = Form(""),
+):
+    print("[EXTRACT] Extract from image endpoint called")
+    try:
+        if not image.content_type or not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="File must be an image")
+
+        temp_dir = Path("input")
+        temp_dir.mkdir(exist_ok=True)
+
+        file_ext = Path(image.filename).suffix.lower() if image.filename else ".jpg"
+        temp_filename = f"extract_{uuid.uuid4()}{file_ext}"
+        temp_path = temp_dir / temp_filename
+
+        print(f"[EXTRACT] Saving uploaded image to {temp_path}")
+        content = await image.read()
+        with open(temp_path, "wb") as f:
+            f.write(content)
+
+        print(f"[EXTRACT] Running canonical image -> markdown -> recipe chain (source_url={source_url!r})")
+        # Canonical chain: vision OCR -> markdown -> single LLM extract that
+        # also fills provenance + classification. Per-stage timings reported.
+        timings: dict = {}
+        prompts: dict = {}
+        t_start = time.perf_counter()
+
+        try:
+            md = await asyncio.to_thread(image_to_markdown, str(temp_path), timings=timings)
+        except Exception as e:
+            print(f"[ERROR] image_to_markdown failed: {e}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}")
+
+        if not md or not md.strip():
+            raise HTTPException(status_code=500, detail="Vision step returned empty markdown")
+
+        # Stash the vision-stage prompt so the UI can surface it. Use a
+        # sub-key to avoid colliding with markdown_to_recipe's prompts.
+        prompts["vision"] = {
+            "model": "gpt-4o",
+            "system_prompt": IMAGE_TO_MARKDOWN_PROMPT,
+        }
+
+        try:
+            recipe = await asyncio.to_thread(
+                markdown_to_recipe,
+                md,
+                source_name=image.filename or "",
+                source_url=source_url,
+                title=title,
+                timings=timings,
+                prompts=prompts,
+            )
+        except Exception as e:
+            print(f"[ERROR] markdown_to_recipe failed: {e}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+        if recipe is None:
+            print("[ERROR] Extraction failed - no result")
+            raise HTTPException(status_code=500, detail="Failed to extract recipe from image")
+
+        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+        timings["path"] = "image-llm"
+
+        print("[OK] Extraction successful")
+        return {
+            "success": True,
+            "recipe": recipe,
+            "_timings": timings,
+            "_prompt": prompts,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Error extracting from image: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+
+# Extract recipe from markdown text (no save). Canonical path: markdown ->
+# RecipeModel via the single JSON-LD-aware LLM call. Provenance and
+# classification are filled in the same call.
+@app.post("/extract-from-markdown")
+async def extract_from_markdown_endpoint(
+    file: UploadFile = File(...),
+    source_url: str = Form(""),
+    title: str = Form(""),
+):
+    print("[EXTRACT] Extract from markdown endpoint called")
+    try:
+        raw = await file.read()
+        try:
+            markdown_text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            markdown_text = raw.decode("latin-1")
+
+        if not markdown_text.strip():
+            raise HTTPException(status_code=400, detail="Markdown file is empty")
+
+        source_name = file.filename or ""
+        print(f"[EXTRACT] Running canonical markdown extraction on {source_name} "
+              f"({len(markdown_text)} chars) source_url={source_url!r}")
+
+        timings: dict = {}
+        prompts: dict = {}
+        t_start = time.perf_counter()
+        try:
+            recipe = await asyncio.to_thread(
+                markdown_to_recipe,
+                markdown_text,
+                source_name=source_name,
+                source_url=source_url,
+                title=title,
+                timings=timings,
+                prompts=prompts,
+            )
+        except Exception as e:
+            print(f"[ERROR] Extraction failed: {e}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+        if recipe is None:
+            print("[ERROR] Extraction failed - no result")
+            raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
+
+        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+        timings["path"] = "markdown-llm"
+
+        print("[OK] Extraction successful")
+        return {
+            "success": True,
+            "recipe": recipe,
+            "_timings": timings,
+            "_prompt": prompts,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Error extracting from markdown: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+
+# Extract recipe from a web page URL (no save). Fetches the page, pulls any
+# schema.org Recipe JSON-LD via to_markdown/html_to_markdown, then runs the
+# single canonical markdown -> RecipeModel call. Mirrors the JSON shape of
+# /extract-from-image and /extract-from-markdown.
+@app.post("/extract-from-url")
+async def extract_from_url_endpoint(url: str = Form(...)):
+    print(f"[EXTRACT] Extract from URL endpoint called: {url!r}")
+    if not url or not url.strip():
+        raise HTTPException(status_code=400, detail="url is required")
+
+    timings: dict = {}
+    prompts: dict = {}
+    t_start = time.perf_counter()
+
+    try:
+        md_result = await asyncio.to_thread(html_to_markdown, url.strip(), timings)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Fetch/convert failed for {url!r}: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch/convert URL: {e}")
+
+    print(f"[EXTRACT] has_jsonld={md_result['has_jsonld']} "
+          f"markdown_len={len(md_result['markdown'])} "
+          f"source_url={md_result['source_url']!r}")
+
+    # Fast lane: when the page ships complete schema.org Recipe JSON-LD, parse
+    # it directly (no LLM) and run only a small enrichment LLM call for
+    # provenance + classification. Falls through to the big-prompt path if
+    # JSON-LD is missing or lacks required fields.
+    recipe = None
+    path_used = ""
+    if md_result.get("jsonld"):
+        try:
+            recipe = await asyncio.to_thread(
+                jsonld_to_recipe,
+                md_result["jsonld"][0],
+                source_url=md_result["source_url"],
+                title=md_result["title"],
+                timings=timings,
+            )
+        except Exception as e:
+            print(f"[WARN] jsonld_to_recipe raised, will fall back: {e}")
+            recipe = None
+        if recipe is not None:
+            try:
+                recipe = await asyncio.to_thread(
+                    enrich_recipe,
+                    recipe,
+                    timings=timings,
+                    prompts=prompts,
+                )
+                path_used = "jsonld-direct"
+            except Exception as e:
+                print(f"[WARN] enrich_recipe raised, keeping unenriched recipe: {e}")
+                path_used = "jsonld-direct-unenriched"
+
+    if recipe is None:
+        try:
+            recipe = await asyncio.to_thread(
+                markdown_to_recipe,
+                md_result["markdown"],
+                source_name="",
+                source_url=md_result["source_url"],
+                title=md_result["title"],
+                timings=timings,
+                prompts=prompts,
+            )
+            path_used = "markdown-llm"
+        except Exception as e:
+            print(f"[ERROR] Extraction failed: {e}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+    if recipe is None:
+        raise HTTPException(status_code=500, detail="Failed to extract recipe from URL")
+
+    timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+    timings["path"] = path_used
+
+    return {
+        "success": True,
+        "recipe": recipe,
+        "source": {
+            "url": md_result["source_url"],
+            "title": md_result["title"],
+            "has_jsonld": md_result["has_jsonld"],
+        },
+        "_timings": timings,
+        "_prompt": prompts,
+    }
+
+
+# Stage markdown from a bookmarklet so the form can pick it up on load.
+@app.post("/stage-markdown")
+async def stage_markdown_endpoint(request: Request):
+    print("[STAGE] Stage markdown endpoint called")
+    payload = await request.json()
+    md_text = (payload.get("markdown") or "").strip()
+    if not md_text:
+        raise HTTPException(status_code=400, detail="markdown is required")
+
+    now = time.time()
+    for k in [k for k, v in _staged_markdown.items() if v.get("expires_at", 0) < now]:
+        _staged_markdown.pop(k, None)
+
+    token = uuid.uuid4().hex
+    _staged_markdown[token] = {
+        "markdown": md_text,
+        "source_url": payload.get("source_url", ""),
+        "title": payload.get("title", ""),
+        "expires_at": now + _STAGE_TTL_SECONDS,
+    }
+    print(f"[OK] Staged markdown under token {token[:8]} ({len(md_text)} chars)")
+    return {"token": token}
+
+
+@app.get("/staged-markdown/{token}")
+async def get_staged_markdown(token: str):
+    print(f"[STAGE] Retrieving staged markdown for token {token[:8]}")
+    entry = _staged_markdown.get(token)
+    if not entry or entry.get("expires_at", 0) < time.time():
+        raise HTTPException(status_code=404, detail="Token not found or expired")
+    return {
+        "markdown": entry["markdown"],
+        "source_url": entry.get("source_url", ""),
+        "title": entry.get("title", ""),
+    }
+
+
+# Bookmarklet uploads the screenshot here after html2canvas finishes.
+@app.post("/stage-image/{token}")
+async def stage_image_endpoint(token: str, request: Request):
+    print(f"[STAGE] Stage image for token {token[:8]}")
+    entry = _staged_markdown.get(token)
+    if not entry or entry.get("expires_at", 0) < time.time():
+        raise HTTPException(status_code=404, detail="Token not found or expired")
+
+    payload = await request.json()
+    image_b64 = payload.get("image_b64", "")
+    if not image_b64:
+        raise HTTPException(status_code=400, detail="image_b64 is required")
+    entry["image_b64"] = image_b64
+    # Bump TTL so the form has time to fetch even if the screenshot took a while.
+    entry["expires_at"] = time.time() + _STAGE_TTL_SECONDS
+    print(f"[OK] Stored image for token {token[:8]} ({len(image_b64)} chars b64)")
+    return {"ok": True}
+
+
+@app.get("/staged-image/{token}")
+async def get_staged_image(token: str):
+    entry = _staged_markdown.get(token)
+    if not entry or entry.get("expires_at", 0) < time.time():
+        raise HTTPException(status_code=404, detail="Token not found or expired")
+    img = entry.get("image_b64")
+    if not img:
+        # Caller should poll; image hasn't been uploaded yet.
+        raise HTTPException(status_code=404, detail="Image not yet available")
+    return {"image_b64": img}
+
+
+print("[DONE] API setup complete!")
