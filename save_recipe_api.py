@@ -60,6 +60,10 @@ try:
         get_or_create_url_metadata,
         get_metabase_url,
     )
+    from input.pipeline.token_journal import (
+        ensure_bcc_token_journal_table,
+        write_usage_entries,
+    )
 
     print("[OK] url_utils / url_scoring imported successfully")
 except Exception as e:
@@ -70,6 +74,27 @@ print("[START] Starting API setup...")
 
 DB_PATH = "recipes.db"
 
+# Placeholder user id until the user-identity field is wired into the form
+# (will eventually come from Ghost). Recipes and token-journal rows both use it.
+PLACEHOLDER_USER_ID = 1
+
+
+def _journal_usage(usage_log, *, recipe_id=None):
+    """Best-effort token-journal write. Opens its own connection so it can be
+    called from anywhere in the request lifecycle; never raises."""
+    if not usage_log:
+        return
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            write_usage_entries(
+                conn,
+                user_id=PLACEHOLDER_USER_ID,
+                recipe_id=recipe_id,
+                entries=usage_log,
+            )
+    except Exception as e:
+        print(f"[WARN] token-journal write failed: {e}")
+
 
 # Ensure tables exist
 def init_db():
@@ -79,7 +104,7 @@ def init_db():
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS recipes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    recipe_id TEXT UNIQUE,
+                    recipe_id TEXT NOT NULL UNIQUE,
                     user_id INTEGER,
                     data TEXT,
                     created_at TEXT,
@@ -87,6 +112,7 @@ def init_db():
                 );
             """)
             ensure_metabase_url_table(conn)
+            ensure_bcc_token_journal_table(conn)
         print("[OK] Database tables ready")
     except Exception as e:
         print(f"[ERROR] Database initialization error: {e}")
@@ -190,7 +216,13 @@ async def save_recipe(request: Request):
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"Bad input: {e}")
 
-    recipe_id = payload.get("recipe_id") or str(uuid.uuid4())
+    # recipe_id is now app-minted at extract time and must be present on save.
+    # Fallback to a fresh UUID kept only for callers that still POST without
+    # one (no UI path produces such a request post-extract changes).
+    recipe_id = (payload.get("recipe_id") or "").strip()
+    if not recipe_id:
+        recipe_id = str(uuid.uuid4())
+        print(f"[SAVE] WARNING: payload missing recipe_id; minted {recipe_id}")
     now = datetime.utcnow().isoformat()
     user_id = 1  # Placeholder
 
@@ -256,12 +288,15 @@ async def save_recipe(request: Request):
                         (json.dumps(recipe_dict, indent=2), now, recipe_id),
                     )
             print("[OK] Recipe saved to database")
+            # Fetch the DB-assigned integer PK so the form can display it.
+            row = conn.execute("SELECT id FROM recipes WHERE recipe_id = ?", (recipe_id,)).fetchone()
+            seq_id = row[0] if row else None
     except Exception as e:
         print(f"[ERROR] Database error: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-    return {"recipe_id": recipe_id}
+    return {"recipe_id": recipe_id, "id": seq_id}
 
 
 # Read-only metadata lookup for the form's collapsible metadata section.
@@ -344,20 +379,27 @@ async def extract_from_image_endpoint(
             f.write(content)
 
         print(f"[EXTRACT] Running canonical image -> markdown -> recipe chain (source_url={source_url!r})")
+        # Mint the recipe UUID now so token-journal entries (and any future
+        # ledger writes) can reference the eventual recipe before save.
+        new_recipe_id = str(uuid.uuid4())
         # Canonical chain: vision OCR -> markdown -> single LLM extract that
         # also fills provenance + classification. Per-stage timings reported.
         timings: dict = {}
         prompts: dict = {}
+        usage_log: list = []
         t_start = time.perf_counter()
 
         try:
-            md = await asyncio.to_thread(image_to_markdown, str(temp_path), timings=timings)
+            md = await asyncio.to_thread(image_to_markdown, str(temp_path),
+                                         timings=timings, usage_log=usage_log)
         except Exception as e:
             print(f"[ERROR] image_to_markdown failed: {e}")
             print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}")
 
         if not md or not md.strip():
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail="Vision step returned empty markdown")
 
         # Stash the vision-stage prompt so the UI can surface it. Use a
@@ -376,25 +418,36 @@ async def extract_from_image_endpoint(
                 title=title,
                 timings=timings,
                 prompts=prompts,
+                usage_log=usage_log,
             )
         except Exception as e:
             print(f"[ERROR] markdown_to_recipe failed: {e}")
             print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
         if recipe is None:
             print("[ERROR] Extraction failed - no result")
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail="Failed to extract recipe from image")
 
         timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         timings["path"] = "image-llm"
 
+        # Stamp the minted UUID onto the recipe so the form picks it up.
+        recipe["id"] = new_recipe_id
+        # Journal LLM token usage before returning (extract happened regardless
+        # of whether the user later saves the recipe).
+        _journal_usage(usage_log, recipe_id=new_recipe_id)
+
         print("[OK] Extraction successful")
         return {
             "success": True,
+            "recipe_id": new_recipe_id,
             "recipe": recipe,
             "_timings": timings,
             "_prompt": prompts,
+            "_usage": usage_log,
         }
 
     except HTTPException:
@@ -439,11 +492,14 @@ async def extract_from_markdown_endpoint(
         effective_md = envelope["markdown"]
         effective_url = envelope["source_url"]
         effective_title = envelope["title"]
+        # Mint the recipe UUID now so the token-journal row references it.
+        new_recipe_id = str(uuid.uuid4())
         print(f"[EXTRACT] Running canonical markdown extraction on {source_name} "
               f"({len(effective_md)} chars) source_url={effective_url!r} title={effective_title!r}")
 
         timings: dict = {}
         prompts: dict = {}
+        usage_log: list = []
         t_start = time.perf_counter()
         try:
             recipe = await asyncio.to_thread(
@@ -454,25 +510,34 @@ async def extract_from_markdown_endpoint(
                 title=effective_title,
                 timings=timings,
                 prompts=prompts,
+                usage_log=usage_log,
             )
         except Exception as e:
             print(f"[ERROR] Extraction failed: {e}")
             print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
         if recipe is None:
             print("[ERROR] Extraction failed - no result")
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
 
         timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         timings["path"] = "markdown-llm"
 
+        recipe["id"] = new_recipe_id
+        # Journal LLM token usage before returning.
+        _journal_usage(usage_log, recipe_id=new_recipe_id)
+
         print("[OK] Extraction successful")
         return {
             "success": True,
+            "recipe_id": new_recipe_id,
             "recipe": recipe,
             "_timings": timings,
             "_prompt": prompts,
+            "_usage": usage_log,
         }
 
     except HTTPException:
@@ -493,8 +558,12 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     if not url or not url.strip():
         raise HTTPException(status_code=400, detail="url is required")
 
+    # Mint the recipe UUID now so token-journal entries reference it from
+    # the very first LLM call.
+    new_recipe_id = str(uuid.uuid4())
     timings: dict = {}
     prompts: dict = {}
+    usage_log: list = []
     t_start = time.perf_counter()
 
     try:
@@ -535,6 +604,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
                     recipe,
                     timings=timings,
                     prompts=prompts,
+                    usage_log=usage_log,
                 )
                 path_used = "jsonld-direct"
             except Exception as e:
@@ -551,21 +621,29 @@ async def extract_from_url_endpoint(url: str = Form(...)):
                 title=md_result["title"],
                 timings=timings,
                 prompts=prompts,
+                usage_log=usage_log,
             )
             path_used = "markdown-llm"
         except Exception as e:
             print(f"[ERROR] Extraction failed: {e}")
             print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            _journal_usage(usage_log, recipe_id=new_recipe_id)
             raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
     if recipe is None:
+        _journal_usage(usage_log, recipe_id=new_recipe_id)
         raise HTTPException(status_code=500, detail="Failed to extract recipe from URL")
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
     timings["path"] = path_used
 
+    recipe["id"] = new_recipe_id
+    # Journal LLM token usage before returning.
+    _journal_usage(usage_log, recipe_id=new_recipe_id)
+
     return {
         "success": True,
+        "recipe_id": new_recipe_id,
         "recipe": recipe,
         "source": {
             "url": md_result["source_url"],
@@ -574,6 +652,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
         },
         "_timings": timings,
         "_prompt": prompts,
+        "_usage": usage_log,
     }
 
 

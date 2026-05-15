@@ -85,13 +85,17 @@ def enrich_recipe(
     model: str = "gpt-4o-mini",
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
+    usage_log: Optional[list] = None,
 ) -> dict:
     """Mutate `recipe` in place with inferred provenance + classification.
 
     Returns the same recipe dict. If the LLM call fails, leaves the existing
     provenance/classification blocks untouched (sanitize will have given them
-    sensible defaults already).
+    sensible defaults already). If `usage_log` is provided, one entry is
+    appended on success so the caller can journal token usage.
     """
+    from input.pipeline.token_journal import build_usage_entry
+
     t0 = time.perf_counter()
     user_prompt = _build_user_prompt(recipe)
 
@@ -123,6 +127,8 @@ def enrich_recipe(
 
     if timings is not None:
         timings["enrich_llm_ms"] = int((time.perf_counter() - t_prep) * 1000)
+    if usage_log is not None:
+        usage_log.append(build_usage_entry("enrich_recipe", model, response))
 
     content = response.choices[0].message.content or "{}"
     try:

@@ -63,13 +63,18 @@ def image_to_data_url(image_path: str) -> str:
 
 
 def image_to_markdown(image_path: str, *, model: str = "gpt-4o",
-                      timings: Optional[dict] = None) -> str:
+                      timings: Optional[dict] = None,
+                      usage_log: Optional[list] = None) -> str:
     """Vision-OCR an image into markdown. Returns empty string on failure.
 
     If `timings` is provided it is populated with:
         encode_ms       base64 of the image bytes
         vision_llm_ms   the OpenAI vision call
+    If `usage_log` is provided, one entry is appended with the LLM token
+    counts so the caller can journal it.
     """
+    from input.pipeline.token_journal import build_usage_entry
+
     t0 = time.perf_counter()
     image_url = image_to_data_url(image_path)
     t_encode = time.perf_counter()
@@ -93,6 +98,8 @@ def image_to_markdown(image_path: str, *, model: str = "gpt-4o",
     )
     if timings is not None:
         timings["vision_llm_ms"] = int((time.perf_counter() - t_encode) * 1000)
+    if usage_log is not None:
+        usage_log.append(build_usage_entry("image_to_markdown", model, response))
     return (response.choices[0].message.content or "").strip()
 
 

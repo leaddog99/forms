@@ -764,7 +764,6 @@
       </div>
 
       <form id="recipeForm">
-        <input type="hidden" id="recipe_id" />
 
         <!-- Header: Title/Desc Left, Image Right -->
         <div class="header-row">
@@ -931,6 +930,16 @@
           <div id="metadataPanel" style="display:none">
             <div class="form-grid">
               <div class="form-group">
+                <label for="recipe_seq_id">Seq ID</label>
+                <input type="text" id="recipe_seq_id" readonly placeholder="(unsaved)"
+                       style="font-family:ui-monospace,'SF Mono',Consolas,monospace" />
+              </div>
+              <div class="form-group">
+                <label for="recipe_id">Recipe UUID</label>
+                <input type="text" id="recipe_id" readonly
+                       style="font-family:ui-monospace,'SF Mono',Consolas,monospace" />
+              </div>
+              <div class="form-group">
                 <label for="meta_page_authority">Page Authority (PA)</label>
                 <input type="text" id="meta_page_authority" readonly />
               </div>
@@ -1048,6 +1057,7 @@
       if (urlInput) urlInput.value = "";
       if (typeof clearExtractionTrace === 'function') clearExtractionTrace();
       document.getElementById("recipe_id").value = recipe.recipe_id;
+      document.getElementById("recipe_seq_id").value = recipe.id != null ? recipe.id : "";
       document.getElementById("name").value = r.name || "";
       document.getElementById("description").value = r.description || "";
 
@@ -1234,7 +1244,8 @@
 
       const result = await res.json();
       if (res.ok) {
-        showFeedback(`Recipe saved successfully!`, 'success');
+        const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
+        showFeedback(`Recipe saved successfully!${seqMsg}`, 'success');
         loadRecipes();
         // Preserve source URL / origin / affiliate so the form resets to a
         // "new entry, same source" state — and auto-load the freshly-scored
@@ -1292,6 +1303,7 @@
     document.getElementById("clearBtn").onclick = () => {
       document.getElementById("recipeForm").reset();
       document.getElementById("recipe_id").value = "";
+      document.getElementById("recipe_seq_id").value = "";
       heroImage.style.display = 'none';
       heroPlaceholder.style.display = 'flex';
       heroSectionEl.classList.remove('has-image');
@@ -1841,6 +1853,7 @@
         const result = await res.json();
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
+          document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
           renderExtractionTrace(result._timings, result._prompt);
           if (!recipeLooksComplete(result.recipe)) {
             showErrorDialog({
@@ -1896,6 +1909,7 @@
         const result = await res.json();
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
+          document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
           renderExtractionTrace(result._timings, result._prompt);
           if (!recipeLooksComplete(result.recipe)) {
             const missing = [];
@@ -1962,6 +1976,7 @@
 
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
+          document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
           renderExtractionTrace(result._timings, result._prompt);
 
           if (!recipeLooksComplete(result.recipe)) {
@@ -2007,8 +2022,9 @@
       // Remember the full extract so save can pass through provenance,
       // classification, and _scoring (none of which have form fields).
       lastExtractedRecipe = r;
-      // Clear recipe_id so it creates a new record
-      document.getElementById("recipe_id").value = "";
+      // recipe_id is now app-minted at extract time and lives on r.id. The
+      // calling extract handler sets the form field; we just don't clear it
+      // here anymore.
 
       // Basic fields
       document.getElementById("name").value = r.name || "";

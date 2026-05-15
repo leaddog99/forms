@@ -22,6 +22,7 @@ from sanitize_recipe_data import sanitize_recipe_data
 from recipe_model import RecipeModel
 from input.pipeline.validators import is_recipe, stamp_validation_on_recipe
 from input.pipeline.url_utils import normalize_url, root_domain
+from input.pipeline.token_journal import build_usage_entry
 
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -84,6 +85,7 @@ def markdown_to_recipe(
     model: str = "gpt-4o-mini",
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
+    usage_log: Optional[list] = None,
 ) -> Optional[dict]:
     """Extract a full RecipeModel from canonical markdown in one LLM call.
 
@@ -98,6 +100,9 @@ def markdown_to_recipe(
         prompts:        Optional dict, populated in place with model,
                         system_prompt, user_prompt. Lets the UI surface
                         exactly what was sent to the LLM.
+        usage_log:      Optional list — appended with one dict
+                        (operation/model/input_tokens/output_tokens/meta)
+                        so the caller can journal token usage.
 
     Returns:
         Validated RecipeModel as a dict (by_alias), or None if parsing failed.
@@ -137,6 +142,8 @@ def markdown_to_recipe(
     t_llm = time.perf_counter()
     if timings is not None:
         timings["extract_llm_ms"] = int((t_llm - t_prep) * 1000)
+    if usage_log is not None:
+        usage_log.append(build_usage_entry("markdown_to_recipe", model, response))
 
     content = response.choices[0].message.content
     try:
