@@ -310,6 +310,19 @@ def get_url_metadata(url: str):
         with sqlite3.connect(DB_PATH) as conn:
             ensure_metabase_url_table(conn)
             row = get_metabase_url(conn, url)
+            # Self-heal: if a row exists but Moz scoring never landed (null
+            # moz_last_scored — e.g. transient Moz outage at the save that
+            # created the row), try once now so the viewer sees real scores
+            # instead of "scoring not yet run." Failed scoring leaves the
+            # null state intact; never zeroes existing values.
+            if row and not row.get("moz_last_scored"):
+                from input.pipeline.url_scoring import score_url_via_moz, _apply_moz_scores
+                from datetime import datetime, timezone
+                scores = score_url_via_moz(row["url"])
+                if scores:
+                    _apply_moz_scores(conn, row["url"], scores,
+                                      datetime.now(timezone.utc).isoformat())
+                    row = get_metabase_url(conn, url)
     except Exception as e:
         print(f"[ERROR] url-metadata lookup failed: {e}")
         raise HTTPException(status_code=500, detail=f"Lookup error: {e}")
