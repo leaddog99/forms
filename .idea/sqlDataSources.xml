@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DdlMappings">
+    <mapping uuid="b6fab70b-7ad1-47a0-9402-9880a8fa7696" name="recipes [2] Mapping">
+      <data-sources db="b75b30f0-0055-423c-901e-08bd2d4ed1a1" ddl="ea09afb5-307f-4bcd-8a0a-86a4963266d1" />
+    </mapping>
+  </component>
+  <component name="SqlDataSourceStorage">
+    <option name="dataSources">
+      <list>
+        <State>
+          <option name="id" value="ea09afb5-307f-4bcd-8a0a-86a4963266d1" />
+          <option name="name" value="recipes [2] (DDL)" />
+          <option name="dbmsName" value="SQLITE" />
+          <option name="urls">
+            <array />
+          </option>
+          <option name="outLayout" value="File per object by schema.groovy" />
+        </State>
+      </list>
+    </option>
+  </component>
+</project>

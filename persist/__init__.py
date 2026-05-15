@@ -1,0 +1,1 @@
+"""Persistence: recipe -> SQLite, image generation, URL metadata upserts."""

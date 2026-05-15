@@ -1,0 +1,2329 @@
+<!DOCTYPE html>
+<!--
+  TODO (revisit): persist the original source image used during AI extraction.
+  Rationale: during edit, the user may want to refer back to the original (e.g., handwritten
+  notes the extractor missed). Worth weighing storage cost & privacy vs. editing utility
+  before committing. Affected pieces if we proceed:
+    - recipe_model.py     : add a sourceImage field (path or URL)
+    - save_recipe_api.py  : on /extract, save the uploaded image to a stable location and
+                            return its URL; persist that URL on save
+    - recipe_form_styled.html : show a thumbnail in the edit view linking to the full image
+  Open questions: where to store (local input/ vs. object storage), retention, and whether
+  to keep multiple source images per recipe (re-extractions, merged sources).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipe Manager</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8f4ed;
+      --card: #fffaf2;
+      --ink: #2a211b;
+      --muted: #74695f;
+      --accent: #9b4a22;
+      --accent-soft: #ead3c6;
+      --line: #e2d6c8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 1.05em;
+      line-height: 1.7;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    /* Sidebar Toggle */
+    .sidebar-toggle {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 100;
+      background: var(--accent);
+      color: white;
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1.2em;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+
+    .sidebar-toggle:hover { background: #7a3a1a; }
+
+    /* Sidebar - Recipe List */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: -280px;
+      width: 260px;
+      height: 100vh;
+      background: var(--card);
+      padding: 16px;
+      box-shadow: 4px 0 20px rgba(60,40,20,.1);
+      z-index: 99;
+      overflow-y: auto;
+      transition: left 0.3s ease;
+    }
+
+    .sidebar.open { left: 0; }
+
+    .sidebar h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1em;
+      font-weight: 600;
+      margin: 40px 0 12px 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .recipe-list { list-style: none; }
+
+    .recipe-item {
+      cursor: pointer;
+      padding: 10px 12px;
+      margin-bottom: 4px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      font-size: 0.9em;
+    }
+
+    .recipe-item:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+
+    .recipe-item .name { font-weight: 600; }
+    .recipe-item .date { font-size: 0.8em; color: var(--muted); }
+
+    /* Main Form Area */
+    .main {
+      background: var(--card);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 14px 34px rgba(60,40,20,.08);
+    }
+
+    /* Header: Title Left, Image Right */
+    .header-row {
+      display: grid;
+      grid-template-columns: 1.62fr 1fr;
+      gap: 28px;
+      margin-bottom: 24px;
+      align-items: start;
+    }
+
+    .header-left {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header-left .form-group { margin-bottom: 14px; }
+
+    .header-right {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Portrait Image */
+    .hero-section {
+      position: relative;
+      background: linear-gradient(135deg, var(--accent-soft) 0%, var(--line) 100%);
+      border-radius: 20px;
+      overflow: hidden;
+      min-height: 320px;
+    }
+    /* When an image is loaded we set --hero-aspect inline; the placeholder
+       state keeps min-height and no aspect-ratio. */
+    .hero-section.has-image {
+      min-height: 0;
+      aspect-ratio: var(--hero-aspect, 4 / 5);
+    }
+
+    .hero-section img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .hero-section .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 0.75em;
+      text-align: center;
+      padding: 10px;
+    }
+
+    .hero-section .placeholder svg {
+      width: 28px;
+      height: 28px;
+      margin-bottom: 4px;
+      opacity: 0.5;
+    }
+
+    .hero-section input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .main h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.5em;
+      margin-bottom: 4px;
+    }
+
+    /* Form Sections */
+    .form-section { margin-bottom: 24px; }
+
+    .form-section h3 {
+      font-family: 'Playfair Display', serif;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.85em;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .form-group { margin-bottom: 14px; }
+
+    label {
+      display: block;
+      font-size: 0.8em;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 14px;
+      font-family: Georgia, serif;
+      font-size: 1em;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      transition: all 0.15s ease;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: #c4b8aa;
+      font-style: italic;
+    }
+
+    /* Validation styles */
+    .field-error input,
+    .field-error textarea {
+      border-color: #c0392b;
+      background: #fdf8f8;
+    }
+
+    .field-error input:focus,
+    .field-error textarea:focus {
+      box-shadow: 0 0 0 3px rgba(192,57,43,.15);
+    }
+
+    .error-msg {
+      color: #c0392b;
+      font-size: 0.8em;
+      margin-top: 4px;
+      display: none;
+    }
+
+    .field-error .error-msg {
+      display: block;
+    }
+
+    .required-star {
+      color: #c0392b;
+      margin-left: 2px;
+    }
+
+    .section-error {
+      border: 1px solid #c0392b;
+      border-radius: 12px;
+      padding: 8px;
+      background: #fdf8f8;
+    }
+
+    textarea { resize: none; overflow: hidden; min-height: 70px; }
+    textarea.auto-grow { min-height: 90px; line-height: 1.7; }
+
+    /* Two Column Recipe Layout */
+    .recipe-columns {
+      display: grid;
+      grid-template-columns: 1fr 1.5fr;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    .recipe-content-area {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(60,40,20,.04);
+    }
+
+    .recipe-content-area label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      font-size: 0.95em;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .recipe-content-area label .icon {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent);
+      color: white;
+      border-radius: 8px;
+      font-size: 0.8em;
+    }
+
+    .recipe-content-area label .icon svg {
+      width: 14px;
+      height: 14px;
+      stroke: white;
+      fill: none;
+    }
+
+    /* Ingredient items */
+    .ingredient-list, .step-list {
+      list-style: none;
+    }
+
+    .ingredient-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .ingredient-item.dragging,
+    .step-item.dragging {
+      opacity: 0.4;
+      background: var(--accent-soft);
+    }
+
+    .ingredient-item.drag-over,
+    .step-item.drag-over {
+      border-top: 2px solid var(--accent);
+    }
+
+    .drag-handle {
+      cursor: grab;
+      color: var(--line);
+      font-size: 0.9em;
+      padding: 2px;
+      user-select: none;
+      transition: color 0.15s;
+    }
+
+    .drag-handle:hover {
+      color: var(--muted);
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .ingredient-item .bullet {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .ingredient-item input,
+    .ingredient-item textarea {
+      border: none;
+      background: transparent;
+      padding: 4px 0;
+      flex: 1;
+      font: inherit;
+      color: inherit;
+      resize: none;
+      overflow: hidden;
+      line-height: 1.4;
+      min-height: 1.4em;
+      width: 100%;
+    }
+
+    .ingredient-item input:focus,
+    .ingredient-item textarea:focus {
+      outline: none;
+      box-shadow: none;
+    }
+
+    /* Action buttons */
+    .item-actions {
+      display: flex;
+      gap: 2px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .ingredient-item:hover .item-actions,
+    .step-item:hover .item-actions {
+      opacity: 1;
+    }
+
+    .item-btn {
+      width: 20px;
+      height: 20px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 0.9em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.15s;
+    }
+
+    .item-btn:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .item-btn.delete:hover {
+      background: #fdf2f2;
+      color: #c0392b;
+    }
+
+    /* Step items */
+    .step-item {
+      display: flex;
+      gap: 14px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+      align-items: flex-start;
+    }
+
+    .step-item:last-child {
+      border-bottom: none;
+    }
+
+    .step-number {
+      width: 32px;
+      height: 32px;
+      background: var(--accent);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9em;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .step-content {
+      flex: 1;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .step-item textarea {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 4px 0;
+      min-height: 24px;
+      resize: none;
+      overflow: hidden;
+    }
+
+    .step-item textarea:focus {
+      outline: none;
+      box-shadow: none;
+    }
+
+
+    .recipe-content-area textarea {
+      background: transparent;
+      border: none;
+      padding: 0;
+      font-size: 0.9em;
+      line-height: 1.7;
+    }
+
+    .recipe-content-area textarea:focus { box-shadow: none; }
+
+    select { cursor: pointer; }
+
+    /* Buttons */
+    .button-row {
+      display: flex;
+      gap: 12px;
+      padding-top: 20px;
+      margin-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+
+    button {
+      font-family: Georgia, serif;
+      font-size: 1em;
+      padding: 14px 28px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: none;
+    }
+
+    button.primary { background: var(--accent); color: white; box-shadow: 0 4px 12px rgba(155,74,34,.25); }
+    button.primary:hover { background: #7a3a1a; transform: translateY(-1px); }
+    button.secondary { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+    button.secondary:hover { background: var(--accent-soft); border-color: var(--accent); }
+    button.danger { background: transparent; color: #c0392b; border: 1px solid #e0c0bc; }
+    button.danger:hover { background: #fdf2f2; }
+
+    /* Feedback */
+    #feedback {
+      margin-top: 10px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.85em;
+    }
+
+    #feedback.success { background: #e8f5e9; color: #2e7d32; border-left: 3px solid #2e7d32; }
+    #feedback.error { background: #fdf2f2; color: #c0392b; border-left: 3px solid #c0392b; }
+    #feedback:empty { display: none; }
+
+    .empty-state { text-align: center; padding: 20px; color: var(--muted); font-size: 0.85em; }
+
+    /* Image Drop Zone */
+    .drop-zone {
+      border: 2px dashed var(--line);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #fffdf9 0%, var(--card) 100%);
+      transition: all 0.2s ease;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .drop-zone:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      transform: scale(1.01);
+    }
+
+    .drop-zone.processing {
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .drop-zone-icon {
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 12px;
+      color: var(--accent);
+    }
+
+    .drop-zone-text {
+      font-size: 1em;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    .drop-zone-hint {
+      font-size: 0.8em;
+      color: var(--muted);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* URL extraction row */
+    .url-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      align-items: stretch;
+    }
+    .url-row input[type="url"] {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font-size: 0.95em;
+      background: var(--card);
+      color: var(--ink);
+      font-family: inherit;
+    }
+    .url-row input[type="url"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .url-row button {
+      padding: 10px 18px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+      white-space: nowrap;
+    }
+    .url-row button:hover:not(:disabled) { opacity: 0.88; }
+    .url-row button:disabled { opacity: 0.55; cursor: wait; }
+
+    .drop-zone-spinner {
+      display: none;
+      margin: 0 auto;
+    }
+
+    .drop-zone.processing .drop-zone-spinner {
+      display: block;
+    }
+
+    .drop-zone.processing .drop-zone-icon,
+    .drop-zone.processing .drop-zone-text,
+    .drop-zone.processing .drop-zone-hint {
+      display: none;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--line);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .processing-text {
+      margin-top: 12px;
+      font-size: 0.9em;
+      color: var(--accent);
+    }
+
+    /* Modal dialog */
+    dialog#errorDialog {
+      border: none;
+      border-radius: 18px;
+      padding: 0;
+      max-width: 480px;
+      width: 92%;
+      box-shadow: 0 24px 60px rgba(60, 40, 20, 0.25);
+      background: var(--card);
+      color: var(--ink);
+      font-family: Georgia, serif;
+    }
+
+    dialog#errorDialog::backdrop {
+      background: rgba(30, 20, 10, 0.45);
+      backdrop-filter: blur(2px);
+    }
+
+    .modal-inner {
+      padding: 24px 28px 20px;
+    }
+
+    .modal-inner h3 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.2em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+
+    .modal-inner p {
+      font-size: 0.95em;
+      line-height: 1.55;
+      color: var(--ink);
+      margin-bottom: 18px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      padding: 14px 24px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .modal-actions button { padding: 10px 18px; font-size: 0.92em; }
+  </style>
+</head>
+<body>
+  <!-- Error dialog (shown via JS) -->
+  <dialog id="errorDialog">
+    <div class="modal-inner">
+      <h3 id="errorDialogTitle">Something went wrong</h3>
+      <p id="errorDialogMessage"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="errorDialogImageBtn" class="primary" style="display:none">Try image extraction</button>
+      <button type="button" id="errorDialogCloseBtn" class="secondary">Close</button>
+    </div>
+  </dialog>
+  <input type="file" id="imageFallbackInput" accept="image/*" style="display:none" />
+
+  <!-- Sidebar Toggle -->
+  <button class="sidebar-toggle" id="sidebarToggle">☰</button>
+
+  <!-- Sidebar: Recipe List -->
+  <aside class="sidebar" id="sidebar">
+    <h2>Recipes</h2>
+    <ul class="recipe-list" id="recipeList">
+      <li class="empty-state">Loading...</li>
+    </ul>
+  </aside>
+
+  <div class="container">
+    <!-- Main: Recipe Form -->
+    <main class="main">
+      <!-- URL Extraction (server fetches HTML, pulls JSON-LD if present) -->
+      <div class="url-row">
+        <input type="url" id="extractUrlInput" placeholder="Paste a recipe URL — https://..." />
+        <button type="button" id="extractUrlBtn">Extract from URL</button>
+      </div>
+
+      <!-- Image Drop Zone for AI Extraction -->
+      <div class="drop-zone" id="dropZone">
+        <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        <div class="drop-zone-text">Drop a recipe .md file or screenshot image</div>
+        <div class="drop-zone-hint">AI will extract the recipe and fill the form</div>
+        <div class="drop-zone-spinner">
+          <div class="spinner"></div>
+          <div class="processing-text">Extracting recipe...</div>
+        </div>
+        <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*" />
+      </div>
+
+      <form id="recipeForm">
+        <input type="hidden" id="recipe_id" />
+
+        <!-- Header: Title/Desc Left, Image Right -->
+        <div class="header-row">
+          <div class="header-left">
+            <div class="form-group" id="nameGroup">
+              <label for="name">Recipe Name<span class="required-star">*</span></label>
+              <input type="text" id="name" placeholder="e.g., Grandmother's Apple Pie" />
+              <div class="error-msg">Recipe name is required</div>
+            </div>
+            <div class="form-group">
+              <label for="description">Description</label>
+              <textarea id="description" class="auto-grow" placeholder="A brief description..."></textarea>
+            </div>
+          </div>
+          <div class="header-right">
+            <div class="hero-section" id="heroSection">
+              <div class="placeholder" id="heroPlaceholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <path d="M21 15l-5-5L5 21"/>
+                </svg>
+                <span>Add image</span>
+              </div>
+              <img id="heroImage" style="display:none" />
+              <input type="file" id="imageUpload" accept="image/*" />
+            </div>
+            <div class="form-group" style="margin-top:10px;margin-bottom:0;">
+              <input type="url" id="heroImageUrl" placeholder="Image URL…" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Ingredients & Method Side by Side -->
+        <div class="recipe-columns">
+          <div class="recipe-content-area" id="ingredientsArea">
+            <label>
+              <span class="icon"><svg viewBox="0 0 24 24" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6"/><path d="M9 12h6M9 16h6"/></svg></span>
+              Ingredients<span class="required-star">*</span>
+            </label>
+            <ul class="ingredient-list" id="ingredientList"></ul>
+            <div class="error-msg">At least one ingredient is required</div>
+          </div>
+          <div class="recipe-content-area" id="methodArea">
+            <label>
+              <span class="icon"><svg viewBox="0 0 24 24" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
+              Method<span class="required-star">*</span>
+            </label>
+            <ul class="step-list" id="stepList"></ul>
+            <div class="error-msg">At least one step is required</div>
+          </div>
+        </div>
+
+        <!-- Times & Yield -->
+        <section class="form-section">
+          <h3>Time & Servings</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="prepTime">Prep Time</label>
+              <input type="text" id="prepTime" placeholder="15 min" />
+            </div>
+            <div class="form-group">
+              <label for="cookTime">Cook Time</label>
+              <input type="text" id="cookTime" placeholder="30 min" />
+            </div>
+            <div class="form-group">
+              <label for="totalTime">Total Time</label>
+              <input type="text" id="totalTime" placeholder="45 min" />
+            </div>
+            <div class="form-group">
+              <label for="recipeYield">Serves</label>
+              <input type="text" id="recipeYield" placeholder="4 servings" />
+            </div>
+          </div>
+        </section>
+
+        <!-- Category & Cuisine -->
+        <section class="form-section">
+          <h3>Category</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="recipeCategory">Category</label>
+              <input type="text" id="recipeCategory" placeholder="Dinner, Main Course" />
+            </div>
+            <div class="form-group">
+              <label for="recipeCuisine">Cuisine</label>
+              <input type="text" id="recipeCuisine" placeholder="Italian, Mexican" />
+            </div>
+            <div class="form-group">
+              <label for="cookingMethod">Cooking Method</label>
+              <input type="text" id="cookingMethod" placeholder="Baking, Grilling" />
+            </div>
+            <div class="form-group">
+              <label for="suitableForDiet">Dietary</label>
+              <input type="text" id="suitableForDiet" placeholder="Vegetarian, Gluten-Free" />
+            </div>
+          </div>
+        </section>
+
+        <!-- Chef's Notes -->
+        <section class="form-section">
+          <h3>Chef's Notes</h3>
+          <ul class="ingredient-list" id="notesList"></ul>
+        </section>
+
+        <!-- Serving & Tags -->
+        <section class="form-section">
+          <h3>Serving & Tags</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="servingSuggestions">Serving Suggestions</label>
+              <input type="text" id="servingSuggestions" placeholder="Pairs well with crusty bread and a green salad" />
+            </div>
+            <div class="form-group">
+              <label for="keywords">Keywords / Tags</label>
+              <textarea id="keywords" class="auto-grow" rows="1" placeholder="easy, quick, weeknight, comfort food"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <!-- Equipment -->
+        <section class="form-section">
+          <h3>Equipment</h3>
+          <ul class="ingredient-list" id="equipmentList"></ul>
+        </section>
+
+        <!-- Source Info -->
+        <section class="form-section">
+          <h3>Source</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="sourceTitle">Source</label>
+              <input type="text" id="sourceTitle" placeholder="Mom's Recipe Box" />
+            </div>
+            <div class="form-group">
+              <label for="author">Author</label>
+              <input type="text" id="author" placeholder="Julia Child" />
+            </div>
+            <div class="form-group">
+              <label for="originalUrl">URL</label>
+              <input type="text" id="originalUrl" placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label for="template">Template</label>
+              <select id="template">
+                <option value="classic">Classic</option>
+                <option value="modern">Modern</option>
+                <option value="minimal">Minimal</option>
+              </select>
+            </div>
+          </div>
+          <input type="hidden" id="affiliateUrl" />
+        </section>
+
+        <!-- Metadata (URL-keyed, lazily loaded). TODO: access-control later. -->
+        <section class="form-section">
+          <h3>
+            Metadata
+            <button type="button" id="metadataToggleBtn" class="secondary"
+                    style="float:right;padding:4px 12px;font-size:0.75em;margin-top:-4px">
+              Show metadata
+            </button>
+          </h3>
+          <div id="metadataPanel" style="display:none">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="meta_page_authority">Page Authority (PA)</label>
+                <input type="text" id="meta_page_authority" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_domain_authority">Domain Authority (DA)</label>
+                <input type="text" id="meta_domain_authority" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_ou_score">Opportunity (OU)</label>
+                <input type="text" id="meta_ou_score" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_recipe_score">Recipe-text score</label>
+                <input type="text" id="meta_recipe_score" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_root_domain">Root domain</label>
+                <input type="text" id="meta_root_domain" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_raw_title">Raw title</label>
+                <input type="text" id="meta_raw_title" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_first_seen">First seen</label>
+                <input type="text" id="meta_first_seen" readonly />
+              </div>
+              <div class="form-group">
+                <label for="meta_last_accessed">Last accessed</label>
+                <input type="text" id="meta_last_accessed" readonly />
+              </div>
+            </div>
+            <div id="metadataStatus" style="font-size:0.8em;color:var(--muted);margin-top:6px"></div>
+
+            <!-- Last extraction: timings + prompts. Populated when the form
+                 is hydrated from /extract-from-url, -from-image, -from-markdown. -->
+            <div id="extractionTrace" style="margin-top:18px;display:none">
+              <h4 style="margin:0 0 6px;font-size:0.92em">Last extraction</h4>
+              <table id="extractionTimingsTable"
+                     style="font-size:0.82em;color:var(--ink);border-collapse:collapse;margin-bottom:8px">
+              </table>
+              <details id="extractionPromptDetails" style="font-size:0.82em">
+                <summary style="cursor:pointer;color:var(--muted)">LLM prompt</summary>
+                <div id="extractionPromptModel" style="margin:6px 0 2px;color:var(--muted)"></div>
+                <div style="margin:8px 0 2px;color:var(--muted)">System prompt</div>
+                <pre id="extractionSystemPrompt"
+                     style="background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:240px;overflow:auto;font-size:0.78em;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+                <div style="margin:8px 0 2px;color:var(--muted)">User prompt</div>
+                <pre id="extractionUserPrompt"
+                     style="background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:240px;overflow:auto;font-size:0.78em;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+              </details>
+            </div>
+          </div>
+        </section>
+
+        <!-- Buttons -->
+        <div class="button-row">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="clearBtn" class="secondary">New</button>
+          <button type="button" id="deleteBtn" class="danger">Delete</button>
+        </div>
+      </form>
+
+      <div id="feedback"></div>
+    </main>
+  </div>
+
+  <script>
+    // Talk to whichever server served this page so the same file works on
+    // 8008 / 8009 / dev / prod without hardcoded ports.
+    const API = window.location.origin;
+    const listEl = document.getElementById("recipeList");
+    const feedback = document.getElementById("feedback");
+
+    function showFeedback(message, type = 'success') {
+      feedback.textContent = message;
+      feedback.className = type;
+      if (type === 'success') {
+        setTimeout(() => { feedback.textContent = ''; feedback.className = ''; }, 4000);
+      }
+    }
+
+    async function loadRecipes() {
+      listEl.innerHTML = '<li class="empty-state">Loading...</li>';
+      try {
+        const res = await fetch(`${API}/recipes`);
+        const data = await res.json();
+        listEl.innerHTML = "";
+
+        if (data.length === 0) {
+          listEl.innerHTML = '<li class="empty-state">No recipes yet.<br>Create your first one!</li>';
+          return;
+        }
+
+        data.forEach(r => {
+          const item = document.createElement("li");
+          item.className = "recipe-item";
+          item.innerHTML = `
+            <div class="name">${r.data.name || "[Untitled]"}</div>
+            <div class="date">${r.updated_at ? new Date(r.updated_at).toLocaleDateString() : ''}</div>
+          `;
+          item.onclick = () => { loadForm(r); sidebar.classList.remove('open'); };
+          listEl.appendChild(item);
+        });
+      } catch (err) {
+        listEl.innerHTML = '<li class="empty-state">Failed to load recipes</li>';
+      }
+    }
+
+    function loadForm(recipe) {
+      const r = recipe.data;
+      // Clear extraction inputs that aren't part of the recipe itself —
+      // they reflect the last extract action, not the loaded record.
+      const urlInput = document.getElementById("extractUrlInput");
+      if (urlInput) urlInput.value = "";
+      if (typeof clearExtractionTrace === 'function') clearExtractionTrace();
+      document.getElementById("recipe_id").value = recipe.recipe_id;
+      document.getElementById("name").value = r.name || "";
+      document.getElementById("description").value = r.description || "";
+
+      // Load ingredients
+      ingredientList.innerHTML = '';
+      (r.recipeIngredient || []).forEach(ing => addIngredient(ing));
+      if (!r.recipeIngredient?.length) addIngredient();
+
+      // Load steps
+      stepList.innerHTML = '';
+      (r.recipeInstructions || []).forEach(step => addStep(step.text || step));
+      if (!r.recipeInstructions?.length) addStep();
+
+      // Time & Yield
+      document.getElementById("prepTime").value = r.prepTime || "";
+      document.getElementById("cookTime").value = r.cookTime || "";
+      document.getElementById("totalTime").value = r.totalTime || "";
+      document.getElementById("recipeYield").value = r.recipeYield || "";
+
+      // Category
+      document.getElementById("recipeCategory").value = r.recipeCategory || "";
+      document.getElementById("recipeCuisine").value = r.recipeCuisine || "";
+      document.getElementById("cookingMethod").value = r.cookingMethod || "";
+      document.getElementById("suitableForDiet").value = (r.suitableForDiet || []).join(", ");
+
+      // Notes
+      notesList.innerHTML = '';
+      const notesArr = (r.notes || '').split('\n').filter(Boolean);
+      notesArr.forEach(note => addNote(note));
+      if (!notesArr.length) addNote();
+
+      document.getElementById("servingSuggestions").value = r.servingSuggestions || "";
+      document.getElementById("keywords").value = (r.keywords || r.tags || []).join(", ");
+
+      // Equipment
+      equipmentList.innerHTML = '';
+      (r.equipment || []).forEach(eq => addEquipment(eq.name || eq));
+      if (!r.equipment?.length) addEquipment();
+
+      // Source
+      document.getElementById("template").value = r.template || "classic";
+      document.getElementById("sourceTitle").value = r._source?.origin || "";
+      document.getElementById("author").value = r.author?.name || "";
+      document.getElementById("originalUrl").value = r._source?.originalUrl || "";
+      document.getElementById("affiliateUrl").value = r._source?.affiliateUrl || "";
+
+      // Hero image (URL field + preview)
+      const firstImageLoad = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
+      heroImageUrl.value = firstImageLoad || '';
+      applyHeroImageFromUrl();
+
+      // Invalidate URL-keyed metadata first, then seed the recipe-text score
+      // from the recipe's own _scoring. (The score isn't URL-keyed and would
+      // otherwise be wiped by the invalidate.)
+      invalidateMetadataCache && invalidateMetadataCache();
+      const recipeScoreEl = document.getElementById('meta_recipe_score');
+      if (recipeScoreEl) {
+        const s = r._scoring || {};
+        recipeScoreEl.value = (s.recipeScore !== undefined && s.recipeScore !== null)
+          ? `${s.recipeScore} (threshold ${s.recipeScoreThreshold || 0})`
+          : '';
+      }
+
+      feedback.textContent = "";
+      feedback.className = "";
+
+      // Auto-grow textareas
+      document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
+      stepList.querySelectorAll('textarea').forEach(autoGrow);
+    }
+
+    // Validation
+    function validateForm() {
+      let isValid = true;
+
+      // Clear previous errors
+      document.querySelectorAll('.field-error, .section-error').forEach(el => {
+        el.classList.remove('field-error', 'section-error');
+      });
+
+      // Name required
+      const nameGroup = document.getElementById('nameGroup');
+      const name = document.getElementById('name').value.trim();
+      if (!name) {
+        nameGroup.classList.add('field-error');
+        isValid = false;
+      }
+
+      // At least one ingredient
+      const ingredientsArea = document.getElementById('ingredientsArea');
+      const ingredients = getIngredients();
+      if (ingredients.length === 0) {
+        ingredientsArea.classList.add('section-error');
+        isValid = false;
+      }
+
+      // At least one step
+      const methodArea = document.getElementById('methodArea');
+      const steps = getSteps();
+      if (steps.length === 0) {
+        methodArea.classList.add('section-error');
+        isValid = false;
+      }
+
+      return isValid;
+    }
+
+    document.getElementById("recipeForm").onsubmit = async (e) => {
+      e.preventDefault();
+
+      // Validate first
+      if (!validateForm()) {
+        showFeedback('Please fill in the required fields', 'error');
+        return;
+      }
+
+      const keywords = document.getElementById("keywords").value.split(/[,\n]/).map(k => k.trim()).filter(Boolean);
+      const diets = document.getElementById("suitableForDiet").value.split(',').map(d => d.trim()).filter(Boolean);
+
+      const payload = {
+        recipe_id: document.getElementById("recipe_id").value || undefined,
+        name: document.getElementById("name").value,
+        description: document.getElementById("description").value,
+        recipeIngredient: getIngredients(),
+        recipeInstructions: getSteps(),
+        prepTime: document.getElementById("prepTime").value,
+        cookTime: document.getElementById("cookTime").value,
+        totalTime: document.getElementById("totalTime").value,
+        recipeYield: document.getElementById("recipeYield").value,
+        recipeCategory: document.getElementById("recipeCategory").value,
+        recipeCuisine: document.getElementById("recipeCuisine").value,
+        cookingMethod: document.getElementById("cookingMethod").value,
+        suitableForDiet: diets,
+        notes: getNotes(),
+        servingSuggestions: document.getElementById("servingSuggestions").value,
+        keywords: keywords,
+        tags: keywords,
+        equipment: getEquipment(),
+        template: document.getElementById("template").value,
+        _source: {
+          origin: document.getElementById("sourceTitle").value,
+          originalUrl: document.getElementById("originalUrl").value,
+          affiliateUrl: document.getElementById("affiliateUrl").value,
+          type: "cookbook"
+        },
+        author: { "@type": "Person", name: document.getElementById("author").value },
+        image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : []
+      };
+
+      // Pass-through fields the form has no UI for. Sourced from the last
+      // extract so LLM-inferred provenance/classification and pipeline-side
+      // _scoring actually land in the saved record.
+      if (lastExtractedRecipe) {
+        if (lastExtractedRecipe.provenance) payload.provenance = lastExtractedRecipe.provenance;
+        if (lastExtractedRecipe.classification) payload.classification = lastExtractedRecipe.classification;
+        if (lastExtractedRecipe._scoring) payload._scoring = lastExtractedRecipe._scoring;
+      }
+
+      const res = await fetch(`${API}/recipes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await res.json();
+      if (res.ok) {
+        showFeedback(`Recipe saved successfully!`, 'success');
+        loadRecipes();
+        // Preserve source URL / origin / affiliate so the form resets to a
+        // "new entry, same source" state — and auto-load the freshly-scored
+        // Moz metadata for that URL.
+        const savedSourceUrl = document.getElementById("originalUrl").value;
+        const savedSourceTitle = document.getElementById("sourceTitle").value;
+        const savedAffiliateUrl = document.getElementById("affiliateUrl").value;
+        const savedExtractUrl = document.getElementById("extractUrlInput").value;
+        const savedHeroImageUrl = heroImageUrl.value;
+        const savedRecipeScore = document.getElementById('meta_recipe_score').value;
+        // Reset form for new entry
+        document.getElementById("recipeForm").reset();
+        document.getElementById("recipe_id").value = "";
+        heroImage.style.display = 'none';
+        heroPlaceholder.style.display = 'flex';
+        clearLists();
+        // Restore fields the reset cleared but the user still cares about.
+        document.getElementById("originalUrl").value = savedSourceUrl;
+        document.getElementById("sourceTitle").value = savedSourceTitle;
+        document.getElementById("affiliateUrl").value = savedAffiliateUrl;
+        document.getElementById("extractUrlInput").value = savedExtractUrl;
+        heroImageUrl.value = savedHeroImageUrl;
+        applyHeroImageFromUrl();
+        document.getElementById('meta_recipe_score').value = savedRecipeScore;
+        // Auto-open and refresh the metadata panel against the saved URL.
+        const metaUrl = savedSourceUrl || savedExtractUrl;
+        if (metaUrl) {
+          metadataPanel.style.display = '';
+          metadataToggleBtn.textContent = 'Hide metadata';
+          metadataLoadedForUrl = null;
+          loadMetadataForUrl(metaUrl);
+        }
+      } else {
+        showFeedback(`Error: ${result.detail}`, 'error');
+      }
+    };
+
+    document.getElementById("deleteBtn").onclick = async () => {
+      const id = document.getElementById("recipe_id").value;
+      if (!id) return showFeedback("No recipe selected to delete.", "error");
+      if (!confirm("Are you sure you want to delete this recipe?")) return;
+
+      const res = await fetch(`${API}/recipes/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        showFeedback("Recipe deleted.", "success");
+        document.getElementById("recipeForm").reset();
+        document.getElementById("recipe_id").value = "";
+        loadRecipes();
+      } else {
+        const result = await res.json();
+        showFeedback(`Error: ${result.detail}`, "error");
+      }
+    };
+
+    document.getElementById("clearBtn").onclick = () => {
+      document.getElementById("recipeForm").reset();
+      document.getElementById("recipe_id").value = "";
+      heroImage.style.display = 'none';
+      heroPlaceholder.style.display = 'flex';
+      heroSectionEl.classList.remove('has-image');
+      heroSectionEl.style.removeProperty('--hero-aspect');
+      clearLists();
+      feedback.textContent = "";
+      feedback.className = "";
+    };
+
+    loadRecipes();
+
+    // Ingredient, Step, Equipment & Notes management
+    const ingredientList = document.getElementById('ingredientList');
+    const stepList = document.getElementById('stepList');
+    const equipmentList = document.getElementById('equipmentList');
+    const notesList = document.getElementById('notesList');
+    let draggedItem = null;
+
+    function setupDrag(li, list, onReorder = null) {
+      li.addEventListener('dragstart', (e) => {
+        draggedItem = li;
+        li.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+
+      li.addEventListener('dragend', () => {
+        li.classList.remove('dragging');
+        list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        draggedItem = null;
+        if (onReorder) onReorder();
+      });
+
+      li.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (draggedItem && draggedItem !== li && draggedItem.parentElement === list) {
+          li.classList.add('drag-over');
+        }
+      });
+
+      li.addEventListener('dragleave', () => {
+        li.classList.remove('drag-over');
+      });
+
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        li.classList.remove('drag-over');
+        if (draggedItem && draggedItem !== li && draggedItem.parentElement === list) {
+          const allItems = [...list.children];
+          const draggedIdx = allItems.indexOf(draggedItem);
+          const targetIdx = allItems.indexOf(li);
+          if (draggedIdx < targetIdx) {
+            li.after(draggedItem);
+          } else {
+            li.before(draggedItem);
+          }
+        }
+      });
+    }
+
+    function addIngredient(value = '', afterElement = null) {
+      const li = document.createElement('li');
+      li.className = 'ingredient-item';
+      li.draggable = true;
+      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><textarea rows="1" placeholder="e.g., 2 cups flour"></textarea><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
+      setupDrag(li, ingredientList);
+      const input = li.querySelector('textarea');
+      input.value = value;
+      const insertBtn = li.querySelector('.insert');
+      const deleteBtn = li.querySelector('.delete');
+
+      input.addEventListener('input', () => {
+        autoGrow(input);
+        document.getElementById('ingredientsArea').classList.remove('section-error');
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addIngredient('', li); }
+        if (e.key === 'Backspace' && input.value === '' && ingredientList.children.length > 1) {
+          const prev = li.previousElementSibling;
+          li.remove();
+          prev?.querySelector('textarea, input')?.focus();
+        }
+      });
+
+      insertBtn.onclick = () => addIngredient('', li);
+
+      deleteBtn.onclick = () => {
+        if (ingredientList.children.length > 1) {
+          const prev = li.previousElementSibling || li.nextElementSibling;
+          li.remove();
+          prev?.querySelector('textarea, input')?.focus();
+        }
+      };
+
+      if (afterElement) {
+        afterElement.after(li);
+      } else {
+        ingredientList.appendChild(li);
+      }
+      if (!value) input.focus();
+      autoGrow(input);
+    }
+
+    function addStep(value = '', afterElement = null) {
+      const li = document.createElement('li');
+      li.className = 'step-item';
+      li.draggable = true;
+      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="step-number">1</span><div class="step-content"><textarea placeholder="Describe this step...">${value}</textarea><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span></div>`;
+      setupDrag(li, stepList, renumberSteps);
+      const textarea = li.querySelector('textarea');
+      const insertBtn = li.querySelector('.insert');
+      const deleteBtn = li.querySelector('.delete');
+
+      textarea.addEventListener('input', () => {
+        autoGrow(textarea);
+        document.getElementById('methodArea').classList.remove('section-error');
+      });
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addStep('', li); }
+        if (e.key === 'Backspace' && textarea.value === '' && stepList.children.length > 1) {
+          const prev = li.previousElementSibling;
+          li.remove();
+          renumberSteps();
+          prev?.querySelector('textarea')?.focus();
+        }
+      });
+
+      insertBtn.onclick = () => addStep('', li);
+
+      deleteBtn.onclick = () => {
+        if (stepList.children.length > 1) {
+          const prev = li.previousElementSibling || li.nextElementSibling;
+          li.remove();
+          renumberSteps();
+          prev?.querySelector('textarea')?.focus();
+        }
+      };
+
+      if (afterElement) {
+        afterElement.after(li);
+      } else {
+        stepList.appendChild(li);
+      }
+      renumberSteps();
+      if (!value) { textarea.focus(); autoGrow(textarea); }
+    }
+
+    function renumberSteps() {
+      stepList.querySelectorAll('.step-number').forEach((el, i) => el.textContent = i + 1);
+    }
+
+    function addEquipment(value = '', afterElement = null) {
+      const li = document.createElement('li');
+      li.className = 'ingredient-item';
+      li.draggable = true;
+      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><input type="text" placeholder="e.g., 9x13 baking dish" value="${value}" /><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
+      setupDrag(li, equipmentList);
+      const input = li.querySelector('input');
+      const insertBtn = li.querySelector('.insert');
+      const deleteBtn = li.querySelector('.delete');
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addEquipment('', li); }
+        if (e.key === 'Backspace' && input.value === '' && equipmentList.children.length > 1) {
+          const prev = li.previousElementSibling;
+          li.remove();
+          prev?.querySelector('input')?.focus();
+        }
+      });
+
+      insertBtn.onclick = () => addEquipment('', li);
+      deleteBtn.onclick = () => {
+        if (equipmentList.children.length > 1) {
+          const prev = li.previousElementSibling || li.nextElementSibling;
+          li.remove();
+          prev?.querySelector('input')?.focus();
+        }
+      };
+
+      if (afterElement) {
+        afterElement.after(li);
+      } else {
+        equipmentList.appendChild(li);
+      }
+      if (!value) input.focus();
+    }
+
+    function getIngredients() {
+      return [...ingredientList.querySelectorAll('textarea')].map(i => i.value).filter(Boolean);
+    }
+
+    function getSteps() {
+      return [...stepList.querySelectorAll('textarea')].map((t, i) => ({
+        "@type": "HowToStep", position: i + 1, text: t.value
+      })).filter(s => s.text);
+    }
+
+    function addNote(value = '', afterElement = null) {
+      const li = document.createElement('li');
+      li.className = 'ingredient-item';
+      li.draggable = true;
+      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><textarea rows="1" placeholder="e.g., Best served warm"></textarea><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
+      setupDrag(li, notesList);
+      const input = li.querySelector('textarea');
+      input.value = value;
+      const insertBtn = li.querySelector('.insert');
+      const deleteBtn = li.querySelector('.delete');
+
+      input.addEventListener('input', () => autoGrow(input));
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote('', li); }
+        if (e.key === 'Backspace' && input.value === '' && notesList.children.length > 1) {
+          const prev = li.previousElementSibling;
+          li.remove();
+          prev?.querySelector('textarea, input')?.focus();
+        }
+      });
+
+      insertBtn.onclick = () => addNote('', li);
+      deleteBtn.onclick = () => {
+        if (notesList.children.length > 1) {
+          const prev = li.previousElementSibling || li.nextElementSibling;
+          li.remove();
+          prev?.querySelector('textarea, input')?.focus();
+        }
+      };
+
+      if (afterElement) {
+        afterElement.after(li);
+      } else {
+        notesList.appendChild(li);
+      }
+      if (!value) input.focus();
+      autoGrow(input);
+    }
+
+    function getEquipment() {
+      return [...equipmentList.querySelectorAll('input')].map(i => ({
+        "@type": "HowToTool", name: i.value
+      })).filter(e => e.name);
+    }
+
+    function getNotes() {
+      return [...notesList.querySelectorAll('textarea')].map(i => i.value).filter(Boolean).join('\n');
+    }
+
+    function clearLists() {
+      ingredientList.innerHTML = '';
+      stepList.innerHTML = '';
+      equipmentList.innerHTML = '';
+      notesList.innerHTML = '';
+      addIngredient();
+      addStep();
+      addEquipment();
+      addNote();
+    }
+
+    // Initialize with one empty each
+    addIngredient();
+    addStep();
+    addEquipment();
+    addNote();
+
+    // Clear errors on input
+    document.getElementById('name').addEventListener('input', () => {
+      document.getElementById('nameGroup').classList.remove('field-error');
+    });
+
+    // Sidebar toggle
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    sidebarToggle.onclick = () => sidebar.classList.toggle('open');
+
+    // Close sidebar when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!sidebar.contains(e.target) && !sidebarToggle.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    });
+
+    // Hero image upload
+    const imageUpload = document.getElementById('imageUpload');
+    const heroImage = document.getElementById('heroImage');
+    const heroPlaceholder = document.getElementById('heroPlaceholder');
+    const heroImageUrl = document.getElementById('heroImageUrl');
+
+    // Single source of truth for displaying the hero. Show the image when the
+    // url field is non-empty; placeholder otherwise.
+    const heroSectionEl = document.getElementById('heroSection');
+    function applyHeroImageFromUrl() {
+      const url = (heroImageUrl.value || '').trim();
+      if (url) {
+        heroImage.src = url;
+        heroImage.style.display = 'block';
+        heroPlaceholder.style.display = 'none';
+      } else {
+        heroImage.removeAttribute('src');
+        heroImage.style.display = 'none';
+        heroPlaceholder.style.display = 'flex';
+        heroSectionEl.classList.remove('has-image');
+        heroSectionEl.style.removeProperty('--hero-aspect');
+      }
+    }
+    heroImageUrl.addEventListener('input', applyHeroImageFromUrl);
+    // Once the natural size is known (URL load or file upload), let the box
+    // adopt the image's aspect ratio so landscape/portrait/square all fit.
+    heroImage.addEventListener('load', () => {
+      const w = heroImage.naturalWidth;
+      const h = heroImage.naturalHeight;
+      if (w && h) {
+        heroSectionEl.style.setProperty('--hero-aspect', `${w} / ${h}`);
+        heroSectionEl.classList.add('has-image');
+      }
+    });
+    heroImage.addEventListener('error', () => {
+      heroSectionEl.classList.remove('has-image');
+      heroSectionEl.style.removeProperty('--hero-aspect');
+    });
+
+    imageUpload.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          heroImage.src = ev.target.result;
+          heroImage.style.display = 'block';
+          heroPlaceholder.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+
+    // Auto-grow textareas
+    function autoGrow(el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+
+    document.querySelectorAll('textarea.auto-grow').forEach(textarea => {
+      textarea.addEventListener('input', () => autoGrow(textarea));
+      // Initial sizing
+      setTimeout(() => autoGrow(textarea), 100);
+    });
+
+    // Re-apply auto-grow when loading a recipe
+    const originalLoadForm = loadForm;
+    loadForm = function(recipe) {
+      originalLoadForm(recipe);
+      document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
+      ingredientList.querySelectorAll('textarea').forEach(autoGrow);
+      notesList.querySelectorAll('textarea').forEach(autoGrow);
+    };
+
+    // ===== URL extraction =====
+    const extractUrlInput = document.getElementById('extractUrlInput');
+    const extractUrlBtn = document.getElementById('extractUrlBtn');
+    extractUrlBtn.addEventListener('click', () => {
+      const url = (extractUrlInput.value || '').trim();
+      if (!url) {
+        extractUrlInput.focus();
+        return;
+      }
+      extractFromUrl(url);
+    });
+    extractUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        extractUrlBtn.click();
+      }
+    });
+
+    // ===== Image Drop Zone for AI Extraction =====
+    const dropZone = document.getElementById('dropZone');
+    const extractImageInput = document.getElementById('extractImageInput');
+
+    // Drag and drop handlers
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+
+    function isMarkdownFile(file) {
+      if (!file) return false;
+      if (file.type === 'text/markdown') return true;
+      const name = (file.name || '').toLowerCase();
+      return name.endsWith('.md') || name.endsWith('.markdown');
+    }
+
+    function handleDroppedFile(file) {
+      console.log('[drop] handleDroppedFile:', file && {name: file.name, type: file.type, size: file.size});
+      if (!file) return;
+      if (isMarkdownFile(file)) {
+        console.log('[drop] -> extractFromMarkdown');
+        extractFromMarkdown(file);
+      } else if (file.type && file.type.startsWith('image/')) {
+        // Handwritten recipes, magazine photos, manual screenshot fallback.
+        console.log('[drop] -> extractFromImage');
+        extractFromImage(file);
+      } else {
+        console.warn('[drop] unsupported type:', file.type, 'name:', file.name);
+        showFeedback('Unsupported file type. Drop a .md file or an image.', 'error');
+      }
+    }
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      console.log('[drop] drop event, files:', files.length);
+      if (files.length > 0) handleDroppedFile(files[0]);
+    });
+
+    // File input handler
+    extractImageInput.addEventListener('change', (e) => {
+      console.log('[drop] file-input change, files:', e.target.files.length);
+      if (e.target.files.length > 0) {
+        handleDroppedFile(e.target.files[0]);
+        e.target.value = ''; // Reset so same file can be selected again
+      }
+    });
+
+    // --- Error dialog ---
+    const errorDialog = document.getElementById('errorDialog');
+    const errorDialogTitle = document.getElementById('errorDialogTitle');
+    const errorDialogMessage = document.getElementById('errorDialogMessage');
+    const errorDialogImageBtn = document.getElementById('errorDialogImageBtn');
+    const errorDialogCloseBtn = document.getElementById('errorDialogCloseBtn');
+    const imageFallbackInput = document.getElementById('imageFallbackInput');
+
+    function showErrorDialog({ title = 'Something went wrong', message = '', showImageButton = false } = {}) {
+      errorDialogTitle.textContent = title;
+      errorDialogMessage.textContent = message;
+      errorDialogImageBtn.style.display = showImageButton ? '' : 'none';
+      if (typeof errorDialog.showModal === 'function') {
+        errorDialog.showModal();
+      } else {
+        // Fallback for browsers without <dialog> support
+        alert(title + '\n\n' + message);
+      }
+    }
+
+    // Bookmarklet handoff context. Held in memory so the image fallback
+    // can grab the staged screenshot (and reuse the same source URL/title)
+    // without going through the file system.
+    let stagedToken = null;
+    let stagedSourceUrl = '';
+    let stagedTitle = '';
+
+    // The full last-extracted recipe — kept so save can pass through fields
+    // the form has no UI for (provenance, classification, _scoring) instead
+    // of dropping them on the floor.
+    let lastExtractedRecipe = null;
+
+    errorDialogCloseBtn.addEventListener('click', () => errorDialog.close());
+    errorDialogImageBtn.addEventListener('click', async () => {
+      errorDialog.close();
+      if (stagedToken) {
+        const ok = await extractFromStagedImage(stagedToken);
+        if (ok) return;
+        // Staged image never arrived — fall through to manual file picker.
+      }
+      imageFallbackInput.click();
+    });
+
+    async function fetchStagedImage(token, { timeoutMs = 25000, intervalMs = 800 } = {}) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        const res = await fetch(`${API}/staged-image/${encodeURIComponent(token)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.image_b64) return data.image_b64;
+        } else if (res.status !== 404) {
+          // 404 = still rendering, anything else is a real error.
+          return null;
+        }
+        await new Promise(r => setTimeout(r, intervalMs));
+      }
+      return null;
+    }
+
+    function b64ToFile(b64, filename = 'screenshot.png', mime = 'image/png') {
+      const bin = atob(b64);
+      const len = bin.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+      return new File([bytes], filename, { type: mime });
+    }
+
+    async function extractFromStagedImage(token) {
+      dropZone.classList.add('processing');
+      const processingEl = document.querySelector('.processing-text');
+      const originalText = processingEl ? processingEl.textContent : '';
+      if (processingEl) processingEl.textContent = 'Waiting for screenshot...';
+      try {
+        const b64 = await fetchStagedImage(token);
+        if (!b64) {
+          showErrorDialog({
+            title: 'Screenshot not available',
+            message: 'The bookmarklet screenshot did not arrive in time. Drop an image onto the drop zone to extract manually.',
+            showImageButton: false,
+          });
+          return false;
+        }
+        if (processingEl) processingEl.textContent = 'Extracting recipe...';
+        await extractFromImage(b64ToFile(b64));
+        return true;
+      } finally {
+        if (processingEl) processingEl.textContent = originalText || 'Extracting recipe...';
+        dropZone.classList.remove('processing');
+      }
+    }
+    imageFallbackInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        extractFromImage(e.target.files[0]);
+        e.target.value = '';
+      }
+    });
+
+    function recipeLooksComplete(r) {
+      if (!r) return false;
+      const hasName = !!(r.name && r.name.trim());
+      const hasIngredients = Array.isArray(r.recipeIngredient) && r.recipeIngredient.length > 0;
+      const hasInstructions = Array.isArray(r.recipeInstructions) && r.recipeInstructions.length > 0;
+      return hasName && hasIngredients && hasInstructions;
+    }
+
+    // Image is OCR'd to markdown server-side and then run through the same
+    // markdown extraction pipeline, so source_url/title plumbing applies
+    // here too.
+    async function extractFromImage(file, sourceUrl = '', title = '') {
+      dropZone.classList.add('processing');
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        const effectiveUrl = sourceUrl || stagedSourceUrl;
+        const effectiveTitle = title || stagedTitle;
+        if (effectiveUrl) formData.append('source_url', effectiveUrl);
+        if (effectiveTitle) formData.append('title', effectiveTitle);
+        const res = await fetch(`${API}/extract-from-image`, { method: 'POST', body: formData });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          populateFormFromRecipe(result.recipe);
+          renderExtractionTrace(result._timings, result._prompt);
+          if (!recipeLooksComplete(result.recipe)) {
+            showErrorDialog({
+              title: 'Image extraction incomplete',
+              message: 'The image extractor still came back without ingredients or instructions. Try a clearer screenshot, or fill the form in manually.',
+              showImageButton: false,
+            });
+          } else {
+            showFeedback('Recipe extracted from image! Review and save when ready.', 'success');
+          }
+        } else {
+          showErrorDialog({
+            title: 'Image extraction failed',
+            message: result.detail || 'Server returned an error.',
+            showImageButton: false,
+          });
+        }
+      } catch (err) {
+        console.error('Image extraction error:', err);
+        showErrorDialog({
+          title: 'Image extraction failed',
+          message: (err && err.message) || 'Unable to reach the extraction server.',
+          showImageButton: false,
+        });
+      } finally {
+        dropZone.classList.remove('processing');
+      }
+    }
+
+    // Extract recipe from a web page URL. Server fetches HTML, pulls JSON-LD
+    // recipe data when present, and runs the canonical markdown extract.
+    async function extractFromUrl(url) {
+      const btn = document.getElementById('extractUrlBtn');
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Extracting…';
+      dropZone.classList.add('processing');
+
+      // Auto-fall-back helper. If the bookmarklet supplied a staged screenshot
+      // token, use it silently when URL extraction fails or is incomplete —
+      // the user already paid for the screenshot, no need to make them click.
+      async function autoFallbackToStagedImage(reason) {
+        if (!stagedToken) return false;
+        showFeedback(`URL extraction ${reason} — falling back to bookmarklet screenshot…`, 'info');
+        const ok = await extractFromStagedImage(stagedToken);
+        return ok;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append('url', url);
+        const res = await fetch(`${API}/extract-from-url`, { method: 'POST', body: formData });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          populateFormFromRecipe(result.recipe);
+          renderExtractionTrace(result._timings, result._prompt);
+          if (!recipeLooksComplete(result.recipe)) {
+            const missing = [];
+            if (!result.recipe.name || !result.recipe.name.trim()) missing.push('name');
+            if (!result.recipe.recipeIngredient || !result.recipe.recipeIngredient.length) missing.push('ingredients');
+            if (!result.recipe.recipeInstructions || !result.recipe.recipeInstructions.length) missing.push('instructions');
+            const fellBack = await autoFallbackToStagedImage('was incomplete');
+            if (!fellBack) {
+              showErrorDialog({
+                title: 'URL extraction incomplete',
+                message: `The page didn't yield ${missing.join(', ')}. The page may be JS-rendered or paywalled. Try a screenshot or the bookmarklet.`,
+                showImageButton: true,
+              });
+            }
+          } else {
+            const note = result.source && result.source.has_jsonld
+              ? ' (JSON-LD source — high fidelity)'
+              : ' (extracted from page text)';
+            showFeedback('Recipe extracted from URL!' + note + ' Review and save when ready.', 'success');
+          }
+        } else {
+          const fellBack = await autoFallbackToStagedImage('failed');
+          if (!fellBack) {
+            showErrorDialog({
+              title: 'URL extraction failed',
+              message: result.detail || 'Server returned an error.',
+              showImageButton: true,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('URL extraction error:', err);
+        const fellBack = await autoFallbackToStagedImage('errored');
+        if (!fellBack) {
+          showErrorDialog({
+            title: 'URL extraction failed',
+            message: (err && err.message) || 'Unable to reach the extraction server.',
+            showImageButton: true,
+          });
+        }
+      } finally {
+        dropZone.classList.remove('processing');
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
+    }
+
+    // Extract recipe from markdown
+    async function extractFromMarkdown(file, sourceUrl = '', title = '') {
+      dropZone.classList.add('processing');
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (sourceUrl) formData.append('source_url', sourceUrl);
+        if (title) formData.append('title', title);
+
+        const res = await fetch(`${API}/extract-from-markdown`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await res.json();
+
+        if (res.ok && result.success) {
+          populateFormFromRecipe(result.recipe);
+          renderExtractionTrace(result._timings, result._prompt);
+
+          if (!recipeLooksComplete(result.recipe)) {
+            const missing = [];
+            if (!result.recipe.name || !result.recipe.name.trim()) missing.push('name');
+            if (!result.recipe.recipeIngredient || !result.recipe.recipeIngredient.length) missing.push('ingredients');
+            if (!result.recipe.recipeInstructions || !result.recipe.recipeInstructions.length) missing.push('instructions');
+            showErrorDialog({
+              title: 'Extraction incomplete',
+              message: `The markdown didn't yield ${missing.join(', ')}. The page may be JS-rendered or paywalled. Try a screenshot instead — drop or pick an image to re-extract.`,
+              showImageButton: true,
+            });
+          } else {
+            const status = result.recipe && result.recipe.current_status;
+            if (status && status.value === 'rejected') {
+              showFeedback(`Recipe extracted, but low recipe-phrase score: ${status.reason}`, 'error');
+            } else {
+              showFeedback('Recipe extracted from markdown! Review and save when ready.', 'success');
+            }
+          }
+        } else {
+          showErrorDialog({
+            title: 'Extraction failed',
+            message: result.detail || 'Server returned an error.',
+            showImageButton: true,
+          });
+        }
+      } catch (err) {
+        console.error('Extraction error:', err);
+        showErrorDialog({
+          title: 'Extraction failed',
+          message: (err && err.message) || 'Unable to reach the extraction server.',
+          showImageButton: true,
+        });
+      } finally {
+        dropZone.classList.remove('processing');
+      }
+    }
+
+    // Populate form from extracted recipe data
+    function populateFormFromRecipe(r) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Remember the full extract so save can pass through provenance,
+      // classification, and _scoring (none of which have form fields).
+      lastExtractedRecipe = r;
+      // Clear recipe_id so it creates a new record
+      document.getElementById("recipe_id").value = "";
+
+      // Basic fields
+      document.getElementById("name").value = r.name || "";
+      document.getElementById("description").value = r.description || "";
+
+      // Ingredients
+      ingredientList.innerHTML = '';
+      (r.recipeIngredient || []).forEach(ing => addIngredient(ing));
+      if (!r.recipeIngredient?.length) addIngredient();
+
+      // Steps
+      stepList.innerHTML = '';
+      const instructions = r.recipeInstructions || [];
+      instructions.forEach(step => {
+        const text = typeof step === 'string' ? step : (step.text || '');
+        if (text) addStep(text);
+      });
+      if (!instructions.length) addStep();
+
+      // Time & Yield
+      document.getElementById("prepTime").value = r.prepTime || "";
+      document.getElementById("cookTime").value = r.cookTime || "";
+      document.getElementById("totalTime").value = r.totalTime || "";
+      document.getElementById("recipeYield").value = r.recipeYield || "";
+
+      // Category
+      document.getElementById("recipeCategory").value = r.recipeCategory || "";
+      document.getElementById("recipeCuisine").value = r.recipeCuisine || "";
+      document.getElementById("cookingMethod").value = r.cookingMethod || "";
+      document.getElementById("suitableForDiet").value = (r.suitableForDiet || []).join(", ");
+
+      // Notes
+      notesList.innerHTML = '';
+      const notesArr = (r.notes || '').split('\n').filter(Boolean);
+      notesArr.forEach(note => addNote(note));
+      if (!notesArr.length) addNote();
+
+      document.getElementById("servingSuggestions").value = r.servingSuggestions || "";
+      document.getElementById("keywords").value = (r.keywords || r.tags || []).join(", ");
+
+      // Equipment
+      equipmentList.innerHTML = '';
+      (r.equipment || []).forEach(eq => {
+        const name = typeof eq === 'string' ? eq : (eq.name || '');
+        if (name) addEquipment(name);
+      });
+      if (!r.equipment?.length) addEquipment();
+
+      // Source
+      document.getElementById("template").value = r.template || "classic";
+      if (r._source) {
+        document.getElementById("sourceTitle").value = r._source.origin || "";
+        document.getElementById("originalUrl").value = r._source.originalUrl || "";
+        document.getElementById("affiliateUrl").value = r._source.affiliateUrl || "";
+      }
+      if (r.author) {
+        document.getElementById("author").value = r.author.name || "";
+      }
+
+      // Hero image — first URL from r.image. JSON-LD ships a list; ImageObject
+      // dicts have already been coerced to strings by sanitize_recipe_data.
+      const firstImage = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
+      heroImageUrl.value = firstImage || '';
+      applyHeroImageFromUrl();
+
+      // Invalidate URL-keyed metadata first, then seed the recipe-text score
+      // from the recipe's own _scoring. (The score isn't URL-keyed and would
+      // otherwise be wiped by the invalidate.)
+      invalidateMetadataCache && invalidateMetadataCache();
+      const recipeScoreEl2 = document.getElementById('meta_recipe_score');
+      if (recipeScoreEl2) {
+        const s = r._scoring || {};
+        recipeScoreEl2.value = (s.recipeScore !== undefined && s.recipeScore !== null)
+          ? `${s.recipeScore} (threshold ${s.recipeScoreThreshold || 0})`
+          : '';
+      }
+
+      // Auto-grow textareas
+      document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
+      stepList.querySelectorAll('textarea').forEach(autoGrow);
+
+      // Clear validation errors
+      document.querySelectorAll('.field-error, .section-error').forEach(el => {
+        el.classList.remove('field-error', 'section-error');
+      });
+    }
+
+    // ===== Metadata section (URL-keyed; lazy fetch on toggle) =====
+    const metadataToggleBtn = document.getElementById('metadataToggleBtn');
+    const metadataPanel = document.getElementById('metadataPanel');
+    const metadataStatus = document.getElementById('metadataStatus');
+    let metadataLoadedForUrl = null;
+
+    // ===== Last extraction trace (timings + prompt) =====
+    // Rendered into the metadata panel after every extract endpoint returns.
+    // Stays visible until the user loads a different recipe.
+    const TIMING_LABELS = {
+      fetch_ms: 'Fetch (HTTP)',
+      html_parse_ms: 'HTML parse + JSON-LD',
+      jsonld_check_ms: 'JSON-LD eligibility',
+      jsonld_direct_ms: 'JSON-LD direct parse',
+      enrich_prep_ms: 'Enrich prep',
+      enrich_llm_ms: 'Enrich LLM (provenance)',
+      encode_ms: 'Image encode',
+      vision_llm_ms: 'Vision LLM (OCR)',
+      prep_ms: 'Prompt prep',
+      extract_llm_ms: 'Extract LLM (big prompt)',
+      validate_ms: 'Validate + sanitize',
+      extract_total_ms: 'Extract (legacy, opaque)',
+      total_ms: 'Total',
+    };
+    function renderExtractionTrace(timings, prompts) {
+      const wrap = document.getElementById('extractionTrace');
+      const table = document.getElementById('extractionTimingsTable');
+      const promptDetails = document.getElementById('extractionPromptDetails');
+      const sysEl = document.getElementById('extractionSystemPrompt');
+      const userEl = document.getElementById('extractionUserPrompt');
+      const modelEl = document.getElementById('extractionPromptModel');
+      if (!wrap || !table) return;
+      table.innerHTML = '';
+
+      // Path badge — which route the server took. Helpful when comparing
+      // jsonld-direct vs markdown-llm vs image timings side-by-side.
+      const path = timings && timings.path;
+      if (path) {
+        const trPath = document.createElement('tr');
+        const td1 = document.createElement('td');
+        td1.style.padding = '2px 12px 6px 0';
+        td1.style.color = 'var(--muted)';
+        td1.textContent = 'Path';
+        const td2 = document.createElement('td');
+        td2.style.padding = '2px 0 6px';
+        td2.style.fontWeight = '600';
+        td2.textContent = path;
+        trPath.appendChild(td1);
+        trPath.appendChild(td2);
+        table.appendChild(trPath);
+      }
+      const ORDER = ['fetch_ms','html_parse_ms','jsonld_check_ms','jsonld_direct_ms','encode_ms','vision_llm_ms','prep_ms','extract_llm_ms','enrich_prep_ms','enrich_llm_ms','extract_total_ms','validate_ms','total_ms'];
+      let any = false;
+      ORDER.forEach(k => {
+        if (timings && timings[k] !== undefined) {
+          any = true;
+          const tr = document.createElement('tr');
+          const ms = timings[k];
+          const td1 = document.createElement('td');
+          td1.style.padding = '2px 12px 2px 0';
+          td1.style.color = 'var(--muted)';
+          td1.textContent = TIMING_LABELS[k] || k;
+          const td2 = document.createElement('td');
+          td2.style.padding = '2px 0';
+          td2.style.fontVariantNumeric = 'tabular-nums';
+          td2.style.fontWeight = k === 'total_ms' ? '600' : '400';
+          td2.textContent = ms >= 1000 ? (ms / 1000).toFixed(2) + ' s' : ms + ' ms';
+          tr.appendChild(td1);
+          tr.appendChild(td2);
+          table.appendChild(tr);
+        }
+      });
+      if (!any) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.style.color = 'var(--muted)';
+        td.textContent = 'No timings reported.';
+        tr.appendChild(td);
+        table.appendChild(tr);
+      }
+
+      const sys = prompts && prompts.system_prompt;
+      const usr = prompts && prompts.user_prompt;
+      const note = prompts && prompts.note;
+      if (sys || usr) {
+        promptDetails.style.display = '';
+        modelEl.textContent = prompts.model ? ('Model: ' + prompts.model) : '';
+        sysEl.textContent = sys || '';
+        userEl.textContent = usr || '';
+      } else if (note) {
+        promptDetails.style.display = '';
+        modelEl.textContent = note;
+        sysEl.textContent = '';
+        userEl.textContent = '';
+      } else {
+        promptDetails.style.display = 'none';
+      }
+
+      wrap.style.display = '';
+      // If the user hadn't opened the metadata section yet, leave it as-is;
+      // they'll see the trace next time they show metadata. No auto-pop.
+    }
+    function clearExtractionTrace() {
+      const wrap = document.getElementById('extractionTrace');
+      if (wrap) wrap.style.display = 'none';
+    }
+
+    function currentSourceUrl() {
+      return (document.getElementById('originalUrl').value || '').trim();
+    }
+
+    function fmtNum(v) {
+      if (v === null || v === undefined || v === '') return '—';
+      const n = Number(v);
+      return Number.isFinite(n) ? n.toString() : '—';
+    }
+
+    function fmtDate(s) {
+      if (!s) return '—';
+      try {
+        const d = new Date(s);
+        return Number.isNaN(d.getTime()) ? s : d.toLocaleString();
+      } catch (e) {
+        return s;
+      }
+    }
+
+    async function loadMetadataForUrl(url) {
+      metadataStatus.textContent = 'Loading...';
+      try {
+        const res = await fetch(`${API}/url-metadata?url=${encodeURIComponent(url)}`);
+        if (!res.ok) {
+          metadataStatus.textContent = `Lookup failed (HTTP ${res.status})`;
+          return;
+        }
+        const m = await res.json();
+        document.getElementById('meta_page_authority').value = fmtNum(m.page_authority);
+        document.getElementById('meta_domain_authority').value = fmtNum(m.domain_authority);
+        document.getElementById('meta_ou_score').value = fmtNum(m.ou_score);
+        document.getElementById('meta_root_domain').value = m.root_domain || '—';
+        document.getElementById('meta_raw_title').value = m.raw_title || '—';
+        document.getElementById('meta_first_seen').value = fmtDate(m.first_seen);
+        document.getElementById('meta_last_accessed').value = fmtDate(m.last_accessed);
+
+        // Recipe-text score lives on the recipe itself, not in metabase_url.
+        const recipeIdInput = document.getElementById('recipe_id');
+        // The recipeScore is populated from the recipe's _scoring at populate
+        // time; we just leave whatever's already in the field. Provide a
+        // default if blank.
+        const scoreEl = document.getElementById('meta_recipe_score');
+        if (!scoreEl.value) scoreEl.value = '—';
+
+        if (!m.exists) {
+          metadataStatus.textContent = 'No metabase row yet — will be created on next save.';
+        } else if (!m.moz_last_scored) {
+          metadataStatus.textContent = 'Row exists; Moz scoring not yet run (set MOZ creds and run refresh script).';
+        } else {
+          metadataStatus.textContent = 'Moz last scored: ' + fmtDate(m.moz_last_scored);
+        }
+        metadataLoadedForUrl = url;
+      } catch (err) {
+        console.error('metadata fetch error:', err);
+        metadataStatus.textContent = 'Lookup error: ' + ((err && err.message) || err);
+      }
+    }
+
+    metadataToggleBtn.addEventListener('click', () => {
+      const hidden = metadataPanel.style.display === 'none';
+      if (hidden) {
+        const url = currentSourceUrl();
+        if (!url) {
+          metadataStatus.textContent = 'No source URL on this recipe — nothing to look up.';
+          metadataPanel.style.display = '';
+          metadataToggleBtn.textContent = 'Hide metadata';
+          return;
+        }
+        metadataPanel.style.display = '';
+        metadataToggleBtn.textContent = 'Hide metadata';
+        if (metadataLoadedForUrl !== url) loadMetadataForUrl(url);
+      } else {
+        metadataPanel.style.display = 'none';
+        metadataToggleBtn.textContent = 'Show metadata';
+      }
+    });
+
+    // When a new recipe is populated (extract, load, clear), discard any
+    // cached metadata so the next open refetches.
+    function invalidateMetadataCache() {
+      metadataLoadedForUrl = null;
+      metadataStatus.textContent = '';
+      ['meta_page_authority','meta_domain_authority','meta_ou_score',
+       'meta_recipe_score','meta_root_domain','meta_raw_title',
+       'meta_first_seen','meta_last_accessed'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+    }
+
+    // Auto-extract when launched via bookmarklet with ?staged=<token>.
+    // If ?url= is ALSO present (new bookmarklet flow), defer to the URL
+    // handler below — the staged token is only the screenshot fallback there.
+    (async function () {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('staged');
+      if (!token) return;
+      if (params.get('url')) return;
+
+      window.scrollTo({ top: 0 });
+      try {
+        const res = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
+        if (!res.ok) {
+          showFeedback('Staged content not found or expired.', 'error');
+          return;
+        }
+        const data = await res.json();
+        const safeName = (data.title || 'staged').replace(/[^a-z0-9]/gi, '_').slice(0, 40) || 'staged';
+        const file = new File([data.markdown], safeName + '.md', { type: 'text/markdown' });
+        // Remember the token + metadata so the image fallback can fetch the
+        // screenshot the bookmarklet is still uploading in the background
+        // AND tag the resulting recipe with the original source URL/title.
+        stagedToken = token;
+        stagedSourceUrl = data.source_url || '';
+        stagedTitle = data.title || '';
+        // Strip token from the URL but leave the in-memory state in place.
+        window.history.replaceState({}, '', window.location.pathname);
+        extractFromMarkdown(file, stagedSourceUrl, stagedTitle);
+      } catch (err) {
+        console.error('Staged fetch error:', err);
+        showFeedback('Failed to fetch staged markdown', 'error');
+      }
+    })();
+
+    // Auto-extract when launched via bookmarklet with ?url=<page-url>.
+    // The bookmarklet runs /extract-from-url first; if it also staged a
+    // screenshot (via ?staged=<token>) we keep that handle so the image
+    // fallback kicks in automatically for paywalled / logged-in pages.
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get('url');
+      if (!url) return;
+      window.scrollTo({ top: 0 });
+      const stagedFromBookmarklet = params.get('staged');
+      if (stagedFromBookmarklet) {
+        stagedToken = stagedFromBookmarklet;
+        stagedSourceUrl = url;
+      }
+      const urlInput = document.getElementById('extractUrlInput');
+      if (urlInput) urlInput.value = url;
+      // Strip the params so a reload doesn't re-fire the extraction.
+      window.history.replaceState({}, '', window.location.pathname);
+      extractFromUrl(url);
+    })();
+  </script>
+</body>
+</html>
