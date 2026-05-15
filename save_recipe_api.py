@@ -107,10 +107,42 @@ def init_db():
                     recipe_id TEXT NOT NULL UNIQUE,
                     user_id INTEGER,
                     data TEXT,
+                    url_normalized TEXT NOT NULL DEFAULT '',
                     created_at TEXT,
                     updated_at TEXT
                 );
             """)
+            # Migration for pre-existing DBs: add url_normalized column +
+            # backfill from each row's _source.originalUrl, then create a
+            # partial UNIQUE index on (url_normalized, user_id) so future
+            # inserts can't make a dup for the same URL+user. Empty URLs
+            # are exempt (handwritten/typed/photo recipes).
+            existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(recipes)").fetchall()}
+            if "url_normalized" not in existing_cols:
+                print("[SETUP] Migrating recipes: adding url_normalized column...")
+                conn.execute("ALTER TABLE recipes ADD COLUMN url_normalized TEXT NOT NULL DEFAULT ''")
+                rows = conn.execute("SELECT id, data FROM recipes").fetchall()
+                for row_id, data_json in rows:
+                    try:
+                        d = json.loads(data_json) if data_json else {}
+                        raw = (d.get("_source") or {}).get("originalUrl") or ""
+                        norm = normalize_url(raw) if raw else ""
+                        if norm:
+                            conn.execute("UPDATE recipes SET url_normalized = ? WHERE id = ?", (norm, row_id))
+                    except Exception as e:
+                        print(f"[WARN] backfill failed for recipes.id={row_id}: {e}")
+                conn.commit()
+                print(f"[OK] Backfilled url_normalized on {len(rows)} row(s)")
+            # Partial UNIQUE index. If existing data already has dups, this
+            # will fail — we log and continue; the application-level upsert
+            # still keeps new dups from being created.
+            try:
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_recipes_url_user "
+                    "ON recipes(url_normalized, user_id) WHERE url_normalized != ''"
+                )
+            except sqlite3.IntegrityError as e:
+                print(f"[WARN] could not add unique index (existing dups?): {e}")
             ensure_metabase_url_table(conn)
             ensure_bcc_token_journal_table(conn)
         print("[OK] Database tables ready")
@@ -237,20 +269,41 @@ async def save_recipe(request: Request):
         source["originalUrl"] = normalized_source_url
         recipe_dict["_source"] = source
 
-    print(f"[SAVE] Saving recipe with ID: {recipe_id}")
+    # Dedup: if a row already exists for (url_normalized, user_id), adopt
+    # ITS recipe_id instead of the form-sent UUID so the existing record
+    # gets updated rather than creating a parallel duplicate.
+    adopted = False
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            if normalized_source_url:
+                existing = conn.execute(
+                    "SELECT recipe_id FROM recipes WHERE url_normalized = ? AND user_id = ? LIMIT 1",
+                    (normalized_source_url, user_id),
+                ).fetchone()
+                if existing and existing[0] != recipe_id:
+                    print(f"[SAVE] Adopting existing recipe_id {existing[0]} for {normalized_source_url!r} "
+                          f"(was {recipe_id})")
+                    recipe_id = existing[0]
+                    adopted = True
+    except Exception as e:
+        print(f"[WARN] dup lookup failed (continuing as insert): {e}")
+
+    print(f"[SAVE] Saving recipe with ID: {recipe_id} (adopted={adopted})")
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("""
-                INSERT INTO recipes (recipe_id, user_id, data, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO recipes (recipe_id, user_id, data, url_normalized, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(recipe_id) DO UPDATE SET
                     data = excluded.data,
+                    url_normalized = excluded.url_normalized,
                     updated_at = excluded.updated_at;
             """, (
                 recipe_id,
                 user_id,
                 json.dumps(recipe_dict, indent=2),
+                normalized_source_url,
                 now,
                 now
             ))
@@ -296,7 +349,7 @@ async def save_recipe(request: Request):
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-    return {"recipe_id": recipe_id, "id": seq_id}
+    return {"recipe_id": recipe_id, "id": seq_id, "adopted": adopted}
 
 
 # Read-only metadata lookup for the form's collapsible metadata section.

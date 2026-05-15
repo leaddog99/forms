@@ -1245,7 +1245,12 @@
       const result = await res.json();
       if (res.ok) {
         const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
-        showFeedback(`Recipe saved successfully!${seqMsg}`, 'success');
+        const verb = result.adopted ? 'updated existing record' : 'saved successfully';
+        showFeedback(`Recipe ${verb}!${seqMsg}`, 'success');
+        // Server may have adopted an existing recipe_id (same URL+user).
+        // Reflect that back on the form so the displayed UUID matches DB.
+        if (result.recipe_id) document.getElementById("recipe_id").value = result.recipe_id;
+        if (result.id != null) document.getElementById("recipe_seq_id").value = result.id;
         loadRecipes();
         // Preserve source URL / origin / affiliate so the form resets to a
         // "new entry, same source" state — and auto-load the freshly-scored
