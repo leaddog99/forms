@@ -43,6 +43,7 @@ except Exception as e:
 try:
     from to_markdown.html_to_markdown import html_to_markdown
     from to_markdown.image_to_markdown import image_to_markdown, IMAGE_TO_MARKDOWN_PROMPT
+    from to_markdown.markdown_passthrough import markdown_passthrough
     from extract.markdown_to_recipe import markdown_to_recipe
     from extract.jsonld_to_recipe import jsonld_to_recipe
     from extract.enrich_recipe import enrich_recipe
@@ -425,8 +426,21 @@ async def extract_from_markdown_endpoint(
             raise HTTPException(status_code=400, detail="Markdown file is empty")
 
         source_name = file.filename or ""
+
+        # Pre-pass: normalize the markdown and sniff for an embedded source
+        # URL / title that the saver may have stamped on top of the body
+        # (e.g. "*Source: <url>*" line from a bookmarklet/converter). Lets
+        # plain .md drops still benefit from Moz scoring at save time.
+        envelope = markdown_passthrough(
+            markdown_text,
+            source_url=source_url,
+            title=title,
+        )
+        effective_md = envelope["markdown"]
+        effective_url = envelope["source_url"]
+        effective_title = envelope["title"]
         print(f"[EXTRACT] Running canonical markdown extraction on {source_name} "
-              f"({len(markdown_text)} chars) source_url={source_url!r}")
+              f"({len(effective_md)} chars) source_url={effective_url!r} title={effective_title!r}")
 
         timings: dict = {}
         prompts: dict = {}
@@ -434,10 +448,10 @@ async def extract_from_markdown_endpoint(
         try:
             recipe = await asyncio.to_thread(
                 markdown_to_recipe,
-                markdown_text,
+                effective_md,
                 source_name=source_name,
-                source_url=source_url,
-                title=title,
+                source_url=effective_url,
+                title=effective_title,
                 timings=timings,
                 prompts=prompts,
             )
