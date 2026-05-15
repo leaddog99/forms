@@ -23,6 +23,12 @@ from recipe_model import RecipeModel
 from input.pipeline.validators import is_recipe, stamp_validation_on_recipe
 from input.pipeline.url_utils import normalize_url, root_domain
 from input.pipeline.token_journal import build_usage_entry
+from input.pipeline.extract_cache import (
+    hash_text,
+    prompt_version_for,
+    get_cached_extract,
+    set_cached_extract,
+)
 
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -86,6 +92,7 @@ def markdown_to_recipe(
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
     usage_log: Optional[list] = None,
+    cache_db_path: Optional[str] = None,
 ) -> Optional[dict]:
     """Extract a full RecipeModel from canonical markdown in one LLM call.
 
@@ -109,6 +116,11 @@ def markdown_to_recipe(
     """
     t0 = time.perf_counter()
     cleaned_md = clean_markdown(markdown_text)
+    # Cache key components. URL is the partition; markdown hash captures
+    # actual content; prompt_version auto-bumps when SYSTEM_PROMPT changes.
+    md_hash = hash_text(cleaned_md)
+    pv = prompt_version_for(SYSTEM_PROMPT)
+    url_norm = normalize_url(source_url) if source_url else ""
 
     validation = is_recipe(cleaned_md)
     print(f"     VALIDATE: {validation['reason']} -> "
@@ -129,29 +141,77 @@ def markdown_to_recipe(
     if timings is not None:
         timings["prep_ms"] = int((t_prep - t0) * 1000)
 
-    response = openai.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        max_tokens=4096,
-        temperature=0.2,
-        response_format={"type": "json_object"},
-    )
+    # Cache lookup. Same (url, markdown, model, prompt) => same LLM output.
+    # On hit, skip the LLM call and journal as cache_hit_markdown_to_recipe
+    # with zero tokens so usage queries can surface "tokens saved" later.
+    json_data = None
+    cache_status = "skip"  # 'hit' / 'miss' / 'skip' (no URL or no db path)
+    if cache_db_path and url_norm:
+        cached = get_cached_extract(
+            cache_db_path,
+            url_normalized=url_norm,
+            markdown_hash=md_hash,
+            model=model,
+            prompt_version=pv,
+        )
+        if cached:
+            json_data = cached["llm_output"]
+            cache_status = "hit"
+            print(f"     CACHE HIT: cached_at={cached['cached_at']}")
+            if usage_log is not None:
+                usage_log.append({
+                    "operation": "cache_hit_markdown_to_recipe",
+                    "model": model,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "meta": {
+                        "cache_key_url": url_norm,
+                        "cache_markdown_hash": md_hash[:16],
+                        "cached_at": cached["cached_at"],
+                    },
+                })
+        else:
+            cache_status = "miss"
+
+    if json_data is None:
+        response = openai.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=4096,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        if usage_log is not None:
+            usage_log.append(build_usage_entry("markdown_to_recipe", model, response))
+
+        content = response.choices[0].message.content
+        try:
+            json_data = json.loads(content)
+        except Exception as e:
+            print("     ERROR: Failed to parse GPT JSON:", e)
+            print("     DEBUG: Raw output:\n", content)
+            return None
+
+        # Store the raw LLM JSON output (pre-sanitize, pre-source-stamping)
+        # so subsequent reads can apply fresh source_url/title without
+        # invalidating the cache on those purely-metadata changes.
+        if cache_db_path and url_norm:
+            set_cached_extract(
+                cache_db_path,
+                url_normalized=url_norm,
+                markdown_hash=md_hash,
+                model=model,
+                prompt_version=pv,
+                llm_output=json_data,
+            )
+
     t_llm = time.perf_counter()
     if timings is not None:
-        timings["extract_llm_ms"] = int((t_llm - t_prep) * 1000)
-    if usage_log is not None:
-        usage_log.append(build_usage_entry("markdown_to_recipe", model, response))
-
-    content = response.choices[0].message.content
-    try:
-        json_data = json.loads(content)
-    except Exception as e:
-        print("     ERROR: Failed to parse GPT JSON:", e)
-        print("     DEBUG: Raw output:\n", content)
-        return None
+        timings["extract_llm_ms"] = 0 if cache_status == "hit" else int((t_llm - t_prep) * 1000)
+        timings["cache"] = cache_status
 
     _attach_source_metadata(json_data, source_url=source_url, title=title)
 
