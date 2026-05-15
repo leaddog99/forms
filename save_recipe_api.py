@@ -5,6 +5,19 @@
 # recipe_model.py (sourceImage field) and recipe_form_styled.html (UI).
 # Decide: storage location, retention, multi-image (re-extractions), privacy.
 
+import sys
+
+# Windows console defaults to cp1252 ("charmap") which can't encode common
+# recipe characters like ℉ (℉), curly quotes, em-dashes, etc. Without
+# this, the first `print(payload)` that hits one of those throws
+# UnicodeEncodeError before save_recipe can even validate input. `replace`
+# falls back to "?" rather than crashing if a stranger character appears.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
