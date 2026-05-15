@@ -1111,6 +1111,20 @@
           : '';
       }
 
+      // Stash the full loaded record so save-after-load preserves the rich
+      // fields the form has no UI for (provenance, classification, nutrition,
+      // _scoring, etc.). Same passthrough mechanism the extract path uses.
+      lastExtractedRecipe = r;
+
+      // Auto-open and refresh the metadata panel so Moz scores show without
+      // requiring a manual "Show metadata" click.
+      const loadedMetaUrl = r._source?.originalUrl;
+      if (loadedMetaUrl) {
+        metadataPanel.style.display = '';
+        metadataToggleBtn.textContent = 'Hide metadata';
+        loadMetadataForUrl(loadedMetaUrl);
+      }
+
       feedback.textContent = "";
       feedback.className = "";
 
@@ -1198,12 +1212,18 @@
       };
 
       // Pass-through fields the form has no UI for. Sourced from the last
-      // extract so LLM-inferred provenance/classification and pipeline-side
-      // _scoring actually land in the saved record.
+      // extracted (or sidebar-loaded) recipe so LLM-inferred and pipeline
+      // metadata actually land in the saved record on both new extracts
+      // and re-saves of existing records.
       if (lastExtractedRecipe) {
-        if (lastExtractedRecipe.provenance) payload.provenance = lastExtractedRecipe.provenance;
-        if (lastExtractedRecipe.classification) payload.classification = lastExtractedRecipe.classification;
-        if (lastExtractedRecipe._scoring) payload._scoring = lastExtractedRecipe._scoring;
+        const r0 = lastExtractedRecipe;
+        if (r0.provenance) payload.provenance = r0.provenance;
+        if (r0.classification) payload.classification = r0.classification;
+        if (r0._scoring) payload._scoring = r0._scoring;
+        if (r0.nutrition) payload.nutrition = r0.nutrition;
+        if (r0.aggregateRating) payload.aggregateRating = r0.aggregateRating;
+        if (r0.video) payload.video = r0.video;
+        if (r0.current_status) payload.current_status = r0.current_status;
       }
 
       const res = await fetch(`${API}/recipes`, {
@@ -1277,6 +1297,9 @@
       heroSectionEl.classList.remove('has-image');
       heroSectionEl.style.removeProperty('--hero-aspect');
       clearLists();
+      // Drop any stashed passthrough fields so the next save doesn't carry
+      // provenance/classification/etc. from a previously loaded record.
+      lastExtractedRecipe = null;
       feedback.textContent = "";
       feedback.className = "";
     };
