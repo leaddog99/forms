@@ -77,6 +77,7 @@ try:
         ensure_bcc_token_journal_table,
         write_usage_entries,
     )
+    from input.pipeline.extract_cache import ensure_llm_extract_cache_table
 
     print("[OK] url_utils / url_scoring imported successfully")
 except Exception as e:
@@ -158,6 +159,7 @@ def init_db():
                 print(f"[WARN] could not add unique index (existing dups?): {e}")
             ensure_metabase_url_table(conn)
             ensure_bcc_token_journal_table(conn)
+            ensure_llm_extract_cache_table(conn)
         print("[OK] Database tables ready")
     except Exception as e:
         print(f"[ERROR] Database initialization error: {e}")
@@ -498,6 +500,7 @@ async def extract_from_image_endpoint(
                 timings=timings,
                 prompts=prompts,
                 usage_log=usage_log,
+                cache_db_path=DB_PATH,
             )
         except Exception as e:
             print(f"[ERROR] markdown_to_recipe failed: {e}")
@@ -590,6 +593,7 @@ async def extract_from_markdown_endpoint(
                 timings=timings,
                 prompts=prompts,
                 usage_log=usage_log,
+                cache_db_path=DB_PATH,
             )
         except Exception as e:
             print(f"[ERROR] Extraction failed: {e}")
@@ -701,6 +705,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
                 timings=timings,
                 prompts=prompts,
                 usage_log=usage_log,
+                cache_db_path=DB_PATH,
             )
             path_used = "markdown-llm"
         except Exception as e:
