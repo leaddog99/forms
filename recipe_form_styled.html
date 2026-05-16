@@ -754,13 +754,13 @@
         <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
-        <div class="drop-zone-text">Drop a recipe .md file or screenshot image</div>
+        <div class="drop-zone-text">Drop a recipe .md file, screenshot image, or PDF</div>
         <div class="drop-zone-hint">AI will extract the recipe and fill the form</div>
         <div class="drop-zone-spinner">
           <div class="spinner"></div>
           <div class="processing-text">Extracting recipe...</div>
         </div>
-        <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*" />
+        <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*,.pdf,application/pdf" />
       </div>
 
       <form id="recipeForm">
@@ -1808,19 +1808,28 @@
       return name.endsWith('.md') || name.endsWith('.markdown');
     }
 
+    function isPdfFile(file) {
+      if (!file) return false;
+      if (file.type === 'application/pdf') return true;
+      return (file.name || '').toLowerCase().endsWith('.pdf');
+    }
+
     function handleDroppedFile(file) {
       console.log('[drop] handleDroppedFile:', file && {name: file.name, type: file.type, size: file.size});
       if (!file) return;
       if (isMarkdownFile(file)) {
         console.log('[drop] -> extractFromMarkdown');
         extractFromMarkdown(file);
+      } else if (isPdfFile(file)) {
+        console.log('[drop] -> extractFromPdf');
+        extractFromPdf(file);
       } else if (file.type && file.type.startsWith('image/')) {
         // Handwritten recipes, magazine photos, manual screenshot fallback.
         console.log('[drop] -> extractFromImage');
         extractFromImage(file);
       } else {
         console.warn('[drop] unsupported type:', file.type, 'name:', file.name);
-        showFeedback('Unsupported file type. Drop a .md file or an image.', 'error');
+        showFeedback('Unsupported file type. Drop a .md file, image, or PDF.', 'error');
       }
     }
 
@@ -2021,6 +2030,57 @@
           showImageButton: false,
         });
       } finally {
+        dropZone.classList.remove('processing');
+      }
+    }
+
+    // PDF is rendered server-side via pypdfium2, vision-OCR'd to markdown,
+    // and then routed through the same markdown -> recipe extract as every
+    // other path. URL-based PDFs go through /extract-from-url (which
+    // dispatches on Content-Type); this handler is for direct file drops.
+    async function extractFromPdf(file, sourceUrl = '', title = '') {
+      dropZone.classList.add('processing');
+      const processingEl = document.querySelector('.processing-text');
+      const originalText = processingEl ? processingEl.textContent : '';
+      if (processingEl) processingEl.textContent = 'Rendering PDF pages…';
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const effectiveUrl = sourceUrl || stagedSourceUrl;
+        const effectiveTitle = title || stagedTitle || file.name || '';
+        if (effectiveUrl) formData.append('source_url', effectiveUrl);
+        if (effectiveTitle) formData.append('title', effectiveTitle);
+        const res = await fetch(`${API}/extract-from-pdf`, { method: 'POST', body: formData });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          populateFormFromRecipe(result.recipe);
+          document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
+          renderExtractionTrace(result._timings, result._prompt);
+          if (!recipeLooksComplete(result.recipe)) {
+            showErrorDialog({
+              title: 'PDF extraction incomplete',
+              message: 'The PDF extractor came back without name, ingredients, or instructions. The PDF may be image-only with unreadable text, or contain multiple recipes. Try a different page or fill the form in manually.',
+              showImageButton: false,
+            });
+          } else {
+            showFeedback('Recipe extracted from PDF! Review and save when ready.', 'success');
+          }
+        } else {
+          showErrorDialog({
+            title: 'PDF extraction failed',
+            message: result.detail || 'Server returned an error.',
+            showImageButton: false,
+          });
+        }
+      } catch (err) {
+        console.error('PDF extraction error:', err);
+        showErrorDialog({
+          title: 'PDF extraction failed',
+          message: (err && err.message) || 'Unable to reach the extraction server.',
+          showImageButton: false,
+        });
+      } finally {
+        if (processingEl) processingEl.textContent = originalText || 'Extracting recipe...';
         dropZone.classList.remove('processing');
       }
     }
