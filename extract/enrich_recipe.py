@@ -48,7 +48,7 @@ Return STRICT JSON matching this shape exactly:
     "sources":            []
   },
   "classification": {
-    "confidence":   <integer 0-100. 30-50 for inferences from dish name/technique alone, 50-70 when corroborated by ingredients, 70+ for well-documented classics. <30 only for genuinely unidentifiable.>,
+    "confidence":   <integer 0-100, reflecting confidence in the CUISINE-LEVEL provenance (broad cultural origin), not in specifics like a city or chef. 70+ for well-documented dishes or unambiguous technique markers ('au gratin' → French, 'tagine' → North African, 'carbonara' → Roman, 'tikka masala' → Indian-British, 'miso' → Japanese). 50-70 for technique + corroborating ingredients when the technique alone is weak. 30-50 for a single weak cue in the name. <30 only for genuinely unidentifiable. Be willing to use 70+ when the technique is unambiguous.>,
     "reasoning":    "<one or two sentences explaining your provenance call. State explicitly when you're inferring vs. quoting. Always populate when other fields have content.>",
     "hierarchyPath":"<slash-separated taxonomy path like 'dessert/cookie/drop-cookie', 'side/gratin/vegetable', 'main/braise/stew'. Provide whenever structural cues exist.>",
     "story":        "<one paragraph (2-4 sentences) telling the dish's story — origin, what makes it distinctive, who eats it. Honest tone; don't fabricate. Provide for any recognizable cuisine.>"
@@ -57,8 +57,10 @@ Return STRICT JSON matching this shape exactly:
 
 Example: "Asparagus au Gratin" with no explicit cuisine label should
 yield ethnicity="French", originRegion="France", hierarchyPath=
-"side/gratin/vegetable", confidence=40, with a brief story about French
-gratin tradition. NOT all-zeros.
+"side/gratin/vegetable", confidence=70 (the "au gratin" technique
+marker is unambiguous at the cuisine level), with reasoning noting the
+inference and a brief story about French gratin tradition. NOT
+all-zeros, and NOT hedged to 40.
 
 Don't fabricate specifics (precise city, named chef) when only the
 cuisine is clear. But DO infer at low confidence when there's any

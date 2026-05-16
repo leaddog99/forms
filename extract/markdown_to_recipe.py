@@ -60,7 +60,12 @@ ENRICHMENT FIELDS — fill these whether JSON-LD is present or not. Make a best-
 - `sources`: leave empty list; this is for citations added later.
 
 `classification` (your confidence and reasoning):
-- `confidence`: integer 0–100. Use 30–50 for inferences from dish name/technique alone, 50–70 when corroborated by ingredients, 70+ for well-documented classics. Use <30 only when the dish is genuinely unidentifiable.
+- `confidence`: integer 0–100, reflecting how sure you are of the CUISINE-LEVEL provenance you're stating (broad regional/cultural origin), not of a specific city or chef.
+    - 70+: well-documented dishes or clear technique/naming markers ("au gratin" → French, "tagine" → North African, "carbonara" → Roman, "tikka masala" → Indian-British, "miso" → Japanese).
+    - 50–70: plausible inference from technique + corroborating ingredients, but technique alone is weak (e.g. "stew" or "casserole" — too generic).
+    - 30–50: a single weak cue in the name (e.g. one ambiguous loanword); use sparingly.
+    - <30: genuinely unidentifiable. Leave fields empty.
+  Be willing to use 70+ when the technique is unambiguous. Don't hedge a clear cuisine signal down to 40 just because the family-recipe wrapping is unfamiliar.
 - `reasoning`: one or two sentences explaining your provenance call. State explicitly when you're inferring vs. quoting from the source. Always populate when other fields have content.
 - `hierarchyPath`: a slash-separated taxonomy path like "dessert/cookie/drop-cookie", "side/gratin/vegetable", "main/braise/stew". Provide whenever structural cues exist.
 - `story`: one paragraph (2–4 sentences) telling the dish's story — its origin, what makes it distinctive, who eats it. Honest tone; don't fabricate. Provide for any recognizable cuisine.
@@ -69,8 +74,8 @@ EXAMPLE — "Asparagus au Gratin" appearing as just a recipe-card title with no 
 - ethnicity: "French"
 - originRegion: "France"
 - traditionalContext: brief note about gratin as a French baked-with-crust technique
-- confidence: 40
-- reasoning: "Inferred French origin from the 'au gratin' technique; no explicit cuisine label in the source."
+- confidence: 70 (the technique marker is unambiguous at the cuisine level)
+- reasoning: "'Au gratin' is a well-documented French cooking technique, so cuisine-level provenance is high-confidence; the specific regional origin within France is uncertain."
 - hierarchyPath: "side/gratin/vegetable"
 - story: short paragraph about gratin tradition
 NOT all zeros / all empty.
