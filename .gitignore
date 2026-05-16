@@ -1,3 +1,13 @@
+# Secrets — never commit. .env was historically tracked and leaked an
+# OpenAI key (caught by GitHub push protection) plus Moz / Diffbot / AWS /
+# Perplexity / Tinify credentials that leaked silently. History was
+# rewritten on 2026-05-16 to scrub .env from every commit.
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
 # Python build artifacts
 __pycache__/
 *.py[cod]
