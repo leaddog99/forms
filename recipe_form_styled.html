@@ -2624,6 +2624,34 @@
       });
     }
 
+    // Open-by-self-URL: when the page is reached via /r/{recipe_id} (which
+    // server-redirects to ?recipe_id=<id>), fetch the record and load it.
+    // Skips extraction entirely — this is purely a "view/edit existing"
+    // entry point. Runs before the staged/url IIFEs so direct loads win.
+    (async function () {
+      const params = new URLSearchParams(window.location.search);
+      const rid = params.get('recipe_id');
+      if (!rid) return;
+      // Don't run if we're ALSO in an extract flow (staged or url present —
+      // those create new records; recipe_id here would be misleading).
+      if (params.get('staged') || params.get('url')) return;
+      window.scrollTo({ top: 0 });
+      try {
+        const res = await fetch(`${API}/recipes/${encodeURIComponent(rid)}`);
+        if (!res.ok) {
+          showFeedback('Recipe not found.', 'error');
+          return;
+        }
+        const recipe = await res.json();
+        // Strip the param so reload doesn't double-fire and refresh feels clean.
+        window.history.replaceState({}, '', window.location.pathname);
+        loadForm(recipe);
+      } catch (err) {
+        console.error('Self-URL load error:', err);
+        showFeedback('Failed to load recipe', 'error');
+      }
+    })();
+
     // Auto-extract when launched via bookmarklet with ?staged=<token>.
     // If ?url= is ALSO present (new bookmarklet flow), defer to the URL
     // handler below — the staged token is only the screenshot fallback there.

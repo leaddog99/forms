@@ -349,6 +349,50 @@ def health_check():
     return {"status": "ok", "message": "Full API with error handling"}
 
 
+# Open-by-self-URL: /r/{recipe_id} → form pre-loaded with that recipe.
+# This is the canonical addressable URL for any recipe. For URL-less
+# recipes (handwritten, photo, typed) extract endpoints mint this same
+# URL into _source.originalUrl so every recipe has a self-reference.
+# Auth is intentionally NOT here yet — that's the visibility / users
+# layer, which is a separate change. Right now, knowing the UUID == access.
+from fastapi.responses import RedirectResponse
+
+@app.get("/r/{recipe_id}")
+def open_recipe_by_url(recipe_id: str):
+    # 302 to the form with ?recipe_id=<id>. The form has an init IIFE that
+    # fetches GET /recipes/{recipe_id} and runs loadForm.
+    return RedirectResponse(url=f"/forms/recipe_form_styled.html?recipe_id={recipe_id}",
+                            status_code=302)
+
+
+# Fetch one recipe by recipe_id. Same shape as list_recipes() rows so the
+# form's existing loadForm path can consume it directly.
+@app.get("/recipes/{recipe_id}")
+def get_recipe(recipe_id: str):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
+                "FROM recipes WHERE recipe_id = ?",
+                (recipe_id,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+            return {
+                "id": row[0],
+                "recipe_id": row[1],
+                "data": json.loads(row[2]),
+                "source_changed_at": row[3],
+                "created_at": row[4],
+                "updated_at": row[5],
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Error in get_recipe({recipe_id}): {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 # List all recipes
 @app.get("/recipes")
 def list_recipes():
@@ -431,6 +475,23 @@ async def save_recipe(request: Request):
     if normalized_source_url and normalized_source_url != raw_source_url:
         source["originalUrl"] = normalized_source_url
         recipe_dict["_source"] = source
+
+    # Self-URL minting: when no external source URL exists (handwritten,
+    # photo, typed recipe), generate one pointing back at this DB record:
+    # https://<host>/r/<recipe_id>. Done BEFORE the adopt-existing check
+    # below so a re-save of a once-saved local recipe still works (the
+    # second save sees the same minted URL and adopts the existing row).
+    if not raw_source_url:
+        base = str(request.base_url).rstrip("/")
+        synthetic_url = f"{base}/r/{recipe_id}"
+        normalized_source_url = normalize_url(synthetic_url)
+        source["originalUrl"] = synthetic_url
+        # Stamp type so the form / future logic can tell apart minted-self
+        # URLs from real external sources without parsing the URL.
+        if not source.get("type") or source.get("type") in ("cookbook", ""):
+            source["type"] = "local"
+        recipe_dict["_source"] = source
+        print(f"[SAVE] Minted self-URL: {synthetic_url}")
 
     # Dedup: if a row already exists for (url_normalized, user_id), adopt
     # ITS recipe_id instead of the form-sent UUID so the existing record
