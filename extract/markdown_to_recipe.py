@@ -48,27 +48,37 @@ AUTHORITY RULES:
 3. If no JSON-LD section is present, derive ALL fields from the markdown body. Preserve quantities and unit text exactly as written — do not convert units.
 4. Ignore page chrome, navigation links, advertisements, comment threads, and "related recipes" lists.
 
-ENRICHMENT FIELDS — fill these whether JSON-LD is present or not:
+ENRICHMENT FIELDS — fill these whether JSON-LD is present or not. Make a best-effort inference using ANY signal: dish name, cooking technique (e.g. "au gratin" → French, "tagine" → North African, "carbonara" → Roman), key ingredients, naming convention. Leaving a field empty signals "no signal at all" — reserve that for genuinely unidentifiable dishes (e.g. "Mom's Mystery Casserole" with no other clue).
 
 `provenance` (cultural/historical context):
-- `ethnicity`: cultural/ethnic origin of the dish ("Italian-American", "Cajun", "Sichuan"). Empty string if uncertain.
-- `originRegion`: geographic region of origin if known ("Naples, Italy", "Louisiana, USA"). Empty if uncertain.
-- `firstDocumented`: approximate date or era if known ("19th century", "1950s"). Null if unknown.
-- `traditionalContext`: short paragraph on when/how the dish is traditionally eaten. Empty if uncertain.
+- `ethnicity`: cultural/ethnic origin of the dish ("Italian-American", "Cajun", "Sichuan", "French"). Infer from technique or ingredients when no explicit label exists.
+- `originRegion`: geographic region of origin ("Naples, Italy", "Louisiana, USA", "France"). Empty only when no regional signal exists.
+- `firstDocumented`: approximate date or era if known ("19th century", "1950s"). Null is fine when truly unknown.
+- `traditionalContext`: short paragraph on when/how the dish is traditionally eaten. Brief inference beats empty.
 - `notableVariations`: list of well-known regional or family variations.
 - `relatedDishes`: list of closely related dishes by name.
 - `sources`: leave empty list; this is for citations added later.
 
 `classification` (your confidence and reasoning):
-- `confidence`: integer 0–100. Your confidence that the provenance fields above are accurate. Use < 40 for novel/unknown dishes, 40–70 for plausible inference, 70+ only for well-documented classics.
-- `reasoning`: one or two sentences explaining your provenance call. State explicitly when you're inferring vs. quoting from the source.
-- `hierarchyPath`: a slash-separated taxonomy path like "dessert/cookie/drop-cookie" or "main/braise/stew". Empty if unclear.
-- `story`: one paragraph (2–4 sentences) telling the dish's story — its origin, what makes it distinctive, who eats it. Honest tone; don't fabricate. Empty string if you have nothing real to say.
+- `confidence`: integer 0–100. Use 30–50 for inferences from dish name/technique alone, 50–70 when corroborated by ingredients, 70+ for well-documented classics. Use <30 only when the dish is genuinely unidentifiable.
+- `reasoning`: one or two sentences explaining your provenance call. State explicitly when you're inferring vs. quoting from the source. Always populate when other fields have content.
+- `hierarchyPath`: a slash-separated taxonomy path like "dessert/cookie/drop-cookie", "side/gratin/vegetable", "main/braise/stew". Provide whenever structural cues exist.
+- `story`: one paragraph (2–4 sentences) telling the dish's story — its origin, what makes it distinctive, who eats it. Honest tone; don't fabricate. Provide for any recognizable cuisine.
+
+EXAMPLE — "Asparagus au Gratin" appearing as just a recipe-card title with no explicit cuisine label should yield:
+- ethnicity: "French"
+- originRegion: "France"
+- traditionalContext: brief note about gratin as a French baked-with-crust technique
+- confidence: 40
+- reasoning: "Inferred French origin from the 'au gratin' technique; no explicit cuisine label in the source."
+- hierarchyPath: "side/gratin/vegetable"
+- story: short paragraph about gratin tradition
+NOT all zeros / all empty.
 
 OUTPUT RULES:
 - Output a single valid JSON object matching the schema. No preamble, no fences, no commentary.
 - Do NOT skip required fields. Use empty strings, empty lists, or null where appropriate.
-- Honesty over completeness on provenance/classification: low confidence + empty fields is better than a confident fabrication.
+- Don't fabricate specifics (e.g. invent a precise city or chef name). But DO infer at low confidence when there's any cuisine/technique signal — confidence 30–50 with populated fields beats confidence 0 with empties.
 
 <SCHEMA>
 {json.dumps(RecipeModel.model_json_schema(), indent=2)}
