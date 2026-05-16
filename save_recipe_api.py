@@ -110,6 +110,33 @@ def _journal_usage(usage_log, *, recipe_id=None):
         print(f"[WARN] token-journal write failed: {e}")
 
 
+def _maybe_stamp_source_drift(timings, *, user_id):
+    """When markdown_to_recipe sets timings["source_drift"] (a TTL-expired
+    re-extract whose semantic fingerprint differs from the cached one),
+    stamp recipes.source_changed_at on every saved recipe matching that URL
+    + user. The form reads the stamp and shows a "source updated — review
+    and re-save" banner; save clears the stamp."""
+    if not timings or not timings.get("source_drift"):
+        return
+    url_normalized = timings.get("drift_url") or ""
+    if not url_normalized:
+        return
+    try:
+        now = datetime.utcnow().isoformat()
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.execute(
+                "UPDATE recipes SET source_changed_at = ? "
+                "WHERE url_normalized = ? AND user_id = ?",
+                (now, url_normalized, user_id),
+            )
+            conn.commit()
+            if cursor.rowcount:
+                print(f"[DRIFT] Stamped source_changed_at on "
+                      f"{cursor.rowcount} recipe(s) for {url_normalized!r}")
+    except Exception as e:
+        print(f"[WARN] source_changed_at stamp failed: {e}")
+
+
 # Ensure tables exist
 def init_db():
     print("[SETUP] Creating database tables if needed...")
@@ -122,6 +149,7 @@ def init_db():
                     user_id INTEGER,
                     data TEXT,
                     url_normalized TEXT NOT NULL DEFAULT '',
+                    source_changed_at TEXT,
                     created_at TEXT,
                     updated_at TEXT
                 );
@@ -147,6 +175,14 @@ def init_db():
                         print(f"[WARN] backfill failed for recipes.id={row_id}: {e}")
                 conn.commit()
                 print(f"[OK] Backfilled url_normalized on {len(rows)} row(s)")
+            # Migration for pre-existing DBs: add source_changed_at column.
+            # Stamped on every saved recipe sharing a URL when an LLM
+            # re-extract reveals the source page meaningfully changed; cleared
+            # when the user saves (i.e. acknowledges the update).
+            if "source_changed_at" not in existing_cols:
+                print("[SETUP] Migrating recipes: adding source_changed_at column...")
+                conn.execute("ALTER TABLE recipes ADD COLUMN source_changed_at TEXT")
+                conn.commit()
             # Partial UNIQUE index. If existing data already has dups, this
             # will fail — we log and continue; the application-level upsert
             # still keeps new dups from being created.
@@ -212,7 +248,10 @@ def list_recipes():
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, recipe_id, data, created_at, updated_at FROM recipes ORDER BY updated_at DESC")
+            cursor.execute(
+                "SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
+                "FROM recipes ORDER BY updated_at DESC"
+            )
             rows = cursor.fetchall()
             result = []
 
@@ -222,8 +261,9 @@ def list_recipes():
                         "id": row[0],
                         "recipe_id": row[1],
                         "data": json.loads(row[2]),
-                        "created_at": row[3],
-                        "updated_at": row[4]
+                        "source_changed_at": row[3],
+                        "created_at": row[4],
+                        "updated_at": row[5]
                     }
                     result.append(recipe_entry)
                 except json.JSONDecodeError as e:
@@ -307,12 +347,15 @@ async def save_recipe(request: Request):
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
+            # Save clears source_changed_at: the user reviewing and saving is
+            # the acknowledgement of any prior drift signal.
             conn.execute("""
-                INSERT INTO recipes (recipe_id, user_id, data, url_normalized, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO recipes (recipe_id, user_id, data, url_normalized, source_changed_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(recipe_id) DO UPDATE SET
                     data = excluded.data,
                     url_normalized = excluded.url_normalized,
+                    source_changed_at = NULL,
                     updated_at = excluded.updated_at;
             """, (
                 recipe_id,
@@ -521,6 +564,7 @@ async def extract_from_image_endpoint(
         # Journal LLM token usage before returning (extract happened regardless
         # of whether the user later saves the recipe).
         _journal_usage(usage_log, recipe_id=new_recipe_id)
+        _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
 
         print("[OK] Extraction successful")
         return {
@@ -612,6 +656,7 @@ async def extract_from_markdown_endpoint(
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
         _journal_usage(usage_log, recipe_id=new_recipe_id)
+        _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
 
         print("[OK] Extraction successful")
         return {
@@ -724,6 +769,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     recipe["id"] = new_recipe_id
     # Journal LLM token usage before returning.
     _journal_usage(usage_log, recipe_id=new_recipe_id)
+    _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
 
     return {
         "success": True,

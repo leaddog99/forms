@@ -765,6 +765,16 @@
 
       <form id="recipeForm">
 
+        <!-- Drift notice: visible when the loaded recipe has
+             source_changed_at set (a TTL-expired LLM re-extract produced a
+             different semantic fingerprint than the prior cached one).
+             Hidden on extract/new/save; populated by loadForm. -->
+        <div id="sourceDriftBanner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#78350f;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:0.92em">
+          <strong>Source page updated</strong>
+          since this recipe was last saved<span id="sourceDriftDate"></span>.
+          Review the recipe and re-save to acknowledge.
+        </div>
+
         <!-- Header: Title/Desc Left, Image Right -->
         <div class="header-row">
           <div class="header-left">
@@ -1135,6 +1145,23 @@
         loadMetadataForUrl(loadedMetaUrl);
       }
 
+      // Source-drift banner: shown when a TTL-expired re-extract of this URL
+      // produced a different semantic fingerprint than the cached one. Cleared
+      // by saving (the user reviewing and saving is the acknowledgement).
+      const driftBanner = document.getElementById('sourceDriftBanner');
+      if (driftBanner) {
+        if (recipe.source_changed_at) {
+          const driftDateEl = document.getElementById('sourceDriftDate');
+          if (driftDateEl) {
+            const d = new Date(recipe.source_changed_at);
+            driftDateEl.textContent = isNaN(d) ? '' : ` (detected ${d.toLocaleDateString()})`;
+          }
+          driftBanner.style.display = '';
+        } else {
+          driftBanner.style.display = 'none';
+        }
+      }
+
       feedback.textContent = "";
       feedback.className = "";
 
@@ -1251,6 +1278,10 @@
         // Reflect that back on the form so the displayed UUID matches DB.
         if (result.recipe_id) document.getElementById("recipe_id").value = result.recipe_id;
         if (result.id != null) document.getElementById("recipe_seq_id").value = result.id;
+        // Save clears source_changed_at server-side; hide the drift banner
+        // immediately for a snappy UI signal.
+        const driftBanner = document.getElementById('sourceDriftBanner');
+        if (driftBanner) driftBanner.style.display = 'none';
         loadRecipes();
         // Preserve source URL / origin / affiliate so the form resets to a
         // "new entry, same source" state — and auto-load the freshly-scored
@@ -1317,6 +1348,8 @@
       // Drop any stashed passthrough fields so the next save doesn't carry
       // provenance/classification/etc. from a previously loaded record.
       lastExtractedRecipe = null;
+      const driftBanner = document.getElementById('sourceDriftBanner');
+      if (driftBanner) driftBanner.style.display = 'none';
       feedback.textContent = "";
       feedback.className = "";
     };
@@ -2024,6 +2057,10 @@
     // Populate form from extracted recipe data
     function populateFormFromRecipe(r) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      // A fresh extract is a fresh slate — drift banner only applies to
+      // recipes loaded from the DB with source_changed_at already set.
+      const driftBanner = document.getElementById('sourceDriftBanner');
+      if (driftBanner) driftBanner.style.display = 'none';
       // Remember the full extract so save can pass through provenance,
       // classification, and _scoring (none of which have form fields).
       lastExtractedRecipe = r;

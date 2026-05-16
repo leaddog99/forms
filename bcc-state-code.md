@@ -275,7 +275,7 @@ Verified live with the chicken-fajitas markdown: first call 35s (miss), second c
 
 **Then a concern surfaced** — see the next section.
 
-### Cache-key design discussion — PENDING DECISION
+### Cache-key design discussion — RESOLVED (see "Cache-key simplification + drift detection" below)
 
 After shipping the content-hash cache, user pushed back: the markdown hash is fragile. Per-capture noise (the bookmarklet's `*Captured: <ISO>*` line, view counters, HTML comments leaking through, JSON-LD `dateModified` flipping daily, sidebar "popular posts" changing, etc.) busts the hash and burns an LLM call for content that hasn't meaningfully changed.
 
@@ -304,6 +304,51 @@ I tried a `canonicalize_for_hash()` regex-based stripper to normalize the markdo
 Status: **left at "want me to do simplification only, or simplification + drift detection?"** when user went to dinner. Total work ≈ 30-line refactor for simplification alone, ~80 more lines for fingerprint + drift flag.
 
 The undo cost from current state (commit `ec0d41e`) is small: drop `canonicalize_for_hash` and its regexes (~30 lines in `extract_cache.py`), drop `markdown_hash` from the cache key signature, rebuild the cache table (1 test row in it, no real data), import cleanup in `markdown_to_recipe.py`, add TTL constant + WHERE clause. ~30 lines net.
+
+### Cache-key simplification + drift detection
+
+Shipped Plan B (the combined plan) in one pass. Net change is roughly what the table above predicted: cache key dropped from 4-tuple to 3-tuple, content-hashing is gone, and a semantic fingerprint now rides each cache row for drift detection on TTL refresh.
+
+`input/pipeline/extract_cache.py` rewritten end-to-end:
+
+- New PK is `(url_normalized, model, prompt_version)`. `markdown_hash` is gone. `canonicalize_for_hash` was never actually shipped (only discussed) so there was nothing to delete there.
+- New constant `EXTRACT_CACHE_TTL_DAYS = 30`, tunable per call via a `ttl_days` kwarg on `get_cached_extract` (same shape as the Moz TTL).
+- `compute_recipe_fingerprint(recipe)` — sha256 of `{name, ingredients[], instruction-texts[]}` joined newline-separated, lowercased. Excludes description/dateModified/image/etc. because those flip on the source page without the actual recipe moving. Not used as a cache key (you'd have to call the LLM to compute it); only for drift detection.
+- `get_cached_extract` now returns `{llm_output, cached_at, semantic_fingerprint, is_stale}` — the row is returned even when past TTL so the caller has the prior fingerprint available for drift comparison. Fresh hits bump usage stats; stale reads leave them alone.
+- `set_cached_extract` requires a `semantic_fingerprint` arg. Resets `created_at` on every write (TTL clock restarts on refresh) and zeros `hit_count`.
+- Schema migration drops any legacy `llm_extract_cache` table whose PK contains `markdown_hash`. Verified live: the one test row from yesterday's session was discarded, new schema created cleanly.
+
+`extract/markdown_to_recipe.py`:
+
+- `cleaned_md` is still computed (for the LLM input) but no longer hashed. `md_hash` deleted; `hash_text` import dropped.
+- Cache lookup now branches three ways: fresh hit → return cached, journal `cache_hit_markdown_to_recipe` with zero tokens; stale row → retain `prior_fingerprint`, fall through to LLM and compute drift after; no row → just run LLM.
+- After every LLM call, `compute_recipe_fingerprint(json_data)` produces `new_fingerprint`. If `prior_fingerprint` is non-empty and differs, drift is detected.
+- `timings["cache"]` is now one of `'hit' | 'miss' | 'refresh-fresh' | 'refresh-drift' | 'skip'`. On drift, also sets `timings["source_drift"] = True` and `timings["drift_url"] = url_norm` so the endpoint can act on it without changing the recipe shape.
+
+`save_recipe_api.py`:
+
+- New `source_changed_at TEXT` column on `recipes`, with both `CREATE TABLE` and `ALTER TABLE` migration for pre-existing rows. Verified live: `PRAGMA table_info(recipes)` shows the column added at the tail.
+- New `_maybe_stamp_source_drift(timings, *, user_id)` helper. When `timings["source_drift"]` is truthy, runs `UPDATE recipes SET source_changed_at = NOW WHERE url_normalized = ? AND user_id = ?`. Best-effort, never raises. Logs the count of stamped rows.
+- All three extract endpoints (`/extract-from-image`, `/extract-from-markdown`, `/extract-from-url`) call `_maybe_stamp_source_drift` immediately after `_journal_usage`, before returning the response.
+- `POST /recipes` clears `source_changed_at` on save: the INSERT supplies `NULL`, and the `ON CONFLICT(recipe_id) DO UPDATE` also sets `source_changed_at = NULL`. Saving is treated as the user's acknowledgement of any prior drift signal.
+- `list_recipes` now selects `source_changed_at` and includes it in each response object.
+
+`recipe_form_styled.html`:
+
+- New `#sourceDriftBanner` div at the top of `<form id="recipeForm">`. Amber-styled (`background:#fef3c7;border:#f59e0b;color:#78350f`), `display:none` by default. Copy: "Source page updated since this recipe was last saved (detected YYYY-MM-DD). Review the recipe and re-save to acknowledge."
+- `loadForm`: when `recipe.source_changed_at` is set, populates the detected-date span and shows the banner. When null, hides it. Renders next to the existing metadata panel logic.
+- `populateFormFromRecipe`: hides the banner (a fresh extract is a clean slate).
+- `clearBtn`: hides the banner.
+- Save-success handler: hides the banner immediately for snappy UI feedback (the server-side `source_changed_at = NULL` will be reflected on next `loadRecipes()` anyway, but the eager hide avoids a flash).
+
+Verified end-to-end:
+
+- Server health check (`GET /`) returns OK after reload.
+- Module import smoke test passes; `compute_recipe_fingerprint` returns deterministic 64-char hex.
+- Inserted a synthetic cache row, read it → `is_stale=False`. Backdated `created_at` to 99 days ago → `is_stale=True`, `semantic_fingerprint` preserved. Different ingredient list produces a different fingerprint. Cleanup OK.
+- No drift detection has been exercised against a real OpenAI re-extract yet — that requires either a 30-day wait or backdating a real cache row, which I deferred since the unit tests cover the comparison logic and the SQL paths are straightforward.
+
+Caveat / known gap: the fast-lane JSON-LD path (`/extract-from-url` when JSON-LD is complete) doesn't go through `markdown_to_recipe` and therefore doesn't participate in cache or drift detection. That's intentional for now — caching the cheap path isn't worth it — but it means drift won't fire on those URLs unless they fall through to the markdown path.
 
 ---
 
@@ -356,11 +401,10 @@ The undo cost from current state (commit `ec0d41e`) is small: drop `canonicalize
 - One-shot dedup of existing duplicates: 6 rows removed across 3 groups, 1 journal row re-pointed at survivor, partial UNIQUE index added cleanly afterward (29 recipes, 0 dup groups remaining)
 - Self-heal Moz scores on `GET /url-metadata` when `moz_last_scored` is null — commit `2248654`
 - Windows charmap encoding fix: `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at module init of `save_recipe_api.py`. Stops the "Bad input: 'charmap' codec can't encode character '℉'" failure mode — commit `d81bcf9`
-- LLM extract cache table (`llm_extract_cache`) + `input/pipeline/extract_cache.py` helpers; threaded through `markdown_to_recipe` via `cache_db_path` kwarg; cache hits journaled as `cache_hit_markdown_to_recipe` with zero tokens. Initial design used `(url_normalized, markdown_hash, model, prompt_version)` as the cache key — commit `ec0d41e`. **Pending decision: simplify the key to URL+TTL (see Session log "Cache-key design discussion").**
+- LLM extract cache table (`llm_extract_cache`) + `input/pipeline/extract_cache.py` helpers; threaded through `markdown_to_recipe` via `cache_db_path` kwarg; cache hits journaled as `cache_hit_markdown_to_recipe` with zero tokens. Initial design used `(url_normalized, markdown_hash, model, prompt_version)` as the cache key — commit `ec0d41e`.
+- Cache-key simplification + drift detection: PK now `(url_normalized, model, prompt_version)` + TTL (`EXTRACT_CACHE_TTL_DAYS = 30`, tunable per call); `semantic_fingerprint` (sha256 of name + ingredients[] + instruction-texts[]) stored on each cache row; on TTL-expired re-extract whose new fingerprint differs from the cached one, `recipes.source_changed_at` is stamped on every recipe sharing that URL+user and the form shows an amber drift banner until the user saves (which clears the stamp). `recipes.source_changed_at` column added with migration. Legacy `llm_extract_cache` schema (with `markdown_hash` in PK) auto-dropped on startup. All three extract endpoints call `_maybe_stamp_source_drift` after journaling.
 
 ## To-do
-
-- **TOP OF QUEUE: Cache-key simplification.** Currently the LLM extract cache (commit `ec0d41e`) uses `(url_normalized, markdown_hash, model, prompt_version)`. Discussion converged on switching to `(url_normalized, model, prompt_version)` + TTL (30 days default), and adding a **semantic fingerprint** (sha256 of `{name, ingredients[], instruction-texts[]}`) stored on each cache row for **drift detection** — when a re-extract produces a different fingerprint, stamp `recipes.source_changed_at` on every saved recipe with that URL+user so the UI can flag "source page was updated; review and re-save." See the 2026-05-15 session-log section "Cache-key design discussion — PENDING DECISION" for the full reasoning. Choice point: simplification only (~30 lines) vs. simplification + drift detection (~110 lines). User leaning toward the combined plan.
 - **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
 - **General ledger / transactions layer** on top of `bcc_token_journal`. Aggregation queries to roll journal rows into a per-user monthly view: `SELECT user_id, model, SUM(input_tokens), SUM(output_tokens), strftime('%Y-%m', created_at) FROM bcc_token_journal GROUP BY ...`. Then map model + token counts → estimated USD via a price table. Subscription tier model (hard cap / soft cap / overage) still TBD.
 - **Re-point journal rows on adopt.** When `save_recipe` adopts an existing recipe_id, the LLM calls from this extract are already journaled under the *originally-minted* UUID. Consider updating `bcc_token_journal SET recipe_id = <adopted>` for those rows so the journal trail joins cleanly to the surviving recipe. Currently their cost history is queryable but doesn't join to `recipes.recipe_id` for the user's canonical record.
