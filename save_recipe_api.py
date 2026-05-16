@@ -57,6 +57,7 @@ try:
     from to_markdown.html_to_markdown import html_to_markdown
     from to_markdown.image_to_markdown import image_to_markdown, IMAGE_TO_MARKDOWN_PROMPT
     from to_markdown.markdown_passthrough import markdown_passthrough
+    from to_markdown.pdf_to_markdown import pdf_url_to_markdown, PDF_TO_MARKDOWN_PROMPT
     from extract.markdown_to_recipe import markdown_to_recipe, SYSTEM_PROMPT as _MD_PROMPT
     from extract.jsonld_to_recipe import jsonld_to_recipe
     from extract.enrich_recipe import enrich_recipe, SYSTEM_PROMPT as _ENRICH_PROMPT
@@ -106,6 +107,7 @@ EXTRACT_MODEL = "gpt-4o-mini"
 EXTRACT_PROMPT_VERSION = prompt_version_for(
     _MD_PROMPT + "\n---ENRICH---\n" + _ENRICH_PROMPT
     + "\n---IMAGE---\n" + IMAGE_TO_MARKDOWN_PROMPT
+    + "\n---PDF---\n" + PDF_TO_MARKDOWN_PROMPT
 )
 print(f"[CACHE] EXTRACT_PROMPT_VERSION = {EXTRACT_PROMPT_VERSION}")
 
@@ -199,6 +201,21 @@ def _stamp_cache_timings(timings, *, status, url_normalized, drift=False):
     if drift and url_normalized:
         timings["source_drift"] = True
         timings["drift_url"] = url_normalized
+
+
+def _probe_url_head(url: str, timeout: int = 5) -> str:
+    """HEAD request to learn Content-Type before fetching the body. Used to
+    dispatch PDFs to pdf_to_markdown vs HTML to html_to_markdown. Returns
+    the content-type header or empty string on any failure (caller treats
+    missing as HTML, which is the existing default)."""
+    import requests
+    try:
+        # allow_redirects so a 301/302 (common for shopify CDN PDFs etc.)
+        # lands on the real Content-Type.
+        r = requests.head(url, allow_redirects=True, timeout=timeout)
+        return r.headers.get("content-type", "") or ""
+    except Exception:
+        return ""
 
 
 def _maybe_stamp_source_drift(timings, *, user_id):
@@ -686,6 +703,113 @@ async def extract_from_image_endpoint(
         raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
 
+# Extract recipe from a PDF upload (no save). Mirrors /extract-from-image
+# but uses pdf_bytes_to_markdown (multi-page vision OCR) instead of
+# image_to_markdown. URL-based PDFs go through /extract-from-url, which
+# detects Content-Type: application/pdf and dispatches to pdf_url_to_markdown
+# itself — same canonical markdown -> recipe chain at the end.
+@app.post("/extract-from-pdf")
+async def extract_from_pdf_endpoint(
+    file: UploadFile = File(...),
+    source_url: str = Form(""),
+    title: str = Form(""),
+):
+    from to_markdown.pdf_to_markdown import pdf_bytes_to_markdown
+    print("[EXTRACT] Extract from PDF endpoint called")
+    try:
+        ctype = (file.content_type or "").lower()
+        if "pdf" not in ctype and not (file.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="File must be a PDF")
+
+        pdf_bytes = await file.read()
+        if not pdf_bytes:
+            raise HTTPException(status_code=400, detail="PDF upload was empty")
+
+        new_recipe_id = str(uuid.uuid4())
+        timings: dict = {}
+        prompts: dict = {}
+        usage_log: list = []
+        t_start = time.perf_counter()
+
+        # Endpoint-level cache: a previously-extracted recipe for this URL
+        # skips both the PDF render+vision step AND the markdown-extract LLM
+        # call. Empty source_url means cache is skipped (e.g. raw upload
+        # with no URL context).
+        url_norm = normalize_url(source_url) if source_url else ""
+        recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+        drift = False
+        path_used = "cache-hit" if recipe is not None else "pdf-llm"
+
+        if recipe is None:
+            try:
+                md = await asyncio.to_thread(
+                    pdf_bytes_to_markdown, pdf_bytes,
+                    timings=timings, usage_log=usage_log,
+                )
+            except Exception as e:
+                print(f"[ERROR] pdf_bytes_to_markdown failed: {e}")
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail=f"PDF extraction error: {e}")
+
+            if not md or not md.strip():
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail="PDF vision step returned empty markdown")
+
+            prompts["vision"] = {
+                "model": "gpt-4o",
+                "system_prompt": PDF_TO_MARKDOWN_PROMPT,
+            }
+
+            try:
+                recipe = await asyncio.to_thread(
+                    markdown_to_recipe,
+                    md,
+                    source_name=file.filename or "",
+                    source_url=source_url,
+                    title=title,
+                    timings=timings,
+                    prompts=prompts,
+                    usage_log=usage_log,
+                )
+            except Exception as e:
+                print(f"[ERROR] markdown_to_recipe failed: {e}")
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+            if recipe is None:
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail="Failed to extract recipe from PDF")
+
+            cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
+
+        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+        timings["path"] = path_used
+        _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
+
+        recipe["id"] = new_recipe_id
+        _journal_usage(usage_log, recipe_id=new_recipe_id)
+        _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
+
+        print("[OK] PDF extraction successful")
+        return {
+            "success": True,
+            "recipe_id": new_recipe_id,
+            "recipe": recipe,
+            "_timings": timings,
+            "_prompt": prompts,
+            "_usage": usage_log,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Error extracting from PDF: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+
 # Extract recipe from markdown text (no save). Canonical path: markdown ->
 # RecipeModel via the single JSON-LD-aware LLM call. Provenance and
 # classification are filled in the same call.
@@ -805,8 +929,26 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     usage_log: list = []
     t_start = time.perf_counter()
 
+    # Probe Content-Type so we can route PDFs through pdf_to_markdown
+    # instead of html_to_markdown. Browser's PDF viewer renders via a
+    # plugin/iframe so the bookmarklet's html2canvas can't capture PDFs;
+    # this path lets PDFs work via the URL endpoint instead.
+    is_pdf = False
     try:
-        md_result = await asyncio.to_thread(html_to_markdown, url.strip(), timings)
+        head = await asyncio.to_thread(_probe_url_head, url.strip())
+        ctype = (head or "").lower()
+        is_pdf = "application/pdf" in ctype
+        print(f"[EXTRACT] HEAD Content-Type: {ctype!r} -> {'PDF' if is_pdf else 'HTML'} path")
+    except Exception as e:
+        print(f"[WARN] Content-Type probe failed (assuming HTML): {e}")
+
+    try:
+        if is_pdf:
+            md_result = await asyncio.to_thread(
+                pdf_url_to_markdown, url.strip(), timings, usage_log
+            )
+        else:
+            md_result = await asyncio.to_thread(html_to_markdown, url.strip(), timings)
     except HTTPException:
         raise
     except Exception as e:
