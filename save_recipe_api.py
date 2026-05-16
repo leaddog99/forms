@@ -534,20 +534,17 @@ async def save_recipe(request: Request):
                 now,
                 now
             ))
-            # If the recipe has a source URL, make sure the metabase_url row
-            # exists (and bump last_accessed). Moz scoring happens inline
-            # when a brand-new URL is seen and creds are configured.
-            # We then denormalize the scores into recipe._scoring so they
-            # travel with the recipe — the metabase_url row stays canonical.
+            # If the recipe has a source URL — including self-minted /r/<id>
+            # URLs — make sure the metabase_url row exists (and bump
+            # last_accessed). Moz scoring happens inline when a brand-new
+            # URL is seen and creds are configured. We then denormalize the
+            # scores into recipe._scoring so they travel with the recipe.
             #
-            # SKIP for self-minted URLs (_source.type == "local"): those
-            # point back at our own /r/<recipe_id> route, and Moz-scoring
-            # our own tunnel domain returns a meaningless PA/DA (we have
-            # zero inbound links to that hostname). Without this guard the
-            # recipe's _scoring block fills with garbage Moz numbers and
-            # the form misleadingly displays them as quality signals.
-            is_self_url = (source.get("type") == "local")
-            if normalized_source_url and not is_self_url:
+            # Self-URLs get scored too: PA/DA on recipes.tbotb.com start
+            # low (zero inbound links on day 1) but grow organically as
+            # the site accrues backlinks. Day-1 truthful low numbers beat
+            # never seeing the domain mature.
+            if normalized_source_url:
                 fallback_title = (
                     (recipe_dict.get("_scoring") or {}).get("rawTitle")
                     or recipe_dict.get("name")
