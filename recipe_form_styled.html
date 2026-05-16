@@ -1111,7 +1111,10 @@
       // they reflect the last extract action, not the loaded record.
       const urlInput = document.getElementById("extractUrlInput");
       if (urlInput) urlInput.value = "";
-      if (typeof clearExtractionTrace === 'function') clearExtractionTrace();
+      // Don't clear the trace here — we re-render from the loaded recipe's
+      // _extract_trace below if it exists, so a sidebar click on a saved
+      // recipe shows the timings/prompt from when it was last extracted.
+      // clearExtractionTrace was wiping that work before it could land.
       document.getElementById("recipe_id").value = recipe.recipe_id;
       document.getElementById("recipe_seq_id").value = recipe.id != null ? recipe.id : "";
       document.getElementById("name").value = r.name || "";
@@ -1192,6 +1195,18 @@
       // fields the form has no UI for (provenance, classification, nutrition,
       // _scoring, etc.). Same passthrough mechanism the extract path uses.
       lastExtractedRecipe = r;
+
+      // Restore the extraction trace panel from the saved record so the
+      // user can see when/how this recipe was extracted, not just records
+      // they just extracted in this session.
+      const savedTrace = r._extract_trace;
+      if (savedTrace) {
+        lastExtractionTrace = savedTrace;
+        renderExtractionTrace(savedTrace.timings, savedTrace.prompts);
+      } else {
+        lastExtractionTrace = null;
+        if (typeof clearExtractionTrace === 'function') clearExtractionTrace();
+      }
 
       // Auto-open and refresh the metadata panel so Moz scores show without
       // requiring a manual "Show metadata" click.
@@ -1343,6 +1358,14 @@
         if (r0.aggregateRating) payload.aggregateRating = r0.aggregateRating;
         if (r0.video) payload.video = r0.video;
         if (r0.current_status) payload.current_status = r0.current_status;
+        // _extract_trace round-trips so the timings/prompt panel survives a
+        // sidebar reload. lastExtractionTrace wins over r0._extract_trace
+        // when both exist (last-extract is the freshest reality).
+        if (lastExtractionTrace) {
+          payload._extract_trace = lastExtractionTrace;
+        } else if (r0._extract_trace) {
+          payload._extract_trace = r0._extract_trace;
+        }
       }
 
       const res = await fetch(`${API}/recipes`, {
@@ -1430,6 +1453,8 @@
       // Drop any stashed passthrough fields so the next save doesn't carry
       // provenance/classification/etc. from a previously loaded record.
       lastExtractedRecipe = null;
+      lastExtractionTrace = null;
+      if (typeof clearExtractionTrace === 'function') clearExtractionTrace();
       const driftBanner = document.getElementById('sourceDriftBanner');
       if (driftBanner) driftBanner.style.display = 'none';
       feedback.textContent = "";
@@ -1980,6 +2005,18 @@
     // of dropping them on the floor.
     let lastExtractedRecipe = null;
 
+    // Last extraction trace (timings + prompts + token usage). Persisted to
+    // the saved recipe at recipe._extract_trace so reloads can re-render it.
+    let lastExtractionTrace = null;
+    function captureExtractionTrace(result) {
+      lastExtractionTrace = {
+        timings: result._timings || null,
+        prompts: result._prompt || null,
+        usage: result._usage || null,
+        captured_at: new Date().toISOString(),
+      };
+    }
+
     errorDialogCloseBtn.addEventListener('click', () => errorDialog.close());
     errorDialogImageBtn.addEventListener('click', async () => {
       errorDialog.close();
@@ -2094,6 +2131,7 @@
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
+          captureExtractionTrace(result);
           renderExtractionTrace(result._timings, result._prompt);
           if (!recipeLooksComplete(result.recipe)) {
             showErrorDialog({
@@ -2144,6 +2182,7 @@
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
+          captureExtractionTrace(result);
           renderExtractionTrace(result._timings, result._prompt);
           if (!recipeLooksComplete(result.recipe)) {
             showErrorDialog({
@@ -2201,6 +2240,7 @@
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
+          captureExtractionTrace(result);
           renderExtractionTrace(result._timings, result._prompt);
           if (!recipeLooksComplete(result.recipe)) {
             const missing = [];
@@ -2268,6 +2308,7 @@
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
+          captureExtractionTrace(result);
           renderExtractionTrace(result._timings, result._prompt);
 
           if (!recipeLooksComplete(result.recipe)) {
