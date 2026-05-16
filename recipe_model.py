@@ -1,5 +1,12 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Union
+# TODO (revisit): add a sourceImage field to RecipeModel to retain the original
+# image used during AI extraction. Useful during edit for cross-referencing
+# handwritten notes the extractor may have missed. See matching TODOs in
+# save_recipe_api.py (storage on /extract) and recipe_form_styled.html (UI).
+# Decide: single field vs. list (re-extractions / multi-page sources), URL vs.
+# stored path, and back-fill strategy for existing records.
+
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional, Union, Literal
 from datetime import datetime
 import os
 
@@ -16,7 +23,7 @@ class NutritionInfo(BaseModel):
 
 class HowToStep(BaseModel):
     type: str = Field(default="HowToStep", alias="@type")
-    position: int
+    position: Optional[int] = None
     name: Optional[str] = None
     text: str
     image: Optional[str] = None
@@ -56,8 +63,34 @@ class SourceInfo(BaseModel):
     type: Optional[str] = ""
     origin: Optional[str] = ""
     originalUrl: Optional[str] = ""
+    affiliateUrl: Optional[str] = ""
+
+# Pipeline-side metadata. Defaults are empty so interactive saves don't have to
+# populate them; batch stages fill them in over time.
+class ScoringMetadata(BaseModel):
+    pageAuthority: float = 0.0
+    domainAuthority: float = 0.0
+    ouScore: float = 0.0
+    rootDomain: str = ""
+    rawTitle: str = ""
+    iconUrl: str = ""
+    recipeScore: int = 0
+    recipeScoreThreshold: int = 0
+
+class ClassificationMetadata(BaseModel):
+    confidence: int = 0
+    reasoning: str = ""
+    hierarchyPath: str = ""
+    story: str = ""
+
+class StatusField(BaseModel):
+    value: Literal["accepted", "rejected"]
+    reason: Optional[str] = None
+    timestamp: Optional[str] = None
 
 class RecipeModel(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
     context: Optional[str] = Field(default="https://schema.org", alias="@context")
     type: Optional[str] = Field(default="Recipe", alias="@type")
     id: Optional[str] = ""
@@ -88,10 +121,20 @@ class RecipeModel(BaseModel):
     provenance: Optional[Provenance] = None
     imageSource: Optional[str] = ""
     inputImage: Optional[str] = None
-    _imported_from: Optional[str] = ""
-    _editor_version: Optional[str] = ""
-    _access: Optional[AccessControl] = None
-    _source: Optional[SourceInfo] = None
+    imported_from: Optional[str] = Field(default="", alias="_imported_from")
+    editor_version: Optional[str] = Field(default="", alias="_editor_version")
+    access: Optional[AccessControl] = Field(default=None, alias="_access")
+    source: Optional[SourceInfo] = Field(default=None, alias="_source")
+    scoring: Optional[ScoringMetadata] = Field(default=None, alias="_scoring")
+    classification: Optional[ClassificationMetadata] = None
+    current_status: Optional[StatusField] = None
+
+    @field_validator('servingSuggestions', mode='before')
+    @classmethod
+    def convert_serving_suggestions(cls, v):
+        if isinstance(v, list):
+            return ", ".join(str(item) for item in v if item)
+        return v
 
     def is_nullish(self, value):
         return value in [None, "", [], {}, "null", "None"] or (
@@ -129,6 +172,42 @@ class RecipeModel(BaseModel):
 
         if self.prefers_dish_image():
             base = f"A plated, fully prepared version of '{self.name}',"
+
+            # Add equipment context for proper shape/presentation
+            if self.equipment:
+                equipment_names = []
+                for item in self.equipment:
+                    if hasattr(item, 'name') and item.name:
+                        equipment_names.append(item.name.lower())
+                    elif isinstance(item, dict) and 'name' in item:
+                        equipment_names.append(item['name'].lower())
+                    elif isinstance(item, str):
+                        equipment_names.append(item.lower())
+
+                if equipment_names:
+                    equipment_text = ", ".join(equipment_names)
+                    if any(word in equipment_text for word in ['pie', 'round', 'circular']):
+                        base += f" in a round {equipment_text},"
+                    elif any(word in equipment_text for word in ['baking dish', 'casserole', 'pan']):
+                        base += f" in a {equipment_text},"
+                    else:
+                        base += f" using {equipment_text},"
+
+            # Add cooking method context
+            if self.cookingMethod and not self.is_nullish(self.cookingMethod):
+                method = self.cookingMethod.lower()
+                if 'baking' in method or 'baked' in method:
+                    base += f" golden and bubbling from baking,"
+                elif 'frying' in method or 'fried' in method:
+                    base += f" with crispy, golden edges from frying,"
+                elif 'grilling' in method or 'grilled' in method:
+                    base += f" with grill marks and charred edges,"
+
+            # Extract visual details from instructions
+            visual_details = self._extract_visual_details_from_instructions()
+            if visual_details:
+                base += f" {visual_details},"
+
             if self.servingSuggestions and not self.is_nullish(self.servingSuggestions):
                 base += f" served with {self.servingSuggestions.strip().rstrip('.')},"
             if self.recipeCuisine and not self.is_nullish(self.recipeCuisine):
@@ -142,3 +221,58 @@ class RecipeModel(BaseModel):
             return f"Stylized flat-lay image of the key ingredients for '{self.name}': " + \
                 ", ".join(self.recipeIngredient or []) + \
                 ". Clean composition, soft shadows, cookbook illustration style."
+
+    def _extract_visual_details_from_instructions(self) -> str:
+        """Extract visual presentation details from recipe instructions"""
+        if not self.recipeInstructions:
+            return ""
+
+        visual_keywords = {
+            'garnish': ['garnish', 'top with', 'sprinkle', 'arrange', 'decorate'],
+            'texture': ['golden', 'brown', 'crispy', 'bubbly', 'bubbling', 'melted', 'caramelized'],
+            'appearance': ['fancy', 'elegant', 'beautiful', 'attractive', 'colorful'],
+            'placement': ['center', 'around', 'on top', 'between', 'in the middle'],
+            'final_touch': ['finish', 'final', 'serve', 'present', 'display']
+        }
+
+        visual_details = []
+
+        for step in self.recipeInstructions:
+            if not step or not hasattr(step, 'text') or not step.text:
+                continue
+
+            step_text = step.text.lower()
+
+            # Look for garnish and topping details
+            if any(keyword in step_text for keyword in visual_keywords['garnish']):
+                # Extract specific garnish items
+                if 'olive' in step_text:
+                    visual_details.append("topped with olives")
+                if 'asparagus' in step_text and 'tip' in step_text:
+                    visual_details.append("garnished with asparagus tips")
+                if 'cheese' in step_text and any(word in step_text for word in ['slice', 'grated', 'melted']):
+                    visual_details.append("with melted cheese on top")
+                if 'herb' in step_text or 'parsley' in step_text or 'cilantro' in step_text:
+                    visual_details.append("garnished with fresh herbs")
+
+            # Look for texture/appearance cues
+            if any(keyword in step_text for keyword in visual_keywords['texture']):
+                if 'golden' in step_text and 'brown' in step_text:
+                    visual_details.append("golden brown and crispy")
+                elif 'bubbly' in step_text or 'bubbling' in step_text:
+                    visual_details.append("bubbling hot")
+                elif 'golden' in step_text:
+                    visual_details.append("golden colored")
+                elif 'caramelized' in step_text:
+                    visual_details.append("with caramelized edges")
+
+            # Look for specific plating/presentation instructions
+            if 'fancy' in step_text and 'top' in step_text:
+                # Extract the fancy topping description
+                fancy_parts = step_text.split('fancy top')[1] if 'fancy top' in step_text else ""
+                if fancy_parts and len(fancy_parts) < 100:  # Keep it reasonable length
+                    visual_details.append(f"elegantly presented{fancy_parts.split('.')[0]}")
+
+        # Remove duplicates and join
+        unique_details = list(dict.fromkeys(visual_details))  # Preserves order
+        return ", ".join(unique_details[:3])  # Limit to 3 most important details
