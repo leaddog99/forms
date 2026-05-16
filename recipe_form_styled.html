@@ -1066,6 +1066,12 @@
   <script>
     // Talk to whichever server served this page so the same file works on
     // 8008 / 8009 / dev / prod without hardcoded ports.
+    // Disable browser scroll restoration so reloads / window.open() always
+    // start at the top of the form. Without this, Chrome/Edge remember the
+    // prior scroll position and you land mid-page on reload.
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    window.scrollTo(0, 0);
+
     const API = window.location.origin;
     const listEl = document.getElementById("recipeList");
     const feedback = document.getElementById("feedback");
@@ -1106,6 +1112,9 @@
     }
 
     function loadForm(recipe) {
+      // Scroll to top so the user sees the loaded recipe's name + feedback
+      // banner, not wherever they were scrolled on the previous record.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       const r = recipe.data;
       // Clear extraction inputs that aren't part of the recipe itself —
       // they reflect the last extract action, not the loaded record.
@@ -1379,6 +1388,9 @@
         const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
         const verb = result.adopted ? 'updated existing record' : 'saved successfully';
         showFeedback(`Recipe ${verb}!${seqMsg}`, 'success');
+        // Return to top so the user sees the feedback banner and the recipe
+        // name at the top of the page after save.
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         // Server may have adopted an existing recipe_id (same URL+user).
         // Reflect that back on the form so the displayed UUID matches DB.
         if (result.recipe_id) document.getElementById("recipe_id").value = result.recipe_id;
