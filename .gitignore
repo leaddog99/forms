@@ -1,0 +1,47 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Claude Code state
+.claude/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# JetBrains per-machine state (project files stay tracked; data-source
+# files and workspace UI state are machine-specific)
+.idea/dataSources.local.xml
+.idea/dataSources/
+.idea/data_source_mapping.xml
+.idea/workspace.xml
+
+# Recipe-pipeline runtime artifacts: every bookmarklet capture writes a PNG
+# into input/, and image extracts write there too. These are inputs to the
+# pipeline, not source to track. Subdirectories (e.g. input/pipeline/) are
+# tracked normally — only loose image files at input/ root are ignored.
+input/*.png
+input/*.jpg
+input/*.jpeg
+input/pipeline/__pycache__/
+input/__pycache__/
+extract/__pycache__/
+to_markdown/__pycache__/
+
+# Generated outputs (image gen, batch results)
+generated-images/
+batches/
+
+# Logs / temp DB tools
+recipe_server.log
+recipe_database.db
+recipes.sqbpro
+
+# Loose capture artifacts that landed in repo root
+/momsAsparagusAuGratin.png
