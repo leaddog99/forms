@@ -873,6 +873,42 @@
           </div>
         </section>
 
+        <!-- Origin & Story (LLM-inferred provenance + classification).
+             Other provenance fields (firstDocumented, traditionalContext,
+             notableVariations, relatedDishes, sources) pass through save
+             via lastExtractedRecipe but don't have form UI yet. -->
+        <section class="form-section">
+          <h3>Origin & Story</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="provenance_ethnicity">Ethnicity</label>
+              <input type="text" id="provenance_ethnicity" placeholder="Italian-American, Cajun, Sichuan" />
+            </div>
+            <div class="form-group">
+              <label for="provenance_region">Region of Origin</label>
+              <input type="text" id="provenance_region" placeholder="Naples, Italy / Louisiana, USA" />
+            </div>
+            <div class="form-group">
+              <label for="classification_hierarchy">Hierarchy Path</label>
+              <input type="text" id="classification_hierarchy" placeholder="main/braise/stew" />
+            </div>
+            <div class="form-group">
+              <label for="classification_confidence">Confidence (0–100)</label>
+              <input type="text" id="classification_confidence" placeholder="0" inputmode="numeric" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:12px">
+            <label for="classification_reasoning">Reasoning</label>
+            <textarea id="classification_reasoning" class="auto-grow" rows="2"
+                      placeholder="Why this provenance call — what the model inferred vs. quoted from the source"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="classification_story">Story</label>
+            <textarea id="classification_story" class="auto-grow" rows="4"
+                      placeholder="The dish's origin, what makes it distinctive, who eats it"></textarea>
+          </div>
+        </section>
+
         <!-- Chef's Notes -->
         <section class="form-section">
           <h3>Chef's Notes</h3>
@@ -1093,6 +1129,17 @@
       document.getElementById("cookingMethod").value = r.cookingMethod || "";
       document.getElementById("suitableForDiet").value = (r.suitableForDiet || []).join(", ");
 
+      // Origin & Story (LLM-inferred provenance + classification)
+      const prov = r.provenance || {};
+      document.getElementById("provenance_ethnicity").value = prov.ethnicity || "";
+      document.getElementById("provenance_region").value = prov.originRegion || "";
+      const cls = r.classification || {};
+      document.getElementById("classification_hierarchy").value = cls.hierarchyPath || "";
+      document.getElementById("classification_confidence").value =
+        (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "";
+      document.getElementById("classification_reasoning").value = cls.reasoning || "";
+      document.getElementById("classification_story").value = cls.story || "";
+
       // Notes
       notesList.innerHTML = '';
       const notesArr = (r.notes || '').split('\n').filter(Boolean);
@@ -1218,6 +1265,24 @@
       const keywords = document.getElementById("keywords").value.split(/[,\n]/).map(k => k.trim()).filter(Boolean);
       const diets = document.getElementById("suitableForDiet").value.split(',').map(d => d.trim()).filter(Boolean);
 
+      // Provenance + classification: the form exposes a subset of each
+      // (ethnicity, originRegion; hierarchyPath, confidence, reasoning,
+      // story). Other sub-fields (firstDocumented, traditionalContext,
+      // notableVariations, relatedDishes, sources) come through the
+      // lastExtractedRecipe passthrough below and are merged so the
+      // form-edited keys win and everything else survives.
+      const confidenceStr = document.getElementById("classification_confidence").value.trim();
+      const userProvenance = {
+        ethnicity: document.getElementById("provenance_ethnicity").value,
+        originRegion: document.getElementById("provenance_region").value,
+      };
+      const userClassification = {
+        hierarchyPath: document.getElementById("classification_hierarchy").value,
+        confidence: confidenceStr === "" ? 0 : (parseInt(confidenceStr, 10) || 0),
+        reasoning: document.getElementById("classification_reasoning").value,
+        story: document.getElementById("classification_story").value,
+      };
+
       const payload = {
         recipe_id: document.getElementById("recipe_id").value || undefined,
         name: document.getElementById("name").value,
@@ -1245,17 +1310,24 @@
           type: "cookbook"
         },
         author: { "@type": "Person", name: document.getElementById("author").value },
-        image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : []
+        image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : [],
+        provenance: userProvenance,
+        classification: userClassification
       };
 
       // Pass-through fields the form has no UI for. Sourced from the last
       // extracted (or sidebar-loaded) recipe so LLM-inferred and pipeline
       // metadata actually land in the saved record on both new extracts
-      // and re-saves of existing records.
+      // and re-saves of existing records. For provenance/classification
+      // the form-edited keys win and the passthrough fills the gaps.
       if (lastExtractedRecipe) {
         const r0 = lastExtractedRecipe;
-        if (r0.provenance) payload.provenance = r0.provenance;
-        if (r0.classification) payload.classification = r0.classification;
+        if (r0.provenance) {
+          payload.provenance = { ...r0.provenance, ...payload.provenance };
+        }
+        if (r0.classification) {
+          payload.classification = { ...r0.classification, ...payload.classification };
+        }
         if (r0._scoring) payload._scoring = r0._scoring;
         if (r0.nutrition) payload.nutrition = r0.nutrition;
         if (r0.aggregateRating) payload.aggregateRating = r0.aggregateRating;
@@ -2115,6 +2187,17 @@
       document.getElementById("recipeCuisine").value = r.recipeCuisine || "";
       document.getElementById("cookingMethod").value = r.cookingMethod || "";
       document.getElementById("suitableForDiet").value = (r.suitableForDiet || []).join(", ");
+
+      // Origin & Story (LLM-inferred provenance + classification)
+      const prov = r.provenance || {};
+      document.getElementById("provenance_ethnicity").value = prov.ethnicity || "";
+      document.getElementById("provenance_region").value = prov.originRegion || "";
+      const cls = r.classification || {};
+      document.getElementById("classification_hierarchy").value = cls.hierarchyPath || "";
+      document.getElementById("classification_confidence").value =
+        (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "";
+      document.getElementById("classification_reasoning").value = cls.reasoning || "";
+      document.getElementById("classification_story").value = cls.story || "";
 
       // Notes
       notesList.innerHTML = '';
