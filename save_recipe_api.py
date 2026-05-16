@@ -57,9 +57,9 @@ try:
     from to_markdown.html_to_markdown import html_to_markdown
     from to_markdown.image_to_markdown import image_to_markdown, IMAGE_TO_MARKDOWN_PROMPT
     from to_markdown.markdown_passthrough import markdown_passthrough
-    from extract.markdown_to_recipe import markdown_to_recipe
+    from extract.markdown_to_recipe import markdown_to_recipe, SYSTEM_PROMPT as _MD_PROMPT
     from extract.jsonld_to_recipe import jsonld_to_recipe
-    from extract.enrich_recipe import enrich_recipe
+    from extract.enrich_recipe import enrich_recipe, SYSTEM_PROMPT as _ENRICH_PROMPT
 
     print("[OK] new to_markdown/extract layer imported successfully")
 except Exception as e:
@@ -77,7 +77,13 @@ try:
         ensure_bcc_token_journal_table,
         write_usage_entries,
     )
-    from input.pipeline.extract_cache import ensure_llm_extract_cache_table
+    from input.pipeline.extract_cache import (
+        ensure_llm_extract_cache_table,
+        get_cached_extract,
+        set_cached_extract,
+        compute_recipe_fingerprint,
+        prompt_version_for,
+    )
 
     print("[OK] url_utils / url_scoring imported successfully")
 except Exception as e:
@@ -91,6 +97,17 @@ DB_PATH = "recipes.db"
 # Placeholder user id until the user-identity field is wired into the form
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
 PLACEHOLDER_USER_ID = 1
+
+# Pipeline cache identity. One key shape for both the JSON-LD fast lane
+# (jsonld_to_recipe + enrich_recipe) and the markdown-LLM path
+# (markdown_to_recipe). When any of the three load-bearing prompts change,
+# the combined version flips and every cache row naturally invalidates.
+EXTRACT_MODEL = "gpt-4o-mini"
+EXTRACT_PROMPT_VERSION = prompt_version_for(
+    _MD_PROMPT + "\n---ENRICH---\n" + _ENRICH_PROMPT
+    + "\n---IMAGE---\n" + IMAGE_TO_MARKDOWN_PROMPT
+)
+print(f"[CACHE] EXTRACT_PROMPT_VERSION = {EXTRACT_PROMPT_VERSION}")
 
 
 def _journal_usage(usage_log, *, recipe_id=None):
@@ -108,6 +125,80 @@ def _journal_usage(usage_log, *, recipe_id=None):
             )
     except Exception as e:
         print(f"[WARN] token-journal write failed: {e}")
+
+
+def _extract_cache_lookup(url_normalized, *, usage_log=None):
+    """Endpoint-side cache lookup. Returns (recipe_or_None, prior_fingerprint, status).
+
+    Status is one of: 'hit' (fresh, recipe returned), 'refresh' (stale row
+    exists, prior fingerprint returned for drift comparison after re-extract),
+    'miss' (no row), 'skip' (no URL — caching not applicable).
+    On a fresh hit, journals a zero-token 'cache_hit_extract' entry."""
+    if not url_normalized:
+        print(f"     CACHE LOOKUP: skip (no url)")
+        return None, "", "skip"
+    cached = get_cached_extract(
+        DB_PATH,
+        url_normalized=url_normalized,
+        model=EXTRACT_MODEL,
+        prompt_version=EXTRACT_PROMPT_VERSION,
+    )
+    print(f"     CACHE LOOKUP: url={url_normalized!r} -> "
+          f"{'no row' if cached is None else ('stale' if cached['is_stale'] else 'fresh hit')}")
+    if cached and not cached["is_stale"]:
+        if usage_log is not None:
+            usage_log.append({
+                "operation": "cache_hit_extract",
+                "model": EXTRACT_MODEL,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "meta": {
+                    "cache_key_url": url_normalized,
+                    "cached_at": cached["cached_at"],
+                },
+            })
+        return cached["llm_output"], "", "hit"
+    if cached:
+        return None, cached["semantic_fingerprint"], "refresh"
+    return None, "", "miss"
+
+
+def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
+    """Endpoint-side cache write. Computes the recipe fingerprint, stores
+    the row (or replaces the stale one), and returns (final_status,
+    drift_detected). drift_detected fires only when a prior fingerprint
+    existed and the new one differs from it."""
+    if not url_normalized or not recipe:
+        return ("skip" if not url_normalized else "miss"), False
+    new_fp = compute_recipe_fingerprint(recipe)
+    drift = bool(prior_fingerprint and prior_fingerprint != new_fp)
+    print(f"     CACHE WRITE: url={url_normalized!r} fp={new_fp[:12]} "
+          f"prior_fp={prior_fingerprint[:12] if prior_fingerprint else '-'} "
+          f"drift={drift}")
+    set_cached_extract(
+        DB_PATH,
+        url_normalized=url_normalized,
+        model=EXTRACT_MODEL,
+        prompt_version=EXTRACT_PROMPT_VERSION,
+        llm_output=recipe,
+        semantic_fingerprint=new_fp,
+    )
+    if drift:
+        return "refresh-drift", True
+    if prior_fingerprint:
+        return "refresh-fresh", False
+    return "miss", False
+
+
+def _stamp_cache_timings(timings, *, status, url_normalized, drift=False):
+    """Push cache state into the extract trace so the form can render it."""
+    if timings is None:
+        return
+    timings["cache"] = status
+    timings["cache_key_url"] = url_normalized or "(no url — cache skipped)"
+    if drift and url_normalized:
+        timings["source_drift"] = True
+        timings["drift_url"] = url_normalized
 
 
 def _maybe_stamp_source_drift(timings, *, user_id):
@@ -513,51 +604,62 @@ async def extract_from_image_endpoint(
         usage_log: list = []
         t_start = time.perf_counter()
 
-        try:
-            md = await asyncio.to_thread(image_to_markdown, str(temp_path),
-                                         timings=timings, usage_log=usage_log)
-        except Exception as e:
-            print(f"[ERROR] image_to_markdown failed: {e}")
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}")
-
-        if not md or not md.strip():
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail="Vision step returned empty markdown")
-
-        # Stash the vision-stage prompt so the UI can surface it. Use a
-        # sub-key to avoid colliding with markdown_to_recipe's prompts.
-        prompts["vision"] = {
-            "model": "gpt-4o",
-            "system_prompt": IMAGE_TO_MARKDOWN_PROMPT,
-        }
-
-        try:
-            recipe = await asyncio.to_thread(
-                markdown_to_recipe,
-                md,
-                source_name=image.filename or "",
-                source_url=source_url,
-                title=title,
-                timings=timings,
-                prompts=prompts,
-                usage_log=usage_log,
-                cache_db_path=DB_PATH,
-            )
-        except Exception as e:
-            print(f"[ERROR] markdown_to_recipe failed: {e}")
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+        # Endpoint-level cache: when the bookmarklet supplies a source_url,
+        # a previously-extracted recipe for that URL skips both the vision
+        # OCR call AND the markdown-extract LLM call.
+        url_norm = normalize_url(source_url) if source_url else ""
+        recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+        drift = False
+        path_used = "cache-hit" if recipe is not None else "image-llm"
 
         if recipe is None:
-            print("[ERROR] Extraction failed - no result")
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail="Failed to extract recipe from image")
+            try:
+                md = await asyncio.to_thread(image_to_markdown, str(temp_path),
+                                             timings=timings, usage_log=usage_log)
+            except Exception as e:
+                print(f"[ERROR] image_to_markdown failed: {e}")
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}")
+
+            if not md or not md.strip():
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail="Vision step returned empty markdown")
+
+            # Stash the vision-stage prompt so the UI can surface it. Use a
+            # sub-key to avoid colliding with markdown_to_recipe's prompts.
+            prompts["vision"] = {
+                "model": "gpt-4o",
+                "system_prompt": IMAGE_TO_MARKDOWN_PROMPT,
+            }
+
+            try:
+                recipe = await asyncio.to_thread(
+                    markdown_to_recipe,
+                    md,
+                    source_name=image.filename or "",
+                    source_url=source_url,
+                    title=title,
+                    timings=timings,
+                    prompts=prompts,
+                    usage_log=usage_log,
+                )
+            except Exception as e:
+                print(f"[ERROR] markdown_to_recipe failed: {e}")
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+            if recipe is None:
+                print("[ERROR] Extraction failed - no result")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail="Failed to extract recipe from image")
+
+            cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
         timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-        timings["path"] = "image-llm"
+        timings["path"] = path_used
+        _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
         # Stamp the minted UUID onto the recipe so the form picks it up.
         recipe["id"] = new_recipe_id
@@ -627,31 +729,40 @@ async def extract_from_markdown_endpoint(
         prompts: dict = {}
         usage_log: list = []
         t_start = time.perf_counter()
-        try:
-            recipe = await asyncio.to_thread(
-                markdown_to_recipe,
-                effective_md,
-                source_name=source_name,
-                source_url=effective_url,
-                title=effective_title,
-                timings=timings,
-                prompts=prompts,
-                usage_log=usage_log,
-                cache_db_path=DB_PATH,
-            )
-        except Exception as e:
-            print(f"[ERROR] Extraction failed: {e}")
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+        url_norm = normalize_url(effective_url) if effective_url else ""
+        recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+        drift = False
+        path_used = "cache-hit" if recipe is not None else "markdown-llm"
 
         if recipe is None:
-            print("[ERROR] Extraction failed - no result")
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
+            try:
+                recipe = await asyncio.to_thread(
+                    markdown_to_recipe,
+                    effective_md,
+                    source_name=source_name,
+                    source_url=effective_url,
+                    title=effective_title,
+                    timings=timings,
+                    prompts=prompts,
+                    usage_log=usage_log,
+                )
+            except Exception as e:
+                print(f"[ERROR] Extraction failed: {e}")
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+            if recipe is None:
+                print("[ERROR] Extraction failed - no result")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
+
+            cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
         timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-        timings["path"] = "markdown-llm"
+        timings["path"] = path_used
+        _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
@@ -707,57 +818,68 @@ async def extract_from_url_endpoint(url: str = Form(...)):
           f"markdown_len={len(md_result['markdown'])} "
           f"source_url={md_result['source_url']!r}")
 
-    # Fast lane: when the page ships complete schema.org Recipe JSON-LD, parse
-    # it directly (no LLM) and run only a small enrichment LLM call for
-    # provenance + classification. Falls through to the big-prompt path if
-    # JSON-LD is missing or lacks required fields.
-    recipe = None
+    # Endpoint-level cache check covers both the JSON-LD fast lane and the
+    # markdown-LLM path — whichever path originally produced the recipe, a
+    # repeat extract on the same URL short-circuits to the cached result.
+    url_norm = normalize_url(md_result["source_url"]) if md_result["source_url"] else ""
+    recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+    drift = False
     path_used = ""
-    if md_result.get("jsonld"):
-        try:
-            recipe = await asyncio.to_thread(
-                jsonld_to_recipe,
-                md_result["jsonld"][0],
-                source_url=md_result["source_url"],
-                title=md_result["title"],
-                timings=timings,
-            )
-        except Exception as e:
-            print(f"[WARN] jsonld_to_recipe raised, will fall back: {e}")
-            recipe = None
-        if recipe is not None:
+
+    if recipe is not None:
+        path_used = "cache-hit"
+    else:
+        # Fast lane: when the page ships complete schema.org Recipe JSON-LD,
+        # parse it directly (no LLM) and run only a small enrichment LLM
+        # call for provenance + classification. Falls through to the
+        # big-prompt path if JSON-LD is missing or lacks required fields.
+        if md_result.get("jsonld"):
             try:
                 recipe = await asyncio.to_thread(
-                    enrich_recipe,
-                    recipe,
+                    jsonld_to_recipe,
+                    md_result["jsonld"][0],
+                    source_url=md_result["source_url"],
+                    title=md_result["title"],
+                    timings=timings,
+                )
+            except Exception as e:
+                print(f"[WARN] jsonld_to_recipe raised, will fall back: {e}")
+                recipe = None
+            if recipe is not None:
+                try:
+                    recipe = await asyncio.to_thread(
+                        enrich_recipe,
+                        recipe,
+                        timings=timings,
+                        prompts=prompts,
+                        usage_log=usage_log,
+                    )
+                    path_used = "jsonld-direct"
+                except Exception as e:
+                    print(f"[WARN] enrich_recipe raised, keeping unenriched recipe: {e}")
+                    path_used = "jsonld-direct-unenriched"
+
+        if recipe is None:
+            try:
+                recipe = await asyncio.to_thread(
+                    markdown_to_recipe,
+                    md_result["markdown"],
+                    source_name="",
+                    source_url=md_result["source_url"],
+                    title=md_result["title"],
                     timings=timings,
                     prompts=prompts,
                     usage_log=usage_log,
                 )
-                path_used = "jsonld-direct"
+                path_used = "markdown-llm"
             except Exception as e:
-                print(f"[WARN] enrich_recipe raised, keeping unenriched recipe: {e}")
-                path_used = "jsonld-direct-unenriched"
+                print(f"[ERROR] Extraction failed: {e}")
+                print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
-    if recipe is None:
-        try:
-            recipe = await asyncio.to_thread(
-                markdown_to_recipe,
-                md_result["markdown"],
-                source_name="",
-                source_url=md_result["source_url"],
-                title=md_result["title"],
-                timings=timings,
-                prompts=prompts,
-                usage_log=usage_log,
-                cache_db_path=DB_PATH,
-            )
-            path_used = "markdown-llm"
-        except Exception as e:
-            print(f"[ERROR] Extraction failed: {e}")
-            print(f"[ERROR] Traceback: {traceback.format_exc()}")
-            _journal_usage(usage_log, recipe_id=new_recipe_id)
-            raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+        if recipe is not None:
+            cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
     if recipe is None:
         _journal_usage(usage_log, recipe_id=new_recipe_id)
@@ -765,6 +887,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
     timings["path"] = path_used
+    _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
     recipe["id"] = new_recipe_id
     # Journal LLM token usage before returning.
