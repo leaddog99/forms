@@ -1865,32 +1865,31 @@
       const items = e.clipboardData && e.clipboardData.items;
       if (!items || items.length === 0) return;
 
-      // Pass 1: file items (image, PDF). Browsers usually surface
-      // screenshots and copied files as kind='file'.
+      // Pass 1: file items. Routes through handleDroppedFile so paste and
+      // drag-and-drop dispatch identically — image, PDF, and .md files all
+      // work from Explorer/Finder copy + Ctrl-V.
       for (const item of items) {
         if (item.kind !== 'file') continue;
         const file = item.getAsFile();
         if (!file) continue;
-        if (file.type && file.type.startsWith('image/')) {
+        const supported = (file.type && file.type.startsWith('image/')) ||
+                          isPdfFile(file) || isMarkdownFile(file);
+        if (supported) {
           e.preventDefault();
-          console.log('[paste] -> extractFromImage');
-          showFeedback('Extracting from pasted image…', 'info');
-          extractFromImage(file);
-          return;
-        }
-        if (isPdfFile(file)) {
-          e.preventDefault();
-          console.log('[paste] -> extractFromPdf');
-          showFeedback('Extracting from pasted PDF…', 'info');
-          extractFromPdf(file);
+          console.log('[paste] -> handleDroppedFile', {name: file.name, type: file.type});
+          showFeedback('Extracting from pasted file…', 'info');
+          handleDroppedFile(file);
           return;
         }
       }
 
-      // Pass 2: plain text. Single-line URL goes to the URL endpoint;
-      // anything else is treated as markdown.
+      // Pass 2: text items. text/plain and text/markdown are both treated as
+      // markdown bodies; a single-line http(s) URL is routed to /extract-from-url
+      // instead. Some apps put markdown content under text/markdown; some
+      // under text/plain — accept both.
       for (const item of items) {
-        if (item.kind !== 'string' || item.type !== 'text/plain') continue;
+        if (item.kind !== 'string') continue;
+        if (item.type !== 'text/plain' && item.type !== 'text/markdown') continue;
         e.preventDefault();
         item.getAsString((text) => {
           const trimmed = (text || '').trim();
@@ -1901,7 +1900,7 @@
             if (urlInput) urlInput.value = trimmed;
             extractFromUrl(trimmed);
           } else {
-            console.log('[paste] -> extractFromMarkdown');
+            console.log('[paste] -> extractFromMarkdown (text body)');
             const file = new File([trimmed], 'pasted.md', { type: 'text/markdown' });
             extractFromMarkdown(file);
           }
