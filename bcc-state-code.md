@@ -350,6 +350,24 @@ Verified end-to-end:
 
 Caveat / known gap: the fast-lane JSON-LD path (`/extract-from-url` when JSON-LD is complete) doesn't go through `markdown_to_recipe` and therefore doesn't participate in cache or drift detection. That's intentional for now — caching the cheap path isn't worth it — but it means drift won't fire on those URLs unless they fall through to the markdown path.
 
+### Cache was actually broken — moved to endpoint layer
+
+The "caveat" above wasn't a caveat, it was the bug. User retested after the initial commit and saw `0 rows` in `llm_extract_cache` and no cache entries in the metadata trace. Diagnosis: NYT / Kitchn / AllRecipes / most major recipe sites all hit the JSON-LD fast lane in `/extract-from-url`, which goes `jsonld_to_recipe` → `enrich_recipe` and never touches `markdown_to_recipe`. The cache I shipped only lived inside `markdown_to_recipe`, so every re-extract on a JSON-LD URL burned a fresh `enrich_recipe` LLM call regardless of how recently we'd done it.
+
+Two follow-up commits:
+
+- `467e7fd` added a `Cache` and `Cache key URL` row to the form's extraction-trace timings table plus diagnostic `CACHE LOOKUP` / `CACHE WRITE` / `CACHE WRITE SKIPPED` prints to the server log. This is what surfaced the underlying bug — the trace showed `(no url — cache skipped)` (well, would have if the cache code had been called at all), and the server log showed no CACHE prints, proving `markdown_to_recipe` wasn't being invoked.
+- `608e2a7` moved the cache out of `markdown_to_recipe` and up into each `/extract-from-*` endpoint:
+  - `EXTRACT_MODEL = "gpt-4o-mini"` and `EXTRACT_PROMPT_VERSION = prompt_version_for(MD_PROMPT + ENRICH_PROMPT + IMAGE_TO_MARKDOWN_PROMPT)` — one combined version, so any change to any pipeline prompt invalidates every row. Printed at startup so you can see when it flips.
+  - `_extract_cache_lookup(url_normalized, usage_log=...)` returns `(recipe_or_None, prior_fingerprint, status)`. Fresh hit journals `cache_hit_extract` with zero tokens; stale row hands back the prior fingerprint for drift comparison.
+  - `_extract_cache_write(url_normalized, recipe, prior_fingerprint=...)` computes the semantic fingerprint, stores the row, returns `(final_status, drift_detected)`.
+  - `_stamp_cache_timings(timings, status=..., url_normalized=..., drift=...)` pushes the cache state into the response trace so the form renders it.
+- Each endpoint now wraps extraction in lookup → extract → write. `/extract-from-image` benefits the most: a cache hit short-circuits BOTH the vision OCR call AND the markdown-extract call.
+
+`markdown_to_recipe` got its `cache_db_path` arg, cache-lookup block, cache-write block, drift-detection block, and diagnostic prints all stripped out. The function is back to "one LLM call, return validated recipe" — caching is a concern of the endpoint layer, where the URL is established and the path (fast-lane vs. markdown vs. image) is chosen.
+
+Verified live: same NYT URL extracted twice, second call returned in **436 ms** vs. a fresh extract that takes the usual ~25 s. The journal row for the hit is `cache_hit_extract` with zero tokens. `llm_extract_cache` now actually has rows.
+
 ---
 
 ## Done
@@ -402,7 +420,11 @@ Caveat / known gap: the fast-lane JSON-LD path (`/extract-from-url` when JSON-LD
 - Self-heal Moz scores on `GET /url-metadata` when `moz_last_scored` is null — commit `2248654`
 - Windows charmap encoding fix: `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at module init of `save_recipe_api.py`. Stops the "Bad input: 'charmap' codec can't encode character '℉'" failure mode — commit `d81bcf9`
 - LLM extract cache table (`llm_extract_cache`) + `input/pipeline/extract_cache.py` helpers; threaded through `markdown_to_recipe` via `cache_db_path` kwarg; cache hits journaled as `cache_hit_markdown_to_recipe` with zero tokens. Initial design used `(url_normalized, markdown_hash, model, prompt_version)` as the cache key — commit `ec0d41e`.
-- Cache-key simplification + drift detection: PK now `(url_normalized, model, prompt_version)` + TTL (`EXTRACT_CACHE_TTL_DAYS = 30`, tunable per call); `semantic_fingerprint` (sha256 of name + ingredients[] + instruction-texts[]) stored on each cache row; on TTL-expired re-extract whose new fingerprint differs from the cached one, `recipes.source_changed_at` is stamped on every recipe sharing that URL+user and the form shows an amber drift banner until the user saves (which clears the stamp). `recipes.source_changed_at` column added with migration. Legacy `llm_extract_cache` schema (with `markdown_hash` in PK) auto-dropped on startup. All three extract endpoints call `_maybe_stamp_source_drift` after journaling.
+- Cache-key simplification + drift detection: PK now `(url_normalized, model, prompt_version)` + TTL (`EXTRACT_CACHE_TTL_DAYS = 30`, tunable per call); `semantic_fingerprint` (sha256 of name + ingredients[] + instruction-texts[]) stored on each cache row; on TTL-expired re-extract whose new fingerprint differs from the cached one, `recipes.source_changed_at` is stamped on every recipe sharing that URL+user and the form shows an amber drift banner until the user saves (which clears the stamp). `recipes.source_changed_at` column added with migration. Legacy `llm_extract_cache` schema (with `markdown_hash` in PK) auto-dropped on startup. All three extract endpoints call `_maybe_stamp_source_drift` after journaling — commit `d63dcb5`.
+- Cache `Cache` + `Cache key URL` rows in form's extraction-trace timings; diagnostic `CACHE LOOKUP` / `CACHE WRITE` prints to server log — commit `467e7fd`.
+- LLM extract cache moved from inside `markdown_to_recipe` up to each `/extract-from-*` endpoint so the JSON-LD fast lane (`jsonld_to_recipe` + `enrich_recipe`) participates in caching too. One combined `EXTRACT_PROMPT_VERSION = prompt_version_for(MD + ENRICH + IMAGE prompts)` so any prompt change invalidates every row. Cache hit on `/extract-from-image` short-circuits both the vision OCR call and the markdown-extract call. Verified live: NYT cache hit returns in **436 ms** vs. ~25 s on miss — commit `608e2a7`.
+- `.gitignore` + untracked JetBrains per-machine state (`workspace.xml`, `dataSources*`) — commit `1aaf653`.
+- Catch-up: `recipe_model.py` schema unification (ScoringMetadata / ClassificationMetadata / StatusField, aliased `_source` / `_scoring` / `_imported_from` / `_editor_version` / `_access` fields, `populate_by_name + extra='allow'`, `HowToStep.position` optional, `SourceInfo.affiliateUrl`) was on disk but never committed; folded in — commit `e273cee`.
 
 ## To-do
 - **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
