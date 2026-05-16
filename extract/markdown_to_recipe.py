@@ -24,8 +24,8 @@ from input.pipeline.validators import is_recipe, stamp_validation_on_recipe
 from input.pipeline.url_utils import normalize_url, root_domain
 from input.pipeline.token_journal import build_usage_entry
 from input.pipeline.extract_cache import (
-    hash_text,
     prompt_version_for,
+    compute_recipe_fingerprint,
     get_cached_extract,
     set_cached_extract,
 )
@@ -116,9 +116,9 @@ def markdown_to_recipe(
     """
     t0 = time.perf_counter()
     cleaned_md = clean_markdown(markdown_text)
-    # Cache key components. URL is the partition; markdown hash captures
-    # actual content; prompt_version auto-bumps when SYSTEM_PROMPT changes.
-    md_hash = hash_text(cleaned_md)
+    # Cache key is URL + model + prompt_version (TTL-invalidated, not
+    # content-hash invalidated — per-capture noise was busting the hash on
+    # every visit). prompt_version auto-bumps when SYSTEM_PROMPT changes.
     pv = prompt_version_for(SYSTEM_PROMPT)
     url_norm = normalize_url(source_url) if source_url else ""
 
@@ -141,20 +141,22 @@ def markdown_to_recipe(
     if timings is not None:
         timings["prep_ms"] = int((t_prep - t0) * 1000)
 
-    # Cache lookup. Same (url, markdown, model, prompt) => same LLM output.
-    # On hit, skip the LLM call and journal as cache_hit_markdown_to_recipe
-    # with zero tokens so usage queries can surface "tokens saved" later.
+    # Cache lookup. Fresh hits (within TTL) short-circuit the LLM and journal
+    # as cache_hit_markdown_to_recipe with zero tokens. Stale rows (past TTL)
+    # still get returned so we have the prior fingerprint for drift detection
+    # after the refresh LLM call.
     json_data = None
-    cache_status = "skip"  # 'hit' / 'miss' / 'skip' (no URL or no db path)
+    prior_fingerprint = ""
+    drift_detected = False
+    cache_status = "skip"  # 'hit' / 'miss' / 'refresh-fresh' / 'refresh-drift' / 'skip'
     if cache_db_path and url_norm:
         cached = get_cached_extract(
             cache_db_path,
             url_normalized=url_norm,
-            markdown_hash=md_hash,
             model=model,
             prompt_version=pv,
         )
-        if cached:
+        if cached and not cached["is_stale"]:
             json_data = cached["llm_output"]
             cache_status = "hit"
             print(f"     CACHE HIT: cached_at={cached['cached_at']}")
@@ -166,10 +168,15 @@ def markdown_to_recipe(
                     "output_tokens": 0,
                     "meta": {
                         "cache_key_url": url_norm,
-                        "cache_markdown_hash": md_hash[:16],
                         "cached_at": cached["cached_at"],
                     },
                 })
+        elif cached:
+            # Past TTL — retain the old fingerprint, fall through to LLM,
+            # and compare after to detect source drift.
+            prior_fingerprint = cached["semantic_fingerprint"]
+            cache_status = "refresh"
+            print(f"     CACHE STALE: cached_at={cached['cached_at']}, refreshing via LLM")
         else:
             cache_status = "miss"
 
@@ -195,23 +202,36 @@ def markdown_to_recipe(
             print("     DEBUG: Raw output:\n", content)
             return None
 
+        new_fingerprint = compute_recipe_fingerprint(json_data)
+        if prior_fingerprint and prior_fingerprint != new_fingerprint:
+            drift_detected = True
+            cache_status = "refresh-drift"
+            print(f"     CACHE DRIFT: fingerprint {prior_fingerprint[:8]} -> {new_fingerprint[:8]}")
+        elif prior_fingerprint:
+            cache_status = "refresh-fresh"
+
         # Store the raw LLM JSON output (pre-sanitize, pre-source-stamping)
-        # so subsequent reads can apply fresh source_url/title without
-        # invalidating the cache on those purely-metadata changes.
+        # alongside the new fingerprint so future refreshes can detect drift.
         if cache_db_path and url_norm:
             set_cached_extract(
                 cache_db_path,
                 url_normalized=url_norm,
-                markdown_hash=md_hash,
                 model=model,
                 prompt_version=pv,
                 llm_output=json_data,
+                semantic_fingerprint=new_fingerprint,
             )
 
     t_llm = time.perf_counter()
     if timings is not None:
         timings["extract_llm_ms"] = 0 if cache_status == "hit" else int((t_llm - t_prep) * 1000)
         timings["cache"] = cache_status
+        if drift_detected:
+            # Endpoint reads these to stamp recipes.source_changed_at on every
+            # already-saved recipe with this URL+user so the UI can flag
+            # "source updated — review and re-save."
+            timings["source_drift"] = True
+            timings["drift_url"] = url_norm
 
     _attach_source_metadata(json_data, source_url=source_url, title=title)
 
