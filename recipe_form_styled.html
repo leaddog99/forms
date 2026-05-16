@@ -1903,20 +1903,26 @@
       imageFallbackInput.click();
     });
 
-    async function fetchStagedImage(token, { timeoutMs = 25000, intervalMs = 800 } = {}) {
+    async function fetchStagedImage(token, { timeoutMs = 45000, intervalMs = 800 } = {}) {
+      // Server returns:
+      //   200 — image ready, return it
+      //   425 — html2canvas is still running on the source page; keep polling
+      //   404 — token doesn't exist / expired; bookmarklet never ran, give up
+      //   anything else — real error, give up
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
         const res = await fetch(`${API}/staged-image/${encodeURIComponent(token)}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.image_b64) return data.image_b64;
-        } else if (res.status !== 404) {
-          // 404 = still rendering, anything else is a real error.
-          return null;
+          if (data.image_b64) return { b64: data.image_b64, reason: 'ok' };
+        } else if (res.status === 404) {
+          return { b64: null, reason: 'no-token' };
+        } else if (res.status !== 425) {
+          return { b64: null, reason: 'http-' + res.status };
         }
         await new Promise(r => setTimeout(r, intervalMs));
       }
-      return null;
+      return { b64: null, reason: 'timeout' };
     }
 
     function b64ToFile(b64, filename = 'screenshot.png', mime = 'image/png') {
@@ -1933,11 +1939,19 @@
       const originalText = processingEl ? processingEl.textContent : '';
       if (processingEl) processingEl.textContent = 'Waiting for screenshot...';
       try {
-        const b64 = await fetchStagedImage(token);
+        const { b64, reason } = await fetchStagedImage(token);
         if (!b64) {
+          let message;
+          if (reason === 'no-token') {
+            message = 'No bookmarklet upload found for this session. The bookmarklet may not have run, or its token expired. Click the bookmarklet again, or drop an image into the drop zone above.';
+          } else if (reason === 'timeout') {
+            message = 'The bookmarklet screenshot did not arrive within 45 seconds. The source page may be too complex for html2canvas, or upload was blocked. Try the bookmarklet again, or drop an image manually.';
+          } else {
+            message = 'Could not fetch the bookmarklet screenshot (' + reason + '). Drop an image onto the drop zone to extract manually.';
+          }
           showErrorDialog({
             title: 'Screenshot not available',
-            message: 'The bookmarklet screenshot did not arrive in time. Drop an image onto the drop zone to extract manually.',
+            message: message,
             showImageButton: false,
           });
           return false;

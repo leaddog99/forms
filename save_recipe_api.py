@@ -969,11 +969,16 @@ async def stage_image_endpoint(token: str, request: Request):
 async def get_staged_image(token: str):
     entry = _staged_markdown.get(token)
     if not entry or entry.get("expires_at", 0) < time.time():
+        # 404 means "this screenshot will never arrive" — bookmarklet never
+        # staged anything OR the entry expired. Form callers fail fast on 404.
         raise HTTPException(status_code=404, detail="Token not found or expired")
     img = entry.get("image_b64")
     if not img:
-        # Caller should poll; image hasn't been uploaded yet.
-        raise HTTPException(status_code=404, detail="Image not yet available")
+        # 425 means "html2canvas is still running on the source page; keep
+        # polling." Distinguishing this from 404 lets the form give up
+        # immediately when the bookmarklet never ran, instead of waiting
+        # out the full poll timeout.
+        raise HTTPException(status_code=425, detail="Image not yet available")
     return {"image_b64": img}
 
 
