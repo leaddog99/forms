@@ -251,6 +251,60 @@ Survivor selection: most-recently-updated per `(url_normalized, user_id)` group 
 
 After the sweep, the partial UNIQUE index `uniq_recipes_url_user` was created cleanly. Final state: 29 recipes, 0 dup groups, three indices on the recipes table (autoindex on recipe_id, `idx_recipe_json_id`, and the new partial unique).
 
+### Windows charmap encoding fix
+
+`POST /recipes` was throwing `Bad input: 'charmap' codec can't encode character '℉'` (℉) on TheKitchn's lasagna recipe. Root cause: Windows console defaults to `cp1252`; `print(f"[DATA] Received payload: {payload}")` at the top of `save_recipe` blew up the moment a recipe contained `℉`, em-dashes, smart quotes, ×, ½, etc. The error got re-wrapped as "Bad input: …" and the save returned 400.
+
+Fix: two-line `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` + same for stderr at module init of `save_recipe_api.py`. The `replace` fallback means an exotic character becomes "?" in logs rather than crashing the request. Stored payload data is unaffected — only console encoding changes. Commit `d81bcf9`.
+
+### LLM extract cache — Stage B caching (commit `ec0d41e`)
+
+Stage B (markdown → recipe via LLM) is ~25s, ~$0.0015 per call, and produces identical output for identical input. New table `llm_extract_cache` caches it. Key design at commit time:
+
+```
+PK: (url_normalized, markdown_hash, model, prompt_version)
+    markdown_hash    = sha256(cleaned_markdown)
+    prompt_version   = sha256(SYSTEM_PROMPT)[:12]
+value: recipe_json (raw LLM JSON, pre-sanitize)
+       created_at, last_used_at, hit_count
+```
+
+`markdown_to_recipe` got a `cache_db_path` kwarg. On hit: journal a `cache_hit_markdown_to_recipe` usage entry (zero tokens) so future per-user usage queries can total "tokens saved", skip the LLM call, return cached JSON. On miss: run LLM, store output, journal real token usage. All three extract endpoints (`/extract-from-url`, `/extract-from-markdown`, `/extract-from-image`) pass `cache_db_path=DB_PATH`.
+
+Verified live with the chicken-fajitas markdown: first call 35s (miss), second call 1s (hit, `hit_count=1` on the cache row).
+
+**Then a concern surfaced** — see the next section.
+
+### Cache-key design discussion — PENDING DECISION
+
+After shipping the content-hash cache, user pushed back: the markdown hash is fragile. Per-capture noise (the bookmarklet's `*Captured: <ISO>*` line, view counters, HTML comments leaking through, JSON-LD `dateModified` flipping daily, sidebar "popular posts" changing, etc.) busts the hash and burns an LLM call for content that hasn't meaningfully changed.
+
+I tried a `canonicalize_for_hash()` regex-based stripper to normalize the markdown before hashing — caught the obvious cases (`*Captured:*`, `*Views:*`, HTML comments) and verified hash stability against synthetic re-captures. But user is correct that the deny-list is **inherently incomplete**: every site has its own per-visit cruft, and each new "why did this miss?" report would require another regex. The cost of a false miss (~$0.0015 + 25s) dramatically outweighs the cost of bounded staleness (a `dateModified` field flipping in the cached output, which `sanitize_recipe_data` regenerates at save anyway).
+
+**Proposed simplification** (not yet built):
+
+| Aspect | Current (commit ec0d41e + canonicalize WIP) | Proposed |
+|---|---|---|
+| Cache key | `(url_normalized, markdown_hash, model, prompt_version)` | `(url_normalized, model, prompt_version)` |
+| Hash work | `canonicalize_for_hash()` regex + sha256 of markdown | none |
+| Invalidation | content change | TTL elapsed (default 30 days, tunable per-call like Moz) |
+| Lines of code | ~30 added for canonicalization | ~5 added for TTL filter; canonicalization removed |
+| Maintenance | "what other patterns to strip?" forever | none |
+
+`prompt_version = sha256(SYSTEM_PROMPT)[:12]` stays — switching models or tweaking the prompt should still miss.
+
+**Then user proposed something better — hash the LLM OUTPUT, not the input.** That can't be the cache key (you'd have to call the LLM to compute it; defeats the purpose; plus `temperature=0.2` makes it bit-unstable across calls). But it IS the right tool for *drift detection*. Combined plan:
+
+| Layer | Mechanic |
+|---|---|
+| Cache key | `(url_normalized, model, prompt_version)` + TTL — simple, no regex |
+| Cache value | `llm_output JSON` + a **semantic fingerprint** = sha256 of `{name, ingredients[], instruction-texts[]}` (NOT the whole recipe — dateModified etc. would make it bit-unstable) |
+| Drift | On forced/TTL-expired re-extract, compute new fingerprint, compare with cached. If differ → stamp `recipes.source_changed_at` on every saved recipe with that URL+user. UI shows "Source page was updated — review and re-save." |
+
+Status: **left at "want me to do simplification only, or simplification + drift detection?"** when user went to dinner. Total work ≈ 30-line refactor for simplification alone, ~80 more lines for fingerprint + drift flag.
+
+The undo cost from current state (commit `ec0d41e`) is small: drop `canonicalize_for_hash` and its regexes (~30 lines in `extract_cache.py`), drop `markdown_hash` from the cache key signature, rebuild the cache table (1 test row in it, no real data), import cleanup in `markdown_to_recipe.py`, add TTL constant + WHERE clause. ~30 lines net.
+
 ---
 
 ## Done
@@ -300,9 +354,13 @@ After the sweep, the partial UNIQUE index `uniq_recipes_url_user` was created cl
 - Partial UNIQUE index `(url_normalized, user_id) WHERE url_normalized != ''` (URL-backed recipes only; handwritten/typed/photo are exempt)
 - `POST /recipes` adopts existing `recipe_id` when `(url_normalized, user_id)` already has a row — commit `7230212`
 - One-shot dedup of existing duplicates: 6 rows removed across 3 groups, 1 journal row re-pointed at survivor, partial UNIQUE index added cleanly afterward (29 recipes, 0 dup groups remaining)
+- Self-heal Moz scores on `GET /url-metadata` when `moz_last_scored` is null — commit `2248654`
+- Windows charmap encoding fix: `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` at module init of `save_recipe_api.py`. Stops the "Bad input: 'charmap' codec can't encode character '℉'" failure mode — commit `d81bcf9`
+- LLM extract cache table (`llm_extract_cache`) + `input/pipeline/extract_cache.py` helpers; threaded through `markdown_to_recipe` via `cache_db_path` kwarg; cache hits journaled as `cache_hit_markdown_to_recipe` with zero tokens. Initial design used `(url_normalized, markdown_hash, model, prompt_version)` as the cache key — commit `ec0d41e`. **Pending decision: simplify the key to URL+TTL (see Session log "Cache-key design discussion").**
 
 ## To-do
 
+- **TOP OF QUEUE: Cache-key simplification.** Currently the LLM extract cache (commit `ec0d41e`) uses `(url_normalized, markdown_hash, model, prompt_version)`. Discussion converged on switching to `(url_normalized, model, prompt_version)` + TTL (30 days default), and adding a **semantic fingerprint** (sha256 of `{name, ingredients[], instruction-texts[]}`) stored on each cache row for **drift detection** — when a re-extract produces a different fingerprint, stamp `recipes.source_changed_at` on every saved recipe with that URL+user so the UI can flag "source page was updated; review and re-save." See the 2026-05-15 session-log section "Cache-key design discussion — PENDING DECISION" for the full reasoning. Choice point: simplification only (~30 lines) vs. simplification + drift detection (~110 lines). User leaning toward the combined plan.
 - **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
 - **General ledger / transactions layer** on top of `bcc_token_journal`. Aggregation queries to roll journal rows into a per-user monthly view: `SELECT user_id, model, SUM(input_tokens), SUM(output_tokens), strftime('%Y-%m', created_at) FROM bcc_token_journal GROUP BY ...`. Then map model + token counts → estimated USD via a price table. Subscription tier model (hard cap / soft cap / overage) still TBD.
 - **Re-point journal rows on adopt.** When `save_recipe` adopts an existing recipe_id, the LLM calls from this extract are already journaled under the *originally-minted* UUID. Consider updating `bcc_token_journal SET recipe_id = <adopted>` for those rows so the journal trail joins cleanly to the surviving recipe. Currently their cost history is queryable but doesn't join to `recipes.recipe_id` for the user's canonical record.
