@@ -2174,6 +2174,8 @@
       vision_llm_ms: 'Vision LLM (OCR)',
       prep_ms: 'Prompt prep',
       extract_llm_ms: 'Extract LLM (big prompt)',
+      cache: 'Cache',
+      cache_key_url: 'Cache key URL',
       validate_ms: 'Validate + sanitize',
       extract_total_ms: 'Extract (legacy, opaque)',
       total_ms: 'Total',
@@ -2205,13 +2207,13 @@
         trPath.appendChild(td2);
         table.appendChild(trPath);
       }
-      const ORDER = ['fetch_ms','html_parse_ms','jsonld_check_ms','jsonld_direct_ms','encode_ms','vision_llm_ms','prep_ms','extract_llm_ms','enrich_prep_ms','enrich_llm_ms','extract_total_ms','validate_ms','total_ms'];
+      const ORDER = ['cache','cache_key_url','fetch_ms','html_parse_ms','jsonld_check_ms','jsonld_direct_ms','encode_ms','vision_llm_ms','prep_ms','extract_llm_ms','enrich_prep_ms','enrich_llm_ms','extract_total_ms','validate_ms','total_ms'];
       let any = false;
       ORDER.forEach(k => {
-        if (timings && timings[k] !== undefined) {
+        if (timings && timings[k] !== undefined && timings[k] !== null && timings[k] !== '') {
           any = true;
           const tr = document.createElement('tr');
-          const ms = timings[k];
+          const val = timings[k];
           const td1 = document.createElement('td');
           td1.style.padding = '2px 12px 2px 0';
           td1.style.color = 'var(--muted)';
@@ -2220,7 +2222,14 @@
           td2.style.padding = '2px 0';
           td2.style.fontVariantNumeric = 'tabular-nums';
           td2.style.fontWeight = k === 'total_ms' ? '600' : '400';
-          td2.textContent = ms >= 1000 ? (ms / 1000).toFixed(2) + ' s' : ms + ' ms';
+          if (typeof val === 'number') {
+            td2.textContent = val >= 1000 ? (val / 1000).toFixed(2) + ' s' : val + ' ms';
+          } else {
+            // Cache status / URL etc. are strings, not millisecond counts.
+            td2.style.fontFamily = "ui-monospace,'SF Mono',Consolas,monospace";
+            td2.style.fontSize = '0.92em';
+            td2.textContent = String(val);
+          }
           tr.appendChild(td1);
           tr.appendChild(td2);
           table.appendChild(tr);

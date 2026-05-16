@@ -149,6 +149,7 @@ def markdown_to_recipe(
     prior_fingerprint = ""
     drift_detected = False
     cache_status = "skip"  # 'hit' / 'miss' / 'refresh-fresh' / 'refresh-drift' / 'skip'
+    print(f"     CACHE LOOKUP: db={bool(cache_db_path)} url={url_norm!r} model={model} pv={pv}")
     if cache_db_path and url_norm:
         cached = get_cached_extract(
             cache_db_path,
@@ -213,6 +214,7 @@ def markdown_to_recipe(
         # Store the raw LLM JSON output (pre-sanitize, pre-source-stamping)
         # alongside the new fingerprint so future refreshes can detect drift.
         if cache_db_path and url_norm:
+            print(f"     CACHE WRITE: url={url_norm!r} fp={new_fingerprint[:12]}")
             set_cached_extract(
                 cache_db_path,
                 url_normalized=url_norm,
@@ -221,11 +223,14 @@ def markdown_to_recipe(
                 llm_output=json_data,
                 semantic_fingerprint=new_fingerprint,
             )
+        else:
+            print(f"     CACHE WRITE SKIPPED: db={bool(cache_db_path)} url={url_norm!r}")
 
     t_llm = time.perf_counter()
     if timings is not None:
         timings["extract_llm_ms"] = 0 if cache_status == "hit" else int((t_llm - t_prep) * 1000)
         timings["cache"] = cache_status
+        timings["cache_key_url"] = url_norm or "(no url — cache skipped)"
         if drift_detected:
             # Endpoint reads these to stamp recipes.source_changed_at on every
             # already-saved recipe with this URL+user so the UI can flag
