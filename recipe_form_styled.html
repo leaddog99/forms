@@ -1779,6 +1779,14 @@
     const imageFallbackInput = document.getElementById('imageFallbackInput');
 
     function showErrorDialog({ title = 'Something went wrong', message = '', showImageButton = false } = {}) {
+      // Don't clobber an existing open dialog. When /extract-from-url runs
+      // autoFallbackToStagedImage and the staged screenshot doesn't arrive,
+      // extractFromStagedImage already opens its OWN dialog. The outer
+      // caller then tries to open another one — can't showModal() (throws
+      // silently) but DOES overwrite the title/message/button, confusing
+      // the user about which error they're seeing and re-arming the "Try
+      // image extraction" button for another 25s staged poll. First wins.
+      if (errorDialog.open) return;
       errorDialogTitle.textContent = title;
       errorDialogMessage.textContent = message;
       errorDialogImageBtn.style.display = showImageButton ? '' : 'none';
@@ -1806,10 +1814,20 @@
     errorDialogImageBtn.addEventListener('click', async () => {
       errorDialog.close();
       if (stagedToken) {
-        const ok = await extractFromStagedImage(stagedToken);
-        if (ok) return;
-        // Staged image never arrived — fall through to manual file picker.
+        // Bookmarklet path — try the staged screenshot. If it fails,
+        // extractFromStagedImage opens its OWN "Screenshot not available"
+        // dialog explaining the situation. DO NOT auto-popup a file picker
+        // on top of that — bcc-state-code's "no file picker on the happy
+        // path" rule applies here too; an auto-popup file dialog right
+        // after a button click is a surprise the user explicitly rejected.
+        // The drop zone above stays available for explicit manual upload.
+        await extractFromStagedImage(stagedToken);
+        return;
       }
+      // No staged screenshot to try (manual URL extract or dropped markdown
+      // without the bookmarklet). The user has no other path to image
+      // extraction except picking a file, so this popup IS user-initiated
+      // (they just clicked "Try image extraction").
       imageFallbackInput.click();
     });
 
