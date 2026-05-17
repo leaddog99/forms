@@ -582,6 +582,44 @@
       box-shadow: none;
     }
 
+    /* Chapter selector — sits above the recipe name in the header row.
+       Cookbook-chapter classification (24-value flat enum) is auto-
+       populated at extract time; user override persists. */
+    .chapter-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .chapter-label {
+      font-size: 0.72em;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+    .chapter-select {
+      flex: 0 1 auto;
+      min-width: 220px;
+      padding: 6px 28px 6px 10px;
+      font-family: Georgia, serif;
+      font-size: 0.95em;
+      color: var(--ink);
+      background: var(--accent-soft);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%239b4a22'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    .chapter-select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
     /* Scoring strip: PA/DA/OU/Recipe-text score chips at the top of the
        form. Visible up front so the user can decide whether the recipe
        is worth saving before paying for enrichment. */
@@ -928,6 +966,17 @@
         <!-- Header: Title/Desc Left, Image Right -->
         <div class="header-row">
           <div class="header-left">
+            <!-- Cookbook chapter (24-value flat enum from
+                 extract/chapter_classifier.py). Auto-populated at
+                 extract time by the keyword-shortcut + LLM-fallback
+                 classifier; editable here. User override persists. -->
+            <div class="chapter-row">
+              <label for="classification_chapter" class="chapter-label">Chapter</label>
+              <select id="classification_chapter" class="chapter-select">
+                <option value=""></option>
+                <!-- Options populated from JS CHAPTERS at init -->
+              </select>
+            </div>
             <div class="form-group" id="nameGroup">
               <label for="name">Recipe Name<span class="required-star">*</span></label>
               <input type="text" id="name" placeholder="e.g., Grandmother's Apple Pie" />
@@ -1212,6 +1261,58 @@
     const listEl = document.getElementById("recipeList");
     const feedback = document.getElementById("feedback");
 
+    // Cookbook chapters — KEEP IN SYNC with CHAPTERS in
+    // extract/chapter_classifier.py. The server's structured-output
+    // enum and this dropdown must agree on the exact strings; a drift
+    // here means the form would offer a value the server rejects.
+    // "Uncertain" is excluded from the dropdown — users picking a
+    // value should commit; "Uncertain" is the classifier's escape
+    // hatch, not a user-facing option.
+    const CHAPTERS = [
+      "Appetizers & Starters",
+      "Soups & Stews",
+      "Salads",
+      "Eggs & Breakfast",
+      "Sandwiches, Pizza & Savory Pastry",
+      "Pasta & Noodles",
+      "Rice & Grains",
+      "Beans, Legumes & Tofu",
+      "Vegetables",
+      "Fish & Shellfish",
+      "Poultry",
+      "Meat",
+      "Sauces, Dressings & Condiments",
+      "Breads",
+      "Cakes",
+      "Cookies & Bars",
+      "Pies & Tarts",
+      "Custards, Puddings & Mousses",
+      "Frozen Desserts",
+      "Fruit Desserts",
+      "Candies & Confections",
+      "Beverages & Cocktails",
+      "Preserving & Pickling",
+    ];
+    (function populateChapterOptions() {
+      const sel = document.getElementById('classification_chapter');
+      if (!sel) return;
+      // First option is the empty placeholder already in HTML.
+      CHAPTERS.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        sel.appendChild(opt);
+      });
+      // Add an "Uncertain" option at the end, italicized via CSS-on-option
+      // doesn't really work, so just leave the bare value — when the
+      // classifier returns "Uncertain" the select shows it; user can pick
+      // a real chapter to clear it.
+      const u = document.createElement('option');
+      u.value = "Uncertain";
+      u.textContent = "Uncertain";
+      sel.appendChild(u);
+    })();
+
     function showFeedback(message, type = 'success') {
       feedback.textContent = message;
       feedback.className = type;
@@ -1374,6 +1475,7 @@
       document.getElementById("provenance_ethnicity").value = prov.ethnicity || "";
       document.getElementById("provenance_region").value = prov.originRegion || "";
       const cls = r.classification || {};
+      document.getElementById("classification_chapter").value = cls.chapter || "";
       document.getElementById("classification_hierarchy").value = cls.hierarchyPath || "";
       document.getElementById("classification_confidence").value =
         (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "";
@@ -1525,6 +1627,7 @@
         originRegion: document.getElementById("provenance_region").value,
       };
       const userClassification = {
+        chapter: document.getElementById("classification_chapter").value,
         hierarchyPath: document.getElementById("classification_hierarchy").value,
         confidence: confidenceStr === "" ? 0 : (parseInt(confidenceStr, 10) || 0),
         reasoning: document.getElementById("classification_reasoning").value,
@@ -2683,6 +2786,7 @@
       document.getElementById("provenance_ethnicity").value = prov.ethnicity || "";
       document.getElementById("provenance_region").value = prov.originRegion || "";
       const cls = r.classification || {};
+      document.getElementById("classification_chapter").value = cls.chapter || "";
       document.getElementById("classification_hierarchy").value = cls.hierarchyPath || "";
       document.getElementById("classification_confidence").value =
         (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "";

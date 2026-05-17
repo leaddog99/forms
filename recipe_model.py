@@ -82,6 +82,11 @@ class ClassificationMetadata(BaseModel):
     reasoning: str = ""
     hierarchyPath: str = ""
     story: str = ""
+    # Cookbook chapter (flat enum, one of CHAPTERS from
+    # extract/chapter_classifier.py). Populated at extract time by the
+    # keyword-shortcut + LLM-fallback classifier. Editable on the form;
+    # user override persists.
+    chapter: str = ""
 
 class StatusField(BaseModel):
     value: Literal["accepted", "rejected"]
