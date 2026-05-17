@@ -504,14 +504,29 @@
 
     select { cursor: pointer; }
 
-    /* Buttons */
+    /* Sticky action bar: always-available buttons + message + drift banner
+       at the top of the form, regardless of how far the user has scrolled. */
+    .action-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--bg);
+      padding: 14px 0 12px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
     .button-row {
       display: flex;
       gap: 12px;
-      padding-top: 20px;
-      margin-top: 8px;
-      border-top: 1px solid var(--line);
+      align-items: center;
+      flex-wrap: wrap;
     }
+    .button-row #feedback {
+      flex: 1 1 auto;
+      margin: 0;
+      min-width: 0;  /* allow shrinking inside flex */
+    }
+    .button-row #feedback:empty { display: none; }
 
     button {
       font-family: Georgia, serif;
@@ -775,14 +790,25 @@
 
       <form id="recipeForm">
 
-        <!-- Drift notice: visible when the loaded recipe has
-             source_changed_at set (a TTL-expired LLM re-extract produced a
-             different semantic fingerprint than the prior cached one).
-             Hidden on extract/new/save; populated by loadForm. -->
-        <div id="sourceDriftBanner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#78350f;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:0.92em">
-          <strong>Source page updated</strong>
-          since this recipe was last saved<span id="sourceDriftDate"></span>.
-          Review the recipe and re-save to acknowledge.
+        <!-- Sticky action bar at top of the form. Holds the Save / Clear /
+             Delete buttons (always reachable without scrolling), the
+             feedback message slot, and the conditional drift banner. -->
+        <div class="action-bar">
+          <div class="button-row">
+            <button type="submit" class="primary">Save</button>
+            <button type="button" id="clearBtn" class="secondary">Clear</button>
+            <button type="button" id="deleteBtn" class="danger">Delete</button>
+            <div id="feedback"></div>
+          </div>
+          <!-- Drift notice: visible when the loaded recipe has
+               source_changed_at set (a TTL-expired LLM re-extract produced
+               a different semantic fingerprint than the prior cached one).
+               Hidden on extract/new/save; populated by loadForm. -->
+          <div id="sourceDriftBanner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#78350f;padding:10px 14px;border-radius:8px;margin-top:10px;font-size:0.92em">
+            <strong>Source page updated</strong>
+            since this recipe was last saved<span id="sourceDriftDate"></span>.
+            Review the recipe and re-save to acknowledge.
+          </div>
         </div>
 
         <!-- Header: Title/Desc Left, Image Right -->
@@ -1051,15 +1077,10 @@
           </div>
         </section>
 
-        <!-- Buttons -->
-        <div class="button-row">
-          <button type="submit" class="primary">Save</button>
-          <button type="button" id="clearBtn" class="secondary">Clear</button>
-          <button type="button" id="deleteBtn" class="danger">Delete</button>
-        </div>
+        <!-- (Save / Clear / Delete buttons are at the top of the form in
+             the sticky action bar above, along with the feedback message
+             slot and the drift banner.) -->
       </form>
-
-      <div id="feedback"></div>
     </main>
   </div>
 
