@@ -1475,12 +1475,19 @@
       document.getElementById("provenance_ethnicity").value = prov.ethnicity || "";
       document.getElementById("provenance_region").value = prov.originRegion || "";
       const cls = r.classification || {};
-      document.getElementById("classification_chapter").value = cls.chapter || "";
-      document.getElementById("classification_hierarchy").value = cls.hierarchyPath || "";
-      document.getElementById("classification_confidence").value =
-        (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "";
-      document.getElementById("classification_reasoning").value = cls.reasoning || "";
-      document.getElementById("classification_story").value = cls.story || "";
+      // Defensive setters: don't tank the whole populate flow if a field
+      // element is missing (e.g. browser cached the old HTML and doesn't
+      // yet have the chapter select). setVal silently skips a null target.
+      const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+      };
+      setVal("classification_chapter", cls.chapter || "");
+      setVal("classification_hierarchy", cls.hierarchyPath || "");
+      setVal("classification_confidence",
+        (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "");
+      setVal("classification_reasoning", cls.reasoning || "");
+      setVal("classification_story", cls.story || "");
 
       // Notes
       notesList.innerHTML = '';
@@ -1626,12 +1633,19 @@
         ethnicity: document.getElementById("provenance_ethnicity").value,
         originRegion: document.getElementById("provenance_region").value,
       };
+      // Defensive reads — older cached HTML might not have classification_chapter
+      // (or any other field added later). getValOr returns the default if the
+      // element doesn't exist so we never throw on a stale browser cache.
+      const getValOr = (id, fallback = "") => {
+        const el = document.getElementById(id);
+        return el ? el.value : fallback;
+      };
       const userClassification = {
-        chapter: document.getElementById("classification_chapter").value,
-        hierarchyPath: document.getElementById("classification_hierarchy").value,
+        chapter: getValOr("classification_chapter"),
+        hierarchyPath: getValOr("classification_hierarchy"),
         confidence: confidenceStr === "" ? 0 : (parseInt(confidenceStr, 10) || 0),
-        reasoning: document.getElementById("classification_reasoning").value,
-        story: document.getElementById("classification_story").value,
+        reasoning: getValOr("classification_reasoning"),
+        story: getValOr("classification_story"),
       };
 
       const payload = {
@@ -2786,12 +2800,19 @@
       document.getElementById("provenance_ethnicity").value = prov.ethnicity || "";
       document.getElementById("provenance_region").value = prov.originRegion || "";
       const cls = r.classification || {};
-      document.getElementById("classification_chapter").value = cls.chapter || "";
-      document.getElementById("classification_hierarchy").value = cls.hierarchyPath || "";
-      document.getElementById("classification_confidence").value =
-        (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "";
-      document.getElementById("classification_reasoning").value = cls.reasoning || "";
-      document.getElementById("classification_story").value = cls.story || "";
+      // Defensive setters: don't tank the whole populate flow if a field
+      // element is missing (e.g. browser cached the old HTML and doesn't
+      // yet have the chapter select). setVal silently skips a null target.
+      const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+      };
+      setVal("classification_chapter", cls.chapter || "");
+      setVal("classification_hierarchy", cls.hierarchyPath || "");
+      setVal("classification_confidence",
+        (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "");
+      setVal("classification_reasoning", cls.reasoning || "");
+      setVal("classification_story", cls.story || "");
 
       // Notes
       notesList.innerHTML = '';
