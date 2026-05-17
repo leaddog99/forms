@@ -1167,17 +1167,18 @@
     //   Clear — disabled when form has no content (nothing to clear)
     //   Delete — disabled when no saved record is loaded (no DB row to delete)
     function updateButtonStates() {
+      // Read directly from the DOM. We deliberately DON'T call
+      // getIngredients() / getSteps() — those helpers reference const-
+      // declared list elements (ingredientList, stepList) that haven't
+      // been initialized yet when updateButtonStates fires at top-level
+      // script time, and the TDZ ReferenceError would break every
+      // subsequent line of script.
       const name = (document.getElementById('name').value || '').trim();
       const description = (document.getElementById('description').value || '').trim();
-      // getIngredients / getSteps may not exist yet if updateButtonStates
-      // fires before those helpers are defined (early IIFE on load).
-      // Use defensive checks.
-      const hasIngredients = typeof getIngredients === 'function' && getIngredients().length > 0;
-      const hasInstructions = typeof getSteps === 'function' && getSteps().length > 0;
       const recipeUuid = (document.getElementById('recipe_id').value || '').trim();
       const recipeSeqId = (document.getElementById('recipe_seq_id').value || '').trim();
 
-      const hasContent = !!(name || description || hasIngredients || hasInstructions || recipeUuid);
+      const hasContent = !!(name || description || recipeUuid);
       const isSavedToDb = !!recipeSeqId;  // seq_id only exists after a successful save
 
       const saveBtn = document.getElementById('saveBtn');
