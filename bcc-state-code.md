@@ -370,6 +370,133 @@ Verified live: same NYT URL extracted twice, second call returned in **436 ms** 
 
 ---
 
+## Session log — 2026-05-16
+
+### Secret rotation + history rewrite
+
+First push of master to `github.com/leaddog99/forms` was blocked by GitHub push protection: `.env` had been committed since `6cc55e7` ("for Joe") and contained a live OpenAI key (flagged) PLUS Moz / Diffbot / Perplexity / AWS / Tinify credentials (silently leaked, not flagged). Used `git filter-branch --index-filter "git rm --cached --ignore-unmatch .env"` to strip `.env` from all 26 commits on master, then `git update-ref -d refs/original/...` + `git tag -d backup-pre-rewrite-master` + `git reflog expire --expire=now --all` + `git gc --prune=now --aggressive` to nuke the backup refs and reclaim disk. Verified after: all old commit hashes (`6cc55e7`, `c51d150`, etc.) return "gone" from `git cat-file -e`. All 10 credentials in `.env` needed to be rotated regardless — the compromise window opened the moment `.env` first hit a commit, and `recipes.db` had been committed alongside it for weeks.
+
+New `.gitignore` covers `.env`, `*.pem`, `*.key`, JetBrains per-machine state (`workspace.xml`, `dataSources/`), runtime artifacts (`__pycache__`, `.venv`, `recipe_server.log`), and `input/*.png|.jpg|.jpeg` captures. Commits `c9955d5` + `1aaf653`.
+
+Caught up older uncommitted work along the way: `recipe_model.py` schema unification (ScoringMetadata, ClassificationMetadata, StatusField, populate_by_name + extra=allow, aliased private fields, `HowToStep.position` optional, `SourceInfo.affiliateUrl`) had been load-bearing for weeks but never committed — folded in (`e273cee`). recipes.db snapshotted post-schema-migration (`a685444`).
+
+### Bookmarklet auto-switch (one bookmark for everything)
+
+Mixed-content blocking: HTTPS pages can't fetch HTTP endpoints. The LOCAL bookmarklet (`http://localhost:8009`) silently failed with generic "Failed to fetch" on every HTTPS recipe site (`theafrikanstore.com` was the trigger). Now: bookmarklet detects HTTPS-page + HTTP-API and transparently falls over to `API_REMOTE` (`https://recipes.tbotb.com`) before any fetch goes out. REMOTE bookmarklet unchanged (already HTTPS). Error alert now includes API URL + page URL so a future "Failed to fetch" is diagnosable at a glance instead of from the devtools console. **Recommendation: keep just the REMOTE bookmark; LOCAL is now redundant in practice** (REMOTE works on both HTTP and HTTPS pages via the tunnel). Commit `0b0a7ac`.
+
+### PDF support
+
+Browser PDF viewers render via plugin / iframe, not regular DOM — html2canvas captures blank space or just the viewer chrome. The bookmarklet path was dead for PDFs. Added a dedicated PDF path that fits the canonical pipeline shape:
+
+```
+PDF bytes  →  pypdfium2 renders pages  →  vision LLM (multi-image, ONE call)
+           →  combined markdown  →  markdown_to_recipe
+```
+
+Pieces:
+
+- New `to_markdown/pdf_to_markdown.py` with `pdf_bytes_to_markdown(bytes, ...)` and `pdf_url_to_markdown(url, ...)`. Single vision call with all pages in one user-message (cheaper than per-page; lets the model integrate context across pages — ingredient list on p.1 continuing on p.2 is one ingredient list). 10-page cap; multi-recipe PDFs surface only the first complete recipe with a note.
+- `/extract-from-url` now HEAD-probes Content-Type and dispatches PDFs to `pdf_url_to_markdown`. HTML path unchanged. `_probe_url_head(url)` helper handles the HEAD call defensively.
+- New `/extract-from-pdf` endpoint paralleling `/extract-from-image` for direct file uploads. Same cache + journal + drift mechanics; `path_used = "pdf-llm"` or `"cache-hit"` in timings.
+- Form: drop zone accepts `.pdf` alongside `.md` and images via `isPdfFile(file)` check; `handleDroppedFile` routes through `extractFromPdf`. File-input `accept` updated to `.md,text/markdown,image/*,.pdf,application/pdf`.
+- `EXTRACT_PROMPT_VERSION` folded in `PDF_TO_MARKDOWN_PROMPT` (rolled `dd3e86e0a1ce`).
+- `pypdfium2 5.8.0` added as a dependency (Windows wheel, MIT-licensed, ~3.8 MB; no system Poppler dep like `pdf2image`).
+
+Commit `940ef0b`. Verified live against `https://cdn.shopify.com/.../Book_Recipe_Foodgasm.pdf?v=...`.
+
+### Drop-zone paste — uniform with drag-and-drop, fixed broken focus
+
+User asked about pasting to the drop zone (which **never actually existed** — only the docstring intent in `markdown_passthrough.py` mentioned it; git history confirms no paste handler ever shipped). Added document-level + drop-zone-level paste handlers that dispatch through the same `handleDroppedFile` routing as drag-and-drop:
+
+| Clipboard contents | Routed to |
+|---|---|
+| image (screenshot, photo) | `extractFromImage` |
+| PDF file (from Explorer/Finder) | `extractFromPdf` |
+| `.md` file (from Explorer/Finder) | `extractFromMarkdown` |
+| plain-text single-line URL | `extractFromUrl` (also populates URL input field) |
+| `text/plain` or `text/markdown` body | `extractFromMarkdown` (wrapped as `pasted.md`) |
+
+Paste into form text fields (URL field, name, ingredient text, etc.) is untouched — handler bails when `event.target` is `INPUT` / `TEXTAREA` / `contenteditable`.
+
+Initial paste support worked everywhere except the drop zone itself. Diagnosis: the file input was absolutely-positioned (`inset:0, opacity:0`) overlaying the drop zone, so clicks landed on the file input → it took focus → file inputs silently absorb paste events without firing them. Fixed structurally by hiding the file input (`display:none`), giving the drop zone `tabindex="0"` + focus styling (amber border, soft halo), and triggering the picker via a JS click handler on the drop zone div. `showErrorDialog` also got an "if already open, don't clobber" guard to prevent the `autoFallbackToStagedImage` double-dialog from re-arming the staged-image poll on the user's button click. Commits `780b0b1`, `c5e842d`, `bb7e8d0`, `c754069`.
+
+### Staged-image diagnostics: 425 vs 404
+
+`/staged-image/{token}` returned 404 whether the token didn't exist OR the screenshot was still rendering. The form polled 25s and gave the same generic "Screenshot not available" regardless. Server now returns **425 Too Early** when the entry exists but no image has been uploaded yet (form keeps polling); **404** means "this screenshot will never arrive" (form fails fast). Form poll timeout bumped from 25s → 45s to match the bookmarklet's html2canvas timeout. `fetchStagedImage` returns `{b64, reason}` so the error dialog can explain which case fired (`no-token` / `timeout` / `http-NNN`). Commit `88b54b4`.
+
+### Origin & Story section + provenance prompt rewrite
+
+Surfaced six previously-hidden LLM-extracted fields in a new form section between Category and Chef's Notes:
+
+| Field | Type | Schema source |
+|---|---|---|
+| Ethnicity | text input | `provenance.ethnicity` |
+| Region of Origin | text input | `provenance.originRegion` |
+| Hierarchy Path | text input | `classification.hierarchyPath` |
+| Confidence (0–100) | numeric text | `classification.confidence` |
+| Reasoning | auto-grow textarea | `classification.reasoning` |
+| Story | auto-grow textarea | `classification.story` |
+
+`loadForm` and `populateFormFromRecipe` both populate them. Save handler builds `payload.provenance` / `payload.classification` from form values, then merges with `lastExtractedRecipe` passthrough — form keys win, un-exposed sub-fields (`firstDocumented`, `traditionalContext`, `notableVariations`, `relatedDishes`, `sources`) survive. Commit `d981b7a`.
+
+Initial extract of "Mom's Asparagus Au Gratin" still came back with all empties (confidence=0, all strings empty). Diagnosis: the prompt was actively discouraging inference — every enrichment field had "Empty if uncertain" and the closing rule said "low confidence + empty fields beats a confident fabrication." Asparagus + "au gratin" is an unambiguous French technique signal; the LLM was being conservative beyond reason because we told it to.
+
+**Rewrote both prompts** (`markdown_to_recipe.SYSTEM_PROMPT` and `enrich_recipe.SYSTEM_PROMPT` — used by the JSON-LD fast lane):
+
+- Lead with *"Make a best-effort inference using ANY signal: dish name, cooking technique ('au gratin' → French, 'tagine' → North African, 'carbonara' → Roman), key ingredients, naming convention. Leaving a field empty signals 'no signal at all' — reserve for genuinely unidentifiable dishes."*
+- Per-field guidance flipped from "Empty if uncertain" to "Infer when there's signal; empty only when nothing to go on."
+- Worked example anchored: "Asparagus au Gratin" should yield French / France / `side/gratin/vegetable` / confidence 70.
+- Confidence bands clarified to reflect **cuisine-level** provenance (broad cultural origin), NOT specifics like city or chef: 70+ for unambiguous technique markers, 50-70 with corroborating ingredients, 30-50 for weak signals, <30 only for genuinely unidentifiable. User pushed back on my first version which anchored the example at 40 — that's for weak signals; au gratin is unambiguous.
+- Closing rule reframed: *"Don't fabricate specifics (precise city, named chef). But DO infer at low confidence when there's any signal — confidence 30-50 with populated fields beats confidence 0 with empties."*
+
+`EXTRACT_PROMPT_VERSION` rolled twice (`dd3e86e0a1ce` → `9f911c92d0ee` → `792cb019e5c4`). Each roll strands existing cache rows but rebuilds naturally. Commits `8746740`, `2a408ab`.
+
+Verified live: re-extract of Mom's Asparagus Au Gratin photo (file-drop, image path) now returns ethnicity=French, region=France, hierarchy filled, confidence ~70 with reasoning naming the technique inference.
+
+### Self-URL — every recipe is addressable
+
+Three pieces:
+
+- `save_recipe` mints `https://<host>/r/<recipe_id>` into `_source.originalUrl` when no caller-supplied source URL exists (handwritten / photo / typed recipes). Done before the adopt-existing dedup check so re-saving a once-saved local recipe still routes to the existing row. `_source.type` flips to `"local"` to differentiate from `"web"` / `"cookbook"` sources.
+- `GET /r/{recipe_id}` (302 → `/forms/recipe_form_styled.html?recipe_id=<id>`) is the canonical addressable URL. No auth gate yet — knowing the UUID is access (UUIDv4 has 122 bits of entropy; bare-UUID URL is unguessable without needing encryption or signed tokens).
+- `GET /recipes/{recipe_id}` returns one row in the same shape as the list endpoint so the form's existing `loadForm` consumes it directly.
+- Form: new init IIFE at the top of the page-load chain handles `?recipe_id=<id>` by fetching `GET /recipes/{recipe_id}` and calling `loadForm`. Skips if `?staged` or `?url` is also present (those are extract flows, not load-existing flows).
+
+Commit `6501179`. Endpoint-level auth check is what `visibility/users/groups` will enable later — the URL itself is unchanged then.
+
+**Self-URL Moz interaction.** Initially I skipped Moz scoring for `_source.type == "local"` because day-1 PA/DA for `recipes.tbotb.com` is meaninglessly low (zero inbound links → PA=11, DA=8). User pushed back: *"isn't it true those scores would be valid eventually?"* — correct. The domain accrues authority over time as the site gets linked-to; permanently skipping throws away the growth signal. Reverted (`69aa779`); self-URLs now Moz-scored like any other URL. Three test recipes that had been cleaned by the over-correction were rescored back to PA=11/DA=8 — the truthful day-1 reading.
+
+### Extraction trace persistence
+
+Trace panel (timings + prompts + token usage) showed after a fresh extract but vanished on sidebar reload — `loadForm` was actively calling `clearExtractionTrace` and the trace itself was never persisted. Now:
+
+- New `lastExtractionTrace` module variable + `captureExtractionTrace(result)` helper, called at all four extract endpoints right next to `renderExtractionTrace` so capture and render stay in lockstep.
+- Save payload includes `_extract_trace` alongside the existing `_scoring`, `nutrition`, etc. passthrough fields. `lastExtractionTrace` wins over a previously-loaded trace when both exist (last-extract is the freshest reality); falls back to the loaded record's trace when re-saving without re-extracting.
+- `loadForm` reads `recipe.data._extract_trace` and re-renders the panel. Cleared explicitly in the "New" button.
+
+Sidebar click on a saved record now restores the same trace the user saw at extract time — timings, path badge, system + user prompt all preserved. Commit `41cd87e`.
+
+### Polish
+
+- `history.scrollRestoration = 'manual'` + explicit `scrollTo(0, 0)` at script start: reloads / `window.open()` always land at the top of the form instead of where the user last scrolled to. Save-success and `loadForm` both smooth-scroll to top so the user sees the feedback banner and recipe name above the fold. Commit `2a96b56`.
+- uvicorn `--reload` on Windows missed picking up several of today's source edits — had to kill the worker + child process manually twice in the session (`taskkill /F /PID` mangled by MSYS path conversion; `powershell Stop-Process -Id N -Force` works). Worth knowing.
+
+### Design discussions in flight (NO CODE)
+
+User has architectural decisions in progress. Captured here so the next session inherits the context:
+
+**Field-level provenance + post-edit memory** (pending review). Adding a `_provenance` map to each recipe that tags every cached field as `llm` / `moz` / `system` / `user`. On user edit of an `llm` field, provenance flips to `user`; re-extracts skip user-owned fields, refresh only `llm` fields. Cache becomes the "machine layer" (strict LLM-only output). Saved record is the "user layer" with user-owned fields overlaid. Three-way merge on TTL refresh. **Replaces the current drift-detection mechanism**, which becomes redundant and can be deleted (column, helper, banner, all of it). Research synthesis pulled from MDM (Informatica/Profisee/Reltio survivorship rules), CRM enrichment (HubSpot ↔ Salesforce sync rules), MTPE (Smartling/Crowdin post-edit memory), Wikidata infoboxes, Expensify SmartScan, ArcGIS three-way merge — all converge on field-level provenance as the dominant pattern. Memory `feedback-research-before-design` captures the methodology trigger.
+
+**Cache scope — LLM-only fields.** Today the cache stores the full validated recipe (41 fields, ~6.5 KB for the americastestkitchen row). Should be trimmed to LLM-produced fields only (~23 fields, ~3 KB). Pipeline-derived stuff (Moz, source stamping, validator output, UUID, schema chrome) gets reconstituted at endpoint time on every cache hit. Makes the cache the strict "machine layer." Same design discussion as field-level provenance.
+
+**Visibility / users / groups.** Three-tier (private / shared / public). Schema sketched: `users` (id, user_id UUID, email, name), `groups`, `group_members`, `recipe_shares` (recipe_id, principal_kind=user|group, principal_id, permission), plus `visibility` column on `recipes`. Owner-only edit; shares are read-only with a "Fork to my recipes" affordance (Google Docs pattern; avoids the conflict-resolution rabbit hole). Self-URL `/r/{recipe_id}` is the foundation already shipped; identity layer is the next prerequisite. Replaces `PLACEHOLDER_USER_ID = 1` everywhere.
+
+**Three image controls + image generation.** Form gets three image slots (hero + two thumbnails). Each accepts drag/paste/click for image upload; uploads go through a new `POST /images` endpoint that stores locally (later S3) and returns a URL. Each slot also has a URL input. `RecipeModel.image: List[str]` already supports it — schema-side nothing to change. **Reconstruct `image_gen_openai.py`** (deleted in `143e016`, bytecode survives in `__pycache__/` and reveals `_generate_image(prompt)` + `generate_dish_image(recipe_model)` + `generate_ingredient_image(recipe_model)`) for a "Generate dish image" affordance on each empty slot. User may have the original source on another machine — checking.
+
+**Controlled vocabulary for ethnicity / classification.** Replace free-form strings with a fixed taxonomy. LLM knows the cuisines from training; doesn't need examples — just the list. Best mechanism: **OpenAI structured outputs with `enum` constraint** on `response_format` JSON Schema — keeps the vocabulary out of the prompt body entirely AND constrains output to exact matches (no more "French" / "Frenchish" / "Continental"). Taxonomy lives in a `taxonomy.json` or DB table the user maintains; the request builds the enum dynamically.
+
+---
+
 ## Done
 
 - `/extract-from-markdown` endpoint + `extract_content_markdown.py` (gpt-4o-mini)
@@ -425,9 +552,24 @@ Verified live: same NYT URL extracted twice, second call returned in **436 ms** 
 - LLM extract cache moved from inside `markdown_to_recipe` up to each `/extract-from-*` endpoint so the JSON-LD fast lane (`jsonld_to_recipe` + `enrich_recipe`) participates in caching too. One combined `EXTRACT_PROMPT_VERSION = prompt_version_for(MD + ENRICH + IMAGE prompts)` so any prompt change invalidates every row. Cache hit on `/extract-from-image` short-circuits both the vision OCR call and the markdown-extract call. Verified live: NYT cache hit returns in **436 ms** vs. ~25 s on miss — commit `608e2a7`.
 - `.gitignore` + untracked JetBrains per-machine state (`workspace.xml`, `dataSources*`) — commit `1aaf653`.
 - Catch-up: `recipe_model.py` schema unification (ScoringMetadata / ClassificationMetadata / StatusField, aliased `_source` / `_scoring` / `_imported_from` / `_editor_version` / `_access` fields, `populate_by_name + extra='allow'`, `HowToStep.position` optional, `SourceInfo.affiliateUrl`) was on disk but never committed; folded in — commit `e273cee`.
+- `.env` + 9 other credentials scrubbed from all 26 commits via `git filter-branch`; backup refs + reflog purged; gc-pruned. `.gitignore` covers `.env`, `*.pem`, `*.key`, JetBrains per-machine state, runtime artifacts, `input/*.png|.jpg` captures — commits `c9955d5`, `1aaf653`.
+- Bookmarklet auto-switches from `API_LOCAL` to `API_REMOTE` on HTTPS pages (mixed-content guard). Error alert includes API + page URL. LOCAL bookmark now redundant with REMOTE — commit `0b0a7ac`.
+- PDF support: `to_markdown/pdf_to_markdown.py` (pypdfium2 renders + single multi-image vision call), `/extract-from-pdf` upload endpoint, `/extract-from-url` HEAD-probes Content-Type and dispatches PDFs, form drop zone + paste handler accept `.pdf`, `EXTRACT_PROMPT_VERSION` folds in PDF prompt — commit `940ef0b`.
+- Paste support: document- and drop-zone-level handlers route clipboard image / PDF / .md file / URL / markdown text through `handleDroppedFile`; paste into form inputs left alone. Drop-zone file input no longer overlays the zone (which was killing paste focus); `tabindex="0"` + focus ring + JS-triggered file picker — commits `780b0b1`, `c5e842d`, `bb7e8d0`.
+- Image-extract dialog no longer pops a file picker after a staged-image failure (kept "no file picker on the happy path" rule). `showErrorDialog` first-dialog-wins prevents the double-dialog re-arming the staged-image poll — commit `c754069`.
+- Staged-image server returns 425 (still rendering, keep polling) vs 404 (no token, fail fast). Form poll timeout 25s → 45s, error dialog reports which case fired — commit `88b54b4`.
+- Origin & Story form section: ethnicity, originRegion, hierarchyPath, confidence, reasoning, story. Round-trips through extract / load / save with merge so un-exposed sub-fields survive — commit `d981b7a`.
+- Provenance prompt rewrite: pushes LLM toward inference instead of empty defaults; confidence bands anchored cuisine-level not city-level; worked example for "Asparagus au Gratin" at confidence 70 — commits `8746740`, `2a408ab`. EXTRACT_PROMPT_VERSION now `792cb019e5c4`.
+- Self-URL `/r/{recipe_id}` minted at save when no external URL exists; `_source.type="local"`; `GET /r/{id}` 302's to form with `?recipe_id=`; `GET /recipes/{id}` returns one row; form init IIFE consumes `?recipe_id=` — commit `6501179`. Self-URLs Moz-scored like any other URL (day-1 reading reflects current site authority; grows organically) — commit `69aa779`.
+- Extraction trace (`_timings` / `_prompt` / `_usage`) persists on the recipe as `_extract_trace`; restored by `loadForm` on sidebar click. `captureExtractionTrace(result)` helper at all four extract endpoints — commit `41cd87e`.
+- `history.scrollRestoration = 'manual'` + explicit scroll-to-top on open / save-success / `loadForm` — commit `2a96b56`.
 
 ## To-do
-- **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
+- **Field-level provenance + post-edit memory.** Top architectural item, designed but not built (see 2026-05-16 session log). User reviewing the design. Replaces drift detection; trims cache to LLM-only fields; introduces `_provenance` map per recipe. Memory `feedback-research-before-design` captures the methodology trigger so future sessions don't skip the research step on cross-cutting design problems.
+- **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. This unblocks visibility/sharing/auth. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
+- **Visibility (private / shared / public) + groups.** `users`, `groups`, `group_members`, `recipe_shares` tables + `visibility` column on `recipes`. Owner-only edit; shared = read-only with a "Fork to my recipes" affordance. Endpoint-level access check on `GET /r/{recipe_id}` + `GET /recipes/{id}`. Builds on the self-URL foundation. Schema sketched in today's session log.
+- **Three image controls + image-gen reconstruction.** `POST /images` upload endpoint (local disk → S3 later), three drop/paste/click slots in the form with URL boxes, reconstruct `image_gen_openai.py` (bytecode signatures captured) for "Generate dish image" button on each empty slot. User may have the deleted original on another machine.
+- **Controlled vocabulary for ethnicity / classification.** Replace free-form strings with a fixed taxonomy via OpenAI structured-outputs `enum`. Cheapest token-wise; LLM constrained to exact matches. Taxonomy in `taxonomy.json` or DB table.
 - **General ledger / transactions layer** on top of `bcc_token_journal`. Aggregation queries to roll journal rows into a per-user monthly view: `SELECT user_id, model, SUM(input_tokens), SUM(output_tokens), strftime('%Y-%m', created_at) FROM bcc_token_journal GROUP BY ...`. Then map model + token counts → estimated USD via a price table. Subscription tier model (hard cap / soft cap / overage) still TBD.
 - **Re-point journal rows on adopt.** When `save_recipe` adopts an existing recipe_id, the LLM calls from this extract are already journaled under the *originally-minted* UUID. Consider updating `bcc_token_journal SET recipe_id = <adopted>` for those rows so the journal trail joins cleanly to the surviving recipe. Currently their cost history is queryable but doesn't join to `recipes.recipe_id` for the user's canonical record.
 - **Refresh existing `metabase_url` rows** scored before the www-variant fix so their PA matches the Moz UI. One-liner: `python -m input.pipeline.refresh_url_metadata --refresh-stale --days 0`.
@@ -438,7 +580,11 @@ Verified live: same NYT URL extracted twice, second call returned in **436 ms** 
 
 ## Ideas
 
-- PDF input: `pypdfium2` renders each page to an image, sends all pages to vision in one call, returns combined markdown that flows into the same `extract_from_markdown` pipeline.
+- ~~PDF input~~ — shipped 2026-05-16 (commit `940ef0b`).
+- "Re-extract this recipe" button on loaded records: re-runs the LLM against the same source (URL or staged image) and updates the existing recipe row in place, using the existing recipe_id instead of minting fresh. Today re-extracting a local-recipe image creates a duplicate row because each extract mints a new recipe_id → fresh self-URL → no adoption.
+- "Re-enrich" button: run `enrich_recipe` against an existing saved recipe (using its current name/ingredients/cuisine) and update only provenance + classification fields. Useful for the 100+ records saved before today's prompt fix that have empty provenance.
+- Bookmarklet detection of in-browser PDFs: when `document.contentType === 'application/pdf'`, fetch the PDF bytes and POST to `/extract-from-pdf` instead of trying html2canvas. Closes the loop for "click bookmarklet while viewing a PDF in a browser tab."
+- HEIC → JPEG conversion on the server side so iPhone-Photos paste flow works end-to-end (OpenAI vision doesn't accept HEIC).
 - Other URL-keyed metadata on `metabase_url`: favicon URL, og:image, domain category, content fingerprint for change detection.
 - Source-page error UX: bookmarklet currently `alert()`s when it fails (source page can't render our styled modal). Could inject a styled overlay into the foreign DOM if it becomes worth it.
 - Bookmarklet variant that *only* sends markdown (no screenshot upload) for users who never want the cost; or a modifier-key gate (shift-click = force screenshot).
