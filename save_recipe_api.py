@@ -61,6 +61,7 @@ try:
     from extract.markdown_to_recipe import markdown_to_recipe, SYSTEM_PROMPT as _MD_PROMPT
     from extract.jsonld_to_recipe import jsonld_to_recipe
     from extract.enrich_recipe import enrich_recipe, SYSTEM_PROMPT as _ENRICH_PROMPT
+    from extract.chapter_classifier import classify_chapter, CHAPTERS
 
     print("[OK] new to_markdown/extract layer imported successfully")
 except Exception as e:
@@ -216,6 +217,29 @@ def _probe_url_head(url: str, timeout: int = 5) -> str:
         return r.headers.get("content-type", "") or ""
     except Exception:
         return ""
+
+
+def _attach_chapter(recipe, *, usage_log=None):
+    """Run the cookbook-chapter classifier at extract time and stamp
+    recipe.classification.chapter. Cheap: most recipes hit the Tier-1
+    keyword shortcut layer (zero API cost); only ambiguous titles fall
+    through to a small gpt-4o-mini call (~$0.0001).
+
+    Doesn't overwrite an existing non-empty chapter — lets the
+    /enrich-recipe path and user overrides survive. Skips entirely
+    when the recipe has no name."""
+    if not recipe:
+        return
+    cls = recipe.get("classification") or {}
+    if cls.get("chapter"):
+        return  # already set (user edit, previous extract, etc.)
+    name = recipe.get("name") or ""
+    if not name.strip():
+        return
+    ingredients = recipe.get("recipeIngredient") or []
+    chapter = classify_chapter(name, ingredients, usage_log=usage_log)
+    cls["chapter"] = chapter
+    recipe["classification"] = cls
 
 
 def _attach_moz_scoring(recipe, url_normalized):
@@ -760,6 +784,7 @@ async def extract_from_image_endpoint(
         # Moz scoring at extract time so the form can show PA/DA/OU/root
         # before the user decides whether to save. Cheap, URL-keyed, no
         # dependency on the recipe being persisted.
+        _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
         # Stamp the minted UUID onto the recipe so the form picks it up.
         recipe["id"] = new_recipe_id
@@ -871,6 +896,7 @@ async def extract_from_pdf_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+        _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
         recipe["id"] = new_recipe_id
         _journal_usage(usage_log, recipe_id=new_recipe_id)
@@ -972,6 +998,7 @@ async def extract_from_markdown_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+        _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
@@ -1109,6 +1136,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     timings["path"] = path_used
     _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+    _attach_chapter(recipe, usage_log=usage_log)
     _attach_moz_scoring(recipe, url_norm)
     recipe["id"] = new_recipe_id
     # Journal LLM token usage before returning.
