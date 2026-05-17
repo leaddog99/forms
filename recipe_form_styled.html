@@ -2706,13 +2706,16 @@
     })();
 
     // Auto-extract when launched via bookmarklet with ?staged=<token>.
-    // If ?url= is ALSO present (new bookmarklet flow), defer to the URL
-    // handler below — the staged token is only the screenshot fallback there.
+    // The DOM-capture bookmarklet stages the rendered page content client-
+    // side and sends BOTH ?url= and ?staged=. We prefer the staged markdown
+    // (it's what the user actually saw — logged-in / JS-rendered / etc.)
+    // over the server re-fetching the URL, which would only see the public
+    // version. The URL is still passed through so the recipe carries it as
+    // its source. If ?staged= is present, the ?url= IIFE below skips.
     (async function () {
       const params = new URLSearchParams(window.location.search);
       const token = params.get('staged');
       if (!token) return;
-      if (params.get('url')) return;
 
       window.scrollTo({ top: 0 });
       try {
@@ -2728,7 +2731,7 @@
         // screenshot the bookmarklet is still uploading in the background
         // AND tag the resulting recipe with the original source URL/title.
         stagedToken = token;
-        stagedSourceUrl = data.source_url || '';
+        stagedSourceUrl = data.source_url || params.get('url') || '';
         stagedTitle = data.title || '';
         // Strip token from the URL but leave the in-memory state in place.
         window.history.replaceState({}, '', window.location.pathname);
@@ -2739,20 +2742,20 @@
       }
     })();
 
-    // Auto-extract when launched via bookmarklet with ?url=<page-url>.
-    // The bookmarklet runs /extract-from-url first; if it also staged a
-    // screenshot (via ?staged=<token>) we keep that handle so the image
-    // fallback kicks in automatically for paywalled / logged-in pages.
+    // Auto-extract when launched via bookmarklet with ONLY ?url=<page-url>.
+    // (When both ?url= and ?staged= are present, the staged IIFE above wins
+    // because client-captured DOM beats a server re-fetch for paywalled /
+    // logged-in / JS-rendered content.) When the user types a URL into the
+    // form's URL input, /extract-from-url is the right path — server fetches
+    // the page and runs JSON-LD / markdown-LLM extraction.
     (function () {
       const params = new URLSearchParams(window.location.search);
       const url = params.get('url');
       if (!url) return;
+      // If a staged token is also present, the staged IIFE above is handling
+      // this extract — skip to avoid double-firing.
+      if (params.get('staged')) return;
       window.scrollTo({ top: 0 });
-      const stagedFromBookmarklet = params.get('staged');
-      if (stagedFromBookmarklet) {
-        stagedToken = stagedFromBookmarklet;
-        stagedSourceUrl = url;
-      }
       const urlInput = document.getElementById('extractUrlInput');
       if (urlInput) urlInput.value = url;
       // Strip the params so a reload doesn't re-fire the extraction.
