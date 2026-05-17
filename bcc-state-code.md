@@ -497,6 +497,85 @@ User has architectural decisions in progress. Captured here so the next session 
 
 ---
 
+## Session log — 2026-05-17
+
+### Bookmarklet rewrite — iOS Safari + client DOM capture (commits `91ed5c0`, `fe03990`)
+
+User reported the bookmarklet didn't work on iOS. Root cause: the old bookmarklet did `await fetch(/stage-markdown)` *before* `window.open()` — Safari consumes the user-gesture token during the await, so the popup gets blocked. Also a separate architectural regression I'd missed: somewhere in the canonical-pipeline cleanup (commit `143e016`) the bookmarklet had been simplified from "DOM-walk + JSON-LD harvest" down to `markdown: "URL: " + location.href` (a placeholder). The form's `?url=` handler then re-fetched server-side. That defeated the entire bookmarklet — the server-side fetch sees the public/unauthenticated version, not what the logged-in user is looking at. User caught the regression bluntly: *"how in god's name did we have a server-side fetch in that code... it defeated the whole objective."*
+
+The new bookmarklet:
+
+- **iOS-safe popup-open**: `window.open('', '_blank')` synchronously with a "Preparing import..." placeholder, then `popup.location.href = …` after staging completes (allowed for already-open popups, no gesture required).
+- **Client-side DOM-to-markdown**: `cleanNode()` strips obvious junk (nav, footer, ads, share buttons, pinterest/affiliate widgets) and `md()` walks the cleaned subtree emitting markdown. Tries `<article>` / `<main>` / recipe-class containers (`.wprm-recipe-container`, `.tasty-recipes`, etc.) before falling back to `<body>`. Captures what the user actually sees — logged-in / JS-rendered / consent-dismissed.
+- **JSON-LD harvest restored** before `cleanNode` strips scripts. Schema.org Recipe blocks land at the top of the markdown body under a `STRUCTURED RECIPE DATA (JSON-LD)` fenced code block, matching the format `markdown_to_recipe.SYSTEM_PROMPT` treats as authoritative.
+- **Screenshot moved to best-effort after form-open**. html2canvas still runs, posts to `/stage-image/<token>`, but doesn't gate the user — the form starts processing the staged markdown immediately.
+- **Payload trim** (`fe03990`): `html_raw` / `html_clean` / `text_raw` / `text_clean` / `jsonld` / `user_agent` / `source` / `captured_at` all dropped from the upload (the server only reads `markdown` / `source_url` / `title`). NYT recipe upload goes from ~400 KB to ~20 KB. Tracking params (`utm_*`, `fbclid`, `gclid`, `mc_eid/cid`, `aff_id`, `igshid`, etc.) stripped from `<a>` hrefs; if a URL is *only* tracking params, the link emits as plain text. Single-instance bookmark (REMOTE) works on HTTP+HTTPS pages and on iOS — LOCAL retired.
+- **Form-side IIFE precedence flipped**: `?staged=` wins over `?url=` when both present. Client-captured DOM beats server-side re-fetch. The `?url=` IIFE skips when staged is also there, runs alone for manual URL-paste flows.
+
+Minified bookmarklet is 6.7 KB — well under the iOS Safari ~8 KB bookmark length limit.
+
+### Save UX — refresh from DB instead of reset-and-restore (commit `704a820`)
+
+The post-save handler used to: show feedback → reset the form → snapshot 6 fields the user "might still want" → re-populate them → re-load the metadata panel. A holdover from when there was no canonical addressable record to display. Replaced with:
+
+1. Refresh sidebar
+2. `GET /recipes/<recipe_id>` to fetch the canonical post-save state (Moz scores, normalized URL, denormalized `_scoring`, persisted `_extract_trace`, cleared `source_changed_at`, adopted recipe_id if any)
+3. `loadForm(saved)` — already does everything (scroll-to-top, populate all fields, restore trace panel, sets `lastExtractedRecipe`)
+4. Re-show success feedback (loadForm internally clears it, so this comes last)
+
+User sees the finished saved product; the **Clear** button (renamed from "New" in `890debf` — "New" was ambiguous; user consistently called it "the clear button") reinits when they're done.
+
+### Form chrome — fixed branding header, action footer, scoring strip, button states (commits `d618b58`, `17dd1fa`, `d62290f`, `775ecb5`)
+
+Layout was: button row at the bottom of the form, feedback below the form, drift banner at the top. Save / Clear / Delete required scrolling past the entire recipe to reach.
+
+First pass shipped a sticky-top action bar inside the form (`d618b58`). User rejected: wanted a real *fixed* header + footer chrome, with the action surface always reachable regardless of scroll. Second pass (`17dd1fa`):
+
+- **Fixed `.app-header`** at viewport top — 56 px tall, `var(--card)` background, content max-width 960 px centered to align with the form column. Sidebar toggle moved out of its viewport-corner `position:fixed` slot into the header's left edge.
+- **Fixed `.action-footer`** at viewport bottom — Save / Clear / Delete buttons plus the feedback message slot, content max-width 960 px centered. Save uses `form="recipeForm"` since it now lives outside the form element. Footer button row, brand header content, and the sidebar drawer's open position all align with the same 960 px column (sidebar slides in to `left: max(0px, calc((100vw - 960px) / 2))`).
+- **`body { padding-top: 56px; padding-bottom: 84px }`** reserves room so content never hides under header/footer.
+- **Context-aware button states** via `updateButtonStates()` called on form-wide `input` event and at every state-change point (`loadForm`, `populateFormFromRecipe`, `clearBtn`, save success, delete success):
+  - Save → disabled when form has no content
+  - Clear → disabled when form has no content
+  - Delete → disabled when no saved record (no `recipe_seq_id`) is loaded
+  - Enrich (added later) → disabled until form has a recipe name; `data-busy` flag prevents `updateButtonStates` from re-enabling mid-request
+
+**TDZ regression (`d62290f`)**. First version of `updateButtonStates` called `getIngredients()` / `getSteps()` which dereference `const`-declared list elements (`ingredientList`, `stepList`) defined later in the script. Top-level call at line 1575 hit the TDZ → `Uncaught ReferenceError: Cannot access 'ingredientList' before initialization` → entire script aborted at that line → no click handlers, no IIFEs, nothing worked. User flagged it with the literal console error. Fix: read directly from the DOM (`#name`, `#description`, `#recipe_id`, `#recipe_seq_id`). The form's `input` event listener already covers typing in ingredient/step fields → `updateButtonStates` re-fires → sufficient signal. Net loss: typing only an ingredient (no name) used to enable Save/Clear; now doesn't — but validation requires a name anyway, so it'd have failed.
+
+### Quality-signal scoring strip (commit `775ecb5`)
+
+Moz scores (PA / DA / OU) and the recipe-text validator score used to live in the collapsible Metadata panel at the bottom of the form, populated only after Save when the panel re-loaded `/url-metadata`. User pushed back: *"the user might find the score crappy and NOT want to save the recipe."* They wanted scores visible before commit.
+
+- New **`.scoring-strip`** at the top of the form: four chips (Page Authority / Domain Authority / Opportunity / Recipe-text) with labels + values. Hidden when no scores exist (clean Clear state).
+- **Moz at extract time**: each `/extract-from-*` endpoint now calls a shared `_attach_moz_scoring(recipe, url_norm)` helper before returning. PA/DA/OU/rootDomain land in `recipe._scoring` before the response goes out; form renders the strip on first paint.
+- `save_recipe`'s old Moz block removed — recipe arrives with `_scoring` already populated. Save just bumps `last_accessed` on the `metabase_url` row so `refresh_url_metadata.py` can still see active URLs.
+- The (collapsible) Metadata panel now carries only technical metadata (Seq ID, Recipe UUID, root domain, raw title, first seen, last accessed). `loadMetadataForUrl` writes Moz values into the strip on self-heal (when `/url-metadata` runs Moz inline for a row that had `moz_last_scored = null`).
+
+### Extract-vs-enrich split + Enrich button (commit `775ecb5`)
+
+`markdown_to_recipe` was a single big LLM call producing all schema fields PLUS the enrichment block (provenance + classification + story). 30-45 s per call because the output token count was high. User's framing: *"we would NOT do the llm call unless requested... it's taking 30-45 seconds now... tie the llm extract in real time to the 'enrich' button which will do the call and refresh the llm fields."*
+
+The split:
+
+- **`markdown_to_recipe.SYSTEM_PROMPT`** stripped of the ENRICHMENT FIELDS section + the asparagus-au-gratin worked example. Says explicitly: *"PROVENANCE AND CLASSIFICATION ARE HANDLED ELSEWHERE. Leave the `provenance` and `classification` blocks at their schema defaults."* Smaller prompt, smaller output, faster response. `EXTRACT_PROMPT_VERSION` rolled to `5554f88e0ff4` — cache rebuilds naturally.
+- **`/extract-from-url` JSON-LD fast lane** no longer auto-calls `enrich_recipe` either. Both lanes return un-enriched recipes. Architectural symmetry.
+- **`POST /enrich-recipe`** new endpoint. Takes `{recipe: {...}}`, runs the existing `enrich_recipe` function, returns `{recipe, _timings, _prompt, _usage}` in the standard shape. Token usage journaled under the recipe_id when present.
+- **Enrich button** in the action footer (user's requested placement — *"next to Save / Clear / Delete"*). Disabled until form has a name. Click handler builds a minimal recipe payload from the current form state (name + description + ingredients + cuisine + the stashed `lastExtractedRecipe`), POSTs to `/enrich-recipe`, merges the response's `provenance` / `classification` back into the Origin & Story form fields and into `lastExtractedRecipe` so save's passthrough picks them up. Renders the trace panel with the enrich call's timing + prompt. Shows `Enriching…` while in flight; `data-busy` flag prevents `updateButtonStates` from re-enabling it mid-call.
+
+Net: extract is now ~10-20 s (no enrichment), enrich is ~3-5 s on demand. User cost-controls — bad-looking recipe gets Cleared without paying for enrichment.
+
+### Design notes captured for follow-up
+
+- **Keyword-driven "book chapter" classifier** (user flagged 2026-05-17). A cheap, LLM-free coarse categorizer that runs inline at extract time and populates a new `classification.chapter` field with a value from a fixed allowlist (Appetizers / Soups / Salads / Mains / Sides / Desserts / Breakfast / Beverages / etc.). Could ship before the full controlled-vocabulary enum work and gives every recipe at least a chapter-level category even without enrichment.
+- **Higher-tier subscription auto-enriches via batch deferral** (user flagged 2026-05-17). Background process picks up `confidence = 0 AND ethnicity = ''` rows and runs `enrich_recipe` on them. Costs land in the token journal; could be metered as part of a richer subscription tier.
+
+### Other small fixes
+
+- **`history.scrollRestoration = 'manual'`** + explicit `scrollTo(0,0)` at script start. Reloads / `window.open()` always land at the top instead of where the user last scrolled. Smooth-scroll-to-top added to save-success and `loadForm` so feedback banner + recipe name land above the fold. (Was committed as part of the layout shift.)
+- **Image-extract dialog file-picker fix** (`c754069`, was actually 2026-05-16 but worth noting in the iOS theme): the bookmarklet-failure dialog used to fall through to a native file picker if `extractFromStagedImage` returned false. User complained — bcc-state-code's *"no file picker on the happy path"* rule should apply to the unhappy path too. Now the dialog's image button is gated: with a `stagedToken` present, it ONLY runs staged extract; only without a staged token (manual URL paste with no bookmarklet) does it open the file picker, and that's a deliberate user click.
+
+---
+
 ## Done
 
 - `/extract-from-markdown` endpoint + `extract_content_markdown.py` (gpt-4o-mini)
@@ -563,9 +642,20 @@ User has architectural decisions in progress. Captured here so the next session 
 - Self-URL `/r/{recipe_id}` minted at save when no external URL exists; `_source.type="local"`; `GET /r/{id}` 302's to form with `?recipe_id=`; `GET /recipes/{id}` returns one row; form init IIFE consumes `?recipe_id=` — commit `6501179`. Self-URLs Moz-scored like any other URL (day-1 reading reflects current site authority; grows organically) — commit `69aa779`.
 - Extraction trace (`_timings` / `_prompt` / `_usage`) persists on the recipe as `_extract_trace`; restored by `loadForm` on sidebar click. `captureExtractionTrace(result)` helper at all four extract endpoints — commit `41cd87e`.
 - `history.scrollRestoration = 'manual'` + explicit scroll-to-top on open / save-success / `loadForm` — commit `2a96b56`.
+- Bookmarklet rewrite: iOS-safe synchronous `window.open()` before any `await`; client-side DOM-to-markdown via `cleanNode()` + recursive `md()`; JSON-LD harvest preserved as a fenced `STRUCTURED RECIPE DATA` block; screenshot moved to best-effort post-form-open; payload trimmed to `{markdown, source_url, title}` (~95% size reduction); tracking params stripped from `<a>` hrefs; minified 6.7 KB fits the iOS 8 KB bookmark limit — commits `91ed5c0`, `fe03990`.
+- Form-side IIFE precedence flipped: `?staged=` wins over `?url=` (client capture beats server re-fetch).
+- Save UX: refresh form from DB after save instead of reset-and-restore. `GET /recipes/{recipe_id}` → `loadForm(saved)` shows canonical post-save state — commit `704a820`.
+- Rename "New" button to "Clear" — commit `890debf`.
+- Form chrome rebuild: fixed `.app-header` (brand + sidebar toggle, 960-px-centered inner content) + fixed `.action-footer` (Save / Enrich / Clear / Delete + feedback, same 960 column) + sidebar drawer aligned with the form's left edge via `left: max(0px, calc((100vw - 960px) / 2))`. `body { padding-top/bottom }` reserves header/footer height — commits `d618b58`, `17dd1fa`.
+- Context-aware button states: Save / Clear disabled when form has no name; Delete disabled when no `recipe_seq_id` (unsaved); Enrich disabled until form has a name. Form-wide `input` listener + explicit calls at every state-change point. TDZ ReferenceError fix (don't call `getIngredients()` at top-level script time before `const ingredientList` initializes) — commits `17dd1fa`, `d62290f`.
+- Quality-signal scoring strip at top of form: PA / DA / OU / Recipe-text chips, populated from `recipe._scoring`. Moved out of the (collapsible) Metadata panel — that panel now carries only technical metadata (Seq ID, Recipe UUID, root domain, raw title, first seen, last accessed) — commit `775ecb5`.
+- Moz at extract time: new shared `_attach_moz_scoring(recipe, url_norm)` helper called at the end of each `/extract-from-*` endpoint. `save_recipe` no longer does Moz (only bumps `last_accessed` on the `metabase_url` row) — commit `775ecb5`.
+- LLM extract / enrichment split: `markdown_to_recipe.SYSTEM_PROMPT` stripped of provenance + classification block (those left at schema defaults); JSON-LD fast lane in `/extract-from-url` no longer auto-calls `enrich_recipe`. Extract is now ~10-20 s instead of ~30-45. New `POST /enrich-recipe` endpoint takes a recipe, runs `enrich_recipe`, returns enriched recipe + trace. EXTRACT_PROMPT_VERSION rolled to `5554f88e0ff4` — commit `775ecb5`.
+- Enrich button in the action footer (between Save and Clear). Disabled until form has a name; click POSTs current form state to `/enrich-recipe`, merges provenance + classification back into the form, refreshes the trace panel. Shows `Enriching…` while in flight; `data-busy` flag prevents `updateButtonStates` from re-enabling it mid-call — commit `775ecb5`.
 
 ## To-do
-- **Field-level provenance + post-edit memory.** Top architectural item, designed but not built (see 2026-05-16 session log). User reviewing the design. Replaces drift detection; trims cache to LLM-only fields; introduces `_provenance` map per recipe. Memory `feedback-research-before-design` captures the methodology trigger so future sessions don't skip the research step on cross-cutting design problems.
+- **Keyword-driven "book chapter" classifier.** Cheap, LLM-free coarse categorizer that runs inline at extract time and populates a new `classification.chapter` field from a fixed allowlist (Appetizers / Soups / Salads / Mains / Sides / Desserts / Breakfast / Beverages / etc.). Ships before the full controlled-vocabulary enum work and gives every recipe a chapter-level category without spending tokens on Enrich.
+- **Field-level provenance + post-edit memory.** Top architectural item, designed but not built (see 2026-05-16 session log). User reviewing the design. Replaces drift detection; trims cache to LLM-only fields; introduces `_provenance` map per recipe. Memory `feedback-research-before-design` captures the methodology trigger so future sessions don't skip the research step on cross-cutting design problems. Note: the 2026-05-17 LLM-split work is NOT this — that's "what runs automatically vs on-demand", a simpler operational change. The full per-field source tagging is still pending.
 - **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. This unblocks visibility/sharing/auth. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
 - **Visibility (private / shared / public) + groups.** `users`, `groups`, `group_members`, `recipe_shares` tables + `visibility` column on `recipes`. Owner-only edit; shared = read-only with a "Fork to my recipes" affordance. Endpoint-level access check on `GET /r/{recipe_id}` + `GET /recipes/{id}`. Builds on the self-URL foundation. Schema sketched in today's session log.
 - **Three image controls + image-gen reconstruction.** `POST /images` upload endpoint (local disk → S3 later), three drop/paste/click slots in the form with URL boxes, reconstruct `image_gen_openai.py` (bytecode signatures captured) for "Generate dish image" button on each empty slot. User may have the deleted original on another machine.
@@ -582,7 +672,8 @@ User has architectural decisions in progress. Captured here so the next session 
 
 - ~~PDF input~~ — shipped 2026-05-16 (commit `940ef0b`).
 - "Re-extract this recipe" button on loaded records: re-runs the LLM against the same source (URL or staged image) and updates the existing recipe row in place, using the existing recipe_id instead of minting fresh. Today re-extracting a local-recipe image creates a duplicate row because each extract mints a new recipe_id → fresh self-URL → no adoption.
-- "Re-enrich" button: run `enrich_recipe` against an existing saved recipe (using its current name/ingredients/cuisine) and update only provenance + classification fields. Useful for the 100+ records saved before today's prompt fix that have empty provenance.
+- ~~"Re-enrich" button~~ — shipped 2026-05-17 as the Enrich button (works on both fresh extracts and loaded existing records since it operates on current form state). The "re-enrich a batch of empty-provenance records" idea is now the **batch enrichment subscription tier** below.
+- **Higher-tier subscription with auto-batch enrichment.** Background process picks up rows where `confidence = 0 AND ethnicity = ''` and runs `enrich_recipe` on them. Costs land in the token journal and could be metered as part of a richer subscription tier. User flagged 2026-05-17 — defers the "always enrich" workflow off the user's interactive critical path while still giving paid users richer recipes.
 - Bookmarklet detection of in-browser PDFs: when `document.contentType === 'application/pdf'`, fetch the PDF bytes and POST to `/extract-from-pdf` instead of trying html2canvas. Closes the loop for "click bookmarklet while viewing a PDF in a browser tab."
 - HEIC → JPEG conversion on the server side so iPhone-Photos paste flow works end-to-end (OpenAI vision doesn't accept HEIC).
 - Other URL-keyed metadata on `metabase_url`: favicon URL, og:image, domain category, content fingerprint for change detection.
