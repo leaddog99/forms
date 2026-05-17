@@ -1387,50 +1387,30 @@
       if (res.ok) {
         const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
         const verb = result.adopted ? 'updated existing record' : 'saved successfully';
-        showFeedback(`Recipe ${verb}!${seqMsg}`, 'success');
-        // Return to top so the user sees the feedback banner and the recipe
-        // name at the top of the page after save.
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        // Server may have adopted an existing recipe_id (same URL+user).
-        // Reflect that back on the form so the displayed UUID matches DB.
-        if (result.recipe_id) document.getElementById("recipe_id").value = result.recipe_id;
-        if (result.id != null) document.getElementById("recipe_seq_id").value = result.id;
-        // Save clears source_changed_at server-side; hide the drift banner
-        // immediately for a snappy UI signal.
-        const driftBanner = document.getElementById('sourceDriftBanner');
-        if (driftBanner) driftBanner.style.display = 'none';
+        // Refresh sidebar so the saved/updated row appears with current state.
         loadRecipes();
-        // Preserve source URL / origin / affiliate so the form resets to a
-        // "new entry, same source" state — and auto-load the freshly-scored
-        // Moz metadata for that URL.
-        const savedSourceUrl = document.getElementById("originalUrl").value;
-        const savedSourceTitle = document.getElementById("sourceTitle").value;
-        const savedAffiliateUrl = document.getElementById("affiliateUrl").value;
-        const savedExtractUrl = document.getElementById("extractUrlInput").value;
-        const savedHeroImageUrl = heroImageUrl.value;
-        const savedRecipeScore = document.getElementById('meta_recipe_score').value;
-        // Reset form for new entry
-        document.getElementById("recipeForm").reset();
-        document.getElementById("recipe_id").value = "";
-        heroImage.style.display = 'none';
-        heroPlaceholder.style.display = 'flex';
-        clearLists();
-        // Restore fields the reset cleared but the user still cares about.
-        document.getElementById("originalUrl").value = savedSourceUrl;
-        document.getElementById("sourceTitle").value = savedSourceTitle;
-        document.getElementById("affiliateUrl").value = savedAffiliateUrl;
-        document.getElementById("extractUrlInput").value = savedExtractUrl;
-        heroImageUrl.value = savedHeroImageUrl;
-        applyHeroImageFromUrl();
-        document.getElementById('meta_recipe_score').value = savedRecipeScore;
-        // Auto-open and refresh the metadata panel against the saved URL.
-        const metaUrl = savedSourceUrl || savedExtractUrl;
-        if (metaUrl) {
-          metadataPanel.style.display = '';
-          metadataToggleBtn.textContent = 'Hide metadata';
-          metadataLoadedForUrl = null;
-          loadMetadataForUrl(metaUrl);
+        // Re-load the canonical post-save record from the DB and re-populate
+        // the form via loadForm. Moz scores, normalized URL, denormalized
+        // _scoring, cleared source_changed_at, persisted _extract_trace,
+        // and the (possibly adopted) recipe_id all come through. The user
+        // sees the finished saved product; the "New" button (clearBtn)
+        // reinits the form when they're done. Replaces the older
+        // reset+selectively-restore-some-fields pattern.
+        const finalRecipeId = result.recipe_id || document.getElementById("recipe_id").value;
+        if (finalRecipeId) {
+          try {
+            const freshRes = await fetch(`${API}/recipes/${encodeURIComponent(finalRecipeId)}`);
+            if (freshRes.ok) {
+              const saved = await freshRes.json();
+              loadForm(saved);  // clears feedback inside; we re-show below
+            }
+          } catch (err) {
+            console.error('Post-save reload failed:', err);
+          }
         }
+        // Show success feedback AFTER loadForm (which clears feedback as
+        // part of its normal init).
+        showFeedback(`Recipe ${verb}!${seqMsg}`, 'success');
       } else {
         showFeedback(`Error: ${result.detail}`, 'error');
       }
