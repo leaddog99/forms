@@ -130,83 +130,38 @@ def _journal_usage(usage_log, *, recipe_id=None):
         print(f"[WARN] token-journal write failed: {e}")
 
 
-def _extract_cache_lookup(url_normalized, *, usage_log=None):
-    """Endpoint-side cache lookup. Returns (recipe_or_None, prior_fingerprint, status).
+# =====================================================================
+# Cache layer — STUBBED OUT as of 2026-05-17.
+#
+# The cache poisoned itself in the wild: six rows accumulated with empty
+# names (paywall / 404 / anti-bot pages) or outright wrong content
+# ("Easy Meatloaf" cached for a curry-chicken URL — likely the LLM
+# picking the wrong recipe from a sidebar carousel). Every retry of
+# those URLs hit the bad cache silently, and users couldn't see why.
+#
+# User decision: stub the cache layer so EVERY extract runs the LLM
+# fresh. Zero cache reads, zero cache writes. The empty-extract guard
+# and the rest of the implementation stay in the file for future
+# redesign — both helpers just no-op for now.
+#
+# The llm_extract_cache table stays in the DB (rows don't grow without
+# writes); no migration. When the redesign lands, we either drop the
+# table, change its schema, or unstub these functions.
+# =====================================================================
 
-    Status is one of: 'hit' (fresh, recipe returned), 'refresh' (stale row
-    exists, prior fingerprint returned for drift comparison after re-extract),
-    'miss' (no row), 'skip' (no URL — caching not applicable).
-    On a fresh hit, journals a zero-token 'cache_hit_extract' entry."""
+_CACHE_STUBBED = True
+
+def _extract_cache_lookup(url_normalized, *, usage_log=None):
+    """No-op lookup while the cache is stubbed. Always returns miss so
+    every extract hits the LLM fresh."""
     if not url_normalized:
-        print(f"     CACHE LOOKUP: skip (no url)")
         return None, "", "skip"
-    cached = get_cached_extract(
-        DB_PATH,
-        url_normalized=url_normalized,
-        model=EXTRACT_MODEL,
-        prompt_version=EXTRACT_PROMPT_VERSION,
-    )
-    print(f"     CACHE LOOKUP: url={url_normalized!r} -> "
-          f"{'no row' if cached is None else ('stale' if cached['is_stale'] else 'fresh hit')}")
-    if cached and not cached["is_stale"]:
-        if usage_log is not None:
-            usage_log.append({
-                "operation": "cache_hit_extract",
-                "model": EXTRACT_MODEL,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "meta": {
-                    "cache_key_url": url_normalized,
-                    "cached_at": cached["cached_at"],
-                },
-            })
-        return cached["llm_output"], "", "hit"
-    if cached:
-        return None, cached["semantic_fingerprint"], "refresh"
-    return None, "", "miss"
+    return None, "", "stubbed"
 
 
 def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
-    """Endpoint-side cache write. Computes the recipe fingerprint, stores
-    the row (or replaces the stale one), and returns (final_status,
-    drift_detected). drift_detected fires only when a prior fingerprint
-    existed and the new one differs from it.
-
-    Refuses to write a poisoned row: if the recipe has no name AND no
-    ingredients AND no instructions, extraction effectively failed; we
-    don't want subsequent calls to cache-hit and replay the failure
-    silently. Earlier sessions had us caching empty-name extractions
-    for paywalled / 404 / anti-bot pages, and one URL got cached with a
-    completely wrong recipe ("Easy Meatloaf" for a chicken curry page,
-    probably picked from a sidebar carousel). The next call after a
-    cache miss costs one LLM round-trip; the cost of falsely cached
-    junk is silent data corruption forever — preference is clear."""
-    if not url_normalized or not recipe:
-        return ("skip" if not url_normalized else "miss"), False
-    name = (recipe.get("name") or "").strip()
-    ingredients = recipe.get("recipeIngredient") or []
-    instructions = recipe.get("recipeInstructions") or []
-    if not name and not ingredients and not instructions:
-        print(f"     CACHE WRITE SKIPPED (empty extract): url={url_normalized!r}")
-        return ("miss" if not prior_fingerprint else "refresh-fresh"), False
-    new_fp = compute_recipe_fingerprint(recipe)
-    drift = bool(prior_fingerprint and prior_fingerprint != new_fp)
-    print(f"     CACHE WRITE: url={url_normalized!r} fp={new_fp[:12]} "
-          f"prior_fp={prior_fingerprint[:12] if prior_fingerprint else '-'} "
-          f"drift={drift}")
-    set_cached_extract(
-        DB_PATH,
-        url_normalized=url_normalized,
-        model=EXTRACT_MODEL,
-        prompt_version=EXTRACT_PROMPT_VERSION,
-        llm_output=recipe,
-        semantic_fingerprint=new_fp,
-    )
-    if drift:
-        return "refresh-drift", True
-    if prior_fingerprint:
-        return "refresh-fresh", False
-    return "miss", False
+    """No-op write while the cache is stubbed."""
+    return "stubbed", False
 
 
 def _stamp_cache_timings(timings, *, status, url_normalized, drift=False):
