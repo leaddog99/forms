@@ -36,6 +36,55 @@
       line-height: 1.7;
       background: var(--bg);
       color: var(--ink);
+      /* Reserve room for the fixed app-header and action-footer so page
+         content never hides under them. Values match the header/footer
+         heights set below. */
+      padding-top: 56px;
+      padding-bottom: 84px;
+    }
+
+    /* Fixed branding header at the top of the viewport. Sidebar toggle
+       lives at the left edge; title fills the middle. */
+    .app-header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 56px;
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      padding: 0 28px 0 64px; /* room for the sidebar-toggle on the left */
+      box-shadow: 0 2px 8px rgba(60,40,20,.04);
+    }
+    .app-header h1 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.15em;
+      font-weight: 600;
+      color: var(--ink);
+      letter-spacing: 0.01em;
+    }
+    .app-header .header-subtitle {
+      margin-left: 12px;
+      color: var(--muted);
+      font-size: 0.9em;
+    }
+
+    /* Fixed action footer at the bottom of the viewport. Holds the
+       Save / Clear / Delete buttons and the feedback message slot —
+       always reachable without scrolling the form. */
+    .action-footer {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--card);
+      border-top: 1px solid var(--line);
+      z-index: 60;
+      padding: 14px 28px;
+      box-shadow: 0 -4px 16px rgba(60,40,20,.06);
+    }
+    .action-footer .button-row {
+      max-width: 960px;
+      margin: 0 auto;
     }
 
     .container {
@@ -504,17 +553,6 @@
 
     select { cursor: pointer; }
 
-    /* Sticky action bar: always-available buttons + message + drift banner
-       at the top of the form, regardless of how far the user has scrolled. */
-    .action-bar {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      background: var(--bg);
-      padding: 14px 0 12px;
-      margin-bottom: 18px;
-      border-bottom: 1px solid var(--line);
-    }
     .button-row {
       display: flex;
       gap: 12px;
@@ -527,6 +565,16 @@
       min-width: 0;  /* allow shrinking inside flex */
     }
     .button-row #feedback:empty { display: none; }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    button.primary:disabled { background: var(--muted); transform: none; }
+    button.primary:disabled:hover { background: var(--muted); transform: none; box-shadow: none; }
+    button.secondary:disabled:hover { background: var(--bg); border-color: var(--line); }
+    button.danger:disabled:hover { background: transparent; }
 
     button {
       font-family: Georgia, serif;
@@ -752,6 +800,11 @@
   </dialog>
   <input type="file" id="imageFallbackInput" accept="image/*" style="display:none" />
 
+  <!-- Fixed branding header at the top of the viewport. -->
+  <header class="app-header">
+    <h1>Recipe Editor</h1>
+  </header>
+
   <!-- Sidebar Toggle -->
   <button class="sidebar-toggle" id="sidebarToggle">☰</button>
 
@@ -790,25 +843,14 @@
 
       <form id="recipeForm">
 
-        <!-- Sticky action bar at top of the form. Holds the Save / Clear /
-             Delete buttons (always reachable without scrolling), the
-             feedback message slot, and the conditional drift banner. -->
-        <div class="action-bar">
-          <div class="button-row">
-            <button type="submit" class="primary">Save</button>
-            <button type="button" id="clearBtn" class="secondary">Clear</button>
-            <button type="button" id="deleteBtn" class="danger">Delete</button>
-            <div id="feedback"></div>
-          </div>
-          <!-- Drift notice: visible when the loaded recipe has
-               source_changed_at set (a TTL-expired LLM re-extract produced
-               a different semantic fingerprint than the prior cached one).
-               Hidden on extract/new/save; populated by loadForm. -->
-          <div id="sourceDriftBanner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#78350f;padding:10px 14px;border-radius:8px;margin-top:10px;font-size:0.92em">
-            <strong>Source page updated</strong>
-            since this recipe was last saved<span id="sourceDriftDate"></span>.
-            Review the recipe and re-save to acknowledge.
-          </div>
+        <!-- Drift notice: visible when the loaded recipe has
+             source_changed_at set (a TTL-expired LLM re-extract produced
+             a different semantic fingerprint than the prior cached one).
+             Hidden on extract/new/save; populated by loadForm. -->
+        <div id="sourceDriftBanner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#78350f;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:0.92em">
+          <strong>Source page updated</strong>
+          since this recipe was last saved<span id="sourceDriftDate"></span>.
+          Review the recipe and re-save to acknowledge.
         </div>
 
         <!-- Header: Title/Desc Left, Image Right -->
@@ -1077,12 +1119,24 @@
           </div>
         </section>
 
-        <!-- (Save / Clear / Delete buttons are at the top of the form in
-             the sticky action bar above, along with the feedback message
-             slot and the drift banner.) -->
+        <!-- Save / Clear / Delete are in the fixed .action-footer at the
+             bottom of the viewport (outside the <form>). The Save button
+             uses form="recipeForm" so submit still flows here. -->
       </form>
     </main>
   </div>
+
+  <!-- Fixed action footer with the always-available action buttons +
+       feedback slot. Save uses form="recipeForm" since the button lives
+       outside the form element. -->
+  <footer class="action-footer">
+    <div class="button-row">
+      <button type="submit" form="recipeForm" class="primary" id="saveBtn">Save</button>
+      <button type="button" id="clearBtn" class="secondary">Clear</button>
+      <button type="button" id="deleteBtn" class="danger">Delete</button>
+      <div id="feedback"></div>
+    </div>
+  </footer>
 
   <script>
     // Talk to whichever server served this page so the same file works on
@@ -1104,6 +1158,44 @@
         setTimeout(() => { feedback.textContent = ''; feedback.className = ''; }, 4000);
       }
     }
+
+    // Context-aware button states. Called after every state-change point
+    // (load, populate, save, clear, delete) and on any form-wide input
+    // event so disabled state tracks form contents.
+    //
+    //   Save  — disabled when form has no content (nothing to save)
+    //   Clear — disabled when form has no content (nothing to clear)
+    //   Delete — disabled when no saved record is loaded (no DB row to delete)
+    function updateButtonStates() {
+      const name = (document.getElementById('name').value || '').trim();
+      const description = (document.getElementById('description').value || '').trim();
+      // getIngredients / getSteps may not exist yet if updateButtonStates
+      // fires before those helpers are defined (early IIFE on load).
+      // Use defensive checks.
+      const hasIngredients = typeof getIngredients === 'function' && getIngredients().length > 0;
+      const hasInstructions = typeof getSteps === 'function' && getSteps().length > 0;
+      const recipeUuid = (document.getElementById('recipe_id').value || '').trim();
+      const recipeSeqId = (document.getElementById('recipe_seq_id').value || '').trim();
+
+      const hasContent = !!(name || description || hasIngredients || hasInstructions || recipeUuid);
+      const isSavedToDb = !!recipeSeqId;  // seq_id only exists after a successful save
+
+      const saveBtn = document.getElementById('saveBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const deleteBtn = document.getElementById('deleteBtn');
+      if (saveBtn) saveBtn.disabled = !hasContent;
+      if (clearBtn) clearBtn.disabled = !hasContent;
+      if (deleteBtn) deleteBtn.disabled = !isSavedToDb;
+    }
+    // Form-wide input listener — covers typing in any field. Programmatic
+    // .value assignments (populateFormFromRecipe / loadForm / clearBtn)
+    // don't fire 'input' so those code paths call updateButtonStates
+    // explicitly at the end.
+    document.addEventListener('DOMContentLoaded', function () {
+      const form = document.getElementById('recipeForm');
+      if (form) form.addEventListener('input', updateButtonStates);
+      updateButtonStates();
+    });
 
     async function loadRecipes() {
       listEl.innerHTML = '<li class="empty-state">Loading...</li>';
@@ -1270,6 +1362,8 @@
       // Auto-grow textareas
       document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
       stepList.querySelectorAll('textarea').forEach(autoGrow);
+
+      updateButtonStates();
     }
 
     // Validation
@@ -1447,7 +1541,9 @@
         showFeedback("Recipe deleted.", "success");
         document.getElementById("recipeForm").reset();
         document.getElementById("recipe_id").value = "";
+        document.getElementById("recipe_seq_id").value = "";
         loadRecipes();
+        updateButtonStates();
       } else {
         const result = await res.json();
         showFeedback(`Error: ${result.detail}`, "error");
@@ -1472,9 +1568,11 @@
       if (driftBanner) driftBanner.style.display = 'none';
       feedback.textContent = "";
       feedback.className = "";
+      updateButtonStates();
     };
 
     loadRecipes();
+    updateButtonStates();
 
     // Ingredient, Step, Equipment & Notes management
     const ingredientList = document.getElementById('ingredientList');
@@ -2470,6 +2568,8 @@
       document.querySelectorAll('.field-error, .section-error').forEach(el => {
         el.classList.remove('field-error', 'section-error');
       });
+
+      updateButtonStates();
     }
 
     // ===== Metadata section (URL-keyed; lazy fetch on toggle) =====
