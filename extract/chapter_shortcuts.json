@@ -97,12 +97,7 @@
 
   "tabbouleh":         "Salads",
 
-  "vinaigrette":       "Sauces, Dressings & Condiments",
-  "aioli":             "Sauces, Dressings & Condiments",
-  "hollandaise":       "Sauces, Dressings & Condiments",
-  "bearnaise":         "Sauces, Dressings & Condiments",
-  "chimichurri":       "Sauces, Dressings & Condiments",
-  "romesco":           "Sauces, Dressings & Condiments",
+  "_sauce_names_note": "Sauce names removed from Tier-1 — they travel in dish titles: 'Celery Salad with Green Apple Vinaigrette' is a SALAD, not a sauce. 'Chimichurri Steak' is meat, not a sauce. 'Asparagus with Hollandaise' is a vegetable. The LLM handles these correctly (a standalone 'Vinaigrette' recipe routes to Sauces; a salad recipe with vinaigrette in the title routes to Salads). Cost of one LLM call per actual standalone sauce recipe: ~$0.0001. Worth it.",
 
   "baguette":          "Breads",
   "ciabatta":          "Breads",
