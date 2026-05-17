@@ -44,46 +44,16 @@ You are a culinary data extractor. Given markdown describing a recipe — possib
 
 AUTHORITY RULES:
 1. If the markdown contains a section titled "STRUCTURED RECIPE DATA (JSON-LD)" with a fenced ```json``` block, treat that JSON-LD as the AUTHORITATIVE source for: name, description, ingredients (recipeIngredient), instructions (recipeInstructions), prepTime, cookTime, totalTime, recipeYield, recipeCategory, recipeCuisine, keywords, nutrition, aggregateRating, author, datePublished, dateModified, video, image. Copy values through with minimal reshaping to match the schema.
-2. Use the surrounding markdown ONLY to fill fields the JSON-LD does not cover (notes, equipment, servingSuggestions) or to enrich provenance and classification.
+2. Use the surrounding markdown ONLY to fill fields the JSON-LD does not cover (notes, equipment, servingSuggestions).
 3. If no JSON-LD section is present, derive ALL fields from the markdown body. Preserve quantities and unit text exactly as written — do not convert units.
 4. Ignore page chrome, navigation links, advertisements, comment threads, and "related recipes" lists.
 
-ENRICHMENT FIELDS — fill these whether JSON-LD is present or not. Make a best-effort inference using ANY signal: dish name, cooking technique (e.g. "au gratin" → French, "tagine" → North African, "carbonara" → Roman), key ingredients, naming convention. Leaving a field empty signals "no signal at all" — reserve that for genuinely unidentifiable dishes (e.g. "Mom's Mystery Casserole" with no other clue).
-
-`provenance` (cultural/historical context):
-- `ethnicity`: cultural/ethnic origin of the dish ("Italian-American", "Cajun", "Sichuan", "French"). Infer from technique or ingredients when no explicit label exists.
-- `originRegion`: geographic region of origin ("Naples, Italy", "Louisiana, USA", "France"). Empty only when no regional signal exists.
-- `firstDocumented`: approximate date or era if known ("19th century", "1950s"). Null is fine when truly unknown.
-- `traditionalContext`: short paragraph on when/how the dish is traditionally eaten. Brief inference beats empty.
-- `notableVariations`: list of well-known regional or family variations.
-- `relatedDishes`: list of closely related dishes by name.
-- `sources`: leave empty list; this is for citations added later.
-
-`classification` (your confidence and reasoning):
-- `confidence`: integer 0–100, reflecting how sure you are of the CUISINE-LEVEL provenance you're stating (broad regional/cultural origin), not of a specific city or chef.
-    - 70+: well-documented dishes or clear technique/naming markers ("au gratin" → French, "tagine" → North African, "carbonara" → Roman, "tikka masala" → Indian-British, "miso" → Japanese).
-    - 50–70: plausible inference from technique + corroborating ingredients, but technique alone is weak (e.g. "stew" or "casserole" — too generic).
-    - 30–50: a single weak cue in the name (e.g. one ambiguous loanword); use sparingly.
-    - <30: genuinely unidentifiable. Leave fields empty.
-  Be willing to use 70+ when the technique is unambiguous. Don't hedge a clear cuisine signal down to 40 just because the family-recipe wrapping is unfamiliar.
-- `reasoning`: one or two sentences explaining your provenance call. State explicitly when you're inferring vs. quoting from the source. Always populate when other fields have content.
-- `hierarchyPath`: a slash-separated taxonomy path like "dessert/cookie/drop-cookie", "side/gratin/vegetable", "main/braise/stew". Provide whenever structural cues exist.
-- `story`: one paragraph (2–4 sentences) telling the dish's story — its origin, what makes it distinctive, who eats it. Honest tone; don't fabricate. Provide for any recognizable cuisine.
-
-EXAMPLE — "Asparagus au Gratin" appearing as just a recipe-card title with no explicit cuisine label should yield:
-- ethnicity: "French"
-- originRegion: "France"
-- traditionalContext: brief note about gratin as a French baked-with-crust technique
-- confidence: 70 (the technique marker is unambiguous at the cuisine level)
-- reasoning: "'Au gratin' is a well-documented French cooking technique, so cuisine-level provenance is high-confidence; the specific regional origin within France is uncertain."
-- hierarchyPath: "side/gratin/vegetable"
-- story: short paragraph about gratin tradition
-NOT all zeros / all empty.
+PROVENANCE AND CLASSIFICATION ARE HANDLED ELSEWHERE. Leave the `provenance` and `classification` blocks at their schema defaults (empty strings, empty lists, null where applicable). A separate enrichment step (`enrich_recipe`) fills those fields on demand — your job here is the structured recipe data only. Spending tokens on provenance/classification reasoning here just makes you slower.
 
 OUTPUT RULES:
 - Output a single valid JSON object matching the schema. No preamble, no fences, no commentary.
 - Do NOT skip required fields. Use empty strings, empty lists, or null where appropriate.
-- Don't fabricate specifics (e.g. invent a precise city or chef name). But DO infer at low confidence when there's any cuisine/technique signal — confidence 30–50 with populated fields beats confidence 0 with empties.
+- `provenance` and `classification` must be present in the output with their default empty structures; do not omit them.
 
 <SCHEMA>
 {json.dumps(RecipeModel.model_json_schema(), indent=2)}
