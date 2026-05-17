@@ -218,6 +218,43 @@ def _probe_url_head(url: str, timeout: int = 5) -> str:
         return ""
 
 
+def _attach_moz_scoring(recipe, url_normalized):
+    """Run Moz scoring at extract time and denormalize PA/DA/OU/rootDomain
+    into recipe._scoring so the form can display them before save. The
+    metabase_url row is written/refreshed as a side effect.
+
+    No-op when url_normalized is empty. Never raises — Moz outages
+    leave the recipe's existing _scoring intact.
+    """
+    if not url_normalized or not recipe:
+        return
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            ensure_metabase_url_table(conn)
+            fallback_title = (
+                (recipe.get("_scoring") or {}).get("rawTitle")
+                or recipe.get("name")
+                or ""
+            )
+            meta = get_or_create_url_metadata(conn, url_normalized, fallback_title=fallback_title)
+            if not meta:
+                return
+            scoring = recipe.get("_scoring") or {}
+            if meta.get("page_authority") is not None:
+                scoring["pageAuthority"] = meta["page_authority"]
+            if meta.get("domain_authority") is not None:
+                scoring["domainAuthority"] = meta["domain_authority"]
+            if meta.get("ou_score") is not None:
+                scoring["ouScore"] = meta["ou_score"]
+            if meta.get("root_domain"):
+                scoring["rootDomain"] = meta["root_domain"]
+            if meta.get("raw_title") and not scoring.get("rawTitle"):
+                scoring["rawTitle"] = meta["raw_title"]
+            recipe["_scoring"] = scoring
+    except Exception as e:
+        print(f"[WARN] Moz scoring at extract failed for {url_normalized!r}: {e}")
+
+
 def _maybe_stamp_source_drift(timings, *, user_id):
     """When markdown_to_recipe sets timings["source_drift"] (a TTL-expired
     re-extract whose semantic fingerprint differs from the cached one),
@@ -534,44 +571,20 @@ async def save_recipe(request: Request):
                 now,
                 now
             ))
-            # If the recipe has a source URL — including self-minted /r/<id>
-            # URLs — make sure the metabase_url row exists (and bump
-            # last_accessed). Moz scoring happens inline when a brand-new
-            # URL is seen and creds are configured. We then denormalize the
-            # scores into recipe._scoring so they travel with the recipe.
-            #
-            # Self-URLs get scored too: PA/DA on recipes.tbotb.com start
-            # low (zero inbound links on day 1) but grow organically as
-            # the site accrues backlinks. Day-1 truthful low numbers beat
-            # never seeing the domain mature.
+            # Moz scoring happens at EXTRACT time now (see _attach_moz_scoring
+            # in each /extract-from-* endpoint). The recipe arriving at save
+            # already carries PA/DA/OU/rootDomain in its _scoring block; we
+            # just persist it as-is. Bump last_accessed on the metabase_url
+            # row though, so refresh_url_metadata.py's --refresh-stale logic
+            # knows the URL is still in active use.
             if normalized_source_url:
-                fallback_title = (
-                    (recipe_dict.get("_scoring") or {}).get("rawTitle")
-                    or recipe_dict.get("name")
-                    or ""
-                )
                 try:
-                    meta = get_or_create_url_metadata(conn, normalized_source_url, fallback_title=fallback_title)
-                except Exception as meta_err:
-                    meta = None
-                    print(f"[WARN] metabase_url upsert failed for {normalized_source_url}: {meta_err}")
-                if meta:
-                    scoring = recipe_dict.get("_scoring") or {}
-                    if meta.get("page_authority") is not None:
-                        scoring["pageAuthority"] = meta["page_authority"]
-                    if meta.get("domain_authority") is not None:
-                        scoring["domainAuthority"] = meta["domain_authority"]
-                    if meta.get("ou_score") is not None:
-                        scoring["ouScore"] = meta["ou_score"]
-                    if meta.get("root_domain"):
-                        scoring["rootDomain"] = meta["root_domain"]
-                    if meta.get("raw_title") and not scoring.get("rawTitle"):
-                        scoring["rawTitle"] = meta["raw_title"]
-                    recipe_dict["_scoring"] = scoring
                     conn.execute(
-                        "UPDATE recipes SET data = ?, updated_at = ? WHERE recipe_id = ?",
-                        (json.dumps(recipe_dict, indent=2), now, recipe_id),
+                        "UPDATE metabase_url SET last_accessed = ? WHERE url = ?",
+                        (now, normalized_source_url),
                     )
+                except Exception as e:
+                    print(f"[WARN] metabase_url last_accessed bump failed: {e}")
             print("[OK] Recipe saved to database")
             # Fetch the DB-assigned integer PK so the form can display it.
             row = conn.execute("SELECT id FROM recipes WHERE recipe_id = ?", (recipe_id,)).fetchone()
@@ -744,6 +757,10 @@ async def extract_from_image_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+        # Moz scoring at extract time so the form can show PA/DA/OU/root
+        # before the user decides whether to save. Cheap, URL-keyed, no
+        # dependency on the recipe being persisted.
+        _attach_moz_scoring(recipe, url_norm)
         # Stamp the minted UUID onto the recipe so the form picks it up.
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning (extract happened regardless
@@ -854,6 +871,7 @@ async def extract_from_pdf_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+        _attach_moz_scoring(recipe, url_norm)
         recipe["id"] = new_recipe_id
         _journal_usage(usage_log, recipe_id=new_recipe_id)
         _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
@@ -954,6 +972,7 @@ async def extract_from_markdown_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+        _attach_moz_scoring(recipe, url_norm)
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
         _journal_usage(usage_log, recipe_id=new_recipe_id)
@@ -1050,22 +1069,15 @@ async def extract_from_url_endpoint(url: str = Form(...)):
                     title=md_result["title"],
                     timings=timings,
                 )
+                if recipe is not None:
+                    # Enrichment (provenance / classification) is deferred to
+                    # the explicit /enrich-recipe endpoint, triggered by the
+                    # form's "Enrich" button. Extract is base-data-only so
+                    # the user can review + decide before paying for it.
+                    path_used = "jsonld-direct"
             except Exception as e:
                 print(f"[WARN] jsonld_to_recipe raised, will fall back: {e}")
                 recipe = None
-            if recipe is not None:
-                try:
-                    recipe = await asyncio.to_thread(
-                        enrich_recipe,
-                        recipe,
-                        timings=timings,
-                        prompts=prompts,
-                        usage_log=usage_log,
-                    )
-                    path_used = "jsonld-direct"
-                except Exception as e:
-                    print(f"[WARN] enrich_recipe raised, keeping unenriched recipe: {e}")
-                    path_used = "jsonld-direct-unenriched"
 
         if recipe is None:
             try:
@@ -1097,6 +1109,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     timings["path"] = path_used
     _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
+    _attach_moz_scoring(recipe, url_norm)
     recipe["id"] = new_recipe_id
     # Journal LLM token usage before returning.
     _journal_usage(usage_log, recipe_id=new_recipe_id)
@@ -1118,6 +1131,53 @@ async def extract_from_url_endpoint(url: str = Form(...)):
 
 
 # Stage markdown from a bookmarklet so the form can pick it up on load.
+# Enrich a recipe with provenance + classification (cultural/historical
+# context, confidence, hierarchy path, story). Split out of the main
+# extract LLM call so it's opt-in — the user clicks Enrich when they've
+# decided the recipe is worth keeping. Returns the same recipe shape
+# with provenance and classification fields populated.
+@app.post("/enrich-recipe")
+async def enrich_recipe_endpoint(request: Request):
+    print("[ENRICH] Enrich-recipe endpoint called")
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    recipe = payload.get("recipe")
+    if not isinstance(recipe, dict) or not recipe:
+        raise HTTPException(status_code=400, detail="recipe object required in body")
+
+    timings: dict = {}
+    prompts: dict = {}
+    usage_log: list = []
+    t_start = time.perf_counter()
+    recipe_id = recipe.get("id") or recipe.get("recipe_id") or payload.get("recipe_id")
+
+    try:
+        enriched = await asyncio.to_thread(
+            enrich_recipe, recipe,
+            timings=timings, prompts=prompts, usage_log=usage_log,
+        )
+    except Exception as e:
+        print(f"[ERROR] enrich_recipe failed: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        _journal_usage(usage_log, recipe_id=recipe_id)
+        raise HTTPException(status_code=500, detail=f"Enrichment error: {e}")
+
+    timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+    timings["path"] = "enrich-only"
+    _journal_usage(usage_log, recipe_id=recipe_id)
+
+    print("[OK] Enrichment successful")
+    return {
+        "success": True,
+        "recipe": enriched,
+        "_timings": timings,
+        "_prompt": prompts,
+        "_usage": usage_log,
+    }
+
+
 @app.post("/stage-markdown")
 async def stage_markdown_endpoint(request: Request):
     print("[STAGE] Stage markdown endpoint called")

@@ -43,8 +43,10 @@
       padding-bottom: 84px;
     }
 
-    /* Fixed branding header at the top of the viewport. Sidebar toggle
-       lives at the left edge; title fills the middle. */
+    /* Fixed branding header. Background spans the full viewport width;
+       inner content is constrained to 960px and centered so it aligns
+       with the form column below. Sidebar toggle lives at the left edge
+       of the inner content area, NOT the viewport corner. */
     .app-header {
       position: fixed;
       top: 0; left: 0; right: 0;
@@ -52,10 +54,16 @@
       background: var(--card);
       border-bottom: 1px solid var(--line);
       z-index: 60;
+      box-shadow: 0 2px 8px rgba(60,40,20,.04);
+    }
+    .app-header .header-inner {
+      max-width: 960px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
-      padding: 0 28px 0 64px; /* room for the sidebar-toggle on the left */
-      box-shadow: 0 2px 8px rgba(60,40,20,.04);
+      gap: 14px;
+      padding: 0 28px;
+      height: 100%;
     }
     .app-header h1 {
       font-family: 'Playfair Display', Georgia, serif;
@@ -63,11 +71,6 @@
       font-weight: 600;
       color: var(--ink);
       letter-spacing: 0.01em;
-    }
-    .app-header .header-subtitle {
-      margin-left: 12px;
-      color: var(--muted);
-      font-size: 0.9em;
     }
 
     /* Fixed action footer at the bottom of the viewport. Holds the
@@ -95,32 +98,33 @@
       padding: 28px;
     }
 
-    /* Sidebar Toggle */
+    /* Sidebar Toggle — sits inside the app header (NOT fixed-to-viewport)
+       so it aligns with the form's left content edge. */
     .sidebar-toggle {
-      position: fixed;
-      top: 12px;
-      left: 12px;
-      z-index: 100;
       background: var(--accent);
       color: white;
       border: none;
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
       cursor: pointer;
-      font-size: 1.2em;
+      font-size: 1.1em;
       box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      flex-shrink: 0;
     }
 
     .sidebar-toggle:hover { background: #7a3a1a; }
 
-    /* Sidebar - Recipe List */
+    /* Sidebar - Recipe List. Slides in from off-viewport-left to align
+       with the form's content column left edge (max-width: 960px centered),
+       so it visually attaches to the content rather than peeking at the
+       viewport corner. Sits below the app header. */
     .sidebar {
       position: fixed;
-      top: 0;
+      top: 56px;
       left: -280px;
       width: 260px;
-      height: 100vh;
+      height: calc(100vh - 56px);
       background: var(--card);
       padding: 16px;
       box-shadow: 4px 0 20px rgba(60,40,20,.1);
@@ -129,7 +133,13 @@
       transition: left 0.3s ease;
     }
 
-    .sidebar.open { left: 0; }
+    .sidebar.open {
+      /* Align the sidebar's left edge with the form's left edge.
+         (100vw - 960px) / 2 = the form's left margin on wide screens;
+         clamped to 0 on viewports narrower than 960px so it just
+         pins to the viewport edge there. */
+      left: max(0px, calc((100vw - 960px) / 2));
+    }
 
     .sidebar h2 {
       font-family: 'Playfair Display', serif;
@@ -571,6 +581,43 @@
       cursor: not-allowed;
       box-shadow: none;
     }
+
+    /* Scoring strip: PA/DA/OU/Recipe-text score chips at the top of the
+       form. Visible up front so the user can decide whether the recipe
+       is worth saving before paying for enrichment. */
+    .scoring-strip {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      padding: 14px 18px;
+      margin-bottom: 18px;
+      background: var(--accent-soft);
+      border-radius: 12px;
+      border: 1px solid var(--line);
+    }
+    .scoring-strip.hidden { display: none; }
+    .score-chip {
+      display: flex;
+      flex-direction: column;
+      min-width: 70px;
+    }
+    .score-label {
+      font-size: 0.7em;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+    .score-value {
+      font-size: 1.2em;
+      font-weight: 700;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .score-value.empty {
+      color: var(--muted);
+      font-weight: 400;
+    }
     button.primary:disabled { background: var(--muted); transform: none; }
     button.primary:disabled:hover { background: var(--muted); transform: none; box-shadow: none; }
     button.secondary:disabled:hover { background: var(--bg); border-color: var(--line); }
@@ -800,13 +847,15 @@
   </dialog>
   <input type="file" id="imageFallbackInput" accept="image/*" style="display:none" />
 
-  <!-- Fixed branding header at the top of the viewport. -->
+  <!-- Fixed branding header. Sidebar toggle lives inside the header at
+       the left edge of the centered content column, aligning with the
+       form's content left edge. -->
   <header class="app-header">
-    <h1>Recipe Editor</h1>
+    <div class="header-inner">
+      <button class="sidebar-toggle" id="sidebarToggle">☰</button>
+      <h1>Recipe Editor</h1>
+    </div>
   </header>
-
-  <!-- Sidebar Toggle -->
-  <button class="sidebar-toggle" id="sidebarToggle">☰</button>
 
   <!-- Sidebar: Recipe List -->
   <aside class="sidebar" id="sidebar">
@@ -851,6 +900,29 @@
           <strong>Source page updated</strong>
           since this recipe was last saved<span id="sourceDriftDate"></span>.
           Review the recipe and re-save to acknowledge.
+        </div>
+
+        <!-- Quality-signal scoring strip. Populated at extract time so the
+             user can decide whether to save the recipe (and whether to
+             pay for the Enrich step) before clicking Save. Hidden when
+             no scores are present. -->
+        <div class="scoring-strip hidden" id="scoringStrip">
+          <div class="score-chip">
+            <span class="score-label">Page Authority</span>
+            <span class="score-value empty" id="score_pa">—</span>
+          </div>
+          <div class="score-chip">
+            <span class="score-label">Domain Authority</span>
+            <span class="score-value empty" id="score_da">—</span>
+          </div>
+          <div class="score-chip">
+            <span class="score-label">Opportunity</span>
+            <span class="score-value empty" id="score_ou">—</span>
+          </div>
+          <div class="score-chip">
+            <span class="score-label">Recipe-text</span>
+            <span class="score-value empty" id="score_text">—</span>
+          </div>
         </div>
 
         <!-- Header: Title/Desc Left, Image Right -->
@@ -1063,22 +1135,10 @@
                 <input type="text" id="recipe_id" readonly
                        style="font-family:ui-monospace,'SF Mono',Consolas,monospace" />
               </div>
-              <div class="form-group">
-                <label for="meta_page_authority">Page Authority (PA)</label>
-                <input type="text" id="meta_page_authority" readonly />
-              </div>
-              <div class="form-group">
-                <label for="meta_domain_authority">Domain Authority (DA)</label>
-                <input type="text" id="meta_domain_authority" readonly />
-              </div>
-              <div class="form-group">
-                <label for="meta_ou_score">Opportunity (OU)</label>
-                <input type="text" id="meta_ou_score" readonly />
-              </div>
-              <div class="form-group">
-                <label for="meta_recipe_score">Recipe-text score</label>
-                <input type="text" id="meta_recipe_score" readonly />
-              </div>
+              <!-- PA / DA / OU / Recipe-text score are surfaced in the
+                   scoring strip at the top of the form. This panel only
+                   carries the secondary technical metadata (UUIDs, root
+                   domain, raw title, timestamps). -->
               <div class="form-group">
                 <label for="meta_root_domain">Root domain</label>
                 <input type="text" id="meta_root_domain" readonly />
@@ -1132,6 +1192,7 @@
   <footer class="action-footer">
     <div class="button-row">
       <button type="submit" form="recipeForm" class="primary" id="saveBtn">Save</button>
+      <button type="button" id="enrichBtn" class="secondary">Enrich</button>
       <button type="button" id="clearBtn" class="secondary">Clear</button>
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
@@ -1182,11 +1243,54 @@
       const isSavedToDb = !!recipeSeqId;  // seq_id only exists after a successful save
 
       const saveBtn = document.getElementById('saveBtn');
+      const enrichBtn = document.getElementById('enrichBtn');
       const clearBtn = document.getElementById('clearBtn');
       const deleteBtn = document.getElementById('deleteBtn');
       if (saveBtn) saveBtn.disabled = !hasContent;
       if (clearBtn) clearBtn.disabled = !hasContent;
       if (deleteBtn) deleteBtn.disabled = !isSavedToDb;
+      // Enrich: need at least a name (enrich_recipe needs SOMETHING to
+      // reason from). Disabled in-flight via a separate `data-busy` flag
+      // toggled by the click handler so we don't fight it here.
+      if (enrichBtn && !enrichBtn.dataset.busy) enrichBtn.disabled = !name;
+    }
+
+    // Scoring strip — PA / DA / OU / Recipe-text score chips at the top
+    // of the form. Show whatever's in recipe._scoring; hide the strip
+    // entirely when no scores are present (clean state on a fresh "Clear").
+    function setScoreChip(id, value) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (value === null || value === undefined || value === '') {
+        el.textContent = '—';
+        el.classList.add('empty');
+      } else {
+        // Round Moz floats to 1dp; integers stay as-is.
+        const out = (typeof value === 'number' && !Number.isInteger(value))
+          ? value.toFixed(1) : String(value);
+        el.textContent = out;
+        el.classList.remove('empty');
+      }
+    }
+    function populateScoringStrip(recipe) {
+      const sc = (recipe && recipe._scoring) || {};
+      setScoreChip('score_pa', sc.pageAuthority);
+      setScoreChip('score_da', sc.domainAuthority);
+      setScoreChip('score_ou', sc.ouScore);
+      setScoreChip('score_text', sc.recipeScore);
+      const strip = document.getElementById('scoringStrip');
+      const hasAny = (
+        sc.pageAuthority !== undefined ||
+        sc.domainAuthority !== undefined ||
+        sc.ouScore !== undefined ||
+        sc.recipeScore !== undefined
+      );
+      if (strip) strip.classList.toggle('hidden', !hasAny);
+    }
+    function clearScoringStrip() {
+      ['score_pa','score_da','score_ou','score_text'].forEach(id => setScoreChip(id, null));
+      const strip = document.getElementById('scoringStrip');
+      if (strip) strip.classList.add('hidden');
     }
     // Form-wide input listener — covers typing in any field. Programmatic
     // .value assignments (populateFormFromRecipe / loadForm / clearBtn)
@@ -1302,17 +1406,11 @@
       heroImageUrl.value = firstImageLoad || '';
       applyHeroImageFromUrl();
 
-      // Invalidate URL-keyed metadata first, then seed the recipe-text score
-      // from the recipe's own _scoring. (The score isn't URL-keyed and would
-      // otherwise be wiped by the invalidate.)
+      // Invalidate technical metadata (root domain etc. from /url-metadata)
+      // and seed the scoring strip from the recipe's own _scoring (Moz +
+      // recipe-text score were denormalized into it at extract time).
       invalidateMetadataCache && invalidateMetadataCache();
-      const recipeScoreEl = document.getElementById('meta_recipe_score');
-      if (recipeScoreEl) {
-        const s = r._scoring || {};
-        recipeScoreEl.value = (s.recipeScore !== undefined && s.recipeScore !== null)
-          ? `${s.recipeScore} (threshold ${s.recipeScoreThreshold || 0})`
-          : '';
-      }
+      populateScoringStrip(r);
 
       // Stash the full loaded record so save-after-load preserves the rich
       // fields the form has no UI for (provenance, classification, nutrition,
@@ -1551,6 +1649,81 @@
       }
     };
 
+    // Enrich button: opt-in cultural/historical context LLM call. Builds
+    // a recipe payload from the current form state (so any user edits are
+    // included), POSTs to /enrich-recipe, merges provenance + classification
+    // into the form, and refreshes the trace panel. Costs ~$0.0005 +
+    // ~3-5s; user clicks it deliberately when they've decided the recipe
+    // is worth enriching.
+    document.getElementById("enrichBtn").onclick = async () => {
+      const enrichBtn = document.getElementById("enrichBtn");
+      const name = (document.getElementById('name').value || '').trim();
+      if (!name) {
+        showFeedback("Need a recipe name before enriching.", "error");
+        return;
+      }
+      // Disable + mark busy so updateButtonStates doesn't override us.
+      enrichBtn.dataset.busy = "1";
+      enrichBtn.disabled = true;
+      const originalLabel = enrichBtn.textContent;
+      enrichBtn.textContent = "Enriching…";
+      showFeedback("Enriching with provenance + classification…", "info");
+      try {
+        // Build a minimal payload from the form for the LLM to reason from.
+        // We send what enrich_recipe actually uses (name + key fields) plus
+        // any existing _scoring / _source so the response is consistent.
+        const ingredients = getIngredients();
+        const baseRecipe = lastExtractedRecipe || {};
+        const recipePayload = {
+          ...baseRecipe,
+          name: name,
+          description: document.getElementById('description').value || '',
+          recipeIngredient: ingredients,
+          recipeCategory: document.getElementById('recipeCategory').value || '',
+          recipeCuisine: document.getElementById('recipeCuisine').value || '',
+        };
+        const res = await fetch(`${API}/enrich-recipe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipe: recipePayload }),
+        });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          const enriched = result.recipe || {};
+          // Update Origin & Story fields from the enriched response.
+          const prov = enriched.provenance || {};
+          document.getElementById('provenance_ethnicity').value = prov.ethnicity || '';
+          document.getElementById('provenance_region').value = prov.originRegion || '';
+          const cls = enriched.classification || {};
+          document.getElementById('classification_hierarchy').value = cls.hierarchyPath || '';
+          document.getElementById('classification_confidence').value =
+            (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : '';
+          document.getElementById('classification_reasoning').value = cls.reasoning || '';
+          document.getElementById('classification_story').value = cls.story || '';
+          // Merge into lastExtractedRecipe so save's passthrough picks up
+          // the new provenance / classification (and any sub-fields the
+          // form doesn't expose).
+          if (lastExtractedRecipe) {
+            lastExtractedRecipe.provenance = enriched.provenance || {};
+            lastExtractedRecipe.classification = enriched.classification || {};
+          }
+          // Render the trace so token cost + timing are visible.
+          captureExtractionTrace(result);
+          renderExtractionTrace(result._timings, result._prompt);
+          showFeedback("Enriched!", "success");
+        } else {
+          showFeedback(`Enrichment failed: ${result.detail || 'server error'}`, "error");
+        }
+      } catch (err) {
+        console.error('Enrich error:', err);
+        showFeedback(`Enrichment failed: ${(err && err.message) || err}`, "error");
+      } finally {
+        delete enrichBtn.dataset.busy;
+        enrichBtn.textContent = originalLabel;
+        updateButtonStates();
+      }
+    };
+
     document.getElementById("clearBtn").onclick = () => {
       document.getElementById("recipeForm").reset();
       document.getElementById("recipe_id").value = "";
@@ -1569,6 +1742,7 @@
       if (driftBanner) driftBanner.style.display = 'none';
       feedback.textContent = "";
       feedback.className = "";
+      clearScoringStrip();
       updateButtonStates();
     };
 
@@ -2549,17 +2723,11 @@
       heroImageUrl.value = firstImage || '';
       applyHeroImageFromUrl();
 
-      // Invalidate URL-keyed metadata first, then seed the recipe-text score
-      // from the recipe's own _scoring. (The score isn't URL-keyed and would
-      // otherwise be wiped by the invalidate.)
+      // Invalidate technical metadata (root domain etc. from /url-metadata)
+      // and seed the scoring strip from the recipe's own _scoring (Moz +
+      // recipe-text score were denormalized into it at extract time).
       invalidateMetadataCache && invalidateMetadataCache();
-      const recipeScoreEl2 = document.getElementById('meta_recipe_score');
-      if (recipeScoreEl2) {
-        const s = r._scoring || {};
-        recipeScoreEl2.value = (s.recipeScore !== undefined && s.recipeScore !== null)
-          ? `${s.recipeScore} (threshold ${s.recipeScoreThreshold || 0})`
-          : '';
-      }
+      populateScoringStrip(r);
 
       // Auto-grow textareas
       document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
@@ -2718,21 +2886,27 @@
           return;
         }
         const m = await res.json();
-        document.getElementById('meta_page_authority').value = fmtNum(m.page_authority);
-        document.getElementById('meta_domain_authority').value = fmtNum(m.domain_authority);
-        document.getElementById('meta_ou_score').value = fmtNum(m.ou_score);
+        // Moz scores now live in the scoring strip at the top of the form,
+        // not in this metadata panel. Self-heal: if /url-metadata returned
+        // fresh Moz numbers (the endpoint runs Moz inline when moz_last_
+        // scored is null on an existing row), push them into the strip.
+        if (m.page_authority !== null && m.page_authority !== undefined) {
+          setScoreChip('score_pa', m.page_authority);
+        }
+        if (m.domain_authority !== null && m.domain_authority !== undefined) {
+          setScoreChip('score_da', m.domain_authority);
+        }
+        if (m.ou_score !== null && m.ou_score !== undefined) {
+          setScoreChip('score_ou', m.ou_score);
+        }
+        const strip = document.getElementById('scoringStrip');
+        if (strip && (m.page_authority || m.domain_authority || m.ou_score)) {
+          strip.classList.remove('hidden');
+        }
         document.getElementById('meta_root_domain').value = m.root_domain || '—';
         document.getElementById('meta_raw_title').value = m.raw_title || '—';
         document.getElementById('meta_first_seen').value = fmtDate(m.first_seen);
         document.getElementById('meta_last_accessed').value = fmtDate(m.last_accessed);
-
-        // Recipe-text score lives on the recipe itself, not in metabase_url.
-        const recipeIdInput = document.getElementById('recipe_id');
-        // The recipeScore is populated from the recipe's _scoring at populate
-        // time; we just leave whatever's already in the field. Provide a
-        // default if blank.
-        const scoreEl = document.getElementById('meta_recipe_score');
-        if (!scoreEl.value) scoreEl.value = '—';
 
         if (!m.exists) {
           metadataStatus.textContent = 'No metabase row yet — will be created on next save.';
@@ -2772,10 +2946,12 @@
     function invalidateMetadataCache() {
       metadataLoadedForUrl = null;
       metadataStatus.textContent = '';
-      ['meta_page_authority','meta_domain_authority','meta_ou_score',
-       'meta_recipe_score','meta_root_domain','meta_raw_title',
-       'meta_first_seen','meta_last_accessed'].forEach(id => {
-        document.getElementById(id).value = '';
+      // Moz scores moved to the scoring strip (cleared via clearScoringStrip
+      // on Clear; otherwise repopulated by populateScoringStrip from the
+      // recipe's _scoring). This panel only manages technical metadata now.
+      ['meta_root_domain','meta_raw_title','meta_first_seen','meta_last_accessed'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
       });
     }
 
