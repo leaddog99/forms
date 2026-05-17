@@ -170,9 +170,25 @@ def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
     """Endpoint-side cache write. Computes the recipe fingerprint, stores
     the row (or replaces the stale one), and returns (final_status,
     drift_detected). drift_detected fires only when a prior fingerprint
-    existed and the new one differs from it."""
+    existed and the new one differs from it.
+
+    Refuses to write a poisoned row: if the recipe has no name AND no
+    ingredients AND no instructions, extraction effectively failed; we
+    don't want subsequent calls to cache-hit and replay the failure
+    silently. Earlier sessions had us caching empty-name extractions
+    for paywalled / 404 / anti-bot pages, and one URL got cached with a
+    completely wrong recipe ("Easy Meatloaf" for a chicken curry page,
+    probably picked from a sidebar carousel). The next call after a
+    cache miss costs one LLM round-trip; the cost of falsely cached
+    junk is silent data corruption forever — preference is clear."""
     if not url_normalized or not recipe:
         return ("skip" if not url_normalized else "miss"), False
+    name = (recipe.get("name") or "").strip()
+    ingredients = recipe.get("recipeIngredient") or []
+    instructions = recipe.get("recipeInstructions") or []
+    if not name and not ingredients and not instructions:
+        print(f"     CACHE WRITE SKIPPED (empty extract): url={url_normalized!r}")
+        return ("miss" if not prior_fingerprint else "refresh-fresh"), False
     new_fp = compute_recipe_fingerprint(recipe)
     drift = bool(prior_fingerprint and prior_fingerprint != new_fp)
     print(f"     CACHE WRITE: url={url_normalized!r} fp={new_fp[:12]} "
