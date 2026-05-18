@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Install Recipe Bookmarklet (iOS)</title>
+  <style>
+    :root {
+      --accent: #b8602a;
+      --accent-dark: #944a1f;
+      --bg: #faf6f1;
+      --text: #1f1611;
+      --muted: #6b5b4f;
+      --card: #fff;
+      --border: #e6dccf;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 24px 18px 64px;
+      padding-bottom: max(64px, env(safe-area-inset-bottom)); }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; letter-spacing: -0.01em; }
+    .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.95rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 18px; margin-bottom: 16px; }
+    button.copy {
+      width: 100%; padding: 16px 18px; font-size: 1.05rem; font-weight: 600;
+      background: var(--accent); color: #fff; border: none; border-radius: 12px;
+      cursor: pointer; -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, transform 0.05s; touch-action: manipulation; }
+    button.copy:hover { background: var(--accent-dark); }
+    button.copy:active { transform: scale(0.985); }
+    button.copy.ok { background: #2f7a3a; }
+    ol { margin: 0; padding-left: 22px; line-height: 1.55; }
+    ol li { margin-bottom: 10px; }
+    code { background: #f3ece2; padding: 2px 6px; border-radius: 5px; font-size: 0.9em;
+      font-family: ui-monospace, Menlo, monospace; }
+    details { margin-top: 18px; }
+    details summary { cursor: pointer; color: var(--muted); font-size: 0.92rem;
+      padding: 4px 0; user-select: none; -webkit-user-select: none; }
+    details[open] summary { color: var(--text); }
+    pre.raw { background: #2a1f17; color: #f6eadb; padding: 14px;
+      border-radius: 10px; overflow-x: auto; font-size: 0.75rem; line-height: 1.4;
+      font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all;
+      user-select: all; -webkit-user-select: all; margin-top: 10px; }
+    .note { font-size: 0.85rem; color: var(--muted); margin-top: 14px; }
+    .step-num { font-weight: 600; color: var(--accent-dark); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Install Recipe Grabber</h1>
+    <p class="sub">A one-tap bookmark that imports the recipe you're reading.</p>
+
+    <div class="card">
+      <button id="copyBtn" class="copy" type="button">Copy bookmarklet code</button>
+      <p class="note" id="copyStatus" aria-live="polite">Tap to copy the bookmarklet URL to your clipboard.</p>
+    </div>
+
+    <div class="card">
+      <ol>
+        <li><span class="step-num">Tap</span> the orange button above to copy.</li>
+        <li><span class="step-num">Bookmark this page</span>: tap Share <span aria-hidden="true">⬆️</span> → <strong>Add Bookmark</strong> → Save.</li>
+        <li>Open <strong>Bookmarks</strong> (the open-book icon) → <strong>Edit</strong>.</li>
+        <li>Tap the bookmark you just made. Change the name to <code>Grab Recipe</code> and replace the URL by pasting (tap-and-hold the URL field → <strong>Paste</strong>).</li>
+        <li>Tap <strong>Done</strong>. You're installed.</li>
+      </ol>
+      <p class="note"><strong>Catch:</strong> If pasting silently strips <code>javascript:</code> off the front, position the cursor at the start of the URL and type those 11 characters in manually.</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:1rem">Using it</h3>
+      <ol>
+        <li>Open any recipe page in Safari.</li>
+        <li>Tap the <code>Grab Recipe</code> bookmark.</li>
+        <li>A new tab opens with the editable recipe form. The original page stays on screen until the import finishes.</li>
+      </ol>
+      <p class="note">First time only: if nothing happens, go to <strong>Settings → Safari → Block Pop-ups</strong> and turn it OFF (or allow pop-ups for recipes.tbotb.com).</p>
+    </div>
+
+    <details>
+      <summary>Show the raw bookmarklet code</summary>
+      <pre class="raw" id="rawCode"></pre>
+    </details>
+  </div>
+
+  <script>
+    // Single source of truth for the loader URL. If we ever change it, edit here.
+    var LOADER = "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Settings > Safari > Block Pop-ups > OFF, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='https://recipes.tbotb.com/forms/bookmarklet_ios.js?'+Date.now();(document.body||document.documentElement).appendChild(s);})();";
+
+    document.getElementById('rawCode').textContent = LOADER;
+
+    var btn = document.getElementById('copyBtn');
+    var status = document.getElementById('copyStatus');
+
+    function flashOk(msg) {
+      btn.classList.add('ok');
+      btn.textContent = 'Copied!';
+      status.textContent = msg;
+      setTimeout(function () {
+        btn.classList.remove('ok');
+        btn.textContent = 'Copy bookmarklet code';
+      }, 2200);
+    }
+
+    btn.addEventListener('click', async function () {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(LOADER);
+          flashOk('Copied. Now follow steps 2-5 below.');
+          return;
+        }
+      } catch (e) { /* fall through */ }
+
+      // Fallback for older Safari: select the raw <pre> and let the user copy manually.
+      var pre = document.getElementById('rawCode');
+      var details = pre.parentElement;
+      if (!details.open) details.open = true;
+      var r = document.createRange();
+      r.selectNodeContents(pre);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      status.textContent = 'Clipboard blocked. The code is now selected below — long-press and tap Copy.';
+    });
+  </script>
+</body>
+</html>

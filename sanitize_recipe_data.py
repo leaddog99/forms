@@ -233,6 +233,11 @@ def sanitize_recipe_data(data: dict) -> dict:
         set_if_nullish(sanitized["classification"], "hierarchyPath", "")
         set_if_nullish(sanitized["classification"], "story", "")
 
+    if isinstance(sanitized.get("editorial"), dict):
+        set_if_nullish(sanitized["editorial"], "opinion", "")
+        set_if_nullish(sanitized["editorial"], "scoreCommentary", "")
+        set_if_nullish(sanitized["editorial"], "sourcingNotes", "")
+
     # Final validation
     validated = RecipeModel(**sanitized)
     return validated.model_dump(by_alias=True, exclude_none=True)

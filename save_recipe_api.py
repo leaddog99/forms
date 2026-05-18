@@ -998,14 +998,43 @@ async def extract_from_markdown_endpoint(
 # schema.org Recipe JSON-LD via to_markdown/html_to_markdown, then runs the
 # single canonical markdown -> RecipeModel call. Mirrors the JSON shape of
 # /extract-from-image and /extract-from-markdown.
-@app.post("/extract-from-url")
-async def extract_from_url_endpoint(url: str = Form(...)):
-    print(f"[EXTRACT] Extract from URL endpoint called: {url!r}")
-    if not url or not url.strip():
-        raise HTTPException(status_code=400, detail="url is required")
+def extract_recipe_from_url(
+    url: str,
+    *,
+    pre_scored: dict | None = None,
+    batch_overrides: dict | None = None,
+) -> dict:
+    """Sync orchestrator: fetch URL → markdown → JSON-LD-or-LLM → enrich
+    hooks → attached scoring. Same pipeline as the /extract-from-url
+    endpoint, factored out so batch jobs (`intake/process_batch.py`) and
+    other in-process callers can run it without HTTP round-trips.
 
-    # Mint the recipe UUID now so token-journal entries reference it from
-    # the very first LLM call.
+    Returns the same dict shape the endpoint returns (success, recipe_id,
+    recipe, source, _timings, _prompt, _usage). Raises plain RuntimeError
+    on hard failures — the HTTP wrapper converts to HTTPException.
+
+    Arguments:
+        url: target URL to extract.
+        pre_scored: when provided, skips the live Moz API call and uses
+            these values verbatim. Shape: {"pageAuthority": float,
+            "domainAuthority": float, "ouScore": float, "rootDomain": str,
+            "rawTitle": str}. Any missing keys fall through to the live
+            scoring path. Batch flows pass this in so we don't burn Moz
+            quota re-scoring URLs the upstream pipeline already scored.
+        batch_overrides: dict applied AFTER all extraction/enrich, taking
+            precedence over inferred values. Used by batch ingestion to
+            stamp authoritative dish-level fields (name, chapter,
+            provenance.ethnicity, etc.). Top-level keys overwrite top-
+            level recipe keys; nested dict keys merge into the existing
+            nested dict (so {"classification": {"chapter": "Breads"}}
+            sets only that one chapter, leaving the rest of
+            classification intact).
+    """
+    print(f"[EXTRACT] extract_recipe_from_url: {url!r}")
+    if not url or not url.strip():
+        raise RuntimeError("url is required")
+    url = url.strip()
+
     new_recipe_id = str(uuid.uuid4())
     timings: dict = {}
     prompts: dict = {}
@@ -1013,12 +1042,10 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     t_start = time.perf_counter()
 
     # Probe Content-Type so we can route PDFs through pdf_to_markdown
-    # instead of html_to_markdown. Browser's PDF viewer renders via a
-    # plugin/iframe so the bookmarklet's html2canvas can't capture PDFs;
-    # this path lets PDFs work via the URL endpoint instead.
+    # instead of html_to_markdown. (Same routing logic as the endpoint.)
     is_pdf = False
     try:
-        head = await asyncio.to_thread(_probe_url_head, url.strip())
+        head = _probe_url_head(url)
         ctype = (head or "").lower()
         is_pdf = "application/pdf" in ctype
         print(f"[EXTRACT] HEAD Content-Type: {ctype!r} -> {'PDF' if is_pdf else 'HTML'} path")
@@ -1027,25 +1054,18 @@ async def extract_from_url_endpoint(url: str = Form(...)):
 
     try:
         if is_pdf:
-            md_result = await asyncio.to_thread(
-                pdf_url_to_markdown, url.strip(), timings, usage_log
-            )
+            md_result = pdf_url_to_markdown(url, timings, usage_log)
         else:
-            md_result = await asyncio.to_thread(html_to_markdown, url.strip(), timings)
-    except HTTPException:
-        raise
+            md_result = html_to_markdown(url, timings)
     except Exception as e:
         print(f"[ERROR] Fetch/convert failed for {url!r}: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=502, detail=f"Failed to fetch/convert URL: {e}")
+        raise RuntimeError(f"Failed to fetch/convert URL: {e}") from e
 
     print(f"[EXTRACT] has_jsonld={md_result['has_jsonld']} "
           f"markdown_len={len(md_result['markdown'])} "
           f"source_url={md_result['source_url']!r}")
 
-    # Endpoint-level cache check covers both the JSON-LD fast lane and the
-    # markdown-LLM path — whichever path originally produced the recipe, a
-    # repeat extract on the same URL short-circuits to the cached result.
     url_norm = normalize_url(md_result["source_url"]) if md_result["source_url"] else ""
     recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
     drift = False
@@ -1054,24 +1074,15 @@ async def extract_from_url_endpoint(url: str = Form(...)):
     if recipe is not None:
         path_used = "cache-hit"
     else:
-        # Fast lane: when the page ships complete schema.org Recipe JSON-LD,
-        # parse it directly (no LLM) and run only a small enrichment LLM
-        # call for provenance + classification. Falls through to the
-        # big-prompt path if JSON-LD is missing or lacks required fields.
         if md_result.get("jsonld"):
             try:
-                recipe = await asyncio.to_thread(
-                    jsonld_to_recipe,
+                recipe = jsonld_to_recipe(
                     md_result["jsonld"][0],
                     source_url=md_result["source_url"],
                     title=md_result["title"],
                     timings=timings,
                 )
                 if recipe is not None:
-                    # Enrichment (provenance / classification) is deferred to
-                    # the explicit /enrich-recipe endpoint, triggered by the
-                    # form's "Enrich" button. Extract is base-data-only so
-                    # the user can review + decide before paying for it.
                     path_used = "jsonld-direct"
             except Exception as e:
                 print(f"[WARN] jsonld_to_recipe raised, will fall back: {e}")
@@ -1079,8 +1090,7 @@ async def extract_from_url_endpoint(url: str = Form(...)):
 
         if recipe is None:
             try:
-                recipe = await asyncio.to_thread(
-                    markdown_to_recipe,
+                recipe = markdown_to_recipe(
                     md_result["markdown"],
                     source_name="",
                     source_url=md_result["source_url"],
@@ -1094,25 +1104,52 @@ async def extract_from_url_endpoint(url: str = Form(...)):
                 print(f"[ERROR] Extraction failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 _journal_usage(usage_log, recipe_id=new_recipe_id)
-                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+                raise RuntimeError(f"Extraction error: {e}") from e
 
         if recipe is not None:
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
     if recipe is None:
         _journal_usage(usage_log, recipe_id=new_recipe_id)
-        raise HTTPException(status_code=500, detail="Failed to extract recipe from URL")
+        raise RuntimeError("Failed to extract recipe from URL")
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
     timings["path"] = path_used
     _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
     _attach_chapter(recipe, usage_log=usage_log)
-    _attach_moz_scoring(recipe, url_norm)
+
+    # Scoring: when the caller (typically batch ingestion) provides
+    # pre_scored values, trust those as canonical and SKIP _attach_moz_scoring
+    # entirely. _attach_moz_scoring unconditionally overwrites recipe._scoring
+    # from the metabase_url cache / Moz API — fine for the form's interactive
+    # path where no upstream scores exist, but wrong for batch where the
+    # upstream pipeline has already produced authoritative numbers. Side
+    # effect: metabase_url isn't refreshed from batch runs; the form's
+    # metadata-refresh path remains the way to update it.
+    if pre_scored:
+        scoring = recipe.get("_scoring") or {}
+        for k in ("pageAuthority", "domainAuthority", "ouScore", "rootDomain", "rawTitle"):
+            v = pre_scored.get(k)
+            if v is not None and v != "":
+                scoring[k] = v
+        recipe["_scoring"] = scoring
+    else:
+        _attach_moz_scoring(recipe, url_norm)
     recipe["id"] = new_recipe_id
-    # Journal LLM token usage before returning.
     _journal_usage(usage_log, recipe_id=new_recipe_id)
     _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
+
+    # Batch overrides: authoritative fields the upstream batch declared.
+    # Apply LAST so they win over anything extract/enrich derived. Shallow-
+    # merge nested dicts (don't replace classification wholesale — overlay
+    # only the keys the batch supplied).
+    if batch_overrides:
+        for k, v in batch_overrides.items():
+            if isinstance(v, dict) and isinstance(recipe.get(k), dict):
+                recipe[k].update(v)
+            else:
+                recipe[k] = v
 
     return {
         "success": True,
@@ -1127,6 +1164,22 @@ async def extract_from_url_endpoint(url: str = Form(...)):
         "_prompt": prompts,
         "_usage": usage_log,
     }
+
+
+@app.post("/extract-from-url")
+async def extract_from_url_endpoint(url: str = Form(...)):
+    if not url or not url.strip():
+        raise HTTPException(status_code=400, detail="url is required")
+    try:
+        return await asyncio.to_thread(extract_recipe_from_url, url.strip())
+    except RuntimeError as e:
+        # Differentiate fetch/convert failures (network) from extract failures
+        # (LLM/parse) so the form can show the right error type. Fetch/convert
+        # errors are prefixed in the message; everything else is a 500.
+        msg = str(e)
+        if msg.startswith("Failed to fetch/convert URL"):
+            raise HTTPException(status_code=502, detail=msg)
+        raise HTTPException(status_code=500, detail=msg)
 
 
 # Stage markdown from a bookmarklet so the form can pick it up on load.
