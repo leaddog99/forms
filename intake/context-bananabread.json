@@ -1,0 +1,1682 @@
+{
+  "https://natashaskitchen.com/banana-bread-recipe-video/": {
+    "url": "https://natashaskitchen.com/banana-bread-recipe-video/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:47.193296",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 56,
+      "history": [
+        {
+          "value": 56,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 70,
+      "history": [
+        {
+          "value": 70,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Moist Banana Bread Recipe (VIDEO) - NatashasKitchen.com",
+      "history": [
+        {
+          "value": "Moist Banana Bread Recipe (VIDEO) - NatashasKitchen.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "natashaskitchen.com",
+      "history": [
+        {
+          "value": "natashaskitchen.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 16.7,
+      "history": [
+        {
+          "value": 16.7,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 56,
+          "domain_authority": 70
+        }
+      ]
+    },
+    "rank": {
+      "value": 5,
+      "history": [
+        {
+          "value": 5,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.allrecipes.com/recipe/20144/banana-banana-bread/": {
+    "url": "https://www.allrecipes.com/recipe/20144/banana-banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:47.640196",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 63,
+      "history": [
+        {
+          "value": 63,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 92,
+      "history": [
+        {
+          "value": 92,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "allrecipes.com",
+      "history": [
+        {
+          "value": "allrecipes.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 16.655,
+      "history": [
+        {
+          "value": 16.655,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 63,
+          "domain_authority": 92
+        }
+      ]
+    },
+    "rank": {
+      "value": 6,
+      "history": [
+        {
+          "value": 6,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.simplyrecipes.com/recipes/banana_bread/": {
+    "url": "https://www.simplyrecipes.com/recipes/banana_bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:47.912760",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 63,
+      "history": [
+        {
+          "value": 63,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 87,
+      "history": [
+        {
+          "value": 87,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "simplyrecipes.com",
+      "history": [
+        {
+          "value": "simplyrecipes.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 18.191,
+      "history": [
+        {
+          "value": 18.191,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 63,
+          "domain_authority": 87
+        }
+      ]
+    },
+    "rank": {
+      "value": 2,
+      "history": [
+        {
+          "value": 2,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://sallysbakingaddiction.com/best-banana-bread-recipe/": {
+    "url": "https://sallysbakingaddiction.com/best-banana-bread-recipe/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:48.284628",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 59,
+      "history": [
+        {
+          "value": 59,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 76,
+      "history": [
+        {
+          "value": 76,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "My Favorite Banana Bread Recipe - Sally's Baking",
+      "history": [
+        {
+          "value": "My Favorite Banana Bread Recipe - Sally's Baking",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "sallysbakingaddiction.com",
+      "history": [
+        {
+          "value": "sallysbakingaddiction.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 17.701,
+      "history": [
+        {
+          "value": 17.701,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 59,
+          "domain_authority": 76
+        }
+      ]
+    },
+    "rank": {
+      "value": 3,
+      "history": [
+        {
+          "value": 3,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.mamaknowsglutenfree.com/easy-gluten-free-banana-bread/": {
+    "url": "https://www.mamaknowsglutenfree.com/easy-gluten-free-banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:49.838050",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 46,
+      "history": [
+        {
+          "value": 46,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 44,
+      "history": [
+        {
+          "value": 44,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Gluten-Free Banana Bread - Mama Knows Gluten Free",
+      "history": [
+        {
+          "value": "Gluten-Free Banana Bread - Mama Knows Gluten Free",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "mamaknowsglutenfree.com",
+      "history": [
+        {
+          "value": "mamaknowsglutenfree.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 16.303,
+      "history": [
+        {
+          "value": 16.303,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 46,
+          "domain_authority": 44
+        }
+      ]
+    },
+    "rank": {
+      "value": 7,
+      "history": [
+        {
+          "value": 7,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.loveandlemons.com/banana-bread/": {
+    "url": "https://www.loveandlemons.com/banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:50.275726",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 53,
+      "history": [
+        {
+          "value": 53,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 69,
+      "history": [
+        {
+          "value": 69,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "loveandlemons.com",
+      "history": [
+        {
+          "value": "loveandlemons.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 14.04,
+      "history": [
+        {
+          "value": 14.04,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 53,
+          "domain_authority": 69
+        }
+      ]
+    },
+    "rank": {
+      "value": 12,
+      "history": [
+        {
+          "value": 12,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://butternutbakeryblog.com/chocolate-chip-banana-bread/": {
+    "url": "https://butternutbakeryblog.com/chocolate-chip-banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:52.324231",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 45,
+      "history": [
+        {
+          "value": 45,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 47,
+      "history": [
+        {
+          "value": 47,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "MOIST Chocolate Chip Banana Bread - Butternut Bakery",
+      "history": [
+        {
+          "value": "MOIST Chocolate Chip Banana Bread - Butternut Bakery",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "butternutbakeryblog.com",
+      "history": [
+        {
+          "value": "butternutbakeryblog.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 14.097,
+      "history": [
+        {
+          "value": 14.097,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 45,
+          "domain_authority": 47
+        }
+      ]
+    },
+    "rank": {
+      "value": 11,
+      "history": [
+        {
+          "value": 11,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://tastesbetterfromscratch.com/skinny-banana-bread/": {
+    "url": "https://tastesbetterfromscratch.com/skinny-banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:57.086266",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 51,
+      "history": [
+        {
+          "value": 51,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 64,
+      "history": [
+        {
+          "value": 64,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Healthy Banana Bread Recipe - Tastes Better from Scratch",
+      "history": [
+        {
+          "value": "Healthy Banana Bread Recipe - Tastes Better from Scratch",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "tastesbetterfromscratch.com",
+      "history": [
+        {
+          "value": "tastesbetterfromscratch.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 13.769,
+      "history": [
+        {
+          "value": 13.769,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 51,
+          "domain_authority": 64
+        }
+      ]
+    },
+    "rank": {
+      "value": 15,
+      "history": [
+        {
+          "value": 15,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.bonappetit.com/recipe/banana-bread": {
+    "url": "https://www.bonappetit.com/recipe/banana-bread",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:57.835462",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 59,
+      "history": [
+        {
+          "value": 59,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 88,
+      "history": [
+        {
+          "value": 88,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "BA's Best Banana Bread Recipe | Bon App\u00e9tit",
+      "history": [
+        {
+          "value": "BA's Best Banana Bread Recipe | Bon App\u00e9tit",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "bonappetit.com",
+      "history": [
+        {
+          "value": "bonappetit.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 13.881,
+      "history": [
+        {
+          "value": 13.881,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 59,
+          "domain_authority": 88
+        }
+      ]
+    },
+    "rank": {
+      "value": 14,
+      "history": [
+        {
+          "value": 14,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.joyofbaking.com/breakfast/BananaBread.html": {
+    "url": "https://www.joyofbaking.com/breakfast/BananaBread.html",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:04:57.937049",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 52,
+      "history": [
+        {
+          "value": 52,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 64,
+      "history": [
+        {
+          "value": 64,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Banana Bread Recipe & Video - Joyofbaking.com *Video Recipe*",
+      "history": [
+        {
+          "value": "Banana Bread Recipe & Video - Joyofbaking.com *Video Recipe*",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "joyofbaking.com",
+      "history": [
+        {
+          "value": "joyofbaking.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 14.769,
+      "history": [
+        {
+          "value": 14.769,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 52,
+          "domain_authority": 64
+        }
+      ]
+    },
+    "rank": {
+      "value": 8,
+      "history": [
+        {
+          "value": 8,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.food.com/recipe/best-banana-bread-2886": {
+    "url": "https://www.food.com/recipe/best-banana-bread-2886",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:00.874526",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 58,
+      "history": [
+        {
+          "value": 58,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 86,
+      "history": [
+        {
+          "value": 86,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Best Banana Bread Recipe  - Food.com",
+      "history": [
+        {
+          "value": "Best Banana Bread Recipe  - Food.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "food.com",
+      "history": [
+        {
+          "value": "food.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 13.503,
+      "history": [
+        {
+          "value": 13.503,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 58,
+          "domain_authority": 86
+        }
+      ]
+    },
+    "rank": {
+      "value": 18,
+      "history": [
+        {
+          "value": 18,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://simple-veganista.com/vegan-banana-tea-bread/": {
+    "url": "https://simple-veganista.com/vegan-banana-tea-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:03.417397",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 49,
+      "history": [
+        {
+          "value": 49,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 57,
+      "history": [
+        {
+          "value": 57,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "The Best Vegan Banana Bread | Easy & Healthy Recipe",
+      "history": [
+        {
+          "value": "The Best Vegan Banana Bread | Easy & Healthy Recipe",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "simple-veganista.com",
+      "history": [
+        {
+          "value": "simple-veganista.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 14.282,
+      "history": [
+        {
+          "value": 14.282,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 49,
+          "domain_authority": 57
+        }
+      ]
+    },
+    "rank": {
+      "value": 10,
+      "history": [
+        {
+          "value": 10,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.theclevercarrot.com/2020/04/ultimate-sourdough-banana-bread/": {
+    "url": "https://www.theclevercarrot.com/2020/04/ultimate-sourdough-banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:04.501649",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 46,
+      "history": [
+        {
+          "value": 46,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 51,
+      "history": [
+        {
+          "value": 51,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "theclevercarrot.com",
+      "history": [
+        {
+          "value": "theclevercarrot.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 13.536,
+      "history": [
+        {
+          "value": 13.536,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 46,
+          "domain_authority": 51
+        }
+      ]
+    },
+    "rank": {
+      "value": 17,
+      "history": [
+        {
+          "value": 17,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.eatingonadime.com/banana-bread-recipe/": {
+    "url": "https://www.eatingonadime.com/banana-bread-recipe/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:04.800323",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 47,
+      "history": [
+        {
+          "value": 47,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 55,
+      "history": [
+        {
+          "value": 55,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Easy Moist Banana Bread Recipe & VIDEO - Eating on a Dime",
+      "history": [
+        {
+          "value": "Easy Moist Banana Bread Recipe & VIDEO - Eating on a Dime",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "eatingonadime.com",
+      "history": [
+        {
+          "value": "eatingonadime.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 13.023,
+      "history": [
+        {
+          "value": 13.023,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 47,
+          "domain_authority": 55
+        }
+      ]
+    },
+    "rank": {
+      "value": 19,
+      "history": [
+        {
+          "value": 19,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.twopeasandtheirpod.com/chocolate-banana-bread/": {
+    "url": "https://www.twopeasandtheirpod.com/chocolate-banana-bread/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:05.050968",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 53,
+      "history": [
+        {
+          "value": 53,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 67,
+      "history": [
+        {
+          "value": 67,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Chocolate Banana Bread Recipe",
+      "history": [
+        {
+          "value": "Chocolate Banana Bread Recipe",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "twopeasandtheirpod.com",
+      "history": [
+        {
+          "value": "twopeasandtheirpod.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 14.726,
+      "history": [
+        {
+          "value": 14.726,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 53,
+          "domain_authority": 67
+        }
+      ]
+    },
+    "rank": {
+      "value": 9,
+      "history": [
+        {
+          "value": 9,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://divascancook.com/moist-banana-bread-recipe-easy/": {
+    "url": "https://divascancook.com/moist-banana-bread-recipe-easy/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:05.487128",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 48,
+      "history": [
+        {
+          "value": 48,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 58,
+      "history": [
+        {
+          "value": 58,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "The BEST Moist Banana Bread Recipe- Fan-Favorite Recipe",
+      "history": [
+        {
+          "value": "The BEST Moist Banana Bread Recipe- Fan-Favorite Recipe",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "divascancook.com",
+      "history": [
+        {
+          "value": "divascancook.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 12.916,
+      "history": [
+        {
+          "value": 12.916,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 48,
+          "domain_authority": 58
+        }
+      ]
+    },
+    "rank": {
+      "value": 20,
+      "history": [
+        {
+          "value": 20,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.loveandlemons.com/healthy-banana-bread-recipe/": {
+    "url": "https://www.loveandlemons.com/healthy-banana-bread-recipe/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:06.306875",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 53,
+      "history": [
+        {
+          "value": 53,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 69,
+      "history": [
+        {
+          "value": 69,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "loveandlemons.com",
+      "history": [
+        {
+          "value": "loveandlemons.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 14.04,
+      "history": [
+        {
+          "value": 14.04,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 53,
+          "domain_authority": 69
+        }
+      ]
+    },
+    "rank": {
+      "value": 13,
+      "history": [
+        {
+          "value": 13,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.spendwithpennies.com/easy-banana-bread-recipe/": {
+    "url": "https://www.spendwithpennies.com/easy-banana-bread-recipe/",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:06.496145",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 55,
+      "history": [
+        {
+          "value": 55,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 66,
+      "history": [
+        {
+          "value": 66,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "Easy Banana Bread Recipe - Spend With Pennies",
+      "history": [
+        {
+          "value": "Easy Banana Bread Recipe - Spend With Pennies",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "spendwithpennies.com",
+      "history": [
+        {
+          "value": "spendwithpennies.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 17.071,
+      "history": [
+        {
+          "value": 17.071,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 55,
+          "domain_authority": 66
+        }
+      ]
+    },
+    "rank": {
+      "value": 4,
+      "history": [
+        {
+          "value": 4,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.marthastewart.com/312772/banana-bread": {
+    "url": "https://www.marthastewart.com/312772/banana-bread",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:06.986342",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 60,
+      "history": [
+        {
+          "value": 60,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 92,
+      "history": [
+        {
+          "value": 92,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "marthastewart.com",
+      "history": [
+        {
+          "value": "marthastewart.com",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 13.655,
+      "history": [
+        {
+          "value": 13.655,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 60,
+          "domain_authority": 92
+        }
+      ]
+    },
+    "rank": {
+      "value": 16,
+      "history": [
+        {
+          "value": 16,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  },
+  "https://www.bbc.co.uk/food/recipes/bananabread_85720": {
+    "url": "https://www.bbc.co.uk/food/recipes/bananabread_85720",
+    "history": [
+      {
+        "timestamp": "2026-05-18T18:04:47.009679",
+        "step": "load_urls",
+        "source": "input/bananabread.txt",
+        "status": "accepted"
+      },
+      {
+        "timestamp": "2026-05-18T18:05:07.327835",
+        "step": "filter_urls",
+        "status": "accepted"
+      },
+      {
+        "status": "scored",
+        "module": "score_urls_moz",
+        "timestamp": "2026-05-18T22:05:10.035379"
+      }
+    ],
+    "current_status": "accepted",
+    "pa": {
+      "value": 67,
+      "history": [
+        {
+          "value": 67,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "da": {
+      "value": 95,
+      "history": [
+        {
+          "value": 95,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "title": {
+      "value": "",
+      "history": [
+        {
+          "value": "",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "domain": {
+      "value": "co.uk",
+      "history": [
+        {
+          "value": "co.uk",
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379"
+        }
+      ]
+    },
+    "ou": {
+      "value": 19.749,
+      "history": [
+        {
+          "value": 19.749,
+          "step": "score_urls",
+          "timestamp": "2026-05-18T22:05:10.035379",
+          "page_authority": 67,
+          "domain_authority": 95
+        }
+      ]
+    },
+    "rank": {
+      "value": 1,
+      "history": [
+        {
+          "value": 1,
+          "step": "rank_and_cull",
+          "timestamp": "2026-05-18T22:05:10.052581"
+        }
+      ]
+    }
+  }
+}

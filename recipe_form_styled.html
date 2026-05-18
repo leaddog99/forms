@@ -14,7 +14,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Recipe Manager</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
@@ -345,7 +345,14 @@
     }
 
     textarea { resize: none; overflow: hidden; min-height: 70px; }
-    textarea.auto-grow { min-height: 90px; line-height: 1.7; }
+    /* Auto-grow textareas: grow with content up to a cap, then scroll.
+       autoGrow() in JS reads max-height and flips overflow-y between
+       hidden (still growing) and auto (capped). Keep min-height modest
+       so empty textareas don't waste vertical space. */
+    textarea.auto-grow { min-height: 90px; max-height: 360px; line-height: 1.7; }
+    /* Story is intentionally longer (history / location / traditional /
+       modern usage), so give it more headroom before the scroll kicks in. */
+    textarea#classification_story.auto-grow { max-height: 560px; }
 
     /* Two Column Recipe Layout */
     .recipe-columns {
@@ -869,6 +876,135 @@
     }
 
     .modal-actions button { padding: 10px 18px; font-size: 0.92em; }
+
+    /* ============================================================
+       RESPONSIVE — mobile (≤720px). The desktop layout uses fixed
+       28-32px padding and 2-column grids that overflow narrow
+       viewports. Here we collapse to single column, tighten paddings,
+       and bump input font-size to 16px (iOS Safari auto-zooms on
+       focus when font-size < 16px, which is jarring on phones).
+       Action footer reserves env(safe-area-inset-bottom) for the
+       iPhone home indicator (viewport-fit=cover in <meta> enables it).
+       ============================================================ */
+    @media (max-width: 720px) {
+      body {
+        font-size: 1em;
+        padding-top: 52px;
+        /* Footer can wrap to 2 button rows on a phone (Save/Enrich/Clear/Delete
+           don't fit on one). Reserve enough room that bottom content isn't
+           hidden under it. */
+        padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+      }
+      .app-header { height: 52px; }
+      .app-header .header-inner {
+        padding: 0 14px;
+        gap: 10px;
+      }
+      .app-header h1 { font-size: 1.02em; }
+
+      .action-footer {
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+      }
+      .action-footer .button-row {
+        gap: 6px;
+        justify-content: space-between;
+      }
+      /* Footer buttons: shrink padding so all four fit on a single row on
+         typical phones (≥360px), still ~44px tall for touch. */
+      .action-footer .button-row button {
+        padding: 10px 14px;
+        font-size: 0.92em;
+        flex: 1 1 auto;
+      }
+      .action-footer #feedback {
+        flex: 1 1 100%;
+        margin: 4px 0 0 0;
+        padding: 6px 10px;
+        font-size: 0.85em;
+      }
+
+      .container { padding: 14px; }
+      .main {
+        padding: 18px;
+        border-radius: 16px;
+        box-shadow: 0 6px 18px rgba(60,40,20,.06);
+      }
+
+      /* Collapse all multi-column grids to single column. */
+      .header-row {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .recipe-columns {
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      .form-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      /* Chapter pill: don't force a min-width that overflows.
+         Let it size to content but max out at the row width. */
+      .chapter-row { flex-wrap: wrap; gap: 8px; }
+      .chapter-select {
+        min-width: 0;
+        width: 100%;
+        font-size: 1em;
+      }
+
+      /* Form inputs at 16px prevents iOS focus-zoom. The rest of
+         the typography scales with body. */
+      input, textarea, select { font-size: 16px; padding: 11px 12px; }
+
+      /* Hero image smaller floor on mobile — the placeholder needn't
+         occupy half the viewport. */
+      .hero-section { min-height: 200px; }
+
+      /* Sidebar grabs most of the screen on mobile (260px is too
+         cramped for 375-430px viewports). The hidden state must push
+         it ALL the way off-screen (-100% of its own width) since the
+         desktop -280px no longer covers the wider mobile sidebar. */
+      .sidebar { width: 86vw; max-width: 320px; left: -100%; }
+      .sidebar.open { left: 0; }
+
+      /* Recipe-content cards: tighter padding so the inner inputs
+         don't get squeezed by chrome. */
+      .recipe-content-area { padding: 14px; border-radius: 12px; }
+
+      /* Scoring chips: smaller min-width so 4 chips fit on a phone. */
+      .scoring-strip { padding: 10px 12px; gap: 10px; }
+      .score-chip { min-width: 0; flex: 1 1 calc(50% - 10px); }
+
+      /* Touch targets — ensure the delete/edit row buttons stay
+         tappable. Default is 20px which is below the 44px minimum. */
+      .item-btn { width: 32px; height: 32px; }
+
+      /* Item-actions are normally hover-revealed (opacity:0) — there's
+         no hover on touch devices, so reveal them always on mobile. */
+      .ingredient-item .item-actions,
+      .step-item .item-actions { opacity: 1; }
+
+      /* The URL-extract row needs the button below the input on narrow
+         screens, not beside it. The flex container stacks; children
+         inherit full width naturally. */
+      .url-row { flex-direction: column; gap: 6px; }
+      .url-row input[type="url"], .url-row button { font-size: 16px; }
+      .drop-zone { padding: 16px; margin-bottom: 16px; }
+      .drop-zone-icon { width: 36px; height: 36px; margin-bottom: 8px; }
+
+      /* Drop zone: stack vertically. */
+      .modal-inner { width: 94%; }
+    }
+
+    /* Very small phones (≤380px — iPhone SE, older Androids). */
+    @media (max-width: 380px) {
+      .container { padding: 10px; }
+      .main { padding: 14px; }
+      .app-header .header-inner { padding: 0 10px; gap: 8px; }
+      .action-footer { padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+    }
   </style>
 </head>
 <body>
@@ -1105,6 +1241,29 @@
             <label for="classification_story">Story</label>
             <textarea id="classification_story" class="auto-grow" rows="4"
                       placeholder="The dish's origin, what makes it distinctive, who eats it"></textarea>
+          </div>
+        </section>
+
+        <!-- Editorial (LLM editorial opinion + score commentary + sourcing
+             notes for THIS specific recipe). Populated by /enrich-recipe;
+             editable by hand. Distinct from Story above (which is about the
+             dish in general). -->
+        <section class="form-section">
+          <h3>Editorial</h3>
+          <div class="form-group">
+            <label for="editorial_opinion">Opinion of this recipe</label>
+            <textarea id="editorial_opinion" class="auto-grow" rows="3"
+                      placeholder="Editorial take on THIS recipe — technique, ratios, what makes it work or wobble, who'd love it"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="editorial_score_commentary">Authority &amp; score commentary</label>
+            <textarea id="editorial_score_commentary" class="auto-grow" rows="2"
+                      placeholder="What the PA/DA/OU scores mean for this page — is the recipe punching above or below its domain's weight"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="editorial_sourcing_notes">Sourcing notes (critical ingredients)</label>
+            <textarea id="editorial_sourcing_notes" class="auto-grow" rows="4"
+                      placeholder="- **Olive oil**: raw in this recipe, so quality dominates. Look for cold-pressed Ligurian..."></textarea>
           </div>
         </section>
 
@@ -1489,6 +1648,12 @@
       setVal("classification_reasoning", cls.reasoning || "");
       setVal("classification_story", cls.story || "");
 
+      // Editorial (opinion + score commentary + sourcing notes for THIS recipe)
+      const ed = r.editorial || {};
+      setVal("editorial_opinion", ed.opinion || "");
+      setVal("editorial_score_commentary", ed.scoreCommentary || "");
+      setVal("editorial_sourcing_notes", ed.sourcingNotes || "");
+
       // Notes
       notesList.innerHTML = '';
       const notesArr = (r.notes || '').split('\n').filter(Boolean);
@@ -1647,6 +1812,13 @@
         reasoning: getValOr("classification_reasoning"),
         story: getValOr("classification_story"),
       };
+      // Editorial: opinion + score commentary + sourcing notes. All three
+      // are markdown text. getValOr handles stale-cached HTML without UI.
+      const userEditorial = {
+        opinion: getValOr("editorial_opinion"),
+        scoreCommentary: getValOr("editorial_score_commentary"),
+        sourcingNotes: getValOr("editorial_sourcing_notes"),
+      };
 
       const payload = {
         recipe_id: document.getElementById("recipe_id").value || undefined,
@@ -1677,7 +1849,8 @@
         author: { "@type": "Person", name: document.getElementById("author").value },
         image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : [],
         provenance: userProvenance,
-        classification: userClassification
+        classification: userClassification,
+        editorial: userEditorial
       };
 
       // Pass-through fields the form has no UI for. Sourced from the last
@@ -1817,12 +1990,27 @@
             (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : '';
           document.getElementById('classification_reasoning').value = cls.reasoning || '';
           document.getElementById('classification_story').value = cls.story || '';
+          // Editorial (opinion + score commentary + sourcing notes). Same
+          // defensive setters in case the form was loaded from cached HTML
+          // without the editorial section yet.
+          const ed = enriched.editorial || {};
+          const setEd = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+          setEd('editorial_opinion', ed.opinion);
+          setEd('editorial_score_commentary', ed.scoreCommentary);
+          setEd('editorial_sourcing_notes', ed.sourcingNotes);
+          // Re-run auto-grow on the freshly populated textareas so they
+          // size to content (without this they stay at min-height even
+          // when the LLM fills them with hundreds of words).
+          ['classification_reasoning','classification_story',
+           'editorial_opinion','editorial_score_commentary','editorial_sourcing_notes']
+            .forEach(id => { const el = document.getElementById(id); if (el) autoGrow(el); });
           // Merge into lastExtractedRecipe so save's passthrough picks up
-          // the new provenance / classification (and any sub-fields the
-          // form doesn't expose).
+          // the new provenance / classification / editorial (and any
+          // sub-fields the form doesn't expose).
           if (lastExtractedRecipe) {
             lastExtractedRecipe.provenance = enriched.provenance || {};
             lastExtractedRecipe.classification = enriched.classification || {};
+            lastExtractedRecipe.editorial = enriched.editorial || {};
           }
           // Render the trace so token cost + timing are visible.
           captureExtractionTrace(result);
@@ -2186,10 +2374,24 @@
       }
     };
 
-    // Auto-grow textareas
+    // Auto-grow textareas, capped at the element's CSS max-height. When
+    // content exceeds the cap, height stays pinned and we switch to a
+    // scrollbar (overflow-y: auto) so the user can read the rest without
+    // the textarea dominating the viewport. When content shrinks back
+    // below the cap, overflow returns to hidden so the natural-grown look
+    // is preserved.
     function autoGrow(el) {
       el.style.height = 'auto';
-      el.style.height = el.scrollHeight + 'px';
+      const cs = getComputedStyle(el);
+      const cap = parseFloat(cs.maxHeight);
+      const content = el.scrollHeight;
+      if (Number.isFinite(cap) && content > cap) {
+        el.style.height = cap + 'px';
+        el.style.overflowY = 'auto';
+      } else {
+        el.style.height = content + 'px';
+        el.style.overflowY = 'hidden';
+      }
     }
 
     document.querySelectorAll('textarea.auto-grow').forEach(textarea => {
@@ -2387,7 +2589,16 @@
       if (errorDialog.open) return;
       errorDialogTitle.textContent = title;
       errorDialogMessage.textContent = message;
-      errorDialogImageBtn.style.display = showImageButton ? '' : 'none';
+      // Only show the image-extract button when there's actually a staged
+      // screenshot to use (bookmarklet flow). Without one, clicking would
+      // open a file picker the user didn't ask for — the recurring "come
+      // on!" frustration. The drop zone on the form is the explicit path
+      // for manual screenshot upload; the error message points the user
+      // back to it (and to the bookmarklet) in prose. See
+      // memory/feedback_no_surprise_pickers.md.
+      const offerStaged = !!(showImageButton && stagedToken);
+      errorDialogImageBtn.style.display = offerStaged ? '' : 'none';
+      errorDialogImageBtn.textContent = 'Try staged screenshot';
       if (typeof errorDialog.showModal === 'function') {
         errorDialog.showModal();
       } else {
@@ -2813,6 +3024,12 @@
         (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : "");
       setVal("classification_reasoning", cls.reasoning || "");
       setVal("classification_story", cls.story || "");
+
+      // Editorial (opinion + score commentary + sourcing notes for THIS recipe)
+      const ed = r.editorial || {};
+      setVal("editorial_opinion", ed.opinion || "");
+      setVal("editorial_score_commentary", ed.scoreCommentary || "");
+      setVal("editorial_sourcing_notes", ed.sourcingNotes || "");
 
       // Notes
       notesList.innerHTML = '';
