@@ -38,23 +38,39 @@ def _compute_ou(pa: float, da: float) -> Optional[float]:
 
 
 def _url_variants(url: str) -> list[str]:
-    """Return [url, www-toggled variant]. Moz doesn't normalize — the
-    non-www form returns only estimated PA, while the www form (the form
-    most major sites canonicalize to) is the actually-crawled URL with
-    real PA. Querying both lets us pick the crawled one at score time."""
+    """Return all reasonable URL variants Moz might score differently:
+    {host, alt-host (www-toggled)} × {path, alt-path (trailing-slash-toggled)}.
+
+    Moz scores variants independently — the canonical (the form the
+    site actually serves) gets the real PA, others get an alternate /
+    estimated PA. Empirically, for many sites the trailing-slash form
+    is canonical and the slash-stripped form scores ~15 points lower
+    PA. `normalize_url` (used internally for cache keys) strips the
+    trailing slash, so we MUST re-add it as a candidate here or we'll
+    cache the under-scored variant. `score_url_via_moz` picks the
+    highest-PA crawled result, so adding more variants only helps.
+    """
     out = [url]
+    seen = {url}
     try:
         p = urlparse(url)
         host = (p.netloc or "").lower()
-        if host.startswith("www."):
-            alt_host = host[4:]
-        elif host:
-            alt_host = "www." + host
-        else:
+        if not host:
             return out
-        alt = urlunparse((p.scheme, alt_host, p.path, p.params, p.query, p.fragment))
-        if alt != url:
-            out.append(alt)
+        # Host toggle
+        alt_host = host[4:] if host.startswith("www.") else "www." + host
+        # Path toggle (trailing slash)
+        path = p.path or "/"
+        if path.endswith("/") and len(path) > 1:
+            alt_path = path.rstrip("/")
+        else:
+            alt_path = path + "/" if path else "/"
+        for h in (host, alt_host):
+            for pa in (path, alt_path):
+                v = urlunparse((p.scheme, h, pa, p.params, p.query, p.fragment))
+                if v not in seen:
+                    seen.add(v)
+                    out.append(v)
     except Exception:
         pass
     return out
@@ -93,11 +109,17 @@ def score_url_via_moz(url: str) -> Optional[dict]:
     if not results:
         return None
 
-    # Prefer a variant Moz has actually crawled; if multiple, pick the
-    # one with the highest PA (real measurement beats estimate).
-    crawled = [r for r in results if r.get("http_code")]
-    chosen = (max(crawled, key=lambda r: r.get("page_authority") or 0)
-              if crawled else max(results, key=lambda r: r.get("page_authority") or 0))
+    # Tiered variant pick: Moz returns one entry per URL variant we
+    # queried, each with an http_code telling us whether it was really
+    # crawled (200/301/302) vs. estimate-only (402) vs. no signal (0/
+    # missing). The canonical-PA variant is the one Moz has the most
+    # real data on, so we walk those tiers in order and within the best
+    # tier we have, pick the highest PA (the canonical concentrates the
+    # link graph).
+    crawled = [r for r in results if r.get("http_code") in (200, 301, 302)]
+    estimated = [r for r in results if r.get("http_code") == 402]
+    pool = crawled or estimated or results
+    chosen = max(pool, key=lambda r: r.get("page_authority") or 0)
 
     pa = float(chosen.get("page_authority") or 0)
     da = float(chosen.get("domain_authority") or 0)
