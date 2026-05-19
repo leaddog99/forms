@@ -230,7 +230,12 @@ def extract_one(
     )
     t0 = time.perf_counter()
     try:
-        result = extract_recipe_from_url(url, pre_scored=pre, batch_overrides=overrides)
+        # Batch extracts target the master collection — pass user_id=0 so
+        # the in-process drift-stamp + token-journal calls record under the
+        # admin/batch user, not the placeholder personal user.
+        result = extract_recipe_from_url(
+            url, pre_scored=pre, batch_overrides=overrides, user_id=0,
+        )
     except Exception as e:
         dt = time.perf_counter() - t0
         print(f"  [EXTRACT-MISS] {dt*1000:.0f}ms — {type(e).__name__}: {e}")
@@ -248,6 +253,9 @@ def save_one(result: dict) -> bool:
     detail on failure."""
     payload = dict(result["recipe"])
     payload["recipe_id"] = result["recipe_id"]
+    # Batch writes target the master collection (master_recipes table).
+    # Server dispatches on user_id; this stamp is the authoritative signal.
+    payload["user_id"] = 0
     try:
         r = requests.post(f"{API_BASE}/recipes", json=payload, timeout=SAVE_TIMEOUT_S)
     except Exception as e:
