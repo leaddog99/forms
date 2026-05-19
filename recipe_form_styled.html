@@ -1042,6 +1042,19 @@
   <div class="container">
     <!-- Main: Recipe Form -->
     <main class="main">
+      <!-- Admin band. Holds the user_id discriminator: 0 = master_recipes
+           (sys-admin / batch-curated), anything else = a personal recipes
+           collection. Visible-but-compact so the operator can see which
+           collection they're writing to without it dominating the form.
+           Default 1 preserves prior single-user behavior. -->
+      <div class="admin-band" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:0.85em;color:var(--muted);margin:0 0 10px 0">
+        <label for="user_id" style="font-weight:600;letter-spacing:0.04em;text-transform:uppercase;font-size:0.78em">User ID
+          <span style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">(0 = master)</span>
+        </label>
+        <input type="number" id="user_id" value="1" min="0" step="1"
+               style="width:64px;padding:4px 8px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:1em;border:1px solid var(--line);border-radius:8px;background:var(--card);text-align:center" />
+      </div>
+
       <!-- URL Extraction (server fetches HTML, pulls JSON-LD if present) -->
       <div class="url-row">
         <input type="url" id="extractUrlInput" placeholder="Paste a recipe URL — https://..." />
@@ -1343,18 +1356,9 @@
                 <input type="text" id="recipe_id" readonly
                        style="font-family:ui-monospace,'SF Mono',Consolas,monospace" />
               </div>
-              <!-- Owner discriminator. 0 = sys-admin master collection
-                   (writes to master_recipes table); any other value = a
-                   personal collection (recipes table). Visible here for
-                   testing while the auth gate / multi-user story isn't
-                   built; default 1 preserves the prior behavior. -->
-              <div class="form-group">
-                <label for="user_id">User ID
-                  <span style="font-weight:400;color:var(--muted);font-size:0.85em">(0 = master)</span>
-                </label>
-                <input type="number" id="user_id" value="1" min="0" step="1"
-                       style="font-family:ui-monospace,'SF Mono',Consolas,monospace" />
-              </div>
+              <!-- The user_id discriminator lives in the admin band at the
+                   top of the form (always-visible, single DOM input). Not
+                   duplicated here. -->
               <!-- PA / DA / OU / Recipe-text score are surfaced in the
                    scoring strip at the top of the form. This panel only
                    carries the secondary technical metadata (UUIDs, root
