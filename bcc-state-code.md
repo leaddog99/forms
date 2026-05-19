@@ -576,6 +576,121 @@ Net: extract is now ~10-20 s (no enrichment), enrich is ~3-5 s on demand. User c
 
 ---
 
+## Session log — 2026-05-18
+
+A blockbuster session. Shipped the **Editorial section** (LLM opinion + score commentary + sourcing notes per recipe), a **mobile-responsive form**, a **paste-safe iOS bookmarklet**, a **batch-ingestion pipeline** that takes the upstream pipelineRecipes context JSONs and runs them through the canonical extract path, a **Moz canonical-URL fix** that landed in both projects, and a **backfill** that retroactively corrected PA scores on 76 existing recipes. Two batches landed end-to-end: Banana Bread 14/20 saved (`cc8ecd6`), Spanakopita 19/20 saved (`6159ecc`). Final commits: `142911a`, `b462377` (pipelineRecipes), `13fb612`, `cc8ecd6`, `6159ecc`.
+
+### Editorial section — three new LLM-generated fields per recipe (commit `cc8ecd6`)
+
+Story field was producing 3-sentence single-paragraph blurbs despite the prompt asking for "one paragraph (2-4 sentences)" — and the user wanted *more*. Three-step diagnosis and fix:
+
+1. **Story rewrite**: hoisted the length directive to a `CRITICAL: THE STORY FIELD` top section (was buried inside the field's placeholder description, where the model treated it as flavor text). Required 150-300 words across 3-5 paragraphs separated by `\\n\\n`. Embedded a worked Asparagus-au-Gratin example (~230 words, four paragraphs) so the model has a concrete length target to pattern-match. Removed the prior "brief story about French gratin tradition" instruction in the example — directly contradicted the new directive. Temperature bumped 0.2 → 0.4 to allow expansion.
+
+2. **Editorial block**: new `EditorialMetadata` model (`opinion` / `scoreCommentary` / `sourcingNotes`), distinct from `classification.story` because they're about THIS specific recipe vs. the dish in general. `opinion` = 2-3 paragraphs on the recipe's technique / ratios / who'd love it. `scoreCommentary` = prose interpretation of the PA/DA/OU triple (so the user can read "this is a niche food blog (DA=52) but the page is punching above its weight (OU=+5.7)" instead of squinting at three numbers). `sourcingNotes` = markdown bullets flagging 2-5 ingredients where quality dominates outcome (raw oils, fresh herbs, aged cheeses), with descriptive sourcing language but **NO affiliate brand names** — those wait for the TBOTB catalog (see Ideas).
+
+3. **Strict JSON schema**: first attempt with `response_format={"type": "json_object"}` had gpt-4o-mini consistently jamming the entire editorial payload into the `opinion` field — opinion paragraphs + score commentary + sourcing bullets all concatenated as one giant string. Switched to `response_format={"type": "json_schema", "strict": true, ...}` with a full schema specifying every required field. Forces the model to populate each subfield separately. `max_tokens` 1500 → 4000 to accommodate the wider response shape (strict mode also forces ALL provenance/classification sub-fields to be present, which adds JSON structural overhead).
+
+`_build_user_prompt` now appends the recipe's PA/DA/OU scores (and root domain) so `editorial.scoreCommentary` can quote actual numbers. When scores aren't available the prompt explicitly says so and tells the model to keep the section short rather than fabricate authority claims.
+
+All four DB↔form edges audited per the `feedback_db_form_sync` rule: `loadForm` (sidebar-click load), `populateFormFromRecipe` (extract-result populate), save payload, and the enrich-response handler that updates fields after the Enrich button. New `editorial` block flows through all four.
+
+### Story / reasoning textarea autosize cap + scroll
+
+The auto-grow textareas had no max-height. Long stories would grow unbounded and push the rest of the form below the fold. Fix: `textarea.auto-grow { max-height: 360px }`, with `#classification_story.auto-grow { max-height: 560px }` since story is intentionally longer. The `autoGrow()` JS reads the computed `max-height`, pins height when content exceeds it, and toggles `overflow-y` between `hidden` (still growing) and `auto` (scrolling) so the user gets a scrollbar inside the textarea instead of an off-screen blob.
+
+### Mobile-responsive form — the "page is a mess on iOS" fix (commit `cc8ecd6`)
+
+User checked the form on Safari mobile and the whole layout overflowed. Root cause: zero media queries, fixed 28-32px padding throughout, multi-column grids that don't collapse. First pass added a `viewport-fit=cover` meta and two responsive blocks:
+
+- **`@media (max-width: 720px)`** — collapses all grids to single column (`.header-row`, `.recipe-columns`, `.form-grid`), tightens paddings (container 28→14px, main 32→18px, header inner 28→14px), bumps input/textarea/select to **16px font-size** (anything smaller triggers iOS Safari's annoying focus-zoom), stacks the URL-extract row, sidebar grows to 86vw (260px is cramped on a 375px viewport) with proper `-100%` off-screen state, scoring chips fit two-per-row, footer buttons shrink so Save/Enrich/Clear/Delete fit on one line on most phones with `env(safe-area-inset-bottom)` reserved, item-actions (delete/edit buttons on ingredient rows) always visible on touch because there's no hover.
+- **`@media (max-width: 380px)`** — tighter padding (10-14px) for iPhone SE / older Androids.
+
+### iOS bookmarklet — paste-safe loader pattern (commit `cc8ecd6`)
+
+User reported the iOS Safari bookmarklet "never launches." Diagnosis took a turn — initial suspicion was iOS popup-blocker (which IS a real issue, and the user did need to toggle that off), but the deeper issue showed up when the user pasted their installed bookmarklet URL: it had **partial percent-encoding** (`%27` for `'`, `%20` for ` ` in the second half but not the first half). Some iOS Safari versions mangle long `javascript:` URLs on paste, and Chrome iOS is notoriously broken on bookmarklets entirely (Apple forces all iOS browsers onto WebKit but Chrome iOS's `window.open` + `javascript:` handling is unreliable). User confirmed they were on Chrome iOS, then switched to Safari.
+
+Solution: a **loader-style bookmarklet** where the installed URL is a ~280-char `javascript:` loader that opens the popup synchronously (preserves the user-gesture), stashes the popup handle on `window.__recipeBookmarkletPopup`, and `<script src>`-injects the real code from `https://recipes.tbotb.com/forms/bookmarklet_ios.js`. The real code lives in `bookmarklet_ios.js` (full IIFE, same DOM-walk + JSON-LD harvest + html2canvas screenshot logic the desktop bookmarklet uses), served via the existing `/forms` static mount. Two upsides: paste-safe (no quotes or spaces in the URL beyond the bare minimum), and self-updating (cache-busted with `?<timestamp>` — edit `bookmarklet_ios.js` and the next bookmark tap picks up the change with no re-install).
+
+Renamed for clarity: `bookmarklet_recipe.js` → `bookmarklet_desktop.js`, new file `bookmarklet_ios.js`. Built a dedicated `install_ios.html` with a tap-to-copy button (`navigator.clipboard.writeText`) and iOS-specific install instructions (`Share → Add Bookmark → Edit → paste`).
+
+### Error dialog no-surprise-pickers — relabel wasn't enough (memory `feedback_no_surprise_pickers`)
+
+User caught the recurring "I clicked the image-extract button and it surprise-opened a file picker" frustration *again* and asked for a regression check on every relevant update. Earlier in the day I'd "fixed" it by relabeling the button to "Upload a screenshot" so the user wasn't surprised; that wasn't enough. User wanted the picker to not appear at all on the unhappy path. New rule: when no `stagedToken` exists (no bookmarklet screenshot to fall back to), **the image button is hidden**, not relabeled. The drop zone on the form is the explicit, expected path for manual uploads. Memory file rewritten to make the rule a hard "hide not relabel" with an explicit re-verify step after touching any of `extractFromUrl`, `extractFromImage`, `showErrorDialog`, or related handlers.
+
+### Extract callable refactor — `extract_recipe_from_url` (commit `cc8ecd6`)
+
+The `/extract-from-url` endpoint was 130 lines of orchestration tangled with `HTTPException`, `Form` input, async/await, `asyncio.to_thread` for sync work. Not callable from a batch job. Refactored into a sync `extract_recipe_from_url(url, *, pre_scored=None, batch_overrides=None) -> dict` that does the same orchestration but synchronously, raises plain `RuntimeError`, and returns the same response shape. Endpoint becomes a thin async wrapper that converts `RuntimeError` back to `HTTPException`. Single canonical path per the `feedback_single_path` memory.
+
+Two new arguments support the batch flow:
+
+- **`pre_scored`** — when present, skips `_attach_moz_scoring` entirely (which otherwise unconditionally overwrites `recipe._scoring` with values from the metabase_url cache or live Moz API). Batch flow passes the upstream pipeline's canonical PA/DA/OU straight through, saving Moz quota AND avoiding the variant bug below.
+- **`batch_overrides`** — dict of authoritative fields the batch declares (chapter, subchapter, ethnicity, `_batch.name`, ...). Shallow-merged into the recipe AFTER extract/enrich so they win over inferred values. Today only `_batch.name/source/rank` and the three classification overrides are recognized; the code reads more fields tolerantly so when the upstream batch JSON grows them they get picked up automatically.
+
+### Batch ingestion pipeline (commit `cc8ecd6` + `6159ecc`)
+
+New `intake/process_batch.py` reads `intake/context-<dish>.json`, iterates URLs in rank order, calls `extract_recipe_from_url`, posts each result to `/recipes`, and journals progress. Two input shapes tolerated by `normalize_batch()` (commit `6159ecc` adds the second):
+
+- **Audited dict-keyed shape** (banana-bread context): `{url: {url, history, current_status, pa: {value, history}, ...}}` — each metric is a `{value, history}` audit trail.
+- **Flat list shape** (Spanakopita context): `[{url, title, domain, rank, pa, da, ou}, ...]` — simpler, no audit, no `current_status`. `normalize_batch` synthesizes `current_status: 'accepted'` for the flat shape since the upstream's culling step has already excluded rejects.
+
+Other behaviors:
+
+- Treats extract failures as expected (paywall / anti-bot / JSON-LD shape variance) — they get logged with a manual-handling list at the bottom of the run, NOT a script failure. Only save failures flip exit code.
+- Dish name inferred from filename (`context-Spanakopita.json` → `Spanakopita`, `context-bananabread.json` → `Bananabread`). Imperfect — when the slug is one lowercase blob the case-split fallback can't insert a space. The user manually renamed `Bananabread` → `Banana Bread` in the DB after the first run; once the upstream batch JSON gains an explicit `dish_name` field this becomes a non-issue.
+- **`--dry-run`** flag for preview, **`--limit N`** for testing.
+
+Two batches landed end-to-end:
+
+- **Banana Bread**: 20 URLs, 14 saved, 6 misses. Misses split between anti-bot defenses (Love & Lemons × 2, Simple Veganista, Butternut Bakery, Joy of Baking) and Pydantic shape mismatches on legitimate JSON-LD (`sallysbakingaddiction` had `video.thumbnailUrl` as a list, `theclevercarrot` had `suitableForDiet: "VegetarianDiet"` as a string — both are valid schema.org variations the recipe model doesn't currently coerce).
+- **Spanakopita**: 20 URLs, **19 saved**, 1 miss (themediterraneandish.com — known anti-bot). 13 via jsonld-direct (~1-3s), 6 via markdown-llm fallback (~30-60s each). Total run 268s.
+
+### Moz canonical-URL fix — the "PA always seems light" bug (commits `142911a`, `b462377`)
+
+User flagged that the PA scores in the saved recipes consistently looked low compared to the batch JSON's numbers. Probe of one specific URL (`natashaskitchen.com/banana-bread-recipe-video/`) made the gap concrete: batch reported PA=56, DB cache had PA=41. Both queried Moz on the same day, hours apart. Two layers of bug:
+
+1. **Variant under-coverage in `_url_variants` (forms)**. Returned only `[url, www-toggled url]` — two host variants. `normalize_url` strips the trailing slash before the Moz query (it has to: trailing slash matters for cache identity), but `_url_variants` then never re-added the slash variant. Moz scores the slash and no-slash forms **independently** in its link graph — for `natashaskitchen.com` they were 56 vs 41, a 15-point delta. Our query missed the canonical (slash) variant entirely.
+2. **Single-variant call in `worker_score_moz` (pipelineRecipes)**. Same root cause one layer upstream — the batch agent sent only the literal input URL to Moz, no variant probing. When the input wasn't the canonical form for the site, the batch JSON was already born with under-scored PA.
+
+Diagnosis path was longer than the fix. Probed Martha Stewart's URL with all 4 variants:
+
+| variant | PA | http_code |
+|---|---|---|
+| `marthastewart.com/.../banana-bread` | 41 | 402 |
+| `marthastewart.com/.../banana-bread/` | 41 | 0 |
+| `www.marthastewart.com/.../banana-bread` | **60** | 402 |
+| `www.marthastewart.com/.../banana-bread/` | 41 | 0 |
+
+So `www.marthastewart.com/.../banana-bread` is the canonical (highest PA), but Moz's UI defaulted to the non-`www.` form which showed 41 — explaining why a check in the Moz Link Explorer "confirmed" PA=41. Each site canonicalizes differently: Martha Stewart, AllRecipes, Simply Recipes still use `www.` (and many drop the slash); Natasha's Kitchen, Sally's Baking Addiction use bare-domain (and keep the slash). The `www.` form being unfashionable doesn't matter — what matters is which form the site's link graph has accumulated authority on.
+
+Fix: `_url_variants` expanded to all 4 combinations (`host × trailing-slash`). `score_url_via_moz` picks tiered — first `http_code ∈ {200, 301, 302}` (Moz actually crawled), else `http_code == 402` (Moz estimate), else any non-empty result; within the chosen tier, highest PA wins. Same logic mirrored in `worker_score_moz` so upstream batches emit canonical PA from the start. User asked whether "highest" was right — answer: mostly, because the canonical accumulates the link graph and ends up highest, but the *technically correct* rule is "prefer crawled," which the tiered approach now does.
+
+**Backfill**: `backfill_url_scoring.py` (commit `13fb612`) walks every recipe in `recipes.db`, re-scores via the now-canonical-aware `score_url_via_moz`, updates both `metabase_url` and the recipe's embedded `_scoring.{pageAuthority,domainAuthority,ouScore}`. First run on 76 unique URLs: **29 gained PA (mean +10.4)**, 41 unchanged, 2 corrected downward (prior values were Moz estimates for high-PA variants; new fix prefers crawled lower-PA variants — correction, not regression).
+
+### Zombie uvicorn workers — a debug detour
+
+While debugging the editorial-not-populating issue (the new prompt + schema changes weren't reflected in API responses despite the file being edited and uvicorn supposedly reloading via `--reload`), discovered that a direct probe of `score_url_via_moz` returned the new prompt content, but the live API kept returning the old one. Eventually traced to **stale multiprocessing-spawn workers from a previous uvicorn `--reload` cycle that hadn't been GC'd by Windows**. PIDs from a parent uvicorn that *I had thought I killed* — `taskkill` reported them as gone, but the workers (`52100`, `76052` — children of dead parents `14856`, `48620`) were still alive and accepting requests on port 8009. Windows TCP table showed listener entries for those dead parents; the OS was routing fresh requests to the still-alive worker children, which were running yesterday's code in memory.
+
+Cleaning that up restored sane behavior. Worth remembering: on Windows, killing the uvicorn parent doesn't always reap multiprocessing.spawn children; check `netstat -ano | findstr :8009` plus `Get-CimInstance Win32_Process -Filter ...` to find orphans, then `taskkill /f /pid <child>` directly.
+
+### Project-memory updates
+
+Two new project memories committed during the session to capture vision the user explicitly flagged:
+
+- **[affiliate-catalog](memory/project_affiliate_catalog.md)**: TBOTB will own a ranked catalog of kitchen + gourmet products. `editorial.sourcingNotes` is the planned injection point — LLM identifies critical-quality ingredients, server matches against the catalog, product picks render inline with the prose. The deliberate "no hallucinated brands" rule in the current prompt is BECAUSE the catalog doesn't exist yet.
+- **[master-cookbook](memory/project_master_cookbook.md)**: top-recipes-across-the-platform curated cookbook. User leaning toward a separate-but-parallel DB rather than a `user_id=0` sentinel. Implication: persistence layer needs to stay parameterized by connection/path so a second store can plug in.
+
+Plus a new feedback memory: **[no-surprise-file-pickers](memory/feedback_no_surprise_pickers.md)** — rewritten from the earlier "label clearly" rule into a stricter "hide the button rather than relabel" rule, with an explicit regression-check step after any change to extract/error-dialog code.
+
+### What didn't ship today
+
+- **Affiliate-link injection** into `editorial.sourcingNotes` — deferred per the affiliate-catalog memory; needs the catalog DB first.
+- **"Three other Banana Bread recipes you should check" cross-recipe recommender** — deferred; needs a similarity model.
+- **Per-image controls + image-gen reconstruction** — still parked.
+- **Pydantic shape coercion** for `suitableForDiet: str → list` and `video.thumbnailUrl: list → str` — would salvage 2 of the 6 banana-bread misses (Sally's Baking, Clever Carrot). Quick fix, deferred to tomorrow.
+- **Pipeline-component consolidation**: user said they'll bring the batch components from `pipelineRecipes/` into `forms/` tomorrow so we collapse the two-copy `url_scoring` state and the batch agent lives alongside the canonical pipeline.
+
+---
+
 ## Done
 
 - `/extract-from-markdown` endpoint + `extract_content_markdown.py` (gpt-4o-mini)
