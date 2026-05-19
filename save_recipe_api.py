@@ -100,6 +100,20 @@ DB_PATH = "recipes.db"
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
 PLACEHOLDER_USER_ID = 1
 
+
+def _recipes_table_for(user_id: int) -> str:
+    """Pick the recipes table based on owner. user_id=0 → master_recipes
+    (sys-admin / batch-curated content); anything else → recipes (personal
+    collection). Used by every endpoint that touches the recipes table —
+    do NOT inline the choice elsewhere.
+
+    Returns one of two hardcoded literals, so f-string interpolation of
+    the result into SQL is safe by construction (never user-controlled).
+    """
+    table = "master_recipes" if (user_id == 0) else "recipes"
+    assert table in ("master_recipes", "recipes")
+    return table
+
 # Pipeline cache identity. One key shape for both the JSON-LD fast lane
 # (jsonld_to_recipe + enrich_recipe) and the markdown-LLM path
 # (markdown_to_recipe). When any of the three load-bearing prompts change,
@@ -113,16 +127,21 @@ EXTRACT_PROMPT_VERSION = prompt_version_for(
 print(f"[CACHE] EXTRACT_PROMPT_VERSION = {EXTRACT_PROMPT_VERSION}")
 
 
-def _journal_usage(usage_log, *, recipe_id=None):
+def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
     """Best-effort token-journal write. Opens its own connection so it can be
-    called from anywhere in the request lifecycle; never raises."""
+    called from anywhere in the request lifecycle; never raises.
+
+    user_id defaults to the placeholder for back-compat with callers that
+    haven't been updated to thread it. Batch flows pass user_id=0 so
+    master-batch LLM costs are attributable separately from personal usage.
+    """
     if not usage_log:
         return
     try:
         with sqlite3.connect(DB_PATH) as conn:
             write_usage_entries(
                 conn,
-                user_id=PLACEHOLDER_USER_ID,
+                user_id=user_id,
                 recipe_id=recipe_id,
                 entries=usage_log,
             )
@@ -253,26 +272,29 @@ def _attach_moz_scoring(recipe, url_normalized):
 def _maybe_stamp_source_drift(timings, *, user_id):
     """When markdown_to_recipe sets timings["source_drift"] (a TTL-expired
     re-extract whose semantic fingerprint differs from the cached one),
-    stamp recipes.source_changed_at on every saved recipe matching that URL
-    + user. The form reads the stamp and shows a "source updated — review
-    and re-save" banner; save clears the stamp."""
+    stamp source_changed_at on every saved recipe matching that URL + user.
+    The form reads the stamp and shows a "source updated — review and
+    re-save" banner; save clears the stamp.
+
+    Dispatches to recipes or master_recipes based on user_id."""
     if not timings or not timings.get("source_drift"):
         return
     url_normalized = timings.get("drift_url") or ""
     if not url_normalized:
         return
+    table = _recipes_table_for(user_id)
     try:
         now = datetime.utcnow().isoformat()
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.execute(
-                "UPDATE recipes SET source_changed_at = ? "
-                "WHERE url_normalized = ? AND user_id = ?",
+                f"UPDATE {table} SET source_changed_at = ? "
+                f"WHERE url_normalized = ? AND user_id = ?",
                 (now, url_normalized, user_id),
             )
             conn.commit()
             if cursor.rowcount:
                 print(f"[DRIFT] Stamped source_changed_at on "
-                      f"{cursor.rowcount} recipe(s) for {url_normalized!r}")
+                      f"{cursor.rowcount} recipe(s) in {table} for {url_normalized!r}")
     except Exception as e:
         print(f"[WARN] source_changed_at stamp failed: {e}")
 
@@ -333,6 +355,33 @@ def init_db():
                 )
             except sqlite3.IntegrityError as e:
                 print(f"[WARN] could not add unique index (existing dups?): {e}")
+
+            # === master_recipes ===
+            # Identical schema to `recipes`. Holds sys-admin / batch-curated
+            # content (user_id=0 by convention). Lives in the same DB file
+            # so cross-table queries are trivial JOINs, but the table boundary
+            # is the authoritative master/user split. Save dispatches by
+            # user_id: 0 → master_recipes, else → recipes.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS master_recipes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recipe_id TEXT NOT NULL UNIQUE,
+                    user_id INTEGER,
+                    data TEXT,
+                    url_normalized TEXT NOT NULL DEFAULT '',
+                    source_changed_at TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                );
+            """)
+            try:
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_master_recipes_url_user "
+                    "ON master_recipes(url_normalized, user_id) WHERE url_normalized != ''"
+                )
+            except sqlite3.IntegrityError as e:
+                print(f"[WARN] could not add master_recipes unique index: {e}")
+
             ensure_metabase_url_table(conn)
             ensure_bcc_token_journal_table(conn)
             ensure_llm_extract_cache_table(conn)
@@ -399,13 +448,20 @@ def open_recipe_by_url(recipe_id: str):
 
 # Fetch one recipe by recipe_id. Same shape as list_recipes() rows so the
 # form's existing loadForm path can consume it directly.
+#
+# user_id dispatches to the right table (0 = master_recipes, else =
+# recipes). Default 1 preserves prior behavior for any external callers.
+# This is also a security boundary: a cross-table fetch (e.g. requesting
+# a master row with user_id=1) returns 404 — the caller has no way to
+# discover someone else's recipes by guessing recipe_ids.
 @app.get("/recipes/{recipe_id}")
-def get_recipe(recipe_id: str):
+def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
+    table = _recipes_table_for(user_id)
     try:
         with sqlite3.connect(DB_PATH) as conn:
             row = conn.execute(
-                "SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
-                "FROM recipes WHERE recipe_id = ?",
+                f"SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
+                f"FROM {table} WHERE recipe_id = ?",
                 (recipe_id,),
             ).fetchone()
             if not row:
@@ -425,16 +481,20 @@ def get_recipe(recipe_id: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-# List all recipes
+# List recipes for the given owner. user_id=0 returns the master collection
+# (master_recipes table); any other value returns that owner's personal
+# recipes. Default preserves the prior behavior for the form's sidebar.
 @app.get("/recipes")
-def list_recipes():
-    print("[LIST] List recipes endpoint called")
+def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
+    table = _recipes_table_for(user_id)
+    print(f"[LIST] List recipes endpoint called user_id={user_id} table={table}")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
-                "FROM recipes ORDER BY updated_at DESC"
+                f"SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
+                f"FROM {table} WHERE user_id = ? ORDER BY updated_at DESC",
+                (user_id,),
             )
             rows = cursor.fetchall()
             result = []
@@ -495,12 +555,19 @@ async def save_recipe(request: Request):
         recipe_id = str(uuid.uuid4())
         print(f"[SAVE] WARNING: payload missing recipe_id; minted {recipe_id}")
     now = datetime.utcnow().isoformat()
-    user_id = 1  # Placeholder
 
     # Normalize the source URL one more time at save (defensive — covers
     # recipes that were created before normalize_url existed in the extract
     # path, or hand-edited URLs).
     recipe_dict = recipe.model_dump(by_alias=True)
+    # user_id is a row-column discriminator (0 = master_recipes, else =
+    # recipes); pop it from the JSON blob so we don't double-store. Default
+    # to PLACEHOLDER_USER_ID (1) when the caller didn't supply one — keeps
+    # existing form payloads working unchanged.
+    user_id = recipe_dict.pop("user_id", None)
+    if user_id is None:
+        user_id = PLACEHOLDER_USER_ID
+    table = _recipes_table_for(user_id)
     source = recipe_dict.get("_source") or {}
     raw_source_url = source.get("originalUrl") or ""
     normalized_source_url = normalize_url(raw_source_url) if raw_source_url else ""
@@ -525,33 +592,35 @@ async def save_recipe(request: Request):
         recipe_dict["_source"] = source
         print(f"[SAVE] Minted self-URL: {synthetic_url}")
 
-    # Dedup: if a row already exists for (url_normalized, user_id), adopt
-    # ITS recipe_id instead of the form-sent UUID so the existing record
-    # gets updated rather than creating a parallel duplicate.
+    # Dedup: if a row already exists for (url_normalized, user_id) in the
+    # OWNER'S table, adopt ITS recipe_id instead of the form-sent UUID so
+    # the existing record gets updated rather than creating a parallel
+    # duplicate. The (url_normalized, user_id) unique index in each table
+    # enforces this server-side too.
     adopted = False
     try:
         with sqlite3.connect(DB_PATH) as conn:
             if normalized_source_url:
                 existing = conn.execute(
-                    "SELECT recipe_id FROM recipes WHERE url_normalized = ? AND user_id = ? LIMIT 1",
+                    f"SELECT recipe_id FROM {table} WHERE url_normalized = ? AND user_id = ? LIMIT 1",
                     (normalized_source_url, user_id),
                 ).fetchone()
                 if existing and existing[0] != recipe_id:
                     print(f"[SAVE] Adopting existing recipe_id {existing[0]} for {normalized_source_url!r} "
-                          f"(was {recipe_id})")
+                          f"(was {recipe_id}) in {table}")
                     recipe_id = existing[0]
                     adopted = True
     except Exception as e:
         print(f"[WARN] dup lookup failed (continuing as insert): {e}")
 
-    print(f"[SAVE] Saving recipe with ID: {recipe_id} (adopted={adopted})")
+    print(f"[SAVE] Saving recipe with ID: {recipe_id} (adopted={adopted}) user_id={user_id} table={table}")
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
             # Save clears source_changed_at: the user reviewing and saving is
             # the acknowledgement of any prior drift signal.
-            conn.execute("""
-                INSERT INTO recipes (recipe_id, user_id, data, url_normalized, source_changed_at, created_at, updated_at)
+            conn.execute(f"""
+                INSERT INTO {table} (recipe_id, user_id, data, url_normalized, source_changed_at, created_at, updated_at)
                 VALUES (?, ?, ?, ?, NULL, ?, ?)
                 ON CONFLICT(recipe_id) DO UPDATE SET
                     data = excluded.data,
@@ -582,7 +651,7 @@ async def save_recipe(request: Request):
                     print(f"[WARN] metabase_url last_accessed bump failed: {e}")
             print("[OK] Recipe saved to database")
             # Fetch the DB-assigned integer PK so the form can display it.
-            row = conn.execute("SELECT id FROM recipes WHERE recipe_id = ?", (recipe_id,)).fetchone()
+            row = conn.execute(f"SELECT id FROM {table} WHERE recipe_id = ?", (recipe_id,)).fetchone()
             seq_id = row[0] if row else None
     except Exception as e:
         print(f"[ERROR] Database error: {e}")
@@ -638,20 +707,26 @@ def get_url_metadata(url: str):
     return row
 
 
-# Delete a recipe
+# Delete a recipe. user_id dispatches to the right table (0 = master,
+# else = personal). Cross-table delete is a 404 — admins must be explicit
+# about which collection they're removing from.
 @app.delete("/recipes/{recipe_id}")
-def delete_recipe(recipe_id: str):
-    print(f"[DELETE] Delete recipe endpoint called for: {recipe_id}")
+def delete_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
+    table = _recipes_table_for(user_id)
+    print(f"[DELETE] Delete recipe endpoint called for: {recipe_id} user_id={user_id} table={table}")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM recipes WHERE recipe_id = ?", (recipe_id,))
+            cursor.execute(f"DELETE FROM {table} WHERE recipe_id = ? AND user_id = ?",
+                           (recipe_id, user_id))
             if cursor.rowcount == 0:
-                print(f"[ERROR] Recipe {recipe_id} not found")
+                print(f"[ERROR] Recipe {recipe_id} not found in {table} for user_id={user_id}")
                 raise HTTPException(status_code=404, detail="Recipe not found")
             conn.commit()
-            print(f"[OK] Recipe {recipe_id} deleted successfully")
+            print(f"[OK] Recipe {recipe_id} deleted successfully from {table}")
         return {"message": "Recipe deleted successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[ERROR] Error deleting recipe: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
@@ -666,6 +741,7 @@ async def extract_from_image_endpoint(
     image: UploadFile = File(...),
     source_url: str = Form(""),
     title: str = Form(""),
+    user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
     print("[EXTRACT] Extract from image endpoint called")
     try:
@@ -710,11 +786,11 @@ async def extract_from_image_endpoint(
             except Exception as e:
                 print(f"[ERROR] image_to_markdown failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}")
 
             if not md or not md.strip():
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail="Vision step returned empty markdown")
 
             # Stash the vision-stage prompt so the UI can surface it. Use a
@@ -738,12 +814,12 @@ async def extract_from_image_endpoint(
             except Exception as e:
                 print(f"[ERROR] markdown_to_recipe failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
             if recipe is None:
                 print("[ERROR] Extraction failed - no result")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail="Failed to extract recipe from image")
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
@@ -761,8 +837,8 @@ async def extract_from_image_endpoint(
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning (extract happened regardless
         # of whether the user later saves the recipe).
-        _journal_usage(usage_log, recipe_id=new_recipe_id)
-        _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
+        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+        _maybe_stamp_source_drift(timings, user_id=user_id)
 
         print("[OK] Extraction successful")
         return {
@@ -792,6 +868,7 @@ async def extract_from_pdf_endpoint(
     file: UploadFile = File(...),
     source_url: str = Form(""),
     title: str = Form(""),
+    user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
     from to_markdown.pdf_to_markdown import pdf_bytes_to_markdown
     print("[EXTRACT] Extract from PDF endpoint called")
@@ -828,11 +905,11 @@ async def extract_from_pdf_endpoint(
             except Exception as e:
                 print(f"[ERROR] pdf_bytes_to_markdown failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail=f"PDF extraction error: {e}")
 
             if not md or not md.strip():
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail="PDF vision step returned empty markdown")
 
             prompts["vision"] = {
@@ -854,11 +931,11 @@ async def extract_from_pdf_endpoint(
             except Exception as e:
                 print(f"[ERROR] markdown_to_recipe failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
             if recipe is None:
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail="Failed to extract recipe from PDF")
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
@@ -870,8 +947,8 @@ async def extract_from_pdf_endpoint(
         _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
         recipe["id"] = new_recipe_id
-        _journal_usage(usage_log, recipe_id=new_recipe_id)
-        _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
+        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+        _maybe_stamp_source_drift(timings, user_id=user_id)
 
         print("[OK] PDF extraction successful")
         return {
@@ -899,6 +976,7 @@ async def extract_from_markdown_endpoint(
     file: UploadFile = File(...),
     source_url: str = Form(""),
     title: str = Form(""),
+    user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
     print("[EXTRACT] Extract from markdown endpoint called")
     try:
@@ -955,12 +1033,12 @@ async def extract_from_markdown_endpoint(
             except Exception as e:
                 print(f"[ERROR] Extraction failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
             if recipe is None:
                 print("[ERROR] Extraction failed - no result")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
@@ -973,8 +1051,8 @@ async def extract_from_markdown_endpoint(
         _attach_moz_scoring(recipe, url_norm)
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
-        _journal_usage(usage_log, recipe_id=new_recipe_id)
-        _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
+        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+        _maybe_stamp_source_drift(timings, user_id=user_id)
 
         print("[OK] Extraction successful")
         return {
@@ -1003,6 +1081,7 @@ def extract_recipe_from_url(
     *,
     pre_scored: dict | None = None,
     batch_overrides: dict | None = None,
+    user_id: int = PLACEHOLDER_USER_ID,
 ) -> dict:
     """Sync orchestrator: fetch URL → markdown → JSON-LD-or-LLM → enrich
     hooks → attached scoring. Same pipeline as the /extract-from-url
@@ -1103,14 +1182,14 @@ def extract_recipe_from_url(
             except Exception as e:
                 print(f"[ERROR] Extraction failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id)
+                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise RuntimeError(f"Extraction error: {e}") from e
 
         if recipe is not None:
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
     if recipe is None:
-        _journal_usage(usage_log, recipe_id=new_recipe_id)
+        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         raise RuntimeError("Failed to extract recipe from URL")
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
@@ -1137,8 +1216,8 @@ def extract_recipe_from_url(
     else:
         _attach_moz_scoring(recipe, url_norm)
     recipe["id"] = new_recipe_id
-    _journal_usage(usage_log, recipe_id=new_recipe_id)
-    _maybe_stamp_source_drift(timings, user_id=PLACEHOLDER_USER_ID)
+    _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+    _maybe_stamp_source_drift(timings, user_id=user_id)
 
     # Batch overrides: authoritative fields the upstream batch declared.
     # Apply LAST so they win over anything extract/enrich derived. Shallow-
@@ -1167,11 +1246,16 @@ def extract_recipe_from_url(
 
 
 @app.post("/extract-from-url")
-async def extract_from_url_endpoint(url: str = Form(...)):
+async def extract_from_url_endpoint(
+    url: str = Form(...),
+    user_id: int = Form(PLACEHOLDER_USER_ID),
+):
     if not url or not url.strip():
         raise HTTPException(status_code=400, detail="url is required")
     try:
-        return await asyncio.to_thread(extract_recipe_from_url, url.strip())
+        return await asyncio.to_thread(
+            extract_recipe_from_url, url.strip(), user_id=user_id,
+        )
     except RuntimeError as e:
         # Differentiate fetch/convert failures (network) from extract failures
         # (LLM/parse) so the form can show the right error type. Fetch/convert
@@ -1204,6 +1288,13 @@ async def enrich_recipe_endpoint(request: Request):
     usage_log: list = []
     t_start = time.perf_counter()
     recipe_id = recipe.get("id") or recipe.get("recipe_id") or payload.get("recipe_id")
+    # user_id can come from either the wrapping payload or the embedded recipe
+    # (the form sends it as a sibling to `recipe` today). Default to placeholder.
+    user_id = payload.get("user_id")
+    if user_id is None:
+        user_id = recipe.get("user_id")
+    if user_id is None:
+        user_id = PLACEHOLDER_USER_ID
 
     try:
         enriched = await asyncio.to_thread(
@@ -1213,12 +1304,12 @@ async def enrich_recipe_endpoint(request: Request):
     except Exception as e:
         print(f"[ERROR] enrich_recipe failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        _journal_usage(usage_log, recipe_id=recipe_id)
+        _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
         raise HTTPException(status_code=500, detail=f"Enrichment error: {e}")
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
     timings["path"] = "enrich-only"
-    _journal_usage(usage_log, recipe_id=recipe_id)
+    _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
 
     print("[OK] Enrichment successful")
     return {

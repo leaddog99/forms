@@ -153,6 +153,13 @@ class RecipeModel(BaseModel):
     classification: Optional[ClassificationMetadata] = None
     editorial: Optional[EditorialMetadata] = None
     current_status: Optional[StatusField] = None
+    # Owner discriminator. 0 = sys-admin / batch-curated master collection
+    # (lives in master_recipes table); any other value = personal collection
+    # (recipes table). Pydantic must know about this field explicitly so it
+    # survives `model_dump(by_alias=True, exclude_none=True)` in
+    # sanitize_recipe_data — `extra="allow"` accepts unknown fields on
+    # construction but drops them on dump.
+    user_id: Optional[int] = None
 
     @field_validator('servingSuggestions', mode='before')
     @classmethod
