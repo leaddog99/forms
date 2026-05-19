@@ -71,10 +71,42 @@ def derive_dish_name(path: Path) -> str:
 
 def _val(field: Any) -> Any:
     """Pull `.value` from the {value, history} pattern the batch uses.
-    Returns the field as-is if it's not in that shape."""
+    Returns the field as-is if it's not in that shape — so this works
+    on both the audited shape and the flat-dict shape transparently."""
     if isinstance(field, dict) and "value" in field:
         return field["value"]
     return field
+
+
+def normalize_batch(raw: Any) -> dict[str, dict]:
+    """Accept either of the two batch shapes the upstream pipeline has
+    emitted and return a uniform `{url: entry}` dict.
+
+    Shape A (audited, e.g. context-bananabread.json):
+        {url: {url, history, current_status, pa: {value, history}, ...}}
+    Shape B (flat list, e.g. context-Spanakopita.json):
+        [{url, title, domain, rank, pa, da, ou}, ...]
+
+    For Shape B we synthesize `current_status: 'accepted'` since the
+    upstream's culling step has already excluded rejects (anything in
+    the list is by definition a keeper).
+    """
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        out: dict[str, dict] = {}
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            url = entry.get("url")
+            if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+                continue
+            # Add a default current_status if absent; tolerate an explicit
+            # one if a future flat-shape batch starts setting it.
+            entry.setdefault("current_status", "accepted")
+            out[url] = entry
+        return out
+    raise ValueError(f"Unrecognized batch JSON shape: {type(raw).__name__}")
 
 
 def select_accepted_urls(batch: dict) -> list[tuple[int, str, dict]]:
@@ -249,7 +281,7 @@ def main() -> int:
     print()
 
     with batch_path.open(encoding="utf-8") as f:
-        batch = json.load(f)
+        batch = normalize_batch(json.load(f))
 
     # Batch-level metadata isn't in the JSON yet, but reserve a hook so
     # when it shows up (chapter / subchapter / ethnicity at the batch
