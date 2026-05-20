@@ -691,6 +691,116 @@ Plus a new feedback memory: **[no-surprise-file-pickers](memory/feedback_no_surp
 
 ---
 
+## Session log — 2026-05-19
+
+Cleaved the recipes table into **`recipes` (personal)** and **`master_recipes` (sys-admin / batch-curated)** so the master collection is physically separated from per-user content at the table boundary. Same DB file (`recipes.db`) — the choice to put both tables in one file rather than separate `master_recipes.db` was a user reversal mid-design: cross-queries are trivial JOINs without ATTACH, single backup, schema evolution stays coordinated. The 34 batch-tagged rows from yesterday's two batches (Banana Bread × 15 + Spanakopita × 19) migrated cleanly. Commits: `db42f98` (cleave), `67a52ca` (admin band moved to top), `1f41478` (GET hydration fix). Also dropped a fresh batch-pipeline tree into `temp/` from the upstream `pipelineRecipes/` project — deferred to a separate plan, left intact.
+
+### Why now: dual-master discriminator was getting hairy
+
+Pre-cleave, every recipe row had `user_id=1` and the only marker that something was batch-curated was the `_batch` field embedded in the JSON. Every list query needed `WHERE user_id = ? OR (user_id=0 AND visible_to_user(?))` glue; every write needed auth-verification of the claimed user_id (one missing check would let a regular user contaminate the master); the schema fought two masters as it grew. User's gut call: cleave now (34 rows is trivial) rather than later (thousands of rows with master-specific schema drift). Right call.
+
+### The cleave (commit `db42f98`)
+
+**Schema** (`save_recipe_api.py:init_db`): new `master_recipes` table with the same columns + same partial UNIQUE index on `(url_normalized, user_id) WHERE url_normalized != ''` as `recipes`. Indexes are independent per table; the same URL can coexist in both tables under different owners (master copy + personal fork are distinct rows).
+
+**Dispatch helper**:
+
+```python
+def _recipes_table_for(user_id: int) -> str:
+    """user_id=0 → master_recipes; anything else → recipes."""
+    table = "master_recipes" if (user_id == 0) else "recipes"
+    assert table in ("master_recipes", "recipes")
+    return table
+```
+
+Two-literal output is safe to f-string into SQL (never user-controlled). Used by every endpoint that touches a recipes table — save (dedup SELECT + UPSERT + post-insert SELECT id), GET single, GET list, DELETE, and `_maybe_stamp_source_drift`. Six+ touch points, one rule, one place to change.
+
+**`RecipeModel.user_id`** declared as `Optional[int] = None`. The model `extra="allow"` accepts unknown fields on construction but `model_dump(by_alias=True, exclude_none=True)` drops them — Pydantic only dumps DECLARED fields. So the explicit declaration is what makes `user_id` survive sanitize → save.
+
+**`save_recipe()`** now reads `user_id = recipe_dict.pop("user_id", None) or 1`. `pop`, not `get` — user_id is a row column, NOT part of the JSON blob; without the pop it'd be double-stored and could drift. Dispatch to `_recipes_table_for(user_id)` for the dedup SELECT and INSERT…ON CONFLICT.
+
+**Threading user_id through extract endpoints**: every `/extract-from-*` endpoint accepts `user_id: int = Form(PLACEHOLDER_USER_ID)`. `extract_recipe_from_url()` (the in-process callable used by `intake/process_batch.py`) gains a `user_id: int = 1` kwarg. Every `_maybe_stamp_source_drift(timings, user_id=...)` and `_journal_usage(usage_log, recipe_id=..., user_id=...)` call now receives the actual request user_id. After the build, `grep PLACEHOLDER_USER_ID save_recipe_api.py` returns only the constant definition, function-default values, and one fallback — no orphan hardcoding in any flow.
+
+**Bundled security fix on GET single + DELETE** (was a side-effect of needing user_id dispatch anyway): both endpoints now accept `?user_id=N` and dispatch to the right table. Cross-table fetches/deletes return 404 instead of leaking the row to anyone who knows the UUID. Cheap to bundle here; would've needed a second pass otherwise.
+
+**`intake/process_batch.py`**: `save_one()` stamps `payload["user_id"] = 0`; `extract_one()` passes `user_id=0` to the in-process extractor so the drift-stamp and token-journal target the master table too.
+
+### Migration (commit `db42f98`, `migrate_master_recipes.py`)
+
+One-shot script with three plan-mandated guards:
+
+a) **Refuse rows lacking `_batch.name`** unless `--force`. Selection is `_batch IS NOT NULL` but `_batch.name` is the canonical batch identifier; orphan rows shouldn't get migrated silently.
+
+b) **Preserve the JSON blob as-is** — no rescoring. Moz numbers age slowly; `refresh_url_metadata.py` already handles freshness. Recomputing here would burn quota and risk inconsistency.
+
+c) **Post-commit spot-check `SELECT`** prints 5 sample rows with `(batch_name, rank, name)` so the operator visually confirms the right rows landed.
+
+Plus the original safety: single `BEGIN…COMMIT`, INSERT first, count-verify, then DELETE, count-verify, rollback on mismatch.
+
+Result: `recipes` 108→74, `master_recipes` 0→34. Spot-check shows Banana Bread rank=1 "Easy banana bread", Spanakopita rank=1 "Spanakopita", etc. — exactly what was expected.
+
+### The admin-band relocation (commit `67a52ca`)
+
+Initial implementation buried the `user_id` input inside the collapsed Metadata panel (default `display:none`). User pushed back: *"the user id should be at the top of the form"* — the discriminator is too load-bearing to hide. Moved to a small right-aligned admin band directly above the URL extract row: always visible, narrow (~64px), single DOM source of truth (removed the Metadata-panel duplicate). Every JS reference uses `document.getElementById("user_id")` — the move is HTML-only, no JS plumbing changes.
+
+### The hydration fix (commit `1f41478`)
+
+Caught during end-to-end testing of the cleave. `save_recipe` pops `user_id` out of the JSON blob before persisting (it's a column, not part of the recipe shape). The form's `loadForm()` was reading `r.user_id` from `recipe.data` — which doesn't exist post-pop. So sidebar-click and deep-link loads never refreshed the admin band input to match the row's actual owner.
+
+**The foot-gun**: with a stale sidebar after flipping the input value, clicking a master row + saving would silently fork it into the personal table (both tables can hold the same recipe_id since UNIQUE(recipe_id) is per-table). Not strictly a duplicate, but a UX safety hole.
+
+Fix: GET `/recipes/{id}` and GET `/recipes` (list) both now return `user_id` at the top level of each response object. `loadForm(recipe)` reads `recipe.user_id` (top level) instead of `r.user_id` (data blob). When a row loads, the admin band input snaps to that row's actual owner — switching collections becomes a deliberate "change input then click Save" gesture, not an accident.
+
+### Form changes summary (commits `db42f98` + `67a52ca` + `1f41478`)
+
+- Admin band `<input id="user_id" value="1">` at the top of `<main class="main">`, above the URL extract row. Helper label "(0 = master)".
+- Save payload includes `user_id: parseInt(getValOr("user_id","1"),10) || 1`.
+- All four extract FormData blocks append `user_id` so the server-side drift-stamp + token-journal target the right table.
+- Sidebar `loadRecipes`, post-save refetch, deep-link IIFE, and DELETE all append `?user_id=${currentUserId}` so they hit the right table.
+- `loadForm()` hydrates the input from `recipe.user_id` on load (post-fix).
+
+### End-to-end verification (the form testing pass)
+
+Direct API tests confirmed:
+
+- `POST /recipes` with `user_id=0` → lands in `master_recipes`, NOT in `recipes`.
+- `POST /recipes` with `user_id=1` → lands in `recipes`, NOT in `master_recipes`.
+- `GET /recipes?user_id=0` → 34 rows; `?user_id=1` → 74 rows (post-migration baseline).
+- `GET /recipes/{master-uuid}?user_id=0` → 200 with the row; `?user_id=1` → 404 (security fix verified).
+- Re-running `intake/process_batch.py intake/context-Spanakopita.json --limit 1` adopts the existing master row's `recipe_id` (upsert, not duplicate); `master_recipes` count stays at 34.
+- After hydration fix: GET responses include `user_id` at the top level — `loadForm` will correctly refresh the admin band input on load.
+
+### `temp/` directory dropped (deferred)
+
+User staged a fresh copy of the upstream pipelineRecipes batch pipeline into `forms/temp/`: `load_urls.py`, `filter_disallowed.py`, `score_urls_service.py`, `context.py`, `run_pipeline.py`, plus seed URL lists for banana bread and spanakopita. Three FastAPI services (ports 8001/8002/8003) plus an orchestrator. **Notably `worker_score_moz.py` is NOT in the drop** — looks like the user intentionally trimmed it since the Moz scoring path was already canonicalized in `forms/input/pipeline/url_scoring.py` (commits `142911a`/`b462377` two days ago).
+
+User's instruction: leave `temp/` intact, examine and propose a consolidation plan. Plan settled in this session but **not yet implemented**:
+
+- Collapse the three FastAPI services into **in-process callables** invoked by one orchestrator (`intake/run_pipeline.py`). Three services means three ports, three uvicorns, three reload watchers — operational complexity for zero benefit.
+- Reuse `forms/input/pipeline/url_scoring.py` (the canonical-variant-aware Moz scorer) instead of porting the temp/ buggy version that only sends one variant to Moz.
+- Reuse `forms/input/pipeline/validators.py` (`is_recipe()`) instead of the duplicate phrase-scoring logic in temp's `filter_disallowed.py`.
+- Lazy-import Playwright in `filter_disallowed.py` — sys-admin-only batch flow tolerates the ~500MB Chromium install; non-admin users without Playwright still get the requests-only path.
+- New layout: `forms/intake/{run_pipeline.py, load_urls.py, filter_disallowed.py, score_urls.py, context.py, seeds/<dish>.txt}`; `forms/batches/<id>/` for per-batch workspaces; `batches/` added to `.gitignore`.
+- The pipeline orchestrator's final step calls `intake/process_batch.py` so the full chain `seed.txt → context.json → scored_urls.json → recipes.db` runs in one shot.
+
+Tomorrow's plan starts here.
+
+### What didn't ship today
+
+- **Auth gate on master writes**. Today any caller can POST `user_id: 0` and write into `master_recipes`. Fine while the system is single-user-admin (the user is the only one with server access), but a real concern once the system goes multi-user. Lands when auth lands.
+- **Pipeline consolidation from `temp/`** — plan agreed, build deferred to next session.
+- **Recipe-cache redesign** — user has a design they'll brief later; cache stays stubbed.
+- **Merged master+personal list view** — one query param (`?user_id=any` or similar) away when needed; no UI yet.
+
+### Tomorrow's pickup
+
+1. **Pipeline consolidation**. Port `temp/pipeline/{load_urls,filter_disallowed,score_urls,context}.py` into `forms/intake/` as callables. Build `run_pipeline.py` orchestrator. Wire end-to-end `seed.txt → recipes.db` with `user_id=0`. Lazy-import Playwright.
+2. **Phrase-list union**: diff `temp/pipeline/config.py:RECIPE_PHRASES` against `forms/input/pipeline/config.py:RECIPE_PHRASES` and pick the union (or canonicalize on the forms/ version if temp's has nothing new).
+3. **Pydantic shape coercion** for `suitableForDiet: str → list` and `video.thumbnailUrl: list → str`. Salvages 2 of the 6 banana-bread misses (Sally's Baking Addiction, The Clever Carrot) at near-zero cost.
+4. **Maybe**: a "show master alongside my recipes" toggle on the form. One query param change in the list endpoint, one checkbox in the sidebar.
+
+---
+
 ## Done
 
 - `/extract-from-markdown` endpoint + `extract_content_markdown.py` (gpt-4o-mini)
