@@ -1624,13 +1624,16 @@
       // clearExtractionTrace was wiping that work before it could land.
       document.getElementById("recipe_id").value = recipe.recipe_id;
       document.getElementById("recipe_seq_id").value = recipe.id != null ? recipe.id : "";
-      // Hydrate user_id from the loaded row's column (server returns the
-      // recipe data under `recipe.data` — user_id is at the same level
-      // when set via RecipeModel). Falls back to current input value if
-      // not present so we don't blow away an admin's deliberate choice.
+      // Hydrate user_id from the row's column (top-level on the GET
+      // response, NOT inside `recipe.data` — user_id is a row column we
+      // pop out of the JSON blob at save time). Updating the admin band
+      // input on load prevents accidental cross-table forks: clicking a
+      // master row from a stale sidebar after flipping the input to 1
+      // would otherwise save the loaded master content into the personal
+      // table on the next save.
       const userIdInput = document.getElementById("user_id");
       if (userIdInput) {
-        const loaded = (r && r.user_id != null) ? r.user_id : null;
+        const loaded = (recipe && recipe.user_id != null) ? recipe.user_id : null;
         if (loaded != null) userIdInput.value = String(loaded);
       }
       document.getElementById("name").value = r.name || "";
