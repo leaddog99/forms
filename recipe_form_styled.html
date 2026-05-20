@@ -274,6 +274,43 @@
       background: #f1eaf6;
       color: #6b4a7a;
     }
+    /* Stale badge — source_changed_at is non-null, meaning the source
+       page drifted since save. User should re-extract and review. */
+    .recipe-item .pill.stale {
+      background: #fde9c8;
+      color: #8a5a1a;
+    }
+    /* Enriched badge — recipe has been through /enrich-recipe (story
+       and/or editorial populated). Icon-style, no text, so it doesn't
+       crowd the meta row. */
+    .recipe-item .pill.enriched {
+      background: transparent;
+      color: var(--accent);
+      padding: 2px 4px;
+      border: 1px solid var(--accent-soft);
+    }
+
+    /* Inline toggle button next to the user_id input — flips between
+       the current value and 0 (master). Clicking shifts the target
+       collection in one tap; the change event chain re-fetches the list. */
+    .sidebar-controls .uid-row button.uid-toggle {
+      padding: 4px 10px;
+      font-family: inherit;
+      font-size: 0.85em;
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid transparent;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .sidebar-controls .uid-row button.uid-toggle:hover {
+      border-color: var(--accent);
+    }
     .recipe-item .date {
       margin-left: auto;
       font-size: 0.88em;
@@ -1166,7 +1203,7 @@
       <div class="uid-row">
         <label for="user_id">User ID</label>
         <input type="number" id="user_id" value="1" min="0" step="1" />
-        <span class="hint">(0 = master)</span>
+        <button type="button" id="user_id_toggle" class="uid-toggle" title="Flip between master (0) and personal (1)">→ master</button>
       </div>
       <input type="search" id="sidebar_search" placeholder="Search recipes…" />
       <select id="sidebar_chapter">
@@ -1174,11 +1211,7 @@
         <!-- populated from CHAPTERS by populateSidebarChapterOptions() -->
       </select>
       <select id="sidebar_sort">
-        <option value="updated_desc">Last modified (newest)</option>
-        <option value="created_desc">Date added (newest)</option>
-        <option value="name_asc">Name (A–Z)</option>
-        <option value="ou_desc">OU score (highest)</option>
-        <option value="chapter_asc">Chapter (A–Z)</option>
+        <!-- options auto-populated from SORT_ORDERS at page load -->
       </select>
     </div>
     <ul class="recipe-list" id="recipeList">
@@ -1734,15 +1767,140 @@
       sel.appendChild(u);
     })();
 
-    // In-memory cache of the most-recently-fetched recipe list. Search /
-    // chapter / sort controls operate on this cache without a re-fetch;
-    // only user_id changes (different table) trigger loadRecipes.
+    // ============================================================
+    // Sidebar sort engine — data-driven multi-field sort
+    // ============================================================
+    // SORT_FIELDS is the type-aware accessor table. Each entry knows
+    // how to pull a value from a recipe row and what type it is
+    // (str/num/date) so the comparator can compare correctly without
+    // a per-field switch. Add a new sortable field here once; every
+    // SORT_ORDERS entry can then reference it by name.
+    const SORT_FIELDS = {
+      name:          { get: r => (r.data && r.data.name) || '',                                        type: 'str' },
+      chapter:       { get: r => (r.data && r.data.classification && r.data.classification.chapter) || '', type: 'str' },
+      ouScore:       { get: r => (r.data && r.data._scoring && r.data._scoring.ouScore),               type: 'num' },
+      pageAuthority: { get: r => (r.data && r.data._scoring && r.data._scoring.pageAuthority),         type: 'num' },
+      recipeScore:   { get: r => (r.data && r.data._scoring && r.data._scoring.recipeScore),           type: 'num' },
+      updated_at:    { get: r => r.updated_at,                                                          type: 'date' },
+      created_at:    { get: r => r.created_at,                                                          type: 'date' },
+      rank:          { get: r => (r.data && r.data._batch && r.data._batch.rank),                      type: 'num' },
+    };
+
+    // SORT_ORDERS is the named-multi-field-sort table the user asked
+    // for. Each entry is a label (shown in the dropdown) + an ordered
+    // list of [field, direction] tuples. Comparator walks the tuples
+    // top-to-bottom; first non-zero comparison wins. Add new sorts
+    // by adding entries here — no JS rewiring needed.
+    const SORT_ORDERS = {
+      updated_desc:  { label: "Last modified (newest)",   order: [["updated_at", "desc"]] },
+      created_desc:  { label: "Date added (newest)",      order: [["created_at", "desc"]] },
+      name_asc:      { label: "Name (A–Z)",               order: [["name", "asc"]] },
+      ou_desc:       { label: "OU score (highest)",       order: [["ouScore", "desc"]] },
+      pa_desc:       { label: "Page authority (highest)", order: [["pageAuthority", "desc"]] },
+      chapter_asc:   { label: "Chapter (A–Z)",            order: [["chapter", "asc"], ["name", "asc"]] },
+      // Composite "quality" sort: best OU first, tie-break on recipe-text
+      // score (in-page recipe phrasing), then most-recently-updated.
+      quality:       { label: "Quality blend",            order: [["ouScore", "desc"], ["recipeScore", "desc"], ["updated_at", "desc"]] },
+      // Batch-oriented: within a chapter group, by rank ascending.
+      batch_rank:    { label: "Batch rank",               order: [["rank", "asc"], ["name", "asc"]] },
+    };
+
+    function makeComparator(orderSpec) {
+      return (a, b) => {
+        for (const [fieldName, dir] of orderSpec) {
+          const def = SORT_FIELDS[fieldName];
+          if (!def) continue;
+          const va = def.get(a);
+          const vb = def.get(b);
+          let cmp;
+          if (def.type === 'num') {
+            // Missing numbers sort to the bottom in BOTH asc and desc:
+            // null means "no signal," so it should never out-rank a real
+            // value regardless of direction. Achieved by pushing nulls to
+            // -Infinity for desc (so they end up last) and +Infinity for
+            // asc (same).
+            const aMissing = (typeof va !== 'number' || isNaN(va));
+            const bMissing = (typeof vb !== 'number' || isNaN(vb));
+            if (aMissing && bMissing) cmp = 0;
+            else if (aMissing) cmp = 1;   // a goes after b
+            else if (bMissing) cmp = -1;  // b goes after a
+            else cmp = (dir === 'desc') ? (vb - va) : (va - vb);
+            if (cmp !== 0) return cmp;
+            continue;  // already directionally applied above
+          } else if (def.type === 'date') {
+            cmp = (new Date(vb || 0)).getTime() - (new Date(va || 0)).getTime();
+            // The date subtraction above is descending-by-default; flip
+            // for asc.
+            if (dir === 'asc') cmp = -cmp;
+          } else {  // 'str'
+            cmp = (va || '￿').localeCompare(vb || '￿', undefined, { sensitivity: 'base' });
+            if (dir === 'desc') cmp = -cmp;
+          }
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      };
+    }
+
+    // Populate the sort dropdown from SORT_ORDERS. Single source of truth;
+    // adding a new sort here makes it appear automatically.
+    (function populateSortOrders() {
+      const sel = document.getElementById('sidebar_sort');
+      if (!sel) return;
+      sel.innerHTML = '';
+      Object.entries(SORT_ORDERS).forEach(([key, def]) => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = def.label;
+        sel.appendChild(opt);
+      });
+    })();
+
+    // ============================================================
+    // localStorage persistence for sidebar UI state
+    // ============================================================
+    // The user_id, sort, and chapter filter survive reloads (the user
+    // expects to come back to the same view). Search box is
+    // intentionally NOT persisted — searches are transient queries.
+    const SIDEBAR_PERSIST_KEYS = ['user_id', 'sidebar_sort', 'sidebar_chapter'];
+    function persistSidebarState() {
+      SIDEBAR_PERSIST_KEYS.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        try { localStorage.setItem('sidebar:' + id, el.value); } catch (e) { /* quota / private mode */ }
+      });
+    }
+    function restoreSidebarState() {
+      SIDEBAR_PERSIST_KEYS.forEach(id => {
+        try {
+          const v = localStorage.getItem('sidebar:' + id);
+          if (v == null) return;
+          const el = document.getElementById(id);
+          if (el) el.value = v;
+        } catch (e) { /* private mode / disabled */ }
+      });
+    }
+
+    // ============================================================
+    // user_id toggle button — one-click flip between 0 and 1
+    // ============================================================
+    // Label tracks the input's current value: shows "→ master" when
+    // viewing personal (1), "→ personal" when viewing master (0), or
+    // "→ master" when viewing some custom uid (so the button always
+    // gets you to master in one tap from anywhere).
+    function syncUserIdToggleLabel() {
+      const btn = document.getElementById('user_id_toggle');
+      const uidEl = document.getElementById('user_id');
+      if (!btn || !uidEl) return;
+      const current = parseInt(uidEl.value, 10);
+      btn.textContent = (current === 0) ? '→ personal' : '→ master';
+    }
+
+    // ============================================================
+    // Recipe list — fetch + render
+    // ============================================================
     let _recipesCache = [];
 
-    // Sidebar list. Pulls from the OWNER'S table: user_id=0 → master_recipes,
-    // else → recipes. Read the value lazily each call so flipping the
-    // sidebar's user_id input + reloading immediately shows the right
-    // collection.
     async function loadRecipes() {
       listEl.innerHTML = '<li class="empty-state">Loading...</li>';
       try {
@@ -1757,8 +1915,6 @@
       }
     }
 
-    // Apply current filters/sort to the cached recipe list and render the
-    // sidebar. Pure: never re-fetches; controls call this directly.
     function renderRecipes() {
       const searchEl = document.getElementById('sidebar_search');
       const chapterEl = document.getElementById('sidebar_chapter');
@@ -1768,8 +1924,8 @@
       const chapterFilter = (chapterEl && chapterEl.value) || '';
       const sortKey = (sortEl && sortEl.value) || 'updated_desc';
 
-      // Helpers — pull common fields safely from the row + nested data blob.
-      const getName    = r => (r.data && r.data.name)    || '';
+      // Per-row pickers used by both filtering and rendering.
+      const getName    = r => (r.data && r.data.name) || '';
       const getChapter = r => (r.data && r.data.classification && r.data.classification.chapter) || '';
       const getOU      = r => {
         const v = r.data && r.data._scoring && r.data._scoring.ouScore;
@@ -1781,6 +1937,13 @@
         return (typeof v === 'number') ? v : null;
       };
       const getBatch   = r => (r.data && r.data._batch && r.data._batch.name) || '';
+      const isStale    = r => !!r.source_changed_at;
+      const isEnriched = r => {
+        const d = r.data || {};
+        const story = d.classification && d.classification.story;
+        const opin  = d.editorial && d.editorial.opinion;
+        return !!((story && story.trim()) || (opin && opin.trim()));
+      };
 
       // Filter
       let rows = _recipesCache.slice();
@@ -1794,37 +1957,16 @@
         rows = rows.filter(r => getChapter(r) === chapterFilter);
       }
 
-      // Sort — single-field for now. The dropdown is a placeholder shape;
-      // a future named-multi-field-sort table can replace this switch.
-      const cmpStr = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
-      const cmpDate = (a, b) => (new Date(b || 0)).getTime() - (new Date(a || 0)).getTime();
-      switch (sortKey) {
-        case 'name_asc':
-          rows.sort((a, b) => cmpStr(getName(a), getName(b)));
-          break;
-        case 'created_desc':
-          rows.sort((a, b) => cmpDate(a.created_at, b.created_at));
-          break;
-        case 'ou_desc':
-          rows.sort((a, b) => (getOU(b) ?? -Infinity) - (getOU(a) ?? -Infinity));
-          break;
-        case 'chapter_asc':
-          rows.sort((a, b) => {
-            const c = cmpStr(getChapter(a) || 'zzz', getChapter(b) || 'zzz');
-            return c !== 0 ? c : cmpStr(getName(a), getName(b));
-          });
-          break;
-        case 'updated_desc':
-        default:
-          rows.sort((a, b) => cmpDate(a.updated_at, b.updated_at));
-          break;
-      }
+      // Sort — data-driven via SORT_ORDERS lookup.
+      const orderDef = SORT_ORDERS[sortKey] || SORT_ORDERS.updated_desc;
+      rows.sort(makeComparator(orderDef.order));
 
-      // Render
+      // Header counter
       const total = _recipesCache.length;
       const shown = rows.length;
       if (countEl) countEl.textContent = (shown === total) ? `${total}` : `${shown}/${total}`;
 
+      // Empty / no-match states
       if (_recipesCache.length === 0) {
         listEl.innerHTML = '<li class="empty-state">No recipes yet.<br>Create your first one!</li>';
         return;
@@ -1834,8 +1976,7 @@
         return;
       }
 
-      // Build DOM. Use textContent for user-provided fields to avoid XSS;
-      // URL goes through an attribute setter, not innerHTML.
+      // Render. textContent for user fields (XSS); attribute setters for URLs.
       listEl.innerHTML = '';
       rows.forEach(r => {
         const item = document.createElement('li');
@@ -1874,6 +2015,22 @@
           meta.appendChild(pill);
         }
 
+        if (isStale(r)) {
+          const pill = document.createElement('span');
+          pill.className = 'pill stale';
+          pill.textContent = '⚠ stale';
+          pill.title = 'Source page changed since save — re-extract to review';
+          meta.appendChild(pill);
+        }
+
+        if (isEnriched(r)) {
+          const pill = document.createElement('span');
+          pill.className = 'pill enriched';
+          pill.textContent = '✎';
+          pill.title = 'Enriched (story / editorial populated)';
+          meta.appendChild(pill);
+        }
+
         const url = getUrl(r);
         if (url) {
           const a = document.createElement('a');
@@ -1883,7 +2040,6 @@
           a.rel = 'noopener noreferrer';
           a.title = url;
           a.textContent = '↗';
-          // Clicking the URL link must NOT trigger the row's loadForm.
           a.addEventListener('click', e => e.stopPropagation());
           meta.appendChild(a);
         }
@@ -1899,22 +2055,51 @@
       });
     }
 
-    // Wire control handlers. user_id change reloads from the server (it
-    // queries a different table); search/chapter/sort only re-render the
-    // cached list. Use 'input' for the search box so filtering feels live.
+    // ============================================================
+    // Wire sidebar control handlers (run AFTER restore so the
+    // restored values are what we react to).
+    // ============================================================
     (function wireSidebarControls() {
+      // Restore persisted state before binding handlers so the initial
+      // values land in the DOM. loadRecipes (called at boot) then picks
+      // up the restored user_id from the input value.
+      restoreSidebarState();
+      syncUserIdToggleLabel();
+
       const uidEl = document.getElementById('user_id');
       if (uidEl) {
         uidEl.addEventListener('change', () => {
+          syncUserIdToggleLabel();
+          persistSidebarState();
+          loadRecipes();
+        });
+      }
+      const toggleBtn = document.getElementById('user_id_toggle');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          if (!uidEl) return;
+          const cur = parseInt(uidEl.value, 10);
+          // Flip: anything non-zero (or empty) → 0; 0 → 1 (the default
+          // personal collection). Simpler than remembering the "previous
+          // personal" value for the one-keystroke common case.
+          uidEl.value = (cur === 0) ? '1' : '0';
+          syncUserIdToggleLabel();
+          persistSidebarState();
           loadRecipes();
         });
       }
       const searchEl = document.getElementById('sidebar_search');
-      if (searchEl) searchEl.addEventListener('input', renderRecipes);
+      if (searchEl) searchEl.addEventListener('input', renderRecipes);  // not persisted
       const chapterEl = document.getElementById('sidebar_chapter');
-      if (chapterEl) chapterEl.addEventListener('change', renderRecipes);
+      if (chapterEl) chapterEl.addEventListener('change', () => {
+        persistSidebarState();
+        renderRecipes();
+      });
       const sortEl = document.getElementById('sidebar_sort');
-      if (sortEl) sortEl.addEventListener('change', renderRecipes);
+      if (sortEl) sortEl.addEventListener('change', () => {
+        persistSidebarState();
+        renderRecipes();
+      });
     })();
 
     function loadForm(recipe) {
