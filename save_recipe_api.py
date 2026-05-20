@@ -460,19 +460,25 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             row = conn.execute(
-                f"SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
+                f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
                 f"FROM {table} WHERE recipe_id = ?",
                 (recipe_id,),
             ).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Recipe not found")
+            # user_id is returned at the top level (it's a column, not part of
+            # the recipe blob) so the form's loadForm hydration can refresh
+            # the admin band input to match the loaded row's actual owner —
+            # prevents accidental "click master row, save to personal" forks
+            # when the user has stale sidebar state.
             return {
                 "id": row[0],
                 "recipe_id": row[1],
-                "data": json.loads(row[2]),
-                "source_changed_at": row[3],
-                "created_at": row[4],
-                "updated_at": row[5],
+                "user_id": row[2],
+                "data": json.loads(row[3]),
+                "source_changed_at": row[4],
+                "created_at": row[5],
+                "updated_at": row[6],
             }
     except HTTPException:
         raise
@@ -492,7 +498,7 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                f"SELECT id, recipe_id, data, source_changed_at, created_at, updated_at "
+                f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
                 f"FROM {table} WHERE user_id = ? ORDER BY updated_at DESC",
                 (user_id,),
             )
@@ -504,10 +510,11 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
                     recipe_entry = {
                         "id": row[0],
                         "recipe_id": row[1],
-                        "data": json.loads(row[2]),
-                        "source_changed_at": row[3],
-                        "created_at": row[4],
-                        "updated_at": row[5]
+                        "user_id": row[2],
+                        "data": json.loads(row[3]),
+                        "source_changed_at": row[4],
+                        "created_at": row[5],
+                        "updated_at": row[6]
                     }
                     result.append(recipe_entry)
                 except json.JSONDecodeError as e:
