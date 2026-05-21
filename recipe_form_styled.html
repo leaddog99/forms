@@ -17,6 +17,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Recipe Manager</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+  <!-- Shared design tokens + base components. Comes BEFORE the inline
+       <style> so the inline rules below win on the cascade — visual
+       identity of this page is unchanged. Token values match what was
+       inline; users.html and any future pages inherit the same palette
+       and typography by linking this file. -->
+  <link rel="stylesheet" href="/forms/forms.css">
   <style>
     :root {
       --bg: #f8f4ed;
@@ -309,6 +315,14 @@
       transition: all 0.15s ease;
     }
     .sidebar-controls .uid-row button.uid-toggle:hover {
+      border-color: var(--accent);
+    }
+    /* TBOTB button "active" state — when the input shows user_id=0 the
+       master collection is being viewed; mark the button so it reads as
+       a current-mode tab rather than just a destination. */
+    .sidebar-controls .uid-row button.uid-toggle.active {
+      background: var(--accent);
+      color: #fff;
       border-color: var(--accent);
     }
     .recipe-item .date {
@@ -871,6 +885,14 @@
       cursor: pointer;
       position: relative;
       outline: none; /* override default; we use a custom focus ring below */
+      /* contenteditable makes the browser surface "Paste" in the right-click
+         menu (and the long-press menu on iOS). Suppress the editor-y bits:
+         no blinking caret, no text selection. The beforeinput listener in JS
+         blocks every input type except paste, so the div never accumulates
+         typed text. */
+      caret-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     .drop-zone:hover {
@@ -1203,7 +1225,7 @@
       <div class="uid-row">
         <label for="user_id">User ID</label>
         <input type="number" id="user_id" value="1" min="0" step="1" />
-        <button type="button" id="user_id_toggle" class="uid-toggle" title="Flip between master (0) and personal (1)">→ master</button>
+        <button type="button" id="user_id_toggle" class="uid-toggle" title="Browse The Best of the Best — the master cookbook (user_id 0)">TBOTB</button>
       </div>
       <input type="search" id="sidebar_search" placeholder="Search recipes…" />
       <select id="sidebar_chapter">
@@ -1233,13 +1255,15 @@
       </div>
 
       <!-- Image Drop Zone for AI Extraction. tabindex=0 so it can take focus
-           and receive paste events; the file input below is hidden and only
-           triggered via JS when the user clicks the drop zone. -->
-      <div class="drop-zone" id="dropZone" tabindex="0">
+           and receive Ctrl+V paste events. contenteditable=true so the
+           browser also enables right-click → Paste (and iOS long-press →
+           Paste); the beforeinput handler in JS blocks everything except
+           insertFromPaste, so the div never accumulates typed text. -->
+      <div class="drop-zone" id="dropZone" tabindex="0" contenteditable="true">
         <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
-        <div class="drop-zone-text">Drop or paste a .md file, image, PDF, or URL</div>
+        <div class="drop-zone-text">Drop or paste a .md file, image, PDF, URL, or selected recipe text</div>
         <div class="drop-zone-hint">AI will extract the recipe and fill the form</div>
         <div class="drop-zone-spinner">
           <div class="spinner"></div>
@@ -1588,6 +1612,11 @@
     <div class="button-row">
       <button type="submit" form="recipeForm" class="primary" id="saveBtn">Save</button>
       <button type="button" id="enrichBtn" class="secondary">Enrich</button>
+      <!-- Visible only when the loaded recipe's owner (recipe.user_id) does
+           NOT match the user's persisted self user_id (localStorage
+           'sidebar:user_id'). Click does a fast in-DB row copy via
+           POST /recipes/<id>/claim and redirects to the claimed copy. -->
+      <button type="button" id="claimBtn" class="primary" style="display:none">Claim</button>
       <button type="button" id="clearBtn" class="secondary">Clear</button>
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
@@ -1606,6 +1635,29 @@
     const API = window.location.origin;
     const listEl = document.getElementById("recipeList");
     const feedback = document.getElementById("feedback");
+
+    // "Who am I logged in as?" — read from localStorage.
+    //
+    //   app:self_user_id  — set ONLY by the users.html picker on
+    //     explicit login. Never changes when the user toggles TBOTB or
+    //     types a different uid in the sidebar input. This is the
+    //     answer to "what's my identity".
+    //   sidebar:user_id   — set by every TBOTB click and every input
+    //     change. This is "what collection am I currently viewing",
+    //     which conflates with identity if a user clicks TBOTB after
+    //     login. Used here ONLY as a legacy fallback for sessions that
+    //     pre-date app:self_user_id.
+    //
+    // Returns an integer >= 1, or 1 as the final fallback.
+    function getSelfUserId() {
+      try {
+        const explicit = localStorage.getItem('app:self_user_id');
+        if (explicit && parseInt(explicit, 10) > 0) return parseInt(explicit, 10);
+        const legacy = localStorage.getItem('sidebar:user_id');
+        if (legacy && parseInt(legacy, 10) > 0) return parseInt(legacy, 10);
+      } catch (e) { /* private mode */ }
+      return 1;
+    }
 
     // Cookbook chapters — KEEP IN SYNC with CHAPTERS in
     // extract/chapter_classifier.py. The server's structured-output
@@ -1882,18 +1934,19 @@
     }
 
     // ============================================================
-    // user_id toggle button — one-click flip between 0 and 1
+    // TBOTB button — one-click jump to the master cookbook
     // ============================================================
-    // Label tracks the input's current value: shows "→ master" when
-    // viewing personal (1), "→ personal" when viewing master (0), or
-    // "→ master" when viewing some custom uid (so the button always
-    // gets you to master in one tap from anywhere).
+    // The button label stays fixed at "TBOTB" (Best of the Best); the
+    // visual state hints whether master is currently active. To return
+    // to a personal collection, the user types a uid in the input — no
+    // toggle-back behavior, because there isn't one "last personal" to
+    // remember once we have multiple users.
     function syncUserIdToggleLabel() {
       const btn = document.getElementById('user_id_toggle');
       const uidEl = document.getElementById('user_id');
       if (!btn || !uidEl) return;
       const current = parseInt(uidEl.value, 10);
-      btn.textContent = (current === 0) ? '→ personal' : '→ master';
+      btn.classList.toggle('active', current === 0);
     }
 
     // ============================================================
@@ -2078,11 +2131,11 @@
       if (toggleBtn) {
         toggleBtn.addEventListener('click', () => {
           if (!uidEl) return;
-          const cur = parseInt(uidEl.value, 10);
-          // Flip: anything non-zero (or empty) → 0; 0 → 1 (the default
-          // personal collection). Simpler than remembering the "previous
-          // personal" value for the one-keystroke common case.
-          uidEl.value = (cur === 0) ? '1' : '0';
+          // One-way jump to TBOTB (master, user_id=0). Coming back to a
+          // personal collection is a deliberate keystroke in the input —
+          // there is no canonical "previous personal" once we have many.
+          if (parseInt(uidEl.value, 10) === 0) return;  // already on master
+          uidEl.value = '0';
           syncUserIdToggleLabel();
           persistSidebarState();
           loadRecipes();
@@ -2103,9 +2156,11 @@
     })();
 
     function loadForm(recipe) {
-      // Scroll to top so the user sees the loaded recipe's name + feedback
-      // banner, not wherever they were scrolled on the previous record.
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Scroll-to-top happens at the END of this function (inside two
+      // rAFs) so it lands after every innerHTML reset, dynamic row add,
+      // and hero-image load below — a smooth scroll started here gets
+      // stranded mid-page once layout shifts. See the matching pattern
+      // in populateFormFromRecipe.
       const r = recipe.data;
       // Clear extraction inputs that aren't part of the recipe itself —
       // they reflect the last extract action, not the loaded record.
@@ -2125,9 +2180,21 @@
       // would otherwise save the loaded master content into the personal
       // table on the next save.
       const userIdInput = document.getElementById("user_id");
-      if (userIdInput) {
-        const loaded = (recipe && recipe.user_id != null) ? recipe.user_id : null;
-        if (loaded != null) userIdInput.value = String(loaded);
+      const loadedUid = (recipe && recipe.user_id != null)
+        ? parseInt(recipe.user_id, 10) : null;
+      if (userIdInput && loadedUid != null) {
+        userIdInput.value = String(loadedUid);
+      }
+      // Claim button visibility: shown when the loaded recipe's owner
+      // differs from the user's *identity* (app:self_user_id) — NOT the
+      // current sidebar view. Otherwise hitting TBOTB and clicking a
+      // master recipe would hide the Claim button (master view == master
+      // recipe → "not foreign") even though it's genuinely not theirs.
+      const claimBtn = document.getElementById("claimBtn");
+      if (claimBtn) {
+        const selfUid = getSelfUserId();
+        const isForeign = (loadedUid != null) && (loadedUid !== selfUid);
+        claimBtn.style.display = isForeign ? '' : 'none';
       }
       document.getElementById("name").value = r.name || "";
       document.getElementById("description").value = r.description || "";
@@ -2262,6 +2329,28 @@
       stepList.querySelectorAll('textarea').forEach(autoGrow);
 
       updateButtonStates();
+
+      // Land at the TOP of the form. See feedback_post_extract_scroll.
+      // Three pins, escalating in delay, because the form has multiple
+      // post-load reflow triggers:
+      //   1. double-rAF — fires after the synchronous DOM mutations
+      //      above (innerHTML resets, addIngredient, etc.).
+      //   2. setTimeout(150) — covers near-term async: hero image
+      //      onload, autoGrow textarea height settling.
+      //   3. setTimeout(450) — covers slow async: loadMetadataForUrl
+      //      fetch returning, source-drift banner showing, scoring strip
+      //      hydrating from a URL.
+      // Instant ('auto') not smooth — smooth gets stranded by layout
+      // shifts. scrollTop is set on documentElement AND body for cross-
+      // browser belt-and-suspenders.
+      const pinToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      };
+      requestAnimationFrame(() => requestAnimationFrame(pinToTop));
+      setTimeout(pinToTop, 150);
+      setTimeout(pinToTop, 450);
     }
 
     // Validation
@@ -2470,6 +2559,44 @@
       }
     };
 
+    // Claim button: pure in-DB row copy from another collection (master or
+    // another user) into this user's personal table. Visible only when
+    // loadForm sees a mismatch between recipe.user_id and the persisted
+    // self user_id (see toggleClaimButton). No LLM call — the server just
+    // SELECTs + INSERTs with a new UUID, so the round-trip is milliseconds.
+    document.getElementById("claimBtn").onclick = async () => {
+      const id = document.getElementById("recipe_id").value;
+      if (!id) return;
+      // Target = the user's *identity* (login picker's self_user_id),
+      // NOT the sidebar input — the sidebar reflects the current view
+      // (which may be master/TBOTB or another user's collection) and
+      // gets clobbered to the loaded recipe's owner by loadForm.
+      const selfUid = String(getSelfUserId());
+      if (!confirm(`Claim this recipe into your collection (user ${selfUid})?`)) return;
+
+      const fd = new FormData();
+      fd.append('target_user_id', selfUid);
+      let res;
+      try {
+        res = await fetch(`${API}/recipes/${encodeURIComponent(id)}/claim`, {
+          method: 'POST',
+          body: fd,
+        });
+      } catch (err) {
+        showFeedback('Claim failed: ' + (err && err.message ? err.message : err), 'error');
+        return;
+      }
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showFeedback('Claim failed: ' + (result.detail || `HTTP ${res.status}`), 'error');
+        return;
+      }
+      // Land the user on the claimed copy. /r/<id> redirects to the form
+      // with the right user_id, so the sidebar input lines up immediately
+      // and the next save targets the right table.
+      window.location.href = result.url || `/r/${result.recipe_id}`;
+    };
+
     // Enrich button: opt-in cultural/historical context LLM call. Builds
     // a recipe payload from the current form state (so any user edits are
     // included), POSTs to /enrich-recipe, merges provenance + classification
@@ -2564,6 +2691,8 @@
       document.getElementById("recipeForm").reset();
       document.getElementById("recipe_id").value = "";
       document.getElementById("recipe_seq_id").value = "";
+      const claimBtnEl = document.getElementById("claimBtn");
+      if (claimBtnEl) claimBtnEl.style.display = 'none';
       heroImage.style.display = 'none';
       heroPlaceholder.style.display = 'flex';
       heroSectionEl.classList.remove('has-image');
@@ -2672,7 +2801,14 @@
       } else {
         ingredientList.appendChild(li);
       }
-      if (!value) input.focus();
+      // Focus the new row ONLY when the caller passed an explicit
+      // afterElement — that signal means "user just hit + or Enter and
+      // wants to type here." Init / load paths call addIngredient() with
+      // no args; we must NOT focus then, because focus() triggers a
+      // browser scroll-into-view on this mid-form row and lands the
+      // viewport mid-page on a fresh form load (see feedback memory:
+      // post-extract-scroll, async-focus failure mode).
+      if (!value && afterElement) input.focus();
       autoGrow(input);
     }
 
@@ -2717,7 +2853,10 @@
         stepList.appendChild(li);
       }
       renumberSteps();
-      if (!value) { textarea.focus(); autoGrow(textarea); }
+      // Focus only on user-driven adds (afterElement passed). See note
+      // in addIngredient for why init paths must skip focus().
+      if (!value && afterElement) { textarea.focus(); }
+      autoGrow(textarea);
     }
 
     function renumberSteps() {
@@ -2757,7 +2896,8 @@
       } else {
         equipmentList.appendChild(li);
       }
-      if (!value) input.focus();
+      // Focus only on user-driven adds. See addIngredient note.
+      if (!value && afterElement) input.focus();
     }
 
     function getIngredients() {
@@ -2805,7 +2945,8 @@
       } else {
         notesList.appendChild(li);
       }
-      if (!value) input.focus();
+      // Focus only on user-driven adds. See addIngredient note.
+      if (!value && afterElement) input.focus();
       autoGrow(input);
     }
 
@@ -3100,6 +3241,15 @@
 
     document.addEventListener('paste', handlePaste);
     dropZone.addEventListener('paste', handlePaste);
+
+    // The drop zone is contenteditable so the browser surfaces "Paste" in
+    // right-click + iOS long-press menus. Block every input type except
+    // paste so typing/drag-drop-text never accumulates characters in the
+    // div. The paste handler itself calls preventDefault(), so even paste
+    // doesn't actually insert text — beforeinput is just for non-paste.
+    dropZone.addEventListener('beforeinput', (e) => {
+      if (e.inputType !== 'insertFromPaste') e.preventDefault();
+    });
 
     // --- Error dialog ---
     const errorDialog = document.getElementById('errorDialog');
@@ -3499,7 +3649,9 @@
 
     // Populate form from extracted recipe data
     function populateFormFromRecipe(r) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // A fresh extract is owned by whoever ran it; no claim affordance.
+      const claimBtn = document.getElementById('claimBtn');
+      if (claimBtn) claimBtn.style.display = 'none';
       // A fresh extract is a fresh slate — drift banner only applies to
       // recipes loaded from the DB with source_changed_at already set.
       const driftBanner = document.getElementById('sourceDriftBanner');
@@ -3616,6 +3768,19 @@
       });
 
       updateButtonStates();
+
+      // Three pins to TOP — see the matching pattern in loadForm for the
+      // rationale. rAF catches the synchronous DOM mutations above,
+      // setTimeout(150) catches image/textarea reflow, setTimeout(450)
+      // catches slow async (metadata fetch, scoring hydration).
+      const pinToTop = () => {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      };
+      requestAnimationFrame(() => requestAnimationFrame(pinToTop));
+      setTimeout(pinToTop, 150);
+      setTimeout(pinToTop, 450);
     }
 
     // ===== Metadata section (URL-keyed; lazy fetch on toggle) =====

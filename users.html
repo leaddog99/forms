@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Pick a User</title>
+  <!-- Shared design tokens + base components (palette, body font,
+       input/button baseline, badge). See forms.css. Anything below in
+       <style> is page-specific layout only. -->
+  <link rel="stylesheet" href="/forms/forms.css">
+  <style>
+    /* ===== Page layout ===== */
+    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+    .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.95rem; }
+    .section-title { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin: 24px 0 12px; }
+
+    /* ===== User row card ===== */
+    .users { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .user-card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 14px 18px; transition: border-color 0.15s ease;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .user-card:hover { border-color: var(--accent); }
+    .user-card .avatar {
+      width: 44px; height: 44px; border-radius: 50%; background: var(--accent);
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1.05rem; flex-shrink: 0;
+    }
+    .user-card .info { flex: 1; min-width: 0; }
+    .user-card .name { font-weight: 600; font-size: 1.02rem; display: flex;
+      align-items: center; gap: 8px; }
+    .user-card .meta { color: var(--muted); font-size: 0.86rem; margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* user_id pill — always visible in BOTH read and edit modes so the
+       user can see at a glance which uid each row binds to. Distinct
+       from the status badge: monospace, accent border, no fill. */
+    .uid-pill {
+      display: inline-block; padding: 2px 8px; border-radius: 6px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em;
+      color: var(--accent); background: #fff;
+      border: 1.5px solid var(--accent);
+    }
+
+    /* ===== Per-row action buttons =====
+       Override the global button vocabulary from forms.css: smaller,
+       tighter, three explicit affordances (Login / Edit / Delete) so
+       there is no ambiguous whole-card click. */
+    .actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .actions button {
+      font-family: Georgia, serif; font-size: 0.85rem; font-weight: 600;
+      padding: 6px 12px; border-radius: 8px; border: 1px solid transparent;
+      cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+      box-shadow: none;
+    }
+    .actions button.login { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .actions button.login:hover { background: var(--accent-dark); border-color: var(--accent-dark); transform: none; }
+    .actions button.edit { background: transparent; color: var(--accent); border-color: var(--accent); }
+    .actions button.edit:hover { background: var(--accent-soft); }
+    .actions button.delete { background: transparent; color: var(--danger); border-color: var(--danger); }
+    .actions button.delete:hover { background: var(--danger-soft); }
+    .actions button.save { background: #2f7a3a; color: #fff; border-color: #2f7a3a; }
+    .actions button.cancel { background: transparent; color: var(--muted); border-color: var(--line); }
+
+    /* ===== Inline edit form =====
+       Replaces the read-only info block when Edit is clicked. Inputs
+       are slightly tighter than the forms.css default to fit two-up
+       inside the card. */
+    .edit-grid {
+      flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0;
+    }
+    .edit-grid input, .edit-grid select {
+      font-size: 0.92rem; padding: 7px 9px; border-radius: 7px;
+    }
+    .row-err { color: var(--danger); font-size: 0.82rem; padding: 6px 18px 0; }
+
+    /* ===== Create-user box ===== */
+    .create-box {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      padding: 18px; margin-top: 20px;
+    }
+    .create-box h2 { font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.05rem; margin: 0 0 12px; font-weight: 600; }
+    .create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .create-row.full { grid-template-columns: 1fr; }
+    .create-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+    .err { color: var(--danger); font-size: 0.86rem; margin-left: auto; }
+    .note { color: var(--muted); font-size: 0.82rem; margin-top: 16px; }
+    .empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+  </style>
+  <!-- Pull Playfair Display from the same Google Fonts entry the recipe
+       form uses so headings here match it exactly. -->
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Pick a User</h1>
+    <p class="sub">Test login. Each row has its own Login / Edit / Delete actions — clicking the row itself does nothing on purpose.</p>
+
+    <div class="section-title">Existing users</div>
+    <div class="users" id="userList"><div class="empty">Loading…</div></div>
+
+    <div class="create-box">
+      <h2>Create a new user</h2>
+      <form id="createForm" autocomplete="off">
+        <div class="create-row">
+          <input type="text" name="name" placeholder="Name (required)" required />
+          <input type="email" name="email" placeholder="Email (optional)" />
+        </div>
+        <div class="create-row" style="margin-top: 10px;">
+          <select name="status">
+            <option value="test">test</option>
+            <option value="free">free</option>
+            <option value="paid">paid</option>
+            <option value="comped">comped</option>
+          </select>
+          <input type="text" name="subscription_tier" placeholder="Subscription tier (optional)" />
+        </div>
+        <div class="create-actions">
+          <button type="submit" class="primary">Create user</button>
+          <span class="err" id="createErr"></span>
+        </div>
+      </form>
+    </div>
+
+    <p class="note">Once Ghost is wired in, this page becomes a redirect — Ghost's member session takes over and our <code>user_id</code> becomes a server-side lookup keyed by <code>ghost_uuid</code> / <code>email</code>.</p>
+  </div>
+
+  <script>
+    const API = window.location.origin;
+    const listEl = document.getElementById('userList');
+    const createForm = document.getElementById('createForm');
+    const errEl = document.getElementById('createErr');
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+      }[c]));
+    }
+
+    function initial(name) {
+      const s = (name || '').trim();
+      if (!s) return '?';
+      const parts = s.split(/\s+/);
+      return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] || '' : '')).toUpperCase();
+    }
+
+    function metaLine(u) {
+      // user_id is rendered separately as a prominent uid-pill on the
+      // card; don't repeat it here.
+      const bits = [];
+      if (u.email) bits.push(u.email);
+      else bits.push('(no email)');
+      if (u.subscription_tier) bits.push(u.subscription_tier);
+      return bits.join(' · ');
+    }
+
+    function pickUser(uid) {
+      // Two distinct keys with distinct meanings:
+      //   app:self_user_id  — the user's *identity* (who am I logged in
+      //     as). Set ONLY here, by an explicit picker click. The Claim
+      //     button reads this to know which collection to claim INTO.
+      //   sidebar:user_id   — the *current view* (whose recipes is the
+      //     sidebar listing). Driven by TBOTB and the sidebar input.
+      // Without this split, hitting TBOTB after login would overwrite
+      // the identity to 0 (master) and Claim would no longer know who
+      // the user is.
+      try {
+        localStorage.setItem('app:self_user_id', String(uid));
+        localStorage.setItem('sidebar:user_id', String(uid));
+      } catch (e) { /* private mode */ }
+      // Redirect to the form. The form's restoreSidebarState() reads
+      // sidebar:user_id on boot and renders that user's recipe list.
+      window.location.href = '/forms/recipe_form_styled.html';
+    }
+
+    function renderReadCard(u) {
+      const card = document.createElement('div');
+      card.className = 'user-card';
+      card.dataset.userId = String(u.user_id);
+      card.innerHTML =
+        `<div class="avatar">${escapeHtml(initial(u.name))}</div>` +
+        `<div class="info">` +
+          `<div class="name">` +
+            `<span class="uid-pill">#${escapeHtml(u.user_id)}</span>` +
+            `<span>${escapeHtml(u.name || '(no name)')}</span>` +
+          `</div>` +
+          `<div class="meta">${escapeHtml(metaLine(u))}</div>` +
+        `</div>` +
+        `<span class="badge ${escapeHtml(u.status || 'test')}">${escapeHtml(u.status || 'test')}</span>` +
+        `<div class="actions">` +
+          `<button type="button" class="login">Login</button>` +
+          `<button type="button" class="edit">Edit</button>` +
+          `<button type="button" class="delete">Delete</button>` +
+        `</div>`;
+      card.querySelector('.login').addEventListener('click', () => pickUser(u.user_id));
+      card.querySelector('.edit').addEventListener('click', () => swapToEdit(card, u));
+      card.querySelector('.delete').addEventListener('click', () => deleteUser(card, u));
+      return card;
+    }
+
+    function swapToEdit(card, u) {
+      // Replace the info block + actions with an inline form. Keep the
+      // avatar and badge so the row still reads as the same user. Save
+      // PATCHes; Cancel restores the read-only card from the cached row.
+      const statuses = ['test', 'free', 'paid', 'comped'];
+      card.innerHTML =
+        `<div class="avatar">${escapeHtml(initial(u.name))}</div>` +
+        `<span class="uid-pill">#${escapeHtml(u.user_id)}</span>` +
+        `<div class="edit-grid">` +
+          `<input type="text" name="name" value="${escapeHtml(u.name || '')}" placeholder="Name" />` +
+          `<input type="email" name="email" value="${escapeHtml(u.email || '')}" placeholder="Email (optional)" />` +
+          `<select name="status">` +
+            statuses.map(s =>
+              `<option value="${s}" ${s === (u.status || 'test') ? 'selected' : ''}>${s}</option>`
+            ).join('') +
+          `</select>` +
+          `<input type="text" name="subscription_tier" value="${escapeHtml(u.subscription_tier || '')}" placeholder="Subscription tier" />` +
+        `</div>` +
+        `<div class="actions">` +
+          `<button type="button" class="save">Save</button>` +
+          `<button type="button" class="cancel">Cancel</button>` +
+        `</div>`;
+      const errLine = document.createElement('div');
+      errLine.className = 'row-err';
+      card.appendChild(errLine);
+      card.querySelector('input[name="name"]').focus();
+
+      card.querySelector('.save').addEventListener('click', async () => {
+        errLine.textContent = '';
+        const body = {
+          name: card.querySelector('input[name="name"]').value,
+          email: card.querySelector('input[name="email"]').value,
+          status: card.querySelector('select[name="status"]').value,
+          subscription_tier: card.querySelector('input[name="subscription_tier"]').value,
+        };
+        try {
+          const res = await fetch(`${API}/users/${u.user_id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const result = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            errLine.textContent = result.detail || `HTTP ${res.status}`;
+            return;
+          }
+          const fresh = renderReadCard(result);
+          card.replaceWith(fresh);
+        } catch (err) {
+          errLine.textContent = err.message || String(err);
+        }
+      });
+      card.querySelector('.cancel').addEventListener('click', () => {
+        const restored = renderReadCard(u);
+        card.replaceWith(restored);
+      });
+    }
+
+    async function deleteUser(card, u) {
+      if (!confirm(`Delete user "${u.name || '(no name)'}" (#${u.user_id})?`)) return;
+      try {
+        const res = await fetch(`${API}/users/${u.user_id}`, { method: 'DELETE' });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(result.detail || `HTTP ${res.status}`);
+          return;
+        }
+        card.remove();
+        // If the list ends up empty after this, show the empty hint.
+        if (!listEl.querySelector('.user-card')) {
+          listEl.innerHTML = '<div class="empty">No users yet. Create one below.</div>';
+        }
+      } catch (err) {
+        alert(err.message || String(err));
+      }
+    }
+
+    async function loadUsers() {
+      try {
+        const res = await fetch(`${API}/users`);
+        const users = await res.json();
+        if (!Array.isArray(users) || users.length === 0) {
+          listEl.innerHTML = '<div class="empty">No users yet. Create one below.</div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        for (const u of users) listEl.appendChild(renderReadCard(u));
+      } catch (e) {
+        listEl.innerHTML = `<div class="empty">Failed to load: ${e.message || e}</div>`;
+      }
+    }
+
+    createForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errEl.textContent = '';
+      const fd = new FormData(createForm);
+      const body = {
+        name: fd.get('name'),
+        email: fd.get('email'),
+        status: fd.get('status'),
+        subscription_tier: fd.get('subscription_tier'),
+      };
+      try {
+        const res = await fetch(`${API}/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          errEl.textContent = result.detail || `HTTP ${res.status}`;
+          return;
+        }
+        // Auto-pick the new user — the user's intent on clicking "Create"
+        // is almost always "and use that user now."
+        pickUser(result.user_id);
+      } catch (err) {
+        errEl.textContent = err.message || String(err);
+      }
+    });
+
+    loadUsers();
+  </script>
+</body>
+</html>

@@ -32,13 +32,22 @@ import os
 import traceback
 from pathlib import Path
 
+# Shadow the builtin print so every existing `print(...)` call in this
+# module emits a leading timestamp. Cheaper than converting 100+ call
+# sites to the logging module; uvicorn's own INFO/access lines are
+# timestamped separately via log_config.json.
+import builtins as _builtins
+_real_print = _builtins.print
+def print(*args, **kwargs):  # noqa: A001 — intentional shadow
+    _real_print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]", *args, **kwargs)
+
 # In-memory staging for bookmarklet → form handoff. One-time read, TTL pruned.
 _STAGE_TTL_SECONDS = 600
 _staged_markdown: dict[str, dict] = {}
 
 # IMPORTANT: Keep the imports for the critical business logic files
 try:
-    from recipe_model import RecipeModel
+    from recipe_model import RecipeModel, static_subset
 
     print("[OK] RecipeModel imported successfully")
 except Exception as e:
@@ -114,11 +123,67 @@ def _recipes_table_for(user_id: int) -> str:
     assert table in ("master_recipes", "recipes")
     return table
 
+
+def _seed_users_from_recipes(conn: sqlite3.Connection) -> None:
+    """One-time bootstrap: ensure every user_id that already appears in
+    recipes (or master_recipes) has a matching row in `users`, so the
+    picker has something to show on first boot of an existing DB. user_id=0
+    is excluded (master/curator pseudo-user). Idempotent — uses INSERT OR
+    IGNORE; reruns are no-ops once seeded."""
+    try:
+        now = datetime.utcnow().isoformat()
+        existing_uids = {
+            row[0] for row in conn.execute(
+                "SELECT user_id FROM recipes WHERE user_id IS NOT NULL AND user_id != 0 "
+                "UNION SELECT user_id FROM master_recipes WHERE user_id IS NOT NULL AND user_id != 0"
+            )
+        }
+        # Always ensure user_id=1 exists (the existing PLACEHOLDER_USER_ID
+        # default) even on a fresh DB with no recipes yet.
+        existing_uids.add(1)
+        for uid in sorted(existing_uids):
+            conn.execute(
+                "INSERT OR IGNORE INTO users "
+                "(user_id, name, status, created_at, updated_at) "
+                "VALUES (?, ?, 'test', ?, ?)",
+                (uid, f"User {uid}", now, now),
+            )
+        conn.commit()
+    except Exception as e:
+        print(f"[WARN] _seed_users_from_recipes failed: {e}")
+
+
+def _find_recipe_owner(recipe_id: str) -> int | None:
+    """Search both recipes and master_recipes for the given UUID; return
+    the row's user_id (0 for master, else personal), or None if absent.
+
+    Used by URL-addressed access (/r/<id>) and by the claim endpoint so
+    callers don't need to know which table holds the recipe. Cheap — two
+    indexed lookups by recipe_id (UUID column).
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT user_id FROM master_recipes WHERE recipe_id = ?",
+                (recipe_id,),
+            ).fetchone()
+            if row:
+                return row[0]
+            row = conn.execute(
+                "SELECT user_id FROM recipes WHERE recipe_id = ?",
+                (recipe_id,),
+            ).fetchone()
+            if row:
+                return row[0]
+    except Exception as e:
+        print(f"[WARN] _find_recipe_owner({recipe_id}) failed: {e}")
+    return None
+
 # Pipeline cache identity. One key shape for both the JSON-LD fast lane
 # (jsonld_to_recipe + enrich_recipe) and the markdown-LLM path
 # (markdown_to_recipe). When any of the three load-bearing prompts change,
 # the combined version flips and every cache row naturally invalidates.
-EXTRACT_MODEL = "gpt-4o-mini"
+EXTRACT_MODEL = "claude-haiku-4-5"  # the model markdown_to_recipe defaults to
 EXTRACT_PROMPT_VERSION = prompt_version_for(
     _MD_PROMPT + "\n---ENRICH---\n" + _ENRICH_PROMPT
     + "\n---IMAGE---\n" + IMAGE_TO_MARKDOWN_PROMPT
@@ -150,37 +215,141 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
 
 
 # =====================================================================
-# Cache layer — STUBBED OUT as of 2026-05-17.
+# Cache layer — URL-keyed, model+prompt-versioned, TTL=30 days.
 #
-# The cache poisoned itself in the wild: six rows accumulated with empty
-# names (paywall / 404 / anti-bot pages) or outright wrong content
-# ("Easy Meatloaf" cached for a curry-chicken URL — likely the LLM
-# picking the wrong recipe from a sidebar carousel). Every retry of
-# those URLs hit the bad cache silently, and users couldn't see why.
+# Why it exists: stage B (markdown → recipe via LLM) costs ~$0.001 and
+# ~15-25s per call and is stable across users for the same source URL.
+# Hits skip the LLM entirely; stale rows are refreshed on the next
+# extract and used to flag source drift.
 #
-# User decision: stub the cache layer so EVERY extract runs the LLM
-# fresh. Zero cache reads, zero cache writes. The empty-extract guard
-# and the rest of the implementation stay in the file for future
-# redesign — both helpers just no-op for now.
+# Why it was stubbed before this revision: the cache poisoned itself
+# with empty extractions (paywall / 404 / anti-bot pages cached as
+# empty recipes) and one wildly wrong row ("Easy Meatloaf" cached for
+# a curry-chicken URL — the LLM picked a sidebar carousel). Two
+# safeguards keep that from recurring now:
+#   1. _is_cacheable() refuses to cache rows that look empty or thin
+#      (no name, < 2 ingredients, < 2 instructions). Bad extracts no
+#      longer pollute the cache.
+#   2. Cache stores the STATIC subset only (recipe_model.static_subset)
+#      — no per-user fields, no claim provenance, no current_status
+#      timestamps. Same boundary discipline as claim.
 #
-# The llm_extract_cache table stays in the DB (rows don't grow without
-# writes); no migration. When the redesign lands, we either drop the
-# table, change its schema, or unstub these functions.
+# Lookup order in extract endpoints (unchanged): jsonld-direct fast
+# lane (when the source page ships JSON-LD) → cache → LLM. Cache
+# catches everything the JSON-LD path doesn't.
 # =====================================================================
 
-_CACHE_STUBBED = True
+_CACHE_STUBBED = False
+
+
+def _is_cacheable(recipe: dict) -> tuple[bool, str]:
+    """Refuse to cache rows that look like a bad extraction (paywall,
+    404, picked-the-wrong-recipe sidebar carousel). Returns
+    (cacheable, reason). Thresholds match what's reasonable for a real
+    recipe: a name AND at least 2 ingredients AND at least 2 instructions.
+    """
+    name = (recipe.get("name") or "").strip() if recipe else ""
+    if not name:
+        return False, "no name"
+    ings = recipe.get("recipeIngredient") or []
+    if sum(1 for i in ings if str(i).strip()) < 2:
+        return False, "fewer than 2 ingredients"
+    steps = recipe.get("recipeInstructions") or []
+    real_steps = 0
+    for s in steps:
+        text = s.get("text") if isinstance(s, dict) else s
+        if str(text or "").strip():
+            real_steps += 1
+    if real_steps < 2:
+        return False, "fewer than 2 instructions"
+    return True, "ok"
+
 
 def _extract_cache_lookup(url_normalized, *, usage_log=None):
-    """No-op lookup while the cache is stubbed. Always returns miss so
-    every extract hits the LLM fresh."""
+    """Look up a cached LLM extract for this URL+model+prompt.
+
+    Returns (recipe, prior_fingerprint, status):
+      recipe              cached recipe dict (the static subset that was
+                          written), or None on miss/stale/error.
+      prior_fingerprint   semantic fingerprint of the cached row; passed
+                          forward so the eventual cache_write can detect
+                          source drift. Empty string on miss.
+      status              "skip"  no URL — nothing to key on
+                          "hit"   fresh — serve recipe verbatim
+                          "stale" past TTL — caller re-extracts; drift
+                                  detection runs on next write
+                          "miss"  no row, or lookup failed
+
+    Fresh hits append a zero-token 'cache_hit_markdown_to_recipe' entry
+    to usage_log so cost reports can total tokens *saved* alongside
+    actual spend.
+    """
     if not url_normalized:
         return None, "", "skip"
-    return None, "", "stubbed"
+    result = get_cached_extract(
+        DB_PATH,
+        url_normalized=url_normalized,
+        model=EXTRACT_MODEL,
+        prompt_version=EXTRACT_PROMPT_VERSION,
+    )
+    if result is None:
+        return None, "", "miss"
+    if result["is_stale"]:
+        # Pass the prior fingerprint forward; the write step on the
+        # fresh re-extract will compare and surface drift.
+        return None, result["semantic_fingerprint"], "stale"
+    if usage_log is not None:
+        usage_log.append({
+            "operation": "cache_hit_markdown_to_recipe",
+            "model": EXTRACT_MODEL,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "meta": {"cached_at": result["cached_at"]},
+        })
+    return result["llm_output"], result["semantic_fingerprint"], "hit"
 
 
 def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
-    """No-op write while the cache is stubbed."""
-    return "stubbed", False
+    """Persist a freshly-extracted recipe to the cache.
+
+    Skips the write entirely if `recipe` looks empty/thin (see
+    _is_cacheable) so paywall pages and anti-bot stubs don't poison
+    future hits. Writes only the static subset of the recipe so on
+    hit, callers treat it like a fresh extract result and downstream
+    stages (chapter, Moz, save-time validation) re-stamp anything
+    per-extract.
+
+    Returns (status, drift):
+      status  "written"      row created or refreshed
+              "skip"         no URL / no recipe / failed _is_cacheable
+              "miss"         write failed (rare; logged)
+      drift   True when prior_fingerprint is set (stale-lookup branch)
+              AND the new fingerprint differs. Caller stamps
+              source_changed_at on the saved recipe row so the UI
+              surfaces "source page changed since you last saved."
+    """
+    if not url_normalized or not recipe:
+        return "skip", False
+    ok, reason = _is_cacheable(recipe)
+    if not ok:
+        print(f"[CACHE] refused to cache {url_normalized!r}: {reason}")
+        return "skip", False
+    try:
+        cacheable = static_subset(recipe)
+        new_fp = compute_recipe_fingerprint(cacheable)
+        set_cached_extract(
+            DB_PATH,
+            url_normalized=url_normalized,
+            model=EXTRACT_MODEL,
+            prompt_version=EXTRACT_PROMPT_VERSION,
+            llm_output=cacheable,
+            semantic_fingerprint=new_fp,
+        )
+    except Exception as e:
+        print(f"[CACHE] write failed for {url_normalized!r}: {e}")
+        return "miss", False
+    drift = bool(prior_fingerprint) and new_fp != prior_fingerprint
+    return "written", drift
 
 
 def _stamp_cache_timings(timings, *, status, url_normalized, drift=False):
@@ -382,6 +551,45 @@ def init_db():
             except sqlite3.IntegrityError as e:
                 print(f"[WARN] could not add master_recipes unique index: {e}")
 
+            # === users ===
+            # Test scaffolding for multi-user flows until Ghost (or another
+            # auth provider) lands. Column shape mirrors Ghost's `members`
+            # table so the eventual migration is a UPSERT-by-email or a
+            # UPSERT-by-ghost_uuid, not a schema rewrite:
+            #   - user_id: our existing INTEGER surrogate, already wired
+            #     into every other table (recipes.user_id, journal rows,
+            #     etc.). Keep this as the stable internal key.
+            #   - ghost_uuid: nullable; populated when Ghost integrates
+            #     (Ghost member id is a UUID).
+            #   - email: Ghost's natural key. Nullable for stub users.
+            #   - status: 'free' | 'paid' | 'comped' (Ghost values) + 'test'.
+            # user_id=0 is reserved for master_recipes (curator pseudo-user)
+            # and is NOT a row in this table.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ghost_uuid        TEXT,
+                    email             TEXT,
+                    name              TEXT,
+                    status            TEXT NOT NULL DEFAULT 'test',
+                    subscription_tier TEXT,
+                    created_at        TEXT NOT NULL,
+                    updated_at        TEXT NOT NULL
+                );
+            """)
+            try:
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email "
+                    "ON users(email) WHERE email IS NOT NULL AND email != ''"
+                )
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_ghost_uuid "
+                    "ON users(ghost_uuid) WHERE ghost_uuid IS NOT NULL AND ghost_uuid != ''"
+                )
+            except sqlite3.IntegrityError as e:
+                print(f"[WARN] could not add users unique indexes: {e}")
+            _seed_users_from_recipes(conn)
+
             ensure_metabase_url_table(conn)
             ensure_bcc_token_journal_table(conn)
             ensure_llm_extract_cache_table(conn)
@@ -440,10 +648,16 @@ from fastapi.responses import RedirectResponse
 
 @app.get("/r/{recipe_id}")
 def open_recipe_by_url(recipe_id: str):
-    # 302 to the form with ?recipe_id=<id>. The form has an init IIFE that
-    # fetches GET /recipes/{recipe_id} and runs loadForm.
-    return RedirectResponse(url=f"/forms/recipe_form_styled.html?recipe_id={recipe_id}",
-                            status_code=302)
+    # Resolve which table the recipe lives in so the redirect carries the
+    # right user_id — otherwise a master recipe URL fails to load when the
+    # sidebar default user_id doesn't match the row's table. Unknown UUIDs
+    # still redirect (form shows a not-found state); a 404 here would
+    # confusingly bypass the form entirely.
+    owner = _find_recipe_owner(recipe_id)
+    target = f"/forms/recipe_form_styled.html?recipe_id={recipe_id}"
+    if owner is not None:
+        target += f"&user_id={owner}"
+    return RedirectResponse(url=target, status_code=302)
 
 
 # Fetch one recipe by recipe_id. Same shape as list_recipes() rows so the
@@ -484,6 +698,294 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
         raise
     except Exception as e:
         print(f"[ERROR] Error in get_recipe({recipe_id}): {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+# Claim a recipe — fast in-DB copy from wherever it lives (master or
+# another user) into the target user's personal collection. Pure SQL,
+# no LLM, no re-extract. Use cases:
+#   - User browses /r/<master-id>, wants their own editable copy.
+#   - Eventually: user-to-user sharing.
+#
+# Security stub: target_user_id must be non-zero (can't claim INTO master
+# — that's a curator-only operation). Source must exist somewhere. No
+# per-user ACL yet — same "knowing the UUID == access" model the GET
+# endpoint uses. When the users layer lands, this is one of the places
+# that needs a real check ("can target_user_id see source?").
+@app.post("/recipes/{recipe_id}/claim")
+def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
+    if target_user_id == 0:
+        raise HTTPException(status_code=403,
+                            detail="Cannot claim into master collection")
+    if target_user_id < 0:
+        raise HTTPException(status_code=400, detail="target_user_id must be positive")
+
+    source_owner = _find_recipe_owner(recipe_id)
+    if source_owner is None:
+        raise HTTPException(status_code=404, detail="Source recipe not found")
+
+    source_table = _recipes_table_for(source_owner)
+    target_table = _recipes_table_for(target_user_id)
+
+    new_recipe_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                f"SELECT data, url_normalized FROM {source_table} WHERE recipe_id = ?",
+                (recipe_id,),
+            ).fetchone()
+            if not row:
+                # Should not happen (we just found the owner) but be defensive.
+                raise HTTPException(status_code=404, detail="Source recipe vanished")
+
+            source_data = json.loads(row[0])
+            # Use static_subset to filter to platonic fields only — drops
+            # the source row's id/user_id/_access/current_status/claim-
+            # provenance/affiliateUrl/etc. The static subset INCLUDES the
+            # LLM enrichment (provenance/classification/editorial) so the
+            # claimer inherits "pay-once" enrichment from master. See
+            # recipe_model.STATIC_TOP_LEVEL_FIELDS for the full split.
+            data = static_subset(source_data)
+            # Mint fresh per-row identity for the target user.
+            data["id"] = new_recipe_id
+            # Stamp claim provenance INSIDE _source so the UI can show
+            # "claimed from master / from user N at <time>" without a
+            # separate join. Layered on top of the static subset's
+            # _source (which kept originalUrl/origin/type).
+            source_block = data.get("_source") or {}
+            source_block["claimedFrom"] = (
+                "master" if source_owner == 0 else f"user:{source_owner}"
+            )
+            source_block["claimedAt"] = now
+            source_block["claimedFromRecipeId"] = recipe_id
+            data["_source"] = source_block
+
+            # "Copy not subscription" — claimed rows are detached from
+            # the source URL. We INTENTIONALLY leave url_normalized
+            # blank so:
+            #   - the daily cache-refresh's drift-stamp query (which
+            #     scopes to url_normalized) cannot touch claimed rows;
+            #   - the save endpoint's (url_normalized, user_id) dedup
+            #     cannot adopt the claimed row when the user later does
+            #     a fresh re-extract of the same URL — preserving the
+            #     claimer's edits.
+            # `_source.originalUrl` stays inside the data blob for
+            # display ("claimed from allrecipes.com/..."); it's just no
+            # longer the row's identity hook.
+
+            # Re-claim short-circuit: if this user already claimed this
+            # exact source recipe before, return their existing copy
+            # rather than minting a parallel row. Keyed on the source
+            # recipe_id (not URL) so it works under the no-url-link
+            # model. JSON-extract on `_source.claimedFromRecipeId`.
+            existing = conn.execute(
+                f"SELECT recipe_id FROM {target_table} "
+                f"WHERE user_id = ? "
+                f"AND json_extract(data, '$._source.claimedFromRecipeId') = ? "
+                f"LIMIT 1",
+                (target_user_id, recipe_id),
+            ).fetchone()
+            if existing:
+                print(f"[CLAIM] Re-claim short-circuit: user {target_user_id} "
+                      f"already has {existing[0]} from source {recipe_id}")
+                return {
+                    "recipe_id": existing[0],
+                    "url": f"/r/{existing[0]}",
+                    "adopted_existing": True,
+                }
+
+            conn.execute(
+                f"INSERT INTO {target_table} "
+                f"(recipe_id, user_id, data, url_normalized, source_changed_at, created_at, updated_at) "
+                f"VALUES (?, ?, ?, ?, NULL, ?, ?)",
+                (new_recipe_id, target_user_id, json.dumps(data, indent=2),
+                 "", now, now),  # url_normalized="" — detached, see comment above
+            )
+            print(f"[CLAIM] {source_table}/{recipe_id} -> "
+                  f"{target_table}/{new_recipe_id} (user {target_user_id})")
+            return {
+                "recipe_id": new_recipe_id,
+                "url": f"/r/{new_recipe_id}",
+                "adopted_existing": False,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] claim_recipe({recipe_id} -> user {target_user_id}) failed: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Claim failed: {e}")
+
+
+# === Users (test scaffold) ===
+# Stub login surface. Backs the /forms/users.html picker page. Returns
+# everything in the users table — the UI is the place to filter, not
+# the API (so a future admin view can use the same endpoint). Ghost
+# integration replaces these with a wrapper around the Members API;
+# the column shape is already Ghost-compatible (see init_db users
+# section), so callers don't have to change.
+@app.get("/users")
+def list_users():
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT user_id, ghost_uuid, email, name, status, "
+                "subscription_tier, created_at, updated_at "
+                "FROM users ORDER BY user_id"
+            ).fetchall()
+            return [
+                {
+                    "user_id": r[0],
+                    "ghost_uuid": r[1],
+                    "email": r[2],
+                    "name": r[3],
+                    "status": r[4],
+                    "subscription_tier": r[5],
+                    "created_at": r[6],
+                    "updated_at": r[7],
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f"[ERROR] list_users failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/users")
+async def create_user(request: Request):
+    """Create a test user. Body: {name, email?, status?, subscription_tier?}.
+    user_id is auto-assigned by SQLite (AUTOINCREMENT). Returns the full
+    row including the assigned user_id so the picker UI can navigate the
+    user straight to the form as that user. Email uniqueness is enforced
+    by a partial index — duplicate email returns 409."""
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    email = (payload.get("email") or "").strip() or None
+    status = (payload.get("status") or "test").strip()
+    tier = (payload.get("subscription_tier") or "").strip() or None
+    now = datetime.utcnow().isoformat()
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.execute(
+                "INSERT INTO users (email, name, status, subscription_tier, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (email, name, status, tier, now, now),
+            )
+            user_id = cur.lastrowid
+        return {
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "status": status,
+            "subscription_tier": tier,
+            "created_at": now,
+            "updated_at": now,
+        }
+    except sqlite3.IntegrityError as e:
+        # uniq_users_email collision is the only expected IntegrityError
+        # here — surface as 409 so the UI can show a useful message.
+        raise HTTPException(status_code=409, detail=f"User already exists: {e}")
+    except Exception as e:
+        print(f"[ERROR] create_user failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.patch("/users/{user_id}")
+async def update_user(user_id: int, request: Request):
+    """Partial-update a user. Body: any subset of {name, email, status,
+    subscription_tier, ghost_uuid}. user_id is NOT mutable (it's our
+    surrogate key; every recipes.user_id row out there references it).
+    Empty string for email/tier → NULL in the DB. 409 on email/ghost_uuid
+    collision."""
+    if user_id == 0:
+        raise HTTPException(status_code=403,
+                            detail="user_id 0 is reserved for master_recipes")
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+
+    allowed = {"name", "email", "status", "subscription_tier", "ghost_uuid"}
+    sets = []
+    params: list = []
+    for k in allowed:
+        if k not in payload:
+            continue
+        v = payload[k]
+        if isinstance(v, str):
+            v = v.strip()
+            if v == "" and k in ("email", "subscription_tier", "ghost_uuid"):
+                v = None
+        if k == "name" and (v is None or v == ""):
+            raise HTTPException(status_code=400, detail="name cannot be empty")
+        sets.append(f"{k} = ?")
+        params.append(v)
+    if not sets:
+        raise HTTPException(status_code=400, detail="no updatable fields in body")
+    now = datetime.utcnow().isoformat()
+    sets.append("updated_at = ?")
+    params.append(now)
+    params.append(user_id)
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.execute(
+                f"UPDATE users SET {', '.join(sets)} WHERE user_id = ?",
+                params,
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="User not found")
+            row = conn.execute(
+                "SELECT user_id, ghost_uuid, email, name, status, "
+                "subscription_tier, created_at, updated_at "
+                "FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        return {
+            "user_id": row[0], "ghost_uuid": row[1], "email": row[2],
+            "name": row[3], "status": row[4], "subscription_tier": row[5],
+            "created_at": row[6], "updated_at": row[7],
+        }
+    except HTTPException:
+        raise
+    except sqlite3.IntegrityError as e:
+        raise HTTPException(status_code=409, detail=f"Conflict: {e}")
+    except Exception as e:
+        print(f"[ERROR] update_user({user_id}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int):
+    """Refuse to delete a user that still owns recipes — orphans break
+    referential expectations elsewhere (token journal, claim provenance,
+    sidebar lookups). Caller must reassign or delete those recipes first.
+    user_id 0 is master, never deletable from here."""
+    if user_id == 0:
+        raise HTTPException(status_code=403,
+                            detail="user_id 0 is reserved for master_recipes")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM recipes WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+            if count > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"User has {count} recipe(s) — delete or reassign them first",
+                )
+            cur = conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="User not found")
+        return {"deleted": True, "user_id": user_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] delete_user({user_id}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
@@ -582,12 +1084,29 @@ async def save_recipe(request: Request):
         source["originalUrl"] = normalized_source_url
         recipe_dict["_source"] = source
 
+    # "Copy not subscription": claimed rows are detached from the source
+    # URL. The `_source.claimedFrom` stamp (set by /recipes/<id>/claim)
+    # marks the row as a clone. For claimed rows:
+    #   - url_normalized is forced to "" so the dedup query below won't
+    #     adopt this row when the user later re-extracts the same URL.
+    #     Their fresh extract becomes a new row; their claimed-and-
+    #     possibly-edited row stays untouched.
+    #   - The daily cache-refresh's drift stamp also scopes by
+    #     url_normalized, so it won't touch claimed rows either.
+    # `_source.originalUrl` is preserved inside the data blob for
+    # display ("claimed from allrecipes.com/..."); it's just not the
+    # row's identity hook anymore.
+    is_claimed_row = bool(source.get("claimedFrom"))
+    if is_claimed_row:
+        normalized_source_url = ""
+
     # Self-URL minting: when no external source URL exists (handwritten,
     # photo, typed recipe), generate one pointing back at this DB record:
     # https://<host>/r/<recipe_id>. Done BEFORE the adopt-existing check
     # below so a re-save of a once-saved local recipe still works (the
     # second save sees the same minted URL and adopts the existing row).
-    if not raw_source_url:
+    # Skip for claimed rows — they intentionally have no url_normalized.
+    if not raw_source_url and not is_claimed_row:
         base = str(request.base_url).rstrip("/")
         synthetic_url = f"{base}/r/{recipe_id}"
         normalized_source_url = normalize_url(synthetic_url)
@@ -621,6 +1140,39 @@ async def save_recipe(request: Request):
         print(f"[WARN] dup lookup failed (continuing as insert): {e}")
 
     print(f"[SAVE] Saving recipe with ID: {recipe_id} (adopted={adopted}) user_id={user_id} table={table}")
+
+    # Auto-enrich hook for master writes — keeps the "pay-once
+    # enrichment" property: any recipe that enters master_recipes
+    # carries provenance + classification + editorial, so every future
+    # claimer inherits the rich data via static_subset. Idempotent:
+    # skips rows where the LLM's biggest unique output
+    # (classification.story) is already populated.
+    # Cost: ~$0.001 + ~15s per row (gpt-4o-mini). Batch flows take the
+    # latency hit one row at a time; interactive curator saves only pay
+    # it if the row arrives un-enriched.
+    # Best-effort: enrich failures log and continue — the save still
+    # proceeds with whatever data we have. Token usage is appended to
+    # save_usage_log so it can be journaled after the INSERT below.
+    save_usage_log: list = []
+    if user_id == 0:
+        cls = recipe_dict.get("classification") or {}
+        story = (cls.get("story") or "").strip()
+        name = (recipe_dict.get("name") or "").strip()
+        ingredients = recipe_dict.get("recipeIngredient") or []
+        if not story and name and ingredients:
+            try:
+                print(f"[SAVE-ENRICH] master row missing story; calling enrich_recipe")
+                t_enrich = time.perf_counter()
+                enrich_recipe(recipe_dict, usage_log=save_usage_log)
+                dt = int((time.perf_counter() - t_enrich) * 1000)
+                new_story = ((recipe_dict.get("classification") or {})
+                             .get("story") or "").strip()
+                if new_story:
+                    print(f"[SAVE-ENRICH] OK story={len(new_story)} chars ({dt}ms)")
+                else:
+                    print(f"[SAVE-ENRICH] WARN: no story produced after {dt}ms")
+            except Exception as e:
+                print(f"[SAVE-ENRICH] FAILED (continuing save): {e}")
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -657,6 +1209,17 @@ async def save_recipe(request: Request):
                 except Exception as e:
                     print(f"[WARN] metabase_url last_accessed bump failed: {e}")
             print("[OK] Recipe saved to database")
+            # Journal token usage from the save-time auto-enrich hook
+            # (master rows only). Tagged with the row's recipe_id +
+            # user_id so cost shows up in bcc_token_journal next to
+            # extract-time usage.
+            if save_usage_log:
+                write_usage_entries(
+                    conn,
+                    user_id=user_id,
+                    recipe_id=recipe_id,
+                    entries=save_usage_log,
+                )
             # Fetch the DB-assigned integer PK so the form can display it.
             row = conn.execute(f"SELECT id FROM {table} WHERE recipe_id = ?", (recipe_id,)).fetchone()
             seq_id = row[0] if row else None
@@ -1023,30 +1586,54 @@ async def extract_from_markdown_endpoint(
         url_norm = normalize_url(effective_url) if effective_url else ""
         recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
-        path_used = "cache-hit" if recipe is not None else "markdown-llm"
+        path_used = "cache-hit" if recipe is not None else ""
 
         if recipe is None:
-            try:
-                recipe = await asyncio.to_thread(
-                    markdown_to_recipe,
-                    effective_md,
-                    source_name=source_name,
-                    source_url=effective_url,
-                    title=effective_title,
-                    timings=timings,
-                    prompts=prompts,
-                    usage_log=usage_log,
-                )
-            except Exception as e:
-                print(f"[ERROR] Extraction failed: {e}")
-                print(f"[ERROR] Traceback: {traceback.format_exc()}")
-                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+            # JSON-LD fast lane — the bookmarklet harvests JSON-LD in the
+            # browser and embeds it in the markdown body under a fenced
+            # ```json``` block. When that block exists and parses to a
+            # Recipe-typed object with the required fields, build the
+            # recipe directly from it and skip the Claude call entirely.
+            # Mirrors the `/extract-from-url` fast lane in
+            # extract_recipe_from_url().
+            if envelope.get("jsonld"):
+                print(f"[EXTRACT] has_jsonld=True -> trying jsonld-direct fast lane")
+                try:
+                    recipe = jsonld_to_recipe(
+                        envelope["jsonld"][0],
+                        source_url=effective_url,
+                        title=effective_title,
+                        timings=timings,
+                    )
+                    if recipe is not None:
+                        path_used = "jsonld-direct"
+                except Exception as e:
+                    print(f"[WARN] jsonld_to_recipe raised, will fall back to LLM: {e}")
+                    recipe = None
 
             if recipe is None:
-                print("[ERROR] Extraction failed - no result")
-                _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
+                path_used = "markdown-llm"
+                try:
+                    recipe = await asyncio.to_thread(
+                        markdown_to_recipe,
+                        effective_md,
+                        source_name=source_name,
+                        source_url=effective_url,
+                        title=effective_title,
+                        timings=timings,
+                        prompts=prompts,
+                        usage_log=usage_log,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] Extraction failed: {e}")
+                    print(f"[ERROR] Traceback: {traceback.format_exc()}")
+                    _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+                    raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+
+                if recipe is None:
+                    print("[ERROR] Extraction failed - no result")
+                    _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+                    raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
@@ -1089,6 +1676,7 @@ def extract_recipe_from_url(
     pre_scored: dict | None = None,
     batch_overrides: dict | None = None,
     user_id: int = PLACEHOLDER_USER_ID,
+    force_refresh: bool = False,
 ) -> dict:
     """Sync orchestrator: fetch URL → markdown → JSON-LD-or-LLM → enrich
     hooks → attached scoring. Same pipeline as the /extract-from-url
@@ -1156,6 +1744,15 @@ def extract_recipe_from_url(
     recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
     drift = False
     path_used = ""
+    if force_refresh and recipe is not None:
+        # Caller (the proactive daily-refresh job) wants a fresh extract
+        # even though the cache row hasn't expired yet. Keep prior_fp so
+        # the write step below can still detect drift; just drop the
+        # cached recipe so the LLM branch runs.
+        print(f"[CACHE] force_refresh: discarding fresh cache hit, "
+              f"prior_fp={prior_fp[:12]!r}")
+        recipe = None
+        cache_status = "stale"
 
     if recipe is not None:
         path_used = "cache-hit"

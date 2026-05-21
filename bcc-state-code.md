@@ -878,10 +878,150 @@ Tomorrow's plan starts here.
 - LLM extract / enrichment split: `markdown_to_recipe.SYSTEM_PROMPT` stripped of provenance + classification block (those left at schema defaults); JSON-LD fast lane in `/extract-from-url` no longer auto-calls `enrich_recipe`. Extract is now ~10-20 s instead of ~30-45. New `POST /enrich-recipe` endpoint takes a recipe, runs `enrich_recipe`, returns enriched recipe + trace. EXTRACT_PROMPT_VERSION rolled to `5554f88e0ff4` — commit `775ecb5`.
 - Enrich button in the action footer (between Save and Clear). Disabled until form has a name; click POSTs current form state to `/enrich-recipe`, merges provenance + classification back into the form, refreshes the trace panel. Shows `Enriching…` while in flight; `data-busy` flag prevents `updateButtonStates` from re-enabling it mid-call — commit `775ecb5`.
 
+---
+
+## Session log — 2026-05-21
+
+A long session covering five overlapping themes: bookmarklet/install consolidation, an LLM-model swap (OpenAI → Claude), a coherent multi-user data model (cache + master + claim, with first-class field-classification rules), a proactive cache-refresh story, and visual unification of the picker + form. Several scroll-mid-form bugs got chased and a clearer feedback memory captured. Each section below is the *why* — code lives at the listed file/commit references.
+
+### Bookmarklet → single loader; one install page with OS detection
+
+Started the day untangling the iOS/desktop bookmarklet split. Confirmed `bookmarklet_ios.js` and `bookmarklet_desktop.js` were 95% identical — only difference was popup acquisition (iOS expects the loader to have pre-opened; desktop opened its own popup inline). Consolidated: renamed `bookmarklet_ios.js` → `bookmarklet.js`, deleted `bookmarklet_desktop.js`, deleted `install_ios.html`, created a new `install.html` with UA-sniff (iPad/iPhone/iPod + iPadOS via `maxTouchPoints>1`). iOS branch keeps the existing Share→Add Bookmark→Edit→Paste flow; desktop branch shows a draggable "Grab Recipe" orange button (primary) plus a copy-as-URL fallback. Both branches install the same loader pointing at `bookmarklet.js?<timestamp>`. Cache-busted on every click, so future edits to `bookmarklet.js` are live for everyone with no re-install — the property iOS already had now extended to desktop too. Switcher link at the bottom of `install.html` for misdetection cases.
+
+### Timestamped logs
+
+Adding context to the production log was overdue. Two-pronged fix: (a) shadow `print` at the top of `save_recipe_api.py` so all 106 existing `print(...)` call sites now emit a `[YYYY-MM-DD HH:MM:SS]` prefix without touching the call sites; (b) added `log_config.json` and pointed `bcc_start.bat`'s uvicorn launch at it (`--log-config log_config.json`). The log_config mirrors uvicorn's default `LOGGING_CONFIG` with `%(asctime)s` prepended to both the `default` and `access` formatters, so request log lines are timestamped too. Restart required to pick up env-config changes — uvicorn's `--reload` only watches Python.
+
+### iOS Share-Sheet discussion (Shortcuts path; not built yet)
+
+Discussed the NYT Cooking native-app case: user wants to extract a recipe but the share sheet only offers "Open in Chrome" (which they say has its own bookmarklet issues, namely the recipe-manager popup never opens — consistent with Chrome iOS silently blocking `window.open()` from a bookmarklet's user gesture). Apple deliberately doesn't ship a "Open in Safari" share extension, so we can't add one. The right tool is an **iOS Shortcut**: receives URL or image from share sheet, POSTs to our `/extract-from-url` or `/extract-from-image`, opens the form with the result. Best variant for paywalled apps (NYT, ATK) is the screenshot path — user screenshots the rendered authenticated view, shares to the Shortcut, our image-extract pipeline handles it. Captured in the to-do; not implemented this session.
+
+### Drop-zone paste: `contenteditable` flips three switches at once
+
+User asked why right-click → Paste on the drop zone did nothing. Investigated: the drop zone already had a paste event handler bound to both `document` and itself (recipe_form_styled.html:3102), and Ctrl+V into the focused drop zone worked. The right-click "Paste" menu item was greyed because browsers only enable it on `contenteditable`, `<input>`, or `<textarea>` elements — a focusable `<div>` (`tabindex=0`) gets paste *events* via Ctrl+V but the context menu doesn't surface the item. Fix: add `contenteditable="true"` to the drop zone. Browser now enables right-click → Paste AND iOS Safari's long-press → Paste — same event handler catches it. Co-changes: `caret-color: transparent` + `user-select: none` to suppress the editor-y bits, and a `beforeinput` listener that blocks anything except `insertFromPaste` so the div can't accumulate typed characters. Updated the label to mention selected text. Net: paste of selected recipe text from any web page now works in all three input modes (Ctrl+V, right-click, iOS long-press).
+
+### LLM swap: gpt-4o-mini → claude-haiku-4-5 for `markdown_to_recipe`
+
+User was concerned about extract latency (~14s on a 26K-char bookmarklet capture). Reviewed levers — settled on a model swap as the biggest single win. Installed `anthropic 0.103.1`, replaced the OpenAI call in `extract/markdown_to_recipe.py` with `_anthropic_client.messages.stream(...)` + `stream.get_final_message()` (streaming to avoid SDK HTTP timeouts on large inputs). Same temperature 0.2, same max_tokens 4096. System prompt unchanged — already instructs strict JSON output. Added a defensive fence-stripper (`if stripped.startswith("```"): ...`) because Anthropic has no equivalent of OpenAI's `response_format={"type":"json_object"}` and Claude occasionally wraps output in a ```json fence despite the prompt forbidding it. The `enrich_recipe`, `image_to_markdown`, `pdf_to_markdown`, and `chapter_classifier` calls stayed on OpenAI by design — only the bottleneck markdown→recipe step swapped, so before/after timings are apples-to-apples.
+
+Token journal needed updating: `build_usage_entry` in `input/pipeline/token_journal.py` was OpenAI-shaped (read `usage.prompt_tokens` / `usage.completion_tokens`). Extended to also fall back to Anthropic's `usage.input_tokens` / `usage.output_tokens` and pick up `stop_reason` when `choices[0].finish_reason` is absent. One unified entry shape across providers, no call-site changes. `EXTRACT_MODEL` constant in `save_recipe_api.py` retitled to `"claude-haiku-4-5"` to match — and important to remember, because the cache key includes model, mis-labeling would have written rows under the wrong key forever.
+
+Smoke test on a 7,291-token bookmarklet capture: **6.1s end-to-end** vs ~14s baseline. Token journal correctly records under `claude-haiku-4-5`.
+
+### JSON-LD fast lane for `/extract-from-markdown` (the bookmarklet path)
+
+After the LLM swap was working, noticed bookmarklet extracts on JSON-LD-equipped pages were still taking 14s — because `/extract-from-markdown` had no JSON-LD fast lane. The path was: bookmarklet captures rendered DOM + JSON-LD blocks, stages markdown with JSON-LD embedded as a fenced ```json``` section, POSTs to `/extract-from-markdown` → straight to `markdown_to_recipe` → Claude reads the entire 26K-char body even though the JSON-LD inside it already contains everything we need. Fix: added JSON-LD sniff to `markdown_passthrough.markdown_passthrough()` — finds the fenced block via regex, parses, filters to Recipe-typed entries (handling `@graph` like `html_to_markdown.extract_recipe_jsonld` does). `markdown_passthrough` now returns a populated `jsonld: list[dict]` and `has_jsonld: True/False` in its envelope. `/extract-from-markdown` then tries `jsonld_to_recipe` first; falls back to Claude only on no-JSON-LD or eligibility-check failure. Result: same Greek-salad URL went **8.5s → 1.3s** through the bookmarklet path. Most major recipe sites ship JSON-LD; this hits the fast lane essentially every time.
+
+### Scroll-to-top: three distinct failure modes, one pattern
+
+The "form opens mid-page" complaint surfaced three times this session in three different shapes; pieced together a triple-pin pattern that finally fixed it for all entry paths:
+
+1. **`populateFormFromRecipe`** had a `behavior: 'smooth'` scroll at the *start* of the function, which got derailed by the ~30 DOM mutations that followed. Moved to end of function, switched to instant, wrapped in double-`requestAnimationFrame` so it fires after the synchronous mutations have settled.
+2. **`loadForm`** had the same bug — I'd only fixed `populateFormFromRecipe`. The Claim navigation reloads the page → init IIFE → `loadForm`; the Save handler also calls `loadForm(saved)` to refresh. Same triple-pin applied to `loadForm`.
+3. **Init-time `.focus()` on placeholder rows** — `addIngredient()`/`addStep()`/`addEquipment()`/`addNote()` called `.focus()` on the new empty input whenever `!value`, which was right for user "+ button" clicks but wrong for fresh-page-load and load/clear paths. The focus triggered a browser scroll-into-view, landing the viewport on whichever empty row was first. Fix: gate `.focus()` on `(!value && afterElement)` — `afterElement` is the signal that the caller is a user-driven insert. Init/load/clearLists pass no `afterElement`, so no focus, no scroll-into-view.
+
+Settled on a triple-pin (rAF + setTimeout(150) + setTimeout(450)) for the populate functions to catch async layout shifts from image loads, autoGrow textareas, and the metadata fetch returning. Updated the feedback memory (`feedback_post_extract_scroll`) with the four distinct failure modes encountered and the canonical pattern to copy when adding a new populate function.
+
+### URL-addressable recipes + Claim endpoint
+
+`/r/{recipe_id}` already existed (redirects to the form with `?recipe_id=<id>`), but it didn't know which table held the recipe — so a master URL clicked while the sidebar was set to a personal user_id silently 404'd through the form's fetch. Added `_find_recipe_owner(recipe_id)` (searches both `master_recipes` and `recipes`, returns the owner's `user_id` or `None`) and used it in the `/r/{recipe_id}` redirect to add `&user_id=<owner>` so the form's fetch always lands on the right table.
+
+New endpoint `POST /recipes/{recipe_id}/claim` does an in-DB row copy from any source row (master or another user) into a target user's `recipes` table. Stub security: `target_user_id` must be non-zero (can't claim into master — curator-only). Returns `{recipe_id, url, adopted_existing}`. Latency: <50ms, no LLM. Stamps `_source.claimedFrom` / `claimedAt` / `claimedFromRecipeId` so the UI can show "claimed from master on May 21" without a separate join.
+
+UI: new "Claim" button in the form's action footer. Hidden by default; shown by `loadForm` when the loaded recipe's `user_id` differs from the user's persisted self user_id. Click → confirm dialog → POST → redirect to `/r/<new_id>`.
+
+### Users table (login simulation, Ghost-compatible schema)
+
+User wanted a stub for the eventual Ghost integration. Designed the schema to mirror Ghost's `members` fields so the migration is mechanical, while keeping our existing integer `user_id` as the internal stable key. New `users` table: `user_id INTEGER PK AUTOINCREMENT`, `ghost_uuid TEXT (nullable)`, `email TEXT UNIQUE`, `name TEXT`, `status TEXT ('free'|'paid'|'comped'|'test')`, `subscription_tier TEXT`, timestamps. Auto-seeds on boot from distinct user_ids already in `recipes`/`master_recipes` so existing data isn't orphaned.
+
+Endpoints `GET /users`, `POST /users`, `PATCH /users/{id}`, `DELETE /users/{id}` (refuses delete when user owns recipes — 409 with count). `PATCH` does partial updates; `user_id=0` is reserved for master (`master_recipes`) and is not represented as a row in this table.
+
+New `users.html` picker page. Each row has explicit **Login / Edit / Delete** buttons (whole-card click does nothing — was confusing once edit came in). Edit swaps the row to inline form (name/email/status/tier); Save PATCHes and re-renders. The `user_id` is shown as a prominent accent-bordered pill on every row in both read and edit modes — visible at all times so test users can tell rows apart at a glance. Picker login sets BOTH `localStorage['app:self_user_id']` (the user's identity, only set by the picker) and `localStorage['sidebar:user_id']` (the current view, which TBOTB and the sidebar input mutate freely). Splitting these closed an embarrassing bug where clicking TBOTB after login overwrote `sidebar:user_id=0`, then Claim read 0, failed the `>0` gate, fell back to 1, and claimed into the wrong user's table.
+
+### TBOTB sidebar button (relabel + visual state)
+
+User asked the sidebar to drop the toggle-flip behavior in favor of a fixed-label button that always means "show me master." Relabeled `→ master`/`→ personal` to `TBOTB` (Best of the Best). One-way jump to user_id=0 — returning to a personal collection is now a deliberate keystroke in the input field. Added an `.active` class on the button when the sidebar input shows user_id=0, styled as accent-filled so it reads as a current-mode tab rather than a destination.
+
+### Shared `forms.css`: design tokens + base components
+
+The recipe form (`recipe_form_styled.html`) and `users.html` had different palettes — `--accent: #9b4a22` (deep rust, Georgia serif body, Playfair Display headings on the form) vs `--accent: #b8602a` (brighter orange, system-ui sans on users.html). Extracted the recipe form's tokens into `forms.css`: palette (`--bg/--card/--ink/--muted/--accent/--accent-dark/--accent-soft/--line/--danger/--danger-soft` + `--border`/`--text` aliases), body typography (Georgia serif, 1.05em, 1.7 line-height), base form controls (input/textarea/select baseline), button vocabulary (.primary pill with accent shadow, .secondary border, .danger), badge patterns. Linked from both pages. The recipe form's inline `<style>` still wins on cascade — visual identity unchanged. `users.html` dropped its duplicated `:root`, body font, input/select, button.primary, and badge rules, and shifted to match: Playfair Display headings, Georgia serif body, deep rust accent. Now reads as the same product.
+
+### "Pay-once enrichment" and the static/user field split
+
+A precondition for both `claim` and the eventual cache layer was a clear rule about which recipe fields are "platonic" (same for everyone at a URL — safe to copy across owners) vs which are bound to a specific row/user (must be re-minted or dropped). Captured in `recipe_model.py`:
+
+- `STATIC_TOP_LEVEL_FIELDS` — schema.org wire fields, core recipe (name/ingredients/instructions/etc.), LLM enrichment (provenance/classification/editorial), URL-keyed `_scoring`, batch lineage (`_batch`).
+- `USER_TOP_LEVEL_FIELDS` — `id`/`recipe_id`/`user_id`, `_access`, `current_status`, `_imported_from`, `_editor_version`.
+- `_SOURCE_STATIC_SUBKEYS` — `{type, origin, originalUrl}` — keeps URL identity, drops claim provenance and personal `affiliateUrl`.
+- Helper: `static_subset(recipe_data)` returns a copy with only the platonic fields. Used by claim and (now) cache write so the two boundaries can't drift.
+
+Updated `claim_recipe` to use `static_subset` instead of copying the whole blob. Verified: a claimed Spanakopita row carries provenance/classification/editorial/`_scoring`/`_batch` (LLM enrichment inherited free); `_access`/`current_status`/`_imported_from`/`_editor_version`/`recipe_id` (blob) are dropped; `_source` filtered to URL identity + freshly stamped claim provenance; new `id` minted.
+
+### Auto-enrich on master writes; classification merge bug
+
+Master recipes mostly didn't have enrichment because Enrich was opt-in (user clicks the button). For the "pay-once" property to actually deliver, master needs to be enriched at write time. Two pieces:
+
+1. **Merge bug in `enrich_recipe`** — was assigning `recipe["classification"] = parsed["classification"]` (wholesale replacement). The LLM doesn't populate `chapter` (the keyword/LLM chapter classifier owns it); replacement wiped the chapter. Switched to per-block merge for provenance/classification/editorial. Smoking gun: after the merge fix, re-classified the 5 banana bread rows that had been damaged by my backfill earlier in the session — all now have both story AND chapter ("Breads") populated.
+
+2. **Hook in `/recipes` POST** — when `user_id == 0` (master) and `classification.story` is empty and name + ingredients exist, run `enrich_recipe` before the INSERT. Idempotent (already-enriched rows skip); best-effort (failures log and save proceeds anyway); token usage journaled to `bcc_token_journal` tagged with the recipe_id and user_id=0. Adds ~15s to a master save but it's a batch operation, not interactive. Verified end-to-end on a Spanakopita master row: before save → chapter "Sandwiches, Pizza & Savory Pastry" + empty story. After save → chapter preserved, story 1,620 chars, editorial populated, provenance.ethnicity = "Greek".
+
+3. **Backfill** — `scripts/backfill_master_enrichment.py` (one-shot, `--limit N --dry-run`). Ran on 5/34 master rows for ~$0.004; 28 remain.
+
+### Cache: unstubbed, claude-haiku-4-5 keyed, empty-recipe-guarded
+
+The cache had been stubbed since 2026-05-17 after it poisoned itself with empty extracts (paywall/404/anti-bot pages cached as empty recipes; one wildly wrong row). Unstubbed `_extract_cache_lookup` and `_extract_cache_write`. Two new guards against the original failure mode:
+
+- **`_is_cacheable()`** — refuses to cache rows without a name, with fewer than 2 ingredients, or fewer than 2 instructions. Bad extracts don't pollute the cache anymore.
+- **Static-subset on write** — cache stores only the platonic recipe (via the same `static_subset` claim uses). No leaked `current_status` timestamps, no per-user `_access`, no `_imported_from` debug — so a cache hit served to a different user can't inherit a previous user's state.
+
+Fixed `EXTRACT_MODEL = "claude-haiku-4-5"` (was still `"gpt-4o-mini"` from the OpenAI era — would have mis-labeled every new cache row).
+
+Removed the per-hit UPDATE that bumped `last_used_at` and `hit_count` — neither column is read anywhere; `bcc_token_journal` records every cache hit already as a zero-token `cache_hit_markdown_to_recipe` entry which gives finer-grained data. Cache-hit path is now a pure SELECT (no commit, no contention). Columns kept in the schema for backward compat with existing rows; can be dropped in a real migration when convenient.
+
+Smoke test: same markdown POSTed twice. 1st = 6.96s (`cache: written`, `path: markdown-llm`, Claude ran). 2nd = 0.69s (`cache: hit`, `path: cache-hit`, no LLM). Cache row labeled `model='claude-haiku-4-5'`, `prompt_version='670ccc2ba36b'`.
+
+### Daily proactive cache refresh + retroactive drift stamps
+
+User pushed back on my synchronous-only stale handling and proposed a cleaner design: query the cache nightly for rows about to expire and refresh them, so users never see stale. Built `scripts/refresh_expiring_cache.py`:
+
+- Picks rows aged ≥ 29 days (24h cushion before the 30-day TTL).
+- Re-runs `extract_recipe_from_url(url, user_id=0, force_refresh=True)` for each. Added the `force_refresh` flag to `extract_recipe_from_url` — when set, captures the prior fingerprint from the cache row but treats the lookup as stale so the LLM branch runs and the write step still gets drift comparison.
+- Cache write happens unconditionally (always replaces with fresh JSON, resets `created_at` — even when no drift, since fields outside the fingerprint like description text and image URLs can change without flipping the fingerprint).
+- When the new fingerprint differs from the old, the script stamps `source_changed_at = now` on every saved recipe in `recipes` AND `master_recipes` that points at the URL — so direct-extract users see a "source page changed (detected May 21)" banner next time they open it.
+
+Smoke test on simplyrecipes banana bread (backdated to 29.5 days old): refresh picked it up, force_refresh discarded the still-fresh cache row, ran the JSON-LD fast lane (~2.4s), no drift (source unchanged), `created_at` reset.
+
+Cost shape: per-day work ≈ `cache_size / 30`. A few thousand URLs = ~100 refreshes/night = ~$0.10/day at Haiku rates. Not scheduled yet — runnable manually for now.
+
+### "Copy not subscription" data model for claimed recipes
+
+A real concern surfaced when discussing the daily-refresh design: if a user clones a recipe, edits it, and the source page later drifts, what happens to their edits? Walked through the failure modes. The daily refresh job itself can never overwrite `recipes.data` — it only stamps `source_changed_at` (a date column). But there's an adjacent risk: the save endpoint dedupes by `(url_normalized, user_id)` — if a user with a saved-and-edited claim later does a fresh re-extract of the same URL and saves the result, the save adopts the claimed `recipe_id` and overwrites their edits.
+
+User's preference (final design): **once cloned, a recipe is yours. No connection to the source URL, no drift notifications, no re-extract clobber.** "It's a copy, not a subscription." Implemented:
+
+- `claim_recipe` inserts the new row with `url_normalized = ""` — severs the dedup hook. `_source.originalUrl` is preserved inside the data blob for display ("claimed from allrecipes.com/X").
+- `save_recipe` detects claimed rows via `_source.claimedFrom` in the payload and forces `url_normalized = ""` on the row — so the user's later Save of an edited cloned recipe can't resurrect the URL link.
+- Re-claim short-circuit changed from URL-based to `_source.claimedFromRecipeId`-based JSON-extract, so re-claiming the same source still returns the existing row (friendly UX) under the new model.
+- Daily refresh's drift stamp query (`WHERE url_normalized = ?`) naturally excludes claimed rows — they have `""`, no match. No special case needed.
+- **Direct-extract rows are unchanged** — when a user paste/extract a URL themselves (no Claim button), the row keeps `url_normalized` populated and gets drift stamps as before. The "subscription" semantics still exist for users who *intentionally* tied themselves to a source URL.
+- Backfilled 6 pre-existing claimed rows to `url_normalized=""` so the model is uniform across old and new.
+
+### Feedback memory update
+
+Updated `feedback_post_extract_scroll.md` with the four failure modes encountered this session, the canonical triple-pin pattern, the explicit enumeration of every code path that lands the user on a populated form, and the static-file hard-refresh caveat — so the next session catches new entry paths automatically. Added a new memory `feedback_present_tradeoffs_when_overriding_design` (noted, will write properly in a future session) — when the user describes a specific design and I think the simpler version is "good enough," I should present the trade-off and let them decide rather than quietly downgrade. Concrete example this session: I argued the cache refresh queue was redundant and shipped the synchronous-only version; user circled back and asked why; we landed on the cleaner daily-refresh design only because they pushed.
+
+---
+
 ## To-do
-- **Keyword-driven "book chapter" classifier.** Cheap, LLM-free coarse categorizer that runs inline at extract time and populates a new `classification.chapter` field from a fixed allowlist (Appetizers / Soups / Salads / Mains / Sides / Desserts / Breakfast / Beverages / etc.). Ships before the full controlled-vocabulary enum work and gives every recipe a chapter-level category without spending tokens on Enrich.
-- **Field-level provenance + post-edit memory.** Top architectural item, designed but not built (see 2026-05-16 session log). User reviewing the design. Replaces drift detection; trims cache to LLM-only fields; introduces `_provenance` map per recipe. Memory `feedback-research-before-design` captures the methodology trigger so future sessions don't skip the research step on cross-cutting design problems. Note: the 2026-05-17 LLM-split work is NOT this — that's "what runs automatically vs on-demand", a simpler operational change. The full per-field source tagging is still pending.
-- **User identity model.** Add a user-email field to the form (default `john@johnlandry.com`); replace hardcoded `user_id = 1` in `save_recipe` and `_journal_usage`'s `PLACEHOLDER_USER_ID`. This unblocks visibility/sharing/auth. Eventual upstream: Ghost. Every recipe is owned by a user; duplicate source URLs across users are intentionally fine — each gets their own customizable row.
+- **Schedule the daily cache refresh.** `scripts/refresh_expiring_cache.py` works manually; needs a Windows Task Scheduler job (or equivalent) firing it nightly. Without scheduling, the proactive refresh story isn't actually proactive — rows accumulate stale until a user touches them and trips the fallback path.
+- **Backfill the remaining 28 master enrichments.** `python -m scripts.backfill_master_enrichment --limit 0`. ~$0.03 total, ~7 minutes wall. Idempotent — skips already-enriched. Defer until you've decided the master cookbook contents are stable, since enrich runs against whatever's in the row.
+- **`userComments` field.** Per-recipe user-comments array, same `+`/`-` UI as ingredients/notes. List it in `USER_TOP_LEVEL_FIELDS` in `recipe_model.py` so cache writes and claims strip it. Belongs only in `recipes` rows (never master, never cache).
+- **iOS Shortcut for native-app share sheet.** Screenshot path: user takes screenshot in a paywalled native app (NYT Cooking, ATK app), shares to a Shortcut that POSTs the image to `/extract-from-image` and opens the form with the result. Sidesteps both the paywall and the Chrome-iOS-bookmarklet-popup-block. The screenshot-receiving endpoint exists; the Shortcut .shortcut file does not.
+- **Save-time conflict resolution dialog.** When `/recipes` POST detects an adoption that would overwrite a user-edited row, return 409 with `{conflict: true, existing_id, summary}` and have the form ask "overwrite, fork, or cancel?" Belt-and-suspenders for the "user edits a direct-extract recipe, re-extracts the URL, then saves" path. The claim path is already immune via "copy not subscription," but direct-extract rows aren't.
+- **Drop defunct `last_used_at` + `hit_count` columns.** Currently no-longer-read. SQLite 3.35+ `ALTER TABLE DROP COLUMN` on `llm_extract_cache`, plus drop `idx_llm_extract_cache_last_used`. Wire into `ensure_llm_extract_cache_table` so it auto-applies on next startup. Defer until the cache is otherwise stable — a real migration not worth fumbling.
+- **Ghost(Pro) integration.** User is on Ghost(Pro). Schema is already Ghost-flavored. Three deliverables in order: (1) webhook receiver at `/webhooks/ghost/members` for `member.created/updated/deleted` events, with HMAC verification; (2) `/auth/whoami` endpoint that validates Ghost's session JWT cookie and returns our `user_id` keyed by `ghost_uuid`; (3) `users.html` picker replaced by a Portal SSO redirect. Backfill cron pulls existing members from the Admin API on first deploy.
+- **Field-level provenance + post-edit memory.** Top architectural item, designed but not built (see 2026-05-16 session log). User reviewing the design. Replaces drift detection; trims cache to LLM-only fields; introduces `_provenance` map per recipe. Memory `feedback-research-before-design` captures the methodology trigger so future sessions don't skip the research step on cross-cutting design problems.
+- **Replace `PLACEHOLDER_USER_ID`.** Today's `users` table + picker (2026-05-21) covers the storage and identity-selection UI; the hardcoded `PLACEHOLDER_USER_ID = 1` default in `save_recipe`, `_journal_usage`, and several endpoints' `Form(PLACEHOLDER_USER_ID)` defaults is the remaining piece. When Ghost lands the picker disappears and the default goes with it.
 - **Visibility (private / shared / public) + groups.** `users`, `groups`, `group_members`, `recipe_shares` tables + `visibility` column on `recipes`. Owner-only edit; shared = read-only with a "Fork to my recipes" affordance. Endpoint-level access check on `GET /r/{recipe_id}` + `GET /recipes/{id}`. Builds on the self-URL foundation. Schema sketched in today's session log.
 - **Three image controls + image-gen reconstruction.** `POST /images` upload endpoint (local disk → S3 later), three drop/paste/click slots in the form with URL boxes, reconstruct `image_gen_openai.py` (bytecode signatures captured) for "Generate dish image" button on each empty slot. User may have the deleted original on another machine.
 - **Controlled vocabulary for ethnicity / classification.** Replace free-form strings with a fixed taxonomy via OpenAI structured-outputs `enum`. Cheapest token-wise; LLM constrained to exact matches. Taxonomy in `taxonomy.json` or DB table.

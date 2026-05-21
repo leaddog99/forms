@@ -67,15 +67,27 @@ def build_usage_entry(
     model: str,
     response: Any,
 ) -> dict:
-    """Pull token counts + interesting extras off an OpenAI ChatCompletion
-    response. Safe against partial/missing fields — returns zeros rather
-    than raising if `response.usage` is absent."""
+    """Pull token counts + interesting extras off a provider response.
+
+    Handles both OpenAI ChatCompletion shape (usage.prompt_tokens /
+    completion_tokens, response.choices[0].finish_reason) and Anthropic
+    Message shape (usage.input_tokens / output_tokens, response.stop_reason).
+    Safe against partial/missing fields — returns zeros rather than raising
+    if `response.usage` is absent."""
     usage = getattr(response, "usage", None)
-    prompt_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
-    completion_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+    # OpenAI names; Anthropic names fall through to the elif.
+    prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+    completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    if prompt_tokens is None and usage is not None:
+        prompt_tokens = getattr(usage, "input_tokens", 0)
+    if completion_tokens is None and usage is not None:
+        completion_tokens = getattr(usage, "output_tokens", 0)
+    prompt_tokens = prompt_tokens or 0
+    completion_tokens = completion_tokens or 0
 
     # Anything beyond raw counts goes into meta. dump() handles cached_tokens,
-    # reasoning_tokens, etc. cleanly for both regular and reasoning models.
+    # reasoning_tokens, cache_read_input_tokens, etc. cleanly for both
+    # OpenAI reasoning models and Anthropic prompt-cached calls.
     meta: dict[str, Any] = {}
     if usage is not None:
         try:
@@ -91,10 +103,13 @@ def build_usage_entry(
     rid = getattr(response, "id", None)
     if rid:
         meta["response_id"] = rid
+    # OpenAI: response.choices[0].finish_reason; Anthropic: response.stop_reason.
     try:
         meta["finish_reason"] = response.choices[0].finish_reason
     except Exception:
-        pass
+        stop = getattr(response, "stop_reason", None)
+        if stop:
+            meta["finish_reason"] = stop
 
     return {
         "operation": operation,

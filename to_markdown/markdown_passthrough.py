@@ -16,10 +16,14 @@ And it sniffs the body for hints the saver may have stamped on top:
 - `*Source: <url>*` italic line (bookmarklet/converter convention)
 - embedded JSON-LD `"url"` field
 - first `# H1` line as title fallback
-so the downstream extract gets a real source_url for Moz scoring etc.
+- fenced ```json``` block under "STRUCTURED RECIPE DATA (JSON-LD)" header
+  (bookmarklet convention); when present and Recipe-typed, the endpoint
+  can take the same `jsonld_to_recipe` fast lane that `/extract-from-url`
+  uses and skip the Claude call entirely.
 """
+import json
 import re
-from typing import Optional
+from typing import Any, Optional
 
 
 _SOURCE_LINE_RE = re.compile(
@@ -28,6 +32,19 @@ _SOURCE_LINE_RE = re.compile(
 )
 _JSONLD_URL_RE = re.compile(r'"url"\s*:\s*"(https?://[^"]+)"')
 _TITLE_RE = re.compile(r'^\s*#\s+(.+?)\s*$', re.MULTILINE)
+# Matches the fenced JSON-LD block the bookmarklet writes:
+#   ## STRUCTURED RECIPE DATA (JSON-LD)
+#
+#   ```json
+#   ...
+#   ```
+# The heading is fixed (bookmarklet.js writes it verbatim); accept the
+# heading line optionally to allow stray fenced blocks elsewhere in the
+# body to be ignored.
+_JSONLD_FENCE_RE = re.compile(
+    r'##\s*STRUCTURED RECIPE DATA \(JSON-LD\)\s*\n+```json\s*\n(.*?)\n```',
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 def markdown_passthrough(
@@ -44,11 +61,13 @@ def markdown_passthrough(
     md = _normalize(markdown_text)
     effective_url = source_url or _sniff_source_url(md)
     effective_title = title or _sniff_title(md)
+    jsonld = _sniff_jsonld(md)
     return {
         "markdown": md,
         "source_url": effective_url,
         "title": effective_title,
-        "has_jsonld": False,
+        "has_jsonld": bool(jsonld),
+        "jsonld": jsonld,
     }
 
 
@@ -77,6 +96,46 @@ def _sniff_title(md: str) -> str:
     """First `# H1` line, if any. Empty otherwise."""
     m = _TITLE_RE.search(md)
     return m.group(1).strip() if m else ""
+
+
+def _is_recipe_type(node_type: Any) -> bool:
+    """schema.org @type can be a string or a list of strings."""
+    if node_type == "Recipe":
+        return True
+    if isinstance(node_type, list) and "Recipe" in node_type:
+        return True
+    return False
+
+
+def _sniff_jsonld(md: str) -> list:
+    """Find a fenced JSON-LD block, parse it, return all Recipe-typed
+    entries (flattening @graph wrappers the same way html_to_markdown does).
+
+    Returns [] when no fenced JSON-LD block is present, when it doesn't
+    parse, or when nothing inside it has @type Recipe — caller falls back
+    to the LLM path in all three cases.
+    """
+    m = _JSONLD_FENCE_RE.search(md)
+    if not m:
+        return []
+    try:
+        parsed = json.loads(m.group(1))
+    except Exception:
+        return []
+    # The bookmarklet wraps multiple <script type="application/ld+json">
+    # blocks in an outer list; some pages also use @graph for nesting.
+    # Normalize to a flat list of dicts before filtering by @type.
+    out: list = []
+    candidates = parsed if isinstance(parsed, list) else [parsed]
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        if _is_recipe_type(item.get("@type")):
+            out.append(item)
+        for nested in item.get("@graph") or []:
+            if isinstance(nested, dict) and _is_recipe_type(nested.get("@type")):
+                out.append(nested)
+    return out
 
 
 if __name__ == "__main__":

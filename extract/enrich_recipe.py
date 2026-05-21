@@ -316,12 +316,20 @@ def enrich_recipe(
         print(f"     DEBUG tail: ...{content[-300:]}")
         return recipe
 
-    if isinstance(parsed.get("provenance"), dict):
-        recipe["provenance"] = parsed["provenance"]
-    if isinstance(parsed.get("classification"), dict):
-        recipe["classification"] = parsed["classification"]
-    if isinstance(parsed.get("editorial"), dict):
-        recipe["editorial"] = parsed["editorial"]
+    # Merge, don't replace. The LLM doesn't populate every sub-field of
+    # `classification` — `chapter` is set separately by
+    # `_attach_chapter` (the keyword/LLM chapter classifier). A
+    # wholesale `recipe["classification"] = parsed[...]` wipes chapter
+    # whenever enrich runs after classification was set. Same merge
+    # discipline for provenance/editorial — cheap insurance against
+    # future fields that some other code path stamps.
+    for block in ("provenance", "classification", "editorial"):
+        new_block = parsed.get(block)
+        if isinstance(new_block, dict):
+            existing = recipe.get(block) or {}
+            merged = dict(existing)
+            merged.update(new_block)
+            recipe[block] = merged
     return recipe
 
 

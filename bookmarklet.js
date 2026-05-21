@@ -1,14 +1,15 @@
-// Recipe-to-form bookmarklet (iOS) — full logic, loaded by the tiny loader
-// bookmarklet at https://recipes.tbotb.com/forms/bookmarklet_ios.js
+// Recipe-to-form bookmarklet — full logic, loaded by the tiny loader
+// bookmarklet served from install.html (desktop + iOS use the same
+// loader and the same payload).
 //
 // The loader does the synchronous window.open() inside the user-gesture
-// context (iOS Safari requirement), stashes the popup handle at
-// window.__recipeBookmarkletPopup, then injects this script. By the time
-// THIS code runs, the popup is already open — we just navigate it after
-// the staging fetch completes.
+// context (iOS Safari requirement; harmless on desktop), stashes the
+// popup handle at window.__recipeBookmarkletPopup, then injects this
+// script. By the time THIS code runs, the popup is already open — we
+// just navigate it after the staging fetch completes.
 //
-// Edit this file → update is live on the next bookmark tap (the loader
-// cache-busts with ?<timestamp>). No re-install ever.
+// Edit this file → update is live on the next bookmark click/tap (the
+// loader cache-busts with ?<timestamp>). No re-install ever.
 (async function () {
   const API = 'https://recipes.tbotb.com';
   const FORM = API + '/forms/recipe_form_styled.html';
