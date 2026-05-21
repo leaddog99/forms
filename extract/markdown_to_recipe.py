@@ -16,7 +16,7 @@ import re
 import time
 from typing import Any, Optional
 
-import openai
+import anthropic
 
 from sanitize_recipe_data import sanitize_recipe_data
 from recipe_model import RecipeModel
@@ -25,7 +25,7 @@ from input.pipeline.url_utils import normalize_url, root_domain
 from input.pipeline.token_journal import build_usage_entry
 
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+_anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
 _DATA_URL_IMG_RE = re.compile(r"!\[[^\]]*\]\(data:[^)]*\)")
@@ -67,7 +67,7 @@ def markdown_to_recipe(
     source_name: str = "",
     source_url: str = "",
     title: str = "",
-    model: str = "gpt-4o-mini",
+    model: str = "claude-haiku-4-5",
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
     usage_log: Optional[list] = None,
@@ -119,24 +119,41 @@ def markdown_to_recipe(
     if timings is not None:
         timings["prep_ms"] = int((t_prep - t0) * 1000)
 
-    response = openai.chat.completions.create(
+    # Streamed to avoid SDK HTTP timeouts on large recipe pages (input
+    # markdown can easily exceed 20k tokens). The SYSTEM_PROMPT already
+    # instructs "Output a single valid JSON object" — no native JSON-mode
+    # toggle on Anthropic, but the prompt + low temperature + json.loads
+    # below give the same envelope. temperature stays at 0.2 (Haiku 4.5
+    # still accepts sampling params; Opus 4.7 is the model that removed
+    # them).
+    with _anthropic_client.messages.stream(
         model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
         max_tokens=4096,
         temperature=0.2,
-        response_format={"type": "json_object"},
-    )
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+    ) as stream:
+        response = stream.get_final_message()
+
     if usage_log is not None:
         usage_log.append(build_usage_entry("markdown_to_recipe", model, response))
 
-    content = response.choices[0].message.content
+    # First text block; Anthropic responses can in principle have multiple
+    # content blocks (e.g. thinking + text), but we don't enable thinking
+    # so a single text block is expected.
+    content = next((b.text for b in response.content if b.type == "text"), "")
+    # Strip a leading/trailing markdown ```json ... ``` fence if Claude
+    # added one despite the prompt's "no fences" rule. OpenAI's JSON-mode
+    # toggle handled this for us; Anthropic has no equivalent, so do it
+    # ourselves.
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*\n?", "", stripped)
+        stripped = re.sub(r"\n?```\s*$", "", stripped)
     try:
-        json_data = json.loads(content)
+        json_data = json.loads(stripped)
     except Exception as e:
-        print("     ERROR: Failed to parse GPT JSON:", e)
+        print("     ERROR: Failed to parse Claude JSON:", e)
         print("     DEBUG: Raw output:\n", content)
         return None
 

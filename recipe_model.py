@@ -10,6 +10,108 @@ from typing import List, Optional, Union, Literal
 from datetime import datetime
 import os
 
+
+# ============================================================================
+# STATIC vs USER field classification.
+#
+# Every recipe blob contains two kinds of fields:
+#   - STATIC ("platonic") — the recipe itself: name, ingredients, steps,
+#     LLM enrichment (provenance/classification/editorial), URL-keyed
+#     scoring. Same across all users for a given URL.
+#   - USER — bound to a specific row/owner: the row UUID, owner user_id,
+#     accept/reject status, visibility, claim provenance, ephemeral
+#     debug fields, and (future) per-user comments.
+#
+# `static_subset()` returns a copy of a recipe blob containing ONLY the
+# static fields. Use it whenever data flows between owners:
+#   - claim (master → user, user → user)
+#   - cache write (an extract result feeds the URL-keyed cache; we must
+#     not leak the writing user's accept/reject decision)
+#   - cache read into a new form (cache → user; user fills in personal
+#     fields fresh)
+#   - master backfill / promotion
+# Centralized here so the two cache/claim sites can't drift.
+# ============================================================================
+
+# Fields belonging to the platonic recipe — same for everyone at a URL.
+# Includes the LLM enrichment blocks (provenance/classification/editorial)
+# and the URL-keyed Moz scoring (_scoring). All of these are safe to
+# carry across owner boundaries.
+STATIC_TOP_LEVEL_FIELDS = frozenset({
+    # schema.org wire fields
+    "@context", "@type",
+    # core recipe content
+    "name", "headline", "description", "image", "author", "publisher",
+    "datePublished", "dateModified",
+    "recipeYield", "prepTime", "cookTime", "totalTime",
+    "recipeCategory", "recipeCuisine", "keywords", "tags",
+    "aggregateRating", "nutrition",
+    "recipeIngredient", "recipeInstructions",
+    "notes", "video", "servingSuggestions", "cookingMethod",
+    "equipment", "suitableForDiet",
+    "imageSource", "inputImage",
+    # LLM enrichment — same dish, same provenance/classification regardless
+    # of who owns this row.
+    "provenance", "classification", "editorial",
+    # URL-keyed Moz scoring (PA/DA/OU/rootDomain/recipeScore/etc.)
+    "_scoring",
+    # Batch lineage — which curation batch this recipe came from.
+    # URL-static (a URL was extracted from one batch; doesn't change per
+    # owner). Keep so master/cache lineage survives a claim.
+    "_batch",
+})
+
+# Fields tied to a specific row / owner — must be re-minted, dropped, or
+# explicitly re-stamped after the copy.
+USER_TOP_LEVEL_FIELDS = frozenset({
+    "id",                # row UUID — minted fresh per row
+    "recipe_id",         # duplicate of id that some flows write into the
+                         #   data blob; must be re-minted
+    "user_id",           # row owner — set to target user
+    "_imported_from",    # ephemeral debug ("imported via /extract-from-url
+                         #   on 2026-03-12")
+    "_editor_version",   # ephemeral debug
+    "_access",           # per-user visibility / sharing
+    "current_status",    # this user's accept/reject decision (validator
+                         #   re-stamps it on every extract anyway)
+    # Future: "userComments" — when added, list here so cache/claim
+    # never carry one user's comments to another.
+})
+
+# _source has a MIX of static and user-specific sub-keys. originalUrl /
+# origin / type identify the dish; affiliateUrl / claimedFrom / claimedAt
+# / claimedFromRecipeId are owner-specific provenance.
+_SOURCE_STATIC_SUBKEYS = frozenset({
+    "type",          # 'web' | 'local' | 'cookbook'
+    "origin",        # root domain or origin label
+    "originalUrl",   # canonical URL — the cache key itself
+})
+
+
+def static_subset(recipe_data: dict) -> dict:
+    """Return a copy of `recipe_data` containing only the platonic
+    recipe fields. Strips per-row state (id/user_id/recipe_id), per-user
+    state (_access/current_status), claim provenance (_source.claimedFrom/
+    claimedAt/claimedFromRecipeId), personal affiliate links
+    (_source.affiliateUrl), and ephemeral debug fields (_imported_from,
+    _editor_version).
+
+    Designed for the boundaries where a recipe crosses owners: claim,
+    cache-write, and future user-to-user share. Callers that need to
+    add fresh per-row state (new UUID, target user_id, fresh
+    claimedFrom stamp) do so on top of this output.
+    """
+    out: dict = {}
+    for k, v in (recipe_data or {}).items():
+        if k in STATIC_TOP_LEVEL_FIELDS:
+            out[k] = v
+    src = (recipe_data or {}).get("_source") or {}
+    if isinstance(src, dict):
+        filtered = {k: v for k, v in src.items() if k in _SOURCE_STATIC_SUBKEYS}
+        if filtered:
+            out["_source"] = filtered
+    return out
+
 class AggregateRating(BaseModel):
     type: str = Field(default="AggregateRating", alias="@type")
     ratingValue: float

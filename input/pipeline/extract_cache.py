@@ -152,15 +152,17 @@ def get_cached_extract(
                 return None
             recipe_json, fingerprint, created_at = row
             is_stale = not _is_within_ttl(created_at, ttl_days)
-            if not is_stale:
-                now = datetime.now(timezone.utc).isoformat()
-                conn.execute(
-                    """UPDATE llm_extract_cache
-                       SET last_used_at = ?, hit_count = hit_count + 1
-                       WHERE url_normalized = ? AND model = ? AND prompt_version = ?""",
-                    (now, url_normalized, model, prompt_version),
-                )
-                conn.commit()
+            # NOTE: previously this branch UPDATE'd last_used_at and
+            # hit_count on every fresh hit. Removed because:
+            #   - No code reads either column. No LRU eviction, no
+            #     popularity-based curation surface, no report.
+            #   - bcc_token_journal already records every hit as
+            #     `cache_hit_markdown_to_recipe (0+0)` with its own
+            #     timestamp, so the analytics signal is preserved.
+            #   - An UPDATE+commit on every hit defeats the point of a
+            #     read-only fast path.
+            # Columns left in the schema so old rows don't break the
+            # SELECT. Drop them later in a real migration if desired.
             return {
                 "llm_output": json.loads(recipe_json),
                 "cached_at": created_at,
@@ -190,6 +192,11 @@ def set_cached_extract(
         with sqlite3.connect(db_path) as conn:
             ensure_llm_extract_cache_table(conn)
             now = datetime.now(timezone.utc).isoformat()
+            # last_used_at and hit_count are no-longer-read defunct columns
+            # (see get_cached_extract). We still seed last_used_at = now
+            # on insert because the column is NOT NULL in the schema; once
+            # the migration that drops both columns lands, we can simplify
+            # both the INSERT and the ON CONFLICT clause.
             conn.execute(
                 """INSERT INTO llm_extract_cache
                      (url_normalized, model, prompt_version,
@@ -200,9 +207,7 @@ def set_cached_extract(
                    DO UPDATE SET
                      recipe_json = excluded.recipe_json,
                      semantic_fingerprint = excluded.semantic_fingerprint,
-                     created_at = excluded.created_at,
-                     last_used_at = excluded.last_used_at,
-                     hit_count = 0""",
+                     created_at = excluded.created_at""",
                 (url_normalized, model, prompt_version,
                  json.dumps(llm_output), semantic_fingerprint,
                  now, now),
