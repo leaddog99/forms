@@ -29,12 +29,12 @@ import time
 from typing import Optional
 from urllib.parse import urlparse, unquote
 
-import openai
+import anthropic
 import pypdfium2 as pdfium
 import requests
 
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+_anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
 PDF_TO_MARKDOWN_PROMPT = """
@@ -79,6 +79,21 @@ Rules:
 _DEFAULT_RENDER_SCALE = 1.5
 _DEFAULT_MAX_PAGES = 10
 
+# Mirrored from image_to_markdown — Anthropic vision rejects per-image
+# base64 payloads over 5MB. PDF pages render to PIL Images that we
+# encode here; keep them under the cap by saving as JPEG (not PNG;
+# PNG is far less compressible for photo-bearing cookbook pages) and
+# capping the long edge. Letter-size pages at scale=1.5 land at
+# 918x1188 which is well under _MAX_LONG_EDGE; the cap only kicks in
+# for unusually large source PDFs.
+_ANTHROPIC_B64_CAP = 5_242_880
+_MAX_LONG_EDGE = 2000
+_JPEG_QUALITY = 85
+
+
+def _base64_size(raw_len: int) -> int:
+    return ((raw_len + 2) // 3) * 4
+
 
 def _fetch_pdf_bytes(url: str, timeout: int = 30) -> bytes:
     r = requests.get(url, timeout=timeout)
@@ -93,13 +108,18 @@ def _title_from_url(url: str) -> str:
     return unquote(stem).replace("_", " ").strip()
 
 
-def _render_pdf_pages_to_png_b64(pdf_bytes: bytes, *,
-                                 max_pages: int = _DEFAULT_MAX_PAGES,
-                                 scale: float = _DEFAULT_RENDER_SCALE) -> list[str]:
-    """Open the PDF, render the first `max_pages` pages to base64 PNGs.
+def _render_pdf_pages_to_jpeg_b64(pdf_bytes: bytes, *,
+                                  max_pages: int = _DEFAULT_MAX_PAGES,
+                                  scale: float = _DEFAULT_RENDER_SCALE) -> list[str]:
+    """Open the PDF, render the first `max_pages` pages to base64 JPEGs.
 
-    Returns a list of `data:image/png;base64,...` strings ready to feed
-    into a vision-LLM image_url field.
+    Returns a list of raw base64 strings (no `data:` prefix) ready to
+    drop into Anthropic's `{"type": "image", "source": {"type":
+    "base64", "media_type": "image/jpeg", "data": ...}}` block.
+
+    JPEG (not PNG) and a long-edge cap so a photo-heavy cookbook page
+    can't exceed Anthropic's 5MB-per-image cap. Text legibility at
+    `_JPEG_QUALITY=85` is comfortable for OCR.
     """
     out: list[str] = []
     pdf = pdfium.PdfDocument(pdf_bytes)
@@ -108,10 +128,24 @@ def _render_pdf_pages_to_png_b64(pdf_bytes: bytes, *,
         for i in range(n):
             page = pdf[i]
             pil_image = page.render(scale=scale).to_pil()
+            if pil_image.mode != "RGB":
+                pil_image = pil_image.convert("RGB")
+            w, h = pil_image.size
+            long_edge = max(w, h)
+            if long_edge > _MAX_LONG_EDGE:
+                k = _MAX_LONG_EDGE / long_edge
+                pil_image = pil_image.resize((int(w * k), int(h * k)), pil_image.LANCZOS)
             buf = io.BytesIO()
-            pil_image.save(buf, format="PNG")
-            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-            out.append(f"data:image/png;base64,{b64}")
+            pil_image.save(buf, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+            raw = buf.getvalue()
+            b64_size = _base64_size(len(raw))
+            if b64_size > _ANTHROPIC_B64_CAP:
+                raise ValueError(
+                    f"PDF page {i+1} still exceeds Anthropic's {_ANTHROPIC_B64_CAP:,}-byte "
+                    f"base64 cap after JPEG/downscale ({b64_size:,} bytes). "
+                    f"The page may be unusually dense; consider rendering at a lower scale."
+                )
+            out.append(base64.b64encode(raw).decode("ascii"))
     finally:
         pdf.close()
     return out
@@ -120,7 +154,7 @@ def _render_pdf_pages_to_png_b64(pdf_bytes: bytes, *,
 def pdf_bytes_to_markdown(
     pdf_bytes: bytes,
     *,
-    model: str = "gpt-4o",
+    model: str = "claude-sonnet-4-6",
     max_pages: int = _DEFAULT_MAX_PAGES,
     render_scale: float = _DEFAULT_RENDER_SCALE,
     timings: Optional[dict] = None,
@@ -134,42 +168,49 @@ def pdf_bytes_to_markdown(
     from input.pipeline.token_journal import build_usage_entry
 
     t0 = time.perf_counter()
-    page_data_urls = _render_pdf_pages_to_png_b64(
+    page_b64s = _render_pdf_pages_to_jpeg_b64(
         pdf_bytes, max_pages=max_pages, scale=render_scale
     )
     t_render = time.perf_counter()
     if timings is not None:
         timings["pdf_render_ms"] = int((t_render - t0) * 1000)
-        timings["pdf_pages_rendered"] = len(page_data_urls)
+        timings["pdf_pages_rendered"] = len(page_b64s)
 
-    if not page_data_urls:
+    if not page_b64s:
         if timings is not None:
             timings["vision_llm_ms"] = 0
         return ""
 
-    user_content: list = [{
+    user_content: list = []
+    for b64 in page_b64s:
+        user_content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/jpeg", "data": b64},
+        })
+    user_content.append({
         "type": "text",
-        "text": (f"Multi-page recipe PDF. {len(page_data_urls)} page"
-                 f"{'s' if len(page_data_urls) > 1 else ''} follow in order. "
+        "text": (f"Multi-page recipe PDF. {len(page_b64s)} page"
+                 f"{'s' if len(page_b64s) > 1 else ''} above in order. "
                  "Produce a single combined markdown document."),
-    }]
-    for url in page_data_urls:
-        user_content.append({"type": "image_url", "image_url": {"url": url}})
+    })
 
-    response = openai.chat.completions.create(
+    # Streamed to avoid SDK HTTP timeouts on multi-page vision calls.
+    with _anthropic_client.messages.stream(
         model=model,
-        messages=[
-            {"role": "system", "content": PDF_TO_MARKDOWN_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
         max_tokens=4096,
         temperature=0.2,
-    )
+        system=PDF_TO_MARKDOWN_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    ) as stream:
+        response = stream.get_final_message()
+
     if timings is not None:
         timings["vision_llm_ms"] = int((time.perf_counter() - t_render) * 1000)
     if usage_log is not None:
         usage_log.append(build_usage_entry("pdf_to_markdown", model, response))
-    return (response.choices[0].message.content or "").strip()
+
+    content = next((b.text for b in response.content if b.type == "text"), "")
+    return content.strip()
 
 
 def pdf_url_to_markdown(

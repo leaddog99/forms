@@ -1,159 +1,94 @@
-"""Small LLM call that fills only `provenance` and `classification` on a
-recipe that already has its standard fields populated (typically from a
-JSON-LD direct parse).
+"""Enrichment LLM calls — independent blocks fired in parallel.
 
-This is the *enrichment* half of the JSON-LD fast lane:
+Each `EnrichmentBlock` describes one focused LLM call: a tool schema, a
+job-specific system prompt, and which key it merges into on the recipe
+dict. The blocks in `ENRICHMENT_BLOCKS` fan out via a ThreadPoolExecutor
+so wall time is roughly the slowest block, not the sum of all blocks.
 
-    JSON-LD direct parse  →  enrich_recipe  →  full RecipeModel
-    (no LLM, ~1ms)           (small LLM,         (same shape as the
-                              ~1–3 s)             big-prompt path)
+Adding a new block later (e.g. nutritional commentary, dietary tags,
+controlled-vocab ethnicity enum) is a one-place change: define another
+EnrichmentBlock and append it to ENRICHMENT_BLOCKS. The orchestrator
+discovers it automatically — it picks up the tool, threads the same
+user_prompt through, journals usage under the block's `operation`
+label, and merges the tool input into `recipe[block.name]`.
 
-The prompt is tiny on purpose — we send the dish name, a short ingredient
-sample, description, and any cuisine/category hints, NOT the full schema or
-the page markdown. That's the whole performance win: ~25 s of token churn
-becomes ~2 s of focused inference.
+Failure isolation: a single block raising leaves OTHER blocks' results
+in place. The old monolithic call had all-or-nothing semantics — a
+truncated story would void provenance and editorial too.
 """
 import json
-import os
 import time
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Any, Optional
 
-import openai
-
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-
-# Strict JSON-Schema response_format. This FORCES the model to produce
-# every required field as a separate string, instead of jamming everything
-# into one field (which gpt-4o-mini does at the slightest excuse with
-# response_format=json_object). All fields must be required and
-# additionalProperties must be false for strict mode to validate.
-RESPONSE_SCHEMA = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "RecipeEnrichment",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["provenance", "classification", "editorial"],
-            "properties": {
-                "provenance": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": [
-                        "ethnicity", "originRegion", "firstDocumented",
-                        "traditionalContext", "notableVariations",
-                        "relatedDishes", "sources",
-                    ],
-                    "properties": {
-                        "ethnicity": {"type": "string"},
-                        "originRegion": {"type": "string"},
-                        "firstDocumented": {"type": ["string", "null"]},
-                        "traditionalContext": {"type": "string"},
-                        "notableVariations": {"type": "array", "items": {"type": "string"}},
-                        "relatedDishes": {"type": "array", "items": {"type": "string"}},
-                        "sources": {"type": "array", "items": {"type": "string"}},
-                    },
-                },
-                "classification": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["confidence", "reasoning", "hierarchyPath", "story"],
-                    "properties": {
-                        "confidence": {"type": "integer"},
-                        "reasoning": {"type": "string"},
-                        "hierarchyPath": {"type": "string"},
-                        "story": {"type": "string"},
-                    },
-                },
-                "editorial": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["opinion", "scoreCommentary", "sourcingNotes"],
-                    "properties": {
-                        "opinion": {"type": "string"},
-                        "scoreCommentary": {"type": "string"},
-                        "sourcingNotes": {"type": "string"},
-                    },
-                },
-            },
-        },
-    },
-}
+import anthropic
 
 
-SYSTEM_PROMPT = """
+_anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+
+
+# Shared preamble for every enrichment block. Per-block job instructions
+# get appended below. Kept compact — each block already gets a focused
+# input_schema that hard-constrains the output shape, so the prompt
+# doesn't need to re-spell the JSON envelope.
+_BASE_SYSTEM = """
 You are a culinary historian AND an opinionated food editor. Given a
-dish's name, ingredients, cuisine hints, and (when available) the page's
-authority scores, you produce THREE outputs the user values equally:
+dish's name, ingredients, and any cuisine hints, you produce a focused
+piece of structured output as directed by the YOUR TASK section below.
 
-  (A) Structured provenance / classification metadata.
-  (B) A substantive multi-paragraph STORY about the dish.
-  (C) An EDITORIAL block: your opinion of this specific recipe, prose
-      commentary on its SEO/authority scores, and sourcing notes for the
-      handful of ingredients where quality dominates outcome.
-
-== CRITICAL: THE STORY FIELD ==
-The `classification.story` field is the main human-facing deliverable.
-It is NOT a one-paragraph blurb. It MUST be:
-
-  • 150 to 300 words total — count them.
-  • Split into 3 to 5 short paragraphs.
-  • Paragraphs separated by a literal "\\n\\n" (two newline characters
-    inside the JSON string value).
-  • Cover, in roughly this order:
-      1. Origin & history — when/where the dish emerged, its lineage.
-      2. Geography & culture — region, local ingredients/foodways that
-         shaped it, why it belongs to that place.
-      3. Traditional usage — meal type, season, occasion, who cooks it.
-      4. Modern usage & spread — how it's prepared inside and outside
-         its home region today; diaspora variations if any.
-      5. Notable variations or widely-recognized renditions.
-
-Hedge with "likely", "tradition holds", "commonly attributed to" when
-inferring rather than quoting a fact. DO NOT invent specific chefs,
-restaurants, or dates — omit rather than guess. For genuinely obscure
-dishes, write a shorter honest paragraph saying so rather than padding.
-
-A 3-sentence single-paragraph story is WRONG and will be rejected.
-
-== STRUCTURED METADATA ==
 Make a best-effort inference from ANY signal: dish name, cooking
 technique (e.g. "au gratin" → French, "tagine" → North African,
 "carbonara" → Roman), key ingredients, naming convention. Leaving a
 field empty signals "no signal at all" — reserve that for genuinely
 unidentifiable dishes.
 
-Return STRICT JSON matching this shape exactly:
+Hedge with "likely", "tradition holds", "commonly attributed to" when
+inferring rather than quoting a fact. DO NOT invent specific chefs,
+restaurants, dates, brand names, shop names, or URLs — omit rather
+than guess.
+""".strip()
 
-{
-  "provenance": {
-    "ethnicity":          "<cultural/ethnic origin, e.g. 'Italian-American', 'Cajun', 'Sichuan'. Infer from technique/ingredients when no explicit label.>",
-    "originRegion":       "<geographic origin, e.g. 'Naples, Italy', 'Louisiana, USA'. Empty only when no regional signal.>",
-    "firstDocumented":    "<approximate date or era, e.g. '19th century', '1930s'. null if truly unknown.>",
-    "traditionalContext": "<one-paragraph note on when/how the dish is traditionally eaten. Brief inference beats empty.>",
-    "notableVariations":  ["<well-known regional or family variations>"],
-    "relatedDishes":      ["<closely related dishes by name>"],
-    "sources":            []
-  },
-  "classification": {
-    "confidence":   <integer 0-100. 70+ for unambiguous technique markers, 50-70 for technique + corroborating ingredients, 30-50 for a single weak cue, <30 only for genuinely unidentifiable.>,
-    "reasoning":    "<one or two sentences explaining your provenance call.>",
-    "hierarchyPath":"<slash-separated taxonomy like 'side/gratin/vegetable', 'main/braise/stew'.>",
-    "story":        "<150-300 words across 3-5 paragraphs separated by \\n\\n. See the STORY rules above.>"
-  },
-  "editorial": {
-    "opinion":         "<2-3 short paragraphs (separate with \\n\\n), roughly 100-200 words. Editorial take on THIS specific recipe — technique choices, ingredient ratios, what makes it work or wobble, who would love it. Concrete and opinionated. Not 'this is a classic dish' filler — comment on what the cook in front of this recipe is actually being asked to do.>",
-    "scoreCommentary": "<1-2 short paragraphs interpreting the PA/DA/OU scores in plain language. PA is the page's Moz authority (0-100); DA is the domain's; OU = -3.0273 * DA^0.6034 + PA, which is positive when the page out-performs its domain baseline and negative when it under-performs. Translate the numbers into a reader-facing observation: 'this is a small/niche food blog (DA=X) but the page is punching above its weight (OU=+Y)', 'a well-established outlet (DA=X) and the page reflects that pedigree', 'mainstream domain but this particular page hasn't gained traction'. If scores are missing/zero (the recipe wasn't scored), say so and keep it short — don't fabricate authority claims.>",
-    "sourcingNotes":   "<Markdown bullet list. Pick 2-5 ingredients where quality dominates outcome (raw oils, fresh herbs, aged cheeses, anchovies, vanilla, etc.). For each, one bullet of the form '- **Ingredient name**: why quality matters here, what to look for, descriptive sourcing guidance (origin, style, hallmarks of the good stuff). DO NOT invent brand names, shop names, or URLs — those will be layered in later from a curated affiliate database. Keep the descriptive sourcing language so it stays useful even without links.>"
-  }
-}
+
+_PROVENANCE_JOB = """
+== YOUR TASK ==
+Call submit_provenance with the dish's cultural/historical metadata.
+Brief inference beats empty fields, but genuinely unknown should stay
+empty (or null for firstDocumented). `sources` should stay an empty
+list — the field exists for future curated citations, not for
+fabricated ones.
+""".strip()
+
+
+_CLASSIFICATION_JOB = """
+== YOUR TASK ==
+Call submit_classification with classification fields PLUS a
+multi-paragraph story about the dish.
+
+confidence: integer 0-100. 70+ for unambiguous technique markers,
+50-70 for technique + corroborating ingredients, 30-50 for a single
+weak cue, <30 only for genuinely unidentifiable.
+
+reasoning: one or two sentences explaining your classification call.
+
+hierarchyPath: slash-separated taxonomy like 'side/gratin/vegetable',
+'main/braise/stew'.
+
+story: 150 to 300 words split into 3 to 5 short paragraphs, separated
+by literal "\\n\\n" (two newline characters inside the JSON string).
+Cover, in roughly this order:
+  1. Origin & history — when/where the dish emerged, its lineage.
+  2. Geography & culture — region, local ingredients/foodways that
+     shaped it, why it belongs to that place.
+  3. Traditional usage — meal type, season, occasion, who cooks it.
+  4. Modern usage & spread — diaspora variations if any.
+  5. Notable variations or widely-recognized renditions.
+
+A 3-sentence single-paragraph story is WRONG. For genuinely obscure
+dishes, write a shorter honest paragraph saying so rather than padding.
 
 == EXAMPLE STORY (for length and tone calibration) ==
-For a dish like "Asparagus au Gratin", a CORRECT story field value
-looks like this (between the markers):
+For "Asparagus au Gratin", a CORRECT story looks like:
 
 >>>BEGIN EXAMPLE STORY>>>
 Gratins are a defining technique of French home cooking, traceable to
@@ -183,12 +118,156 @@ endive — using the same gratin grammar.
 <<<END EXAMPLE STORY<<<
 
 That story is roughly 230 words across four paragraphs. Match that
-density and structure for the dish you are given.
-
-== OUTPUT RULES ==
-Output ONLY the JSON object. No preamble, no commentary, no fences,
-no markdown — pure JSON only.
+density and structure.
 """.strip()
+
+
+_EDITORIAL_JOB = """
+== YOUR TASK ==
+Call submit_editorial with three fields:
+
+opinion: 2-3 short paragraphs (separate with \\n\\n), roughly 100-200
+words. Editorial take on THIS specific recipe — technique choices,
+ingredient ratios, what makes it work or wobble, who would love it.
+Concrete and opinionated. Not 'this is a classic dish' filler —
+comment on what the cook in front of this recipe is actually being
+asked to do.
+
+scoreCommentary: 1-2 short paragraphs interpreting the PA/DA/OU scores
+in plain language. PA is the page's Moz authority (0-100); DA is the
+domain's; OU = -3.0273 * DA^0.6034 + PA, positive when the page
+outperforms its domain baseline, negative when it underperforms.
+Translate the numbers into a reader-facing observation. If scores are
+missing/zero (the recipe wasn't scored), say so and keep it short —
+don't fabricate authority claims.
+
+sourcingNotes: Markdown bullet list. Pick 2-5 ingredients where
+quality dominates outcome (raw oils, fresh herbs, aged cheeses,
+anchovies, vanilla, etc.). For each: '- **Ingredient name**: why
+quality matters here, what to look for, descriptive sourcing guidance
+(origin, style, hallmarks of the good stuff).' DO NOT invent brand
+names, shop names, or URLs — those will be layered in later from a
+curated affiliate database.
+""".strip()
+
+
+@dataclass(frozen=True)
+class EnrichmentBlock:
+    """One parallel-callable unit of enrichment.
+
+    To add a new block: define another instance and append it to
+    ENRICHMENT_BLOCKS. The orchestrator picks it up automatically —
+    fires it alongside the others, journals usage under `operation`,
+    and merges the tool's `input` dict into `recipe[name]`.
+    """
+    name: str               # 'provenance' — also the recipe-dict key the result merges into
+    tool_name: str          # 'submit_provenance'
+    tool_description: str
+    input_schema: dict      # JSON Schema for the tool input
+    job_prompt: str         # The "== YOUR TASK ==" section, appended to _BASE_SYSTEM
+    operation: str          # journal label, e.g. 'enrich_provenance'
+    max_tokens: int = 1024  # generation cap; classification (with story) needs more
+
+    def tool(self) -> dict:
+        return {
+            "name": self.tool_name,
+            "description": self.tool_description,
+            "input_schema": self.input_schema,
+        }
+
+    def system_prompt(self) -> str:
+        return f"{_BASE_SYSTEM}\n\n{self.job_prompt}"
+
+
+PROVENANCE_BLOCK = EnrichmentBlock(
+    name="provenance",
+    tool_name="submit_provenance",
+    tool_description="Submit the dish's cultural/historical provenance metadata.",
+    input_schema={
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "ethnicity", "originRegion", "firstDocumented",
+            "traditionalContext", "notableVariations",
+            "relatedDishes", "sources",
+        ],
+        "properties": {
+            "ethnicity": {"type": "string"},
+            "originRegion": {"type": "string"},
+            "firstDocumented": {"type": ["string", "null"]},
+            "traditionalContext": {"type": "string"},
+            "notableVariations": {"type": "array", "items": {"type": "string"}},
+            "relatedDishes": {"type": "array", "items": {"type": "string"}},
+            "sources": {"type": "array", "items": {"type": "string"}},
+        },
+    },
+    job_prompt=_PROVENANCE_JOB,
+    operation="enrich_provenance",
+    max_tokens=800,
+)
+
+
+CLASSIFICATION_BLOCK = EnrichmentBlock(
+    name="classification",
+    tool_name="submit_classification",
+    tool_description="Submit classification fields plus a multi-paragraph dish story.",
+    input_schema={
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["confidence", "reasoning", "hierarchyPath", "story"],
+        "properties": {
+            "confidence": {"type": "integer"},
+            "reasoning": {"type": "string"},
+            "hierarchyPath": {"type": "string"},
+            "story": {"type": "string"},
+        },
+    },
+    job_prompt=_CLASSIFICATION_JOB,
+    operation="enrich_classification",
+    max_tokens=1600,  # story alone is ~400 tokens; headroom for reasoning + structural
+)
+
+
+EDITORIAL_BLOCK = EnrichmentBlock(
+    name="editorial",
+    tool_name="submit_editorial",
+    tool_description="Submit editorial opinion, score commentary, and sourcing notes for this recipe.",
+    input_schema={
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["opinion", "scoreCommentary", "sourcingNotes"],
+        "properties": {
+            "opinion": {"type": "string"},
+            "scoreCommentary": {"type": "string"},
+            "sourcingNotes": {"type": "string"},
+        },
+    },
+    job_prompt=_EDITORIAL_JOB,
+    operation="enrich_editorial",
+    max_tokens=1200,
+)
+
+
+# Ordered registry. Order drives:
+#   1) the deterministic walk-and-merge after futures complete (so
+#      usage_log entries land in a consistent order regardless of which
+#      block finishes first), and
+#   2) the worker pool size (one worker per block).
+# Append new blocks to extend enrichment.
+ENRICHMENT_BLOCKS: list[EnrichmentBlock] = [
+    PROVENANCE_BLOCK,
+    CLASSIFICATION_BLOCK,
+    EDITORIAL_BLOCK,
+]
+
+
+# Concatenated system prompt for cache-key versioning. `save_recipe_api.py`
+# hashes this string into `EXTRACT_PROMPT_VERSION`; any change to any
+# block's prompt naturally invalidates the cache without needing the
+# caller to know about the block split. Order matches ENRICHMENT_BLOCKS.
+SYSTEM_PROMPT = "\n\n---\n\n".join(
+    f"[{block.name}]\n{block.system_prompt()}" for block in ENRICHMENT_BLOCKS
+)
 
 
 def _build_user_prompt(recipe: dict) -> str:
@@ -217,8 +296,10 @@ def _build_user_prompt(recipe: dict) -> str:
             lines.append(f"  (+ {len(ingredients) - len(ing_sample)} more)")
 
     # Moz / page-authority scores for the editorial.scoreCommentary field.
-    # We only include scores that have a real (non-zero) value so the model
-    # doesn't fabricate commentary on a missing measurement.
+    # Only include scores with a real (non-zero) value so the model doesn't
+    # fabricate commentary on a missing measurement. Always included even
+    # though only the editorial block uses them — keeps user_prompt
+    # identical across blocks (one less thing to vary).
     scoring = recipe.get("_scoring") or recipe.get("scoring") or {}
     pa = scoring.get("pageAuthority")
     da = scoring.get("domainAuthority")
@@ -230,8 +311,6 @@ def _build_user_prompt(recipe: dict) -> str:
     if da is not None and float(da) > 0:
         score_lines.append(f"  DA (domain authority, 0-100): {float(da):.1f}")
     if ou is not None:
-        # OU can be negative (page under-performs domain) or positive (over-
-        # performs). 0 is meaningful too, so include it whenever it's set.
         score_lines.append(f"  OU (page-vs-domain over/under-performance, +/-): {float(ou):.1f}")
     if root_domain:
         score_lines.append(f"  Root domain: {root_domain}")
@@ -247,20 +326,65 @@ def _build_user_prompt(recipe: dict) -> str:
     return "\n".join(lines)
 
 
+def _run_block(
+    block: EnrichmentBlock,
+    user_prompt: str,
+    model: str,
+) -> tuple[Any, Optional[dict], int]:
+    """Execute a single enrichment block via Anthropic streamed messages.
+
+    Returns (response, parsed_input_dict_or_None, elapsed_ms). Raises on
+    network/SDK errors — caller catches and isolates per-block failure.
+    """
+    t_start = time.perf_counter()
+    with _anthropic_client.messages.stream(
+        model=model,
+        max_tokens=block.max_tokens,
+        temperature=0.4,
+        system=block.system_prompt(),
+        messages=[{"role": "user", "content": user_prompt}],
+        tools=[block.tool()],
+        tool_choice={"type": "tool", "name": block.tool_name},
+    ) as stream:
+        response = stream.get_final_message()
+    elapsed_ms = int((time.perf_counter() - t_start) * 1000)
+    parsed = next(
+        (b.input for b in response.content
+         if b.type == "tool_use" and b.name == block.tool_name),
+        None,
+    )
+    return response, (parsed if isinstance(parsed, dict) else None), elapsed_ms
+
+
 def enrich_recipe(
     recipe: dict,
     *,
-    model: str = "gpt-4o-mini",
+    model: str = "claude-haiku-4-5",
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
     usage_log: Optional[list] = None,
 ) -> dict:
-    """Mutate `recipe` in place with inferred provenance + classification.
+    """Mutate `recipe` in place with provenance + classification + editorial.
 
-    Returns the same recipe dict. If the LLM call fails, leaves the existing
-    provenance/classification blocks untouched (sanitize will have given them
-    sensible defaults already). If `usage_log` is provided, one entry is
-    appended on success so the caller can journal token usage.
+    Fires each block in ENRICHMENT_BLOCKS in parallel. Per-block failures
+    (LLM error, missing tool_use block, schema mismatch) leave that block's
+    existing recipe values untouched but DO NOT block other blocks from
+    landing. Wall time is bounded by the slowest block, not the sum.
+
+    Timings populated:
+      enrich_prep_ms              — user prompt build time
+      enrich_llm_ms               — total wall time across all blocks (max of per-block)
+      enrich_<block>_ms           — per-block wall time, one row per block
+
+    Prompts populated (preserves the original top-level shape so the
+    existing trace panel still renders; adds `blocks` for per-block detail):
+      model                       — same string for every block today
+      system_prompt, user_prompt  — copied from the classification block
+                                    (the block carrying the user-visible story)
+      blocks[<name>]              — { model, system_prompt, user_prompt, operation }
+
+    Usage log: one entry per block, appended in ENRICHMENT_BLOCKS order
+    regardless of completion order.
     """
     from input.pipeline.token_journal import build_usage_entry
 
@@ -268,68 +392,93 @@ def enrich_recipe(
     user_prompt = _build_user_prompt(recipe)
 
     if prompts is not None:
+        # Per-block detail; top-level keys filled below from the
+        # classification block so the existing trace panel keeps working.
+        blocks_trace: dict = {}
+        for block in ENRICHMENT_BLOCKS:
+            blocks_trace[block.name] = {
+                "model": model,
+                "system_prompt": block.system_prompt(),
+                "user_prompt": user_prompt,
+                "operation": block.operation,
+            }
         prompts["model"] = model
-        prompts["system_prompt"] = SYSTEM_PROMPT
-        prompts["user_prompt"] = user_prompt
+        prompts["blocks"] = blocks_trace
+        # Pick the classification block for the top-level fields — it's
+        # the one that produces the user-visible story. Falls back to
+        # the first block if classification is somehow missing.
+        primary = next(
+            (b for b in ENRICHMENT_BLOCKS if b.name == "classification"),
+            ENRICHMENT_BLOCKS[0] if ENRICHMENT_BLOCKS else None,
+        )
+        if primary is not None:
+            prompts["system_prompt"] = primary.system_prompt()
+            prompts["user_prompt"] = user_prompt
 
     t_prep = time.perf_counter()
     if timings is not None:
         timings["enrich_prep_ms"] = int((t_prep - t0) * 1000)
 
-    try:
-        response = openai.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            # Story (~400) + provenance (~150) + classification (~50) +
-            # editorial.opinion (~250) + editorial.scoreCommentary (~150) +
-            # editorial.sourcingNotes (~300) ≈ 1300. Strict JSON schema
-            # adds structural overhead AND requires all sub-fields populated;
-            # 4000 gives comfortable headroom so we never truncate mid-string
-            # (truncation makes invalid JSON → parse failure → empty defaults).
-            max_tokens=4000,
-            temperature=0.4,
-            response_format=RESPONSE_SCHEMA,
-        )
-    except Exception as e:
-        print(f"     ENRICH: LLM call failed ({e}); leaving defaults")
-        if timings is not None:
-            timings["enrich_llm_ms"] = int((time.perf_counter() - t_prep) * 1000)
-        return recipe
+    # Fan out. Each block runs in its own thread; the synchronous
+    # Anthropic SDK is thread-safe (httpx underneath). Worker count
+    # scales with the registry, so adding a 4th block doesn't require
+    # touching this code.
+    results: dict = {}  # block.name -> (response_or_None, parsed_or_None, elapsed_ms, error_or_None)
+    if ENRICHMENT_BLOCKS:
+        with ThreadPoolExecutor(
+            max_workers=len(ENRICHMENT_BLOCKS),
+            thread_name_prefix="enrich",
+        ) as pool:
+            future_to_block = {
+                pool.submit(_run_block, block, user_prompt, model): block
+                for block in ENRICHMENT_BLOCKS
+            }
+            for future, block in future_to_block.items():
+                try:
+                    response, parsed, elapsed_ms = future.result()
+                    results[block.name] = (response, parsed, elapsed_ms, None)
+                except Exception as e:
+                    elapsed_ms = int((time.perf_counter() - t_prep) * 1000)
+                    results[block.name] = (None, None, elapsed_ms, e)
 
     if timings is not None:
         timings["enrich_llm_ms"] = int((time.perf_counter() - t_prep) * 1000)
-    if usage_log is not None:
-        usage_log.append(build_usage_entry("enrich_recipe", model, response))
 
-    content = response.choices[0].message.content or "{}"
-    try:
-        parsed = json.loads(content)
-    except Exception as e:
-        # Useful diagnostics on parse fail. Print TAIL not just head — the
-        # most common failure is truncation, which manifests at the end.
-        print(f"     ENRICH: failed to parse JSON ({e}); leaving defaults")
-        print(f"     DEBUG raw len={len(content)} finish_reason={response.choices[0].finish_reason}")
-        print(f"     DEBUG head: {content[:300]}")
-        print(f"     DEBUG tail: ...{content[-300:]}")
-        return recipe
+    # Walk blocks in registry order — deterministic usage_log + merge order.
+    for block in ENRICHMENT_BLOCKS:
+        response, parsed, elapsed_ms, err = results.get(
+            block.name, (None, None, 0, None)
+        )
 
-    # Merge, don't replace. The LLM doesn't populate every sub-field of
-    # `classification` — `chapter` is set separately by
-    # `_attach_chapter` (the keyword/LLM chapter classifier). A
-    # wholesale `recipe["classification"] = parsed[...]` wipes chapter
-    # whenever enrich runs after classification was set. Same merge
-    # discipline for provenance/editorial — cheap insurance against
-    # future fields that some other code path stamps.
-    for block in ("provenance", "classification", "editorial"):
-        new_block = parsed.get(block)
-        if isinstance(new_block, dict):
-            existing = recipe.get(block) or {}
-            merged = dict(existing)
-            merged.update(new_block)
-            recipe[block] = merged
+        if timings is not None:
+            timings[f"enrich_{block.name}_ms"] = elapsed_ms
+
+        if err is not None:
+            print(f"     ENRICH[{block.name}]: failed ({err}); leaving defaults")
+            continue
+
+        if usage_log is not None and response is not None:
+            usage_log.append(build_usage_entry(block.operation, model, response))
+
+        if not isinstance(parsed, dict):
+            # tool_choice forced the tool, so missing it means an API
+            # anomaly (e.g. max_tokens hit before the tool_use block
+            # completed). Leave existing defaults intact.
+            print(f"     ENRICH[{block.name}]: no {block.tool_name} tool_use in response; "
+                  f"leaving defaults (stop_reason={getattr(response, 'stop_reason', None)})")
+            continue
+
+        # Merge, don't replace. The LLM doesn't populate every sub-field
+        # of `classification` — `chapter` is set separately by
+        # `_attach_chapter` (the keyword/LLM chapter classifier). A
+        # wholesale `recipe[block.name] = parsed` wipes that. Same merge
+        # discipline applies to provenance/editorial so any other code
+        # path that stamps fields there survives.
+        existing = recipe.get(block.name) or {}
+        merged = dict(existing)
+        merged.update(parsed)
+        recipe[block.name] = merged
+
     return recipe
 
 
@@ -344,4 +493,5 @@ if __name__ == "__main__":
     enriched = enrich_recipe(recipe, timings=timings)
     print("timings:", timings)
     print(json.dumps({"provenance": enriched.get("provenance"),
-                      "classification": enriched.get("classification")}, indent=2))
+                      "classification": enriched.get("classification"),
+                      "editorial": enriched.get("editorial")}, indent=2))
