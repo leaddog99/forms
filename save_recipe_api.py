@@ -18,6 +18,17 @@ try:
 except Exception:
     pass
 
+# Load .env BEFORE any anthropic-using module is imported below. The
+# Anthropic SDK reads ANTHROPIC_API_KEY at client-construction time and
+# permanently caches api_key=None if the env is empty in that moment.
+# Several to_markdown/extract modules construct module-level clients at
+# import (image_to_markdown, pdf_to_markdown, markdown_to_recipe,
+# enrich_recipe, chapter_classifier) — without this preamble they all
+# silently end up unauthenticated unless the launching shell happens to
+# already have ANTHROPIC_API_KEY set.
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -382,7 +393,7 @@ def _attach_chapter(recipe, *, usage_log=None):
     """Run the cookbook-chapter classifier at extract time and stamp
     recipe.classification.chapter. Cheap: most recipes hit the Tier-1
     keyword shortcut layer (zero API cost); only ambiguous titles fall
-    through to a small gpt-4o-mini call (~$0.0001).
+    through to a small claude-haiku-4-5 call.
 
     Doesn't overwrite an existing non-empty chapter — lets the
     /enrich-recipe path and user overrides survive. Skips entirely
@@ -1147,7 +1158,7 @@ async def save_recipe(request: Request):
     # claimer inherits the rich data via static_subset. Idempotent:
     # skips rows where the LLM's biggest unique output
     # (classification.story) is already populated.
-    # Cost: ~$0.001 + ~15s per row (gpt-4o-mini). Batch flows take the
+    # ~Few seconds per row (claude-haiku-4-5). Batch flows take the
     # latency hit one row at a time; interactive curator saves only pay
     # it if the row arrives un-enriched.
     # Best-effort: enrich failures log and continue — the save still
@@ -1366,7 +1377,7 @@ async def extract_from_image_endpoint(
             # Stash the vision-stage prompt so the UI can surface it. Use a
             # sub-key to avoid colliding with markdown_to_recipe's prompts.
             prompts["vision"] = {
-                "model": "gpt-4o",
+                "model": "claude-sonnet-4-6",
                 "system_prompt": IMAGE_TO_MARKDOWN_PROMPT,
             }
 
@@ -1483,7 +1494,7 @@ async def extract_from_pdf_endpoint(
                 raise HTTPException(status_code=500, detail="PDF vision step returned empty markdown")
 
             prompts["vision"] = {
-                "model": "gpt-4o",
+                "model": "claude-sonnet-4-6",
                 "system_prompt": PDF_TO_MARKDOWN_PROMPT,
             }
 

@@ -3188,16 +3188,26 @@
     // and the drop zone explicitly (so even if focus ends up on the drop
     // zone's children, paste fires).
     function handlePaste(e) {
+      // Bound to both document and dropZone (defense-in-depth for browsers
+      // that don't bubble paste). Dedupe so we don't double-extract when both
+      // listeners fire for the same event.
+      if (e._handled) return;
+      e._handled = true;
       const tag = (e.target && e.target.tagName) || '';
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) {
+      // The drop zone is itself contenteditable (to surface iOS long-press
+      // Paste), so don't treat a paste targeting it as "paste into a focused
+      // field" — that's the whole point of binding this handler.
+      const inDropZone = e.target && (e.target === dropZone || dropZone.contains(e.target));
+      if (!inDropZone && (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable))) {
         return; // Normal paste into a focused field.
       }
-      const items = e.clipboardData && e.clipboardData.items;
-      if (!items || items.length === 0) return;
+      const cd = e.clipboardData;
+      if (!cd) return;
 
       // Pass 1: file items. Routes through handleDroppedFile so paste and
       // drag-and-drop dispatch identically — image, PDF, and .md files all
       // work from Explorer/Finder copy + Ctrl-V.
+      const items = cd.items || [];
       for (const item of items) {
         if (item.kind !== 'file') continue;
         const file = item.getAsFile();
@@ -3213,29 +3223,30 @@
         }
       }
 
-      // Pass 2: text items. text/plain and text/markdown are both treated as
-      // markdown bodies; a single-line http(s) URL is routed to /extract-from-url
-      // instead. Some apps put markdown content under text/markdown; some
-      // under text/plain — accept both.
-      for (const item of items) {
-        if (item.kind !== 'string') continue;
-        if (item.type !== 'text/plain' && item.type !== 'text/markdown') continue;
-        e.preventDefault();
-        item.getAsString((text) => {
-          const trimmed = (text || '').trim();
-          if (!trimmed) return;
-          if (/^https?:\/\/\S+$/.test(trimmed)) {
-            console.log('[paste] -> extractFromUrl');
-            const urlInput = document.getElementById('extractUrlInput');
-            if (urlInput) urlInput.value = trimmed;
-            extractFromUrl(trimmed);
-          } else {
-            console.log('[paste] -> extractFromMarkdown (text body)');
-            const file = new File([trimmed], 'pasted.md', { type: 'text/markdown' });
-            extractFromMarkdown(file);
-          }
-        });
-        return;
+      // Pass 2: text. Use getData (synchronous, reliable across browsers and
+      // iOS Safari) instead of items+getAsString — items iteration misses
+      // text on some rich-text copies (only text/html present) and the async
+      // getAsString races with preventDefault timing on iOS. A single-line
+      // http(s) URL routes to /extract-from-url; everything else is treated
+      // as a markdown body. If the drop zone is the target we preventDefault
+      // unconditionally so the contenteditable div never accumulates content,
+      // even if the clipboard ended up empty.
+      const plain = (cd.getData && cd.getData('text/plain')) || '';
+      const md = (cd.getData && cd.getData('text/markdown')) || '';
+      const text = md || plain;
+      if (inDropZone) e.preventDefault();
+      const trimmed = (text || '').trim();
+      if (!trimmed) return;
+      if (!inDropZone) e.preventDefault();
+      if (/^https?:\/\/\S+$/.test(trimmed)) {
+        console.log('[paste] -> extractFromUrl');
+        const urlInput = document.getElementById('extractUrlInput');
+        if (urlInput) urlInput.value = trimmed;
+        extractFromUrl(trimmed);
+      } else {
+        console.log('[paste] -> extractFromMarkdown (text body)', {len: trimmed.length});
+        const file = new File([trimmed], 'pasted.md', { type: 'text/markdown' });
+        extractFromMarkdown(file);
       }
     }
 

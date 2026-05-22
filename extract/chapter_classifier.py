@@ -1,11 +1,11 @@
 """Chapter classifier — cookbook-style flat classification.
 
-Tier-1 keyword shortcut layer in front of an OpenAI enum LLM call.
+Tier-1 keyword shortcut layer in front of a Claude enum LLM call.
 Most recipes (specific dish nouns like "Risotto", "Pho", "Carbonara")
 hit the shortcut layer and never make an API call. Ambiguous titles
-fall through to gpt-4o-mini with response_format=json_schema and an
-enum constraint that guarantees the output is one of the 24 canonical
-chapters — byte for byte.
+fall through to claude-haiku-4-5 with tool_use + input_schema enum
+that guarantees the output is one of the 24 canonical chapters —
+byte for byte.
 
 CHAPTERS is the schema, kept in code so the enum constraint and the
 form UI can't drift from each other. Shortcuts live in
@@ -18,17 +18,19 @@ regardless of any other shortcut match in the same title — the
 ambiguity is itself the signal.
 
 Per-call cost when the shortcut layer misses: ~150 input + ~10 output
-tokens at gpt-4o-mini ≈ $0.0001. Shortcut hits cost zero. Most titles
+tokens at claude-haiku-4-5. Shortcut hits cost zero. Most titles
 hit a shortcut.
 """
 import json
-import os
 import re
 import unicodedata
 from pathlib import Path
 from typing import Optional
 
-import openai
+import anthropic
+
+
+_anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
 # 24 canonical chapters. Order roughly follows menu progression
@@ -240,17 +242,37 @@ import hashlib
 CHAPTER_PROMPT_VERSION = hashlib.sha256(_SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
 
 
+# Anthropic tool with an enum input_schema. tool_choice forces the model
+# to call submit_chapter, and the SDK validates the input against the
+# enum — same byte-for-byte guarantee OpenAI's json_schema enum gave us.
+CHAPTER_TOOL = {
+    "name": "submit_chapter",
+    "description": "Submit the cookbook chapter classification for the recipe.",
+    "input_schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["chapter"],
+        "properties": {
+            "chapter": {
+                "type": "string",
+                "enum": CHAPTERS,
+            },
+        },
+    },
+}
+
+
 def classify_chapter(
     name: str,
     ingredients: Optional[list] = None,
     *,
-    model: str = "gpt-4o-mini",
+    model: str = "claude-haiku-4-5",
     usage_log: Optional[list] = None,
 ) -> str:
     """Classify a recipe into one of CHAPTERS.
 
     Shortcut layer first (zero-cost; most dishes hit it). LLM fallback
-    with structured-outputs enum constraint guarantees the output is
+    with tool_use + enum input_schema guarantees the output is
     byte-for-byte one of CHAPTERS — no parsing, no normalization, no
     drift.
 
@@ -283,10 +305,6 @@ def classify_chapter(
             })
         return short
 
-    # LLM fallback. response_format=json_schema with strict=True forces
-    # the output to be valid JSON matching the schema — the enum
-    # constraint on `chapter` makes returning anything outside CHAPTERS
-    # structurally impossible.
     ingredients_sample = (ingredients or [])[:12]
     user_lines = [f"Recipe: {name.strip()}"]
     if ingredients_sample:
@@ -296,32 +314,14 @@ def classify_chapter(
     user_prompt = "\n".join(user_lines)
 
     try:
-        response = openai.chat.completions.create(
+        response = _anthropic_client.messages.create(
             model=model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "chapter_classification",
-                    "strict": True,
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "chapter": {
-                                "type": "string",
-                                "enum": CHAPTERS,
-                            }
-                        },
-                        "required": ["chapter"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            max_tokens=60,
+            max_tokens=200,
             temperature=0,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            tools=[CHAPTER_TOOL],
+            tool_choice={"type": "tool", "name": "submit_chapter"},
         )
     except Exception as e:
         print(f"[WARN] chapter_classifier LLM call failed: {e}")
@@ -334,14 +334,15 @@ def classify_chapter(
         except Exception:
             pass  # journal failures never propagate
 
-    content = (response.choices[0].message.content or "").strip()
-    try:
-        data = json.loads(content)
-        chapter = data.get("chapter", "Uncertain")
-    except Exception:
+    tool_input = next(
+        (b.input for b in response.content if b.type == "tool_use" and b.name == "submit_chapter"),
+        None,
+    )
+    if not isinstance(tool_input, dict):
         return "Uncertain"
+    chapter = tool_input.get("chapter", "Uncertain")
     if chapter not in CHAPTERS:
-        # Belt-and-suspenders — strict enum should prevent this entirely.
+        # Belt-and-suspenders — the enum input_schema should prevent this.
         return "Uncertain"
     return chapter
 
