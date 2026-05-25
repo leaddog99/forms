@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Dish Library</title>
+
+  <!-- ============================================================
+       TEMPLATE NOTE (for future entity-library pages like cookbooks)
+       ------------------------------------------------------------
+       This page uses the shared library-shell pattern. To create a new
+       admin page for a different entity (cookbooks, taxonomies, etc.):
+
+         1. Copy this file → forms/<entity>.html
+         2. Find/replace "dish" → "<entity>" (Dish → <Entity>, etc.)
+         3. Adjust the entity-specific bits:
+              - Endpoint paths in fetch() calls (/dishes → /cookbooks)
+              - Field set in renderViewCard / renderEditForm / renderAddForm
+              - Actions in the footer (Run is dish-specific; cookbooks
+                might have "Import" or no equivalent)
+              - Entity-specific badges/result-panel styles in <style>
+         4. New backend table + CRUD endpoints in:
+              - input/pipeline/<entity>.py  (CRUD helpers)
+              - save_recipe_api.py          (FastAPI endpoints)
+
+       The shared shell handles:
+         - Fixed header + hamburger + page title
+         - Sliding sidebar with search + add-new + list
+         - iOS body lock when sidebar open (no overscroll drift)
+         - Action footer with primary/secondary/danger buttons
+         - Detail card / form fields / empty state styling
+       ============================================================ -->
+
+  <link rel="stylesheet" href="/forms/forms.css">
+  <link rel="stylesheet" href="/forms/library-shell.css">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* Dish-specific badges + run-result panel. Everything else (layout,
+       sidebar, header, footer, fields) lives in library-shell.css. */
+    .badge {
+      display: inline-block; padding: 1px 7px; border-radius: 999px;
+      font-size: 0.7em; font-weight: 600; letter-spacing: 0.02em;
+      line-height: 1.4;
+    }
+    .badge-success { background: #e7f6e8; color: #2f7a3a; border: 1px solid #b9dfbe; }
+    .badge-error   { background: #fce8e8; color: #a23131; border: 1px solid #f0b6b6; }
+    .badge-never   { background: #f4eedb; color: #8a6b1f; border: 1px solid #e0d2a3; }
+    .badge-due     { background: #fff3d6; color: #7a4f00; border: 1px solid #f0d8a0; }
+
+    .run-result {
+      margin-top: 16px; padding: 12px 14px; background: #f7f4ec;
+      border: 1px solid var(--line); border-radius: 10px; font-size: 0.9em;
+    }
+    .run-result .row { margin-bottom: 4px; }
+    .run-result .label { color: var(--muted); margin-right: 6px; }
+    .run-result .value { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    .run-result details { margin-top: 6px; }
+    .run-result details summary { cursor: pointer; color: var(--accent); }
+    .run-result .url-list {
+      margin: 6px 0 0; padding-left: 18px; font-size: 0.86em;
+      color: var(--muted);
+    }
+
+    /* Live SSE log panel — shown while a job is running, persists after
+       completion so the user can review what happened. */
+    .live-log {
+      margin-top: 16px; border: 1px solid var(--line); border-radius: 10px;
+      background: #1f1d1a; color: #e4dcc8; overflow: hidden;
+    }
+    .live-log-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; background: #2a2723; color: #f0e7d4;
+      border-bottom: 1px solid #3a3530; font-size: 0.86em;
+    }
+    .live-log-status {
+      display: inline-block; padding: 1px 8px; border-radius: 999px;
+      font-size: 0.72em; font-weight: 600; letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .live-log-status.queued   { background: #4a3f1a; color: #f0d8a0; }
+    .live-log-status.running  { background: #1a4a3f; color: #a0e8d8; }
+    .live-log-status.success  { background: #1a4a1f; color: #b9dfbe; }
+    .live-log-status.error,
+    .live-log-status.cancelled { background: #4a1a1a; color: #f0b6b6; }
+    .live-log-body {
+      margin: 0; padding: 10px 14px; max-height: 360px; overflow-y: auto;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.8em; line-height: 1.45; white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .live-log-body > div { padding: 1px 0; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+      <h1>Dish Library</h1>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar">
+    <h2>Dishes <span class="count" id="dishCount"></span></h2>
+    <div class="sidebar-controls">
+      <button type="button" class="add-new-btn" id="addNewBtn">+ Add new dish</button>
+      <input type="search" id="searchInput" placeholder="Search dishes…" />
+    </div>
+    <ul class="entity-list" id="dishList">
+      <li class="empty-state">Loading…</li>
+    </ul>
+  </aside>
+
+  <div class="container">
+    <main id="detailPanel">
+      <div class="detail-empty">
+        <p>Pick a dish from the sidebar (☰) to view, run, or edit.</p>
+        <p>Or click <strong>+ Add new dish</strong> to create one.</p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="action-footer" id="actionFooter" style="display:none">
+    <div class="button-row" id="footerButtons"></div>
+  </footer>
+
+  <script src="/forms/library-shell.js"></script>
+  <script>
+    const API = window.location.origin;
+    const $ = (sel) => document.querySelector(sel);
+    const { escapeHtml, fmtDate, closeOnNarrow } = LibraryShell;
+
+    // Wire the sidebar toggle + iOS body lock. (Click-outside-closes is
+    // wired by init() too.)
+    LibraryShell.init({
+      sidebarSelector: '#sidebar',
+      sidebarToggleSelector: '#sidebarToggle',
+    });
+
+    // In-memory cache + UI state.
+    let dishes = {};          // name -> dish dict
+    let selectedName = null;
+    let mode = 'empty';       // 'empty' | 'view' | 'edit' | 'add'
+    let searchTerm = '';
+
+    function statusBadge(d) {
+      if (d.is_due && d.last_refreshed) return `<span class="badge badge-due">due</span>`;
+      if (!d.last_refreshed)            return `<span class="badge badge-never">never</span>`;
+      if (d.last_run_status === 'success') return `<span class="badge badge-success">ok</span>`;
+      if (d.last_run_status && d.last_run_status.startsWith('error')) return `<span class="badge badge-error">err</span>`;
+      return '';
+    }
+
+    // ===== Sidebar list rendering =====
+    function renderList() {
+      const term = searchTerm.toLowerCase();
+      const filtered = Object.values(dishes).filter(d =>
+        !term ||
+        d.name.toLowerCase().includes(term) ||
+        (d.queries || []).some(q => q.toLowerCase().includes(term)) ||
+        (d.notes || '').toLowerCase().includes(term)
+      );
+      filtered.sort((a, b) => a.name.localeCompare(b.name));
+      $('#dishCount').textContent = String(filtered.length);
+      const listEl = $('#dishList');
+      if (!filtered.length) {
+        listEl.innerHTML = '<li class="empty-state">' +
+          (term ? 'No matches.' : 'No dishes yet. Click + Add new dish.') + '</li>';
+        return;
+      }
+      listEl.innerHTML = '';
+      for (const d of filtered) {
+        const li = document.createElement('li');
+        if (d.name === selectedName) li.classList.add('selected');
+        const queries = Array.isArray(d.queries) ? d.queries : [];
+        const queryHint = queries.length === 1 ? queries[0] : `${queries.length} queries`;
+        li.innerHTML =
+          `<div class="entity-name">${escapeHtml(d.name)} ${statusBadge(d)}</div>` +
+          `<div class="entity-meta">${escapeHtml(queryHint)} · top ${escapeHtml(d.top_n_final)} · last: ${escapeHtml(fmtDate(d.last_refreshed))}</div>`;
+        li.addEventListener('click', () => {
+          selectedName = d.name;
+          mode = 'view';
+          renderList();
+          renderDetail();
+          closeOnNarrow();
+        });
+        listEl.appendChild(li);
+      }
+    }
+
+    $('#searchInput').addEventListener('input', (e) => {
+      searchTerm = e.target.value || '';
+      renderList();
+    });
+
+    $('#addNewBtn').addEventListener('click', () => {
+      selectedName = null;
+      mode = 'add';
+      renderList();
+      renderDetail();
+      closeOnNarrow();
+    });
+
+    // ===== Detail panel rendering =====
+    function renderDetail() {
+      if (mode === 'empty' || (mode === 'view' && !dishes[selectedName])) {
+        $('#detailPanel').innerHTML =
+          `<div class="detail-empty">` +
+          `<p>Pick a dish from the sidebar (☰) to view, run, or edit.</p>` +
+          `<p>Or click <strong>+ Add new dish</strong> to create one.</p>` +
+          `</div>`;
+        $('#actionFooter').style.display = 'none';
+        return;
+      }
+      if (mode === 'add')  { renderAddForm(); return; }
+      if (mode === 'edit') { renderEditForm(dishes[selectedName]); return; }
+      renderViewCard(dishes[selectedName]);
+    }
+
+    function renderViewCard(d) {
+      const queries = Array.isArray(d.queries) ? d.queries : [];
+      const logLinkHtml = d.last_run_log_url
+        ? ` · <a href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">view latest log</a>`
+        : '';
+      $('#detailPanel').innerHTML =
+        `<div class="detail-card" id="detailCard">` +
+          `<h2>${escapeHtml(d.name)} ${statusBadge(d)}</h2>` +
+          `<div class="subline">` +
+            `<span class="pill">SerpAPI ${escapeHtml(d.top_n_serpapi)}/query</span>` +
+            `<span class="pill">top ${escapeHtml(d.top_n_final)}</span>` +
+            `<span class="pill">TTL ${d.refresh_ttl_days == null ? 'manual' : (d.refresh_ttl_days + 'd')}</span>` +
+            `<span>last run: ${escapeHtml(fmtDate(d.last_refreshed))}` +
+              (d.last_run_count != null ? ` (${escapeHtml(d.last_run_count)} saved)` : '') +
+              logLinkHtml +
+            `</span>` +
+          `</div>` +
+          `<div class="field full">` +
+            `<label>Queries</label>` +
+            `<div class="locked">${queries.map(q => escapeHtml(q)).join('<br>')}</div>` +
+          `</div>` +
+          (d.notes ? `<div class="field full" style="margin-top:14px">` +
+            `<label>Notes</label>` +
+            `<div class="locked" style="font-family:inherit;background:transparent;border-style:solid">${escapeHtml(d.notes)}</div>` +
+          `</div>` : '') +
+        `</div>`;
+      $('#footerButtons').innerHTML =
+        `<button type="button" class="primary" id="runBtn">Run</button>` +
+        `<button type="button" class="secondary" id="editBtn">Edit</button>` +
+        `<button type="button" class="danger" id="deleteBtn">Delete</button>` +
+        `<div class="feedback" id="feedback"></div>`;
+      $('#actionFooter').style.display = '';
+      $('#runBtn').addEventListener('click', () => doRun(d));
+      $('#editBtn').addEventListener('click', () => { mode = 'edit'; renderDetail(); });
+      $('#deleteBtn').addEventListener('click', () => doDelete(d));
+    }
+
+    function renderEditForm(d) {
+      const queries = Array.isArray(d.queries) ? d.queries : [];
+      $('#detailPanel').innerHTML =
+        `<div class="detail-card">` +
+          `<h2>Edit ${escapeHtml(d.name)}</h2>` +
+          `<div class="subline">name is immutable — to rename, delete + recreate</div>` +
+          `<div class="field full"><label>Queries (one per line)</label>` +
+            `<textarea id="ed_queries">${escapeHtml(queries.join('\n'))}</textarea>` +
+          `</div>` +
+          `<div class="field-row" style="margin-top:14px">` +
+            `<div class="field"><label>Top-N SerpAPI / query</label>` +
+              `<input type="number" id="ed_top_n_serpapi" min="1" value="${escapeHtml(d.top_n_serpapi)}" /></div>` +
+            `<div class="field"><label>Top-N final</label>` +
+              `<input type="number" id="ed_top_n_final" min="1" value="${escapeHtml(d.top_n_final)}" /></div>` +
+            `<div class="field"><label>Refresh TTL (days)</label>` +
+              `<input type="number" id="ed_ttl" min="1" value="${d.refresh_ttl_days == null ? '' : escapeHtml(d.refresh_ttl_days)}" placeholder="blank = manual only" /></div>` +
+          `</div>` +
+          `<div class="field full" style="margin-top:14px">` +
+            `<label>Notes</label>` +
+            `<input type="text" id="ed_notes" value="${escapeHtml(d.notes || '')}" />` +
+          `</div>` +
+        `</div>`;
+      $('#footerButtons').innerHTML =
+        `<button type="button" class="primary" id="saveBtn">Save</button>` +
+        `<button type="button" class="secondary" id="cancelBtn">Cancel</button>` +
+        `<div class="feedback" id="feedback"></div>`;
+      $('#actionFooter').style.display = '';
+      $('#saveBtn').addEventListener('click', () => doSaveEdit(d));
+      $('#cancelBtn').addEventListener('click', () => { mode = 'view'; renderDetail(); });
+    }
+
+    function renderAddForm() {
+      // Defaults are conveyed via placeholder text (italic grey hint),
+      // NOT via value="..." — otherwise the defaults look like a real
+      // half-filled entry and the user wonders if the form was cleared.
+      // doCreate's `parseInt(...) || N` fallback supplies the actual
+      // default when the field is left blank.
+      $('#detailPanel').innerHTML =
+        `<div class="detail-card">` +
+          `<h2>Add a new dish</h2>` +
+          `<div class="subline">name is immutable after creation — join key into master_recipes</div>` +
+          `<div class="field full"><label>Dish name *</label>` +
+            `<input type="text" id="ad_name" placeholder="e.g. Spaghetti and Meat Sauce" /></div>` +
+          `<div class="field full" style="margin-top:14px">` +
+            `<label>Queries (one per line) *</label>` +
+            `<textarea id="ad_queries" placeholder="spaghetti with meat sauce&#10;spaghetti and meat sauce"></textarea>` +
+            `<span class="hint">Multiple lines union for one dish.</span>` +
+          `</div>` +
+          `<div class="field-row" style="margin-top:14px">` +
+            `<div class="field"><label>Top-N SerpAPI / query</label>` +
+              `<input type="number" id="ad_top_n_serpapi" min="1" placeholder="25 (default)" /></div>` +
+            `<div class="field"><label>Top-N final</label>` +
+              `<input type="number" id="ad_top_n_final" min="1" placeholder="10 (default)" /></div>` +
+            `<div class="field"><label>Refresh TTL (days)</label>` +
+              `<input type="number" id="ad_ttl" min="1" placeholder="30 (default) — blank = manual only" /></div>` +
+          `</div>` +
+          `<div class="field full" style="margin-top:14px">` +
+            `<label>Notes (optional)</label>` +
+            `<input type="text" id="ad_notes" placeholder="curator note" />` +
+          `</div>` +
+        `</div>`;
+      $('#footerButtons').innerHTML =
+        `<button type="button" class="primary" id="createBtn">Create dish</button>` +
+        `<button type="button" class="secondary" id="cancelAddBtn">Cancel</button>` +
+        `<div class="feedback" id="feedback"></div>`;
+      $('#actionFooter').style.display = '';
+      $('#createBtn').addEventListener('click', doCreate);
+      $('#cancelAddBtn').addEventListener('click', () => {
+        mode = selectedName ? 'view' : 'empty';
+        renderDetail();
+      });
+      setTimeout(() => $('#ad_name')?.focus(), 50);
+    }
+
+    function setFeedback(msg, kind = 'info') {
+      const el = $('#feedback');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.className = 'feedback ' + (kind || '');
+    }
+
+    // ===== Actions =====
+    async function doCreate() {
+      const name = $('#ad_name').value.trim();
+      const queries = $('#ad_queries').value.split('\n').map(q => q.trim()).filter(Boolean);
+      const ttlRaw = $('#ad_ttl').value.trim();
+      const body = {
+        name,
+        queries,
+        top_n_serpapi: parseInt($('#ad_top_n_serpapi').value, 10) || 25,
+        top_n_final:   parseInt($('#ad_top_n_final').value, 10)   || 10,
+        refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
+        notes: $('#ad_notes').value.trim() || null,
+      };
+      try {
+        const res = await fetch(`${API}/dishes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setFeedback((typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)) || `HTTP ${res.status}`, 'error');
+          return;
+        }
+        dishes[result.name] = result;
+        selectedName = result.name;
+        mode = 'view';
+        renderList();
+        renderDetail();
+        setFeedback(`Created ${result.name}`, 'success');
+      } catch (err) {
+        setFeedback(err.message || String(err), 'error');
+      }
+    }
+
+    async function doSaveEdit(d) {
+      const ttlRaw = $('#ed_ttl').value.trim();
+      const body = {
+        queries: $('#ed_queries').value.split('\n').map(q => q.trim()).filter(Boolean),
+        top_n_serpapi: parseInt($('#ed_top_n_serpapi').value, 10),
+        top_n_final:   parseInt($('#ed_top_n_final').value, 10),
+        refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
+        notes: $('#ed_notes').value.trim() || null,
+      };
+      try {
+        const res = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setFeedback((typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)) || `HTTP ${res.status}`, 'error');
+          return;
+        }
+        dishes[result.name] = result;
+        mode = 'view';
+        renderList();
+        renderDetail();
+        setFeedback('Saved.', 'success');
+      } catch (err) {
+        setFeedback(err.message || String(err), 'error');
+      }
+    }
+
+    async function doDelete(d) {
+      if (!confirm(
+        `Delete dish "${d.name}"?\n\n` +
+        `This ALSO deletes every top-kind master_recipes row for this dish ` +
+        `(editors_choice and legacy rows untouched). Cannot be undone.`
+      )) return;
+      try {
+        const res = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`, { method: 'DELETE' });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setFeedback((typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)) || `HTTP ${res.status}`, 'error');
+          return;
+        }
+        delete dishes[d.name];
+        selectedName = null;
+        mode = 'empty';
+        renderList();
+        renderDetail();
+      } catch (err) {
+        setFeedback(err.message || String(err), 'error');
+      }
+    }
+
+    // Run a dish refresh. Three phases:
+    //   1. POST /dishes/<name>/refresh — returns 202 with {job_id} immediately
+    //      (no Cloudflare 100s timeout). On 409 (job already in flight) we
+    //      attach to that job's stream instead of failing.
+    //   2. Open SSE stream at /jobs/<id>/stream — receive live log lines,
+    //      status changes, heartbeats. The browser sees the run as a
+    //      growing log panel + a status pill changing 'queued' → 'running'
+    //      → 'success'/'error'.
+    //   3. On `done` event — close the stream, refetch the dish (so its
+    //      last_refreshed/last_run_count are fresh), render the view + a
+    //      summary panel.
+    async function doRun(d) {
+      const buttons = $('#footerButtons').querySelectorAll('button');
+      buttons.forEach(b => b.disabled = true);
+      setFeedback('Enqueuing job…', 'info');
+
+      let job_id = null;
+      try {
+        const res = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}/refresh`, { method: 'POST' });
+        const result = await res.json().catch(() => ({}));
+        if (res.status === 202) {
+          job_id = result.job_id;
+        } else if (res.status === 409 && result.job_id) {
+          // Already in flight (the page was opened while a prior run was
+          // still running, OR another browser tab kicked one off).
+          // Attach to the existing job's stream rather than failing.
+          job_id = result.job_id;
+          setFeedback(`Attaching to in-flight job #${job_id}…`, 'info');
+        } else {
+          setFeedback(`Run failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result)) || res.status}`, 'error');
+          buttons.forEach(b => b.disabled = false);
+          return;
+        }
+      } catch (err) {
+        setFeedback(`Enqueue failed: ${err.message || err}`, 'error');
+        buttons.forEach(b => b.disabled = false);
+        return;
+      }
+
+      // Build / reveal the live-log panel
+      const liveLog = ensureLiveLogPanel(job_id);
+      setFeedback(`Job #${job_id} queued`, 'info');
+
+      // Connect to the SSE stream
+      const stream = new EventSource(`${API}/jobs/${job_id}/stream`);
+
+      stream.addEventListener('status', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          liveLog.statusEl.textContent = data.status;
+          liveLog.statusEl.className = 'live-log-status ' + data.status;
+          if (data.status === 'running') setFeedback(`Job #${job_id} running…`, 'info');
+        } catch (err) { /* ignore parse errors */ }
+      });
+
+      stream.addEventListener('log', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          appendLiveLogLine(liveLog, data.line);
+        } catch (err) { /* ignore */ }
+      });
+
+      stream.addEventListener('heartbeat', () => {
+        // Visual ping — could update a timestamp; for now no-op.
+      });
+
+      stream.addEventListener('done', async (e) => {
+        let data = {};
+        try { data = JSON.parse(e.data); } catch (err) {}
+        stream.close();
+        // Refetch dish row + result panel from the completed job.
+        try {
+          const dishRes = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`);
+          if (dishRes.ok) {
+            const fresh = await dishRes.json();
+            dishes[fresh.name] = fresh;
+            mode = 'view';
+            renderList();
+            renderDetail();
+            // Re-attach the live log to the new view card so the user
+            // can still see the trace + then append the result panel.
+            const refreshedLive = ensureLiveLogPanel(job_id);
+            // Restore the lines we already streamed (renderDetail wiped them)
+            refreshedLive.bodyEl.innerHTML = liveLog.bodyEl.innerHTML;
+            refreshedLive.statusEl.textContent = data.status || 'done';
+            refreshedLive.statusEl.className = 'live-log-status ' + (data.status || 'done');
+            if (data.result) appendResultPanel(data.result);
+            if (data.error_detail) appendErrorPanel(data.error_detail);
+          }
+        } catch (err) {
+          console.error('post-run reload failed:', err);
+        }
+        const ok = data.status === 'success';
+        setFeedback(
+          ok ? `Job #${job_id} success` :
+          (data.error_detail ? `Job #${job_id} ${data.status}: ${data.error_detail}` :
+           `Job #${job_id} ${data.status}`),
+          ok ? 'success' : 'error'
+        );
+      });
+
+      stream.addEventListener('error', (e) => {
+        // SSE errored. Cloudflare or network glitch. EventSource will
+        // auto-reconnect; if the job already finished, the server
+        // returns the final 'done' status on reconnect. Show a hint.
+        setFeedback(`Stream interrupted — auto-reconnecting…`, 'error');
+      });
+    }
+
+    // Live log panel: a console-style growing div pinned under the dish
+    // header that shows lines as they stream in from the SSE 'log' event.
+    function ensureLiveLogPanel(job_id) {
+      let panel = document.getElementById('liveLog');
+      if (panel) return {
+        statusEl: panel.querySelector('.live-log-status'),
+        bodyEl: panel.querySelector('.live-log-body'),
+      };
+      const detail = document.getElementById('detailCard');
+      if (!detail) return { statusEl: { textContent: '', className: '' }, bodyEl: { appendChild() {}, innerHTML: '' } };
+      panel = document.createElement('div');
+      panel.id = 'liveLog';
+      panel.className = 'live-log';
+      panel.innerHTML =
+        `<div class="live-log-header">` +
+          `<strong>Job #${job_id}</strong>` +
+          `<span class="live-log-status queued">queued</span>` +
+          `<a href="/jobs/${job_id}" target="_blank" rel="noopener" style="color:var(--muted);font-size:0.82em;margin-left:auto">status JSON →</a>` +
+        `</div>` +
+        `<pre class="live-log-body"></pre>`;
+      detail.appendChild(panel);
+      return {
+        statusEl: panel.querySelector('.live-log-status'),
+        bodyEl: panel.querySelector('.live-log-body'),
+      };
+    }
+
+    function appendLiveLogLine(liveLog, line) {
+      // Append + auto-scroll. Keep last ~2000 lines so a runaway log
+      // doesn't blow up the DOM.
+      const div = document.createElement('div');
+      div.textContent = line;
+      liveLog.bodyEl.appendChild(div);
+      const MAX_LINES = 2000;
+      while (liveLog.bodyEl.children.length > MAX_LINES) {
+        liveLog.bodyEl.removeChild(liveLog.bodyEl.firstChild);
+      }
+      liveLog.bodyEl.scrollTop = liveLog.bodyEl.scrollHeight;
+    }
+
+    function appendErrorPanel(error_detail) {
+      const detail = document.getElementById('detailCard');
+      if (!detail) return;
+      const panel = document.createElement('div');
+      panel.className = 'run-result';
+      panel.style.background = '#fce8e8';
+      panel.style.borderColor = '#f0b6b6';
+      panel.innerHTML = `<div class="row"><strong>Job errored:</strong> ${escapeHtml(error_detail)}</div>`;
+      detail.appendChild(panel);
+    }
+
+    function appendResultPanel(result) {
+      const detail = document.getElementById('detailCard');
+      if (!detail) return;
+      const panel = document.createElement('div');
+      panel.className = 'run-result';
+      const c = result.front_end_counts || {};
+      panel.innerHTML =
+        `<div class="row"><strong>Run complete</strong> in ${Math.round(result.elapsed_s || 0)}s — ` +
+        `<span class="value">${escapeHtml(result.saved_count)} saved</span>, ` +
+        `<span class="value">${escapeHtml(result.skipped_thin)} skipped (thin)</span>, ` +
+        `<span class="value">${(result.extract_misses || []).length} extract miss</span>, ` +
+        `<span class="value">${escapeHtml(result.deleted_prior_rows)} prior rows deleted</span></div>` +
+        `<details><summary>Front-end stage counts</summary>` +
+          `<div style="margin-top:4px;font-family:ui-monospace,monospace;font-size:0.82em">` +
+            `<span class="label">SerpAPI/query:</span> ${escapeHtml(c.serpapi_per_query)} × ${escapeHtml(c.num_queries ?? 1)} queries · ` +
+            `<span class="label">serpapi_union:</span> ${escapeHtml(c.serpapi_union)} · ` +
+            `<span class="label">after_disallowed:</span> ${escapeHtml(c.after_disallowed)} · ` +
+            `<span class="label">after_is_recipe:</span> ${escapeHtml(c.after_is_recipe)} · ` +
+            `<span class="label">after_moz:</span> ${escapeHtml(c.after_moz)} · ` +
+            `<span class="label">after_min_da:</span> ${escapeHtml(c.after_min_da)} · ` +
+            `<span class="label">after_min_ou:</span> ${escapeHtml(c.after_min_ou)} · ` +
+            `<span class="label">final:</span> ${escapeHtml(c.final)}` +
+          `</div></details>` +
+        ((result.extract_misses || []).length
+          ? `<details><summary>Extract misses (${(result.extract_misses || []).length})</summary>` +
+            `<ul class="url-list">` + result.extract_misses.map(u => `<li>${escapeHtml(u)}</li>`).join('') + `</ul></details>`
+          : '') +
+        ((result.save_failures || []).length
+          ? `<details><summary>Save failures (${(result.save_failures || []).length})</summary>` +
+            `<ul class="url-list">` + result.save_failures.map(u => `<li>${escapeHtml(u)}</li>`).join('') + `</ul></details>`
+          : '');
+      detail.appendChild(panel);
+    }
+
+    // ===== Initial load =====
+    async function loadDishes() {
+      try {
+        const res = await fetch(`${API}/dishes`);
+        const arr = await res.json();
+        dishes = {};
+        for (const d of (arr || [])) dishes[d.name] = d;
+        renderList();
+        renderDetail();
+        if (window.matchMedia('(min-width: 760px)').matches) LibraryShell.openSidebar();
+      } catch (e) {
+        $('#dishList').innerHTML = `<li class="empty-state">Failed to load: ${escapeHtml(e.message || e)}</li>`;
+      }
+    }
+    loadDishes();
+  </script>
+</body>
+</html>

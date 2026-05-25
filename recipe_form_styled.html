@@ -128,15 +128,33 @@
     .sidebar {
       position: fixed;
       top: 56px;
+      /* Anchored top + bottom (not height: 100vh - 56) so iOS Safari's
+         dynamic viewport height shifts can't push it off-screen.
+         overscroll-behavior + touch-action prevent the rubber-band
+         drag that lets the panel drift on iOS when the user reaches
+         the scrollable bottom. */
+      bottom: 0;
       left: -420px;
       width: 400px;
-      height: calc(100vh - 56px);
       background: var(--card);
       padding: 16px 16px 24px;
       box-shadow: 4px 0 20px rgba(60,40,20,.1);
       z-index: 99;
       overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
       transition: left 0.3s ease;
+    }
+
+    /* iOS body lock when sidebar open — keeps the background from
+       scrolling underneath, which would otherwise make the fixed
+       sidebar appear to drift relative to the viewport. */
+    body.sidebar-open {
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
 
     .sidebar.open {
@@ -1518,6 +1536,23 @@
               <label for="originalUrl">URL</label>
               <input type="text" id="originalUrl" placeholder="https://..." />
             </div>
+            <!-- BCC Permalink: read-only, server-computed canonical URL
+                 for this record on bestcooksclub.com. Populated by
+                 captureBccPermalink() on every recipe load and after
+                 each successful save. Copy button writes the value to
+                 the clipboard. -->
+            <div class="form-group">
+              <label for="bccPermalink">BCC Permalink</label>
+              <div style="display:flex;gap:6px;align-items:stretch">
+                <input type="text" id="bccPermalink" readonly
+                       placeholder="(saved recipes only)"
+                       style="flex:1;background:#f7f4ec;cursor:text" />
+                <button type="button" id="copyBccPermalinkBtn"
+                        class="secondary"
+                        style="padding:6px 12px;font-size:0.85em"
+                        title="Copy permalink to clipboard">Copy</button>
+              </div>
+            </div>
             <div class="form-group">
               <label for="template">Template</label>
               <select id="template">
@@ -1617,6 +1652,13 @@
            'sidebar:user_id'). Click does a fast in-DB row copy via
            POST /recipes/<id>/claim and redirects to the claimed copy. -->
       <button type="button" id="claimBtn" class="primary" style="display:none">Claim</button>
+      <!-- Promote-to-master: clones the loaded recipe into master_recipes
+           (user_id=0) via POST /recipes/<id>/promote-to-master. Visible
+           only when the recipe is saved (has a recipe_seq_id) AND the
+           current user is not already viewing master. See
+           memory/project_master_recipes_ui.md — this is the first-pass
+           curator affordance; full workflow still needs design. -->
+      <button type="button" id="promoteBtn" class="secondary" style="display:none">Promote to Master</button>
       <button type="button" id="clearBtn" class="secondary">Clear</button>
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
@@ -2103,7 +2145,11 @@
         meta.appendChild(date);
 
         item.appendChild(meta);
-        item.onclick = () => { loadForm(r); sidebar.classList.remove('open'); };
+        item.onclick = () => {
+          loadForm(r);
+          sidebar.classList.remove('open');
+          document.body.classList.remove('sidebar-open');  // mirror syncBodyLock
+        };
         listEl.appendChild(item);
       });
     }
@@ -2196,6 +2242,31 @@
         const isForeign = (loadedUid != null) && (loadedUid !== selfUid);
         claimBtn.style.display = isForeign ? '' : 'none';
       }
+      // Promote-to-Master visibility: shown only on a saved recipe that
+      // isn't already in master_recipes. Click clones the row to master
+      // via POST /recipes/<id>/promote-to-master. First-pass curator
+      // affordance — see memory/project_master_recipes_ui.md.
+      const promoteBtn = document.getElementById("promoteBtn");
+      if (promoteBtn) {
+        const isSaved = !!recipe.id;
+        const alreadyMaster = (loadedUid === 0);
+        promoteBtn.style.display = (isSaved && !alreadyMaster) ? '' : 'none';
+      }
+      // BCC Permalink: server returns the canonical bestcooksclub.com/r/<id>
+      // URL on every recipe GET. Populate the read-only field; the Copy
+      // button writes it to the clipboard.
+      const bccInput = document.getElementById("bccPermalink");
+      if (bccInput) bccInput.value = recipe.bccUrl || "";
+      // Reflect the loaded recipe in the browser's address bar so the
+      // URL bar = "what you're looking at" and a copy-from-URL-bar
+      // matches the recipe. Path-only (same-origin requirement of the
+      // History API) — the canonical bestcooksclub.com URL is in the
+      // Permalink field above, which is what gets shared.
+      try {
+        if (recipe.recipe_id) {
+          window.history.replaceState(null, '', '/r/' + recipe.recipe_id);
+        }
+      } catch (e) { /* History API failure shouldn't block load */ }
       document.getElementById("name").value = r.name || "";
       document.getElementById("description").value = r.description || "";
 
@@ -2499,44 +2570,75 @@
         }
       }
 
-      const res = await fetch(`${API}/recipes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+      // Wrapped so we can retry once with force_save=true if the server
+      // rejects the recipe as too thin (thin_recipe gate). User confirms
+      // via a dialog before the override fires — explicit intent only.
+      async function postSave(forceSave) {
+        const sendPayload = forceSave ? { ...payload, force_save: true } : payload;
+        const res = await fetch(`${API}/recipes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sendPayload)
+        });
+        const result = await res.json().catch(() => ({}));
 
-      const result = await res.json();
-      if (res.ok) {
-        const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
-        const verb = result.adopted ? 'updated existing record' : 'saved successfully';
-        // Refresh sidebar so the saved/updated row appears with current state.
-        loadRecipes();
-        // Re-load the canonical post-save record from the DB and re-populate
-        // the form via loadForm. Moz scores, normalized URL, denormalized
-        // _scoring, cleared source_changed_at, persisted _extract_trace,
-        // and the (possibly adopted) recipe_id all come through. The user
-        // sees the finished saved product; the "New" button (clearBtn)
-        // reinits the form when they're done. Replaces the older
-        // reset+selectively-restore-some-fields pattern.
-        const finalRecipeId = result.recipe_id || document.getElementById("recipe_id").value;
-        if (finalRecipeId) {
-          try {
-            const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
-            const freshRes = await fetch(`${API}/recipes/${encodeURIComponent(finalRecipeId)}?user_id=${encodeURIComponent(uid)}`);
-            if (freshRes.ok) {
-              const saved = await freshRes.json();
-              loadForm(saved);  // clears feedback inside; we re-show below
-            }
-          } catch (err) {
-            console.error('Post-save reload failed:', err);
+        // Thin-recipe gate. Server returns 422 with a structured detail
+        // {thin_recipe: true, reason, min_ingredients, min_instructions,
+        // message}. Show a confirm dialog; on OK, retry with force_save.
+        if (!res.ok && res.status === 422 && result && result.detail
+            && typeof result.detail === 'object' && result.detail.thin_recipe) {
+          if (forceSave) {
+            // Should never happen — server-side bug if force_save was
+            // sent and still got the thin gate.
+            showFeedback(`Error: ${result.detail.message || 'thin recipe'}`, 'error');
+            return;
           }
+          const det = result.detail;
+          const proceed = confirm(
+            `${det.message || 'This recipe looks thin.'}\n\n` +
+            `OK = save anyway. Cancel = stay on form and add more.`
+          );
+          if (proceed) {
+            await postSave(true);
+          }
+          return;
         }
-        // Show success feedback AFTER loadForm (which clears feedback as
-        // part of its normal init).
-        showFeedback(`Recipe ${verb}!${seqMsg}`, 'success');
-      } else {
-        showFeedback(`Error: ${result.detail}`, 'error');
+
+        if (res.ok) {
+          const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
+          const verb = result.adopted ? 'updated existing record' : 'saved successfully';
+          // Refresh sidebar so the saved/updated row appears with current state.
+          loadRecipes();
+          // Re-load the canonical post-save record from the DB and re-populate
+          // the form via loadForm. Moz scores, normalized URL, denormalized
+          // _scoring, cleared source_changed_at, persisted _extract_trace,
+          // and the (possibly adopted) recipe_id all come through. The user
+          // sees the finished saved product; the "New" button (clearBtn)
+          // reinits the form when they're done. Replaces the older
+          // reset+selectively-restore-some-fields pattern.
+          const finalRecipeId = result.recipe_id || document.getElementById("recipe_id").value;
+          if (finalRecipeId) {
+            try {
+              const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+              const freshRes = await fetch(`${API}/recipes/${encodeURIComponent(finalRecipeId)}?user_id=${encodeURIComponent(uid)}`);
+              if (freshRes.ok) {
+                const saved = await freshRes.json();
+                loadForm(saved);  // clears feedback inside; we re-show below
+              }
+            } catch (err) {
+              console.error('Post-save reload failed:', err);
+            }
+          }
+          // Show success feedback AFTER loadForm (which clears feedback as
+          // part of its normal init).
+          const overrideMsg = forceSave ? ' (override)' : '';
+          showFeedback(`Recipe ${verb}!${seqMsg}${overrideMsg}`, 'success');
+        } else {
+          showFeedback(`Error: ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`, 'error');
+        }
       }
+
+      await postSave(false);
     };
 
     document.getElementById("deleteBtn").onclick = async () => {
@@ -2564,6 +2666,58 @@
     // loadForm sees a mismatch between recipe.user_id and the persisted
     // self user_id (see toggleClaimButton). No LLM call — the server just
     // SELECTs + INSERTs with a new UUID, so the round-trip is milliseconds.
+    // Promote-to-Master: clones the loaded recipe into master_recipes
+    // and redirects to the master copy via /r/<id>. Visibility is
+    // controlled in loadForm — only shown for saved, non-master rows.
+    document.getElementById("promoteBtn").onclick = async () => {
+      const id = document.getElementById("recipe_id").value;
+      if (!id) return;
+      if (!confirm('Promote this recipe into the master collection? '
+                 + 'A separate master copy will be created — your current '
+                 + 'recipe stays in place.')) return;
+      let res;
+      try {
+        res = await fetch(`${API}/recipes/${encodeURIComponent(id)}/promote-to-master`,
+                          { method: 'POST' });
+      } catch (err) {
+        showFeedback('Promote failed: ' + (err && err.message ? err.message : err), 'error');
+        return;
+      }
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showFeedback('Promote failed: ' + (result.detail || `HTTP ${res.status}`), 'error');
+        return;
+      }
+      // Land the user on the new master copy — same UX as Claim.
+      window.location.href = result.url || `/r/${result.recipe_id}`;
+    };
+
+    // Copy BCC permalink to clipboard. Read-only input — clipboard API
+    // is the easiest path; falls back to selecting the input text so the
+    // user can hit Cmd/Ctrl+C if the API is unavailable (older Safari).
+    document.getElementById("copyBccPermalinkBtn").onclick = async () => {
+      const input = document.getElementById("bccPermalink");
+      const url = (input && input.value) || '';
+      if (!url) {
+        showFeedback('No permalink yet — save the recipe first.', 'info');
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(url);
+          showFeedback('Permalink copied to clipboard.', 'success');
+        } else {
+          input.select();
+          document.execCommand('copy');
+          showFeedback('Permalink copied (legacy path).', 'success');
+        }
+      } catch (e) {
+        // Surface the input contents so the user can copy manually.
+        input.select();
+        showFeedback('Copy failed — select-and-copy manually.', 'error');
+      }
+    };
+
     document.getElementById("claimBtn").onclick = async () => {
       const id = document.getElementById("recipe_id").value;
       if (!id) return;
@@ -2693,6 +2847,16 @@
       document.getElementById("recipe_seq_id").value = "";
       const claimBtnEl = document.getElementById("claimBtn");
       if (claimBtnEl) claimBtnEl.style.display = 'none';
+      const promoteBtnEl = document.getElementById("promoteBtn");
+      if (promoteBtnEl) promoteBtnEl.style.display = 'none';
+      const bccInputEl = document.getElementById("bccPermalink");
+      if (bccInputEl) bccInputEl.value = '';
+      // Drop the /r/<id> path from the URL bar — we're back to a blank
+      // form, so reflect that. Replace (not push) — the user didn't
+      // navigate, they cleared.
+      try { window.history.replaceState(null, '', window.location.pathname.startsWith('/r/')
+            ? '/forms/recipe_form_styled.html' : window.location.pathname); }
+      catch (e) { /* ignore */ }
       heroImage.style.display = 'none';
       heroPlaceholder.style.display = 'flex';
       heroSectionEl.classList.remove('has-image');
@@ -2982,15 +3146,21 @@
       document.getElementById('nameGroup').classList.remove('field-error');
     });
 
-    // Sidebar toggle
+    // Sidebar toggle — mirrors the body.sidebar-open class so iOS
+    // Safari can't scroll the background underneath (which would
+    // otherwise make the fixed sidebar appear to drift).
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebarToggle');
-    sidebarToggle.onclick = () => sidebar.classList.toggle('open');
+    function syncBodyLock() {
+      document.body.classList.toggle('sidebar-open', sidebar.classList.contains('open'));
+    }
+    sidebarToggle.onclick = () => { sidebar.classList.toggle('open'); syncBodyLock(); };
 
     // Close sidebar when clicking outside
     document.addEventListener('click', (e) => {
       if (!sidebar.contains(e.target) && !sidebarToggle.contains(e.target)) {
         sidebar.classList.remove('open');
+        syncBodyLock();
       }
     });
 
@@ -3398,7 +3568,13 @@
           return false;
         }
         if (processingEl) processingEl.textContent = 'Extracting recipe...';
-        await extractFromImage(b64ToFile(b64));
+        // The bookmarklet's screenshot IS the source page, so passing
+        // stagedSourceUrl/stagedTitle is correct here — the server's
+        // url-keyed cache should hit/store under that URL. This is the
+        // ONE call site that legitimately wants stagedSourceUrl; every
+        // other extractFromImage caller (drop zone, file picker, manual
+        // fallback) is user-initiated against an unrelated image.
+        await extractFromImage(b64ToFile(b64), stagedSourceUrl, stagedTitle);
         return true;
       } finally {
         if (processingEl) processingEl.textContent = originalText || 'Extracting recipe...';
@@ -3421,17 +3597,21 @@
     }
 
     // Image is OCR'd to markdown server-side and then run through the same
-    // markdown extraction pipeline, so source_url/title plumbing applies
-    // here too.
+    // markdown extraction pipeline. source_url is taken ONLY from the
+    // explicit `sourceUrl` arg — do NOT silently fall back to
+    // `stagedSourceUrl`. A stale stagedSourceUrl (left over from a prior
+    // bookmarklet extract) would otherwise cause the server's
+    // url-keyed cache to return that PRIOR recipe instead of running
+    // vision on this image. Callers that genuinely want to tie the
+    // image to a source URL (e.g. extractFromStagedImage in the
+    // bookmarklet fallback) pass it explicitly.
     async function extractFromImage(file, sourceUrl = '', title = '') {
       dropZone.classList.add('processing');
       try {
         const formData = new FormData();
         formData.append('image', file);
-        const effectiveUrl = sourceUrl || stagedSourceUrl;
-        const effectiveTitle = title || stagedTitle;
-        if (effectiveUrl) formData.append('source_url', effectiveUrl);
-        if (effectiveTitle) formData.append('title', effectiveTitle);
+        if (sourceUrl) formData.append('source_url', sourceUrl);
+        if (title) formData.append('title', title);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
         const res = await fetch(`${API}/extract-from-image`, { method: 'POST', body: formData });
         const result = await res.json();
@@ -3480,9 +3660,11 @@
       try {
         const formData = new FormData();
         formData.append('file', file);
-        const effectiveUrl = sourceUrl || stagedSourceUrl;
-        const effectiveTitle = title || stagedTitle || file.name || '';
-        if (effectiveUrl) formData.append('source_url', effectiveUrl);
+        // source_url is explicit-only — same cache-contamination concern
+        // as extractFromImage. file.name is fine as a title default
+        // because it describes THIS file, not some prior bookmarklet state.
+        const effectiveTitle = title || file.name || '';
+        if (sourceUrl) formData.append('source_url', sourceUrl);
         if (effectiveTitle) formData.append('title', effectiveTitle);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
         const res = await fetch(`${API}/extract-from-pdf`, { method: 'POST', body: formData });
@@ -3663,6 +3845,13 @@
       // A fresh extract is owned by whoever ran it; no claim affordance.
       const claimBtn = document.getElementById('claimBtn');
       if (claimBtn) claimBtn.style.display = 'none';
+      // Promote-to-Master and BCC permalink only make sense for SAVED
+      // rows. A fresh extract has a recipe_id (minted by extract) but
+      // no DB row yet, so /r/<id> would 404 and promote would 404.
+      const promoteBtn = document.getElementById('promoteBtn');
+      if (promoteBtn) promoteBtn.style.display = 'none';
+      const bccInput = document.getElementById('bccPermalink');
+      if (bccInput) bccInput.value = '';
       // A fresh extract is a fresh slate — drift banner only applies to
       // recipes loaded from the DB with source_changed_at already set.
       const driftBanner = document.getElementById('sourceDriftBanner');

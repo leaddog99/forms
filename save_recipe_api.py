@@ -31,14 +31,16 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from typing import Optional
 from pydantic import ValidationError
 import sqlite3
 import uuid
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import traceback
 from pathlib import Path
@@ -106,6 +108,8 @@ try:
         compute_recipe_fingerprint,
         prompt_version_for,
     )
+    from input.pipeline import dishes as dishes_lib
+    from input.pipeline import jobs as jobs_lib
 
     print("[OK] url_utils / url_scoring imported successfully")
 except Exception as e:
@@ -119,6 +123,58 @@ DB_PATH = "recipes.db"
 # Placeholder user id until the user-identity field is wired into the form
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
 PLACEHOLDER_USER_ID = 1
+
+# Cross-cutting tunables loaded from bcc_config.json (with built-in
+# defaults in input/pipeline/config.py). Re-imported here so the live
+# form's save gate, self-URL minting, and self-URL recognition all
+# track the same single source of truth.
+from input.pipeline.config import (  # noqa: E402
+    BCC_PUBLIC_DOMAIN,
+    SAVE_GATE_MIN_INGREDIENTS,
+    SAVE_GATE_MIN_INSTRUCTIONS,
+)
+
+
+def _bcc_permalink(recipe_id: str) -> str:
+    """Canonical BCC URL for any saved recipe — what gets displayed in
+    the form's Permalink field and copied to the clipboard for sharing."""
+    return f"https://{BCC_PUBLIC_DOMAIN}/r/{recipe_id}"
+
+
+# Hosts that point at our own /r/<id> redirect. New self-URLs mint under
+# BCC_PUBLIC_DOMAIN; recipes.tbotb.com is the legacy host the 16
+# pre-2026-05-22 self-URLs use. Either resolves to the same form via
+# the /r/<id> route. www. prefix is folded in `_is_bcc_self_url`.
+_BCC_SELF_HOSTS = frozenset({
+    BCC_PUBLIC_DOMAIN,
+    "recipes.tbotb.com",
+})
+
+
+def _is_bcc_self_url(url: str) -> bool:
+    """True when the URL is one of our own self-minted permalinks.
+
+    Self-URLs point at OUR database via the /r/<id> redirect to the
+    form. Fetching one server-side returns form HTML, not recipe
+    content — so feeding a self-URL into html_to_markdown / Moz /
+    llm_extract_cache produces garbage. Three guards use this to
+    short-circuit:
+      - `_extract_cache_lookup` / `_extract_cache_write` keep the
+        cache table free of self-URL rows (so the nightly refresh
+        script never tries to re-extract one).
+      - `/extract-from-url` rejects self-URL extract attempts and
+        points the caller at the correct route (GET /recipes/<id>).
+    """
+    if not url:
+        return False
+    try:
+        from urllib.parse import urlparse  # one-line import; not hot path
+        host = (urlparse(url).netloc or "").lower().split(":", 1)[0]
+        if host.startswith("www."):
+            host = host[4:]
+        return host in _BCC_SELF_HOSTS
+    except Exception:
+        return False
 
 
 def _recipes_table_for(user_id: int) -> str:
@@ -253,27 +309,39 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
 _CACHE_STUBBED = False
 
 
-def _is_cacheable(recipe: dict) -> tuple[bool, str]:
+def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
     """Refuse to cache rows that look like a bad extraction (paywall,
     404, picked-the-wrong-recipe sidebar carousel). Returns
-    (cacheable, reason). Thresholds match what's reasonable for a real
-    recipe: a name AND at least 2 ingredients AND at least 2 instructions.
+    (cacheable, reason). Defaults to the cache layer's relaxed
+    thresholds (≥2 ingredients, ≥2 instructions). The /recipes save
+    gate calls this with stricter thresholds (≥3/≥3) because junk in
+    the recipes/master_recipes tables corrupts aggregated stats — see
+    [[batch-single-program]] for the same reasoning on the batch side.
     """
     name = (recipe.get("name") or "").strip() if recipe else ""
     if not name:
         return False, "no name"
     ings = recipe.get("recipeIngredient") or []
-    if sum(1 for i in ings if str(i).strip()) < 2:
-        return False, "fewer than 2 ingredients"
+    real_ings = sum(1 for i in ings if str(i).strip())
+    if real_ings < min_ings:
+        return False, f"fewer than {min_ings} ingredients ({real_ings})"
     steps = recipe.get("recipeInstructions") or []
     real_steps = 0
     for s in steps:
         text = s.get("text") if isinstance(s, dict) else s
         if str(text or "").strip():
             real_steps += 1
-    if real_steps < 2:
-        return False, "fewer than 2 instructions"
+    if real_steps < min_steps:
+        return False, f"fewer than {min_steps} instructions ({real_steps})"
     return True, "ok"
+
+
+# Save-gate thresholds — SAVE_GATE_MIN_INGREDIENTS /
+# SAVE_GATE_MIN_INSTRUCTIONS are now loaded from bcc_config.json at the
+# top of this file (see the `from input.pipeline.config import ...`
+# block). The values keep the recipes/master_recipes tables clean for
+# aggregated stats — Wikipedia-style narrative articles that survive
+# is_recipe and produce thin extractions land here.
 
 
 def _extract_cache_lookup(url_normalized, *, usage_log=None):
@@ -296,6 +364,12 @@ def _extract_cache_lookup(url_normalized, *, usage_log=None):
     actual spend.
     """
     if not url_normalized:
+        return None, "", "skip"
+    if _is_bcc_self_url(url_normalized):
+        # BCC self-URLs aren't extractable via the URL path — they
+        # resolve to our form HTML, not recipe content. Treat them
+        # like "no URL" so the caller falls through to vision / LLM /
+        # whatever path actually has real content to work with.
         return None, "", "skip"
     result = get_cached_extract(
         DB_PATH,
@@ -340,6 +414,13 @@ def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
               surfaces "source page changed since you last saved."
     """
     if not url_normalized or not recipe:
+        return "skip", False
+    if _is_bcc_self_url(url_normalized):
+        # Never cache a recipe under a self-URL key. The nightly cache
+        # refresh would later try to re-extract from that URL, hit our
+        # own /r/<id> redirect, and corrupt the cache with form-HTML
+        # extractions. Self-URLs live in the recipes table; that's the
+        # canonical store, no cache needed.
         return "skip", False
     ok, reason = _is_cacheable(recipe)
     if not ok:
@@ -604,6 +685,14 @@ def init_db():
             ensure_metabase_url_table(conn)
             ensure_bcc_token_journal_table(conn)
             ensure_llm_extract_cache_table(conn)
+            dishes_lib.ensure_dishes_table(conn)
+            jobs_lib.ensure_jobs_table(conn)
+            # Reset any jobs that were 'running' when the prior process
+            # died — they're not coming back, but they'd otherwise sit
+            # blocking new enqueues for the same entity.
+            interrupted = jobs_lib.reset_interrupted_jobs(conn)
+            if interrupted:
+                print(f"[JOBS] reset {interrupted} interrupted job(s) from prior run")
         print("[OK] Database tables ready")
     except Exception as e:
         print(f"[ERROR] Database initialization error: {e}")
@@ -638,6 +727,23 @@ try:
     print("[OK] Static files mounted successfully")
 except Exception as e:
     print(f"[WARN] Static files mount failed: {e}")
+
+# Per-run log files for dish refreshes. Each /dishes/<name>/refresh
+# call tees stdout to a file in this directory; the dish row stores
+# the filename, and the dishes form surfaces a "View latest log" link
+# via /logs/<filename>.
+LOGS_DIR = Path(__file__).resolve().parent / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+try:
+    app.mount("/logs", StaticFiles(directory=str(LOGS_DIR)), name="logs")
+    print(f"[OK] Logs mount: {LOGS_DIR}")
+except Exception as e:
+    print(f"[WARN] Logs mount failed: {e}")
+
+
+# Per-job Tee/lock/log-filename used to live here; moved to
+# input/pipeline/jobs.py once the dish refresh became a job. The runner
+# in jobs.py owns the tee context now — handlers just print() normally.
 
 print("[ROUTE] Setting up routes...")
 
@@ -704,6 +810,7 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
                 "source_changed_at": row[4],
                 "created_at": row[5],
                 "updated_at": row[6],
+                "bccUrl": _bcc_permalink(row[1]),
             }
     except HTTPException:
         raise
@@ -826,6 +933,100 @@ def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
         print(f"[ERROR] claim_recipe({recipe_id} -> user {target_user_id}) failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Claim failed: {e}")
+
+
+# Promote-to-master is the inverse of /claim — clones a personal recipe
+# into master_recipes (user_id=0). Mirrors claim's "copy not subscription"
+# semantics so the master copy is independently editable; the original
+# personal row stays in place untouched. Stamps `_source.promotedFrom`
+# (rather than `claimedFrom`) so the two provenance trails stay
+# distinguishable. Re-promote of the same source short-circuits to the
+# existing master copy, same pattern as claim's re-claim short-circuit.
+#
+# Curator authorization is a TODO: today any caller can promote. When
+# Ghost SSO lands, gate this on curator role. See
+# memory/project_master_recipes_ui.md.
+@app.post("/recipes/{recipe_id}/promote-to-master")
+def promote_to_master(recipe_id: str):
+    source_owner = _find_recipe_owner(recipe_id)
+    if source_owner is None:
+        raise HTTPException(status_code=404, detail="Source recipe not found")
+    if source_owner == 0:
+        raise HTTPException(status_code=409, detail="Recipe is already in master")
+
+    source_table = _recipes_table_for(source_owner)
+    target_table = "master_recipes"
+    new_recipe_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat()
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                f"SELECT data FROM {source_table} WHERE recipe_id = ?",
+                (recipe_id,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Source recipe vanished")
+
+            source_data = json.loads(row[0])
+            # static_subset drops user-scoped/identity fields and keeps the
+            # platonic recipe content + LLM enrichment — same filter the
+            # claim path uses, just in the opposite direction.
+            data = static_subset(source_data)
+            data["id"] = new_recipe_id
+            source_block = data.get("_source") or {}
+            source_block["promotedFrom"] = f"user:{source_owner}"
+            source_block["promotedAt"] = now
+            source_block["promotedFromRecipeId"] = recipe_id
+            data["_source"] = source_block
+
+            # Re-promote short-circuit: if this exact source has already
+            # been promoted to master, return the existing master copy
+            # rather than minting a parallel one. Mirrors claim's
+            # re-claim short-circuit, keyed on the source recipe_id.
+            existing = conn.execute(
+                f"SELECT recipe_id FROM {target_table} "
+                f"WHERE user_id = 0 "
+                f"AND json_extract(data, '$._source.promotedFromRecipeId') = ? "
+                f"LIMIT 1",
+                (recipe_id,),
+            ).fetchone()
+            if existing:
+                print(f"[PROMOTE] Re-promote short-circuit: master already "
+                      f"has {existing[0]} from source {recipe_id}")
+                return {
+                    "recipe_id": existing[0],
+                    "url": f"/r/{existing[0]}",
+                    "bccUrl": _bcc_permalink(existing[0]),
+                    "adopted_existing": True,
+                }
+
+            # Master copy gets its own self-URL (the promoted-from URL is
+            # on the source row, not this one). url_normalized stays
+            # blank — promoted rows, like claimed rows, are detached
+            # from URL-based dedup. Auto-enrich is a no-op when the
+            # source row already carried full enrichment (which a
+            # static_subset copy preserves).
+            conn.execute(
+                f"INSERT INTO {target_table} "
+                f"(recipe_id, user_id, data, url_normalized, source_changed_at, created_at, updated_at) "
+                f"VALUES (?, 0, ?, ?, NULL, ?, ?)",
+                (new_recipe_id, json.dumps(data, indent=2), "", now, now),
+            )
+            print(f"[PROMOTE] {source_table}/{recipe_id} -> "
+                  f"{target_table}/{new_recipe_id} (master)")
+            return {
+                "recipe_id": new_recipe_id,
+                "url": f"/r/{new_recipe_id}",
+                "bccUrl": _bcc_permalink(new_recipe_id),
+                "adopted_existing": False,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] promote_to_master({recipe_id}) failed: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Promote failed: {e}")
 
 
 # === Users (test scaffold) ===
@@ -1000,6 +1201,472 @@ def delete_user(user_id: int):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+# === Dishes (the dish library) ===
+# A dish is the unit of curated top-recipe collection. Each row maps a
+# canonical dish name to a set of SerpAPI queries + tuning + refresh
+# metadata. The dish name is the IMMUTABLE primary key — every
+# master_recipes row from a batch refresh will stamp _master.dish with
+# this name (#3 in the implementation plan; not wired yet). See
+# memory/project_dish_library.md for the full design.
+#
+# Endpoints:
+#   GET    /dishes              list all
+#   POST   /dishes              create (name + queries required)
+#   GET    /dishes/{name}       fetch one
+#   PATCH  /dishes/{name}       update (NOT name — that's the join key)
+#   DELETE /dishes/{name}       delete (cascade-to-master added in #3)
+#
+# The /dishes/{name}/refresh endpoint lives separately (next implementation
+# step) — it imports build_query_batch in-process to do the actual work.
+
+
+@app.get("/dishes")
+def list_dishes_endpoint():
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return dishes_lib.list_dishes(conn)
+    except Exception as e:
+        print(f"[ERROR] list_dishes failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/dishes/{name}")
+def get_dish_endpoint(name: str):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            d = dishes_lib.get_dish(conn, name)
+            if d is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            return d
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] get_dish({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/dishes")
+async def create_dish_endpoint(request: Request):
+    """Create a new dish. Body:
+        {
+          "name": "Spaghetti and Meat Sauce",       (required, unique, immutable)
+          "queries": ["spaghetti with meat sauce",  (required, non-empty)
+                      "spaghetti and meat sauce"],
+          "top_n_serpapi": 25,                       (optional, default 25)
+          "top_n_final": 10,                         (optional, default 10)
+          "refresh_ttl_days": 30,                    (optional; null = manual-only)
+          "notes": "..."                             (optional)
+        }
+    """
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    try:
+        name, queries, top_serp, top_final, ttl, notes = \
+            dishes_lib.validate_create_payload(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return dishes_lib.create_dish(
+                conn,
+                name=name, queries=queries,
+                top_n_serpapi=top_serp, top_n_final=top_final,
+                refresh_ttl_days=ttl, notes=notes,
+            )
+    except sqlite3.IntegrityError:
+        # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name
+        raise HTTPException(status_code=409,
+                            detail=f"Dish {name!r} already exists")
+    except Exception as e:
+        print(f"[ERROR] create_dish failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.patch("/dishes/{name}")
+async def update_dish_endpoint(name: str, request: Request):
+    """Partial update. Body may include any subset of {queries,
+    top_n_serpapi, top_n_final, refresh_ttl_days, notes}. The name
+    field is intentionally not updatable — it's the join key into
+    master_recipes._master.dish; renaming would orphan recipe rows.
+    To rename, delete + recreate."""
+    try:
+        patch = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    if "name" in patch:
+        raise HTTPException(
+            status_code=400,
+            detail="Dish name is immutable (join key into master_recipes). "
+                   "Delete + recreate to rename.",
+        )
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            try:
+                updated = dishes_lib.update_dish(conn, name, patch)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            if updated is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] update_dish({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.delete("/dishes/{name}")
+def delete_dish_endpoint(name: str):
+    """Delete a dish AND its top-kind master_recipes rows. editors_choice
+    and legacy rows for this dish are untouched (kind filter)."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            cascaded = dishes_lib.delete_master_rows_for_dish(conn, name, kind="top")
+            dishes_lib.delete_dish(conn, name)
+            return {
+                "deleted": True,
+                "name": name,
+                "cascaded_master_rows": cascaded,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] delete_dish({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+# =========================================================================
+# Dish refresh — now a job handler, not a long-blocking endpoint.
+# POST /dishes/<name>/refresh enqueues a `dish_refresh` job and returns 202.
+# The runner picks it up, opens a per-job log file, calls
+# _handle_dish_refresh_job below. The dishes form connects to the SSE
+# stream at /jobs/<id>/stream to watch progress in real time.
+# =========================================================================
+
+
+async def _handle_dish_refresh_job(job: dict) -> dict:
+    """Job handler — registered with the runner under type 'dish_refresh'.
+    The runner has already tee'd stdout/stderr to the per-job log file
+    and stamped log_filename on the job row by the time we run.
+    Returns a result dict that the runner stores in jobs.result.
+
+    Mostly the same logic as the prior /refresh endpoint body — the
+    stdout-tee bookkeeping moved to the runner, leaving this focused
+    on the actual work."""
+    from intake.build_query_batch import build_batch
+
+    params = job.get("params") or {}
+    name = params.get("dish_name") or ""
+    log_filename = job.get("log_filename")
+
+    # Re-fetch dish at run-time (could have been edited/deleted between
+    # enqueue and run).
+    with sqlite3.connect(DB_PATH) as conn:
+        dish = dishes_lib.get_dish(conn, name)
+    if dish is None:
+        raise RuntimeError(f"Dish {name!r} not found at run time (deleted?)")
+    canonical_name = dish["name"]
+
+    print(f"=== Dish refresh: {canonical_name!r} ===")
+    print(f"queries: {dish['queries']}")
+    print(f"top_n_serpapi: {dish['top_n_serpapi']} per query, "
+          f"top_n_final: {dish['top_n_final']}")
+    print(f"[REFRESH-DISH] {canonical_name!r} starting")
+
+    try:
+        batch_result = await asyncio.to_thread(
+            build_batch,
+            queries=dish["queries"],
+            dish=canonical_name,
+            top_n_serpapi=dish["top_n_serpapi"],
+            top_n_final=dish["top_n_final"],
+        )
+    except Exception as e:
+        print(f"[REFRESH-DISH] build_batch failed: {e}")
+        with sqlite3.connect(DB_PATH) as conn:
+            dishes_lib.record_run_result(
+                conn, canonical_name,
+                status=f"error:build_batch:{type(e).__name__}", count=0,
+                log_filename=log_filename,
+            )
+        raise  # runner records error status + stores the message
+
+    entries = batch_result["entries"]
+    print(f"[REFRESH-DISH] front-end yielded {len(entries)} candidates")
+
+    # Delete prior top-kind rows for this dish — editors_choice and
+    # legacy survive. Done BEFORE saves so the (url_normalized,
+    # user_id=0) unique index can't collide between old + new.
+    with sqlite3.connect(DB_PATH) as conn:
+        deleted = dishes_lib.delete_master_rows_for_dish(conn, canonical_name, kind="top")
+    print(f"[REFRESH-DISH] deleted {deleted} prior kind=top rows for {canonical_name!r}")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    saved_count = 0
+    skipped_thin = 0
+    extract_misses: list[str] = []
+    save_failures: list[str] = []
+    for entry in entries:
+        url = entry["url"]
+        try:
+            extract_result = await asyncio.to_thread(
+                extract_recipe_from_url, url, user_id=0,
+            )
+        except Exception as e:
+            print(f"[REFRESH-DISH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
+            extract_misses.append(url)
+            continue
+        recipe_dict = (extract_result or {}).get("recipe") or {}
+        if not recipe_dict:
+            extract_misses.append(url)
+            continue
+
+        ok, reason = _is_cacheable(
+            recipe_dict,
+            min_ings=SAVE_GATE_MIN_INGREDIENTS,
+            min_steps=SAVE_GATE_MIN_INSTRUCTIONS,
+        )
+        if not ok:
+            print(f"[REFRESH-DISH] SKIP-THIN {reason}  {url}")
+            skipped_thin += 1
+            continue
+
+        payload = dict(recipe_dict)
+        payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
+        payload["user_id"] = 0
+        payload["_master"] = {
+            "kind": "top",
+            "dish": canonical_name,
+            "refreshed_at": now_iso,
+            "rank": entry.get("rank"),
+            "queries": entry.get("_queries") or [],
+            "batch_source": "/dishes/refresh",
+        }
+        try:
+            await asyncio.to_thread(_save_recipe_core, payload)
+            saved_count += 1
+        except HTTPException as e:
+            print(f"[REFRESH-DISH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
+            save_failures.append(url)
+        except Exception as e:
+            print(f"[REFRESH-DISH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
+            save_failures.append(url)
+
+    dish_status = "success" if saved_count > 0 else "error:no_saves"
+    with sqlite3.connect(DB_PATH) as conn:
+        dishes_lib.record_run_result(
+            conn, canonical_name, status=dish_status, count=saved_count,
+            log_filename=log_filename,
+        )
+
+    print(f"[REFRESH-DISH] {canonical_name!r} done: "
+          f"saved={saved_count} extract_misses={len(extract_misses)} "
+          f"skipped_thin={skipped_thin} save_failures={len(save_failures)}")
+
+    return {
+        "dish": canonical_name,
+        "deleted_prior_rows": deleted,
+        "saved_count": saved_count,
+        "skipped_thin": skipped_thin,
+        "extract_misses": extract_misses,
+        "save_failures": save_failures,
+        "front_end_counts": batch_result["counts"],
+        "elapsed_s": batch_result["elapsed_s"],
+    }
+
+
+# Register the handler so the runner knows about it. Done at module
+# import time — the runner loop reads JOB_HANDLERS each tick.
+jobs_lib.register_handler("dish_refresh", _handle_dish_refresh_job)
+
+
+@app.post("/dishes/{name}/refresh")
+async def refresh_dish_endpoint(name: str):
+    """Enqueue a dish_refresh job. Returns 202 with the job_id immediately
+    — no long-held HTTP, no Cloudflare 100s timeout. The browser then
+    opens an SSE stream at GET /jobs/<id>/stream to watch progress, or
+    polls GET /jobs/<id>.
+
+    Refuses if a job for this dish is already queued or running (409,
+    with the existing job_id in the response so the UI can attach to
+    that stream instead)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        dish = dishes_lib.get_dish(conn, name)
+    if dish is None:
+        raise HTTPException(status_code=404, detail="Dish not found")
+    if not dish["queries"]:
+        raise HTTPException(status_code=400,
+                            detail=f"Dish {name!r} has no queries")
+
+    entity_ref = f"dish:{dish['name']}"
+    with sqlite3.connect(DB_PATH) as conn:
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "already in flight",
+                    "job_id": existing["id"],
+                    "status": existing["status"],
+                    "log_filename": existing.get("log_filename"),
+                },
+            )
+        job_id = jobs_lib.enqueue_job(
+            conn,
+            type="dish_refresh",
+            params={"dish_name": dish["name"]},
+            entity_ref=entity_ref,
+        )
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "job_id": job_id,
+            "status": "queued",
+            "entity_ref": entity_ref,
+            "stream_url": f"/jobs/{job_id}/stream",
+            "status_url": f"/jobs/{job_id}",
+        },
+    )
+
+
+# =========================================================================
+# Jobs endpoints (generic — usable by any future job type + the future
+# /forms/jobs.html admin page)
+# =========================================================================
+
+@app.get("/jobs")
+def list_jobs_endpoint(type: Optional[str] = None,
+                       entity_ref: Optional[str] = None,
+                       status: Optional[str] = None,
+                       limit: int = 100):
+    """List jobs, optionally filtered. Newest first."""
+    with sqlite3.connect(DB_PATH) as conn:
+        return jobs_lib.list_jobs(
+            conn, type=type, entity_ref=entity_ref,
+            status=status, limit=limit,
+        )
+
+
+@app.get("/jobs/{job_id}")
+def get_job_endpoint(job_id: int):
+    """Single-job status. Polled by UIs that don't use the SSE stream."""
+    with sqlite3.connect(DB_PATH) as conn:
+        job = jobs_lib.get_job(conn, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@app.get("/jobs/{job_id}/stream")
+async def job_stream_endpoint(job_id: int):
+    """Server-Sent Events stream for a job. Emits:
+      - event: status   → status changes (queued → running → success/error)
+      - event: log      → new log lines appended to the job's log file
+      - event: heartbeat → every ~25s so Cloudflare's idle-close timer
+                           never fires (free plan ≈ 100s)
+      - event: done     → final event when the job hits a terminal status;
+                          the stream closes immediately after.
+
+    Browser opens with `new EventSource('/jobs/<id>/stream')` and adds
+    listeners for the four event types. The dishes form's Run button
+    uses this for the live log tail."""
+    async def event_gen():
+        last_log_size = 0
+        last_status = None
+        last_heartbeat = time.time()
+        consecutive_missing = 0
+        while True:
+            try:
+                with sqlite3.connect(DB_PATH) as conn:
+                    job = jobs_lib.get_job(conn, job_id)
+            except Exception as e:
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                return
+
+            if not job:
+                # Tolerate a few misses immediately post-enqueue (DB
+                # commit race). Give up after a handful of polls.
+                consecutive_missing += 1
+                if consecutive_missing > 5:
+                    yield f"event: error\ndata: {json.dumps({'error': 'job not found'})}\n\n"
+                    return
+                await asyncio.sleep(0.5)
+                continue
+            consecutive_missing = 0
+
+            # Status change
+            if job["status"] != last_status:
+                yield (
+                    f"event: status\n"
+                    f"data: {json.dumps({'status': job['status'], 'started_at': job['started_at'], 'finished_at': job['finished_at'], 'log_filename': job['log_filename'], 'result': job['result'], 'error_detail': job['error_detail']})}\n\n"
+                )
+                last_status = job["status"]
+
+            # New log content (only if log_filename has been stamped)
+            if job.get("log_filename"):
+                log_path = LOGS_DIR / job["log_filename"]
+                if log_path.exists():
+                    size = log_path.stat().st_size
+                    if size > last_log_size:
+                        try:
+                            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                                f.seek(last_log_size)
+                                new_text = f.read()
+                            last_log_size = size
+                            # Send line by line so the client can append cleanly.
+                            for line in new_text.splitlines():
+                                if not line:
+                                    continue
+                                yield f"event: log\ndata: {json.dumps({'line': line})}\n\n"
+                        except Exception as e:
+                            print(f"[SSE] log read failed: {e}")
+
+            # Terminal status → emit `done` and close stream
+            if job["status"] in ("success", "error", "cancelled"):
+                yield f"event: done\ndata: {json.dumps({'status': job['status'], 'result': job['result'], 'error_detail': job['error_detail']})}\n\n"
+                return
+
+            # Heartbeat to keep the connection alive past Cloudflare's
+            # idle-close (~100s on free plan).
+            now = time.time()
+            if now - last_heartbeat > 25:
+                yield f"event: heartbeat\ndata: {json.dumps({'t': now})}\n\n"
+                last_heartbeat = now
+
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # tells any nginx/proxy not to buffer
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# =========================================================================
+# Job runner — background asyncio task
+# =========================================================================
+
+@app.on_event("startup")
+async def start_job_runner():
+    """Spawn the jobs runner as a background asyncio task. Runs for the
+    life of the uvicorn worker, polling the jobs table every ~2s for
+    the next ready job and dispatching to the registered handler."""
+    asyncio.create_task(
+        jobs_lib.runner_loop(DB_PATH, LOGS_DIR, poll_interval=2.0)
+    )
+    print("[STARTUP] job runner spawned")
+
+
 # List recipes for the given owner. user_id=0 returns the master collection
 # (master_recipes table); any other value returns that owner's personal
 # recipes. Default preserves the prior behavior for the form's sidebar.
@@ -1027,7 +1694,8 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
                         "data": json.loads(row[3]),
                         "source_changed_at": row[4],
                         "created_at": row[5],
-                        "updated_at": row[6]
+                        "updated_at": row[6],
+                        "bccUrl": _bcc_permalink(row[1]),
                     }
                     result.append(recipe_entry)
                 except json.JSONDecodeError as e:
@@ -1044,28 +1712,62 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
 
 
 # Save (insert or update) a recipe
-@app.post("/recipes")
-async def save_recipe(request: Request):
+def _save_recipe_core(payload: dict) -> dict:
+    """Synchronous core of POST /recipes. Same behavior as the endpoint —
+    same return shape, same HTTPException raises — but callable
+    in-process from other endpoints (e.g. /dishes/<name>/refresh)
+    without going through self-HTTP. Sanitize + validate + save-gate +
+    dedup + auto-enrich + insert/update + journal.
+
+    All async behavior (request.json(), to_thread wrapping) lives in the
+    thin endpoint wrapper below; this function is pure synchronous Python.
+    """
     print("[SAVE] Save recipe endpoint called")
     try:
-        # Get the payload
-        payload = await request.json()
         print(f"[DATA] Received payload: {payload}")
-
-        # IMPORTANT: Use the critical business logic files
         cleaned = sanitize_recipe_data(payload)
         print(f"[CLEAN] Sanitized data: {cleaned}")
-
         recipe = RecipeModel(**cleaned)
         print("[OK] Recipe model validation passed")
-
     except ValidationError as e:
         print(f"[ERROR] Validation error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[ERROR] Error processing request: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"Bad input: {e}")
+
+    # Save-quality gate. Refuse rows below the minimum-ingredients /
+    # minimum-instructions floor so the recipes/master_recipes tables
+    # stay statistically clean. The form catches the structured 422 and
+    # offers a "Save anyway" dialog that retries with force_save=true.
+    # Curator-only paths (claim/promote) bypass this naturally because
+    # they re-save data that already passed the gate originally.
+    force_save = bool(payload.get("force_save"))
+    if not force_save:
+        cleaned_for_check = recipe.model_dump(by_alias=True)
+        save_worthy, reason = _is_cacheable(
+            cleaned_for_check,
+            min_ings=SAVE_GATE_MIN_INGREDIENTS,
+            min_steps=SAVE_GATE_MIN_INSTRUCTIONS,
+        )
+        if not save_worthy:
+            print(f"[SAVE-GATE] Refused: {reason}")
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "thin_recipe": True,
+                    "reason": reason,
+                    "min_ingredients": SAVE_GATE_MIN_INGREDIENTS,
+                    "min_instructions": SAVE_GATE_MIN_INSTRUCTIONS,
+                    "message": (
+                        f"This recipe looks too thin to save ({reason}). "
+                        f"Add more ingredients/steps, or confirm to save anyway."
+                    ),
+                },
+            )
 
     # recipe_id is now app-minted at extract time and must be present on save.
     # Fallback to a fresh UUID kept only for callers that still POST without
@@ -1113,13 +1815,15 @@ async def save_recipe(request: Request):
 
     # Self-URL minting: when no external source URL exists (handwritten,
     # photo, typed recipe), generate one pointing back at this DB record:
-    # https://<host>/r/<recipe_id>. Done BEFORE the adopt-existing check
-    # below so a re-save of a once-saved local recipe still works (the
-    # second save sees the same minted URL and adopts the existing row).
-    # Skip for claimed rows — they intentionally have no url_normalized.
+    # https://bestcooksclub.com/r/<recipe_id>. The BCC domain is the
+    # canonical public URL regardless of which host the server was
+    # reached on (tunnel host, localhost, future cnames). Done BEFORE
+    # the adopt-existing check below so a re-save of a once-saved local
+    # recipe still works (the second save sees the same minted URL and
+    # adopts the existing row). Skip for claimed rows — they
+    # intentionally have no url_normalized.
     if not raw_source_url and not is_claimed_row:
-        base = str(request.base_url).rstrip("/")
-        synthetic_url = f"{base}/r/{recipe_id}"
+        synthetic_url = _bcc_permalink(recipe_id)
         normalized_source_url = normalize_url(synthetic_url)
         source["originalUrl"] = synthetic_url
         # Stamp type so the form / future logic can tell apart minted-self
@@ -1239,7 +1943,25 @@ async def save_recipe(request: Request):
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-    return {"recipe_id": recipe_id, "id": seq_id, "adopted": adopted}
+    return {
+        "recipe_id": recipe_id,
+        "id": seq_id,
+        "adopted": adopted,
+        "bccUrl": _bcc_permalink(recipe_id),
+    }
+
+
+@app.post("/recipes")
+async def save_recipe(request: Request):
+    """Thin async wrapper around _save_recipe_core. Pulls payload from the
+    request body and offloads the synchronous DB work to a worker thread
+    so the event loop stays free to service other requests (notably the
+    self-call pattern when /dishes/<name>/refresh saves many rows)."""
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    return await asyncio.to_thread(_save_recipe_core, payload)
 
 
 # Read-only metadata lookup for the form's collapsible metadata section.
@@ -1867,9 +2589,23 @@ async def extract_from_url_endpoint(
 ):
     if not url or not url.strip():
         raise HTTPException(status_code=400, detail="url is required")
+    url = url.strip()
+    if _is_bcc_self_url(url):
+        # Extracting one of our own permalinks would fetch our /r/<id>
+        # redirect, follow to form HTML, and produce a garbage extraction.
+        # Point the caller at the right route instead — GET /recipes/<id>
+        # already loads the saved recipe directly.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This URL is a BCC permalink, not an external recipe page. "
+                "Open it via /r/<recipe_id> (which lands on the form) "
+                "or fetch /recipes/<recipe_id> for the JSON shape."
+            ),
+        )
     try:
         return await asyncio.to_thread(
-            extract_recipe_from_url, url.strip(), user_id=user_id,
+            extract_recipe_from_url, url, user_id=user_id,
         )
     except RuntimeError as e:
         # Differentiate fetch/convert failures (network) from extract failures

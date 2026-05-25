@@ -1012,6 +1012,191 @@ Updated `feedback_post_extract_scroll.md` with the four failure modes encountere
 
 ---
 
+## Session log — 2026-05-22
+
+Single-themed day: **finish what 2026-05-21 started** — the Claude migration that only touched `markdown_to_recipe` was extended to every remaining LLM call, then a related-but-separate cleanup pass on parallelism, env-loading order, vision payload sizing, and the drop-zone paste handler. Single commit `f3d2dbb`.
+
+### Anthropic everywhere — text on Haiku, vision on Sonnet
+
+`markdown_to_recipe` shipped on `claude-haiku-4-5` the day before; this session moved the rest of the LLM surface over. The text-only paths (`enrich_recipe`, `chapter_classifier`) joined Haiku. The vision paths (`image_to_markdown`, `pdf_to_markdown`) intentionally went to `claude-sonnet-4-6` — preserving OCR quality matters more than per-call cost here, since a silent vision misread becomes a wrong recipe that ships. Schema enforcement standardized on Anthropic's `tool_use` + `tool_choice="<tool_name>"` pattern (Claude's equivalent of OpenAI's `response_format=json_schema, strict=true`). The provider-agnostic `build_usage_entry` already coped with both `prompt_tokens`/`completion_tokens` (OpenAI) and `input_tokens`/`output_tokens` (Anthropic) shapes from the 2026-05-21 work, so the token journal stayed uniform with no call-site churn.
+
+### Parallel-block enrich
+
+`enrich_recipe` was one monolithic Anthropic call that ran ~16s and produced provenance + classification + editorial in a single response. Split into a 3-block `EnrichmentBlock` registry — provenance / classification / editorial as independent calls — fanned out via `ThreadPoolExecutor`. Wall time drops to ~7-11s (slowest block bounds the total). Two upsides beyond latency: failure isolation (one block raising no longer voids the other two) and trivial extensibility (adding a 4th block is define-instance + append-to-list). Trace panel preserved: the `prompts` envelope keeps `model` / `system_prompt` / `user_prompt` pointing at the classification block's values for backward compatibility, and adds a `prompts.blocks` array with per-block detail.
+
+### `load_dotenv` import-order gotcha
+
+A silent bug from the morning's Anthropic-everywhere rollout: every vision/text call started returning *Could not resolve authentication method*. The 5 `anthropic.Anthropic()` constructors at the top of `save_recipe_api.py` (lines ~67-73) instantiated *before* the lazy `url_scoring` import (line ~82) which is what had been triggering `load_dotenv()` until now. The clients cached `api_key=None` at construction; nothing later was going to retroactively give them the key. Fix: explicit `load_dotenv()` at the very top of `save_recipe_api.py`, before any client construction. The launching shell happened to have the key set externally most of the time, which is why this lurked.
+
+### Vision payload downscale — the iPhone 5MB cap
+
+Anthropic's vision endpoint rejects images over 5MB *base64-encoded*. Base64 inflates 4/3, so the raw-byte threshold is ~3.7MB. iPhone Photos picks routinely land at 3-5MB raw → 4-7MB base64 → 400 with `image exceeds 5 MB maximum`. Earlier attempts thresholded on raw bytes and let 3.9-4.8MB JPEGs slip through. Now: when raw bytes would push base64 over the cap, downscale to 2000px long edge (preserves OCR fidelity per the user's "leave it at 2000 for now") + JPEG q=85; belt-and-suspenders `ValueError` if anything still busts the cap. PDF page rendering also switched from PNG to JPEG for the same reason — photo-heavy cookbook pages as PNG land at 7-10MB base64 even at modest pixel counts.
+
+### Drop-zone paste handler
+
+The drop zone is `contenteditable="true"` (shipped 2026-05-21 to enable right-click + iOS long-press Paste). Today: the global paste handler had an `isContentEditable` check that early-returned for editable elements — which had been correct when the drop zone was a plain `<div tabindex=0>` but became wrong once it was editable. Result on iOS: long-press Paste inserted text invisibly into the contenteditable div and the extract pipeline never saw it. Fix: exempt the drop zone from the `isContentEditable` early-return; switch text retrieval to `clipboardData.getData('text/plain')` (synchronous and robust across browsers, where rich-text copies otherwise hide plaintext behind a `text/html`-only `items[]`); dedupe via `e._handled` so the `document` and `dropZone` listeners can't both fire extraction off the same paste.
+
+---
+
+## Session log — 2026-05-23
+
+The big build day — the **dish library + batch query pipeline** end-to-end. Started from "I need a way to insert/update a master_recipes batch" and finished with admin UI, multi-query SerpAPI lookup, an upfront `is_recipe` filter before Moz quota burn, a quality-floor min-OU/min-DA gate, and the `library-shell` pattern that future admin pages (cookbooks, equipment, gourmet) inherit for free. All uncommitted; lives in the working tree.
+
+### `bcc_config.json` — single user-tunable config
+
+Pipeline thresholds (is_recipe ≥ 7, min_da ≥ 30.0, min_ou ≥ 0.0), domain + path blacklists, save-gate floors (3 ingredients / 3 instructions), per-query SerpAPI funnel defaults (25 candidates per query, 10 final), and the canonical BCC public domain (`bestcooksclub.com`) all moved to `bcc_config.json` at the project root. `input/pipeline/config.py` loads it with sensible fallbacks so the app still boots cleanly if the file (or any key) is missing. Code-level constants (timeouts, internal sentinels, the `RECIPE_PHRASES` list) stayed in Python — the JSON is for things a user might want to tune without touching code. Restart required to pick up changes (uvicorn `--reload` only watches `.py`).
+
+### `intake/build_query_batch.py` — 7-stage front-end pipeline
+
+The new batch ingestion pipeline: `query → SerpAPI → filter → is_recipe → Moz → min-DA → min-OU → rank`. Single in-process Python program per the `feedback_batch_single_program` memory — no new uvicorn workers; reuses the same `extract_recipe_from_url` + `_save_recipe_core` the live form does.
+
+Three SerpAPI-stage improvements over the obvious first cut, all chased after a beef-stew test returned 7 organic out of 50 requested:
+
+- **Pagination via `start`**. Google's first page is featured-snippets / People-Also-Ask / video / carousel theater — typically only 7-9 organic slots. Subsequent pages return clean rosters. Cap at `serpapi_max_pages` (default 10).
+- **Site-exclusion operators in the query**. Splice `-site:youtube.com -site:wikipedia.org ...` into the query string itself so Google's organic slots get spent on real recipe sites instead of being burned + post-filtered by us. Costs nothing extra (one quota unit per page either way). Wikipedia added to the blacklist on the user's call after one beef-stew hit had a negative OU.
+- **Locale + dedup params**. `gl=us hl=en filter=0` pins a stable SERP and disables Google's similar-page auto-collapse for more candidate variety.
+
+The `is_recipe` filter intentionally runs **before** Moz — burning Moz quota on roundup articles ("/articles/24-the-best-beef-stew") that survive the cheap domain blacklist is wasteful. Threshold defaults to 7; a path-fragment blacklist (`/articles/`, `/roundup`, `/listicle`, ...) catches roundup patterns that score above 7 because they contain ingredient lists in passing.
+
+### Multi-query dishes
+
+User flagged that "spaghetti with meat sauce" and "spaghetti and meat sauce" are two queries for one dish — both should feed the same library row, dedup'd and merged. `_multi_query_lookup` accepts a list of queries, runs each through `_serpapi_lookup`, unions on `normalize_url()` of each result, and stamps `_queries: [<which queries surfaced this URL>]` (1 query usually, but a URL appearing in *multiple* phrasings is a stronger dish signal worth carrying through). `google_rank` keeps the best position across queries. Single-query callers pass a list of one and behave identically to the pre-multi-query path.
+
+### `is_recipe` warn-and-continue on the live path (memory only, not built)
+
+User: *"there are recipes that can have less than 7 tags... lets say we let him go forward if it's not a recipe — won't the lack of ingredients and steps kill it later?"* Right call: for the live form (user pasted text or URL with intent), the right move is **warn** with override, not **block**. Batch keeps the hard floor; live gets a banner. Captured in `memory/project_live_is_recipe_warn.md` — not built this session.
+
+### `intake/process_batch.py` save-gate
+
+`_batch_save_worthy(recipe, min_ings=3, min_steps=3)` mirrors the live save floor — but where the live form catches the 422 and offers "Save anyway," the batch saves silently skip with a `SAVE-SKIP` log line. User's framing: *"if junk gets in all our aggregated stats go to hell, just like they would with the Wikipedia case."* Both floors read from `bcc_config.json`; one place to tighten/loosen.
+
+### Dish library — table, CRUD, refresh button
+
+`input/pipeline/dishes.py` introduces the `dishes` table:
+
+- `name TEXT PRIMARY KEY COLLATE NOCASE` — the immutable join key. Every `master_recipes` row stamps `_master.dish` with this name; "rename" is delete + recreate (which also deletes the master rows — intentional, per the dish-library design).
+- `queries TEXT NOT NULL` — JSON array (one or more).
+- `top_n_serpapi / top_n_final` — per-dish override of the config defaults.
+- `refresh_ttl_days` — NULL = manual-only; populated = the eventual scheduler agent picks it up when due.
+- `last_refreshed / last_run_status / last_run_count / last_run_log_filename` — run telemetry the form's status badges + "View latest log" link read.
+
+Endpoints: `GET /dishes`, `GET /dishes/{name}`, `POST /dishes`, `PUT /dishes/{name}`, `DELETE /dishes/{name}`, `POST /dishes/{name}/refresh`. The refresh endpoint is the synchronous version this session shipped — `build_batch` + delete prior `kind='top'` rows for the dish + extract + save with `_master` stamped. Wall time 1-3 minutes; the Cloudflare 100s timeout that bit us next day (2026-05-24) drove the job-system rework.
+
+### `_master` MasterMetadata block + kind taxonomy
+
+Master rows now carry a `_master` block: `kind` (`top` | `editors_choice` | `legacy`), `dish` (canonical name from the dishes table), `refreshed_at`, `rank`, `queries`, `batch_source`. The delete-and-replace logic on refresh only touches `kind='top'` rows — `editors_choice` (curator picks) and `legacy` (pre-batch imports) survive. `_master` added to `USER_TOP_LEVEL_FIELDS` in `recipe_model.py` so `static_subset` correctly strips it during claim — claimed rows shouldn't carry the master's curator-side metadata into a user's table.
+
+### Live `is_recipe` score on form extract (warning, not block)
+
+Tied in with the dish work: the live extract path now stamps `current_status.is_recipe_score` on every extraction and the form surfaces it as a "low recipe-text confidence" warning chip when the score is below `is_recipe_threshold`. **Does not block** — user can save anyway. Mirrors the batch path's `is_recipe` filter, but the consequence is informational rather than hard-cull. The `memory/project_live_is_recipe_warn.md` note went from "to do" to "shipped first pass."
+
+### BCC permalink — `bestcooksclub.com/r/<recipe_id>`
+
+User: *"we need a URL for OUR link to our recipes... if we created them we need to construct a link to our domain (BestCooksClub.com)/this record id... we need a field to display this url and we should put it in the current page url."* Implementation:
+
+- Self-URL minted at save time when no caller-supplied source exists, using `BCC_PUBLIC_DOMAIN` from `bcc_config.json` — `https://bestcooksclub.com/r/<recipe_id>`. (The original implementation used the request's `Host` header, which made local-dev recipes get `localhost:8009/r/...` permalinks. Config-driven domain fixes that.)
+- `/r/{recipe_id}` already redirects to `?recipe_id=...` (shipped 2026-05-21). The form's GET response now includes `user_id` at the top level (commit `1f41478`) so the form's load path can hydrate the sidebar to the correct user without an extra fetch.
+- Cached `_source.type='local'` recipes round-trip through the same dedup path as any "real" source URL — verified by extracting a recipe that originated from the bookmarklet, save, re-extract via the BCC self-URL, observe the adopt-existing short-circuit instead of a new row.
+
+### Master recipes UI (first pass) — Promote + Master picker
+
+Curator workflow shipped as a first pass — full curator-only workflow still needs design (memory: `project_master_recipes_ui`):
+
+- **Promote** button on every loaded recipe — duplicates the row into `master_recipes` (user_id=0) with `_master.kind='editors_choice'` and the curator's name in `_master.curator`. Idempotent — re-promoting just updates `refreshed_at`.
+- **Master picker row** in the sidebar — collapsible row above the personal recipe list showing the top N master rows for the current view. Click → load just like a personal recipe; the form's "Claim" button (shipped 2026-05-21) is the path from master → personal.
+
+Both are admin-visible only for now (no formal role gating yet — sidebar input `user_id=0` is the implicit toggle).
+
+### `library-shell` pattern — shared admin-page scaffold
+
+Three reusable pieces extracted as `dishes.html` was being built, in anticipation of the upcoming cookbooks / equipment / gourmet admin pages:
+
+- `library-shell.css` — fixed header with hamburger ☰, sliding sidebar (left) with `body.sidebar-open` lock for iOS, centered main container, fixed action footer. Input/button styling mirrors the recipe form (12px 14px padding, 12px border-radius, italic placeholder color) so admin pages feel like the same product.
+- `library-shell.js` — `LibraryShell.init({sidebarSelector, sidebarToggleSelector})` wires the toggle, click-outside-closes, and the iOS body lock; exports `openSidebar` / `closeSidebar` / `escapeHtml` / `fmtDate` helpers. One initialization line per page.
+- Documented inline at the top of `dishes.html` as a template: 5 steps to spin up a new entity admin page.
+
+### iOS sidebar drift fix
+
+User reported the sidebar scrolled with the page on iPhone. Three CSS additions: `overscroll-behavior: contain` on the sidebar (kills iOS rubber-band into the parent), `touch-action: pan-y` on the body, and a `body.sidebar-open { position: fixed; width: 100% }` lock that the JS toggles. Also anchored the sidebar top + bottom instead of `height: 100vh` (which drifted when iOS Safari hides/shows its bottom bar). The same fix applied retroactively to `recipe_form_styled.html` since it had the same bug.
+
+### "Add new dish doesn't clear" — placeholder vs default misdiagnosis
+
+User reported the add-new-dish form had leftover values from the previously-selected dish. Initial diagnosis was wrong — the fields *were* cleared, but the empty inputs showed `value="25"` etc. as actual values rather than placeholders. The defaults visually mimicked real entries. Fix: switch to `placeholder="25 (default)"` with italic muted styling, and apply the recipe-form input styling so the "this is a hint not a value" cue is unambiguous.
+
+### Per-run log files
+
+Every dish refresh now writes to `forms/logs/dish_<name>_<timestamp>.log` for the duration of the run. `_TeeStream` wraps `sys.stdout`/`sys.stderr` to tee writes into the log file (with `.flush()` after each — terminal output was hidden during runs without it). `last_run_log_filename` column on the dishes row + a "View latest log" link in the form header so the user can read the trace post-mortem. `forms/logs/` mounted as a static directory so the link works without an extra endpoint. Migrated to `jobs.py` on 2026-05-24 — the runner now owns the tee context.
+
+---
+
+## Session log — 2026-05-24
+
+**Async job system day.** A 524 from Cloudflare on a 3-minute dish refresh forced the question: keep band-aiding sync HTTP or build the right infrastructure now? User: *"we might as well bit the bullet now... we should generalize it to an extent as I believe we will have many jobs like this likely kicked off by agentic AI... this is a serious piece of infrastructure software and this will be the model to build others from."*
+
+### Cloudflare 524 on dish runs
+
+`POST /dishes/<name>/refresh` ran synchronously — `build_batch` + extract + save each candidate inline — and took 1-3 minutes for typical dishes. Cloudflare's free plan has a hard 100s origin-idle timeout; the browser saw `524` even though uvicorn finished the work and the saves landed cleanly. User: *"on my dish run for chocolate chip cookies i got a 524 error... run failed... where can I see the activity in real time?"* — and the answer was "you can't, it's in the python console you closed." Point-fix options (longer Cloudflare timeout: paid plan; client-side polling against an ad-hoc status endpoint) all looked like band-aids on the same wound.
+
+### Hybrid messaging — SQLite-poll queue + SSE live tail
+
+Considered messaging architectures. Real options: in-process asyncio queue (no durability — uvicorn restart = lost jobs), Redis/RabbitMQ (overkill for one-machine pre-launch), SQLite-poll (durable, no new infrastructure, fast enough at our volume). Picked SQLite-poll for the queue + SSE for the browser live log. User: *"absolutely... sounds great... be careful, it's a significant change but worth every minute."*
+
+The hybrid messaging design: the **queue** is SQLite (durable across restart, free crash recovery via `reset_interrupted_jobs`); the **browser update channel** is SSE (live log lines + status transitions + 25s heartbeats so Cloudflare's idle timer can't fire mid-run); the **fallback** is a regular GET `/jobs/<id>` poll for environments where SSE wobbles through the tunnel (mobile carriers, proxies). Three different mechanisms each appropriate to their layer.
+
+### `input/pipeline/jobs.py` — the foundation
+
+New module owns the durable queue + the runner + the handler registry:
+
+- **`jobs` table** — `id`, `type`, `params` (JSON), `entity_ref` (e.g. `dish:Beef Stew` so cross-finds like "is this dish currently in flight?" are cheap), `status` (`queued` | `running` | `success` | `error` | `cancelled`), `scheduled_at` (NULL = immediate, populated = future for the eventual scheduler), `created_at` / `started_at` / `finished_at`, `log_filename`, `result` (JSON, type-specific), `error_detail`. Three indexes: `(status, scheduled_at)` for the runner's find-next hot path, `(entity_ref, status)` for in-flight checks, `(type, created_at DESC)` for the future admin list view.
+- **`runner_loop(db_path, log_dir, *, poll_interval=2.0)`** — asyncio background task started on uvicorn startup. Polls every ~2s for the next ready job, opens a per-job log file (`forms/logs/job_<type>_<id>_<entity>_<ts>.log`), tees `sys.stdout` + `sys.stderr` to it, calls `JOB_HANDLERS[job["type"]](job)`, marks finished with the result dict (or `error` + `error_detail`). **Serial** — one job at a time process-wide, because the stdout-tee is global; concurrent jobs would interleave logs and we'd lose the per-job trace. Concurrency caps per-type are a future design point.
+- **Crash recovery** — `reset_interrupted_jobs(conn)` runs on startup; any row stuck in `running` from a previous process is flipped to `error:interrupted`. The runner died mid-job in the last process; future agents can re-enqueue if they need to.
+- **Pluggable handlers** — `register_handler("dish_refresh", async fn)` at module import time. The runner reads `JOB_HANDLERS` each tick, so handlers can be added or replaced without restarting the loop (though we don't lean on that yet).
+- **`_TeeStream`** with explicit `.flush()` after each write + the log file opened `buffering=1` (line-buffered) — the SSE tail sees lines in near-real-time, which is the whole point.
+
+### Refactored `/dishes/<name>/refresh`
+
+The old refresh body got extracted as-is into `_handle_dish_refresh_job(job)` — same logic, but it's no longer in charge of opening the log file or managing the stdout-tee (the runner does both). The endpoint became a thin 5-line enqueuer:
+
+- 404 if dish unknown
+- 400 if dish has no queries
+- 409 if `jobs_lib.find_in_flight_for_entity(conn, "dish:<name>")` returns a row — returns the existing `job_id` so the UI can attach to that stream instead of fighting for a slot
+- otherwise enqueue + return 202 with `{job_id, stream_url, status_url}`
+
+`register_handler("dish_refresh", _handle_dish_refresh_job)` at module top level wires the type → handler binding. Adding a new job type is define-handler + register; no other touchpoints.
+
+### Generic jobs endpoints
+
+Three new endpoints that any future job type inherits for free:
+
+- `GET /jobs` — list with optional `type` / `entity_ref` / `status` / `limit` filters. The eventual `/forms/jobs.html` admin page consumes this.
+- `GET /jobs/{id}` — single-job poll. The SSE fallback for browsers that can't keep a stream open.
+- `GET /jobs/{id}/stream` — Server-Sent Events. Four event types: `status` (queued → running → success/error transitions, each fired once), `log` (one event per appended log line, tailed via `tell()`/`seek()`), `heartbeat` (every ~25s, content irrelevant, exists to reset Cloudflare's idle timer), `done` (final event when status hits a terminal value; the stream closes after). `X-Accel-Buffering: no` header tells any nginx-style proxy not to buffer the stream. The tail tolerates ~5 consecutive misses post-enqueue (the job row's `INSERT` and the runner's first `SELECT` race in the first ~100ms).
+
+### `dishes.html` live-log UI
+
+The Run handler went from `await fetch(...) → render(result)` (90s of dead time, then a result) to:
+
+1. POST `/dishes/<name>/refresh` → 202 with `job_id` (or 409 → attach to the in-flight job's stream — handles the case where two browser tabs both clicked Run, or where the page was opened mid-run).
+2. Open `new EventSource('/jobs/<id>/stream')`.
+3. Render a dark console-styled `.live-log` panel under the dish detail card with a status pill (`queued` → `running` → `success`/`error`) and a tailing `<pre>` of log lines.
+4. On `done` — close the stream, refetch the dish row (so `last_refreshed` etc. are fresh), reattach the live-log panel to the re-rendered detail (so the trace survives the re-render), and append the existing `appendResultPanel(result)` summary.
+
+Auto-scroll keeps the latest line in view; bounded at 2000 lines so a runaway log doesn't blow up the DOM.
+
+### "Do not close this tab" leftover from the sync era
+
+User noticed a CSS-rendered overlay still read *"Running — please wait, do not close this tab."* The whole point of the job system is **the user can close the tab and the job keeps running**, so the message was actively wrong. Tracked it down to `.running-overlay::after` in `library-shell.css` (a holdover from the synchronous version's pessimistic UX). Removed the overlay rule entirely + removed the matching `card.classList.add('running-overlay')` adds/removes in `dishes.html`. The live-log panel is the new visual indicator; it stays visible without locking interaction.
+
+### `serpapi_union` count — bridge the per-query vs after-disallowed gap
+
+User: *"i asked for 10 from serp.. in the counts it said after-disallowed 18."* Not a bug — with 2 queries × 10 per query = 20 SerpAPI candidates, deduped to ~19, then `after_disallowed: 18` after one was dropped. But the count panel jumped from "10 per query" to "18 after disallowed" with no visible bridge step, which read as inconsistent. Added `serpapi_union` (post-dedup total before `filter_disallowed` runs) + `num_queries` to the counts dict in `build_batch`; the panel now reads `SerpAPI/query: 10 × 2 queries · serpapi_union: 19 · after_disallowed: 18 · ...`. Math was always right; the UI just hid the relevant step.
+
+### Memory + architecture notes
+
+- `memory/project_job_system.md` — full architecture rationale: queue layer (SQLite), runner layer (serial asyncio), scheduler layer (future), admin UI layer (future). Layer phasing: **Layer 1** (this session) jobs table + runner + dish_refresh handler + endpoint refactor + SSE UI; **Layer 2** scheduler loop scanning `dishes` for due refreshes (`refresh_ttl_days` elapsed since `last_refreshed`); **Layer 3** `/forms/jobs.html` admin page on the library-shell. The cron-equivalent in-process — what the user described as "this process will be running on a timed basis in batch... we need to build that and figure out how to have it running continually waiting for the time to do the next scheduled refresh."
+
+---
+
 ## To-do
 - **Schedule the daily cache refresh.** `scripts/refresh_expiring_cache.py` works manually; needs a Windows Task Scheduler job (or equivalent) firing it nightly. Without scheduling, the proactive refresh story isn't actually proactive — rows accumulate stale until a user touches them and trips the fallback path.
 - **Backfill the remaining 28 master enrichments.** `python -m scripts.backfill_master_enrichment --limit 0`. ~$0.03 total, ~7 minutes wall. Idempotent — skips already-enriched. Defer until you've decided the master cookbook contents are stable, since enrich runs against whatever's in the row.
@@ -1038,8 +1223,7 @@ Updated `feedback_post_extract_scroll.md` with the four failure modes encountere
 - ~~PDF input~~ — shipped 2026-05-16 (commit `940ef0b`).
 - "Re-extract this recipe" button on loaded records: re-runs the LLM against the same source (URL or staged image) and updates the existing recipe row in place, using the existing recipe_id instead of minting fresh. Today re-extracting a local-recipe image creates a duplicate row because each extract mints a new recipe_id → fresh self-URL → no adoption.
 - ~~"Re-enrich" button~~ — shipped 2026-05-17 as the Enrich button (works on both fresh extracts and loaded existing records since it operates on current form state). The "re-enrich a batch of empty-provenance records" idea is now the **batch enrichment subscription tier** below.
-- **Higher-tier subscription with auto-batch enrichment.** Background process picks up rows where `confidence = 0 AND ethnicity = ''` and runs `enrich_recipe` on them. Costs land in the token journal and could be metered as part of a richer subscription tier. User flagged 2026-05-17 — defers the "always enrich" workflow off the user's interactive critical path while still giving paid users richer recipes.
-- Bookmarklet detection of in-browser PDFs: when `document.contentType === 'application/pdf'`, fetch the PDF bytes and POST to `/extract-from-pdf` instead of trying html2canvas. Closes the loop for "click bookmarklet while viewing a PDF in a browser tab."
+i'- Bookmarklet detection of in-browser PDFs: when `document.contentType === 'application/pdf'`, fetch the PDF bytes and POST to `/extract-from-pdf` instead of trying html2canvas. Closes the loop for "click bookmarklet while viewing a PDF in a browser tab."
 - HEIC → JPEG conversion on the server side so iPhone-Photos paste flow works end-to-end (OpenAI vision doesn't accept HEIC).
 - Other URL-keyed metadata on `metabase_url`: favicon URL, og:image, domain category, content fingerprint for change detection.
 - Source-page error UX: bookmarklet currently `alert()`s when it fails (source page can't render our styled modal). Could inject a styled overlay into the foreign DOM if it becomes worth it.
