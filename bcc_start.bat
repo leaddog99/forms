@@ -13,4 +13,4 @@ echo.
 
 uvicorn save_recipe_api:app --host 127.0.0.1 --port 8009 --reload --log-config log_config.json
 
-endlocal
+endlocalcl

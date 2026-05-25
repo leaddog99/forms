@@ -1,0 +1,42 @@
+{
+  "_comment_top": "BCC tunable configuration. Edit + restart uvicorn to apply. Defaults live in input/pipeline/config.py so the app starts cleanly if this file (or any key) is missing. All user-facing tunables live here — code-level constants (timeouts, internal sentinels, the RECIPE_PHRASES list) stay in Python.",
+
+  "_comment_quality_floors": "Pipeline quality floors. Lower = more candidates pass (broader funnel, more risk of junk); higher = stricter. is_recipe_threshold and the disallowed lists are used by both batch (as hard filters) and the live extract path (informational only — see memory/project_live_is_recipe_warn.md). min_ou_score and min_da_score are batch-only filters.",
+  "is_recipe_threshold": 7,
+  "min_ou_score": 0.0,
+  "min_da_score": 30.0,
+
+  "_comment_blacklists": "Domain blacklist runs at the cheap pre-fetch filter stage in batch. Path blacklist catches roundup/article patterns that survive is_recipe (e.g. /articles/24-the-best-beef-stew).",
+  "disallowed_domains": [
+    "youtube.com",
+    "facebook.com",
+    "reddit.com",
+    "twitter.com",
+    "pinterest.com",
+    "tiktok.com",
+    "linkedin.com",
+    "wikipedia.org"
+  ],
+  "disallowed_url_path_fragments": [
+    "/articles/",
+    "/article/",
+    "/news/",
+    "/blog-post",
+    "/best-of",
+    "/roundup",
+    "/listicle",
+    "/buying-guide"
+  ],
+
+  "_comment_save_gate": "Minimum ingredient/instruction counts for a recipe to land in the recipes or master_recipes tables. Applies to BOTH live form saves and batch saves. The live form catches the 422 reject and offers a 'Save anyway' dialog (force_save=true bypasses); batch saves skip with a SAVE-SKIP log line.",
+  "save_gate_min_ingredients": 3,
+  "save_gate_min_instructions": 3,
+
+  "_comment_batch_funnel": "Per-query and per-dish SerpAPI funnel sizes. Each dish row in the dishes table overrides via its own top_n_serpapi / top_n_final columns; these are just the defaults applied when a dish is created without explicit values.",
+  "default_top_serpapi_per_query": 25,
+  "default_top_final": 10,
+  "serpapi_max_pages": 10,
+
+  "_comment_branding": "Canonical public domain for BCC permalinks. Used by the live save path's self-URL minting AND by the /r/<id> redirect (both live + batch). Swapping the brand domain is a config edit, not a code change.",
+  "bcc_public_domain": "bestcooksclub.com"
+}

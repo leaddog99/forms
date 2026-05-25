@@ -20,9 +20,10 @@ Idempotent: re-runs skip rows that already have a populated
 bcc_token_journal alongside extract-time usage.
 
 Notes:
-- Uses gpt-4o-mini (the model enrich_recipe defaults to). Roughly
-  ~1k input + ~1.5k output tokens per recipe -> ~$0.001 each at
-  current pricing.
+- Uses claude-haiku-4-5 (the model enrich_recipe defaults to as of the
+  2026-05-22 Anthropic migration). Now fans out to three parallel
+  blocks (provenance / classification / editorial), so wall time is
+  ~7-11s per row depending on which block is slowest.
 - This is a manual maintenance script, not an endpoint. Cost is
   intentional and bounded by --limit.
 """
@@ -35,8 +36,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# load_dotenv BEFORE importing enrich_recipe — the module reads
-# OPENAI_API_KEY at import time.
+# load_dotenv BEFORE importing enrich_recipe — the module constructs
+# its anthropic.Anthropic() client at import and the SDK reads
+# ANTHROPIC_API_KEY at construction time (caches None permanently if
+# env is empty at that moment).
 load_dotenv()
 
 # Ensure the project root is importable when run via `python -m`.

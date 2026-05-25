@@ -74,6 +74,11 @@ USER_TOP_LEVEL_FIELDS = frozenset({
     "_access",           # per-user visibility / sharing
     "current_status",    # this user's accept/reject decision (validator
                          #   re-stamps it on every extract anyway)
+    "_master",           # dish-library provenance (kind/dish/refreshed_at/
+                         #   rank/queries). Tied to the row's place in the
+                         #   dish library — a claimed copy should NOT inherit
+                         #   "kind=top" since it's no longer in the top-N;
+                         #   promote-to-master re-stamps fresh on the new row.
     # Future: "userComments" — when added, list here so cache/claim
     # never carry one user's comments to another.
 })
@@ -167,6 +172,24 @@ class SourceInfo(BaseModel):
     originalUrl: Optional[str] = ""
     affiliateUrl: Optional[str] = ""
 
+
+# Dish-library provenance block — stamped on master_recipes rows so the
+# delete-and-replace refresh logic can find them, and so the live form
+# can later suggest "better recipes for this dish" by joining on dish.
+# kind drives refresh behavior:
+#   "top"            — batch-sourced, replaced on each dish refresh
+#   "editors_choice" — curator's manual Promote-to-Master, permanent
+#   "legacy"         — pre-existing rows from before this scheme
+# See memory/project_dish_library.md.
+class MasterMetadata(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+    kind: Optional[str] = None                    # "top" | "editors_choice" | "legacy"
+    dish: Optional[str] = None                    # join key into dishes table
+    refreshed_at: Optional[str] = None            # ISO-8601 UTC; top-kind only
+    rank: Optional[int] = None                    # within dish, top-kind only
+    queries: Optional[List[str]] = None           # queries that surfaced this URL
+    batch_source: Optional[str] = None            # provenance debug
+
 # Pipeline-side metadata. Defaults are empty so interactive saves don't have to
 # populate them; batch stages fill them in over time.
 class ScoringMetadata(BaseModel):
@@ -252,6 +275,11 @@ class RecipeModel(BaseModel):
     access: Optional[AccessControl] = Field(default=None, alias="_access")
     source: Optional[SourceInfo] = Field(default=None, alias="_source")
     scoring: Optional[ScoringMetadata] = Field(default=None, alias="_scoring")
+    # Dish-library block — present on master_recipes rows from a batch
+    # refresh (kind="top") or a curator promote (kind="editors_choice").
+    # Absent on personal recipes. Declared explicitly so it survives
+    # model_dump(by_alias=True) the same way _source/_scoring do.
+    master: Optional[MasterMetadata] = Field(default=None, alias="_master")
     classification: Optional[ClassificationMetadata] = None
     editorial: Optional[EditorialMetadata] = None
     current_status: Optional[StatusField] = None

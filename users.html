@@ -102,6 +102,29 @@
     <h1>Pick a User</h1>
     <p class="sub">Test login. Each row has its own Login / Edit / Delete actions — clicking the row itself does nothing on purpose.</p>
 
+    <!-- Synthetic Master (curator) row — NOT in the users table.
+         user_id=0 is the dispatch sentinel for master_recipes; clicking
+         Login sets app:self_user_id=0 so subsequent saves route to the
+         master table and the sidebar lists master_recipes. First-pass
+         curator login — see memory/project_master_recipes_ui.md. -->
+    <div class="section-title">Curator</div>
+    <div class="users">
+      <div class="user-card" id="masterCard">
+        <div class="avatar" style="background:#7a5e3a">M</div>
+        <div class="info">
+          <div class="name">
+            <span class="uid-pill">#0</span>
+            <span>Master (curator)</span>
+          </div>
+          <div class="meta">Login here to add or edit recipes in the master collection.</div>
+        </div>
+        <span class="badge paid">curator</span>
+        <div class="actions">
+          <button type="button" class="login" id="masterLoginBtn">Login</button>
+        </div>
+      </div>
+    </div>
+
     <div class="section-title">Existing users</div>
     <div class="users" id="userList"><div class="empty">Loading…</div></div>
 
@@ -324,6 +347,11 @@
         errEl.textContent = err.message || String(err);
       }
     });
+
+    // Master (curator) login — sets app:self_user_id=0 like any
+    // other Login click. The form's sidebar boot reads sidebar:user_id
+    // and lists master_recipes; pickUser(0) sets both keys.
+    document.getElementById('masterLoginBtn').addEventListener('click', () => pickUser(0));
 
     loadUsers();
   </script>

@@ -248,10 +248,54 @@ def extract_one(
     return result
 
 
+# Batch save quality gate — uses the SAVE_GATE_* thresholds loaded
+# from bcc_config.json (same source as save_recipe_api.py's POST
+# /recipes gate). Single source of truth: editing the JSON re-tunes
+# both paths in lockstep.
+import sys as _sys
+from pathlib import Path as _Path
+_PROJECT_ROOT = _Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(_PROJECT_ROOT))
+from input.pipeline.config import (  # noqa: E402
+    SAVE_GATE_MIN_INGREDIENTS as BATCH_MIN_INGREDIENTS,
+    SAVE_GATE_MIN_INSTRUCTIONS as BATCH_MIN_INSTRUCTIONS,
+)
+
+
+def _batch_save_worthy(recipe: dict) -> tuple[bool, str]:
+    """Mirror of save_recipe_api._is_cacheable with the bcc_config.json
+    save-gate thresholds. Returns (ok, reason)."""
+    name = (recipe.get("name") or "").strip() if recipe else ""
+    if not name:
+        return False, "no name"
+    ings = recipe.get("recipeIngredient") or []
+    real_ings = sum(1 for i in ings if str(i).strip())
+    if real_ings < BATCH_MIN_INGREDIENTS:
+        return False, f"fewer than {BATCH_MIN_INGREDIENTS} ingredients ({real_ings})"
+    steps = recipe.get("recipeInstructions") or []
+    real_steps = 0
+    for s in steps:
+        text = s.get("text") if isinstance(s, dict) else s
+        if str(text or "").strip():
+            real_steps += 1
+    if real_steps < BATCH_MIN_INSTRUCTIONS:
+        return False, f"fewer than {BATCH_MIN_INSTRUCTIONS} instructions ({real_steps})"
+    return True, "ok"
+
+
 def save_one(result: dict) -> bool:
-    """POST the recipe to /recipes. Returns True on HTTP 200, prints
-    detail on failure."""
-    payload = dict(result["recipe"])
+    """POST the recipe to /recipes. Returns True on HTTP 200 (or on a
+    skip), False on transport/HTTP failure. Skips don't count as
+    failures — they're the "extracted-but-too-thin" path, expected for
+    roundup articles and other not-quite-recipe pages that survive the
+    is_recipe pre-filter."""
+    recipe = result.get("recipe") or {}
+    ok, reason = _batch_save_worthy(recipe)
+    if not ok:
+        print(f"  [SAVE-SKIP]    {reason} — not save-worthy for batch")
+        return True  # not a save failure; the row is just too thin
+    payload = dict(recipe)
     payload["recipe_id"] = result["recipe_id"]
     # Batch writes target the master collection (master_recipes table).
     # Server dispatches on user_id; this stamp is the authoritative signal.
