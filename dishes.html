@@ -135,6 +135,8 @@
       sidebarSelector: '#sidebar',
       sidebarToggleSelector: '#sidebarToggle',
     });
+    // Cross-page nav (right-side ⋮). currentPage marks the active row.
+    LibraryShell.initNav({ currentPage: 'dishes' });
 
     // In-memory cache + UI state.
     let dishes = {};          // name -> dish dict
