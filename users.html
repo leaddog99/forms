@@ -92,7 +92,75 @@
     .err { color: var(--danger); font-size: 0.86rem; margin-left: auto; }
     .note { color: var(--muted); font-size: 0.82rem; margin-top: 16px; }
     .empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+
+    /* ---------- Right-side cross-page nav (⋮) ----------
+       Inlined from library-shell.css. users.html doesn't use the
+       library-shell layout (no fixed app-header), so the button mounts
+       as a fixed top-right element — initNav() detects the absence of
+       .app-header .header-inner and falls back automatically. */
+    .nav-toggle {
+      background: var(--accent); color: #fff; border: none;
+      width: 36px; height: 36px; border-radius: 8px;
+      cursor: pointer; font-size: 1.3em; line-height: 1;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    .nav-toggle:hover { background: var(--accent-dark); }
+    .nav-menu {
+      position: fixed; top: 60px; right: 16px;
+      background: var(--card);
+      border: 1px solid var(--line); border-radius: 10px;
+      padding: 6px; min-width: 200px;
+      box-shadow: 0 6px 20px rgba(60,40,20,.18);
+      z-index: 101;
+      display: none;
+    }
+    .nav-menu.open { display: block; }
+    .nav-menu .nav-item {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%;
+      padding: 9px 12px; border-radius: 6px;
+      color: var(--ink); text-decoration: none;
+      background: transparent; border: none;
+      font: inherit; font-size: 0.95em; text-align: left;
+      cursor: pointer; box-sizing: border-box;
+    }
+    .nav-menu .nav-item:hover { background: var(--accent-soft); }
+    .nav-menu .nav-item.active {
+      background: var(--accent-soft); color: var(--accent); font-weight: 600;
+    }
+    .nav-menu .badge-soon {
+      font-size: 0.72em; color: var(--muted);
+      font-style: italic; margin-left: 8px;
+    }
+    .coming-soon-overlay {
+      position: fixed; inset: 0;
+      background: rgba(42, 33, 27, 0.45);
+      z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .coming-soon-card {
+      background: var(--card);
+      border-radius: 14px; padding: 28px 32px;
+      max-width: 400px; text-align: center;
+      box-shadow: 0 12px 36px rgba(60,40,20,.3);
+    }
+    .coming-soon-card h2 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.5em; margin: 0 0 8px;
+    }
+    .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
+    .coming-soon-card button {
+      background: var(--accent); color: #fff; border: none;
+      padding: 9px 22px; border-radius: 8px;
+      font-weight: 600; cursor: pointer; font-size: 0.95em;
+      font-family: Georgia, serif;
+    }
+    .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
+  <script src="/forms/library-shell.js"></script>
   <!-- Pull Playfair Display from the same Google Fonts entry the recipe
        form uses so headings here match it exactly. -->
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
@@ -159,6 +227,12 @@
     const listEl = document.getElementById('userList');
     const createForm = document.getElementById('createForm');
     const errEl = document.getElementById('createErr');
+
+    // Cross-page nav (right-side ⋮). No .app-header on this page, so
+    // initNav() will mount the toggle as a fixed top-right button.
+    if (window.LibraryShell && LibraryShell.initNav) {
+      LibraryShell.initNav({ currentPage: 'users' });
+    }
 
     function escapeHtml(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({

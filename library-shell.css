@@ -66,6 +66,8 @@ body {
   cursor: pointer; font-size: 1.1em;
   box-shadow: 0 2px 8px rgba(0,0,0,.15);
   flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1; padding: 0;
 }
 .sidebar-toggle:hover { background: var(--accent-dark); }
 
@@ -76,13 +78,15 @@ body {
    centered content column. */
 .nav-spacer { flex: 1; }
 .nav-toggle {
-  background: transparent; border: 1px solid var(--line);
-  color: var(--ink);
+  background: var(--accent); color: #fff; border: none;
   width: 36px; height: 36px; border-radius: 8px;
   cursor: pointer; font-size: 1.3em; line-height: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
   flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
 }
-.nav-toggle:hover { background: var(--accent-soft); border-color: var(--accent); }
+.nav-toggle:hover { background: var(--accent-dark); }
 .nav-menu {
   position: absolute;
   top: calc(var(--header-h) + 6px);

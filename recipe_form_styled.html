@@ -117,6 +117,8 @@
       font-size: 1.1em;
       box-shadow: 0 2px 8px rgba(0,0,0,.15);
       flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      line-height: 1; padding: 0;
     }
 
     .sidebar-toggle:hover { background: #7a3a1a; }
@@ -136,7 +138,11 @@
       bottom: 0;
       left: -420px;
       width: 400px;
-      background: var(--card);
+      /* White background + NYT-Cooking-style editorial palette. The
+         sidebar reads as its own clean "list page" docked next to the
+         (warm cream) recipe form — deliberate visual separation
+         between "browse recipes" and "edit a recipe". */
+      background: #fff;
       padding: 16px 16px 24px;
       box-shadow: 4px 0 20px rgba(60,40,20,.1);
       z-index: 99;
@@ -146,6 +152,12 @@
       touch-action: pan-y;
       transition: left 0.3s ease;
     }
+    /* Reserve a clean sans-serif vocabulary for the sidebar — only
+       used here for now, not the whole form. NYT Cooking uses Franklin
+       (proprietary); system stack is the closest free analog and
+       reads as the same editorial register. */
+    .sidebar { --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .sidebar { --ink-strong: #121212; --ink-muted: #666; --hairline: #e2e2e2; --accent-red: #c7522a; }
 
     /* iOS body lock when sidebar open — keeps the background from
        scrolling underneath, which would otherwise make the fixed
@@ -245,73 +257,163 @@
 
     .recipe-list { list-style: none; }
 
+    /* NYT-Cooking-style list row. No card containers — just rows
+       separated by a hairline rule. White background, near-black ink,
+       generous vertical padding. The title is a chunky serif; every
+       other text element is a clean sans (system stack as a free
+       Franklin analog). The only accent color in this whole panel is
+       the warm terracotta red, reserved for the A-tier grade chip. */
     .recipe-item {
       cursor: pointer;
-      padding: 10px 12px;
-      margin-bottom: 6px;
-      border-radius: 10px;
-      border: 1px solid var(--line);
-      background: #fff;
-      transition: all 0.15s ease;
-      font-size: 0.9em;
+      padding: 20px 4px;
+      margin: 0;
+      border: none;
+      border-bottom: 1px solid var(--hairline);
+      background: transparent;
+      border-radius: 0;
+      transition: background 0.12s ease;
+      display: grid;
+      grid-template-columns: 128px 1fr;
+      column-gap: 18px;
+      position: relative;
+    }
+    .recipe-item:last-child { border-bottom: none; }
+    .recipe-item:hover { background: #fafafa; }
+    .recipe-item:hover .title { text-decoration: underline; text-underline-offset: 3px; }
+    .recipe-item:hover .thumb img { opacity: 0.9; }
+
+    /* Thumbnail — larger (128px) so the food imagery anchors the row
+       rather than supports it. Sharp 2px radius, like a print plate.
+       Neutral light-grey placeholder; no cream tones. */
+    .recipe-item .thumb {
+      width: 128px; height: 128px;
+      border-radius: 2px;
+      background: #f0f0f0;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .recipe-item .thumb img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: opacity 0.12s ease;
+    }
+    .recipe-item .thumb-placeholder {
+      color: #aaa;
+      font-size: 1.5em;
+    }
+
+    .recipe-item .body {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 5px;
+      min-width: 0;
     }
-    .recipe-item:hover {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      transform: translateX(2px);
-    }
-    .recipe-item .name {
-      font-weight: 600;
-      line-height: 1.3;
-      color: var(--ink);
+
+    /* Title — NYT Cooking tile spec. Cheltenham-style serif, weight 500
+       (medium — NOT bold), 19px, near-black. The title is the most
+       prominent text but doesn't shout; bold would push it into magazine
+       headline territory. NYT uses #121212. */
+    .recipe-item .title {
+      font-family: 'Playfair Display', Cheltenham, Georgia, serif;
+      font-size: 19px;
+      font-weight: 500;
+      line-height: 1.2;
+      color: var(--ink-strong);
+      letter-spacing: -0.005em;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       word-break: break-word;
+      margin-bottom: 4px;
     }
-    .recipe-item .meta {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.78em;
-      color: var(--muted);
-    }
-    .recipe-item .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-weight: 600;
-      font-size: 0.92em;
-      letter-spacing: 0.01em;
+
+    /* Byline — NYT Franklin Gothic / system sans, 13px, regular weight,
+       color #5a5a5a. The "By Author Name" line directly under the title. */
+    .recipe-item .byline {
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 400;
+      color: #5a5a5a;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .recipe-item .pill.ou {
-      background: #eaf3e7;
-      color: #4a6b3c;
+
+    /* Source / date / grade line — sans, 12px, slightly lighter than
+       byline (#6e6e6e). Dot separator matches NYT spacing. */
+    .recipe-item .source-line {
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 400;
+      color: #6e6e6e;
+      line-height: 1.45;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    .recipe-item .pill.batch {
-      background: #f1eaf6;
-      color: #6b4a7a;
+    .recipe-item .source-line .dot { margin: 0 6px; opacity: 0.45; }
+
+    /* Domain as clickable link — NYT's quiet link treatment: same color
+       as surrounding text, underline only on hover. Click goes to the
+       original URL in a new tab; doesn't trigger the card's load action. */
+    .recipe-item .source-link {
+      color: inherit;
+      text-decoration: none;
+      border-bottom: 1px dotted transparent;
     }
-    /* Stale badge — source_changed_at is non-null, meaning the source
-       page drifted since save. User should re-extract and review. */
-    .recipe-item .pill.stale {
-      background: #fde9c8;
-      color: #8a5a1a;
+    .recipe-item .source-link:hover {
+      color: var(--ink-strong);
+      border-bottom-color: #b0b0b0;
     }
-    /* Enriched badge — recipe has been through /enrich-recipe (story
-       and/or editorial populated). Icon-style, no text, so it doesn't
-       crowd the meta row. */
-    .recipe-item .pill.enriched {
-      background: transparent;
-      color: var(--accent);
-      padding: 2px 4px;
-      border: 1px solid var(--accent-soft);
+
+    /* Grade — inline letterspaced caps, NYT's small-caps label register.
+       A-tier wears the lone color accent (terracotta), matching the red
+       NYT uses for its star ratings and save-heart. */
+    .recipe-item .grade-mark {
+      font-family: var(--sans);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: #9a9a9a;
+    }
+    .recipe-item .grade-mark.tier-a { color: var(--accent-red); }
+
+    /* Chapter — NYT-style small-caps section label, sits at the
+       bottom of the metadata stack. */
+    .recipe-item .chapter {
+      font-family: var(--sans);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8a8a8a;
+      font-weight: 500;
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .recipe-item .batch-tag {
+      font-family: var(--sans);
+      font-size: 12px;
+      color: #8a8a8a;
+      margin-top: 2px;
+    }
+
+    /* Stale — a small text marker in the source line is cleaner than a
+       colored edge stripe under this palette. Rendered inline in JS. */
+    .recipe-item .stale-mark {
+      color: var(--accent-red);
+      font-family: var(--sans);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-left: 6px;
     }
 
     /* Inline toggle button next to the user_id input — flips between
@@ -1205,7 +1307,78 @@
       .app-header .header-inner { padding: 0 10px; gap: 8px; }
       .action-footer { padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
     }
+
+    /* ---------- Right-side cross-page nav (⋮) ----------
+       Mirrors the styles in library-shell.css for admin pages. Inlined
+       here rather than linking the full library-shell.css to avoid
+       cascade fights with the form's tuned .app-header/.sidebar rules. */
+    .nav-spacer { flex: 1; }
+    .nav-toggle {
+      background: var(--accent); color: #fff; border: none;
+      width: 36px; height: 36px; border-radius: 8px;
+      cursor: pointer; font-size: 1.3em; line-height: 1;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    .nav-toggle:hover { background: var(--accent-dark); }
+    .nav-menu {
+      position: absolute;
+      top: calc(var(--header-h, 56px) + 6px);
+      right: max(16px, calc((100vw - 960px) / 2 + 16px));
+      background: var(--card);
+      border: 1px solid var(--line); border-radius: 10px;
+      padding: 6px; min-width: 200px;
+      box-shadow: 0 6px 20px rgba(60,40,20,.18);
+      z-index: 101;
+      display: none;
+    }
+    .nav-menu.open { display: block; }
+    .nav-menu .nav-item {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%;
+      padding: 9px 12px; border-radius: 6px;
+      color: var(--ink); text-decoration: none;
+      background: transparent; border: none;
+      font: inherit; font-size: 0.95em; text-align: left;
+      cursor: pointer; box-sizing: border-box;
+    }
+    .nav-menu .nav-item:hover { background: var(--accent-soft); }
+    .nav-menu .nav-item.active {
+      background: var(--accent-soft); color: var(--accent); font-weight: 600;
+    }
+    .nav-menu .badge-soon {
+      font-size: 0.72em; color: var(--muted);
+      font-style: italic; margin-left: 8px;
+    }
+    .coming-soon-overlay {
+      position: fixed; inset: 0;
+      background: rgba(42, 33, 27, 0.45);
+      z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .coming-soon-card {
+      background: var(--card);
+      border-radius: 14px; padding: 28px 32px;
+      max-width: 400px; text-align: center;
+      box-shadow: 0 12px 36px rgba(60,40,20,.3);
+    }
+    .coming-soon-card h2 {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-size: 1.5em; margin: 0 0 8px;
+    }
+    .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
+    .coming-soon-card button {
+      background: var(--accent); color: #fff; border: none;
+      padding: 9px 22px; border-radius: 8px;
+      font-weight: 600; cursor: pointer; font-size: 0.95em;
+      font-family: Georgia, serif;
+    }
+    .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
+  <script src="/forms/library-shell.js"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -2026,6 +2199,14 @@
         const v = r.data && r.data._scoring && r.data._scoring.ouScore;
         return (typeof v === 'number' && !isNaN(v)) ? v : null;
       };
+      const getPA      = r => {
+        const v = r.data && r.data._scoring && r.data._scoring.pageAuthority;
+        return (typeof v === 'number' && !isNaN(v)) ? v : null;
+      };
+      const getDA      = r => {
+        const v = r.data && r.data._scoring && r.data._scoring.domainAuthority;
+        return (typeof v === 'number' && !isNaN(v)) ? v : null;
+      };
       const getUrl     = r => (r.data && r.data._source && r.data._source.originalUrl) || '';
       const getRank    = r => {
         const v = r.data && r.data._batch && r.data._batch.rank;
@@ -2038,6 +2219,85 @@
         const story = d.classification && d.classification.story;
         const opin  = d.editorial && d.editorial.opinion;
         return !!((story && story.trim()) || (opin && opin.trim()));
+      };
+
+      // First image from the recipe (schema.org image[0]) — used as the
+      // card thumbnail. Strings, list-of-strings, list-of-ImageObject
+      // all coerced down to a single URL or null.
+      const getImage = r => {
+        const img = r.data && r.data.image;
+        if (!img) return null;
+        if (typeof img === 'string') return img.trim() || null;
+        if (Array.isArray(img) && img.length) {
+          const first = img[0];
+          if (typeof first === 'string') return first.trim() || null;
+          if (first && typeof first === 'object') {
+            return (first.url || first.contentUrl || first['@id'] || '').toString().trim() || null;
+          }
+        }
+        return null;
+      };
+
+      // Author — from enrichment's provenance block. Empty when the
+      // recipe hasn't been enriched (most older saves); the byline row
+      // just hides.
+      const getAuthor = r => {
+        const p = r.data && r.data.provenance;
+        return (p && typeof p.author === 'string' && p.author.trim()) || '';
+      };
+
+      // Source domain — display-friendly form for the card. Prefer
+      // _scoring.rootDomain (already canonicalized, no www.), fall
+      // back to deriving from the URL. Strip www. defensively.
+      const getDomain = r => {
+        const root = r.data && r.data._scoring && r.data._scoring.rootDomain;
+        if (root && typeof root === 'string') return root.replace(/^www\./, '');
+        const url = getUrl(r);
+        if (!url) return '';
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+      };
+
+      // Letter grade — Moz-derived headline score. Composite =
+      // PA + max(0, OU): page authority plus an opportunity bonus when
+      // the page punches above its domain baseline (positive OU means
+      // page is stronger than its DA alone would predict). Buckets
+      // tuned against the existing recipe set so most rows land in
+      // the B/C range — A is a real signal, F is genuinely thin.
+      // Returns { letter, tier } or null when no scoring data.
+      const gradeOf = r => {
+        const pa = getPA(r);
+        if (pa === null) return null;
+        const ou = getOU(r);
+        const composite = pa + (ou !== null && ou > 0 ? ou : 0);
+        let letter, tier;
+        if (composite >= 70) { letter = 'A+'; tier = 'a'; }
+        else if (composite >= 60) { letter = 'A';  tier = 'a'; }
+        else if (composite >= 55) { letter = 'A-'; tier = 'a'; }
+        else if (composite >= 50) { letter = 'B+'; tier = 'b'; }
+        else if (composite >= 45) { letter = 'B';  tier = 'b'; }
+        else if (composite >= 40) { letter = 'B-'; tier = 'b'; }
+        else if (composite >= 35) { letter = 'C+'; tier = 'c'; }
+        else if (composite >= 30) { letter = 'C';  tier = 'c'; }
+        else if (composite >= 25) { letter = 'C-'; tier = 'c'; }
+        else if (composite >= 18) { letter = 'D';  tier = 'd'; }
+        else                       { letter = 'F'; tier = 'f'; }
+        return { letter, tier, pa, da: getDA(r), ou };
+      };
+
+      // Relative date — "3 d ago" / "2 hr ago" — same vocabulary used
+      // by the library-shell admin pages so the brand reads consistently.
+      const fmtRelDate = s => {
+        if (!s) return '';
+        try {
+          const d = new Date(s);
+          if (Number.isNaN(d.getTime())) return '';
+          const ageMs = Date.now() - d.getTime();
+          const ageHrs = ageMs / 3600000;
+          if (ageHrs < 1) return Math.round(ageMs / 60000) + ' min ago';
+          if (ageHrs < 24) return Math.round(ageHrs) + ' hr ago';
+          if (ageHrs < 24 * 7) return Math.round(ageHrs / 24) + ' d ago';
+          return d.toLocaleDateString();
+        } catch { return ''; }
       };
 
       // Filter
@@ -2077,74 +2337,140 @@
         const item = document.createElement('li');
         item.className = 'recipe-item';
 
-        const nameDiv = document.createElement('div');
-        nameDiv.className = 'name';
-        nameDiv.textContent = getName(r) || '[Untitled]';
-        item.appendChild(nameDiv);
+        // Thumbnail — image[0] or cream placeholder with a glyph.
+        const thumb = document.createElement('div');
+        thumb.className = 'thumb';
+        const imgUrl = getImage(r);
+        if (imgUrl) {
+          const img = document.createElement('img');
+          img.src = imgUrl;
+          img.alt = '';
+          img.loading = 'lazy';
+          // If the URL 404s or hotlink-blocks, swap to the placeholder
+          // glyph rather than show a broken-image icon.
+          img.onerror = () => {
+            thumb.innerHTML = '<span class="thumb-placeholder">🍳</span>';
+          };
+          thumb.appendChild(img);
+        } else {
+          thumb.innerHTML = '<span class="thumb-placeholder">🍳</span>';
+        }
+        item.appendChild(thumb);
 
-        const meta = document.createElement('div');
-        meta.className = 'meta';
+        const body = document.createElement('div');
+        body.className = 'body';
 
+        // Title — single editorial signal, the only bold on the card.
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = getName(r) || '[Untitled]';
+        body.appendChild(title);
+
+        // Byline — sans small grey, hidden when no author.
+        const author = getAuthor(r);
+        if (author) {
+          const byline = document.createElement('div');
+          byline.className = 'byline';
+          byline.textContent = 'by ' + author;
+          body.appendChild(byline);
+        }
+
+        // Metadata line: GRADE · domain (link) · date · [stale]. Grade
+        // is leading letterspaced caps (terracotta only for A-tier);
+        // the domain is now a clickable <a> opening the original URL
+        // in a new tab — click on the link doesn't load the card.
+        // Stale lives at the tail as a small red mark.
+        const grade = gradeOf(r);
+        const domain = getDomain(r);
+        const url = getUrl(r);
+        const dateStr = fmtRelDate(r.updated_at);
+        const stale = isStale(r);
+        if (grade || domain || dateStr || stale) {
+          const srcLine = document.createElement('div');
+          srcLine.className = 'source-line';
+
+          if (grade) {
+            const g = document.createElement('span');
+            g.className = 'grade-mark tier-' + grade.tier;
+            g.textContent = grade.letter;
+            const parts = [];
+            if (grade.pa !== null) parts.push('PA ' + grade.pa.toFixed(1));
+            if (grade.da !== null) parts.push('DA ' + grade.da.toFixed(1));
+            if (grade.ou !== null) parts.push('OU ' + grade.ou.toFixed(1));
+            g.title = parts.join(' · ');
+            srcLine.appendChild(g);
+          }
+
+          if (domain) {
+            if (srcLine.children.length) {
+              const dot = document.createElement('span');
+              dot.className = 'dot'; dot.textContent = '·';
+              srcLine.appendChild(dot);
+            }
+            // Clickable link to the original URL when we have one;
+            // plain text fallback for local-only recipes (no external
+            // source). Skip the link for BCC self-URLs since those
+            // round-trip back into this same form — not useful.
+            const isExternal = url && !url.startsWith('https://bestcooksclub.com/r/');
+            if (isExternal) {
+              const a = document.createElement('a');
+              a.className = 'source-link';
+              a.href = url;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              a.title = url;
+              a.textContent = domain;
+              a.addEventListener('click', e => e.stopPropagation());
+              srcLine.appendChild(a);
+            } else {
+              const s = document.createElement('span');
+              s.textContent = domain;
+              srcLine.appendChild(s);
+            }
+          }
+
+          if (dateStr) {
+            if (srcLine.children.length) {
+              const dot = document.createElement('span');
+              dot.className = 'dot'; dot.textContent = '·';
+              srcLine.appendChild(dot);
+            }
+            const d = document.createElement('span');
+            d.textContent = dateStr;
+            srcLine.appendChild(d);
+          }
+
+          if (stale) {
+            const mark = document.createElement('span');
+            mark.className = 'stale-mark';
+            mark.textContent = 'stale';
+            mark.title = 'Source page changed since save — re-extract to review';
+            srcLine.appendChild(mark);
+          }
+
+          body.appendChild(srcLine);
+        }
+
+        // Chapter — small-caps category cue, below the source line.
         const chapter = getChapter(r);
         if (chapter) {
-          const pill = document.createElement('span');
-          pill.className = 'pill';
-          pill.textContent = chapter;
-          meta.appendChild(pill);
+          const chap = document.createElement('div');
+          chap.className = 'chapter';
+          chap.textContent = chapter;
+          body.appendChild(chap);
         }
 
-        const ou = getOU(r);
-        if (ou !== null) {
-          const pill = document.createElement('span');
-          pill.className = 'pill ou';
-          pill.textContent = `OU ${ou.toFixed(1)}`;
-          meta.appendChild(pill);
-        }
-
+        // Batch tag — only for batch-imported / master refresh rows.
         const batchName = getBatch(r);
         if (batchName) {
-          const pill = document.createElement('span');
-          pill.className = 'pill batch';
+          const tag = document.createElement('div');
+          tag.className = 'batch-tag';
           const rank = getRank(r);
-          pill.textContent = rank != null ? `${batchName} #${rank}` : batchName;
-          meta.appendChild(pill);
+          tag.textContent = rank != null ? `${batchName} · #${rank}` : batchName;
+          body.appendChild(tag);
         }
 
-        if (isStale(r)) {
-          const pill = document.createElement('span');
-          pill.className = 'pill stale';
-          pill.textContent = '⚠ stale';
-          pill.title = 'Source page changed since save — re-extract to review';
-          meta.appendChild(pill);
-        }
-
-        if (isEnriched(r)) {
-          const pill = document.createElement('span');
-          pill.className = 'pill enriched';
-          pill.textContent = '✎';
-          pill.title = 'Enriched (story / editorial populated)';
-          meta.appendChild(pill);
-        }
-
-        const url = getUrl(r);
-        if (url) {
-          const a = document.createElement('a');
-          a.className = 'source-link';
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          a.title = url;
-          a.textContent = '↗';
-          a.addEventListener('click', e => e.stopPropagation());
-          meta.appendChild(a);
-        }
-
-        const date = document.createElement('span');
-        date.className = 'date';
-        date.textContent = r.updated_at ? new Date(r.updated_at).toLocaleDateString() : '';
-        meta.appendChild(date);
-
-        item.appendChild(meta);
+        item.appendChild(body);
         item.onclick = () => {
           loadForm(r);
           sidebar.classList.remove('open');
@@ -3155,6 +3481,12 @@
       document.body.classList.toggle('sidebar-open', sidebar.classList.contains('open'));
     }
     sidebarToggle.onclick = () => { sidebar.classList.toggle('open'); syncBodyLock(); };
+
+    // Cross-page nav (right-side ⋮ menu). Single source of truth for
+    // admin-page links lives in library-shell.js NAV_ITEMS.
+    if (window.LibraryShell && LibraryShell.initNav) {
+      LibraryShell.initNav({ currentPage: 'recipes' });
+    }
 
     // Close sidebar when clicking outside
     document.addEventListener('click', (e) => {
