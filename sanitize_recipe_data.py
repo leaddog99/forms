@@ -1,7 +1,29 @@
 from recipe_model import RecipeModel
+import html
 import uuid
 from datetime import datetime
 from typing import Any, Dict
+
+
+def _decode_entities_deep(obj: Any) -> Any:
+    """Recursively walk a recipe-shaped dict/list and decode HTML entities
+    on every string value. `html.unescape` handles named (&amp;, &nbsp;,
+    &mdash;), decimal (&#39;), and hex (&#x27;) entities — anything a
+    browser would decode. Strings without an '&' short-circuit so the
+    walk stays cheap. Dict KEYS are untouched (they're schema field names,
+    not user content). Some JSON-LD sources (notably NYT, Kitchn) ship
+    titles and bodies pre-encoded as `Banana &amp; Walnut Loaf`; this is
+    the upstream-canonicalization fix that keeps `&amp;` from leaking
+    into stored data, which would then surface as a literal in any
+    consumer that renders via textContent / .text / json."""
+    if isinstance(obj, str):
+        return html.unescape(obj) if "&" in obj else obj
+    if isinstance(obj, dict):
+        return {k: _decode_entities_deep(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decode_entities_deep(v) for v in obj]
+    return obj
+
 
 def is_nullish(value: Any) -> bool:
     if value is None:
@@ -54,7 +76,11 @@ def _join_if_list(value: Any) -> Any:
 
 
 def sanitize_recipe_data(data: dict) -> dict:
-    sanitized = data.copy()
+    # Decode HTML entities upfront so every downstream defaulting +
+    # validation step works on canonical strings. The data.copy() above
+    # was shallow; _decode_entities_deep returns a new dict tree so we
+    # don't mutate the caller's data.
+    sanitized = _decode_entities_deep(data)
 
     set_if_nullish(sanitized, "@context", "https://schema.org")
     set_if_nullish(sanitized, "@type", "Recipe")

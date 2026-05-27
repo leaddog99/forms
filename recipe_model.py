@@ -8,7 +8,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Union, Literal
 from datetime import datetime
-import os
 
 
 # ============================================================================
@@ -298,143 +297,10 @@ class RecipeModel(BaseModel):
             return ", ".join(str(item) for item in v if item)
         return v
 
-    def is_nullish(self, value):
-        return value in [None, "", [], {}, "null", "None"] or (
-            isinstance(value, list) and all(self.is_nullish(v) for v in value)
-        )
-
-    def file_exists(self, path):
-        try:
-            return os.path.exists(path) and os.path.isfile(path)
-        except:
-            return False
-
-    def needs_image_generation(self) -> bool:
-        has_valid_image_file = any(
-            isinstance(img, str) and not self.is_nullish(img) and self.file_exists(img)
-            for img in self.image or []
-        )
-        return (
-            not has_valid_image_file and
-            self.is_nullish(self.imageSource)
-        )
-
-    def prefers_dish_image(self) -> bool:
-        return (
-            not self.is_nullish(self.name) and
-            not self.is_nullish(self.recipeIngredient) and
-            any(
-                step and hasattr(step, "text") and isinstance(step.text, str) and step.text.strip()
-                for step in self.recipeInstructions or []
-            )
-        )
-
-    def generate_prompt(self) -> str:
-        ingredient_sample = ", ".join(self.recipeIngredient[:3]) if self.recipeIngredient else ""
-
-        if self.prefers_dish_image():
-            base = f"A plated, fully prepared version of '{self.name}',"
-
-            # Add equipment context for proper shape/presentation
-            if self.equipment:
-                equipment_names = []
-                for item in self.equipment:
-                    if hasattr(item, 'name') and item.name:
-                        equipment_names.append(item.name.lower())
-                    elif isinstance(item, dict) and 'name' in item:
-                        equipment_names.append(item['name'].lower())
-                    elif isinstance(item, str):
-                        equipment_names.append(item.lower())
-
-                if equipment_names:
-                    equipment_text = ", ".join(equipment_names)
-                    if any(word in equipment_text for word in ['pie', 'round', 'circular']):
-                        base += f" in a round {equipment_text},"
-                    elif any(word in equipment_text for word in ['baking dish', 'casserole', 'pan']):
-                        base += f" in a {equipment_text},"
-                    else:
-                        base += f" using {equipment_text},"
-
-            # Add cooking method context
-            if self.cookingMethod and not self.is_nullish(self.cookingMethod):
-                method = self.cookingMethod.lower()
-                if 'baking' in method or 'baked' in method:
-                    base += f" golden and bubbling from baking,"
-                elif 'frying' in method or 'fried' in method:
-                    base += f" with crispy, golden edges from frying,"
-                elif 'grilling' in method or 'grilled' in method:
-                    base += f" with grill marks and charred edges,"
-
-            # Extract visual details from instructions
-            visual_details = self._extract_visual_details_from_instructions()
-            if visual_details:
-                base += f" {visual_details},"
-
-            if self.servingSuggestions and not self.is_nullish(self.servingSuggestions):
-                base += f" served with {self.servingSuggestions.strip().rstrip('.')},"
-            if self.recipeCuisine and not self.is_nullish(self.recipeCuisine):
-                base += f" in a {self.recipeCuisine} style,"
-            if ingredient_sample:
-                base += f" made with ingredients like {ingredient_sample},"
-            if self.description and not self.is_nullish(self.description):
-                base += f" {self.description.strip().rstrip('.')}"
-            return base + " — cookbook photo quality, natural lighting, minimal background."
-        else:
-            return f"Stylized flat-lay image of the key ingredients for '{self.name}': " + \
-                ", ".join(self.recipeIngredient or []) + \
-                ". Clean composition, soft shadows, cookbook illustration style."
-
-    def _extract_visual_details_from_instructions(self) -> str:
-        """Extract visual presentation details from recipe instructions"""
-        if not self.recipeInstructions:
-            return ""
-
-        visual_keywords = {
-            'garnish': ['garnish', 'top with', 'sprinkle', 'arrange', 'decorate'],
-            'texture': ['golden', 'brown', 'crispy', 'bubbly', 'bubbling', 'melted', 'caramelized'],
-            'appearance': ['fancy', 'elegant', 'beautiful', 'attractive', 'colorful'],
-            'placement': ['center', 'around', 'on top', 'between', 'in the middle'],
-            'final_touch': ['finish', 'final', 'serve', 'present', 'display']
-        }
-
-        visual_details = []
-
-        for step in self.recipeInstructions:
-            if not step or not hasattr(step, 'text') or not step.text:
-                continue
-
-            step_text = step.text.lower()
-
-            # Look for garnish and topping details
-            if any(keyword in step_text for keyword in visual_keywords['garnish']):
-                # Extract specific garnish items
-                if 'olive' in step_text:
-                    visual_details.append("topped with olives")
-                if 'asparagus' in step_text and 'tip' in step_text:
-                    visual_details.append("garnished with asparagus tips")
-                if 'cheese' in step_text and any(word in step_text for word in ['slice', 'grated', 'melted']):
-                    visual_details.append("with melted cheese on top")
-                if 'herb' in step_text or 'parsley' in step_text or 'cilantro' in step_text:
-                    visual_details.append("garnished with fresh herbs")
-
-            # Look for texture/appearance cues
-            if any(keyword in step_text for keyword in visual_keywords['texture']):
-                if 'golden' in step_text and 'brown' in step_text:
-                    visual_details.append("golden brown and crispy")
-                elif 'bubbly' in step_text or 'bubbling' in step_text:
-                    visual_details.append("bubbling hot")
-                elif 'golden' in step_text:
-                    visual_details.append("golden colored")
-                elif 'caramelized' in step_text:
-                    visual_details.append("with caramelized edges")
-
-            # Look for specific plating/presentation instructions
-            if 'fancy' in step_text and 'top' in step_text:
-                # Extract the fancy topping description
-                fancy_parts = step_text.split('fancy top')[1] if 'fancy top' in step_text else ""
-                if fancy_parts and len(fancy_parts) < 100:  # Keep it reasonable length
-                    visual_details.append(f"elegantly presented{fancy_parts.split('.')[0]}")
-
-        # Remove duplicates and join
-        unique_details = list(dict.fromkeys(visual_details))  # Preserves order
-        return ", ".join(unique_details[:3])  # Limit to 3 most important details
+    # Dead code removed 2026-05-27: an older RecipeModel-based image
+    # prompt builder (file_exists / needs_image_generation /
+    # prefers_dish_image / generate_prompt / _extract_visual_details_
+    # from_instructions, plus their is_nullish helper). The current
+    # image-generation pipeline lives in image_gen_openai.py
+    # (_build_dish_prompt) and never touched any of these. Confirmed
+    # zero callers across active source before removal.

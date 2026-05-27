@@ -38,5 +38,9 @@
   "serpapi_max_pages": 10,
 
   "_comment_branding": "Canonical public domain for BCC permalinks. Used by the live save path's self-URL minting AND by the /r/<id> redirect (both live + batch). Swapping the brand domain is a config edit, not a code change.",
-  "bcc_public_domain": "bestcooksclub.com"
+  "bcc_public_domain": "bestcooksclub.com",
+
+  "_comment_image_gen": "gpt-image-1 dish-image generation (replaces deprecated dall-e-3). quality=standard maps to gpt-image-1 'medium' (~$0.042/image, live form default); quality=hd maps to 'high' (~$0.167/image, cookbook-print-ready). The 'standard'/'hd' vocabulary is preserved here for caller stability across OpenAI's model renamings — image_gen_openai.py maps to the current API values. Size 1024x1024 is square; 1536x1024 (landscape) and 1024x1536 (portrait) are also valid. Per-call quality= overrides take precedence (cookbook export will pass 'hd' explicitly).",
+  "image_gen_quality": "hd",
+  "image_gen_size": "1024x1024"
 }
