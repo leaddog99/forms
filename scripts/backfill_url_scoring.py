@@ -34,14 +34,19 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+# Script lives in scripts/; project root is parent.parent. The sys.path
+# bootstrap lets `input.pipeline.url_scoring` (and other top-level
+# packages) resolve regardless of where the script is invoked from.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from input.pipeline.url_scoring import (  # noqa: E402
     score_url_via_moz, _apply_moz_scores, ensure_metabase_url_table,
     normalize_url,
 )
 
-DB_PATH = "recipes.db"
+DB_PATH = str(PROJECT_ROOT / "recipes.db")
 
 
 def gather_recipes(con: sqlite3.Connection) -> dict[str, list[tuple[int, dict]]]:

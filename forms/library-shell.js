@@ -121,6 +121,10 @@
     { page: 'cookbooks', label: 'Cookbooks', comingSoon: true },
     { page: 'equipment', label: 'Equipment', comingSoon: true },
     { page: 'gourmet',   label: 'Gourmet',   comingSoon: true },
+    // Utility / setup items sit at the bottom, separated from the
+    // entity pages above. "Install bookmarklet" is the most-needed
+    // utility today; future items (settings, exports, etc.) go here.
+    { page: 'install',   label: 'Install bookmarklet', href: '/forms/install.html' },
   ];
 
   function showComingSoon(label) {

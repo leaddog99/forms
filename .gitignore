@@ -47,11 +47,26 @@ to_markdown/__pycache__/
 # Generated outputs (image gen, batch results)
 generated-images/
 batches/
+# generated/ holds AI-generated + user-uploaded recipe images. Runtime
+# accumulating state, not source — created on demand by /images and
+# /recipes/<id>/generate-image. App auto-mkdir's at startup.
+generated/
 
 # Logs / temp DB tools
 recipe_server.log
 recipe_database.db
 recipes.sqbpro
+# uvicorn stdio is redirected to these files by bcc_start.bat —
+# regenerated every restart, never source.
+uvicorn_stdout.log
+uvicorn_stderr.log
+# Per-job runtime logs from the async job system. The dishes form
+# links to the latest via /logs/<filename>; never source.
+logs/
+
+# pycache that the existing entries missed
+scripts/__pycache__/
+intake/__pycache__/
 
 # Loose capture artifacts that landed in repo root
 /momsAsparagusAuGratin.png

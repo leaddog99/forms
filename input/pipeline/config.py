@@ -161,7 +161,12 @@ SAVE_GATE_MIN_INSTRUCTIONS = int(_cfg.get("save_gate_min_instructions", 3))
 # either this or the legacy recipes.tbotb.com host to the form.
 BCC_PUBLIC_DOMAIN = str(_cfg.get("bcc_public_domain", "bestcooksclub.com"))
 
-# Legacy constant — kept for backwards compat with anywhere it might
-# still be referenced. Not currently load-bearing; the actual passing
-# logic uses MIN_OU_SCORE / MIN_DA_SCORE.
-MOZ_PASSING_GRADE = 0
+# DALL-E 3 dish-image generation.
+#   IMAGE_GEN_QUALITY: "standard" ($0.04/image, default for live form) or
+#     "hd" ($0.08, for cookbook-print-ready output). Cookbook export jobs
+#     should override per-call instead of flipping the global default.
+#   IMAGE_GEN_SIZE: "1024x1024" is the cheapest DALL-E 3 size and matches
+#     the form's square thumbnail. "1792x1024" / "1024x1792" cost the
+#     same as hd-square.
+IMAGE_GEN_QUALITY = str(_cfg.get("image_gen_quality", "standard"))
+IMAGE_GEN_SIZE = str(_cfg.get("image_gen_size", "1024x1024"))

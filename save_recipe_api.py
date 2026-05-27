@@ -306,9 +306,6 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
 # catches everything the JSON-LD path doesn't.
 # =====================================================================
 
-_CACHE_STUBBED = False
-
-
 def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
     """Refuse to cache rows that look like a bad extraction (paywall,
     404, picked-the-wrong-recipe sidebar carousel). Returns
@@ -720,11 +717,17 @@ app.add_middleware(
 
 print("[FILE] Setting up static files...")
 
-# Serve static HTML files (e.g., recipe_form.html)
+# Serve the web frontend (HTML / JS / CSS / bookmarklet) from the
+# dedicated forms/ subdirectory. Previously this mount pointed at the
+# project root, which meant /forms/save_recipe_api.py would have leaked
+# Python source — moving the static surface into its own directory
+# scopes the mount to web assets only. URL paths (`/forms/...`) are
+# unchanged; the bat file, bookmarklet, and every <link>/<script>
+# reference continue to work as-is.
 try:
-    forms_path = os.path.dirname(__file__)  # Use the directory this file is in
+    forms_path = os.path.join(os.path.dirname(__file__), "forms")
     app.mount("/forms", StaticFiles(directory=forms_path), name="forms")
-    print("[OK] Static files mounted successfully")
+    print(f"[OK] Static files mounted: {forms_path}")
 except Exception as e:
     print(f"[WARN] Static files mount failed: {e}")
 
@@ -739,6 +742,17 @@ try:
     print(f"[OK] Logs mount: {LOGS_DIR}")
 except Exception as e:
     print(f"[WARN] Logs mount failed: {e}")
+
+# AI-generated dish images (DALL-E 3 via image_gen_openai). Each generation
+# saves to forms/generated/<recipe_id>.jpg and gets served from here.
+# Future: move to S3 / object storage when we have multi-image storage.
+GENERATED_DIR = Path(__file__).resolve().parent / "generated"
+GENERATED_DIR.mkdir(exist_ok=True)
+try:
+    app.mount("/generated", StaticFiles(directory=str(GENERATED_DIR)), name="generated")
+    print(f"[OK] Generated images mount: {GENERATED_DIR}")
+except Exception as e:
+    print(f"[WARN] Generated images mount failed: {e}")
 
 
 # Per-job Tee/lock/log-filename used to live here; moved to
@@ -1027,6 +1041,211 @@ def promote_to_master(recipe_id: str):
         print(f"[ERROR] promote_to_master({recipe_id}) failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Promote failed: {e}")
+
+
+# === Image generation (DALL-E 3) ===
+# Per-recipe dish image generation. Restored 2026-05-26 from the deleted
+# image_gen_openai.py (commit 143e016^). Live form path:
+#   POST /recipes/<id>/generate-image  (optional ?quality=hd&size=...)
+# Loads recipe, calls generate_dish_image, saves to forms/generated/
+# <recipe_id>.jpg, returns the served URL. The form's "Generate dish
+# image" button posts here and stores the returned URL in the recipe's
+# image[0] on the next save.
+# Fetch an image from an external URL and save it locally — "co-opt
+# the source image" so the recipe is permanently independent of
+# whether the source site changes / deletes the image. Same target
+# directory as /images uploads (forms/generated/upload_<uuid>.<ext>).
+#
+# Protections:
+#   - URL scheme must be http(s); other schemes rejected
+#   - Refuses obvious internal-network hostnames (SSRF mitigation)
+#   - Content-Type must be image/*
+#   - Max size 50 MB (streaming download checks as bytes arrive)
+#   - 30s total timeout
+@app.post("/images/fetch")
+async def fetch_image_from_url(request: Request):
+    """Body: {url: "https://..."}. Returns {url, bytes, source_url}."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON body required")
+    source_url = ((body or {}).get("url") or "").strip()
+    if not source_url:
+        raise HTTPException(status_code=400, detail="`url` is required")
+    if not (source_url.startswith("http://") or source_url.startswith("https://")):
+        raise HTTPException(status_code=400,
+                            detail="URL must be http(s)://")
+    # SSRF-lite: reject obvious internal hostnames. This isn't a full
+    # network-level protection (real one would resolve DNS + check
+    # against RFC1918 ranges + IPv6 link-local) but kills the most
+    # common foot-shooting vectors.
+    from urllib.parse import urlparse
+    host = (urlparse(source_url).hostname or "").lower()
+    bad_hosts = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+    bad_prefixes = ("192.168.", "10.", "172.16.", "172.17.", "172.18.",
+                    "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
+                    "172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
+                    "172.29.", "172.30.", "172.31.", "169.254.", "fe80:")
+    if host in bad_hosts or any(host.startswith(p) for p in bad_prefixes):
+        raise HTTPException(status_code=400,
+                            detail="URL points at an internal/private host")
+
+    import requests as _rq
+    MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+    try:
+        # stream=True so we can size-check before fully buffering
+        resp = _rq.get(source_url, timeout=30, stream=True, headers={
+            "User-Agent": "BCC-image-coopt/1.0 (recipes.tbotb.com)",
+        })
+        resp.raise_for_status()
+    except _rq.RequestException as e:
+        raise HTTPException(status_code=502,
+                            detail=f"Source fetch failed: {type(e).__name__}: {e}")
+
+    content_type = (resp.headers.get("content-type") or "").lower().split(";")[0].strip()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400,
+                            detail=f"Source URL didn't return an image (content-type: {content_type or 'unknown'})")
+    # Map content-type to file extension. Same vocabulary as /images.
+    ext_by_mime = {
+        "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/pjpeg": ".jpg",
+        "image/png":  ".png", "image/webp": ".webp", "image/gif": ".gif",
+        "image/heic": ".heic", "image/heif": ".heif",
+    }
+    ext = ext_by_mime.get(content_type, ".jpg")
+
+    # Stream into memory with the size cap enforced as bytes arrive.
+    buf = bytearray()
+    for chunk in resp.iter_content(chunk_size=64 * 1024):
+        if chunk:
+            buf.extend(chunk)
+            if len(buf) > MAX_BYTES:
+                raise HTTPException(status_code=413,
+                                    detail=f"Source image exceeds {MAX_BYTES // (1024*1024)} MB cap")
+    if not buf:
+        raise HTTPException(status_code=502, detail="Source returned 0 bytes")
+
+    filename = f"upload_{uuid.uuid4()}{ext}"
+    out_path = GENERATED_DIR / filename
+    out_path.write_bytes(bytes(buf))
+    url = f"/generated/{filename}"
+    print(f"[IMGFETCH] {source_url} -> {filename} ({len(buf)} bytes, mime={content_type})")
+    return {"url": url, "bytes": len(buf), "source_url": source_url}
+
+
+# Upload a user-supplied image (drag/drop/paste/picker from the form's
+# hero-image area). Saves to forms/generated/upload_<uuid>.<ext> and
+# returns the URL. The same `/generated/` mount serves both AI-generated
+# and uploaded images — single static directory, single mount point.
+# User-uploaded files are prefixed `upload_` to keep them visually
+# distinct from the AI-generated `<recipe_id>.jpg` files in the directory
+# listing.
+@app.post("/images")
+async def upload_image(image: UploadFile = File(...)):
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    # Map content_type to a reasonable extension. Pillow could sniff
+    # this from bytes but the content_type the browser provides is
+    # accurate enough for the common cases (jpeg, png, webp, gif).
+    ext_by_mime = {
+        "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/pjpeg": ".jpg",
+        "image/png":  ".png", "image/webp": ".webp", "image/gif": ".gif",
+        "image/heic": ".heic", "image/heif": ".heif",
+    }
+    ext = ext_by_mime.get(image.content_type.lower())
+    if not ext:
+        # Fall back to whatever extension the browser claimed; refuse
+        # anything that didn't come with an extension we recognize.
+        from pathlib import PurePosixPath
+        suffix = PurePosixPath(image.filename or "").suffix.lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}:
+            ext = suffix
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported image type: {image.content_type}",
+            )
+    content = await image.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty image upload")
+    filename = f"upload_{uuid.uuid4()}{ext}"
+    out_path = GENERATED_DIR / filename
+    out_path.write_bytes(content)
+    url = f"/generated/{filename}"
+    print(f"[IMGUP] {filename} ({len(content)} bytes, mime={image.content_type})")
+    return {"url": url, "bytes": len(content)}
+
+
+@app.post("/recipes/{recipe_id}/generate-image")
+async def generate_recipe_image_endpoint(
+    recipe_id: str,
+    request: Request,
+    quality: Optional[str] = None,
+    size: Optional[str] = None,
+):
+    # Lazy import — pulls openai client construction only when used.
+    from image_gen_openai import generate_dish_image, _build_dish_prompt
+
+    # Optional JSON body: {extra_prompt?: str}. User-supplied override
+    # text appended to the auto-built prompt before generation.
+    extra_prompt = ""
+    try:
+        body = await request.json()
+        if isinstance(body, dict):
+            extra_prompt = (body.get("extra_prompt") or "").strip()
+    except Exception:
+        pass  # no body, or malformed — treat as empty
+
+    owner = _find_recipe_owner(recipe_id)
+    if owner is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    table = _recipes_table_for(owner)
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            f"SELECT data FROM {table} WHERE recipe_id = ?",
+            (recipe_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+
+    try:
+        recipe_dict = json.loads(row[0])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Recipe data unreadable: {e}")
+    name = (recipe_dict.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400,
+                            detail="Recipe needs a name before generating an image")
+
+    # Pre-build the prompt so we can log + return it for transparency.
+    # generate_dish_image internally calls _build_dish_prompt with the
+    # same recipe dict + extra_prompt, so this is purely so the response
+    # includes it.
+    prompt = _build_dish_prompt(recipe_dict, extra_prompt=extra_prompt)
+    print(f"[IMGGEN] {recipe_id} ({owner=}, {quality=}, {size=}, extra_prompt={extra_prompt!r}) name={name!r}")
+    print(f"[IMGGEN] prompt: {prompt}")
+
+    try:
+        t0 = time.perf_counter()
+        img_bytes = generate_dish_image(
+            recipe_dict, quality=quality, size=size, extra_prompt=extra_prompt,
+        )
+        dt_ms = int((time.perf_counter() - t0) * 1000)
+    except Exception as e:
+        print(f"[IMGGEN] FAILED {recipe_id}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502,
+                            detail=f"Image generation failed: {type(e).__name__}: {e}")
+
+    out_path = GENERATED_DIR / f"{recipe_id}.jpg"
+    out_path.write_bytes(img_bytes)
+    url = f"/generated/{recipe_id}.jpg"
+    print(f"[IMGGEN] OK {recipe_id} -> {out_path} ({len(img_bytes)} bytes, {dt_ms}ms)")
+    return {
+        "url": url,
+        "bytes": len(img_bytes),
+        "elapsed_ms": dt_ms,
+        "prompt": prompt,
+    }
 
 
 # === Users (test scaffold) ===
@@ -2689,9 +2908,17 @@ async def stage_markdown_endpoint(request: Request):
         "markdown": md_text,
         "source_url": payload.get("source_url", ""),
         "title": payload.get("title", ""),
+        # The bookmarklet uploads the page's hero image bytes to /images
+        # from inside the user's authenticated session (paywall-aware),
+        # gets back a /generated/<file>.jpg URL, and stashes it here.
+        # The form picks it up and uses it as recipe.image[0], replacing
+        # whatever external URL the JSON-LD shipped — coopting the
+        # source image so we're independent of the source site.
+        "local_hero_image_url": (payload.get("local_hero_image_url") or "").strip() or None,
         "expires_at": now + _STAGE_TTL_SECONDS,
     }
-    print(f"[OK] Staged markdown under token {token[:8]} ({len(md_text)} chars)")
+    print(f"[OK] Staged markdown under token {token[:8]} ({len(md_text)} chars, "
+          f"local_hero={'yes' if _staged_markdown[token]['local_hero_image_url'] else 'no'})")
     return {"token": token}
 
 
@@ -2705,6 +2932,7 @@ async def get_staged_markdown(token: str):
         "markdown": entry["markdown"],
         "source_url": entry.get("source_url", ""),
         "title": entry.get("title", ""),
+        "local_hero_image_url": entry.get("local_hero_image_url"),
     }
 
 

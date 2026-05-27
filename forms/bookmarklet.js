@@ -121,7 +121,131 @@
     return out;
   }
 
-  async function uploadScreenshot(token) {
+  // === Hero image capture ===
+  // The bookmarklet runs in the source page's authenticated session,
+  // so it can read images the server can't (paywalled, signed-CDN,
+  // cookied). Strategy:
+  //   1. Find the hero image URL from JSON-LD (or a fallback DOM walk)
+  //   2. fetch() it with credentials so cookies + auth headers ride along
+  //   3. POST the bytes to our /images endpoint
+  //   4. Pass the resulting local URL through stage-markdown so the form
+  //      uses it as recipe.image[0] instead of the external URL —
+  //      coopting the image so the recipe is permanently independent
+  //      of the source site.
+  function findHeroImageUrl(jsonldArr) {
+    function findRecipe(obj) {
+      if (!obj || typeof obj !== 'object') return null;
+      const t = obj['@type'];
+      if (t === 'Recipe' || (Array.isArray(t) && t.indexOf('Recipe') !== -1)) return obj;
+      if (Array.isArray(obj['@graph'])) {
+        for (const it of obj['@graph']) {
+          const f = findRecipe(it);
+          if (f) return f;
+        }
+      }
+      return null;
+    }
+    function pickUrl(image) {
+      if (!image) return null;
+      if (typeof image === 'string') return image;
+      if (Array.isArray(image)) {
+        for (const i of image) { const u = pickUrl(i); if (u) return u; }
+        return null;
+      }
+      if (typeof image === 'object') {
+        return image.url || image.contentUrl || image['@id'] || null;
+      }
+      return null;
+    }
+    for (const ld of jsonldArr) {
+      const r = findRecipe(ld);
+      if (r) { const u = pickUrl(r.image); if (u) return u; }
+    }
+    // Fallback: first reasonably-sized img inside the recipe container.
+    const candidates = document.querySelectorAll(
+      'article img, main img, [role="main"] img, ' +
+      '.recipe-card img, .wprm-recipe-container img, .tasty-recipes img'
+    );
+    for (const img of candidates) {
+      if (img.naturalWidth >= 200 && img.naturalHeight >= 200) {
+        return img.currentSrc || img.src;
+      }
+    }
+    return null;
+  }
+
+  async function captureHeroImageBytes(heroUrl) {
+    // Primary: fetch with credentials. Works for same-origin paywalled
+    // images (cookies ride along) and CORS-enabled CDNs. Cap latency
+    // so the bookmarklet doesn't stall on hanging requests.
+    try {
+      const res = await Promise.race([
+        fetch(heroUrl, { credentials: 'include' }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('fetch timeout')), 6000))
+      ]);
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size > 0 && (blob.type || '').startsWith('image/')) return blob;
+      } else {
+        console.log('[recipe-bookmarklet] hero fetch HTTP', res.status);
+      }
+    } catch (e) {
+      console.log('[recipe-bookmarklet] hero fetch error:', e && e.message);
+    }
+    // Fallback: the image is already rendered in the DOM, draw it to a
+    // canvas. Works when CORS-fetch is blocked but the <img> tag was
+    // loaded with crossorigin=anonymous (lots of news sites do this).
+    try {
+      const imgs = document.querySelectorAll('img');
+      let target = null;
+      for (const img of imgs) {
+        if ((img.currentSrc || img.src) === heroUrl && img.naturalWidth > 0) {
+          target = img; break;
+        }
+      }
+      if (!target) return null;
+      const c = document.createElement('canvas');
+      c.width = target.naturalWidth;
+      c.height = target.naturalHeight;
+      c.getContext('2d').drawImage(target, 0, 0);
+      return await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.9));
+    } catch (e) {
+      console.log('[recipe-bookmarklet] canvas fallback failed:', e && e.message);
+      return null;
+    }
+  }
+
+  async function captureAndUploadHero(jsonld) {
+    const heroUrl = findHeroImageUrl(jsonld);
+    if (!heroUrl) {
+      console.log('[recipe-bookmarklet] no hero image URL found in JSON-LD or DOM');
+      return null;
+    }
+    console.log('[recipe-bookmarklet] hero image URL:', heroUrl);
+    const blob = await captureHeroImageBytes(heroUrl);
+    if (!blob) return null;
+    try {
+      const fd = new FormData();
+      // Choose a sensible extension from the blob's content-type so the
+      // server saves it with a useful filename.
+      const ext = ((blob.type || 'image/jpeg').split('/')[1] || 'jpg')
+                    .replace('jpeg', 'jpg').replace('+xml', '');
+      fd.append('image', blob, 'hero.' + ext);
+      const uploadRes = await fetch(API + '/images', { method: 'POST', body: fd });
+      if (!uploadRes.ok) {
+        console.log('[recipe-bookmarklet] hero upload HTTP', uploadRes.status);
+        return null;
+      }
+      const { url } = await uploadRes.json();
+      console.log('[recipe-bookmarklet] hero image coopted as', url);
+      return url;
+    } catch (e) {
+      console.log('[recipe-bookmarklet] hero upload failed:', e && e.message);
+      return null;
+    }
+  }
+
+  async function uploadScreenshot(token, root) {
     if (!window.html2canvas) {
       await new Promise(function (res, rej) {
         const s = document.createElement('script');
@@ -145,11 +269,22 @@
       '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">' +
       '<rect width="100%" height="100%" fill="#eee"/></svg>');
 
-    const shotPromise = html2canvas(document.body, {
-      height: document.body.scrollHeight,
-      width: document.body.scrollWidth,
-      windowHeight: document.body.scrollHeight,
-      windowWidth: document.body.scrollWidth,
+    // Scope the screenshot to the recipe-content root (same article /
+    // main / .recipe-card element the markdown walker uses), NOT
+    // document.body. Whole-body screenshots include comments / ads /
+    // footer / related-recipe rails, which on long pages produce
+    // 10,000+ px tall images that downscale to unreadably-narrow
+    // slivers and blow past Anthropic's vision payload cap.
+    const target = root || document.body;
+    const rect = target.getBoundingClientRect();
+    const targetH = Math.max(target.scrollHeight, target.offsetHeight, rect.height);
+    const targetW = Math.max(target.scrollWidth, target.offsetWidth, rect.width);
+
+    const shotPromise = html2canvas(target, {
+      height: targetH,
+      width: targetW,
+      windowHeight: targetH,
+      windowWidth: Math.max(targetW, document.body.scrollWidth),
       useCORS: true, allowTaint: false, logging: false,
       backgroundColor: '#ffffff', imageTimeout: 8000,
       onclone: function (d) {
@@ -185,13 +320,48 @@
       })
     ]);
 
-    const b64 = canvas.toDataURL('image/png').split(',')[1];
+    // Client-side downscale + JPEG encoding before upload. The raw
+    // canvas can easily be 1500x10000 px for a long recipe page,
+    // which as PNG balloons past 10MB — too big to ship and too big
+    // for the server's vision-payload cap even after re-downscale.
+    // Cap the LONG edge at 2000px (matches the server's _MAX_LONG_EDGE)
+    // and encode JPEG q=0.85 (matches the server's downscale settings).
+    // Aspect ratio preserved. This produces a payload that's typically
+    // 200-800 KB instead of multiple MB.
+    const MAX_LONG = 2000;
+    let outW = canvas.width;
+    let outH = canvas.height;
+    const longEdge = Math.max(outW, outH);
+    let dataUrl;
+    if (longEdge > MAX_LONG) {
+      const scale = MAX_LONG / longEdge;
+      outW = Math.round(canvas.width * scale);
+      outH = Math.round(canvas.height * scale);
+      const c2 = document.createElement('canvas');
+      c2.width = outW;
+      c2.height = outH;
+      const ctx = c2.getContext('2d');
+      // White fill in case the source canvas had transparent regions —
+      // JPEG has no alpha and would blacken them otherwise.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, outW, outH);
+      ctx.drawImage(canvas, 0, 0, outW, outH);
+      dataUrl = c2.toDataURL('image/jpeg', 0.85);
+    } else {
+      // Even under the cap, JPEG-encode the canvas — PNG of a screenshot
+      // is wastefully large because every pixel is unique color noise.
+      dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    }
+    const b64 = dataUrl.split(',')[1];
+    console.log('[recipe-bookmarklet] screenshot encoded:',
+                canvas.width + 'x' + canvas.height + ' -> ' + outW + 'x' + outH,
+                '| b64 chars:', b64.length);
     const uploadRes = await fetch(API + '/stage-image/' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_b64: b64 })
     });
-    console.log('[recipe-bookmarklet] screenshot uploaded:', uploadRes.status, '| b64 chars:', b64.length);
+    console.log('[recipe-bookmarklet] screenshot uploaded:', uploadRes.status);
   }
 
   try {
@@ -214,10 +384,20 @@
     }
     body += '---\n\n' + md(cleaned).replace(/\n{3,}/g, '\n\n').trim();
 
+    // Coopt the hero image from the user's authenticated browser
+    // session BEFORE staging markdown — the local URL rides through
+    // the stage payload so the form uses it as image[0]. Failure
+    // returns null and we fall through with the external URL still
+    // in the JSON-LD; recipe still works, just keeps the external
+    // dependency. The whole step is capped at ~8s by inner timeouts
+    // so a hanging image fetch can't block the popup.
+    const localHeroUrl = await captureAndUploadHero(jsonld);
+
     const payload = {
       markdown: body,
       source_url: location.href,
-      title: document.title
+      title: document.title,
+      local_hero_image_url: localHeroUrl || null
     };
 
     const stageRes = await fetch(API + '/stage-markdown', {
@@ -234,7 +414,10 @@
       '&staged=' + encodeURIComponent(token);
 
     try {
-      await uploadScreenshot(token);
+      // Pass the recipe `root` so the screenshot scopes to just the
+      // recipe content, not the entire document body (which includes
+      // comments / ads / footer on long pages).
+      await uploadScreenshot(token, root);
     } catch (e) {
       console.log('[recipe-bookmarklet] screenshot skipped/failed:', e && e.message ? e.message : e);
     }

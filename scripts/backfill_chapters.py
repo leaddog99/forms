@@ -20,10 +20,17 @@ import sqlite3
 import sys
 import time
 from collections import Counter
+from pathlib import Path
 
-from extract.chapter_classifier import classify_chapter
+# Script lives in scripts/; add project root to sys.path so `extract.`
+# (and any other top-level package) resolves regardless of cwd.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-DB_PATH = "recipes.db"
+from extract.chapter_classifier import classify_chapter  # noqa: E402
+
+DB_PATH = str(PROJECT_ROOT / "recipes.db")
 
 
 def main():

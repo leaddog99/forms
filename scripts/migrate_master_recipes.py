@@ -27,8 +27,12 @@ import json
 import sqlite3
 import sys
 from datetime import datetime
+from pathlib import Path
 
-DB_PATH = "recipes.db"
+# Script lives in scripts/; resolve recipes.db at the project root
+# regardless of where it's invoked from.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = str(PROJECT_ROOT / "recipes.db")
 
 
 def main() -> int:

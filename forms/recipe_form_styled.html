@@ -16,6 +16,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Recipe Manager</title>
+  <!-- Suppress favicon 404 noise in DevTools until we ship a real brand
+       favicon. data: URL tells the browser the icon is empty, so it
+       doesn't go looking for /favicon.ico. -->
+  <link rel="icon" href="data:," />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
   <!-- Shared design tokens + base components. Comes BEFORE the inline
        <style> so the inline rules below win on the cascade — visual
@@ -170,10 +174,13 @@
     }
 
     .sidebar.open {
-      /* Align the sidebar's left edge with the form's left edge.
-         (100vw - 960px) / 2 = the form's left margin on wide screens;
-         clamped to 0 on viewports narrower than 960px so it just
-         pins to the viewport edge there. */
+      /* Align the sidebar's left edge with the FORM's left edge — i.e.
+         the left edge of the centered 960px page column. On wide
+         monitors the sidebar appears flush with the form, not against
+         the browser-window edge. On viewports narrower than 960px the
+         calc() clamps to 0 so the sidebar pins to the viewport edge
+         (no awkward margin). Mobile branch in the narrow-screen media
+         query below uses 100vw + left: 0 for full-width drawer. */
       left: max(0px, calc((100vw - 960px) / 2));
     }
 
@@ -324,7 +331,7 @@
       letter-spacing: -0.005em;
       overflow: hidden;
       display: -webkit-box;
-      -webkit-line-clamp: 2;
+      -webkit-line-clamp: 3;
       -webkit-box-orient: vertical;
       word-break: break-word;
       margin-bottom: 4px;
@@ -343,11 +350,11 @@
       white-space: nowrap;
     }
 
-    /* Source / date / grade line — sans, 12px, slightly lighter than
+    /* Source / date / grade line — sans, 14px, slightly lighter than
        byline (#6e6e6e). Dot separator matches NYT spacing. */
     .recipe-item .source-line {
       font-family: var(--sans);
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 400;
       color: #6e6e6e;
       line-height: 1.45;
@@ -360,16 +367,28 @@
 
     /* Domain as clickable link — NYT's quiet link treatment: same color
        as surrounding text, underline only on hover. Click goes to the
-       original URL in a new tab; doesn't trigger the card's load action. */
+       original URL in a new tab; doesn't trigger the card's load action.
+       The trailing external-link icon is a Lucide SVG that inherits the
+       link color via stroke: currentColor — same icon Claude + most
+       modern UIs use to signal "opens elsewhere". */
     .recipe-item .source-link {
       color: inherit;
       text-decoration: none;
       border-bottom: 1px dotted transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
     .recipe-item .source-link:hover {
       color: var(--ink-strong);
       border-bottom-color: #b0b0b0;
     }
+    .recipe-item .source-link .ext-icon {
+      width: 12px; height: 12px;
+      vertical-align: -1px;
+      opacity: 0.7;
+    }
+    .recipe-item .source-link:hover .ext-icon { opacity: 1; }
 
     /* Grade — inline letterspaced caps, NYT's small-caps label register.
        A-tier wears the lone color accent (terracotta), matching the red
@@ -383,16 +402,24 @@
     }
     .recipe-item .grade-mark.tier-a { color: var(--accent-red); }
 
-    /* Chapter — NYT-style small-caps section label, sits at the
-       bottom of the metadata stack. */
+    /* Chapter — NYT-style kicker / eyebrow over the title. Small-caps
+       sans, letterspaced, muted grey. Sits as the first line of the
+       body block; the title hangs tight against it (negative margin
+       to pull the title up ~8px closer to the kicker, per design
+       crit 2026-05-26).
+       line-height: 1 + negative margin-top zeros out the typographic
+       leading above the caps so the visible top of the letters lines
+       up flush with the top edge of the thumbnail image to the left. */
     .recipe-item .chapter {
       font-family: var(--sans);
-      font-size: 11px;
+      font-size: 12px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #8a8a8a;
       font-weight: 500;
-      margin-top: 4px;
+      line-height: 1;
+      margin-top: 1px;
+      margin-bottom: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -506,6 +533,14 @@
     .hero-section.has-image {
       min-height: 0;
       aspect-ratio: var(--hero-aspect, 4 / 5);
+    }
+    /* Active state while a file is being dragged over the hero —
+       echoes the recipe drop-zone treatment so the visual language
+       is consistent. */
+    .hero-section.drag-over {
+      outline: 2px dashed var(--accent);
+      outline-offset: -8px;
+      background: var(--accent-soft);
     }
 
     .hero-section img {
@@ -647,6 +682,14 @@
     /* Story is intentionally longer (history / location / traditional /
        modern usage), so give it more headroom before the scroll kicks in. */
     textarea#classification_story.auto-grow { max-height: 560px; }
+    /* Description is a 2-4 sentence summary — cap it shorter than the
+       default 360px so a wordy description scrolls inside the textarea
+       instead of pushing the rest of the form down the page. */
+    textarea#description.auto-grow { max-height: 180px; }
+    /* Make the in-textarea scrollbar visibly present (not just on
+       hover) when overflow-y is active. iOS gets touch-scroll
+       momentum so finger-drag works inside the box. */
+    textarea.auto-grow { scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 
     /* Two Column Recipe Layout */
     .recipe-columns {
@@ -1264,11 +1307,12 @@
          occupy half the viewport. */
       .hero-section { min-height: 200px; }
 
-      /* Sidebar grabs most of the screen on mobile (260px is too
-         cramped for 375-430px viewports). The hidden state must push
-         it ALL the way off-screen (-100% of its own width) since the
-         desktop -280px no longer covers the wider mobile sidebar. */
-      .sidebar { width: 86vw; max-width: 320px; left: -100%; }
+      /* Sidebar takes the full viewport width on mobile — iPhone
+         portrait is ~360-430px, and a partial-coverage sidebar with
+         a sliver of form visible behind reads as a UX mistake. Native
+         iOS apps all use full-width drawers; we match. The hidden
+         state pushes it -100% of its own width off-screen. */
+      .sidebar { width: 100vw; max-width: none; left: -100%; }
       .sidebar.open { left: 0; }
 
       /* Recipe-content cards: tighter padding so the inner inputs
@@ -1535,9 +1579,26 @@
               <img id="heroImage" style="display:none" />
               <input type="file" id="imageUpload" accept="image/*" />
             </div>
-            <div class="form-group" style="margin-top:10px;margin-bottom:0;">
-              <input type="url" id="heroImageUrl" placeholder="Image URL…" />
+            <div class="form-group" style="margin-top:10px;margin-bottom:0; display:flex; gap:8px; align-items:center;">
+              <input type="url" id="heroImageUrl" placeholder="Image URL…" style="flex:1;" />
+              <button type="button" id="generateImageBtn" class="secondary"
+                      title="Generate a dish image with gpt-image-1. Saved recipes only."
+                      style="white-space:nowrap; padding:8px 14px;">
+                Generate
+              </button>
             </div>
+            <!-- Optional user override appended to the auto-built prompt
+                 before generation. Use to correct details the auto-prompt
+                 misses (visual specifics, ingredient form, styling tweaks).
+                 Collapsed by default so it doesn't crowd the form. -->
+            <details class="form-group" id="imageGenExtraDetails" style="margin-top:8px; margin-bottom:0;">
+              <summary style="font-size: 0.82em; color: var(--muted); cursor: pointer; user-select: none;">
+                Tweak generation prompt (optional)
+              </summary>
+              <textarea id="imageGenExtraPrompt"
+                        placeholder="e.g., carrots should be shredded not chunked; thin glaze brushed on, not poured; served on a blue ceramic plate."
+                        style="margin-top: 6px; min-height: 70px; font-size: 0.9em; font-family: inherit;"></textarea>
+            </details>
           </div>
         </div>
 
@@ -2192,9 +2253,22 @@
       const chapterFilter = (chapterEl && chapterEl.value) || '';
       const sortKey = (sortEl && sortEl.value) || 'updated_desc';
 
+      // HTML-entity decoder for fields that arrive double-encoded from
+      // some JSON-LD sources (e.g. titles with "&amp;" instead of "&").
+      // Uses a throwaway <textarea> so it handles every named + numeric
+      // entity browsers know about, not just the common five.
+      const _decodeEntitiesEl = document.createElement('textarea');
+      const decodeEntities = s => {
+        if (s == null) return '';
+        const str = String(s);
+        if (str.indexOf('&') === -1) return str;
+        _decodeEntitiesEl.innerHTML = str;
+        return _decodeEntitiesEl.value;
+      };
+
       // Per-row pickers used by both filtering and rendering.
-      const getName    = r => (r.data && r.data.name) || '';
-      const getChapter = r => (r.data && r.data.classification && r.data.classification.chapter) || '';
+      const getName    = r => decodeEntities((r.data && r.data.name) || '');
+      const getChapter = r => decodeEntities((r.data && r.data.classification && r.data.classification.chapter) || '');
       const getOU      = r => {
         const v = r.data && r.data._scoring && r.data._scoring.ouScore;
         return (typeof v === 'number' && !isNaN(v)) ? v : null;
@@ -2243,7 +2317,8 @@
       // just hides.
       const getAuthor = r => {
         const p = r.data && r.data.provenance;
-        return (p && typeof p.author === 'string' && p.author.trim()) || '';
+        const raw = (p && typeof p.author === 'string' && p.author.trim()) || '';
+        return decodeEntities(raw);
       };
 
       // Source domain — display-friendly form for the card. Prefer
@@ -2360,6 +2435,16 @@
         const body = document.createElement('div');
         body.className = 'body';
 
+        // Chapter eyebrow — NYT-style small-caps kicker that sits as
+        // the first line of the body block, above the title.
+        const chapterTop = getChapter(r);
+        if (chapterTop) {
+          const chap = document.createElement('div');
+          chap.className = 'chapter';
+          chap.textContent = chapterTop;
+          body.appendChild(chap);
+        }
+
         // Title — single editorial signal, the only bold on the card.
         const title = document.createElement('div');
         title.className = 'title';
@@ -2375,42 +2460,26 @@
           body.appendChild(byline);
         }
 
-        // Metadata line: GRADE · domain (link) · date · [stale]. Grade
-        // is leading letterspaced caps (terracotta only for A-tier);
-        // the domain is now a clickable <a> opening the original URL
-        // in a new tab — click on the link doesn't load the card.
-        // Stale lives at the tail as a small red mark.
-        const grade = gradeOf(r);
+        // Metadata line: just the clickable source domain + a stale
+        // mark when applicable. Grade and elapsed-date were dropped
+        // 2026-05-26 to simplify the card; both helpers (gradeOf,
+        // fmtRelDate) remain available for when they come back.
         const domain = getDomain(r);
         const url = getUrl(r);
-        const dateStr = fmtRelDate(r.updated_at);
         const stale = isStale(r);
-        if (grade || domain || dateStr || stale) {
+        if (domain || stale) {
           const srcLine = document.createElement('div');
           srcLine.className = 'source-line';
 
-          if (grade) {
-            const g = document.createElement('span');
-            g.className = 'grade-mark tier-' + grade.tier;
-            g.textContent = grade.letter;
-            const parts = [];
-            if (grade.pa !== null) parts.push('PA ' + grade.pa.toFixed(1));
-            if (grade.da !== null) parts.push('DA ' + grade.da.toFixed(1));
-            if (grade.ou !== null) parts.push('OU ' + grade.ou.toFixed(1));
-            g.title = parts.join(' · ');
-            srcLine.appendChild(g);
-          }
-
           if (domain) {
-            if (srcLine.children.length) {
-              const dot = document.createElement('span');
-              dot.className = 'dot'; dot.textContent = '·';
-              srcLine.appendChild(dot);
-            }
             // Clickable link to the original URL when we have one;
             // plain text fallback for local-only recipes (no external
             // source). Skip the link for BCC self-URLs since those
             // round-trip back into this same form — not useful.
+            // TODO: replace `domain` text with a friendly site name
+            // (e.g. "Natasha's Kitchen" from "natashaskitchen.com")
+            // once we have a domain→display-name map. See bcc-state-
+            // code.md to-do.
             const isExternal = url && !url.startsWith('https://bestcooksclub.com/r/');
             if (isExternal) {
               const a = document.createElement('a');
@@ -2419,7 +2488,18 @@
               a.target = '_blank';
               a.rel = 'noopener noreferrer';
               a.title = url;
-              a.textContent = domain;
+              // Domain text + Lucide external-link SVG icon (same
+              // glyph Claude and most modern UIs use to signal
+              // "opens off-site"). Inline SVG so it inherits color
+              // via stroke: currentColor — quiet by default,
+              // darkens on hover with the link text.
+              a.innerHTML =
+                `${domain.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}` +
+                `<svg class="ext-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+                  `<path d="M15 3h6v6"/>` +
+                  `<path d="M10 14 21 3"/>` +
+                  `<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>` +
+                `</svg>`;
               a.addEventListener('click', e => e.stopPropagation());
               srcLine.appendChild(a);
             } else {
@@ -2427,17 +2507,6 @@
               s.textContent = domain;
               srcLine.appendChild(s);
             }
-          }
-
-          if (dateStr) {
-            if (srcLine.children.length) {
-              const dot = document.createElement('span');
-              dot.className = 'dot'; dot.textContent = '·';
-              srcLine.appendChild(dot);
-            }
-            const d = document.createElement('span');
-            d.textContent = dateStr;
-            srcLine.appendChild(d);
           }
 
           if (stale) {
@@ -2451,14 +2520,8 @@
           body.appendChild(srcLine);
         }
 
-        // Chapter — small-caps category cue, below the source line.
-        const chapter = getChapter(r);
-        if (chapter) {
-          const chap = document.createElement('div');
-          chap.className = 'chapter';
-          chap.textContent = chapter;
-          body.appendChild(chap);
-        }
+        // (Chapter now renders above the title — see the eyebrow
+        // block right after `body` is created above.)
 
         // Batch tag — only for batch-imported / master refresh rows.
         const batchName = getBatch(r);
@@ -3187,6 +3250,12 @@
       heroPlaceholder.style.display = 'flex';
       heroSectionEl.classList.remove('has-image');
       heroSectionEl.style.removeProperty('--hero-aspect');
+      // Image-gen tweak textarea — no `name` attribute so form.reset()
+      // skips it in some browsers; clear explicitly.
+      const _extraPrompt = document.getElementById('imageGenExtraPrompt');
+      if (_extraPrompt) _extraPrompt.value = '';
+      const _extraDetails = document.getElementById('imageGenExtraDetails');
+      if (_extraDetails) _extraDetails.open = false;
       clearLists();
       // Drop any stashed passthrough fields so the next save doesn't carry
       // provenance/classification/etc. from a previously loaded record.
@@ -3507,6 +3576,26 @@
     const heroSectionEl = document.getElementById('heroSection');
     function applyHeroImageFromUrl() {
       const url = (heroImageUrl.value || '').trim();
+      // blob: URLs are origin-scoped (a blob: from gemini.google.com
+      // can only be loaded by gemini.google.com), and data: URLs would
+      // be megabytes in the saved recipe if persisted. Refuse both with
+      // a useful message — user needs to download the image first and
+      // drop the file, or paste the public https:// URL of the image.
+      if (url.startsWith('blob:') || url.startsWith('data:')) {
+        heroImageUrl.value = '';
+        heroImage.removeAttribute('src');
+        heroImage.style.display = 'none';
+        heroPlaceholder.style.display = 'flex';
+        heroSectionEl.classList.remove('has-image');
+        heroSectionEl.style.removeProperty('--hero-aspect');
+        const kind = url.startsWith('blob:') ? "browser-internal (blob:)" : "embedded (data:)";
+        showFeedback(
+          `That's a ${kind} URL — it won't work outside the page that created it. ` +
+          `Right-click the image → "Save image as…", then drag the file here (or use the Add image button).`,
+          'error'
+        );
+        return;
+      }
       if (url) {
         heroImage.src = url;
         heroImage.style.display = 'block';
@@ -3520,6 +3609,63 @@
       }
     }
     heroImageUrl.addEventListener('input', applyHeroImageFromUrl);
+
+    // Generate dish image (DALL-E 3 via /recipes/<id>/generate-image).
+    // Requires a saved recipe — the endpoint looks the recipe up by
+    // recipe_id and uses its name for the prompt. Result URL goes into
+    // the heroImageUrl input, which auto-paints the hero via the
+    // existing applyHeroImageFromUrl path. Doesn't auto-save; user
+    // hits Save when they're happy with the result.
+    const generateImageBtn = document.getElementById('generateImageBtn');
+    if (generateImageBtn) {
+      generateImageBtn.addEventListener('click', async () => {
+        const recipeId = (document.getElementById('recipe_id').value || '').trim();
+        const name = (document.getElementById('name').value || '').trim();
+        if (!recipeId) {
+          showFeedback('Save the recipe first — the generator needs a recipe_id to write back to.', 'error');
+          return;
+        }
+        if (!name) {
+          showFeedback('Add a recipe name first (the name is the prompt).', 'error');
+          return;
+        }
+        // Optional user-tweak text appended to the auto-built prompt
+        // on the server side. Empty string when the textarea is blank.
+        const extraEl = document.getElementById('imageGenExtraPrompt');
+        const extraPrompt = ((extraEl && extraEl.value) || '').trim();
+
+        generateImageBtn.disabled = true;
+        const originalLabel = generateImageBtn.textContent;
+        generateImageBtn.textContent = 'Generating…';
+        showFeedback('Generating dish image (gpt-image-1, ~30-50s for hd)…', 'info');
+        try {
+          const res = await fetch(`${API}/recipes/${encodeURIComponent(recipeId)}/generate-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ extra_prompt: extraPrompt }),
+          });
+          const result = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showFeedback(`Generate failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result))}`, 'error');
+            return;
+          }
+          // Absolute URL + cache-bust query so (a) the field passes its
+          // type="url" validation when the user clicks Save, (b) the
+          // browser fetches the freshly-written file even if a prior
+          // generation cached the same path, and (c) the saved
+          // recipe.image[0] is a portable URL not a relative path.
+          const url = `${window.location.origin}${result.url}?t=${Date.now()}`;
+          heroImageUrl.value = url;
+          applyHeroImageFromUrl();
+          showFeedback(`Image generated (${Math.round((result.elapsed_ms || 0) / 1000)}s). Save to persist on this recipe.`, 'success');
+        } catch (err) {
+          showFeedback(`Generate failed: ${err.message || err}`, 'error');
+        } finally {
+          generateImageBtn.disabled = false;
+          generateImageBtn.textContent = originalLabel;
+        }
+      });
+    }
     // Once the natural size is known (URL load or file upload), let the box
     // adopt the image's aspect ratio so landscape/portrait/square all fit.
     heroImage.addEventListener('load', () => {
@@ -3535,18 +3681,100 @@
       heroSectionEl.style.removeProperty('--hero-aspect');
     });
 
+    // Upload a hero image (drag/drop/paste/picker). Two-phase UX:
+    // immediate optimistic display via FileReader's data URL, then
+    // background POST /images to persist; on success we swap the
+    // heroImageUrl input to the absolute URL so save() picks it up.
+    // On failure the optimistic preview stays visible but the input
+    // is left blank — user knows save won't persist this image.
+    async function uploadHeroImage(file) {
+      if (!file) return;
+      if (!file.type || !file.type.startsWith('image/')) {
+        showFeedback(`Not an image (${file.type || 'unknown type'})`, 'error');
+        return;
+      }
+      // Optimistic preview while the upload is in flight.
+      try {
+        const dataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = () => rej(r.error);
+          r.readAsDataURL(file);
+        });
+        heroImage.src = dataUrl;
+        heroImage.style.display = 'block';
+        heroPlaceholder.style.display = 'none';
+      } catch (e) { /* preview failed — keep going, the upload may still succeed */ }
+
+      showFeedback('Uploading image…', 'info');
+      try {
+        const fd = new FormData();
+        fd.append('image', file, file.name || 'upload');
+        const res = await fetch(`${API}/images`, { method: 'POST', body: fd });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showFeedback(`Upload failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result))}`, 'error');
+          return;
+        }
+        // Absolute URL + cache-bust so the field's type="url" validation
+        // passes and the saved recipe.image[0] is portable across hosts.
+        const absUrl = `${window.location.origin}${result.url}?t=${Date.now()}`;
+        heroImageUrl.value = absUrl;
+        applyHeroImageFromUrl();
+        showFeedback('Image uploaded. Save to persist on this recipe.', 'success');
+      } catch (err) {
+        showFeedback(`Upload failed: ${err.message || err}`, 'error');
+      }
+    }
+
     imageUpload.onchange = (e) => {
       const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          heroImage.src = ev.target.result;
-          heroImage.style.display = 'block';
-          heroPlaceholder.style.display = 'none';
-        };
-        reader.readAsDataURL(file);
-      }
+      if (file) uploadHeroImage(file);
     };
+
+    // Drag-and-drop on the hero image well. Same pattern as the recipe
+    // drop zone — dragover toggles a visual state, drop posts the file
+    // to /images. Scoped to the hero box so dropping elsewhere still
+    // routes to the recipe-extraction drop zone.
+    if (heroSectionEl) {
+      heroSectionEl.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        heroSectionEl.classList.add('drag-over');
+      });
+      heroSectionEl.addEventListener('dragleave', (e) => {
+        // Only un-highlight when leaving the section itself, not when
+        // moving over a child element (relatedTarget inside section).
+        if (e.relatedTarget && heroSectionEl.contains(e.relatedTarget)) return;
+        heroSectionEl.classList.remove('drag-over');
+      });
+      heroSectionEl.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();   // keep the recipe drop zone from also handling
+        heroSectionEl.classList.remove('drag-over');
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) uploadHeroImage(file);
+      });
+
+      // Paste a clipboard image directly into the hero area. The
+      // document-level paste handler (which routes to recipe
+      // extraction) is gated by e._handled — flagging it here means
+      // the global handler skips this event.
+      heroSectionEl.addEventListener('paste', (e) => {
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (const item of items) {
+          if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              e.stopPropagation();
+              e._handled = true;
+              uploadHeroImage(file);
+              return;
+            }
+          }
+        }
+      });
+    }
 
     // Auto-grow textareas, capped at the element's CSS max-height. When
     // content exceeds the cap, height stays pinned and we switch to a
@@ -3807,6 +4035,11 @@
     let stagedToken = null;
     let stagedSourceUrl = '';
     let stagedTitle = '';
+    // Local URL of the hero image the bookmarklet already coopted to
+    // our /generated/ store from the source page's authenticated session.
+    // When present, overrides recipe.image[0] post-extract so the saved
+    // recipe doesn't depend on the source site for its image.
+    let stagedLocalHeroUrl = '';
 
     // The full last-extracted recipe — kept so save can pass through fields
     // the form has no UI for (provenance, classification, _scoring) instead
@@ -3868,12 +4101,29 @@
       return { b64: null, reason: 'timeout' };
     }
 
-    function b64ToFile(b64, filename = 'screenshot.png', mime = 'image/png') {
+    function b64ToFile(b64, filename = null, mime = null) {
+      // Sniff the actual image format from the base64 magic prefix.
+      // The bookmarklet ships JPEG now (smaller); older or other
+      // callers may still produce PNG. Pick the right mime + extension
+      // so the multipart upload reaches the server tagged correctly.
+      // Anthropic vision rejects mime/bytes mismatches with a 400.
+      let detectedMime = mime;
+      let ext = 'png';
+      if (!detectedMime) {
+        if (b64.startsWith('/9j/'))       { detectedMime = 'image/jpeg'; ext = 'jpg'; }
+        else if (b64.startsWith('iVBORw0')) { detectedMime = 'image/png';  ext = 'png'; }
+        else if (b64.startsWith('R0lGOD'))  { detectedMime = 'image/gif';  ext = 'gif'; }
+        else if (b64.startsWith('UklGR'))   { detectedMime = 'image/webp'; ext = 'webp'; }
+        else { detectedMime = 'image/png'; ext = 'png'; }  // fallback
+      } else {
+        ext = (detectedMime.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      }
+      const safeName = filename || ('screenshot.' + ext);
       const bin = atob(b64);
       const len = bin.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-      return new File([bytes], filename, { type: mime });
+      return new File([bytes], safeName, { type: detectedMime });
     }
 
     async function extractFromStagedImage(token) {
@@ -4130,6 +4380,19 @@
         const result = await res.json();
 
         if (res.ok && result.success) {
+          // Coopt the hero image: if the bookmarklet captured + uploaded
+          // the source page's hero image (paywall-aware client-side
+          // fetch), the resulting /generated/<file>.jpg URL is in
+          // stagedLocalHeroUrl. Override recipe.image[0] with the
+          // absolute form of that URL so the form's hero well displays
+          // our local copy and the saved recipe is independent of the
+          // source site for its image.
+          if (stagedLocalHeroUrl && result.recipe) {
+            const absUrl = stagedLocalHeroUrl.startsWith('http')
+              ? stagedLocalHeroUrl
+              : `${window.location.origin}${stagedLocalHeroUrl}`;
+            result.recipe.image = [absUrl];
+          }
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
           captureExtractionTrace(result);
@@ -4591,6 +4854,11 @@
         stagedToken = token;
         stagedSourceUrl = data.source_url || params.get('url') || '';
         stagedTitle = data.title || '';
+        // Local hero URL from the bookmarklet's authenticated-session
+        // image capture — overrides the JSON-LD external URL in
+        // recipe.image[0] inside extractFromMarkdown's response handling
+        // so the recipe is coopted from the source site.
+        stagedLocalHeroUrl = data.local_hero_image_url || '';
         // Strip token from the URL but leave the in-memory state in place.
         window.history.replaceState({}, '', window.location.pathname);
         extractFromMarkdown(file, stagedSourceUrl, stagedTitle);
