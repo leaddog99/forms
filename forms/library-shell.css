@@ -371,3 +371,99 @@ body.sidebar-open {
   .action-footer button { padding: 8px 12px; font-size: 0.88em; }
   .action-footer .feedback { flex-basis: 100%; text-align: left; order: 99; }
 }
+
+/* ============================================================
+   Exceptionalism grade badge — shared across pages.
+   Pair with LibraryShell.renderExcBadge() in library-shell.js.
+
+   Editorial monogram: letter is the focal point, +/- a small
+   superscript. Tier colors grade through saturation rather than
+   hue so the page reads as one color story.
+     A+ : filled accent, white letter (critic's-pick register)
+     A  : accent letter on soft-bg + outline
+     A- : accent letter, outline only
+     B  : ink letter, no fill
+     C  : muted grey, outlined
+     D  : pale grey, dashed
+     F  : near-invisible — completeness only
+
+   Color tokens (--accent, --accent-soft, --ink, --muted, --line)
+   come from the host page's :root; both recipe_form_styled.html
+   and library-shell-using pages share equivalent values so the
+   palette is consistent across the app.
+   ============================================================ */
+.exc-badge {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0;
+  font-family: var(--sans, "Inter", -apple-system, sans-serif);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-radius: 4px;
+  padding: 3px 7px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  transition: transform 0.12s ease;
+  user-select: none;
+  cursor: default;
+  vertical-align: middle;
+}
+.exc-badge .exc-letter { font-size: 1em; }
+.exc-badge .exc-suffix {
+  font-size: 0.62em;
+  font-weight: 700;
+  margin-left: 1px;
+  position: relative;
+  top: -0.32em;
+}
+.exc-badge.small  { font-size: 12px; padding: 2px 5px; border-radius: 3px; }
+.exc-badge.medium { font-size: 14px; }
+.exc-badge.large  { font-size: 18px; padding: 4px 9px; border-radius: 5px; }
+
+.exc-badge.tier-a-plus {
+  background: var(--accent, #9b4a22);
+  color: #fff;
+  border: 1px solid var(--accent, #9b4a22);
+}
+.exc-badge.tier-a {
+  background: var(--accent-soft, #ead3c6);
+  color: var(--accent, #9b4a22);
+  border: 1px solid var(--accent, #9b4a22);
+}
+.exc-badge.tier-a-minus {
+  background: transparent;
+  color: var(--accent, #9b4a22);
+  border: 1px solid var(--accent, #9b4a22);
+}
+.exc-badge.tier-b {
+  background: transparent;
+  color: var(--ink, #2a211b);
+  border: 1px solid var(--line, #e2d6c8);
+}
+.exc-badge.tier-c {
+  background: transparent;
+  color: var(--muted, #74695f);
+  border: 1px solid var(--line, #e2d6c8);
+  font-weight: 600;
+}
+.exc-badge.tier-d {
+  background: transparent;
+  color: #a89684;
+  border: 1px dashed var(--line, #e2d6c8);
+  font-weight: 500;
+}
+.exc-badge.tier-f {
+  background: transparent;
+  color: #c4b6a5;
+  border: 1px dashed var(--line, #e2d6c8);
+  font-weight: 500;
+}
+.exc-badge.tier-none {
+  background: transparent;
+  color: var(--muted, #74695f);
+  border: 1px dashed var(--line, #e2d6c8);
+  font-weight: 400;
+  font-style: italic;
+}
+.exc-badge:hover { transform: translateY(-1px); }

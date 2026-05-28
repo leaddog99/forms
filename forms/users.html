@@ -92,6 +92,21 @@
     .err { color: var(--danger); font-size: 0.86rem; margin-left: auto; }
     .note { color: var(--muted); font-size: 0.82rem; margin-top: 16px; }
     .empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+    /* Role pill — accent-toned for staff (owner/admin/editor/author),
+       muted-grey for members. Same vocabulary as the uid-pill so both
+       read as inline labels. */
+    .role-pill {
+      display: inline-block; padding: 2px 8px; border-radius: 6px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.74rem; font-weight: 600; letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .role-pill.member      { color: var(--muted); background: #f4ebdd; }
+    .role-pill.contributor { color: var(--muted); background: #f4ebdd; }
+    .role-pill.author      { color: var(--accent-dark); background: #f4ebdd; }
+    .role-pill.editor      { color: var(--accent-dark); background: #f4ebdd; border: 1px solid var(--accent-soft); }
+    .role-pill.admin       { color: #fff; background: var(--accent); }
+    .role-pill.owner       { color: #fff; background: var(--accent-dark); }
 
     /* ---------- Right-side cross-page nav (⋮) ----------
        Inlined from library-shell.css. users.html doesn't use the
@@ -160,7 +175,7 @@
     }
     .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
-  <script src="/forms/library-shell.js"></script>
+  <script src="/forms/library-shell.js?v=exc1"></script>
   <!-- Pull Playfair Display from the same Google Fonts entry the recipe
        form uses so headings here match it exactly. -->
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
@@ -175,21 +190,22 @@
          Login sets app:self_user_id=0 so subsequent saves route to the
          master table and the sidebar lists master_recipes. First-pass
          curator login — see memory/project_master_recipes_ui.md. -->
-    <div class="section-title">Curator</div>
+    <div class="section-title">Master collection</div>
     <div class="users">
       <div class="user-card" id="masterCard">
         <div class="avatar" style="background:#7a5e3a">M</div>
         <div class="info">
           <div class="name">
             <span class="uid-pill">#0</span>
-            <span>Master (curator)</span>
+            <span>Master (curator collection)</span>
           </div>
-          <div class="meta">Login here to add or edit recipes in the master collection.</div>
+          <div class="meta">
+            Access controlled by role — anyone with <strong>owner / admin / editor / author</strong>
+            can save to master from the recipe form. There's no "Master user" to log in as;
+            log in as yourself and your role permissions determine whether master writes are allowed.
+          </div>
         </div>
-        <span class="badge paid">curator</span>
-        <div class="actions">
-          <button type="button" class="login" id="masterLoginBtn">Login</button>
-        </div>
+        <span class="role-pill admin">role-gated</span>
       </div>
     </div>
 
@@ -280,12 +296,14 @@
       const card = document.createElement('div');
       card.className = 'user-card';
       card.dataset.userId = String(u.user_id);
+      const role = u.role || 'member';
       card.innerHTML =
         `<div class="avatar">${escapeHtml(initial(u.name))}</div>` +
         `<div class="info">` +
           `<div class="name">` +
             `<span class="uid-pill">#${escapeHtml(u.user_id)}</span>` +
             `<span>${escapeHtml(u.name || '(no name)')}</span>` +
+            `<span class="role-pill ${escapeHtml(role)}">${escapeHtml(role)}</span>` +
           `</div>` +
           `<div class="meta">${escapeHtml(metaLine(u))}</div>` +
         `</div>` +
@@ -306,6 +324,8 @@
       // avatar and badge so the row still reads as the same user. Save
       // PATCHes; Cancel restores the read-only card from the cached row.
       const statuses = ['test', 'free', 'paid', 'comped'];
+      const roles = ['owner', 'admin', 'editor', 'author', 'contributor', 'member'];
+      const currentRole = u.role || 'member';
       card.innerHTML =
         `<div class="avatar">${escapeHtml(initial(u.name))}</div>` +
         `<span class="uid-pill">#${escapeHtml(u.user_id)}</span>` +
@@ -318,6 +338,11 @@
             ).join('') +
           `</select>` +
           `<input type="text" name="subscription_tier" value="${escapeHtml(u.subscription_tier || '')}" placeholder="Subscription tier" />` +
+          `<select name="role" style="grid-column: span 2">` +
+            roles.map(r =>
+              `<option value="${r}" ${r === currentRole ? 'selected' : ''}>${r}</option>`
+            ).join('') +
+          `</select>` +
         `</div>` +
         `<div class="actions">` +
           `<button type="button" class="save">Save</button>` +
@@ -335,6 +360,7 @@
           email: card.querySelector('input[name="email"]').value,
           status: card.querySelector('select[name="status"]').value,
           subscription_tier: card.querySelector('input[name="subscription_tier"]').value,
+          role: card.querySelector('select[name="role"]').value,
         };
         try {
           const res = await fetch(`${API}/users/${u.user_id}`, {
@@ -422,10 +448,11 @@
       }
     });
 
-    // Master (curator) login — sets app:self_user_id=0 like any
-    // other Login click. The form's sidebar boot reads sidebar:user_id
-    // and lists master_recipes; pickUser(0) sets both keys.
-    document.getElementById('masterLoginBtn').addEventListener('click', () => pickUser(0));
+    // The Master "Login" button was removed 2026-05-27 — logging in
+    // as user_id=0 left you anonymous to the role-based auth system
+    // (master is a save-target sentinel, not an identity). Master
+    // access is now role-gated: log in as yourself, and your role
+    // determines whether your saves can write to master_recipes.
 
     loadUsers();
   </script>

@@ -677,6 +677,15 @@ def init_db():
                 )
             except sqlite3.IntegrityError as e:
                 print(f"[WARN] could not add users unique indexes: {e}")
+            # Migration (2026-05-27): add `role` column to mirror Ghost's
+            # staff/member identity model (owner/admin/editor/author/
+            # contributor for staff; 'member' for subscribers). Defaults
+            # to 'member' — admin status is hand-promoted manually until
+            # Ghost integrates and tier-driven promotion can replace it.
+            user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+            if "role" not in user_cols:
+                conn.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member'")
+                print("[MIGRATE] added users.role column (default 'member')")
             _seed_users_from_recipes(conn)
 
             ensure_metabase_url_table(conn)
@@ -961,7 +970,8 @@ def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
 # Ghost SSO lands, gate this on curator role. See
 # memory/project_master_recipes_ui.md.
 @app.post("/recipes/{recipe_id}/promote-to-master")
-def promote_to_master(recipe_id: str):
+def promote_to_master(recipe_id: str, request: Request):
+    _require_perm(request, "promote_to_master")
     source_owner = _find_recipe_owner(recipe_id)
     if source_owner is None:
         raise HTTPException(status_code=404, detail="Source recipe not found")
@@ -1261,7 +1271,7 @@ def list_users():
         with sqlite3.connect(DB_PATH) as conn:
             rows = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
-                "subscription_tier, created_at, updated_at "
+                "subscription_tier, role, created_at, updated_at "
                 "FROM users ORDER BY user_id"
             ).fetchall()
             return [
@@ -1272,14 +1282,70 @@ def list_users():
                     "name": r[3],
                     "status": r[4],
                     "subscription_tier": r[5],
-                    "created_at": r[6],
-                    "updated_at": r[7],
+                    "role": r[6] or "member",
+                    "created_at": r[7],
+                    "updated_at": r[8],
                 }
                 for r in rows
             ]
     except Exception as e:
         print(f"[ERROR] list_users failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+# === Auth (pre-Ghost stub) ===
+# Identifies the caller via the X-Self-User-Id header that
+# library-shell.js auto-attaches from localStorage's app:self_user_id.
+# Pre-Ghost this trusts the client header; post-Ghost the resolver
+# swaps to validating a session JWT. Either way, callers get back the
+# same shape: {user, permissions, is_staff}.
+from input.pipeline import auth as auth_lib  # noqa: E402
+
+
+def _resolve_caller(request: Request) -> Optional[dict]:
+    """Return the user dict for the caller, or None if no/invalid
+    self-user-id header. Helper for endpoints that need to know who's
+    calling."""
+    header = request.headers.get("x-self-user-id")
+    with sqlite3.connect(DB_PATH) as conn:
+        return auth_lib.resolve_user(conn, header)
+
+
+def _require_perm(request: Request, perm: str) -> dict:
+    """Raise 403 unless the caller has `perm`. Returns the caller's
+    user dict on success — useful for downstream logging / audit."""
+    user = _resolve_caller(request)
+    if not auth_lib.can(user, perm):
+        role = (user or {}).get("role", "anonymous")
+        raise HTTPException(
+            status_code=403,
+            detail=f"This action requires the '{perm}' permission "
+                   f"(your role: '{role}')."
+        )
+    return user
+
+
+@app.get("/auth/me")
+def auth_me(request: Request):
+    """Identify the caller and return their role + permission list. The
+    frontend hits this on page load to decide what UI to render. Returns
+    {user: null, role: 'anonymous', permissions: []} when no valid
+    self-user-id is supplied — the caller is treated as anonymous."""
+    user = _resolve_caller(request)
+    if user is None:
+        return {
+            "user": None,
+            "role": "anonymous",
+            "permissions": [],
+            "is_staff": False,
+        }
+    role = user.get("role") or "member"
+    return {
+        "user": user,
+        "role": role,
+        "permissions": auth_lib.permissions_for(role),
+        "is_staff": auth_lib.is_staff(user),
+    }
 
 
 @app.post("/users")
@@ -1299,13 +1365,20 @@ async def create_user(request: Request):
     email = (payload.get("email") or "").strip() or None
     status = (payload.get("status") or "test").strip()
     tier = (payload.get("subscription_tier") or "").strip() or None
+    # Role defaults to 'member' (the vast majority of accounts). Caller
+    # supplies a staff role explicitly. Validated against the allowed set.
+    role = (payload.get("role") or "member").strip().lower()
+    if role not in auth_lib.ROLE_PERMISSIONS:
+        raise HTTPException(status_code=400,
+                            detail=f"invalid role {role!r}; allowed: "
+                                   f"{sorted(auth_lib.ROLE_PERMISSIONS.keys())}")
     now = datetime.utcnow().isoformat()
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.execute(
-                "INSERT INTO users (email, name, status, subscription_tier, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (email, name, status, tier, now, now),
+                "INSERT INTO users (email, name, status, subscription_tier, role, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (email, name, status, tier, role, now, now),
             )
             user_id = cur.lastrowid
         return {
@@ -1314,6 +1387,7 @@ async def create_user(request: Request):
             "name": name,
             "status": status,
             "subscription_tier": tier,
+            "role": role,
             "created_at": now,
             "updated_at": now,
         }
@@ -1341,7 +1415,7 @@ async def update_user(user_id: int, request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
 
-    allowed = {"name", "email", "status", "subscription_tier", "ghost_uuid"}
+    allowed = {"name", "email", "status", "subscription_tier", "ghost_uuid", "role"}
     sets = []
     params: list = []
     for k in allowed:
@@ -1354,6 +1428,15 @@ async def update_user(user_id: int, request: Request):
                 v = None
         if k == "name" and (v is None or v == ""):
             raise HTTPException(status_code=400, detail="name cannot be empty")
+        if k == "role":
+            role_norm = (v or "member").lower()
+            if role_norm not in auth_lib.ROLE_PERMISSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"invalid role {role_norm!r}; allowed: "
+                           f"{sorted(auth_lib.ROLE_PERMISSIONS.keys())}",
+                )
+            v = role_norm
         sets.append(f"{k} = ?")
         params.append(v)
     if not sets:
@@ -1372,14 +1455,15 @@ async def update_user(user_id: int, request: Request):
                 raise HTTPException(status_code=404, detail="User not found")
             row = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
-                "subscription_tier, created_at, updated_at "
+                "subscription_tier, role, created_at, updated_at "
                 "FROM users WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
         return {
             "user_id": row[0], "ghost_uuid": row[1], "email": row[2],
             "name": row[3], "status": row[4], "subscription_tier": row[5],
-            "created_at": row[6], "updated_at": row[7],
+            "role": row[6] or "member",
+            "created_at": row[7], "updated_at": row[8],
         }
     except HTTPException:
         raise
@@ -1466,6 +1550,7 @@ def get_dish_endpoint(name: str):
 
 @app.post("/dishes")
 async def create_dish_endpoint(request: Request):
+    _require_perm(request, "manage_dishes")
     """Create a new dish. Body:
         {
           "name": "Spaghetti and Meat Sauce",       (required, unique, immutable)
@@ -1482,7 +1567,7 @@ async def create_dish_endpoint(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
     try:
-        name, queries, top_serp, top_final, ttl, notes = \
+        name, queries, top_serp, top_final, ttl, notes, auto_enrich = \
             dishes_lib.validate_create_payload(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1493,6 +1578,7 @@ async def create_dish_endpoint(request: Request):
                 name=name, queries=queries,
                 top_n_serpapi=top_serp, top_n_final=top_final,
                 refresh_ttl_days=ttl, notes=notes,
+                auto_enrich=auto_enrich,
             )
     except sqlite3.IntegrityError:
         # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name
@@ -1505,6 +1591,7 @@ async def create_dish_endpoint(request: Request):
 
 @app.patch("/dishes/{name}")
 async def update_dish_endpoint(name: str, request: Request):
+    _require_perm(request, "manage_dishes")
     """Partial update. Body may include any subset of {queries,
     top_n_serpapi, top_n_final, refresh_ttl_days, notes}. The name
     field is intentionally not updatable — it's the join key into
@@ -1536,8 +1623,82 @@ async def update_dish_endpoint(name: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.patch("/dishes/{name}/rejects/{reject_id}")
+async def update_dish_reject_status(name: str, reject_id: int, request: Request):
+    """Update a reject's user-status + notes. Body:
+        {status: 'new'|'recovered'|'skipped'|'unreachable', notes?: str}
+
+    Staff-only (manage_dishes) since user marks affect what surfaces
+    on subsequent refreshes. 'name' in the path is the dish name; the
+    reject_id selects the specific row."""
+    _require_perm(request, "manage_dishes")
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    status = (payload.get("status") or "").strip().lower()
+    notes_raw = payload.get("notes")
+    notes = notes_raw.strip() if isinstance(notes_raw, str) else None
+    if notes == "":
+        notes = None
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            updated = dishes_lib.update_reject_status(
+                conn, reject_id, status=status, notes=notes,
+            )
+            if updated is None:
+                raise HTTPException(status_code=404, detail="Reject not found")
+            # Defensive: confirm the reject belongs to the named dish
+            # (caller might have constructed a URL with a mismatched
+            # name; the unique key is the id, but the dish_name in the
+            # URL should match for sanity).
+            if (updated.get("dish_name") or "").lower() != name.lower():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Reject {reject_id} is not under dish {name!r}",
+                )
+            return updated
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] update_dish_reject_status({name!r},{reject_id}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/dishes/{name}/rejects")
+def list_dish_rejects(name: str):
+    """Return the URLs from the dish's last refresh that made it past
+    the batch front-end (filter_disallowed + is_recipe + Moz scoring)
+    but then failed extract / save / save-gate. Each row carries the
+    original DA / PA / OU and the rejection reason so the dish form
+    can render "would have qualified" against last_run_bottom_ou and
+    surface a manual-recovery affordance (open the URL in browser,
+    use the bookmarklet, save to master normally).
+    Returns [] when the dish hasn't been refreshed yet or had no
+    rejects on its last run. No staff gate — read-only diagnostic."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            return {
+                "dish": existing["name"],
+                "bottom_ou": existing.get("last_run_bottom_ou"),
+                "ou_fit": existing.get("last_ou_fit"),
+                "rejects": dishes_lib.list_rejects_for_dish(conn, existing["name"]),
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] list_dish_rejects({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.delete("/dishes/{name}")
-def delete_dish_endpoint(name: str):
+def delete_dish_endpoint(name: str, request: Request):
+    _require_perm(request, "manage_dishes")
     """Delete a dish AND its top-kind master_recipes rows. editors_choice
     and legacy rows for this dish are untouched (kind filter)."""
     try:
@@ -1608,10 +1769,16 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     except Exception as e:
         print(f"[REFRESH-DISH] build_batch failed: {e}")
         with sqlite3.connect(DB_PATH) as conn:
+            # Pass rejects=[] (not None) so the per-run wipe still
+            # fires — semantically: "this refresh produced zero
+            # rejects because it failed before any URL was processed."
+            # Otherwise stale rejects from a previous successful run
+            # would persist + mislead the form.
             dishes_lib.record_run_result(
                 conn, canonical_name,
                 status=f"error:build_batch:{type(e).__name__}", count=0,
                 log_filename=log_filename,
+                rejects=[], ou_fit=None, bottom_ou=None,
             )
         raise  # runner records error status + stores the message
 
@@ -1627,9 +1794,33 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 
     now_iso = datetime.now(timezone.utc).isoformat()
     saved_count = 0
-    skipped_thin = 0
-    extract_misses: list[str] = []
-    save_failures: list[str] = []
+    # Unified rejects list: every URL that *made it past the batch's
+    # front-end pipeline* but then failed extract / save / save-gate.
+    # Each entry preserves the original DA/PA/OU/title from the
+    # SerpAPI+Moz step so the form can render "would have qualified"
+    # against the dish's last_run_bottom_ou. Pre-extract rejects
+    # (filter_disallowed, is_recipe, Moz-fail) are intentionally
+    # excluded — they have no recipe candidate to recover.
+    rejects: list[dict] = []
+
+    def _record_reject(entry: dict, reason: str) -> None:
+        exc = entry.get("exceptionalism") or {}
+        rejects.append({
+            "url": entry.get("url"),
+            "reason": reason,
+            "title": entry.get("title") or "",
+            "da": entry.get("da"),
+            "pa": entry.get("pa"),
+            "ou": entry.get("ou"),
+            "rank": entry.get("rank"),
+            # Cohort grade — shows on the dish-form reject row so the
+            # user can see "this reject would have graded A-" before
+            # deciding whether to harvest it. None for n<25 dishes that
+            # didn't get a per-dish fit.
+            "exc_score": exc.get("score"),
+            "exc_grade": exc.get("grade"),
+        })
+
     for entry in entries:
         url = entry["url"]
         try:
@@ -1638,11 +1829,11 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             )
         except Exception as e:
             print(f"[REFRESH-DISH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
-            extract_misses.append(url)
+            _record_reject(entry, f"extract-miss: {type(e).__name__}")
             continue
         recipe_dict = (extract_result or {}).get("recipe") or {}
         if not recipe_dict:
-            extract_misses.append(url)
+            _record_reject(entry, "extract-miss: empty recipe")
             continue
 
         ok, reason = _is_cacheable(
@@ -1652,13 +1843,13 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         )
         if not ok:
             print(f"[REFRESH-DISH] SKIP-THIN {reason}  {url}")
-            skipped_thin += 1
+            _record_reject(entry, f"skip-thin: {reason}")
             continue
 
         payload = dict(recipe_dict)
         payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
         payload["user_id"] = 0
-        payload["_master"] = {
+        master_block = {
             "kind": "top",
             "dish": canonical_name,
             "refreshed_at": now_iso,
@@ -1666,34 +1857,62 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             "queries": entry.get("_queries") or [],
             "batch_source": "/dishes/refresh",
         }
+        # Exceptionalism grade was computed in _compute_custom_ou at the
+        # batch step. Stamp it onto _master so the row carries its grade
+        # forever (the cohort's σ is also persisted on dish.last_ou_fit
+        # for future harvest-grading). n<25 dishes don't get a custom
+        # fit and therefore no exceptionalism — surfaces as em-dash in
+        # display.
+        exc = entry.get("exceptionalism")
+        if exc:
+            master_block["exceptionalism"] = exc
+        payload["_master"] = master_block
+        # Auto-enrich is opt-in per dish (defaults off). The save core
+        # reads this flag to decide whether to fan out the 3 enrich
+        # blocks (~$0.05 + ~10s per row). Without it, the dish refresh
+        # is fast + cheap; user can enrich later from the form.
+        payload["_skip_auto_enrich"] = not bool(dish.get("auto_enrich"))
         try:
             await asyncio.to_thread(_save_recipe_core, payload)
             saved_count += 1
         except HTTPException as e:
             print(f"[REFRESH-DISH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
-            save_failures.append(url)
+            _record_reject(entry, f"save-fail-{e.status_code}: {e.detail}")
         except Exception as e:
             print(f"[REFRESH-DISH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
-            save_failures.append(url)
+            _record_reject(entry, f"save-fail: {type(e).__name__}")
+
+    # Compute the bar-to-beat: the OU of the lowest-ranked URL that
+    # made it into the final top-N (the LAST surviving entry — they're
+    # rank-ordered by OU descending). Used by the dish form to flag
+    # rejects whose OU exceeds this — "would have qualified."
+    bottom_ou: Optional[float] = None
+    if entries:
+        last = entries[-1]
+        if isinstance(last.get("ou"), (int, float)):
+            bottom_ou = float(last["ou"])
 
     dish_status = "success" if saved_count > 0 else "error:no_saves"
     with sqlite3.connect(DB_PATH) as conn:
         dishes_lib.record_run_result(
             conn, canonical_name, status=dish_status, count=saved_count,
             log_filename=log_filename,
+            ou_fit=batch_result.get("ou_fit"),
+            rejects=rejects,
+            bottom_ou=bottom_ou,
         )
 
     print(f"[REFRESH-DISH] {canonical_name!r} done: "
-          f"saved={saved_count} extract_misses={len(extract_misses)} "
-          f"skipped_thin={skipped_thin} save_failures={len(save_failures)}")
+          f"saved={saved_count} rejects={len(rejects)} "
+          f"bottom_ou={bottom_ou}")
 
     return {
         "dish": canonical_name,
         "deleted_prior_rows": deleted,
         "saved_count": saved_count,
-        "skipped_thin": skipped_thin,
-        "extract_misses": extract_misses,
-        "save_failures": save_failures,
+        "rejects": rejects,
+        "bottom_ou": bottom_ou,
+        "ou_fit": batch_result.get("ou_fit"),
         "front_end_counts": batch_result["counts"],
         "elapsed_s": batch_result["elapsed_s"],
     }
@@ -1705,7 +1924,8 @@ jobs_lib.register_handler("dish_refresh", _handle_dish_refresh_job)
 
 
 @app.post("/dishes/{name}/refresh")
-async def refresh_dish_endpoint(name: str):
+async def refresh_dish_endpoint(name: str, request: Request):
+    _require_perm(request, "refresh_dishes")
     """Enqueue a dish_refresh job. Returns 202 with the job_id immediately
     — no long-held HTTP, no Cloudflare 100s timeout. The browser then
     opens an SSE stream at GET /jobs/<id>/stream to watch progress, or
@@ -1941,6 +2161,25 @@ def _save_recipe_core(payload: dict) -> dict:
     All async behavior (request.json(), to_thread wrapping) lives in the
     thin endpoint wrapper below; this function is pure synchronous Python.
     """
+    # Manual-from-reject rescue: the bookmarklet harvested #_bcc_dish/
+    # #_bcc_run from the dish-form reject link, threaded them through
+    # staging, and the form replayed them in this payload. user_id was
+    # already forced to 0 at the auth gate; here we stamp the _master
+    # block so the row attributes back to its originating batch.
+    # kind="harvest" — distinct from "top" (algorithmic batch winners)
+    # and "editors_choice" (curator's deliberate elevation).
+    hints = payload.pop("bcc_hints", None)
+    if isinstance(hints, dict) and (hints.get("dish") or "").strip():
+        existing_master = payload.get("_master") or {}
+        payload["_master"] = {
+            **existing_master,
+            "kind": "harvest",
+            "dish": hints["dish"].strip(),
+            "refreshed_at": (hints.get("run") or "").strip() or datetime.utcnow().isoformat(),
+            "batch_source": "manual-from-reject",
+        }
+        print(f"[HARVEST] manual-from-reject save: dish={hints['dish']!r} "
+              f"run={hints.get('run')!r}")
     print("[SAVE] Save recipe endpoint called")
     try:
         print(f"[DATA] Received payload: {payload}")
@@ -2088,7 +2327,14 @@ def _save_recipe_core(payload: dict) -> dict:
     # proceeds with whatever data we have. Token usage is appended to
     # save_usage_log so it can be journaled after the INSERT below.
     save_usage_log: list = []
-    if user_id == 0:
+    # _skip_auto_enrich is set true by the dish refresh job when the
+    # dish's auto_enrich flag is off (the default). Lets batch saves
+    # avoid the ~$0.05 + ~10s enrich cost per row; user can run
+    # enrich manually later via the form's Enrich button. Live form
+    # saves (no _skip flag set) preserve the original auto-enrich
+    # behavior for master writes.
+    skip_auto_enrich = bool(payload.get("_skip_auto_enrich"))
+    if user_id == 0 and not skip_auto_enrich:
         cls = recipe_dict.get("classification") or {}
         story = (cls.get("story") or "").strip()
         name = (recipe_dict.get("name") or "").strip()
@@ -2107,6 +2353,8 @@ def _save_recipe_core(payload: dict) -> dict:
                     print(f"[SAVE-ENRICH] WARN: no story produced after {dt}ms")
             except Exception as e:
                 print(f"[SAVE-ENRICH] FAILED (continuing save): {e}")
+    elif user_id == 0 and skip_auto_enrich:
+        print(f"[SAVE-ENRICH] skipped (dish auto_enrich=off)")
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -2175,11 +2423,36 @@ async def save_recipe(request: Request):
     """Thin async wrapper around _save_recipe_core. Pulls payload from the
     request body and offloads the synchronous DB work to a worker thread
     so the event loop stays free to service other requests (notably the
-    self-call pattern when /dishes/<name>/refresh saves many rows)."""
+    self-call pattern when /dishes/<name>/refresh saves many rows).
+
+    Master writes (payload.user_id == 0) require the `edit_master`
+    permission. Personal saves are open to anyone (own_recipes is
+    granted to all roles including 'member')."""
     try:
         payload = await request.json()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    # Manual-from-reject rescues: when the bookmarklet harvested a dish
+    # hint from #_bcc_dish=… the staged data carries bcc_hints. The form
+    # threads them into the save payload. The hint determines the TARGET
+    # (force user_id=0 → master), the role check still gates the ACTOR.
+    # This means a non-staff member who somehow crafts a bcc_hints
+    # payload still gets 403'd at the master gate below — no privilege
+    # escalation.
+    hints = payload.get("bcc_hints")
+    if isinstance(hints, dict) and (hints.get("dish") or "").strip():
+        payload["user_id"] = 0
+
+    # Gate master writes here, before threading off the DB work. The
+    # job-runner path (dish refresh) calls _save_recipe_core directly,
+    # NOT this endpoint, so it bypasses this gate by design — it's a
+    # trusted in-process caller, not user input.
+    #
+    # Careful: payload.get("user_id", 1) or 1 would mis-fire on 0
+    # because Python treats 0 as falsy. Explicit None-check instead.
+    uid_raw = payload.get("user_id")
+    if uid_raw is not None and int(uid_raw) == 0:
+        _require_perm(request, "edit_master")
     return await asyncio.to_thread(_save_recipe_core, payload)
 
 
@@ -2233,7 +2506,14 @@ def get_url_metadata(url: str):
 # else = personal). Cross-table delete is a 404 — admins must be explicit
 # about which collection they're removing from.
 @app.delete("/recipes/{recipe_id}")
-def delete_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
+def delete_recipe(recipe_id: str, request: Request, user_id: int = PLACEHOLDER_USER_ID):
+    # Master-row deletes require the `delete_master` permission.
+    # Personal deletes are open (the user is deleting their own row).
+    # In neither case do we verify the caller IS the owner of the
+    # target personal row — that gate belongs to a later visibility/
+    # auth pass; today the trust model is "client sent the right uid".
+    if user_id == 0:
+        _require_perm(request, "delete_master")
     table = _recipes_table_for(user_id)
     print(f"[DELETE] Delete recipe endpoint called for: {recipe_id} user_id={user_id} table={table}")
     try:
@@ -2904,6 +3184,21 @@ async def stage_markdown_endpoint(request: Request):
         _staged_markdown.pop(k, None)
 
     token = uuid.uuid4().hex
+    # Bookmarklet harvests #_bcc_dish/#_bcc_run from the page URL when
+    # the user opened the source from a dish reject row. We pass these
+    # through to the form, which uses them to force user_id=0 and stamp
+    # _master on save (kind="harvest"). Validate shape but don't enforce
+    # values — the save-side gate still requires edit_master perm.
+    raw_hints = payload.get("bcc_hints")
+    bcc_hints: Optional[dict] = None
+    if isinstance(raw_hints, dict):
+        cleaned_hints = {}
+        for k in ("dish", "run"):
+            v = raw_hints.get(k)
+            if isinstance(v, str) and v.strip():
+                cleaned_hints[k] = v.strip()
+        if cleaned_hints.get("dish"):
+            bcc_hints = cleaned_hints
     _staged_markdown[token] = {
         "markdown": md_text,
         "source_url": payload.get("source_url", ""),
@@ -2915,10 +3210,12 @@ async def stage_markdown_endpoint(request: Request):
         # whatever external URL the JSON-LD shipped — coopting the
         # source image so we're independent of the source site.
         "local_hero_image_url": (payload.get("local_hero_image_url") or "").strip() or None,
+        "bcc_hints": bcc_hints,
         "expires_at": now + _STAGE_TTL_SECONDS,
     }
     print(f"[OK] Staged markdown under token {token[:8]} ({len(md_text)} chars, "
-          f"local_hero={'yes' if _staged_markdown[token]['local_hero_image_url'] else 'no'})")
+          f"local_hero={'yes' if _staged_markdown[token]['local_hero_image_url'] else 'no'}, "
+          f"bcc_hints={bcc_hints or 'none'})")
     return {"token": token}
 
 
@@ -2933,6 +3230,7 @@ async def get_staged_markdown(token: str):
         "source_url": entry.get("source_url", ""),
         "title": entry.get("title", ""),
         "local_hero_image_url": entry.get("local_hero_image_url"),
+        "bcc_hints": entry.get("bcc_hints"),
     }
 
 

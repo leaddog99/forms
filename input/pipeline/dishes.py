@@ -55,12 +55,254 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(dishes)")}
     if "last_run_log_filename" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN last_run_log_filename TEXT")
+    # Migration (2026-05-27): add auto_enrich opt-in flag. Default 0
+    # (off) — dish refreshes save fast and cheap by default; user opts
+    # in per-dish to run enrich_recipe on every saved master row.
+    if "auto_enrich" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN auto_enrich INTEGER NOT NULL DEFAULT 0")
+    # Migration (2026-05-27): per-run persistence for OU-fit and the
+    # bar-to-beat. Rejects live in their own table (see
+    # ensure_dish_rejects_table) — proper rows, indexable by URL,
+    # joinable with master_recipes. `last_ou_fit` is the
+    # {model, coefficients, n, r2} from _compute_custom_ou so a manual
+    # rescore of any URL uses the same formula the batch did.
+    # `last_run_bottom_ou` is the OU of the lowest-included URL in
+    # the final top-N — the "bar to beat" the form flags each reject
+    # against.
+    if "last_ou_fit" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN last_ou_fit TEXT")  # JSON
+    if "last_run_bottom_ou" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN last_run_bottom_ou REAL")
+    # last_run_rejects column was briefly added 2026-05-27 then moved
+    # to dish_rejects table — column stays nullable + unused for
+    # forward-compat with rows created during the brief window.
+    ensure_dish_rejects_table(conn)
     # Index on refresh_ttl_days so the agent's "find due" query is cheap.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_dishes_ttl "
         "ON dishes(refresh_ttl_days) WHERE refresh_ttl_days IS NOT NULL"
     )
     conn.commit()
+
+
+def ensure_dish_rejects_table(conn: sqlite3.Connection) -> None:
+    """Create the dish_rejects table if absent. One row per URL that
+    made it past the batch's front-end (filter_disallowed +
+    is_recipe + Moz scoring) but then failed extract / save / thin-
+    gate during the dish refresh.
+
+    Lifecycle:
+      - status='new' rows are wiped on each refresh and replaced with
+        the current run's rejects.
+      - User-marked rows ('recovered', 'skipped', 'unreachable')
+        survive across refreshes — institutional memory.
+      - If a URL appears in the new run AND has a prior user-marked
+        row, the score columns get refreshed but status + notes are
+        preserved.
+
+    Indexed by dish_name for fast per-dish fetch + by URL for
+    cross-dish JOINs."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dish_rejects (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            dish_name       TEXT NOT NULL COLLATE NOCASE,
+            url             TEXT NOT NULL,
+            reason          TEXT NOT NULL,
+            title           TEXT,
+            da              REAL,
+            pa              REAL,
+            ou              REAL,        -- against the run's custom fit
+            rank            INTEGER,     -- original SerpAPI rank
+            run_started_at  TEXT,        -- ISO ts, ties to the refresh run
+            created_at      TEXT NOT NULL
+        )
+    """)
+    # Migration (2026-05-27): user-status tracking. Lets the curator
+    # mark each reject as recovered / skipped / unreachable so the
+    # next refresh doesn't surface it as a fresh discovery.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(dish_rejects)")}
+    if "status" not in cols:
+        conn.execute(
+            "ALTER TABLE dish_rejects ADD COLUMN status TEXT NOT NULL DEFAULT 'new' "
+            "CHECK (status IN ('new', 'recovered', 'skipped', 'unreachable'))"
+        )
+    if "notes" not in cols:
+        conn.execute("ALTER TABLE dish_rejects ADD COLUMN notes TEXT")
+    if "marked_at" not in cols:
+        conn.execute("ALTER TABLE dish_rejects ADD COLUMN marked_at TEXT")
+    # Migration (2026-05-27): Exceptionalism grade per reject row, so
+    # the dish form can show "would have graded A-" alongside the
+    # existing "would qualify" indicator.
+    if "exc_score" not in cols:
+        conn.execute("ALTER TABLE dish_rejects ADD COLUMN exc_score REAL")
+    if "exc_grade" not in cols:
+        conn.execute("ALTER TABLE dish_rejects ADD COLUMN exc_grade TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dish_rejects_dish "
+        "ON dish_rejects(dish_name)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dish_rejects_url "
+        "ON dish_rejects(url)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dish_rejects_status "
+        "ON dish_rejects(status)"
+    )
+    conn.commit()
+
+
+def replace_rejects_for_dish(conn: sqlite3.Connection, dish_name: str,
+                              rejects: list[dict],
+                              run_started_at: Optional[str] = None) -> int:
+    """Merge the new run's rejects into dish_rejects, preserving user
+    annotations. Returns count of rows inserted or updated.
+
+    Algorithm:
+      1. Delete all status='new' rows for this dish (untouched rejects
+         from the previous run that the user never acted on).
+      2. For each reject in the new batch:
+         - If a row already exists for (dish, url) AND its status is
+           non-'new': UPDATE the score / reason / rank / run_started_at
+           columns to reflect the latest values. Preserve status,
+           notes, marked_at — that's the user's institutional memory.
+         - Else: INSERT with status='new'.
+
+    Net effect: user-marked rows (recovered / skipped / unreachable)
+    survive across refreshes and never re-surface as fresh discoveries,
+    while their scores keep updating so the form's "would qualify"
+    badge stays accurate."""
+    # Step 1: drop unmarked rejects from the previous run.
+    conn.execute(
+        "DELETE FROM dish_rejects WHERE dish_name = ? AND status = 'new'",
+        (dish_name,),
+    )
+    # Step 2: build a lookup of the surviving (marked) URLs.
+    existing_rows = conn.execute(
+        "SELECT url FROM dish_rejects WHERE dish_name = ?",
+        (dish_name,),
+    ).fetchall()
+    existing_urls = {r[0] for r in existing_rows}
+
+    now = datetime.now(timezone.utc).isoformat()
+    rts = run_started_at or now
+    count = 0
+    for r in rejects:
+        url = r.get("url")
+        if url in existing_urls:
+            # User-marked row — refresh score columns but keep status.
+            conn.execute(
+                "UPDATE dish_rejects SET reason = ?, title = ?, "
+                "da = ?, pa = ?, ou = ?, rank = ?, run_started_at = ?, "
+                "exc_score = ?, exc_grade = ? "
+                "WHERE dish_name = ? AND url = ?",
+                (
+                    r.get("reason"),
+                    r.get("title"),
+                    r.get("da"),
+                    r.get("pa"),
+                    r.get("ou"),
+                    r.get("rank"),
+                    rts,
+                    r.get("exc_score"),
+                    r.get("exc_grade"),
+                    dish_name,
+                    url,
+                ),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO dish_rejects (dish_name, url, reason, title, "
+                "da, pa, ou, rank, run_started_at, created_at, status, "
+                "exc_score, exc_grade) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?)",
+                (
+                    dish_name,
+                    url,
+                    r.get("reason"),
+                    r.get("title"),
+                    r.get("da"),
+                    r.get("pa"),
+                    r.get("ou"),
+                    r.get("rank"),
+                    rts,
+                    now,
+                    r.get("exc_score"),
+                    r.get("exc_grade"),
+                ),
+            )
+        count += 1
+    conn.commit()
+    return count
+
+
+def update_reject_status(conn: sqlite3.Connection, reject_id: int,
+                         status: str, notes: Optional[str] = None) -> Optional[dict]:
+    """Update a single reject's user-status + notes. Returns the
+    updated row dict, or None if reject_id doesn't exist. Raises
+    ValueError on invalid status."""
+    valid = {"new", "recovered", "skipped", "unreachable"}
+    if status not in valid:
+        raise ValueError(f"status must be one of {sorted(valid)}; got {status!r}")
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.execute(
+        "UPDATE dish_rejects SET status = ?, notes = ?, marked_at = ? "
+        "WHERE id = ?",
+        (status, (notes or None), now, reject_id),
+    )
+    if cur.rowcount == 0:
+        return None
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, dish_name, url, reason, title, da, pa, ou, rank, "
+        "run_started_at, created_at, status, notes, marked_at, "
+        "exc_score, exc_grade "
+        "FROM dish_rejects WHERE id = ?",
+        (reject_id,),
+    ).fetchone()
+    return {
+        "id": row[0], "dish_name": row[1], "url": row[2], "reason": row[3],
+        "title": row[4], "da": row[5], "pa": row[6], "ou": row[7],
+        "rank": row[8], "run_started_at": row[9], "created_at": row[10],
+        "status": row[11], "notes": row[12], "marked_at": row[13],
+        "exc_score": row[14], "exc_grade": row[15],
+    }
+
+
+def list_rejects_for_dish(conn: sqlite3.Connection, dish_name: str) -> list[dict]:
+    """Return all rejects for a dish, ordered status-then-OU:
+    'new' rows first (actionable), then marked rows (recovered /
+    skipped / unreachable) so user-decided items don't crowd the
+    fresh-actionable ones. Within a status group: OU descending."""
+    rows = conn.execute(
+        "SELECT id, url, reason, title, da, pa, ou, rank, "
+        "run_started_at, created_at, status, notes, marked_at, "
+        "exc_score, exc_grade "
+        "FROM dish_rejects WHERE dish_name = ? "
+        "ORDER BY CASE status WHEN 'new' THEN 0 ELSE 1 END, "
+        "         ou DESC NULLS LAST, id",
+        (dish_name,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            "id": r[0],
+            "url": r[1],
+            "reason": r[2],
+            "title": r[3],
+            "da": r[4],
+            "pa": r[5],
+            "ou": r[6],
+            "rank": r[7],
+            "run_started_at": r[8],
+            "created_at": r[9],
+            "status": r[10] or "new",
+            "notes": r[11],
+            "marked_at": r[12],
+            "exc_score": r[13],
+            "exc_grade": r[14],
+        })
+    return out
 
 
 def row_to_dict(row: tuple) -> dict:
@@ -71,13 +313,18 @@ def row_to_dict(row: tuple) -> dict:
     `is_due` field based on refresh_ttl_days + last_refreshed, and a
     derived `last_run_log_url` for the form's "View latest log" link.
     """
-    name, queries_json, top_n_serpapi, top_n_final, ttl_days, \
-        last_refreshed, last_run_status, last_run_count, notes, \
-        created_at, updated_at, last_run_log_filename = row
+    (name, queries_json, top_n_serpapi, top_n_final, ttl_days,
+     last_refreshed, last_run_status, last_run_count, notes,
+     created_at, updated_at, last_run_log_filename, auto_enrich,
+     last_ou_fit, last_run_bottom_ou) = row
     try:
         queries = json.loads(queries_json) if queries_json else []
     except Exception:
         queries = []
+    try:
+        ou_fit = json.loads(last_ou_fit) if last_ou_fit else None
+    except Exception:
+        ou_fit = None
     return {
         "name": name,
         "queries": queries,
@@ -93,13 +340,18 @@ def row_to_dict(row: tuple) -> dict:
         "is_due": is_due(ttl_days, last_refreshed),
         "last_run_log_filename": last_run_log_filename,
         "last_run_log_url": f"/logs/{last_run_log_filename}" if last_run_log_filename else None,
+        "auto_enrich": bool(auto_enrich),
+        "last_ou_fit": ou_fit,
+        "last_run_bottom_ou": last_run_bottom_ou,
+        # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
 
 _SELECT_ALL_COLS = (
     "name, queries, top_n_serpapi, top_n_final, refresh_ttl_days, "
     "last_refreshed, last_run_status, last_run_count, notes, "
-    "created_at, updated_at, last_run_log_filename"
+    "created_at, updated_at, last_run_log_filename, auto_enrich, "
+    "last_ou_fit, last_run_bottom_ou"
 )
 
 
@@ -120,10 +372,10 @@ def get_dish(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     return row_to_dict(row) if row else None
 
 
-def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str]]:
+def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str], bool]:
     """Validate a POST /dishes body. Returns (name, queries, top_n_serpapi,
-    top_n_final, refresh_ttl_days, notes). Raises ValueError on any
-    problem; the endpoint converts that to a 400."""
+    top_n_final, refresh_ttl_days, notes, auto_enrich). Raises ValueError
+    on any problem; the endpoint converts that to a 400."""
     name = (payload.get("name") or "").strip()
     if not name:
         raise ValueError("name is required and must be non-empty")
@@ -154,7 +406,11 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
         raise ValueError("notes must be a string or null")
     notes = (notes or None) if notes is None else notes.strip() or None
 
-    return name, queries, top_n_serpapi, top_n_final, ttl, notes
+    # auto_enrich: optional bool, defaults to False (cheap fast saves
+    # during refresh; user opts in per-dish to run enrich on each row).
+    auto_enrich = bool(payload.get("auto_enrich", False))
+
+    return name, queries, top_n_serpapi, top_n_final, ttl, notes, auto_enrich
 
 
 def create_dish(conn: sqlite3.Connection, *,
@@ -163,16 +419,17 @@ def create_dish(conn: sqlite3.Connection, *,
                 top_n_serpapi: int = 25,
                 top_n_final: int = 10,
                 refresh_ttl_days: Optional[int] = 30,
-                notes: Optional[str] = None) -> dict:
+                notes: Optional[str] = None,
+                auto_enrich: bool = False) -> dict:
     """Insert a new dish. Raises sqlite3.IntegrityError on name
     collision (caller maps to 409). Returns the created dict."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT INTO dishes (name, queries, top_n_serpapi, top_n_final, "
-        "refresh_ttl_days, notes, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "refresh_ttl_days, notes, created_at, updated_at, auto_enrich) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (name, json.dumps(queries), top_n_serpapi, top_n_final,
-         refresh_ttl_days, notes, now, now),
+         refresh_ttl_days, notes, now, now, 1 if auto_enrich else 0),
     )
     conn.commit()
     return get_dish(conn, name)  # round-trip so we return the canonical shape
@@ -184,7 +441,7 @@ def create_dish(conn: sqlite3.Connection, *,
 # the master rows too — intentional cascade).
 _PATCHABLE = {
     "queries", "top_n_serpapi", "top_n_final",
-    "refresh_ttl_days", "notes",
+    "refresh_ttl_days", "notes", "auto_enrich",
 }
 
 
@@ -248,6 +505,10 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
             else:
                 sets.append("notes = NULL")
 
+    if "auto_enrich" in patch:
+        sets.append("auto_enrich = ?")
+        params.append(1 if bool(patch["auto_enrich"]) else 0)
+
     extras = set(patch.keys()) - _PATCHABLE
     if extras:
         raise ValueError(f"non-patchable fields in body: {sorted(extras)}")
@@ -269,7 +530,8 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
 
 
 def delete_dish(conn: sqlite3.Connection, name: str) -> bool:
-    """Delete a dish row. Returns True if a row was removed.
+    """Delete a dish row + its dish_rejects rows. Returns True if the
+    dish row was removed.
 
     NOTE: this does NOT yet cascade-delete the dish's top-kind rows in
     master_recipes — that's done by the in-process refresh logic when
@@ -277,6 +539,9 @@ def delete_dish(conn: sqlite3.Connection, name: str) -> bool:
     stamped with `_master.dish == name` (if/when they exist) stay
     until the next batch refresh. Tracked in project_dish_library.md.
     """
+    # Wipe the per-run reject rows first so they don't dangle pointing
+    # at a deleted dish.
+    conn.execute("DELETE FROM dish_rejects WHERE dish_name = ?", (name,))
     cur = conn.execute("DELETE FROM dishes WHERE name = ?", (name,))
     conn.commit()
     return cur.rowcount > 0
@@ -339,24 +604,42 @@ def delete_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
 
 def record_run_result(conn: sqlite3.Connection, name: str, *,
                       status: str, count: Optional[int] = None,
-                      log_filename: Optional[str] = None) -> None:
+                      log_filename: Optional[str] = None,
+                      ou_fit: Optional[dict] = None,
+                      rejects: Optional[list] = None,
+                      bottom_ou: Optional[float] = None) -> None:
     """Stamp a refresh run's outcome on the dish row. Called by both the
     /dishes/<name>/refresh endpoint and the agent. `status` is
     'success' or 'error:<short-reason>'. `log_filename` is the basename
     of the per-run log file under forms/logs/; the form turns it into
-    a /logs/<filename> link."""
+    a /logs/<filename> link.
+
+    `ou_fit` is the {model, coefficients, n, r2} dict from
+    `_compute_custom_ou` — persisted so manual single-URL rescoring
+    (a rejected URL the user later bookmarklets) uses the same formula
+    the batch did. `bottom_ou` is the OU of the lowest-included URL
+    in the final top-N (so the form can flag "would have qualified"
+    on each reject). `rejects`, when supplied, replaces the dish's
+    rows in dish_rejects (per-run state, no history kept)."""
+    import json as _json
     now = datetime.now(timezone.utc).isoformat()
+    # Build the SET clause dynamically so we always include the new
+    # per-run fields (even when None — clears them from the last run).
+    fields = [
+        ("last_refreshed", now),
+        ("last_run_status", status),
+        ("last_run_count", count),
+        ("last_ou_fit", _json.dumps(ou_fit) if ou_fit is not None else None),
+        ("last_run_bottom_ou", bottom_ou),
+        ("updated_at", now),
+    ]
     if log_filename is not None:
-        conn.execute(
-            "UPDATE dishes SET last_refreshed = ?, last_run_status = ?, "
-            "last_run_count = ?, last_run_log_filename = ?, updated_at = ? "
-            "WHERE name = ?",
-            (now, status, count, log_filename, now, name),
-        )
-    else:
-        conn.execute(
-            "UPDATE dishes SET last_refreshed = ?, last_run_status = ?, "
-            "last_run_count = ?, updated_at = ? WHERE name = ?",
-            (now, status, count, now, name),
-        )
+        fields.insert(-1, ("last_run_log_filename", log_filename))
+    set_clause = ", ".join(f"{k} = ?" for k, _ in fields)
+    params = [v for _, v in fields] + [name]
+    conn.execute(f"UPDATE dishes SET {set_clause} WHERE name = ?", params)
+    # Replace dish_rejects rows in the same connection so it's
+    # transactional with the dishes-row update.
+    if rejects is not None:
+        replace_rejects_for_dish(conn, name, rejects, run_started_at=now)
     conn.commit()

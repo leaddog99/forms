@@ -245,6 +245,14 @@
     }
   }
 
+  // Minimum size we trust as a "real" screenshot. A page screenshot
+  // at 2000px long edge / JPEG q=0.85 is typically 100-500 KB; below
+  // ~22 KB suggests html2canvas captured a near-empty subtree (e.g.,
+  // the wrong root container — see pickBestRoot's regression notes).
+  // We retry with document.body in that case so the image-extraction
+  // fallback gets actual page content to OCR.
+  const SCREENSHOT_MIN_B64_CHARS = 30000;
+
   async function uploadScreenshot(token, root) {
     if (!window.html2canvas) {
       await new Promise(function (res, rej) {
@@ -269,111 +277,246 @@
       '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">' +
       '<rect width="100%" height="100%" fill="#eee"/></svg>');
 
-    // Scope the screenshot to the recipe-content root (same article /
-    // main / .recipe-card element the markdown walker uses), NOT
-    // document.body. Whole-body screenshots include comments / ads /
-    // footer / related-recipe rails, which on long pages produce
-    // 10,000+ px tall images that downscale to unreadably-narrow
-    // slivers and blow past Anthropic's vision payload cap.
-    const target = root || document.body;
-    const rect = target.getBoundingClientRect();
-    const targetH = Math.max(target.scrollHeight, target.offsetHeight, rect.height);
-    const targetW = Math.max(target.scrollWidth, target.offsetWidth, rect.width);
+    // Capture+encode helper — extracted so we can call it twice
+    // (once with the picked root, fallback with document.body if
+    // the first capture comes out suspiciously small). Returns
+    // { b64, canvasW, canvasH, outW, outH }.
+    async function captureAndEncode(target) {
+      const rect = target.getBoundingClientRect();
+      const targetH = Math.max(target.scrollHeight, target.offsetHeight, rect.height);
+      const targetW = Math.max(target.scrollWidth, target.offsetWidth, rect.width);
 
-    const shotPromise = html2canvas(target, {
-      height: targetH,
-      width: targetW,
-      windowHeight: targetH,
-      windowWidth: Math.max(targetW, document.body.scrollWidth),
-      useCORS: true, allowTaint: false, logging: false,
-      backgroundColor: '#ffffff', imageTimeout: 8000,
-      onclone: function (d) {
-        d.querySelectorAll('img').forEach(function (img) {
-          try {
-            const u = new URL(img.src, location.href);
-            if (u.origin !== location.origin) {
-              img.src = PLACEHOLDER;
-              img.removeAttribute('srcset');
-            }
-          } catch (e) { img.src = PLACEHOLDER; }
-        });
-        d.querySelectorAll('[style*="background-image"]').forEach(function (el) {
-          const s = el.getAttribute('style') || '';
-          if (/url\(/.test(s)) el.style.backgroundImage = 'none';
-        });
-        d.querySelectorAll('*').forEach(function (el) {
-          try {
-            const cs = getComputedStyle(el);
-            PROPS.forEach(function (p) {
-              const v = cs[p];
-              if (v && BAD.test(v)) el.style[p] = FB[p];
-            });
-          } catch (e) { }
-        });
+      const shotPromise = html2canvas(target, {
+        height: targetH,
+        width: targetW,
+        windowHeight: targetH,
+        windowWidth: Math.max(targetW, document.body.scrollWidth),
+        useCORS: true, allowTaint: false, logging: false,
+        backgroundColor: '#ffffff', imageTimeout: 8000,
+        onclone: function (d) {
+          d.querySelectorAll('img').forEach(function (img) {
+            try {
+              const u = new URL(img.src, location.href);
+              if (u.origin !== location.origin) {
+                img.src = PLACEHOLDER;
+                img.removeAttribute('srcset');
+              }
+            } catch (e) { img.src = PLACEHOLDER; }
+          });
+          d.querySelectorAll('[style*="background-image"]').forEach(function (el) {
+            const s = el.getAttribute('style') || '';
+            if (/url\(/.test(s)) el.style.backgroundImage = 'none';
+          });
+          d.querySelectorAll('*').forEach(function (el) {
+            try {
+              const cs = getComputedStyle(el);
+              PROPS.forEach(function (p) {
+                const v = cs[p];
+                if (v && BAD.test(v)) el.style[p] = FB[p];
+              });
+            } catch (e) { }
+          });
+        }
+      });
+      const canvas = await Promise.race([
+        shotPromise,
+        new Promise(function (_, rej) {
+          setTimeout(function () { rej(new Error('screenshot timed out')); }, 45000);
+        })
+      ]);
+      // Client-side downscale + JPEG encoding before upload. Long edge
+      // capped at 2000px (matches the server's _MAX_LONG_EDGE) and
+      // encoded at JPEG q=0.85 (matches the server's downscale).
+      const MAX_LONG = 2000;
+      let outW = canvas.width;
+      let outH = canvas.height;
+      const longEdge = Math.max(outW, outH);
+      let dataUrl;
+      if (longEdge > MAX_LONG) {
+        const scale = MAX_LONG / longEdge;
+        outW = Math.round(canvas.width * scale);
+        outH = Math.round(canvas.height * scale);
+        const c2 = document.createElement('canvas');
+        c2.width = outW;
+        c2.height = outH;
+        const ctx = c2.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, outW, outH);
+        ctx.drawImage(canvas, 0, 0, outW, outH);
+        dataUrl = c2.toDataURL('image/jpeg', 0.85);
+      } else {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       }
-    });
-
-    const canvas = await Promise.race([
-      shotPromise,
-      new Promise(function (_, rej) {
-        setTimeout(function () { rej(new Error('screenshot timed out')); }, 45000);
-      })
-    ]);
-
-    // Client-side downscale + JPEG encoding before upload. The raw
-    // canvas can easily be 1500x10000 px for a long recipe page,
-    // which as PNG balloons past 10MB — too big to ship and too big
-    // for the server's vision-payload cap even after re-downscale.
-    // Cap the LONG edge at 2000px (matches the server's _MAX_LONG_EDGE)
-    // and encode JPEG q=0.85 (matches the server's downscale settings).
-    // Aspect ratio preserved. This produces a payload that's typically
-    // 200-800 KB instead of multiple MB.
-    const MAX_LONG = 2000;
-    let outW = canvas.width;
-    let outH = canvas.height;
-    const longEdge = Math.max(outW, outH);
-    let dataUrl;
-    if (longEdge > MAX_LONG) {
-      const scale = MAX_LONG / longEdge;
-      outW = Math.round(canvas.width * scale);
-      outH = Math.round(canvas.height * scale);
-      const c2 = document.createElement('canvas');
-      c2.width = outW;
-      c2.height = outH;
-      const ctx = c2.getContext('2d');
-      // White fill in case the source canvas had transparent regions —
-      // JPEG has no alpha and would blacken them otherwise.
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, outW, outH);
-      ctx.drawImage(canvas, 0, 0, outW, outH);
-      dataUrl = c2.toDataURL('image/jpeg', 0.85);
-    } else {
-      // Even under the cap, JPEG-encode the canvas — PNG of a screenshot
-      // is wastefully large because every pixel is unique color noise.
-      dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const b64 = dataUrl.split(',')[1];
+      return { b64: b64, canvasW: canvas.width, canvasH: canvas.height,
+               outW: outW, outH: outH };
     }
-    const b64 = dataUrl.split(',')[1];
-    console.log('[recipe-bookmarklet] screenshot encoded:',
-                canvas.width + 'x' + canvas.height + ' -> ' + outW + 'x' + outH,
-                '| b64 chars:', b64.length);
+
+    // First attempt — the picked root (typically the recipe-content
+    // container). Whole-body screenshots include comments / ads /
+    // footer / related-recipe rails, which on long pages produce
+    // 10,000+ px tall images.
+    const target = root || document.body;
+    let captured = await captureAndEncode(target);
+    console.log('[recipe-bookmarklet] screenshot[root] encoded:',
+                captured.canvasW + 'x' + captured.canvasH + ' -> ' +
+                captured.outW + 'x' + captured.outH +
+                ' | b64 chars: ' + captured.b64.length);
+
+    // Size sanity — a real recipe screenshot is normally 100-500 KB
+    // (133K-666K b64 chars). Under SCREENSHOT_MIN_B64_CHARS suggests
+    // we captured a nearly-empty subtree (root picker landed on a
+    // wrapper that contains no rendered content). Retry with the
+    // full body so the image-extraction LLM fallback gets useful
+    // pixels. Skip the retry if we already targeted body.
+    if (captured.b64.length < SCREENSHOT_MIN_B64_CHARS && target !== document.body) {
+      console.log('[recipe-bookmarklet] screenshot too small (' +
+                  Math.round(captured.b64.length * 3 / 4 / 1024) +
+                  'KB), retrying with document.body');
+      try {
+        const retry = await captureAndEncode(document.body);
+        console.log('[recipe-bookmarklet] screenshot[body] encoded:',
+                    retry.canvasW + 'x' + retry.canvasH + ' -> ' +
+                    retry.outW + 'x' + retry.outH +
+                    ' | b64 chars: ' + retry.b64.length);
+        // Use the retry only if it's bigger. (If body comes out
+        // smaller too, the page genuinely has minimal content;
+        // keep the root attempt rather than swap to something
+        // potentially worse.)
+        if (retry.b64.length > captured.b64.length) {
+          captured = retry;
+        }
+      } catch (retryErr) {
+        console.log('[recipe-bookmarklet] body-retry failed:',
+                    retryErr && retryErr.message);
+      }
+    }
+
     const uploadRes = await fetch(API + '/stage-image/' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_b64: b64 })
+      body: JSON.stringify({ image_b64: captured.b64 })
     });
     console.log('[recipe-bookmarklet] screenshot uploaded:', uploadRes.status);
   }
 
+  // === Recipe-content scoring (for root selection) ===
+  // Inline subset of server's RECIPE_PHRASES — just the most reliable
+  // signals. Counting hits at the bookmarklet level catches the
+  // case where the FIRST <article>/<main> match is a page wrapper
+  // (header, breadcrumbs, sidebar nav) rather than the recipe-
+  // content container — pre-2026-05-27 the walker committed to that
+  // wrong root, captured no recipe text, and the LLM extracted 0
+  // ingredients. Now we score every candidate and pick the best.
+  const RECIPE_PHRASES = [
+    'teaspoon', 'tablespoon', 'tsp', 'tbsp', 'cup', 'cups',
+    ' oz', ' lb', ' lbs', ' ounce', ' pound', 'gram', ' ml',
+    'ingredients', 'instructions', 'directions', 'method',
+    'prep time', 'cook time', 'total time', 'serves',
+    'servings', 'yield',
+    'preheat', 'bake', 'boil', 'simmer', 'roast', 'fry',
+    'minutes', 'whisk'
+  ];
+
+  function scoreText(text) {
+    const lower = (text || '').toLowerCase();
+    let phraseHits = 0;
+    for (const p of RECIPE_PHRASES) {
+      if (lower.indexOf(p) !== -1) phraseHits++;
+    }
+    const chars = (text || '').length;
+    // Char count is decent but phrases are far more reliable — a
+    // sidebar nav can be 5000 chars of menu items with 0 phrases.
+    // Weight phrases ~100x so 10 phrases beats 1000 chars of menu.
+    return { chars: chars, phraseHits: phraseHits, score: chars + 100 * phraseHits };
+  }
+
+  function pickBestRoot() {
+    // Build candidate list in priority order; dedupe at the end.
+    const candidates = [];
+    const addAll = function (sel) {
+      try {
+        document.querySelectorAll(sel).forEach(function (el) { candidates.push(el); });
+      } catch (e) { /* invalid selector, skip */ }
+    };
+    // Schema.org Recipe wrapper — strongest semantic signal when present
+    addAll('[itemtype*="Recipe"]');
+    addAll('[typeof*="Recipe"]');
+    // Recipe-plugin containers (high signal)
+    addAll('.wprm-recipe-container');
+    addAll('.tasty-recipes');
+    addAll('.mv-recipe-card');
+    addAll('.recipe-card');
+    addAll('.recipe');
+    // Mediavine "create" recipe-card wrappers (cleanfoodiecravings,
+    // many other food blogs running Mediavine ads). The recipe lives
+    // in `.recipe-details` which contains `.recipe-ingredient` +
+    // `.recipe-instruction` siblings — outside the page's <article>.
+    addAll('.recipe-details');
+    addAll('[data-slot-rendered-recipe]');
+    // hRecipe microdata (older standard, still in use)
+    addAll('[class*="hrecipe"]');
+    // Article / main — the old default
+    addAll('article');
+    addAll('main');
+    addAll('[role="main"]');
+    // Common WordPress / blog content wrappers
+    addAll('.post-content');
+    addAll('.entry-content');
+    addAll('.article-content');
+    addAll('.post-body');
+    // Body always last as a fallback
+    candidates.push(document.body);
+
+    const seen = new Set();
+    const unique = candidates.filter(function (el) {
+      if (!el || seen.has(el)) return false;
+      seen.add(el);
+      return true;
+    });
+
+    // Score each candidate. cleanNode + md is moderately expensive
+    // (DOM clone + tree walk), but for a typical page with <10
+    // candidates this is <100ms total — well within "click feels
+    // instant" budget.
+    let best = null;
+    const scored = [];
+    for (const el of unique) {
+      const cleanedEl = cleanNode(el);
+      const text = md(cleanedEl).trim();
+      const s = scoreText(text);
+      scored.push({ el: el, text: text, score: s });
+      if (!best || s.score > best.score.score) {
+        best = { el: el, text: text, score: s };
+      }
+    }
+
+    // Diagnostic log so investigating "why did it pick X" doesn't
+    // require re-bookmarketting with a debugger attached.
+    console.log('[recipe-bookmarklet] root candidates:',
+      scored.map(function (x) {
+        return { tag: x.el.tagName,
+                 cls: (x.el.className || '').toString().slice(0, 40),
+                 chars: x.score.chars,
+                 phrases: x.score.phraseHits,
+                 score: x.score.score };
+      })
+    );
+    console.log('[recipe-bookmarklet] picked root:', best.el.tagName,
+      '(' + (best.el.className || '').toString().slice(0, 40) + ')',
+      'score=' + best.score.score, 'phrases=' + best.score.phraseHits);
+
+    return { el: best.el, mdText: best.text };
+  }
+
   try {
-    const root =
-      document.querySelector('article') ||
-      document.querySelector('main') ||
-      document.querySelector('[role="main"]') ||
-      document.querySelector('.post-content,.entry-content,.article-content,.post-body,.recipe-card,.wprm-recipe-container,.tasty-recipes') ||
-      document.body;
+    // Multi-candidate root pick — see pickBestRoot above. Falls back
+    // to document.body if no candidate has any recipe content.
+    const picked = pickBestRoot();
+    const root = picked.el;
+    const mdText = picked.mdText;
 
     const jsonld = harvestJsonLd();
-    const cleaned = cleanNode(root);
 
     let body = '# ' + document.title + '\n\n' +
                '*Source: ' + location.href + '*  \n' +
@@ -382,7 +525,7 @@
       body += '## STRUCTURED RECIPE DATA (JSON-LD)\n\n```json\n' +
               JSON.stringify(jsonld, null, 2) + '\n```\n\n';
     }
-    body += '---\n\n' + md(cleaned).replace(/\n{3,}/g, '\n\n').trim();
+    body += '---\n\n' + mdText.replace(/\n{3,}/g, '\n\n').trim();
 
     // Coopt the hero image from the user's authenticated browser
     // session BEFORE staging markdown — the local URL rides through
@@ -393,11 +536,40 @@
     // so a hanging image fetch can't block the popup.
     const localHeroUrl = await captureAndUploadHero(jsonld);
 
+    // Harvest manual-from-reject hints from the URL fragment. The dish
+    // form stamps reject links with #_bcc_dish=<name>&_bcc_run=<iso>
+    // (forms/dishes.html renderRejects). When present, the resulting
+    // save will be force-targeted to master with _master.dish/run stamped
+    // so the rescued recipe attributes back to its originating batch.
+    // Stripped from source_url so the canonical URL stays clean.
+    const bccHints = {};
+    let canonicalSourceUrl = location.href;
+    try {
+      const hash = (location.hash || '').replace(/^#/, '');
+      if (hash) {
+        const params = new URLSearchParams(hash);
+        const dish = params.get('_bcc_dish');
+        const run = params.get('_bcc_run');
+        if (dish) bccHints.dish = dish;
+        if (run) bccHints.run = run;
+        if (dish || run) {
+          // Rebuild a URL without our hints in the fragment so source_url
+          // reflects what the source site sees, not our internal plumbing.
+          params.delete('_bcc_dish');
+          params.delete('_bcc_run');
+          const remaining = params.toString();
+          canonicalSourceUrl = location.origin + location.pathname + location.search
+            + (remaining ? '#' + remaining : '');
+        }
+      }
+    } catch (e) { /* malformed hash, fall through with no hints */ }
+
     const payload = {
       markdown: body,
-      source_url: location.href,
+      source_url: canonicalSourceUrl,
       title: document.title,
-      local_hero_image_url: localHeroUrl || null
+      local_hero_image_url: localHeroUrl || null,
+      bcc_hints: Object.keys(bccHints).length ? bccHints : null
     };
 
     const stageRes = await fetch(API + '/stage-markdown', {

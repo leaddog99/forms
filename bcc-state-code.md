@@ -1197,7 +1197,74 @@ User: *"i asked for 10 from serp.. in the counts it said after-disallowed 18."* 
 
 ---
 
+## Session log — 2026-05-27
+
+**Consistency day.** A series of "why does X fail here but work there" questions all pointed at the same root: parallel implementations drifting. The day's work standardized fetch, root-pick, and grade scaling across batch and live paths; then added a manual-from-reject rescue path and an Exceptionalism letter-grade overlay.
+
+### BS4 picker port — server-side root scoring matches the bookmarklet
+
+Yesterday's bookmarklet `pickBestRoot` (score every candidate root by `chars + 100 * recipe_phrase_hits`, pick the highest) was browser-only. Today ported the same algorithm to `to_markdown/html_to_markdown.py:select_main_content`. Phrase list (~30 entries) and selector list (`.recipe-details`, `[data-slot-rendered-recipe]`, `.wprm-recipe-container`, etc.) mirrored exactly, with cross-reference comments in both files so they stay in sync. The old picker did first-match-wins on `[itemtype*='Recipe'] / article / main / body`; that grabbed a blog-post `<article>` on sites where the recipe lived in a sibling `.recipe-details` widget (cleanfoodiecravings.com case) and silently dropped the recipe. New picker clones each candidate, runs `clean_for_markdown` on the clone, scores it, returns the winner — `<body>` wins as the safe fallback when no narrower candidate concentrates more recipe phrase. Three-case smoke test covered: recipe-in-`<article>` (picks article), recipe-in-`.recipe-details` sibling (picks body, still contains the recipe), schema.org itemtype present (picks body, JSON-LD fast lane handles upstream).
+
+### Playwright sandbox queued
+
+Discussed adding Playwright as a future server-side fallback for the two failure modes plain `requests.get()` can't fix: anti-bot 403 (cleanfoodiecravings) and JS-rendered widgets. Concluded today's BS4 port is the right "fast path" (no JS needed) and Playwright will be the right "fallback" (anti-bot / JS-rendered). The architectural promise: extract `pickBestRoot` to a shared `.js` file the bookmarklet AND server (via `page.evaluate`) both consume → actual code reuse, not parallel implementations. Built `sandbox/playwright/` folder with README + install notes + a 02_smoke.py that launches Chromium and dumps a page. Default smoke target is the cleanfoodiecravings URL that 403's our plain fetcher. Not wired into production.
+
+### Harvest from rejects — manual-from-reject → master, attributed
+
+User's question: "still need work on saving the record launched from the dish page... do we store the batch name (dish) with the records in the master after the batch run? if so when we launch from the dish rejects page we should add to the url our batch name... voila we now are able to reconstruct the batch... we should probably store the date run the same way as well." Then: "make sure that launched url is going to the master, not any user acct."
+
+Round trip:
+
+1. **Dish form (`forms/dishes.html`)** stamps each reject link with a hash fragment `#_bcc_dish=<name>&_bcc_run=<reject.run_started_at>`. Hash (not query string) survives redirects and doesn't go to the source server.
+2. **Bookmarklet (`forms/bookmarklet.js`)** reads `location.hash`, harvests `_bcc_*` keys, strips them from the recorded `source_url`, posts them as `bcc_hints` in the stage-markdown body.
+3. **`/stage-markdown`** validates and persists hints alongside the markdown.
+4. **Form hydrate (`recipe_form_styled.html`)** locks the user-id picker to `0` (Master), disables the TBOTB toggle, shows a sticky amber "🌾 Harvest from dish rejects" banner with the dish + run, and a "✕ clear harvest" reset link. Clicking Clear (form-wide) also clears the harvest lock.
+5. **`/recipes` save** force-pins `user_id=0` from the hint *before* the master-write permission check (so role gating still runs on the actor, not bypassed by the hint). `_save_recipe_core` pops `bcc_hints` and stamps `_master.kind="harvest"`, `_master.dish=<hint>`, `_master.refreshed_at=<run>`, `_master.batch_source="manual-from-reject"`.
+
+Defense in depth: even if a user manually toggles the user-id input after the harvest lock is set, the server's hint-driven re-pin wins. The kind `harvest` is distinct from `top` (algorithmic batch winners) and `editors_choice` (deliberate curatorial elevation) — explicit per user feedback: *"editors choice is for items I WANT in... you need to say something implying the curation run or something."*
+
+### Exceptionalism — T-score letter grade per recipe
+
+User proposed grading recipes on their per-dish OU residual via the T-score transformation `(OU / σ) * 10 + 75`. School-style 0.5σ-wide buckets (A+ ≥ 97.5, A ≥ 92.5, A- ≥ 87.5, B+ ≥ 82.5, etc.). Cross-dish comparable because grades are relative-to-cohort. `σ_effective = max(σ_observed, 0.5)` — floor prevents tight cohorts from auto-creating A+'s where a tiny absolute lead becomes a huge z-score. n<25 dishes (where `_compute_custom_ou` doesn't fit) skip grading entirely; UI shows em-dash.
+
+Stamped on master rows as `_master.exceptionalism = {score, grade, basis: {model, n, sigma_effective, sigma_observed}}`. `sigma_effective` also persists on `dishes.last_ou_fit` so future harvest grading can recompute against the originating run's scale rather than today's cohort. Rejects table gained `exc_score` + `exc_grade` columns so the dish-form reject rows display "would have graded X" alongside the existing "would qualify" badge — informs the harvest decision.
+
+Display rolled out across three surfaces. CSS lives in `library-shell.css` so dishes.html and recipe_form_styled.html share the visual:
+
+- **Sidebar card** — small monogram badge top-right (size 'small'), tier-keyed color. A grades wear the brand terracotta; B/C/D recede through saturation; F is ghosted. Hover reveals tooltip with score + cohort basis. Cards without a grade render unchanged (no empty slot reserved).
+- **Form scoring strip** — 5th chip joining PA / DA / OU / Recipe-text: large badge + numeric T-score + cohort basis line ("quadratic · n=100 · σ=2.34").
+- **Dish-reject row** — small inline badge next to "would qualify". Cohort basis omitted (already shown on the panel's fit line).
+
+Three size variants share one tier palette — A+ filled terracotta, A outlined terracotta on soft-bg, A- outline only, B ink, C muted with outline, D pale dashed, F nearly invisible. Editorial register, not stoplight; grades step down through saturation rather than hue so the page reads as one color story.
+
+### Dish form: zero-rejects no longer collapses the panel
+
+After enabling Exceptionalism, Pastitsio's dishes page showed nothing under rejects — because its last run saved 10/10 cleanly, no rejects. `renderRejects` early-returned on empty. Fixed to always render the run-summary panel when `ou_fit` is present, with "No rejects from the last run — every top-N URL extracted and saved cleanly" as the empty-state message. Also: σ_effective now displays on the fit line so the grade math is auditable (`OU fit: quadratic on n=102 URLs (R²=0.715) · σ=5.49 · bar to beat: 6.74`).
+
+Bug along the way: `dishName` referenced inside `renderRejects` wasn't in scope — fixed by reading `payload.dish` (the endpoint already returns it).
+
+### UA fallback in the canonical fetcher — Kitchn `FETCH-FAIL` resolved
+
+User reported: *"[32/123] FETCH-FAIL https://www.thekitchn.com/pastitsio-recipe-23165635"* during a batch run, despite earlier in the session proving Kitchn URLs extract cleanly when fetched directly. Root cause: **two different fetchers with two different UAs**. Step 3 (`_fetch_text` in `intake/build_query_batch.py`) used a Chrome 113 UA; step 7 (`fetch_html` in `to_markdown/html_to_markdown.py`) used the project's bot UA `recipe-forms/0.1`. Kitchn has a reverse anti-bot stance — they 403 Chrome-flavored UAs and 200 bot UAs (opposite of typical). Step 3 dropped every Kitchn URL before extract ever ran.
+
+Fixed the right way (per [[single-path]]): added `fetch_with_ua_fallback(url)` to `html_to_markdown.py` — tries bot UA first, falls back to Chrome UA on failure. Returns `(response, ua_used)` for diagnostics. 404/410 short-circuit terminally (page genuinely doesn't exist, swapping UA can't conjure it). `fetch_html` now uses the fallback by default; explicit `user_agent=` param preserved for tests. Refactored `_fetch_text` (step 3) to call the same canonical fetcher — both stages now see the same response for any URL, no more silent step-3 drops from UA mismatch.
+
+Verified end-to-end: the previously-failing `https://www.thekitchn.com/pastitsio-recipe-23165635` now extracts to a full recipe with 20 ingredients and 11 instructions. Bot UA wins on first try for Kitchn (no fallback needed); 404 URL raised terminally in 0.08s (no wasted retry).
+
+Trade to watch: any site that does *normal* anti-bot (blocks bots, allows Chrome) was previously kept at step 3 (Chrome UA passed) and *might* now fall through to extract with bot UA blocking first. Since both UAs are in the chain, extract still succeeds. The cost is one wasted bot-UA HTTP request before falling back — sub-second.
+
+### Memory + state
+
+- Updated `memory/feedback_single_path.md` lessons concretized — fetcher consistency was an *exact* instance of the canonical-path principle. The fix wasn't "add a workaround in step 3"; it was "share the fetcher."
+- Exceptionalism's `sigma_effective` persists in `last_ou_fit` JSON on the dish row, so future harvest grading has the originating run's scale available. Harvest-time grading not yet wired (tomorrow's work).
+- `dish_rejects` table got `exc_score` + `exc_grade` columns via ALTER TABLE migration.
+
+---
+
 ## To-do
+- **Harvest grading at save time.** Today's `_master.exceptionalism` is stamped only in the batch path (after `_compute_custom_ou` runs). Manual-from-reject saves go to master with `_master.kind="harvest"` but no grade. The dish row's `last_ou_fit` now persists `sigma_effective` + model + coefficients (today's change), so a harvest save can: (1) fetch DA/PA for the URL via Moz, (2) apply the stored fit's predicted_PA(DA), (3) residual → T-score against stored σ, (4) stamp the grade. Edge case: stored fit is from a run that may be weeks old; consider whether to surface a "graded against the originating run's cohort, last refreshed YYYY-MM-DD" caveat on the badge.
+- **Non-batch-originated recipes — grade story.** Personal saves and pre-existing recipes have no dish cohort. Three options: (a) skip Exceptionalism entirely for them (em-dash in UI — already what happens today since `_master.exceptionalism` is absent); (b) match the recipe to a dish heuristically (chapter + cuisine + ingredient overlap) and grade against that dish's stored fit; (c) introduce a global Exceptionalism scale across ALL recipes (different math, different meaning — would be confusing to mix with the per-dish T-score). Discussed today but deferred — Option (a) is the honest default and probably the right answer.
+- **Domain quirks registry.** Discussed today as future work — a small `domain_strategies` table keyed on domain with `fetch_strategy` (`plain` / `playwright` / `bookmarklet_only` / `skip`), `custom_extractor` module path, free-form notes, and auto-tracked failure counts. Value comes from routing between MULTIPLE strategies — don't build until Playwright lands as a second strategy. Backfill from `dish_rejects.reason` patterns on day one. The Kitchn turned out NOT to need this (it was just a UA mismatch — fixed today via the canonical fetcher); first real candidate will surface from the next failed batch run.
 - **Schedule the daily cache refresh.** `scripts/refresh_expiring_cache.py` works manually; needs a Windows Task Scheduler job (or equivalent) firing it nightly. Without scheduling, the proactive refresh story isn't actually proactive — rows accumulate stale until a user touches them and trips the fallback path.
 - **Backfill the remaining 28 master enrichments.** `python -m scripts.backfill_master_enrichment --limit 0`. ~$0.03 total, ~7 minutes wall. Idempotent — skips already-enriched. Defer until you've decided the master cookbook contents are stable, since enrich runs against whatever's in the row.
 - **`userComments` field.** Per-recipe user-comments array, same `+`/`-` UI as ingredients/notes. List it in `USER_TOP_LEVEL_FIELDS` in `recipe_model.py` so cache writes and claims strip it. Belongs only in `recipes` rows (never master, never cache).
@@ -1218,6 +1285,8 @@ User: *"i asked for 10 from serp.. in the counts it said after-disallowed 18."* 
 - Access-control the form's Metadata section (currently marked `TODO: secure later`).
 - Update `pipelineRecipes/` batch project to import schema + stages from `forms/` rather than maintain its own copies.
 - Investigate the one Kitchn URL where markdown extraction came back empty (image fallback worked, but worth understanding why JSON-LD or DOM walk missed it).
+- ~~**Bookmarklet smarter-root + self-check**~~ — **shipped 2026-05-27**. Bookmarklet now scores every candidate root via `chars + 100 * recipe_phrase_hits` and picks the best (`pickBestRoot`). Screenshot has size fallback to `document.body` when initial capture < 30KB b64. Same scoring picker also ported to server-side `to_markdown/html_to_markdown.py:select_main_content` so batch + Extract-from-URL get the same fix — phrase list + selector list kept identical between JS and Python; comments in both files cross-reference. Still open: **friendly "no recipe content" popup** when even the best candidate scores ~0 (no recipe phrases hit at all). Defer until we see it in the wild.
+- **Playwright sandbox** (2026-05-27, queued). Folder at `sandbox/playwright/` with install notes + a 02_smoke.py that launches Chromium and dumps a page. Goal: rehearse the headless-browser fallback for the batch fetcher before committing to it as a production code path. Two failure modes plain `requests.get()` can't fix — anti-bot 403 (cleanfoodiecravings) and JS-rendered recipe widgets — both go away in a real Chromium. The architectural promise: extract `pickBestRoot` to a shared `.js` file the bookmarklet and the server (via `page.evaluate`) both consume → actual code reuse, not parallel maintenance. Not yet wired into `extract_recipe_from_url`. Decide after sandbox probes whether to graduate it into `to_markdown/playwright_fetch.py` as a fallback when plain fetch returns 403/empty.
 - **Friendly site-name display in recipe list.** The recipe sidebar currently renders the bare domain (`natashaskitchen.com`) for the source link; we want the human-readable site name (`Natasha's Kitchen`, `Serious Eats`, `NYT Cooking`). Two paths: (1) curated `domain_display_names.json` in `input/pipeline/` that the form fetches on load and uses for lookup with domain fallback; (2) capture `og:site_name` (or `<title>` shortened) during extract into a new `_source.siteName` field. Path (2) is cleaner long-term but requires a per-page change to the bookmarklet + `html_to_markdown` capture; path (1) is a hand-curated map you control for the first dozen or so dominant sources. Sidebar JS already has the swap point flagged with a TODO in recipe_form_styled.html.
 - **Image coopt policy + processing pipeline** — the bigger architecture (designed 2026-05-26, partially built). **Policy:** every recipe's hero image lives in our `/generated/` store, never references the source site directly. Independence is the goal — source sites take recipes down, change CDN URLs, sign image URLs with expiring tokens, or move behind paywalls; today's saved recipes would lose their image. **Fair-use stance:** internal, non-shared use is treated as fair use; revisit if we ever go public-share (cookbook export to print, blog posts, social). **What's done (2026-05-26):** bookmarklet captures the hero image bytes via `fetch(heroUrl, {credentials:'include'})` in the source page's authenticated session, posts to `/images`, threads the local URL through `local_hero_image_url` in stage-markdown, form overrides `recipe.image[0]` before populating. AI-generated images go directly to `/generated/` by design. `POST /images` (uploads) and `POST /images/fetch` (server-side URL fetch, ~70% solution — paywall/hotlink/CDN-signed fail) exist. **What's still open:**
   1. **`/images/fetch` UI integration** — small "Fetch & save" affordance next to the hero URL field, visible only when the URL is external and not already `/generated/`. Calls the endpoint, replaces the field with the returned local URL. Currently the endpoint exists but isn't surfaced in the form.
