@@ -35,7 +35,7 @@
   "_comment_batch_funnel": "Per-query and per-dish SerpAPI funnel sizes. Each dish row in the dishes table overrides via its own top_n_serpapi / top_n_final columns; these are just the defaults applied when a dish is created without explicit values.",
   "default_top_serpapi_per_query": 25,
   "default_top_final": 10,
-  "serpapi_max_pages": 10,
+  "serpapi_max_pages": 20,
 
   "_comment_branding": "Canonical public domain for BCC permalinks. Used by the live save path's self-URL minting AND by the /r/<id> redirect (both live + batch). Swapping the brand domain is a config edit, not a code change.",
   "bcc_public_domain": "bestcooksclub.com",

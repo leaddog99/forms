@@ -61,6 +61,114 @@
       color: var(--muted);
     }
 
+    /* Rejected URLs panel — read-only diagnostic for the most recent
+       refresh. Visually distinct from the run-result success panel
+       so the user knows these are "almost made it" candidates worth
+       manual recovery, not failures. */
+    .rejects-details {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fdfaf2;
+    }
+    .rejects-details summary {
+      cursor: pointer;
+      font-size: 0.95em;
+      list-style: none;
+      user-select: none;
+    }
+    .rejects-details summary::-webkit-details-marker { display: none; }
+    .rejects-details summary::before {
+      content: '▸ ';
+      color: var(--accent);
+      transition: transform 0.15s ease;
+    }
+    .rejects-details[open] summary::before { content: '▾ '; }
+
+    .rejects-list { display: flex; flex-direction: column; gap: 8px; }
+    .reject-row {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 0.88em;
+    }
+    .reject-row-main {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    }
+    .reject-title {
+      font-weight: 500;
+      color: var(--ink);
+      text-decoration: none;
+      border-bottom: 1px dotted transparent;
+    }
+    .reject-title:hover {
+      color: var(--accent-dark);
+      border-bottom-color: var(--accent);
+    }
+    .reject-host {
+      color: var(--muted);
+      font-size: 0.85em;
+    }
+    .reject-meta {
+      display: flex; justify-content: space-between; gap: 12px;
+      margin-top: 4px;
+      font-size: 0.82em;
+      color: var(--muted);
+    }
+    .reject-reason {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.92em;
+    }
+    .reject-scores {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      white-space: nowrap;
+    }
+    .qualify-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-size: 0.7em;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: #e7f6e8;
+      color: #2f7a3a;
+      border: 1px solid #b9dfbe;
+    }
+    /* Per-status row dimming. 'new' rows stay full opacity (actionable);
+       marked rows fade to ~55% so the curator's eye lands on fresh
+       discoveries first while still seeing the institutional memory. */
+    .reject-row.status-recovered  { opacity: 0.55; background: #f4f9ee; border-color: #cfe6c9; }
+    .reject-row.status-skipped    { opacity: 0.55; background: #fafafa; }
+    .reject-row.status-unreachable { opacity: 0.55; background: #fbf2ea; border-color: #e3cdb3; }
+    /* Row controls — status select + notes input, sit below the meta line. */
+    .reject-controls {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--line);
+      flex-wrap: wrap;
+    }
+    .reject-status-label {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 0.82em; color: var(--muted);
+    }
+    .reject-status {
+      padding: 3px 6px; font-size: 0.86em;
+      border: 1px solid var(--line); border-radius: 6px;
+      background: #fff; cursor: pointer;
+    }
+    .reject-notes {
+      flex: 1; min-width: 140px;
+      padding: 4px 8px; font-size: 0.86em;
+      border: 1px solid var(--line); border-radius: 6px;
+      background: #fff;
+    }
+    .reject-marked {
+      font-size: 0.78em; color: var(--muted); font-style: italic;
+    }
+
     /* Live SSE log panel — shown while a job is running, persists after
        completion so the user can review what happened. */
     .live-log {
@@ -123,7 +231,7 @@
     <div class="button-row" id="footerButtons"></div>
   </footer>
 
-  <script src="/forms/library-shell.js"></script>
+  <script src="/forms/library-shell.js?v=exc1"></script>
   <script>
     const API = window.location.origin;
     const $ = (sel) => document.querySelector(sel);
@@ -243,6 +351,7 @@
             `<label>Notes</label>` +
             `<div class="locked" style="font-family:inherit;background:transparent;border-style:solid">${escapeHtml(d.notes)}</div>` +
           `</div>` : '') +
+          `<div id="rejectsSection" style="margin-top:18px"></div>` +
         `</div>`;
       $('#footerButtons').innerHTML =
         `<button type="button" class="primary" id="runBtn">Run</button>` +
@@ -253,6 +362,198 @@
       $('#runBtn').addEventListener('click', () => doRun(d));
       $('#editBtn').addEventListener('click', () => { mode = 'edit'; renderDetail(); });
       $('#deleteBtn').addEventListener('click', () => doDelete(d));
+      // Fire-and-forget reject load. The section stays hidden until
+      // the fetch returns, so an empty/never-refreshed dish doesn't
+      // flash "Rejected URLs" briefly before disappearing.
+      loadRejects(d.name);
+    }
+
+    // ===== Rejected URLs section =====
+    // Fetches /dishes/<name>/rejects on view, renders a collapsible
+    // panel showing every URL that made it past the batch's front-end
+    // (filter_disallowed + is_recipe + Moz) but then failed extract /
+    // save / save-gate. Each row gets a "WOULD QUALIFY" badge if its
+    // custom OU exceeds the dish's last_run_bottom_ou — actionable
+    // hint that bookmarketting the URL and saving to master would
+    // give us a recipe whose score beats the current weakest entry.
+    async function loadRejects(dishName) {
+      const section = document.getElementById('rejectsSection');
+      if (!section) return;
+      try {
+        const res = await fetch(`${API}/dishes/${encodeURIComponent(dishName)}/rejects`);
+        if (!res.ok) { section.innerHTML = ''; return; }
+        const payload = await res.json();
+        // Always render the run-summary panel when the dish HAS a fit
+        // (last_ou_fit is present). The rejects list inside the panel
+        // can be empty — that's a meaningful UX state, not a bug. Only
+        // skip rendering when there's no fit data at all (dish never
+        // refreshed, or a pre-fit-instrumentation run).
+        const hasFitData = payload.ou_fit || (typeof payload.bottom_ou === 'number');
+        const hasRejects = (payload.rejects || []).length > 0;
+        if (!hasFitData && !hasRejects) { section.innerHTML = ''; return; }
+        section.innerHTML = renderRejects(payload);
+        if (hasRejects) wireRejectControls(dishName);
+      } catch (err) {
+        section.innerHTML = '';
+        console.error('rejects fetch failed:', err);
+      }
+    }
+
+    function renderRejects(payload) {
+      const rejects = payload.rejects || [];
+      const bottom = (typeof payload.bottom_ou === 'number') ? payload.bottom_ou : null;
+      const fit = payload.ou_fit || null;
+      // Fit summary line — model + R² + σ (the grading scale) + bottom OU.
+      // σ matters: it's the denominator in the Exceptionalism T-score, so
+      // a small σ means small absolute OU differences swing big grade
+      // changes, and large σ means the cohort is dispersed and only big
+      // outliers earn A grades. Exposing it makes the grade defensible.
+      const sigmaStr = (fit && typeof fit.sigma_effective === 'number')
+        ? ` · σ=<strong>${fit.sigma_effective.toFixed(2)}</strong>` +
+          (fit.sigma_observed != null && Math.abs(fit.sigma_observed - fit.sigma_effective) > 0.001
+            ? ` <em style="font-size:0.85em;color:var(--muted,#74695f)">(σ_obs ${fit.sigma_observed.toFixed(2)}, floored)</em>` : '')
+        : '';
+      const fitLine = fit && fit.used
+        ? `<div class="subline" style="margin-top:4px">OU fit: <strong>${escapeHtml(fit.model)}</strong> on n=${escapeHtml(fit.n)} URLs (R²=${(fit.r2_chosen || 0).toFixed(3)})${sigmaStr}${bottom != null ? ` · bar to beat: <strong>${bottom.toFixed(2)}</strong>` : ''}</div>`
+        : `<div class="subline" style="margin-top:4px">${bottom != null ? `bar to beat: <strong>${bottom.toFixed(2)}</strong>` : 'no OU fit (n &lt; 25 — used global formula)'}</div>`;
+      const statusOptions = ['new', 'recovered', 'skipped', 'unreachable'];
+      // Stamp each reject's outbound link with a hash fragment carrying the
+      // originating dish + run timestamp (#_bcc_dish=…&_bcc_run=…). The
+      // bookmarklet, running on the source page in the user's session,
+      // reads location.hash to harvest these hints. They thread through
+      // /stage-markdown → form hydrate → save, where the save forces
+      // user_id=0 and stamps _master so the rescued recipe is attributed
+      // back to the batch that originally rejected it. Hash (not query)
+      // because it survives redirects + doesn't go to the source server.
+      const dishHint = encodeURIComponent(payload.dish || '');
+      const rows = rejects.map((r) => {
+        const wouldQualify = (typeof r.ou === 'number' && bottom != null && r.ou > bottom);
+        const ouStr = (typeof r.ou === 'number') ? r.ou.toFixed(2) : '—';
+        const daStr = (typeof r.da === 'number') ? r.da.toFixed(0) : '—';
+        const paStr = (typeof r.pa === 'number') ? r.pa.toFixed(0) : '—';
+        const title = r.title || '(no title)';
+        const hostname = (() => {
+          try { return new URL(r.url).hostname.replace(/^www\./, ''); }
+          catch { return r.url; }
+        })();
+        const status = r.status || 'new';
+        const qualifyBadge = wouldQualify
+          ? '<span class="qualify-badge">would qualify</span>'
+          : '';
+        const statusOpts = statusOptions.map(s =>
+          `<option value="${s}" ${s === status ? 'selected' : ''}>${s}</option>`
+        ).join('');
+        const markedHint = (status !== 'new' && r.marked_at)
+          ? `<span class="reject-marked">marked ${escapeHtml(fmtDate(r.marked_at))}</span>`
+          : '';
+        const runHint = encodeURIComponent(r.run_started_at || '');
+        const stampedHref = `${r.url}${r.url.includes('#') ? '&' : '#'}_bcc_dish=${dishHint}&_bcc_run=${runHint}`;
+        // Exceptionalism — what grade this URL WOULD HAVE earned if it'd
+        // survived to master. Inline next to the existing DA/PA/OU
+        // scores. Shows when the run computed one (n>=25 cohort).
+        const excBadgeHtml = (r.exc_grade && r.exc_score != null
+                              && window.LibraryShell && LibraryShell.renderExcBadge)
+          ? LibraryShell.renderExcBadge(
+              { grade: r.exc_grade, score: r.exc_score, basis: {} },
+              { size: 'small' }
+            )
+          : '';
+        return (
+          `<div class="reject-row status-${escapeHtml(status)}" data-reject-id="${escapeHtml(r.id)}">` +
+            `<div class="reject-row-main">` +
+              `<a class="reject-title" href="${escapeHtml(stampedHref)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(r.url)}">${escapeHtml(title)}</a>` +
+              ` <span class="reject-host">${escapeHtml(hostname)}</span>` +
+              qualifyBadge +
+              (excBadgeHtml ? ' ' + excBadgeHtml : '') +
+            `</div>` +
+            `<div class="reject-meta">` +
+              `<span class="reject-reason">${escapeHtml(r.reason || '')}</span>` +
+              `<span class="reject-scores">DA ${daStr} · PA ${paStr} · OU ${ouStr}</span>` +
+            `</div>` +
+            `<div class="reject-controls">` +
+              `<label class="reject-status-label">Status` +
+                `<select class="reject-status">${statusOpts}</select>` +
+              `</label>` +
+              `<input type="text" class="reject-notes" placeholder="Notes (optional)" value="${escapeHtml(r.notes || '')}" />` +
+              markedHint +
+            `</div>` +
+          `</div>`
+        );
+      }).join('');
+      // Empty-state copy: a clean run is GOOD news, not missing data.
+      const listBlock = rejects.length === 0
+        ? `<div class="subline" style="margin-top:10px;font-style:italic;color:var(--muted,#74695f)">` +
+            `No rejects from the last run — every top-${rejects.length || 'N'} URL extracted and saved cleanly.` +
+          `</div>`
+        : `<div class="rejects-list" style="margin-top:10px">${rows}</div>` +
+          `<div class="subline" style="margin-top:8px;font-style:italic">` +
+            `Click a title to open in a new tab. Use the bookmarklet there to extract from your authenticated session, then save to master (your role allows it). ` +
+            `Mark each reject's status — your marks persist across refreshes so already-decided URLs don't re-surface as fresh.` +
+          `</div>`;
+      const heading = rejects.length === 0
+        ? `<strong>Last run summary</strong>`
+        : `<strong>Rejected URLs (${rejects.length})</strong>`;
+      return (
+        `<details open class="rejects-details">` +
+          `<summary>${heading}</summary>` +
+          fitLine +
+          listBlock +
+        `</details>`
+      );
+    }
+
+    // Attach status + notes change handlers to every reject row in
+    // the panel. Called after renderRejects() injects HTML; uses
+    // event delegation on the rejects-list container so we wire once
+    // per render. Save fires on every change to the dropdown +
+    // on blur of the notes input (cheap enough to commit every edit).
+    function wireRejectControls(dishName) {
+      const list = document.querySelector('#rejectsSection .rejects-list');
+      if (!list) return;
+      async function patchStatus(row, body) {
+        const id = row.dataset.rejectId;
+        if (!id) return;
+        try {
+          const res = await fetch(`${API}/dishes/${encodeURIComponent(dishName)}/rejects/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const txt = await res.text();
+            setFeedback(`Reject update failed: ${txt.slice(0, 160)}`, 'error');
+            return;
+          }
+          const updated = await res.json();
+          // Reflect new status class + marked-at timestamp.
+          row.className = `reject-row status-${updated.status || 'new'}`;
+          let markedSpan = row.querySelector('.reject-marked');
+          if ((updated.status || 'new') !== 'new' && updated.marked_at) {
+            if (!markedSpan) {
+              markedSpan = document.createElement('span');
+              markedSpan.className = 'reject-marked';
+              row.querySelector('.reject-controls').appendChild(markedSpan);
+            }
+            markedSpan.textContent = `marked ${fmtDate(updated.marked_at)}`;
+          } else if (markedSpan) {
+            markedSpan.remove();
+          }
+        } catch (err) {
+          setFeedback(`Reject update failed: ${err.message || err}`, 'error');
+        }
+      }
+      list.addEventListener('change', (e) => {
+        if (!e.target.matches('.reject-status')) return;
+        const row = e.target.closest('.reject-row');
+        const notes = (row.querySelector('.reject-notes')?.value || '').trim();
+        patchStatus(row, { status: e.target.value, notes });
+      });
+      list.addEventListener('blur', (e) => {
+        if (!e.target.matches('.reject-notes')) return;
+        const row = e.target.closest('.reject-row');
+        const status = row.querySelector('.reject-status').value;
+        patchStatus(row, { status, notes: e.target.value.trim() });
+      }, true);
     }
 
     function renderEditForm(d) {
@@ -275,6 +576,13 @@
           `<div class="field full" style="margin-top:14px">` +
             `<label>Notes</label>` +
             `<input type="text" id="ed_notes" value="${escapeHtml(d.notes || '')}" />` +
+          `</div>` +
+          `<div class="field full" style="margin-top:14px">` +
+            `<label style="display:flex;align-items:center;gap:8px;cursor:pointer">` +
+              `<input type="checkbox" id="ed_auto_enrich" ${d.auto_enrich ? 'checked' : ''} style="width:auto;margin:0" />` +
+              `Auto-enrich on save` +
+            `</label>` +
+            `<span class="hint">Default off. When on, each master row saved during a refresh runs through enrich_recipe (~$0.05 + ~10s per row, adds ~4 minutes per 25-URL refresh).</span>` +
           `</div>` +
         `</div>`;
       $('#footerButtons').innerHTML =
@@ -315,6 +623,13 @@
             `<label>Notes (optional)</label>` +
             `<input type="text" id="ad_notes" placeholder="curator note" />` +
           `</div>` +
+          `<div class="field full" style="margin-top:14px">` +
+            `<label style="display:flex;align-items:center;gap:8px;cursor:pointer">` +
+              `<input type="checkbox" id="ad_auto_enrich" style="width:auto;margin:0" />` +
+              `Auto-enrich on save` +
+            `</label>` +
+            `<span class="hint">Default off. When on, each master row saved during a refresh runs through enrich_recipe (~$0.05 + ~10s per row, adds ~4 minutes per 25-URL refresh).</span>` +
+          `</div>` +
         `</div>`;
       $('#footerButtons').innerHTML =
         `<button type="button" class="primary" id="createBtn">Create dish</button>` +
@@ -348,6 +663,7 @@
         top_n_final:   parseInt($('#ad_top_n_final').value, 10)   || 10,
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#ad_notes').value.trim() || null,
+        auto_enrich: $('#ad_auto_enrich').checked,
       };
       try {
         const res = await fetch(`${API}/dishes`, {
@@ -379,6 +695,7 @@
         top_n_final:   parseInt($('#ed_top_n_final').value, 10),
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#ed_notes').value.trim() || null,
+        auto_enrich: $('#ed_auto_enrich').checked,
       };
       try {
         const res = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`, {

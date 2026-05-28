@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
+import numpy as np
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -77,12 +78,11 @@ SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 SERPAPI_TIMEOUT_S = 30
 FETCH_TIMEOUT_S = 10
-FETCH_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-    ),
-}
+# Step 3's fetch is now shared with step 7's extract via the canonical
+# `fetch_with_ua_fallback`. Both go through the SAME UA chain so a URL
+# that the extract can fetch will always pass step 3's filter — no
+# more silent drops from UA mismatch. See [[single-path]].
+from to_markdown.html_to_markdown import fetch_with_ua_fallback
 
 # Defaults now come from bcc_config.json via input.pipeline.config.
 # Re-exported under the historical names so existing CLI / callers
@@ -258,13 +258,11 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
 
 def _fetch_text(url: str) -> Optional[str]:
     """Fetch a URL and return lower-cased plain text. Returns None on any
-    failure (HTTP error, timeout, parse error). No Playwright fallback —
-    JS-rendered/paywalled pages get dropped, which is the right call for
-    batch (we don't want them anyway)."""
+    failure (HTTP error, timeout, parse error). Uses the canonical
+    fetch_with_ua_fallback so step 3's filter sees the same response
+    the step-7 extract would — no UA-mismatch silent drops."""
     try:
-        resp = requests.get(url, timeout=FETCH_TIMEOUT_S, headers=FETCH_HEADERS)
-        if resp.status_code != 200:
-            return None
+        resp, _ua_used = fetch_with_ua_fallback(url, timeout=FETCH_TIMEOUT_S)
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
@@ -345,27 +343,222 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _min_da_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Drop entries whose Moz domain_authority is below MIN_DA_SCORE
-    (default 30.0 from bcc_config.json).
+_MIN_FIT_N = 25  # Floor below which the regression isn't worth running
+                  # (overfitting noise at small N). Falls back to whatever
+                  # OU score_url_via_moz already computed via the global
+                  # formula.
 
-    Low-DA domains routinely surface low-quality recipes — even the
-    enrichment's own editor commentary flags them. Dropping them before
-    rank+cull keeps master_recipes statistically clean. Page-quality
-    floor (separate from _min_ou_filter which drops pages that
-    under-perform their domain baseline).
+# === Exceptionalism grading ===
+# T-score transformation of OU residuals into a school-style letter grade.
+# Math: for each entry, grade_score = (OU / σ_effective) * 10 + 75.
+# Base 75 (not 50) reflects the qualified cohort — even rank-100 passed
+# SerpAPI's top organic + our domain blacklist + is_recipe filter + Moz
+# OU>0 floor, so "average" is closer to B than to C/D.
+#
+# σ_effective = max(σ_observed, EXC_SIGMA_FLOOR). The floor prevents tight
+# cohorts from auto-creating A+'s: when residuals cluster very tight, a
+# tiny absolute lead becomes a huge z-score, which over-rewards small
+# differences. 0.5 OU is roughly the noise band we've observed between
+# back-to-back Moz refreshes on the same URL.
+EXC_SIGMA_FLOOR = 0.5
+EXC_BASE = 75.0
+EXC_SIGMA_MULT = 10.0
+
+# Grade buckets in descending threshold order. The score floor for each
+# letter is the bucket's MIN — anything >= floor and < next-higher gets
+# that letter. Mirrors a standard 4.0-scale boundary (A-/B+ at 87.5/82.5
+# etc.) — 0.5σ wide buckets in T-score space.
+_EXC_GRADE_BUCKETS = [
+    (97.5, "A+"),
+    (92.5, "A"),
+    (87.5, "A-"),
+    (82.5, "B+"),
+    (77.5, "B"),
+    (72.5, "B-"),
+    (67.5, "C+"),
+    (62.5, "C"),
+    (57.5, "C-"),
+    (52.5, "D+"),
+    (47.5, "D"),
+    (42.5, "D-"),
+]
+
+
+def _score_to_grade(score: float) -> str:
+    """Return the letter grade for a T-score. Below the lowest bucket
+    floor (42.5) returns 'F'. Score is assumed to be a finite number."""
+    for floor, letter in _EXC_GRADE_BUCKETS:
+        if score >= floor:
+            return letter
+    return "F"
+
+
+def _r_squared(y_actual: np.ndarray, y_predicted: np.ndarray) -> float:
+    """Coefficient of determination. 1.0 = perfect fit; 0.0 = no
+    explanatory power vs the mean; can go negative if the model is
+    worse than just predicting the mean."""
+    ss_res = float(np.sum((y_actual - y_predicted) ** 2))
+    ss_tot = float(np.sum((y_actual - y_actual.mean()) ** 2))
+    if ss_tot <= 0:
+        return 0.0   # all y values identical — degenerate
+    return 1.0 - (ss_res / ss_tot)
+
+
+def _compute_custom_ou(entries: list[dict]) -> dict:
+    """Fit a regression of PA on DA across the URLs in THIS dish's batch,
+    then recompute each entry's OU as `actual_PA - predicted_PA(DA)`.
+
+    Replaces the global static OU formula (`-3.0273 * DA^0.6034 + PA`)
+    that score_url_via_moz uses for single-recipe scoring. The static
+    formula was fit on a broad sample of websites; the PA-vs-DA shape
+    varies meaningfully by topic, so refitting per-dish surfaces the
+    pages that genuinely outperform their domain *within this category*.
+
+    Tries both linear (d=1) and quadratic (d=2) fits, picks the one with
+    the higher R² for use, logs both for transparency. Coefficients are
+    NOT persisted — fit is ephemeral per refresh.
+
+    Returns a metadata dict (degree, coefficients, R², n) for the
+    pipeline counts. The entries list is mutated in place: each entry's
+    `ou` value is overwritten with the per-dish custom residual.
+
+    If N < _MIN_FIT_N (25), the fit is skipped and the existing OU
+    values (from the global formula) are left in place — a regression
+    on a handful of points overfits to noise rather than identifying
+    real exceptions.
     """
-    kept, dropped = [], []
-    for i, e in enumerate(entries, start=1):
-        da = e.get("da")
-        if da is None or da < MIN_DA_SCORE:
-            e["_dropped_reason"] = f"da<{MIN_DA_SCORE} (da={da})"
-            dropped.append(e)
-            da_disp = f"{da:.1f}" if isinstance(da, (int, float)) else str(da)
-            print(f"  [{i:>2}/{len(entries)}] DA-DROP    da={da_disp:>5}  {e['url']}")
-        else:
-            kept.append(e)
-    return kept, dropped
+    # Collect (da, pa) for entries that have both. Some Moz responses
+    # have one or the other as None — skip those for the fit, but they
+    # still pass through with their existing OU.
+    da_vals, pa_vals, fit_indices = [], [], []
+    for i, e in enumerate(entries):
+        da, pa = e.get("da"), e.get("pa")
+        if isinstance(da, (int, float)) and isinstance(pa, (int, float)):
+            da_vals.append(float(da))
+            pa_vals.append(float(pa))
+            fit_indices.append(i)
+
+    n = len(da_vals)
+    if n < _MIN_FIT_N:
+        print(f"      -> SKIP custom-OU fit: only {n} URLs with PA+DA "
+              f"(need >={_MIN_FIT_N}); using global OU formula values "
+              f"already computed by Moz step")
+        return {"used": False, "n": n, "reason": "below_min_n"}
+
+    da_arr = np.array(da_vals)
+    pa_arr = np.array(pa_vals)
+
+    # === Candidate 1: linear  PA = m*DA + b  ===
+    coeffs_lin = np.polyfit(da_arr, pa_arr, 1)
+    pred_lin = np.polyval(coeffs_lin, da_arr)
+    r2_lin = _r_squared(pa_arr, pred_lin)
+
+    # === Candidate 2: quadratic  PA = a*DA^2 + b*DA + c  ===
+    coeffs_quad = np.polyfit(da_arr, pa_arr, 2)
+    pred_quad = np.polyval(coeffs_quad, da_arr)
+    r2_quad = _r_squared(pa_arr, pred_quad)
+
+    # === Candidate 3: power  PA = a*DA^b  ===
+    # This is the form Moz's own published formula uses
+    # (-3.0273 * DA^0.6034 + PA), so we test it on the current dish too.
+    # Power isn't linear in (a, b), but log(PA) = log(a) + b*log(DA) IS
+    # linear in (log a, b) — fit via polyfit on log-transformed inputs.
+    # Mask out non-positive values where log is undefined.
+    pos_mask = (da_arr > 0) & (pa_arr > 0)
+    if pos_mask.sum() >= _MIN_FIT_N:
+        log_da = np.log(da_arr[pos_mask])
+        log_pa = np.log(pa_arr[pos_mask])
+        slope, intercept = np.polyfit(log_da, log_pa, 1)
+        pwr_a = float(np.exp(intercept))
+        pwr_b = float(slope)
+        # Compute predicted PA on the ORIGINAL scale across ALL points
+        # so R² is comparable to the polynomial fits (DA=0 points
+        # predict PA=0, which is the right limit for a power model).
+        pred_pwr = np.where(da_arr > 0, pwr_a * (np.maximum(da_arr, 1e-9) ** pwr_b), 0.0)
+        r2_pwr = _r_squared(pa_arr, pred_pwr)
+        power_available = True
+    else:
+        pwr_a, pwr_b, r2_pwr, pred_pwr, power_available = 0.0, 0.0, float("-inf"), None, False
+
+    # Pick the model with the highest R². Power and quadratic can each
+    # beat linear depending on the dish's PA-DA shape; we let the data
+    # choose.
+    candidates = [("linear",    r2_lin,  coeffs_lin,  pred_lin),
+                  ("quadratic", r2_quad, coeffs_quad, pred_quad)]
+    if power_available:
+        candidates.append(("power", r2_pwr, np.array([pwr_a, pwr_b]), pred_pwr))
+    chosen_name, chosen_r2, chosen_coeffs, chosen_pred = max(candidates, key=lambda c: c[1])
+
+    # Pretty-print the chosen model + the full comparison.
+    if chosen_name == "quadratic":
+        a, b, c = chosen_coeffs
+        formula = f"predicted_PA = {a:+.4f}*DA^2 {b:+.4f}*DA {c:+.4f}"
+    elif chosen_name == "linear":
+        m, b = chosen_coeffs
+        formula = f"predicted_PA = {m:+.4f}*DA {b:+.4f}"
+    else:  # power
+        a, b = chosen_coeffs
+        formula = f"predicted_PA = {a:.4f} * DA^{b:.4f}"
+    pwr_str = f"{r2_pwr:.4f}" if power_available else "n/a"
+    print(f"      n={n}  R²: linear={r2_lin:.4f}  quad={r2_quad:.4f}  "
+          f"power={pwr_str}  -> chose {chosen_name}")
+    print(f"      {formula}")
+
+    # Rewrite OU per entry: residual against the chosen model. Entries
+    # skipped from the fit (missing PA or DA) keep their existing OU
+    # value from the Moz step.
+    residuals = np.zeros(n)
+    for fit_idx, e_idx in enumerate(fit_indices):
+        actual_pa = pa_vals[fit_idx]
+        predicted_pa = float(chosen_pred[fit_idx])
+        residual = actual_pa - predicted_pa
+        residuals[fit_idx] = residual
+        entries[e_idx]["ou"] = residual
+        entries[e_idx]["_ou_predicted_pa"] = predicted_pa  # debug crumb
+
+    # === Exceptionalism grade ===
+    # Compute σ across all post-fit residuals, apply floor, T-score each
+    # entry, and stamp the grade. Residual mean is ~0 by construction
+    # (polyfit produces zero-sum residuals on the fit set), so the
+    # formula simplifies to (residual / σ_eff) * 10 + 75.
+    sigma_observed = float(np.std(residuals, ddof=0))
+    sigma_effective = max(sigma_observed, EXC_SIGMA_FLOOR)
+    residual_mean = float(np.mean(residuals))
+    print(f"      σ_obs={sigma_observed:.4f}  σ_eff={sigma_effective:.4f} "
+          f"(floor={EXC_SIGMA_FLOOR})  residual_mean={residual_mean:+.4f}")
+    for fit_idx, e_idx in enumerate(fit_indices):
+        residual = float(residuals[fit_idx])
+        score = (residual / sigma_effective) * EXC_SIGMA_MULT + EXC_BASE
+        entries[e_idx]["exceptionalism"] = {
+            "score": round(score, 2),
+            "grade": _score_to_grade(score),
+            "basis": {
+                "model": chosen_name,
+                "sigma_effective": round(sigma_effective, 4),
+                "sigma_observed": round(sigma_observed, 4),
+                "n": n,
+            },
+        }
+
+    return {
+        "used": True,
+        "n": n,
+        "model": chosen_name,
+        "r2_linear": r2_lin,
+        "r2_quadratic": r2_quad,
+        "r2_power": r2_pwr if power_available else None,
+        "r2_chosen": chosen_r2,
+        "coefficients": [float(x) for x in chosen_coeffs],
+        # σ_effective is the cohort-wide grading scale. Persisted on the
+        # dish row via last_ou_fit so future harvest-from-reject saves
+        # can recompute Exceptionalism against the originating batch's
+        # scale rather than today's cohort.
+        "sigma_observed": round(sigma_observed, 4),
+        "sigma_effective": round(sigma_effective, 4),
+        "exc_base": EXC_BASE,
+        "exc_sigma_mult": EXC_SIGMA_MULT,
+        "exc_sigma_floor": EXC_SIGMA_FLOOR,
+    }
 
 
 def _min_ou_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -461,9 +654,9 @@ def build_batch(
     entries, dropped_moz = _moz_score(entries)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_moz)}")
 
-    print(f"\n[5/7] min-DA filter (>= {MIN_DA_SCORE})")
-    entries, dropped_low_da = _min_da_filter(entries)
-    print(f"      -> kept {len(entries)}, dropped {len(dropped_low_da)}")
+    print(f"\n[5/7] custom OU fit (per-dish regression; "
+          f"floor n>={_MIN_FIT_N}, else global formula)")
+    ou_fit = _compute_custom_ou(entries)
 
     print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE})")
     entries, dropped_low_ou = _min_ou_filter(entries)
@@ -484,9 +677,8 @@ def build_batch(
         e["dish"] = dish
 
     after_min_ou = len(entries)
-    after_min_da = after_min_ou + len(dropped_low_ou)
-    after_moz = after_min_da + len(dropped_low_da)
-    after_is_recipe = after_moz + len(dropped_moz)
+    after_moz_post_fit = after_min_ou + len(dropped_low_ou)
+    after_is_recipe = after_moz_post_fit + len(dropped_moz)
     after_disallowed = after_is_recipe + len(dropped_not_recipe)
     return {
         "dish": dish,
@@ -498,16 +690,15 @@ def build_batch(
             "serpapi_union": serpapi_union,
             "after_disallowed": after_disallowed,
             "after_is_recipe": after_is_recipe,
-            "after_moz": after_moz,
-            "after_min_da": after_min_da,
+            "after_moz": after_moz_post_fit,
             "after_min_ou": after_min_ou,
             "final": len(final),
             "dropped_disallowed": len(dropped_disallowed),
             "dropped_not_recipe": len(dropped_not_recipe),
             "dropped_moz": len(dropped_moz),
-            "dropped_low_da": len(dropped_low_da),
             "dropped_low_ou": len(dropped_low_ou),
         },
+        "ou_fit": ou_fit,
         "entries": final,
     }
 

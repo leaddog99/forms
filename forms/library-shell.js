@@ -40,6 +40,41 @@
     sidebarToggle: null,
   };
 
+  // === X-Self-User-Id header auto-attach ===
+  // Every page that loads library-shell.js (recipe form, dishes,
+  // users, install) makes API calls that the server uses to check
+  // permissions (gates on master writes, /auth/me identity, etc.).
+  // Read app:self_user_id once from localStorage and stamp it on every
+  // outbound fetch so callers don't have to thread it manually. The
+  // legacy sidebar:user_id key is honored as fallback for sessions
+  // pre-dating the picker login (2026-05-21). Pre-Ghost this is a
+  // trust-the-client header — fine for a private app — and on Ghost
+  // integration the server-side validator swaps to a session JWT.
+  (function patchFetch() {
+    if (window.__bccFetchPatched) return;
+    window.__bccFetchPatched = true;
+    const _origFetch = window.fetch.bind(window);
+    function selfUid() {
+      try {
+        const explicit = localStorage.getItem('app:self_user_id');
+        if (explicit && parseInt(explicit, 10) > 0) return String(parseInt(explicit, 10));
+        const legacy = localStorage.getItem('sidebar:user_id');
+        if (legacy && parseInt(legacy, 10) > 0) return String(parseInt(legacy, 10));
+      } catch (e) { /* private mode / no storage */ }
+      return null;
+    }
+    window.fetch = function (input, init) {
+      const uid = selfUid();
+      if (uid) {
+        init = init ? Object.assign({}, init) : {};
+        const h = new Headers(init.headers || {});
+        if (!h.has('X-Self-User-Id')) h.set('X-Self-User-Id', uid);
+        init.headers = h;
+      }
+      return _origFetch(input, init);
+    };
+  })();
+
   function openSidebar() {
     if (!state.sidebar) return;
     state.sidebar.classList.add('open');
@@ -66,6 +101,60 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
       '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
     }[c]));
+  }
+
+  // === Exceptionalism grade badge ===
+  // Returns HTML string for a tier-keyed monogram badge. Pair with the
+  // .exc-badge CSS in recipe_form_styled.html (also imported by
+  // dishes.html via the shared stylesheet pipeline).
+  //
+  // Usage:
+  //   const html = renderExcBadge({grade: 'A-', score: 88.3, basis: {...}});
+  //   const html = renderExcBadge(exc, {size: 'small'});  // sidebar
+  //   const html = renderExcBadge(exc, {size: 'large', includeScore: true});
+  //
+  // Returns '' when exc is null/missing — callers can ${...} this directly
+  // into a template without a guard.
+  function gradeToTier(grade) {
+    if (!grade) return 'tier-none';
+    if (grade === 'A+') return 'tier-a-plus';
+    if (grade === 'A')  return 'tier-a';
+    if (grade === 'A-') return 'tier-a-minus';
+    if (grade.startsWith('B')) return 'tier-b';
+    if (grade.startsWith('C')) return 'tier-c';
+    if (grade.startsWith('D')) return 'tier-d';
+    if (grade === 'F') return 'tier-f';
+    return 'tier-none';
+  }
+
+  function renderExcBadge(exc, opts) {
+    if (!exc || !exc.grade) return '';
+    opts = opts || {};
+    const size = opts.size || 'medium';
+    const tier = gradeToTier(exc.grade);
+    const letter = exc.grade[0];
+    const suffix = exc.grade.length > 1 ? exc.grade.slice(1) : '';
+    const score = (typeof exc.score === 'number') ? exc.score.toFixed(1) : '';
+    const basis = exc.basis || {};
+    const basisParts = [];
+    if (basis.model) basisParts.push(basis.model);
+    if (typeof basis.n === 'number') basisParts.push('n=' + basis.n);
+    if (typeof basis.sigma_effective === 'number') {
+      basisParts.push('σ=' + basis.sigma_effective.toFixed(2));
+    }
+    const basisStr = basisParts.length ? '  ·  ' + basisParts.join(', ') : '';
+    const tooltip = 'Exceptionalism ' + exc.grade
+      + (score ? '  ·  score ' + score : '')
+      + basisStr;
+    const suffixHtml = suffix
+      ? '<span class="exc-suffix">' + escapeHtml(suffix) + '</span>'
+      : '';
+    return '<span class="exc-badge ' + size + ' ' + tier + '" '
+      + 'title="' + escapeHtml(tooltip) + '" '
+      + 'aria-label="' + escapeHtml(tooltip) + '">'
+      + '<span class="exc-letter">' + escapeHtml(letter) + '</span>'
+      + suffixHtml
+      + '</span>';
   }
 
   function fmtDate(s) {
@@ -252,6 +341,8 @@
     closeOnNarrow,
     escapeHtml,
     fmtDate,
+    renderExcBadge,
+    gradeToTier,
     NAV_ITEMS,
   };
 })();

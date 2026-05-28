@@ -1000,6 +1000,132 @@
       color: var(--muted);
       font-weight: 400;
     }
+
+    /* ─── Exceptionalism grade badge ──────────────────────────────────
+       Editorial monogram: letter is the focal point, +/- a small
+       superscript. Tier colors grade down through saturation rather
+       than hue so the page reads as one color story (terracotta-and-
+       cream) instead of a stoplight.
+         A+ : filled terracotta, white letter   (critic's-pick register)
+         A  : terracotta letter on soft-bg + outline
+         A- : terracotta letter, hairline outline only
+         B  : ink (dark brown) letter, no fill
+         C  : muted grey letter, hairline outline
+         D  : pale grey letter
+         F  : near-invisible — completeness only
+       Hover surfaces score + cohort basis. Three size variants share
+       the same color palette: .small (sidebar card), .medium
+       (default), .large (form scoring chip). */
+    .exc-badge {
+      display: inline-flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0;
+      font-family: var(--sans);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      border-radius: 4px;
+      padding: 3px 7px;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      transition: transform 0.12s ease;
+      user-select: none;
+      cursor: default;
+    }
+    .exc-badge .exc-letter { font-size: 1em; }
+    .exc-badge .exc-suffix {
+      font-size: 0.62em;
+      font-weight: 700;
+      margin-left: 1px;
+      position: relative;
+      top: -0.32em;
+    }
+
+    /* Size variants */
+    .exc-badge.small  { font-size: 12px; padding: 2px 5px; border-radius: 3px; }
+    .exc-badge.medium { font-size: 14px; }
+    .exc-badge.large  { font-size: 18px; padding: 4px 9px; border-radius: 5px; }
+
+    /* Tier colors. A+ is the only solid fill (the critic's-pick mark);
+       the rest grade down through opacity + weight changes. */
+    .exc-badge.tier-a-plus {
+      background: var(--accent);
+      color: #fff;
+      border: 1px solid var(--accent);
+    }
+    .exc-badge.tier-a {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .exc-badge.tier-a-minus {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .exc-badge.tier-b {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    .exc-badge.tier-c {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      font-weight: 600;
+    }
+    .exc-badge.tier-d {
+      background: transparent;
+      color: #a89684;
+      border: 1px dashed var(--line);
+      font-weight: 500;
+    }
+    .exc-badge.tier-f {
+      background: transparent;
+      color: #c4b6a5;
+      border: 1px dashed var(--line);
+      font-weight: 500;
+    }
+    .exc-badge.tier-none {
+      background: transparent;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      font-weight: 400;
+      font-style: italic;
+    }
+    .exc-badge:hover { transform: translateY(-1px); }
+
+    /* Sidebar card placement — top-right corner of the body block,
+       vertically centered with the title baseline. Positioned via
+       margin in the flex layout (recipe-item already uses flex). */
+    .recipe-item .exc-badge {
+      align-self: flex-start;
+      margin-top: 2px;
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Scoring-strip chip — letter badge + numeric score side-by-side
+       in the same metric register as PA/DA/OU chips. */
+    .exc-chip-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1;
+    }
+    .exc-chip-num {
+      font-size: 1.2em;
+      font-weight: 700;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .exc-chip-basis {
+      font-size: 0.72em;
+      color: var(--muted);
+      font-family: var(--sans);
+      letter-spacing: 0.02em;
+      margin-top: 4px;
+    }
     button.primary:disabled { background: var(--muted); transform: none; }
     button.primary:disabled:hover { background: var(--muted); transform: none; box-shadow: none; }
     button.secondary:disabled:hover { background: var(--bg); border-color: var(--line); }
@@ -1422,7 +1548,7 @@
     }
     .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
-  <script src="/forms/library-shell.js"></script>
+  <script src="/forms/library-shell.js?v=exc1"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -1539,6 +1665,17 @@
           <div class="score-chip">
             <span class="score-label">Recipe-text</span>
             <span class="score-value empty" id="score_text">—</span>
+          </div>
+          <!-- Exceptionalism is the headline grade for batch-saved master
+               recipes. Letter badge + numeric T-score side by side, with
+               the cohort basis (n, σ, model) underneath. Empty / em-dash
+               for personal recipes, n<25 dishes, and pre-grading saves. -->
+          <div class="score-chip" id="score_exc_chip">
+            <span class="score-label">Exceptionalism</span>
+            <span class="exc-chip-value" id="score_exc_value">
+              <span class="score-value empty">—</span>
+            </span>
+            <span class="exc-chip-basis" id="score_exc_basis"></span>
           </div>
         </div>
 
@@ -1995,6 +2132,85 @@
       }
     }
 
+    // Manual-from-reject hydrate. Locks the user-id picker to 0
+    // (master), disables the TBOTB toggle, and surfaces a sticky amber
+    // banner so the user can SEE this save is a harvest. Server still
+    // re-pins user_id=0 from bcc_hints on save (defense in depth — the
+    // lock is UI, the server is authority).
+    function applyHarvestLock(hints) {
+      const uidEl = document.getElementById('user_id');
+      const tbtn = document.getElementById('user_id_toggle');
+      if (uidEl) {
+        uidEl.value = '0';
+        uidEl.disabled = true;
+        uidEl.title = 'Locked to Master (harvest from dish rejects). ' +
+                      'Use "clear harvest" in the banner to unlock.';
+        // Fire so listeners (TBOTB toggle visual state, sidebar
+        // persistence) react. Disabled inputs still propagate
+        // programmatic events.
+        try { uidEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+        try { uidEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+      }
+      if (tbtn) {
+        tbtn.disabled = true;
+        tbtn.title = 'Locked while harvesting from dish rejects.';
+      }
+
+      let badge = document.getElementById('harvestBadge');
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'harvestBadge';
+        badge.style.cssText =
+          'margin:10px 0;padding:10px 14px;border-radius:6px;' +
+          'background:#fff4e0;border:1px solid #d6a55a;color:#7a4e0e;' +
+          'font-size:0.92em;line-height:1.45;display:flex;' +
+          'justify-content:space-between;align-items:center;gap:12px;';
+        const fb = document.getElementById('feedback');
+        if (fb && fb.parentNode) {
+          fb.parentNode.insertBefore(badge, fb);
+        } else {
+          document.body.insertBefore(badge, document.body.firstChild);
+        }
+      }
+      const runStr = hints.run
+        ? ` &middot; run <code style="background:#fce6c1;padding:1px 5px;border-radius:3px">${hints.run}</code>`
+        : '';
+      badge.innerHTML =
+        '<div><strong>🌾 Harvest from dish rejects.</strong> ' +
+        `This save will go to <strong>Master</strong> attributed to ` +
+        `dish <strong>${hints.dish}</strong>${runStr}.</div>` +
+        '<button type="button" id="harvestClearBtn" ' +
+        'style="background:transparent;border:1px solid #d6a55a;color:#7a4e0e;' +
+        'padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.88em;' +
+        'white-space:nowrap">✕ clear harvest</button>';
+      const clearBtn = document.getElementById('harvestClearBtn');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', clearHarvestLock);
+      }
+    }
+
+    // Inverse of applyHarvestLock. Drops the hints, re-enables the
+    // user-id picker, removes the banner. Save POSTs after this point
+    // omit bcc_hints, so the save goes to whatever user the picker now
+    // shows (which is still 0 unless the user changes it).
+    function clearHarvestLock() {
+      stagedBccHints = null;
+      const uidEl = document.getElementById('user_id');
+      const tbtn = document.getElementById('user_id_toggle');
+      if (uidEl) {
+        uidEl.disabled = false;
+        uidEl.title = '';
+      }
+      if (tbtn) {
+        tbtn.disabled = false;
+        tbtn.title = '';
+      }
+      const badge = document.getElementById('harvestBadge');
+      if (badge && badge.parentNode) {
+        badge.parentNode.removeChild(badge);
+      }
+    }
+
     // Context-aware button states. Called after every state-change point
     // (load, populate, save, clear, delete) and on any form-wide input
     // event so disabled state tracks form contents.
@@ -2053,17 +2269,50 @@
       setScoreChip('score_da', sc.domainAuthority);
       setScoreChip('score_ou', sc.ouScore);
       setScoreChip('score_text', sc.recipeScore);
+
+      // Exceptionalism — letter badge + score + basis line. Pulled from
+      // _master.exceptionalism (only stamped on batch-saved master
+      // recipes). Em-dash for personal/missing.
+      const exc = recipe && recipe._master && recipe._master.exceptionalism;
+      const excValEl = document.getElementById('score_exc_value');
+      const excBasisEl = document.getElementById('score_exc_basis');
+      if (excValEl) {
+        if (exc && exc.grade && typeof exc.score === 'number'
+            && window.LibraryShell && LibraryShell.renderExcBadge) {
+          excValEl.innerHTML =
+            LibraryShell.renderExcBadge(exc, { size: 'large' }) +
+            '<span class="exc-chip-num">' + exc.score.toFixed(1) + '</span>';
+        } else {
+          excValEl.innerHTML = '<span class="score-value empty">—</span>';
+        }
+      }
+      if (excBasisEl) {
+        const basis = (exc && exc.basis) || {};
+        const parts = [];
+        if (basis.model) parts.push(basis.model);
+        if (typeof basis.n === 'number') parts.push('n=' + basis.n);
+        if (typeof basis.sigma_effective === 'number') {
+          parts.push('σ=' + basis.sigma_effective.toFixed(2));
+        }
+        excBasisEl.textContent = parts.join(' · ');
+      }
+
       const strip = document.getElementById('scoringStrip');
       const hasAny = (
         sc.pageAuthority !== undefined ||
         sc.domainAuthority !== undefined ||
         sc.ouScore !== undefined ||
-        sc.recipeScore !== undefined
+        sc.recipeScore !== undefined ||
+        (exc && exc.grade)
       );
       if (strip) strip.classList.toggle('hidden', !hasAny);
     }
     function clearScoringStrip() {
       ['score_pa','score_da','score_ou','score_text'].forEach(id => setScoreChip(id, null));
+      const excValEl = document.getElementById('score_exc_value');
+      if (excValEl) excValEl.innerHTML = '<span class="score-value empty">—</span>';
+      const excBasisEl = document.getElementById('score_exc_basis');
+      if (excBasisEl) excBasisEl.textContent = '';
       const strip = document.getElementById('scoringStrip');
       if (strip) strip.classList.add('hidden');
     }
@@ -2287,6 +2536,15 @@
         return (typeof v === 'number') ? v : null;
       };
       const getBatch   = r => (r.data && r.data._batch && r.data._batch.name) || '';
+
+      // Exceptionalism — per-dish T-score grade, stamped by the batch
+      // refresh into _master.exceptionalism. Returns null when absent
+      // (personal recipes, n<25 dishes, pre-grading saves).
+      const getExc = r => {
+        const exc = r.data && r.data._master && r.data._master.exceptionalism;
+        if (!exc || typeof exc.score !== 'number' || !exc.grade) return null;
+        return exc;
+      };
       const isStale    = r => !!r.source_changed_at;
       const isEnriched = r => {
         const d = r.data || {};
@@ -2534,6 +2792,22 @@
         }
 
         item.appendChild(body);
+
+        // Exceptionalism badge — top-right of the card, sized small so
+        // it doesn't compete with the title. Tier-keyed color (A grades
+        // wear the brand accent; everything else recedes). Absent on
+        // n<25 dishes, personal recipes, and pre-grading saves — those
+        // cards render exactly as before with no slot reserved.
+        const exc = getExc(r);
+        if (exc && window.LibraryShell && LibraryShell.renderExcBadge) {
+          const badgeWrap = document.createElement('span');
+          badgeWrap.innerHTML = LibraryShell.renderExcBadge(exc, { size: 'small' });
+          // Stop click-through so hovering the tooltip doesn't fire
+          // the row's loadForm — the badge is read-only metadata.
+          badgeWrap.addEventListener('click', e => e.stopPropagation());
+          if (badgeWrap.firstChild) item.appendChild(badgeWrap.firstChild);
+        }
+
         item.onclick = () => {
           loadForm(r);
           sidebar.classList.remove('open');
@@ -2931,6 +3205,16 @@
         editorial: userEditorial
       };
 
+      // Manual-from-reject rescue: include the hints so the server forces
+      // user_id=0 at the auth gate and stamps _master.dish/run/kind=harvest
+      // inside _save_recipe_core. Defense in depth — even if the user
+      // manually changed the user-id picker after hydrate, the server
+      // re-pins to master based on the hint.
+      if (stagedBccHints && stagedBccHints.dish) {
+        payload.user_id = 0;
+        payload.bcc_hints = { ...stagedBccHints };
+      }
+
       // Pass-through fields the form has no UI for. Sourced from the last
       // extracted (or sidebar-loaded) recipe so LLM-inferred and pipeline
       // metadata actually land in the saved record on both new extracts
@@ -3240,6 +3524,9 @@
       if (promoteBtnEl) promoteBtnEl.style.display = 'none';
       const bccInputEl = document.getElementById("bccPermalink");
       if (bccInputEl) bccInputEl.value = '';
+      // Clearing the form also abandons the harvest context — no banner,
+      // no user-id lock, no hints in the next save.
+      clearHarvestLock();
       // Drop the /r/<id> path from the URL bar — we're back to a blank
       // form, so reflect that. Replace (not push) — the user didn't
       // navigate, they cleared.
@@ -4040,6 +4327,12 @@
     // When present, overrides recipe.image[0] post-extract so the saved
     // recipe doesn't depend on the source site for its image.
     let stagedLocalHeroUrl = '';
+    // Manual-from-reject hints (#_bcc_dish/#_bcc_run from the dish-form
+    // reject link). Bookmarklet harvested them from the source page's
+    // hash; staging server passes through to this hydrate. When set,
+    // the save POST forces user_id=0 and stamps _master.dish + run +
+    // kind="harvest" so the rescue attributes to its originating batch.
+    let stagedBccHints = null;
 
     // The full last-extracted recipe — kept so save can pass through fields
     // the form has no UI for (provenance, classification, _scoring) instead
@@ -4309,7 +4602,30 @@
         formData.append('url', url);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
         const res = await fetch(`${API}/extract-from-url`, { method: 'POST', body: formData });
-        const result = await res.json();
+        // Defensive JSON parse: if the server (or Cloudflare in front of
+        // it) returned an HTML error page — bot challenge, 502/524,
+        // origin error — `.json()` throws "Unexpected token '<'" and
+        // kills the handler. Read as text first, attempt JSON, fall
+        // back to a useful error message that includes the status.
+        const bodyText = await res.text();
+        let result;
+        try { result = JSON.parse(bodyText); }
+        catch (parseErr) {
+          // Likely an HTML error page. Show the status + a sniff of the
+          // body so the user knows whether it's a Cloudflare/server
+          // issue vs. an anti-bot challenge on the source. The auto-
+          // fallback to staged screenshot still gets a shot.
+          const sniff = bodyText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+          const fellBack = await autoFallbackToStagedImage(`returned non-JSON (HTTP ${res.status})`);
+          if (!fellBack) {
+            showErrorDialog({
+              title: `URL extraction failed (HTTP ${res.status})`,
+              message: `Server returned a non-JSON response — likely a Cloudflare/bot challenge on the source page. ${sniff ? '\n\nResponse sniff:\n' + sniff : ''}\n\nTry the bookmarklet on the page directly (it runs inside your authenticated browser session).`,
+              showImageButton: !!stagedToken,
+            });
+          }
+          return;
+        }
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
@@ -4859,6 +5175,14 @@
         // recipe.image[0] inside extractFromMarkdown's response handling
         // so the recipe is coopted from the source site.
         stagedLocalHeroUrl = data.local_hero_image_url || '';
+        // Manual-from-reject hints (forces user_id=0 + _master stamp on save).
+        if (data.bcc_hints && data.bcc_hints.dish) {
+          stagedBccHints = {
+            dish: data.bcc_hints.dish,
+            run: data.bcc_hints.run || ''
+          };
+          applyHarvestLock(stagedBccHints);
+        }
         // Strip token from the URL but leave the in-memory state in place.
         window.history.replaceState({}, '', window.location.pathname);
         extractFromMarkdown(file, stagedSourceUrl, stagedTitle);
