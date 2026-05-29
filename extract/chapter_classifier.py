@@ -41,7 +41,7 @@ CHAPTERS = [
     "Soups & Stews",
     "Salads",
     "Eggs & Breakfast",
-    "Sandwiches, Pizza & Savory Pastry",
+    "Sandwiches",
     "Pasta & Noodles",
     "Rice & Grains",
     "Beans, Legumes & Tofu",
@@ -53,7 +53,8 @@ CHAPTERS = [
     "Breads",
     "Cakes",
     "Cookies & Bars",
-    "Pies & Tarts",
+    "Pies and Pastries - Sweet",
+    "Pies and Pastries - Savory",
     "Custards, Puddings & Mousses",
     "Frozen Desserts",
     "Fruit Desserts",
@@ -109,6 +110,14 @@ def _load_shortcuts():
         if key.startswith("_"):
             continue  # skip metadata keys like _comment
         normalized = _normalize(key)
+        if not normalized.strip():
+            # Key contains only non-Latin characters that the normalizer
+            # strips (Greek, Cyrillic, CJK, Arabic, etc.). Empty
+            # normalized form would substring-match EVERY title and
+            # poison the lookup. Skip with a warning so the user knows
+            # the key is dead code rather than silently working.
+            print(f"[WARN] chapter_shortcuts.json: key {key!r} normalizes to empty (non-Latin chars); skipping. Use a transliterated key instead.")
+            continue
         if value == _DEFER:
             traps.add(normalized)
         elif value in valid:
@@ -200,20 +209,37 @@ _SYSTEM_PROMPT = (
     "dessert containing eggs (custard, sponge cake) is the relevant "
     "dessert chapter — course/sweetness overrides ingredient.\n\n"
     "8. The bread recipe itself (focaccia, pizza dough, baguette) is "
-    "\"Breads\". The assembled / filled / topped thing built on bread "
-    "(sandwich, finished pizza, empanada) is \"Sandwiches, Pizza & "
-    "Savory Pastry\".\n\n"
+    "\"Breads\". A bread-based handheld assembly with fillings — "
+    "sandwich, grilled cheese, panini, sub, hoagie, gyro wrap, "
+    "shawarma wrap, sloppy joe, cheesesteak — is \"Sandwiches\". "
+    "Finished pizza, calzone, stromboli, empanada, pasty, meat pie, "
+    "chicken pot pie, and other enclosed/topped savory doughs are "
+    "\"Pies and Tarts - Savory\" (pizza is structurally a savory pie "
+    "with a flat crust + topping).\n\n"
     "9. \"Appetizers & Starters\" is reserved for things that exist "
     "ONLY as starters and don't fit a dish-type chapter (cheese boards, "
     "dips, mixed canapés, bar snacks). A small plate of meatballs is "
     "\"Meat\"; a cup of soup is \"Soups & Stews\".\n\n"
-    "10. Within desserts: a tart with custard filling is \"Pies & "
-    "Tarts\" (crust wins over filling); a baked custard with no crust "
-    "(crème brûlée, flan, pot de crème) is \"Custards, Puddings & "
-    "Mousses\"; a fruit dish that's mostly fruit with topping (crisp, "
-    "cobbler) is \"Fruit Desserts\"; anything churned or frozen is "
-    "\"Frozen Desserts\"; sugar-based confections (fudge, caramels, "
-    "brittle) are \"Candies & Confections\".\n\n"
+    "10. Within sweet desserts: pies and tarts (apple pie, pecan pie, "
+    "tarte tatin, lemon tart), choux pastries (éclair, profiteroles, "
+    "cream puffs, Paris-Brest), laminated puff-pastry desserts "
+    "(mille-feuille, palmiers), and phyllo desserts (baklava, "
+    "galaktoboureko, strudel) all go to \"Pies and Pastries - Sweet\" "
+    "— crust/dough form wins over filling. A baked custard with NO "
+    "crust (crème brûlée, flan, pot de crème) is \"Custards, Puddings "
+    "& Mousses\"; a fruit dish that's mostly fruit with topping "
+    "(crisp, cobbler) is \"Fruit Desserts\"; anything churned or "
+    "frozen is \"Frozen Desserts\"; sugar-based confections (fudge, "
+    "caramels, brittle) are \"Candies & Confections\".\n\n"
+    "10b. Savory pies and pastries (chicken pot pie, beef pot pie, "
+    "meat pie, steak and kidney pie, Cornish pasty, tourtière, "
+    "empanada, calzone, stromboli, pizza, vol-au-vent, savory hand "
+    "pie) all go to \"Pies and Pastries - Savory\". Pizza is "
+    "structurally a savory open-faced pie. Quiche is genuinely "
+    "contested between Eggs & Breakfast and Pies and Pastries - "
+    "Savory — when the title says quiche, lean Eggs & Breakfast "
+    "unless the recipe emphasizes the crust as the dish's "
+    "identity.\n\n"
     "11. Only the STANDALONE recipe for a sauce / dressing / "
     "condiment goes in \"Sauces, Dressings & Condiments\". A dish "
     "that prominently features a sauce still classifies by the dish. "
@@ -227,9 +253,15 @@ _SYSTEM_PROMPT = (
     "and \"Jambalaya\" both go to \"Rice & Grains\".\n\n"
     "13. QUICK BREADS AND MUFFINS go to \"Breads\", not \"Cakes\", "
     "regardless of sugar content. Banana bread, blueberry muffins, "
-    "scones, biscuits (US sense), corn muffins — all \"Breads\". "
+    "biscuits (US sense), corn muffins — all \"Breads\". "
     "\"Cakes\" is reserved for proper layer / sponge / pound / Bundt "
     "cake structures.\n\n"
+    "13b. SCONES are an exception to rule 13. Sweet scones (blueberry, "
+    "cream, currant, lemon, chocolate chip, glazed, etc.) go to "
+    "\"Pies and Pastries - Sweet\". Savory scones (cheese, herb, "
+    "chive, cheddar, bacon, etc.) go to \"Pies and Pastries - "
+    "Savory\". A bare \"Scones\" title without a flavor qualifier "
+    "leans \"Pies and Pastries - Sweet\" (the dominant tradition).\n\n"
     "If genuinely ambiguous after these rules, return \"Uncertain\". "
     "Don't hedge with a guess."
 )
