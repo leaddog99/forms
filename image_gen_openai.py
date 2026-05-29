@@ -69,22 +69,67 @@ _SIZE_MAP = {
 }
 
 
+def _resolve_orientation(orientation: Optional[str]) -> str:
+    """Translate an orientation hint to a gpt-image-1 size string.
+
+    orientation values:
+      'landscape'  → 1536×1024  (cookbook 3:2, our LANDSCAPE_TARGET)
+      'portrait'   → 1024×1536  (cookbook 2:3, our PORTRAIT_TARGET)
+      'square'     → 1024×1024
+      'random' or None → 50/50 coin flip between landscape and portrait
+        (square is intentionally excluded from random — cookbook design
+        rarely uses squares; if a caller wants square they ask for it)
+
+    The returned size is gpt-image-1's NATIVE output dimensions. The
+    consumer crops down to our exact LANDSCAPE_TARGET (1500×1000) /
+    PORTRAIT_TARGET (1000×1500) via image_pipeline.process_thumbnail,
+    which makes the AI-generated images visually indistinguishable
+    from cooped og:image thumbnails in the gallery / cookbook view.
+    """
+    import random as _random
+    o = (orientation or "").strip().lower()
+    if o == "landscape":
+        return "1536x1024"
+    if o == "portrait":
+        return "1024x1536"
+    if o == "square":
+        return "1024x1024"
+    # random / unspecified — coin flip
+    return _random.choice(["1536x1024", "1024x1536"])
+
+
 def _generate_image(
     prompt: str,
     *,
     quality: Optional[str] = None,
     size: Optional[str] = None,
+    orientation: Optional[str] = None,
 ) -> bytes:
     """Call gpt-image-1, return raw image bytes.
 
-    quality/size default to the values in bcc_config.json; callers can
-    pin per-call (e.g. cookbook export forces quality='hd'). Returns
-    bytes directly — gpt-image-1 ships base64-encoded image data in
-    the response (no separate URL fetch step like dall-e-3 needed)."""
+    quality defaults to bcc_config.json; callers can pin per-call.
+
+    For sizing: `orientation` is the modern preferred input ('random'
+    by default — coin flip landscape/portrait so the corpus has
+    cookbook-style visual rhythm). The legacy `size` argument is still
+    honored for direct gpt-image-1 size strings, but should be phased
+    out — orientation expresses intent without leaking gpt-image-1's
+    pixel grid into callers.
+
+    Returns base64-decoded bytes (gpt-image-1 ships them inline; no
+    separate URL fetch step like dall-e-3 needed)."""
     cfg_q = quality or IMAGE_GEN_QUALITY
-    cfg_s = size or IMAGE_GEN_SIZE
     api_q = _QUALITY_MAP.get(cfg_q, "medium")
-    api_s = _SIZE_MAP.get(cfg_s, "1024x1024")
+    # Orientation takes precedence over the legacy size arg. When both
+    # are absent, orientation='random' wins (50/50 landscape/portrait).
+    if orientation is not None:
+        api_s = _resolve_orientation(orientation)
+    elif size:
+        api_s = _SIZE_MAP.get(size, "1024x1024")
+    else:
+        # Use the corpus-consistent random default rather than the
+        # config's IMAGE_GEN_SIZE — the goal is uniform-shaped output.
+        api_s = _resolve_orientation("random")
     response = client.images.generate(
         model="gpt-image-1",
         prompt=prompt,
@@ -333,14 +378,45 @@ def _build_dish_prompt(recipe, extra_prompt: str = "") -> str:
 
 def generate_dish_image(recipe, *, quality: Optional[str] = None,
                         size: Optional[str] = None,
-                        extra_prompt: str = "") -> bytes:
-    """Hero shot of a finished dish — what goes on the form's main
-    image well and on a cookbook page. `recipe` may be a RecipeModel
-    instance or the sanitized recipe dict; _get() handles both shapes.
+                        orientation: Optional[str] = None,
+                        extra_prompt: str = "",
+                        normalize_dimensions: bool = True) -> bytes:
+    """Hero shot of a finished dish.
+
+    `recipe` may be a RecipeModel instance or the sanitized recipe
+    dict; _get() handles both shapes.
+
+    Orientation defaults to 'random' (50/50 landscape/portrait) so a
+    page of dishes has cookbook-style visual rhythm. Callers can pin
+    'landscape' / 'portrait' / 'square' when a specific shape is
+    needed (e.g. recipe form hero wants the same aspect as cooped
+    og:image previews, which is mostly landscape).
+
+    When `normalize_dimensions=True` (the default), the bytes are
+    post-processed by image_pipeline.process_thumbnail so the output
+    matches the corpus standard (1500×1000 or 1000×1500). This makes
+    AI-generated images visually indistinguishable from cooped
+    og:image thumbnails in the gallery / cookbook view.
+
     extra_prompt is appended to the auto-built brief with strong
     weighting (see _build_dish_prompt)."""
     prompt = _build_dish_prompt(recipe, extra_prompt=extra_prompt)
-    return _generate_image(prompt, quality=quality, size=size)
+    raw = _generate_image(prompt, quality=quality, size=size,
+                          orientation=orientation)
+    if not normalize_dimensions:
+        return raw
+    # Pipe through the same Pillow pipeline that processes cooped
+    # og:image bytes — center-crop to either 1500×1000 (landscape) or
+    # 1000×1500 (portrait) based on the source aspect. Result is the
+    # exact same shape as any cooped row.
+    try:
+        from input.pipeline.image_pipeline import process_thumbnail
+        processed = process_thumbnail(raw)
+        if processed:
+            return processed
+    except Exception as e:
+        print(f"[IMGGEN] normalize failed (returning raw): {e}")
+    return raw
 
 
 def generate_ingredient_image(recipe_model, *, quality: Optional[str] = None,

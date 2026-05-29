@@ -682,10 +682,14 @@
     /* Story is intentionally longer (history / location / traditional /
        modern usage), so give it more headroom before the scroll kicks in. */
     textarea#classification_story.auto-grow { max-height: 560px; }
-    /* Description is a 2-4 sentence summary — cap it shorter than the
-       default 360px so a wordy description scrolls inside the textarea
-       instead of pushing the rest of the form down the page. */
-    textarea#description.auto-grow { max-height: 180px; }
+    /* Description sits in the left header column alongside the right
+       column's hero + page-screenshot stack — the right column got
+       taller when the screenshot well landed (2026-05-28), so the
+       description now has matching vertical room to breathe. Cap
+       around 420px (~14 lines) — enough for a substantial source-site
+       intro paragraph without bleeding off the fold. Beyond that,
+       internal scroll keeps the form's vertical rhythm intact. */
+    textarea#description.auto-grow { max-height: 420px; }
     /* Make the in-textarea scrollbar visibly present (not just on
        hover) when overflow-y is active. iOS gets touch-scroll
        momentum so finger-drag works inside the box. */
@@ -1548,7 +1552,12 @@
     }
     .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
-  <script src="/forms/library-shell.js?v=exc1"></script>
+  <!-- Shared identity-badge + nav-toggle + nav-menu styles. Loaded
+       BEFORE the form's own <style> would be ideal, but the form's
+       inline block runs first; library-shell.css uses lower-specificity
+       selectors so the form's rules cleanly win where they override. -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
+  <script src="/forms/library-shell.js?v=20260528b"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -1585,7 +1594,14 @@
     <div class="sidebar-controls">
       <div class="uid-row">
         <label for="user_id">User ID</label>
-        <input type="number" id="user_id" value="1" min="0" step="1" />
+        <input type="number" id="user_id" value="1" min="0" step="1"
+               autocomplete="off" name="bcc_user_view_id"
+               data-lpignore="true"
+               data-form-type="other"
+               data-rf-ignore="true"
+               data-rf-noformfilling="true"
+               data-1p-ignore="true"
+               data-bwignore="true" />
         <button type="button" id="user_id_toggle" class="uid-toggle" title="Browse The Best of the Best — the master cookbook (user_id 0)">TBOTB</button>
       </div>
       <input type="search" id="sidebar_search" placeholder="Search recipes…" />
@@ -1736,6 +1752,23 @@
                         placeholder="e.g., carrots should be shredded not chunked; thin glaze brushed on, not poured; served on a blue ceramic plate."
                         style="margin-top: 6px; min-height: 70px; font-size: 0.9em; font-family: inherit;"></textarea>
             </details>
+            <!-- Page screenshot of the source URL (above-fold view).
+                 Captured at extract via Playwright + stored locally /
+                 S3 via image_store. Read-only display — clicking opens
+                 the source URL in a new tab. Hidden when the recipe
+                 has no source URL OR no screenshot was captured. -->
+            <div id="pageScreenshotBlock" style="margin-top:14px;display:none">
+              <label style="font-size:0.85em;color:var(--muted);display:block;margin-bottom:6px">
+                Source page screenshot
+                <span style="font-size:0.86em;font-style:italic">— above-fold view, captured at extract</span>
+              </label>
+              <a id="pageScreenshotLink" href="#" target="_blank" rel="noopener"
+                 title="Open source page in new tab"
+                 style="display:block;width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);text-decoration:none">
+                <img id="pageScreenshotImg" src="" alt=""
+                     style="width:100%;display:block;aspect-ratio:3/2;object-fit:cover" />
+              </a>
+            </div>
           </div>
         </div>
 
@@ -1981,6 +2014,89 @@
                 <input type="text" id="meta_last_accessed" readonly />
               </div>
             </div>
+
+            <!-- Cohort matching internals — what the embedding-based
+                 grader sees. Identity card is the structured cohort
+                 fingerprint (extract.identity_card output) — facts
+                 first (cuisine, technique, ingredient roles), the
+                 LLM-derived `likelyDish` conclusion last. The card
+                 powers the embedding match; matched-dish / confidence /
+                 method come from the grade basis. Empty when the
+                 recipe pre-dates the cohort-matching work. -->
+            <div style="margin-top:18px">
+              <h4 style="margin:0 0 6px;font-size:0.92em">Cohort matching</h4>
+
+              <!-- Identity card: structured fact view. Card-derived
+                   dishSignal lives in the meta_dish_signal field below
+                   for backward-compat with any other consumer. -->
+              <div id="identityCardPanel" style="display:none;margin-bottom:12px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:6px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                  <strong style="font-size:0.95em;color:var(--accent)" id="meta_likely_dish"></strong>
+                  <span style="font-size:0.78em;color:var(--muted)" id="meta_card_label">identity card</span>
+                </div>
+                <div class="form-grid" style="margin-bottom:8px">
+                  <div class="form-group">
+                    <label for="meta_card_cuisine" style="font-size:0.82em;color:var(--muted)">Cuisine</label>
+                    <input type="text" id="meta_card_cuisine" readonly style="font-size:0.85em" />
+                  </div>
+                  <div class="form-group">
+                    <label for="meta_card_ethnicity" style="font-size:0.82em;color:var(--muted)">Ethnicity</label>
+                    <input type="text" id="meta_card_ethnicity" readonly style="font-size:0.85em" />
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:8px">
+                  <label for="meta_card_primary" style="font-size:0.82em;color:var(--muted)">Primary ingredients</label>
+                  <input type="text" id="meta_card_primary" readonly
+                         style="font-size:0.85em;font-family:ui-monospace,SFMono-Regular,Consolas,monospace" />
+                </div>
+                <div class="form-group" style="margin-bottom:8px">
+                  <label for="meta_card_technique" style="font-size:0.82em;color:var(--muted)">Technique</label>
+                  <textarea id="meta_card_technique" readonly rows="2"
+                            style="resize:vertical;font-size:0.85em"></textarea>
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label for="meta_card_serving" style="font-size:0.82em;color:var(--muted)">Serving form</label>
+                  <input type="text" id="meta_card_serving" readonly style="font-size:0.85em" />
+                </div>
+                <details style="margin-top:8px;font-size:0.82em">
+                  <summary style="cursor:pointer;color:var(--muted)">Ingredient roles (<span id="meta_card_role_count">0</span>)</summary>
+                  <table id="meta_card_roles" style="width:100%;margin-top:6px;border-collapse:collapse">
+                    <thead>
+                      <tr style="text-align:left;border-bottom:1px solid var(--line)">
+                        <th style="padding:4px 6px;font-weight:600;color:var(--muted)">Ingredient</th>
+                        <th style="padding:4px 6px;font-weight:600;color:var(--muted)">Role</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </details>
+              </div>
+
+              <!-- The likelyDish heading inside the identity card panel
+                   above is the dish signal. classification.dishSignal
+                   is still written at save time (mirrored from
+                   _identity.likelyDish) for backward compatibility,
+                   but it doesn't need its own UI field — duplicated
+                   information clutters the metadata panel. -->
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="meta_matched_dish" style="font-size:0.82em;color:var(--muted)">Matched dish</label>
+                  <input type="text" id="meta_matched_dish" readonly
+                         style="font-size:0.85em" />
+                </div>
+                <div class="form-group">
+                  <label for="meta_match_confidence" style="font-size:0.82em;color:var(--muted)">Confidence (cosine)</label>
+                  <input type="text" id="meta_match_confidence" readonly
+                         style="font-size:0.85em;font-family:ui-monospace,'SF Mono',Consolas,monospace" />
+                </div>
+                <div class="form-group">
+                  <label for="meta_match_method" style="font-size:0.82em;color:var(--muted)">Method</label>
+                  <input type="text" id="meta_match_method" readonly
+                         style="font-size:0.85em" />
+                </div>
+              </div>
+            </div>
+
             <div id="metadataStatus" style="font-size:0.8em;color:var(--muted);margin-top:6px"></div>
 
             <!-- Last extraction: timings + prompts. Populated when the form
@@ -2270,10 +2386,14 @@
       setScoreChip('score_ou', sc.ouScore);
       setScoreChip('score_text', sc.recipeScore);
 
-      // Exceptionalism — letter badge + score + basis line. Pulled from
-      // _master.exceptionalism (only stamped on batch-saved master
-      // recipes). Em-dash for personal/missing.
-      const exc = recipe && recipe._master && recipe._master.exceptionalism;
+      // Exceptionalism — letter badge + score + basis line. Master
+      // rows carry _master.exceptionalism (batch path stamps it
+      // per-entry; harvest/explicit-dish saves compute it from the
+      // dish's stored fit). Personal rows carry _grade at the top
+      // level, populated by the embedding-match path at save time.
+      // Em-dash when neither is present.
+      const exc = (recipe && recipe._master && recipe._master.exceptionalism)
+                  || (recipe && recipe._grade);
       const excValEl = document.getElementById('score_exc_value');
       const excBasisEl = document.getElementById('score_exc_basis');
       if (excValEl) {
@@ -2307,6 +2427,86 @@
       );
       if (strip) strip.classList.toggle('hidden', !hasAny);
     }
+    // Surface the embedding-based cohort matching internals so the
+    // curator can see WHAT the matcher used + WHICH dish it picked.
+    // dishSignal is the Haiku-distilled one-line dish identity stamped
+    // at save time (the dominant input to the embedding vector).
+    // matched_dish + confidence + method come from the grade's basis
+    // block — present on master rows (_master.exceptionalism.basis)
+    // and personal rows (_grade.basis). Empty on rows that pre-date
+    // the cohort-matching work, or where no dish cleared the threshold.
+    function populateCohortMeta(recipe) {
+      const cls = (recipe && recipe.classification) || {};
+      const dishSignal = (cls.dishSignal || '').trim();
+      const card = (recipe && recipe._identity) || null;
+      const exc = (recipe && recipe._master && recipe._master.exceptionalism)
+                  || (recipe && recipe._grade) || null;
+      const basis = (exc && exc.basis) || {};
+
+      // Identity card panel — only show when populated
+      const panel = document.getElementById('identityCardPanel');
+      const hasCard = card && (card.likelyDish || '').trim();
+      if (panel) panel.style.display = hasCard ? '' : 'none';
+      if (hasCard) {
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v || ''); };
+        const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v || ''); };
+        setText('meta_likely_dish', card.likelyDish);
+        setVal('meta_card_cuisine', card.cuisine);
+        setVal('meta_card_ethnicity', card.ethnicity);
+        const primary = Array.isArray(card.primaryIngredients) ? card.primaryIngredients : [];
+        setVal('meta_card_primary', primary.join(', '));
+        setVal('meta_card_technique', card.technique);
+        setVal('meta_card_serving', card.servingForm);
+
+        // Ingredient roles table. escapeHtml is not a top-level
+        // function in this file — pull it from LibraryShell. Without
+        // this, the table render throws ReferenceError, the IIFE's
+        // catch fires, and the form shows "Failed to load recipe".
+        const _esc = (window.LibraryShell && LibraryShell.escapeHtml)
+          || (s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+        const tbody = document.querySelector('#meta_card_roles tbody');
+        const roles = Array.isArray(card.ingredientRoles) ? card.ingredientRoles : [];
+        if (tbody) {
+          tbody.innerHTML = roles.map(r => {
+            const t = (r && r.text) ? String(r.text) : '';
+            const rl = (r && r.role) ? String(r.role) : '';
+            return `<tr><td style="padding:3px 6px">${_esc(t)}</td><td style="padding:3px 6px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Consolas,monospace">${_esc(rl)}</td></tr>`;
+          }).join('');
+        }
+        setText('meta_card_role_count', String(roles.length));
+      }
+
+      // (Old dish-signal textarea removed — the identity card panel's
+      // `meta_likely_dish` heading shows the same value more legibly.)
+
+      const dishEl = document.getElementById('meta_matched_dish');
+      if (dishEl) dishEl.value = basis.matched_dish || '';
+
+      const confEl = document.getElementById('meta_match_confidence');
+      if (confEl) {
+        confEl.value = (typeof basis.match_confidence === 'number')
+                        ? basis.match_confidence.toFixed(3)
+                        : '';
+      }
+
+      const methodEl = document.getElementById('meta_match_method');
+      if (methodEl) methodEl.value = basis.match_method || '';
+    }
+
+    function clearCohortMeta() {
+      ['meta_matched_dish','meta_match_confidence','meta_match_method',
+       'meta_card_cuisine','meta_card_ethnicity','meta_card_primary','meta_card_technique','meta_card_serving'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      const lik = document.getElementById('meta_likely_dish');
+      if (lik) lik.textContent = '';
+      const tbody = document.querySelector('#meta_card_roles tbody');
+      if (tbody) tbody.innerHTML = '';
+      const panel = document.getElementById('identityCardPanel');
+      if (panel) panel.style.display = 'none';
+    }
+
     function clearScoringStrip() {
       ['score_pa','score_da','score_ou','score_text'].forEach(id => setScoreChip(id, null));
       const excValEl = document.getElementById('score_exc_value');
@@ -2537,11 +2737,14 @@
       };
       const getBatch   = r => (r.data && r.data._batch && r.data._batch.name) || '';
 
-      // Exceptionalism — per-dish T-score grade, stamped by the batch
-      // refresh into _master.exceptionalism. Returns null when absent
-      // (personal recipes, n<25 dishes, pre-grading saves).
+      // Exceptionalism — per-dish T-score grade. Master rows carry
+      // it in _master.exceptionalism (batch + harvest paths); personal
+      // rows carry it in _grade (embedding-match at save time). Same
+      // shape either way. Returns null when neither present
+      // (un-saved cohort, n<25 dishes, below match threshold).
       const getExc = r => {
-        const exc = r.data && r.data._master && r.data._master.exceptionalism;
+        const exc = (r.data && r.data._master && r.data._master.exceptionalism)
+                    || (r.data && r.data._grade);
         if (!exc || typeof exc.score !== 'number' || !exc.grade) return null;
         return exc;
       };
@@ -2553,10 +2756,13 @@
         return !!((story && story.trim()) || (opin && opin.trim()));
       };
 
-      // First image from the recipe (schema.org image[0]) — used as the
-      // card thumbnail. Strings, list-of-strings, list-of-ImageObject
-      // all coerced down to a single URL or null.
+      // Thumbnail for sidebar card. Prefer the cooped og:image (locally
+      // hosted, no hotlinking, no Mixed Content risk, consistent 3:2 or
+      // 2:3 dimensions). Fall back to JSON-LD image[0] for rows that
+      // pre-date the coopt pipeline.
       const getImage = r => {
+        const preview = (r.data && r.data._source && r.data._source.previewImage || '').trim();
+        if (preview) return preview;
         const img = r.data && r.data.image;
         if (!img) return null;
         if (typeof img === 'string') return img.trim() || null;
@@ -3001,16 +3207,43 @@
       document.getElementById("originalUrl").value = r._source?.originalUrl || "";
       document.getElementById("affiliateUrl").value = r._source?.affiliateUrl || "";
 
-      // Hero image (URL field + preview)
+      // Hero image (URL field + preview) — prefer the cooped og:image
+      // thumbnail (locally hosted, no hotlinking) when present.
+      // Fallback to the JSON-LD image[0] for rows that pre-date the
+      // coopt pipeline. Pre-coopt rows still display fine because
+      // image[0] is the original schema.org URL; new rows get the
+      // hosted version automatically.
+      const previewLoad = (r._source && r._source.previewImage || '').trim();
       const firstImageLoad = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
-      heroImageUrl.value = firstImageLoad || '';
+      heroImageUrl.value = previewLoad || firstImageLoad || '';
       applyHeroImageFromUrl();
+
+      // Page screenshot — display when present + source URL exists.
+      // Tile is clickable to open the source page.
+      (function showPageScreenshot() {
+        const block = document.getElementById('pageScreenshotBlock');
+        const img = document.getElementById('pageScreenshotImg');
+        const link = document.getElementById('pageScreenshotLink');
+        if (!block || !img || !link) return;
+        const shot = (r._source && r._source.pageScreenshot || '').trim();
+        const src  = (r._source && r._source.originalUrl || '').trim();
+        if (shot) {
+          img.src = shot;
+          img.alt = 'Source page: ' + (r.name || '');
+          link.href = src || shot;
+          block.style.display = '';
+        } else {
+          block.style.display = 'none';
+          img.src = '';
+        }
+      })();
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
       // and seed the scoring strip from the recipe's own _scoring (Moz +
       // recipe-text score were denormalized into it at extract time).
       invalidateMetadataCache && invalidateMetadataCache();
       populateScoringStrip(r);
+      populateCohortMeta && populateCohortMeta(r);
 
       // Stash the full loaded record so save-after-load preserves the rich
       // fields the form has no UI for (provenance, classification, nutrition,
@@ -4857,17 +5090,38 @@
         document.getElementById("author").value = r.author.name || "";
       }
 
-      // Hero image — first URL from r.image. JSON-LD ships a list; ImageObject
-      // dicts have already been coerced to strings by sanitize_recipe_data.
+      // Hero image — prefer the cooped og:image thumbnail (locally
+      // hosted, no hotlinking) when present; fall back to the
+      // JSON-LD image[0] for pre-coopt rows.
+      const previewImg = (r._source && r._source.previewImage || '').trim();
       const firstImage = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
-      heroImageUrl.value = firstImage || '';
+      heroImageUrl.value = previewImg || firstImage || '';
       applyHeroImageFromUrl();
+
+      // Page screenshot from a fresh extract — same logic as loadForm.
+      (function showExtractScreenshot() {
+        const block = document.getElementById('pageScreenshotBlock');
+        const img = document.getElementById('pageScreenshotImg');
+        const link = document.getElementById('pageScreenshotLink');
+        if (!block || !img || !link) return;
+        const shot = (r._source && r._source.pageScreenshot || '').trim();
+        const src  = (r._source && r._source.originalUrl || '').trim();
+        if (shot) {
+          img.src = shot;
+          img.alt = 'Source page: ' + (r.name || '');
+          link.href = src || shot;
+          block.style.display = '';
+        } else {
+          block.style.display = 'none';
+        }
+      })();
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
       // and seed the scoring strip from the recipe's own _scoring (Moz +
       // recipe-text score were denormalized into it at extract time).
       invalidateMetadataCache && invalidateMetadataCache();
       populateScoringStrip(r);
+      populateCohortMeta && populateCohortMeta(r);
 
       // Auto-grow textareas
       document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
@@ -5106,6 +5360,7 @@
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
+      clearCohortMeta();
     }
 
     // Open-by-self-URL: when the page is reached via /r/{recipe_id} (which

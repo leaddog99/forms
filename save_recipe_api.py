@@ -110,6 +110,10 @@ try:
     )
     from input.pipeline import dishes as dishes_lib
     from input.pipeline import jobs as jobs_lib
+    from input.pipeline.grading import compute_exceptionalism
+    from input.pipeline.embeddings import find_best_dish_match
+    from extract.dish_signal import generate_dish_signal_for_recipe
+    from extract.identity_card import generate_identity_card_for_recipe
 
     print("[OK] url_utils / url_scoring imported successfully")
 except Exception as e:
@@ -490,6 +494,42 @@ def _attach_chapter(recipe, *, usage_log=None):
     recipe["classification"] = cls
 
 
+def _attach_identity_card(recipe, *, usage_log=None):
+    """Generate + stamp `_identity` on a fresh extract if absent.
+
+    Card carries the structured dish fingerprint (cuisine, ingredient
+    roles, technique, likelyDish, primaryIngredients) — the same
+    artifact the save flow generates. Running it at extract time
+    means the form's identity card panel populates immediately, so
+    the curator can verify the cohort fit before saving (or skip the
+    save if the card looks wrong).
+
+    Cost: ~$0.0001 + ~2s via Haiku. Idempotent: the save flow checks
+    `_identity` and skips regeneration. Best-effort: failures don't
+    block extract (the panel just hides).
+    """
+    name = (recipe.get("name") or "").strip() if recipe else ""
+    if not name:
+        return
+    existing = recipe.get("_identity")
+    if isinstance(existing, dict) and (existing.get("likelyDish") or "").strip():
+        return
+    try:
+        card = generate_identity_card_for_recipe(recipe, usage_log=usage_log)
+    except Exception as e:
+        print(f"[IDENTITY] extract stamping failed (continuing): {e}")
+        return
+    if not card:
+        return
+    recipe["_identity"] = card
+    # Mirror to classification.dishSignal so backward-compat consumers
+    # (any UI/code still reading dishSignal) see the canonical phrase.
+    cls = recipe.get("classification") or {}
+    cls["dishSignal"] = (card.get("likelyDish") or "").strip()
+    recipe["classification"] = cls
+    print(f"[IDENTITY] extract stamped: likelyDish={card.get('likelyDish')!r}")
+
+
 def _attach_moz_scoring(recipe, url_normalized):
     """Run Moz scoring at extract time and denormalize PA/DA/OU/rootDomain
     into recipe._scoring so the form can display them before save. The
@@ -693,6 +733,16 @@ def init_db():
             ensure_llm_extract_cache_table(conn)
             dishes_lib.ensure_dishes_table(conn)
             jobs_lib.ensure_jobs_table(conn)
+            # sqlite-vec virtual tables for dish + master recipe KNN.
+            # Best-effort: if the extension is missing the cohort matcher
+            # falls back to the in-Python scan path (which has been
+            # kept intact during the migration as belt + suspenders).
+            try:
+                from input.pipeline import vector_store
+                vector_store.ensure_vec_tables(conn)
+                print("[VEC] sqlite-vec virtual tables ready")
+            except Exception as e:
+                print(f"[WARN] sqlite-vec init failed (KNN disabled): {e}")
             # Reset any jobs that were 'running' when the prior process
             # died — they're not coming back, but they'd otherwise sit
             # blocking new enqueues for the same entity.
@@ -1192,6 +1242,7 @@ async def generate_recipe_image_endpoint(
     request: Request,
     quality: Optional[str] = None,
     size: Optional[str] = None,
+    orientation: Optional[str] = None,
 ):
     # Lazy import — pulls openai client construction only when used.
     from image_gen_openai import generate_dish_image, _build_dish_prompt
@@ -1232,13 +1283,16 @@ async def generate_recipe_image_endpoint(
     # same recipe dict + extra_prompt, so this is purely so the response
     # includes it.
     prompt = _build_dish_prompt(recipe_dict, extra_prompt=extra_prompt)
-    print(f"[IMGGEN] {recipe_id} ({owner=}, {quality=}, {size=}, extra_prompt={extra_prompt!r}) name={name!r}")
+    print(f"[IMGGEN] {recipe_id} ({owner=}, {quality=}, {size=}, {orientation=}, "
+          f"extra_prompt={extra_prompt!r}) name={name!r}")
     print(f"[IMGGEN] prompt: {prompt}")
 
     try:
         t0 = time.perf_counter()
         img_bytes = generate_dish_image(
-            recipe_dict, quality=quality, size=size, extra_prompt=extra_prompt,
+            recipe_dict,
+            quality=quality, size=size, orientation=orientation,
+            extra_prompt=extra_prompt,
         )
         dt_ms = int((time.perf_counter() - t0) * 1000)
     except Exception as e:
@@ -1533,6 +1587,80 @@ def list_dishes_endpoint():
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/dishes/suggestions")
+def suggested_dishes_endpoint(min_count: int = 3):
+    """Suggested new dishes — clusters of carded recipes whose
+    `_identity.likelyDish` doesn't match any existing dish row.
+
+    Returns the LLM's canonical-dish phrase ranked by how many recipes
+    are waiting on it. Pass `min_count=N` to override the threshold
+    (default 3 — keeps idiosyncratic LLM outputs out).
+
+    Each entry:
+      {
+        suggested: "Spaghetti and Meatballs",
+        waiting:   10,
+        chapters:  ["Pasta & Noodles"],
+        cuisines:  ["Italian-American", "American"],
+        example_recipe_ids: [42, 81, 117],  # first few, for curator preview
+      }
+
+    No persistence — query runs on every call. At 300-row scale this
+    is microseconds. If the table grows past ~50K rows and the query
+    starts costing real time, materialize after each dish refresh job
+    completes (the timing the user suggested 2026-05-28).
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            sql = """
+                WITH carded AS (
+                    SELECT
+                        json_extract(data, '$._identity.likelyDish') AS suggested,
+                        json_extract(data, '$.classification.chapter') AS chapter,
+                        json_extract(data, '$._identity.cuisine')      AS cuisine,
+                        id
+                    FROM master_recipes
+                    WHERE json_extract(data, '$._identity.likelyDish') IS NOT NULL
+                    UNION ALL
+                    SELECT
+                        json_extract(data, '$._identity.likelyDish'),
+                        json_extract(data, '$.classification.chapter'),
+                        json_extract(data, '$._identity.cuisine'),
+                        id
+                    FROM recipes
+                    WHERE json_extract(data, '$._identity.likelyDish') IS NOT NULL
+                )
+                SELECT
+                    suggested,
+                    COUNT(*) AS waiting,
+                    GROUP_CONCAT(DISTINCT chapter) AS chapters,
+                    GROUP_CONCAT(DISTINCT cuisine) AS cuisines,
+                    GROUP_CONCAT(id) AS example_ids
+                FROM carded
+                WHERE LOWER(suggested) NOT IN (
+                    SELECT LOWER(name) FROM dishes
+                )
+                GROUP BY suggested
+                HAVING waiting >= ?
+                ORDER BY waiting DESC, suggested
+            """
+            rows = conn.execute(sql, (min_count,)).fetchall()
+            out = []
+            for suggested, waiting, chapters, cuisines, example_ids in rows:
+                ids = [int(x) for x in (example_ids or "").split(",") if x.strip()][:5]
+                out.append({
+                    "suggested": suggested,
+                    "waiting": int(waiting),
+                    "chapters": [c for c in (chapters or "").split(",") if c],
+                    "cuisines": [c for c in (cuisines or "").split(",") if c],
+                    "example_recipe_ids": ids,
+                })
+            return out
+    except Exception as e:
+        print(f"[ERROR] suggested_dishes failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.get("/dishes/{name}")
 def get_dish_endpoint(name: str):
     try:
@@ -1567,19 +1695,32 @@ async def create_dish_endpoint(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
     try:
-        name, queries, top_serp, top_final, ttl, notes, auto_enrich = \
+        name, queries, top_serp, top_final, ttl, notes, auto_enrich, description = \
             dishes_lib.validate_create_payload(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            return dishes_lib.create_dish(
+            created = dishes_lib.create_dish(
                 conn,
                 name=name, queries=queries,
                 top_n_serpapi=top_serp, top_n_final=top_final,
                 refresh_ttl_days=ttl, notes=notes,
                 auto_enrich=auto_enrich,
+                description=description,
             )
+            # Auto-describe (when blank) + embed so the dish is
+            # immediately participating in cohort matches. Best-effort:
+            # failures don't block the create.
+            try:
+                from input.pipeline.embeddings import ensure_dish_embedding
+                ensure_dish_embedding(conn, created)
+                # Re-read so the response reflects the auto-filled
+                # description + chapter.
+                created = dishes_lib.get_dish(conn, name) or created
+            except Exception as e:
+                print(f"[WARN] post-create dish embed failed for {name!r}: {e}")
+            return created
     except sqlite3.IntegrityError:
         # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name
         raise HTTPException(status_code=409,
@@ -1615,6 +1756,16 @@ async def update_dish_endpoint(name: str, request: Request):
                 raise HTTPException(status_code=400, detail=str(e))
             if updated is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
+            # If the edit touched queries/description, the embedding's
+            # input text may have changed. Re-embed (idempotent — the
+            # staleness check inside ensure_dish_embedding compares the
+            # cached embedding_text to the freshly composed one).
+            try:
+                from input.pipeline.embeddings import ensure_dish_embedding
+                ensure_dish_embedding(conn, updated)
+                updated = dishes_lib.get_dish(conn, name) or updated
+            except Exception as e:
+                print(f"[WARN] post-edit dish re-embed failed for {name!r}: {e}")
             return updated
     except HTTPException:
         raise
@@ -1664,6 +1815,78 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print(f"[ERROR] update_dish_reject_status({name!r},{reject_id}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/dishes/{name}/top-recipes")
+def list_dish_top_recipes(name: str):
+    """Return the master_recipes rows tagged as the top-N for this dish
+    (`_master.dish = name AND _master.kind = 'top'`). Used by the
+    dishes form to surface what's currently in the curated set —
+    each row links back to its original source URL and to the
+    BCC permalink for the saved master copy.
+
+    Ordered by `_master.rank` ascending (1 = top), with un-ranked rows
+    at the end. Returns [] when the dish has never refreshed or had
+    no successful saves. Cheap — single SELECT, ~10-25 rows typically.
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            rows = conn.execute(
+                "SELECT id, recipe_id, data FROM master_recipes "
+                "WHERE json_extract(data, '$._master.dish') = ? "
+                "AND json_extract(data, '$._master.kind') = 'top' "
+                "ORDER BY CAST(json_extract(data, '$._master.rank') AS INTEGER) ASC, id",
+                (existing["name"],),
+            ).fetchall()
+            out: list[dict] = []
+            for seq_id, recipe_uuid, dj in rows:
+                try:
+                    d = json.loads(dj)
+                except Exception:
+                    continue
+                source = d.get("_source") or {}
+                master = d.get("_master") or {}
+                exc = master.get("exceptionalism") or {}
+                scoring = d.get("_scoring") or {}
+                out.append({
+                    "id": seq_id,
+                    "recipe_id": recipe_uuid,
+                    "name": d.get("name") or "(no title)",
+                    "rank": master.get("rank"),
+                    "source_url": source.get("originalUrl") or "",
+                    "bcc_url": _bcc_permalink(recipe_uuid),
+                    "queries": master.get("queries") or [],
+                    "grade": exc.get("grade"),
+                    "exc_score": exc.get("score"),
+                    "exc_basis": exc.get("basis") or {},
+                    "pa": scoring.get("pageAuthority"),
+                    "da": scoring.get("domainAuthority"),
+                    "ou": scoring.get("ouScore"),
+                    # Cooped og:image thumbnail (preferred) — falls
+                    # back to the hotlinked schema.org image[0] when
+                    # the row pre-dates the coopt pipeline. UI prefers
+                    # preview_image; the hotlink is the legacy
+                    # fallback for pre-coopt rows.
+                    "preview_image": source.get("previewImage") or "",
+                    "fallback_image": (
+                        (d.get("image") or [None])[0]
+                        if isinstance(d.get("image"), list) else None
+                    ),
+                })
+            return {
+                "dish": existing["name"],
+                "refreshed_at": existing.get("last_refreshed"),
+                "count": len(out),
+                "recipes": out,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] list_dish_top_recipes({name!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
@@ -2150,6 +2373,92 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
+    """Stamp Exceptionalism grade on the recipe dict in place.
+
+    Master rows: result lands at `_master.exceptionalism` (existing
+    shape — batch path already populates it this way; we fill in for
+    rows that came through other paths).
+    Personal rows: result lands at top-level `_grade` so the form's
+    badge component reads one location regardless of table.
+
+    Cohort selection:
+      - Master rows with `_master.dish`: grade against that dish's
+        stored last_ou_fit (cohort known).
+      - Master rows without `_master.dish` OR personal rows: embedding-
+        match to a dish; below threshold → no grade.
+
+    DA/PA come from `_scoring.{pageAuthority, domainAuthority}` which
+    the extract step already populated via Moz. No Moz call here —
+    we trust the freshness of what just landed (TTL refresh handled
+    elsewhere by url_scoring's get_or_create_url_metadata).
+
+    Best-effort: any failure leaves the recipe ungraded (em-dash in
+    UI) rather than blocking the save.
+    """
+    scoring = recipe_dict.get("_scoring") or {}
+    da = scoring.get("domainAuthority")
+    pa = scoring.get("pageAuthority")
+    if da is None or pa is None:
+        return  # no Moz scores → can't grade
+
+    is_master = (user_id == 0)
+    master_block = recipe_dict.get("_master") or {}
+
+    # Path 1 — already stamped (batch path). Don't overwrite.
+    if is_master and master_block.get("exceptionalism"):
+        return
+
+    # Path 2 — explicit cohort via _master.dish
+    explicit_dish = (master_block.get("dish") or "").strip() if is_master else ""
+    grade: Optional[dict] = None
+    if explicit_dish:
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                dish_row = dishes_lib.get_dish(conn, explicit_dish)
+            if dish_row and dish_row.get("last_ou_fit"):
+                grade = compute_exceptionalism(
+                    da, pa, dish_row["last_ou_fit"],
+                    matched_dish=explicit_dish,
+                    match_method="explicit",
+                )
+        except Exception as e:
+            print(f"[GRADE] explicit-cohort lookup failed for {explicit_dish!r}: {e}")
+
+    # Path 3 — embedding match (any row without an explicit dish, or
+    # explicit-path failed)
+    if grade is None:
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                match = find_best_dish_match(conn, recipe_dict)
+            if match and match.get("ou_fit"):
+                grade = compute_exceptionalism(
+                    da, pa, match["ou_fit"],
+                    matched_dish=match["dish_name"],
+                    match_confidence=match["confidence"],
+                    match_method=("embedding-match-narrow"
+                                  if match.get("chapter_filtered")
+                                  else "embedding-match-wide"),
+                )
+        except Exception as e:
+            print(f"[GRADE] embedding match failed: {e}")
+
+    if grade is None:
+        print(f"[GRADE] no cohort match → ungraded")
+        return
+
+    if is_master:
+        master_block["exceptionalism"] = grade
+        recipe_dict["_master"] = master_block
+    else:
+        recipe_dict["_grade"] = grade
+
+    basis = grade.get("basis") or {}
+    print(f"[GRADE] {grade.get('grade')} (score={grade.get('score')}) "
+          f"via {basis.get('match_method') or 'explicit'} "
+          f"dish={basis.get('matched_dish') or explicit_dish!r}")
+
+
 # Save (insert or update) a recipe
 def _save_recipe_core(payload: dict) -> dict:
     """Synchronous core of POST /recipes. Same behavior as the endpoint —
@@ -2356,6 +2665,61 @@ def _save_recipe_core(payload: dict) -> dict:
     elif user_id == 0 and skip_auto_enrich:
         print(f"[SAVE-ENRICH] skipped (dish auto_enrich=off)")
 
+    # === Identity card generation ==========================================
+    # Every recipe (master or personal) gets a structured dish identity
+    # card stamped on top-level `_identity`. The card encodes
+    # ingredientRoles (per-ingredient role tags), cuisine, ethnicity,
+    # technique, servingForm, and the LLM's canonical-dish conclusion
+    # in `likelyDish` — derived from the facts the LLM just committed
+    # to via the ordered tool_use schema.
+    #
+    # This replaces the older classification.dishSignal field. The
+    # card is the structured truth; dishSignal becomes a derived
+    # display string (filled in below from card.likelyDish) for
+    # backward-compat with UI that still reads dishSignal.
+    #
+    # Cost: ~$0.0001/call via Haiku with ordered tool_use, ~2-3s.
+    # Skipped when the card already exists (idempotent) and when the
+    # recipe has no name. Failures swallowed — embedding composer
+    # falls back to dishSignal then to raw ingredients.
+    existing_card = recipe_dict.get("_identity")
+    if (recipe_dict.get("name") or "").strip() and not (
+        isinstance(existing_card, dict)
+        and (existing_card.get("likelyDish") or "").strip()
+    ):
+        try:
+            card = generate_identity_card_for_recipe(recipe_dict, usage_log=save_usage_log)
+            if card:
+                recipe_dict["_identity"] = card
+                # Keep classification.dishSignal in sync as a derived
+                # display string. UI surfaces that still read it
+                # continue to work; new code reads _identity.
+                cls_for_signal = recipe_dict.get("classification") or {}
+                cls_for_signal["dishSignal"] = (card.get("likelyDish") or "").strip()
+                recipe_dict["classification"] = cls_for_signal
+                print(f"[IDENTITY] stamped: likelyDish={card.get('likelyDish')!r} "
+                      f"primary={card.get('primaryIngredients')}")
+        except Exception as e:
+            print(f"[IDENTITY] FAILED (continuing save): {e}")
+
+    # === Exceptionalism grade ==============================================
+    # Three paths to a grade, picked in order:
+    #   1. Already stamped (batch path stamps _master.exceptionalism per
+    #      entry in the batch step) — keep as-is.
+    #   2. Master row with explicit _master.dish (harvest / editors_choice /
+    #      manually-tagged) — grade against THAT dish's stored last_ou_fit.
+    #   3. Master row OR personal row without an explicit dish — embedding-
+    #      match the recipe to a dish, grade against the matched dish's
+    #      last_ou_fit. Below the confidence threshold, no grade
+    #      (em-dash in UI).
+    # Master rows stamp the result on `_master.exceptionalism` (existing
+    # shape). Personal rows stamp on `_grade` (new top-level field) so
+    # the UI can render the same badge for both.
+    try:
+        _grade_recipe_on_save(recipe_dict, user_id=user_id)
+    except Exception as e:
+        print(f"[GRADE] FAILED (continuing save): {e}")
+
     try:
         with sqlite3.connect(DB_PATH) as conn:
             # Save clears source_changed_at: the user reviewing and saving is
@@ -2405,6 +2769,35 @@ def _save_recipe_core(payload: dict) -> dict:
             # Fetch the DB-assigned integer PK so the form can display it.
             row = conn.execute(f"SELECT id FROM {table} WHERE recipe_id = ?", (recipe_id,)).fetchone()
             seq_id = row[0] if row else None
+
+            # For master rows, embed the recipe and upsert into
+            # recipes_master_vec so the "We Think You'd Like"
+            # recommender has fresh KNN data. classification.dishSignal
+            # is already stamped above — compose_recipe_text uses it as
+            # the dominant signal, so the embedding captures dish
+            # identity cleanly. Best-effort: failure doesn't break the
+            # save (sqlite-vec may be absent, the embedder may fail,
+            # etc. — the row still lands).
+            if user_id == 0 and seq_id is not None:
+                try:
+                    from input.pipeline.embeddings import (
+                        compose_recipe_text, embed_text,
+                    )
+                    from input.pipeline import vector_store
+                    txt = compose_recipe_text(recipe_dict)
+                    if txt.strip():
+                        rec_vec = embed_text(txt)
+                        vector_store.enable_vec(conn)
+                        master_block_for_vec = recipe_dict.get("_master") or {}
+                        ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
+                        dish_for_vec = master_block_for_vec.get("dish") or None
+                        vector_store.upsert_recipe_vector(
+                            conn, seq_id, rec_vec,
+                            chapter=ch, dish=dish_for_vec,
+                        )
+                        print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
+                except Exception as e:
+                    print(f"[VEC] master recipe vec upsert failed: {e}")
     except Exception as e:
         print(f"[ERROR] Database error: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
@@ -2635,6 +3028,7 @@ async def extract_from_image_endpoint(
         # dependency on the recipe being persisted.
         _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
+        _attach_identity_card(recipe, usage_log=usage_log)
         # Stamp the minted UUID onto the recipe so the form picks it up.
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning (extract happened regardless
@@ -2748,6 +3142,7 @@ async def extract_from_pdf_endpoint(
 
         _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
+        _attach_identity_card(recipe, usage_log=usage_log)
         recipe["id"] = new_recipe_id
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         _maybe_stamp_source_drift(timings, user_id=user_id)
@@ -2875,6 +3270,7 @@ async def extract_from_markdown_endpoint(
 
         _attach_chapter(recipe, usage_log=usage_log)
         _attach_moz_scoring(recipe, url_norm)
+        _attach_identity_card(recipe, usage_log=usage_log)
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
@@ -3034,6 +3430,43 @@ def extract_recipe_from_url(
 
     _attach_chapter(recipe, usage_log=usage_log)
 
+    # Stamp the full og: meta block on _source: cooped preview image
+    # (locally hosted, no hotlinking), description, alt text, site
+    # name, author + timestamps. These come from the page's <meta>
+    # tags — the source's own consent-given preview data.
+    og_meta = md_result.get("og_meta") or {}
+    if og_meta:
+        src = recipe.get("_source") or {}
+        # Stash the non-image text fields directly — cheap, no fetch
+        # required. UI surfaces (tile description, alt text, site
+        # name attribution) can consume immediately.
+        for src_key, meta_key in (
+            ("previewDescription", "description"),
+            ("previewImageAlt",    "imageAlt"),
+            ("siteName",           "siteName"),
+            ("author",             "author"),
+            ("publishedTime",      "publishedTime"),
+            ("modifiedTime",       "modifiedTime"),
+        ):
+            val = (og_meta.get(meta_key) or "").strip()
+            if val:
+                src[src_key] = val
+        # Coopt the image — fetch + Pillow process + store via active
+        # backend (Local or S3). Best-effort: failure leaves
+        # previewImage unset and the UI falls back to schema.org
+        # image[0]. Skipped when og:image is missing.
+        og_image_url = (og_meta.get("image") or "").strip()
+        if og_image_url:
+            try:
+                from input.pipeline.image_pipeline import coopt_image
+                cooped = coopt_image(og_image_url)
+                if cooped:
+                    src["previewImage"] = cooped
+                    print(f"[OG-IMAGE] cooped {og_image_url[:80]!r} -> {cooped}")
+            except Exception as e:
+                print(f"[OG-IMAGE] coopt failed (continuing): {e}")
+        recipe["_source"] = src
+
     # Scoring: when the caller (typically batch ingestion) provides
     # pre_scored values, trust those as canonical and SKIP _attach_moz_scoring
     # entirely. _attach_moz_scoring unconditionally overwrites recipe._scoring
@@ -3065,6 +3498,26 @@ def extract_recipe_from_url(
                 recipe[k].update(v)
             else:
                 recipe[k] = v
+
+    # Identity card — populates the form's cohort matching panel
+    # immediately on extract, before save. See _attach_identity_card.
+    _attach_identity_card(recipe, usage_log=usage_log)
+
+    # Page screenshot — capture the above-fold view of the source page
+    # via Playwright + store via image_store. Stamps the URL on
+    # _source.pageScreenshot so the form can show "this is what the
+    # source actually looked like." Best-effort: failures don't block
+    # the extract. ~3-5s per call.
+    try:
+        from input.pipeline.screenshot_pipeline import capture_screenshot
+        screen_url = capture_screenshot(url, new_recipe_id)
+        if screen_url:
+            src = recipe.get("_source") or {}
+            src["pageScreenshot"] = screen_url
+            recipe["_source"] = src
+            print(f"[SCREENSHOT] stamped: {screen_url}")
+    except Exception as e:
+        print(f"[SCREENSHOT] capture failed (continuing): {e}")
 
     return {
         "success": True,

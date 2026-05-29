@@ -1197,6 +1197,126 @@ User: *"i asked for 10 from serp.. in the counts it said after-disallowed 18."* 
 
 ---
 
+## Session log — 2026-05-28
+
+A monster day. Built the cohort-matching + grading infrastructure end-to-end (embeddings, sqlite-vec, identity card, dish_signal); reframed the image story (og:image coopt, consistent 1500×1000/1000×1500 sizing, Playwright page screenshots, manifest sidecar for traceability); shipped two new UI surfaces (suggested-dishes queue, top-recipes panel with Open-in-BCC / View-source buttons); rebuilt the identity badge as text-only with hover-arrow; and ran four large backfills (identity cards, grades, cooped images, page screenshots) across 354 rows. Twelve+ files added, every form file modified, ~$0.10 in LLM costs across all backfills. Single end-of-day commit.
+
+### Embeddings + cohort matching + grading (the morning's headline)
+
+Built `input/pipeline/embeddings.py` (text-embedding-3-small via OpenAI, 1536-dim normalized vectors, `find_best_dish_match` with chapter pre-filter), `input/pipeline/grading.py` (`compute_exceptionalism(da, pa, ou_fit)` that applies a stored fit's coefficients to a single DA/PA pair), and `input/pipeline/vector_store.py` (sqlite-vec backed). Wire-in: `_save_recipe_core` now stamps `_master.exceptionalism` on master rows and `_grade` on personal rows from either an explicit `_master.dish` (harvest path) or an embedding match. `dishes.identity_card`, `dishes.embedding`, and `dishes.chapter` columns added to surface the matching internals + drive a SQL pre-filter on KNN.
+
+Two memories saved: `project_sqlite_vec_migration.md` (the v0.1.9 quirks: no LIMIT with `k = ?`, aux-column equality forbidden inside KNN, but PK `IN (subselect)` IS honored as a pre-filter — that's the cleaner pattern than over-fetch+post-filter), `project_identity_card.md` (the facts-first ordered-tool_use schema that fixed the Salted Tahini Chocolate Chip Cookies case from cos 0.54 → 0.78).
+
+### Identity card architecture (the key architectural inversion)
+
+`extract/dish_signal.py` (one-line Haiku call) → `extract/identity_card.py` (structured fact card via ordered tool_use). The schema lists `ingredientRoles` → `cuisine` → `ethnicity` → `technique` → `servingForm` → `likelyDish` in that exact property order. Anthropic's tool_use emits keys in declared order, so the model commits to the structural facts BEFORE the conclusion. `likelyDish` then has to reason from what it just recorded.
+
+Storage: top-level `_identity` on recipes, `dishes.identity_card` (JSON TEXT) on dishes. `compose_identity_text(card, title)` is the shared composer — same shape both sides → embedding cosine reflects semantic similarity, not format-similarity.
+
+The Salted Tahini case went 0.54 → 0.78 against the CCC dish. The whole identity card backfill across 11 dishes + 157 master + 167 personal recipes ran in ~10 minutes, ~$0.03 total cost.
+
+### sqlite-vec migration (vec0 with PK pre-filter)
+
+Installed sqlite-vec 0.1.9, added `dishes_vec` (TEXT PK = dish name, embedding float[1536]) and `recipes_master_vec` (INTEGER PK = master_recipes.id, embedding float[1536], +chapter, +dish aux columns) virtual tables. `find_best_dish_match` rewritten to use `WHERE embedding MATCH ? AND k = ? AND <pk> IN (SELECT … FROM dishes WHERE chapter = ?)`. The PK IN subselect is the secret — vec0 honors it as a true pre-filter (not post-filter), so the KNN scan stays small even at scale. No over-fetch needed.
+
+L2 distance is monotonic with cosine for normalized vectors; the public API still reports cosine via `_l2_to_cosine_sim(d) = 1 - d²/2` so thresholds stay unchanged.
+
+### Wayback Machine fallback in the canonical fetcher
+
+`to_markdown/html_to_markdown.py` gained `fetch_via_wayback(url)` + `fetch_with_full_fallback(url)` — direct UA chain first, Wayback snapshot fallback on failure. Verified live on the Kitchn URL that's been blocking us all week; Wayback returned the full JSON-LD recipe from a 4-month-old snapshot. Used by both `fetch_html` (step 7) and `_fetch_text` (step 3) for consistency. Per the [[single-path]] memory.
+
+The dish-refresh batch logs show Wayback firing on a couple sites that were briefly down (barbarabakes.com); pipeline gracefully recovered.
+
+### og:image + og:meta extraction → coopt pipeline
+
+`extract_og_image` generalized to `extract_og_meta(soup, base_url)` — full dict with `image`, `description`, `imageAlt`, `title`, `siteName`, `author`, `publishedTime`, `modifiedTime`. New fields on `SourceInfo`: `previewImage`, `previewDescription`, `previewImageAlt`, `siteName`, `author`, `publishedTime`, `modifiedTime`. All added to `_SOURCE_STATIC_SUBKEYS` so they travel through claim/cache.
+
+`input/pipeline/image_pipeline.py` — `coopt_image(url)` fetches with browser UA + 10MB cap, runs through `process_thumbnail` (Pillow, EXIF strip, JPEG q=85), stores via the `image_store` abstraction. URL-hash keying for dedup across recipes pointing at the same image.
+
+### Cookbook-grade image sizing — every image is now 1500×1000 OR 1000×1500
+
+Switched `process_thumbnail` from "downsize-to-max-width" to `ImageOps.fit` center-crop with two target buckets:
+- LANDSCAPE_TARGET = (1500, 1000) — 3:2
+- PORTRAIT_TARGET = (1000, 1500) — 2:3
+- Aspect threshold 0.95 to pick bucket (square-ish leans landscape)
+
+Same composer used by `coopt_image` AND `generate_dish_image` (AI gen, default orientation='random' → 50/50 landscape/portrait → gpt-image-1 native 1536×1024 or 1024×1536 → process_thumbnail crops to exact corpus standard). Result: visually indistinguishable artifacts across cooped + AI-generated images.
+
+Audit confirmed: 272 cooped files, EVERY single one is exactly (1500, 1000) or (1000, 1500). Zero outliers.
+
+### Image storage abstraction (LocalStore + S3Store + manifest)
+
+`input/pipeline/image_store.py` — backend-agnostic `ImageStore` protocol with two implementations:
+- `LocalStore` — writes to `generated/` (matches existing static mount), default
+- `S3Store` — boto3 + `put_object` with public-read or presigned URLs. Configure via `BCC_S3_BUCKET` / `BCC_S3_REGION` / `BCC_S3_PUBLIC_BASE_URL` (CloudFront) env vars. Falls back to Local on missing config.
+
+Manifest writer: every `put()` appends a line to `_manifest.jsonl` with `{file, url, ts, meta: {recipe_id, source_url, kind}}`. File→recipe mapping is recoverable from the storage backend alone — addresses the user's concern about lost-DB-link traceability without forcing recipe-id-based naming (which would lose dedup).
+
+### Page screenshot capture via Playwright
+
+`input/pipeline/screenshot_pipeline.py` + `scripts/_capture_screenshot_worker.py`. Captures above-fold view (1500×900 viewport, 800px capture height, 1.5s settle) via headless Chromium, processes through `process_thumbnail` to corpus-standard 1500×1000. Key pattern: `recipe-screens/<recipe_id>-<sha8>.jpg` — recipe_id prefix gives the file→recipe traceability the user explicitly asked for.
+
+**Windows asyncio quirk caught + fixed:** calling `sync_playwright()` from inside uvicorn's worker thread raises `NotImplementedError` because the parent's `ProactorEventLoop` can't spawn subprocess children from threads. Fix: shell out to `scripts/_capture_screenshot_worker.py` via `subprocess.run` — fresh Python process with its own event-loop policy. ~200ms overhead per capture is noise next to the 2-3s page load.
+
+Wired into `extract_recipe_from_url` so every URL extract auto-captures going forward. Backfill ran across 321 of 359 rows that have source URLs (94%); the 38 misses are anti-bot blocked or handwritten.
+
+### Misshared og:image detection + cleanup
+
+Sanity check found 5 cases where DIFFERENT recipes shared a cooped previewImage. 3 were correct dedup (same content, different URL variants — print pages, query-string twins). 2 were real mishares: food.com publishes a single generic og:image for every recipe (`imgstore.sndimg.com/foodcom/images/8de26738-...jpg`) and yboc.ai (user's own Ghost site!) publishes `YBOC-Eggs-Wide-2.png` as the default OG card for every post that lacks a Feature Image. We faithfully cooped both. Fix: for affected rows, re-cooped from JSON-LD `image[0]` (recipe-specific) when available; cleared `previewImage` when not. 11 rows refixed, 3 cleared (the yboc.ai pork+rice ones — user will add Feature Images in Ghost admin).
+
+### Identity badge redesign (twice) + positioning fix
+
+First pass: avatar circle + italic name + monospace uid. User: "ugly as hell" + "looks absurd on iPhone." Redesigned as text-only — italic Georgia name + hover-revealed `↗` arrow. No avatar, no link underline, plain text reading as "your byline" not "a button." Mobile: just the name + always-visible faded arrow.
+
+Second issue: badge landed on the LEFT on dishes/users/install (only on the RIGHT on recipe form). Root cause: `init()` was calling `initIdentityBadge` BEFORE `initNav` mounted the nav-spacer. Fix: drop the call from `init()`; let `initNav` be the single mount point. Now consistent right-side mount across all pages.
+
+### Form UX additions
+
+- **Identity card panel** in recipe form metadata section — likelyDish + cuisine + ethnicity + primary ingredients + technique + servingForm + ingredient roles table.
+- **Page screenshot well** under hero image — read-only, clickable to source URL, hidden when empty.
+- **Description max-height bumped 180px → 420px** to match the now-taller right column (hero + screenshot stack).
+- **Sidebar thumbnails** updated to prefer `_source.previewImage` over `image[0]` (fixes Mixed Content warnings on HTTP recipe image URLs).
+- **Suggested dishes panel** on dishes.html sidebar — `GET /dishes/suggestions` returns clusters of carded recipes whose `_identity.likelyDish` doesn't match any dish entry (≥3 threshold). Click pre-fills the Add Dish form with the suggested name.
+- **Top recipes panel** on the dish view card — `GET /dishes/<name>/top-recipes` returns the ranked master rows for the dish. Each row: preview tile, rank chip, name + hostname + grade badge, PA/DA/OU, and a two-button action row: **`Open in BCC`** (primary, fills accent) and **`View source ↗`** (outline secondary). Tile clicks to BCC; source button to original site. Resolves the user's "I should have a choice" ask.
+
+### Many small fixes worth not forgetting
+
+- `escapeHtml` ReferenceError in recipe form's identity card render was caching the "Failed to load recipe" error — `populateCohortMeta` was using bare `escapeHtml` but the recipe form doesn't import LibraryShell.escapeHtml at top level. Pulled it inline.
+- Recipe form's image autofill blocker was triggering RoboForm. Added `data-rf-ignore` + `data-1p-ignore` + `data-bwignore` + `autocomplete="off"` + renamed `name` attribute.
+- "Dish signal (legacy / display)" textarea was redundant with the identity card's `likelyDish` heading — removed.
+- `library-shell.css` was inlined in recipe_form_styled.html (against the principle); linked the stylesheet instead via `?v=20260528b` cache-bust.
+- Save flow's existing dishSignal field auto-mirrors `_identity.likelyDish` for backward-compat with any consumer still reading the old field.
+
+### Backfills run today
+
+| Backfill | Rows | Wall time | Cost |
+|---|---|---|---|
+| Identity cards (dishes + recipes) | 11 + 157 + 167 = 335 | ~10 min | ~$0.03 |
+| Grades (after card stamping) | 324 | ~7.5 min | ~$0.02 |
+| Cooped og:image (re-fetch + 1500×1000 / 1000×1500) | 321 | ~7 min | $0 (no LLM) |
+| Page screenshots via Playwright | 321 | ~17.5 min | $0 |
+| Mis-shared image re-fix | 11 + 3 | ~30s | $0 |
+
+### Where stuff lives now
+
+- 305 cooped previews + 321 screenshots + a few hundred manifest entries: `generated/og-thumbs/`, `generated/recipe-screens/`, `generated/_manifest.jsonl`
+- ~110 MB total on disk
+- Configuration for S3 flip in `bcc_config.json` and env vars (`BCC_IMAGE_STORE_BACKEND=s3`, `BCC_S3_BUCKET`, …) — code is ready, just flip the switch when you have a bucket
+
+### What's queued for tomorrow
+
+User explicitly flagged for the morning:
+1. **Master recipe display panel (END-USER FACING)** — this is THE page consumers will see when they land on a TBOTB recipe. NOT an admin/curator surface. Editorial visual register, lots of pizazz, designed to make the user think "this is a real cookbook, not a scrape." Above-fold elements should include: cooped photo (or AI-gen) at hero size, recipe title in display serif, grade badge prominent, the editorial commentary (`editorial.opinion` + `scoreCommentary`), the "Open in BCC / View source ↗" choice front-and-center. Below-fold: identity card facts as a kind of "recipe DNA" panel, the "We think you'd like" cluster (next task), and the page screenshot as the article-style provenance bottom of the page. Must feel deliberate and delightful — this is the public-facing surface for every master recipe.
+2. **"We think you'd like" recommender wiring** — the `find_similar_master_recipes` helper already works; needs to land on the recipe page + the dish detail page. Vec0 KNN with chapter pre-filter + exclude_dish for cross-cohort discovery.
+3. **Begin commerce / Amazon Rainforest API integration** — user added the Rainforest API key to `.env`. Use the embedding infrastructure we built today to map recipe ingredients → product matches via vector similarity. Start with the affiliate-catalog memory's "Editorial.sourcingNotes" injection point: LLM identifies critical-quality ingredients during enrich, server matches against a vectorized Amazon product catalog, picks render inline with the editorial prose.
+
+### Memories updated / added today
+
+- `project_sqlite_vec_migration.md` (rewritten with shipped status + v0.1.9 quirks + the PK-IN-subselect pre-filter pattern)
+- `project_identity_card.md` (architecture + ordered-tool_use pattern + LLM quirks observed in backfill)
+
+---
+
 ## Session log — 2026-05-27
 
 **Consistency day.** A series of "why does X fail here but work there" questions all pointed at the same root: parallel implementations drifting. The day's work standardized fetch, root-pick, and grade scaling across batch and live paths; then added a manual-from-reject rescue path and an Exceptionalism letter-grade overlay.
@@ -1262,6 +1382,9 @@ Trade to watch: any site that does *normal* anti-bot (blocks bots, allows Chrome
 ---
 
 ## To-do
+- **Page screenshot capture + display.** Designed 2026-05-28 with the user. Add `_source.pageScreenshot` field, capture via Playwright headless Chromium (already installed in `sandbox/playwright/`), trim to above-fold + center-crop to 1500×800 then 1500×1000 via the existing `process_thumbnail` pipeline. Filename pattern: `recipe-screens/<recipe_id>-<sha8 of timestamp>.jpg` so files trace back to recipes if the DB link is lost (the user's concern about over-reliance on URL-hash naming). Add a smaller image well under the hero on the recipe form. Backfill for the existing 354 rows is one Playwright session, ~20-30 min wall time. Same `image_store` abstraction (LocalStore today, S3 when flipped). Manifest sidecar (`_manifest.jsonl`) makes the file→recipe mapping recoverable independent of the DB.
+- **Identity badge — consistent right-side mount across all pages.** Currently the recipe form has the badge on the RIGHT (it calls only `LibraryShell.initNav`, which mounts after inserting the spacer); other pages (dishes, users, install) call `LibraryShell.init` FIRST, which mounts the badge before the spacer exists, so it lands on the LEFT. Fix: drop the `initIdentityBadge()` call inside `init()`; rely on `initNav()` to mount it everywhere. Pages that don't call `initNav` (none today) would lose the badge; we'd add an explicit `initIdentityBadge` call there. Caught 2026-05-28 during the demo prep — user noted "the user id stuff at the top needs to be on the right on all pages, not just recipes."
+- **Next/prev navigation arrows on recipe + dish pages.** When viewing a single recipe (recipe_form_styled.html?recipe_id=…) or a single dish (dishes.html with a dish selected), surface ‹ / › arrows in the header to step through the sibling rows of the current scope. Scope rules to confirm at build time: recipe arrows step through the current sidebar's filtered+sorted list (so a chapter filter or search constrains the cycle); dish arrows step through `list_dishes` alphabetical or by `last_refreshed` desc (TBD). Keyboard shortcuts: `[` / `]` or arrow keys. Wraparound at end-of-list. The arrows belong in the same header strip as the identity badge; reuse the existing chevron pattern from the nav menu. Cheap to build (~50 lines per page), and dramatically improves cookbook-style review workflow ("look at all 10 Pastitsio recipes in order"). Worth noting: today every recipe view is a direct URL load (`?recipe_id=…`), so the navigation also needs to push the new URL via `history.pushState` rather than full page reload so the chrome stays stable.
 - **Harvest grading at save time.** Today's `_master.exceptionalism` is stamped only in the batch path (after `_compute_custom_ou` runs). Manual-from-reject saves go to master with `_master.kind="harvest"` but no grade. The dish row's `last_ou_fit` now persists `sigma_effective` + model + coefficients (today's change), so a harvest save can: (1) fetch DA/PA for the URL via Moz, (2) apply the stored fit's predicted_PA(DA), (3) residual → T-score against stored σ, (4) stamp the grade. Edge case: stored fit is from a run that may be weeks old; consider whether to surface a "graded against the originating run's cohort, last refreshed YYYY-MM-DD" caveat on the badge.
 - **Non-batch-originated recipes — grade story.** Personal saves and pre-existing recipes have no dish cohort. Three options: (a) skip Exceptionalism entirely for them (em-dash in UI — already what happens today since `_master.exceptionalism` is absent); (b) match the recipe to a dish heuristically (chapter + cuisine + ingredient overlap) and grade against that dish's stored fit; (c) introduce a global Exceptionalism scale across ALL recipes (different math, different meaning — would be confusing to mix with the per-dish T-score). Discussed today but deferred — Option (a) is the honest default and probably the right answer.
 - **Domain quirks registry.** Discussed today as future work — a small `domain_strategies` table keyed on domain with `fetch_strategy` (`plain` / `playwright` / `bookmarklet_only` / `skip`), `custom_extractor` module path, free-form notes, and auto-tracked failure counts. Value comes from routing between MULTIPLE strategies — don't build until Playwright lands as a second strategy. Backfill from `dish_rejects.reason` patterns on day one. The Kitchn turned out NOT to need this (it was just a UA mismatch — fixed today via the canonical fetcher); first real candidate will surface from the next failed batch run.

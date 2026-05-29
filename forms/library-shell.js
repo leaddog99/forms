@@ -173,6 +173,85 @@
     }
   }
 
+  // === Identity badge in title bar ===
+  // Text-only "signed in as" chip. Reference patterns: GitHub's
+  // top-right account pill, Linear's workspace switcher, Notion's
+  // account row. Common thread: italic editor-page name with a subtle
+  // directional indicator, NO avatar circle (looks out of place at
+  // form-page scale and absurd on phones), NO link underline. Reads
+  // as "your byline" not "a button."
+  //
+  // Why this matters: every API call dispatches by X-Self-User-Id
+  // (master writes, sidebar load, claim flow). Easy to think you're
+  // acting as User A when you're actually User B — silent data scope
+  // bugs. Putting the name in the header makes identity unambiguous.
+  //
+  // The right-up arrow appears on hover (or always on mobile, where
+  // there's no hover state) — that's the click affordance.
+  function initIdentityBadge() {
+    const headerInner = document.querySelector('.app-header .header-inner');
+    if (!headerInner) return;
+    if (headerInner.querySelector('.identity-badge')) return;  // idempotent
+
+    const badge = document.createElement('a');
+    badge.className = 'identity-badge';
+    badge.href = '/forms/users.html';
+    badge.title = 'Click to switch user';
+    badge.innerHTML =
+      '<span class="identity-name muted">…</span>' +
+      '<span class="identity-arrow">↗</span>';
+
+    // Sit to the RIGHT, adjacent to the nav toggle. The .nav-spacer
+    // (flex:1) sits between the title and the badge, so the badge
+    // floats next to the ⋮ menu rather than next to the page title.
+    // Insert AFTER the spacer (i.e. before whatever comes after — the
+    // nav-toggle if it's already mounted, otherwise just append).
+    const navSpacer = headerInner.querySelector('.nav-spacer');
+    if (navSpacer && navSpacer.nextSibling) {
+      headerInner.insertBefore(badge, navSpacer.nextSibling);
+    } else if (navSpacer) {
+      // Spacer exists, nothing after it yet — append (initNav will
+      // add the ⋮ toggle after the badge in a moment).
+      headerInner.appendChild(badge);
+    } else {
+      // No spacer yet (initNav hasn't run, or this page doesn't use it).
+      // Just append; the spacer will be inserted before us by initNav.
+      headerInner.appendChild(badge);
+    }
+
+    // Hydrate via /auth/me. patchFetch already attaches X-Self-User-Id.
+    window.fetch('/auth/me')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => {
+        const u = data && data.user;
+        if (!u) {
+          badge.innerHTML =
+            '<span class="identity-name muted">not signed in</span>' +
+            '<span class="identity-arrow">↗</span>';
+          badge.title = 'Click to pick a user';
+          return;
+        }
+        const nm = (u.name || u.email || '').trim();
+        const uid = u.user_id;
+        const role = (data.role || 'member');
+        const display = nm || ('user ' + uid);
+        badge.innerHTML =
+          '<span class="identity-name">' + escapeHtml(display) + '</span>' +
+          '<span class="identity-arrow">↗</span>';
+        // Tooltip carries the precise lookup data so the at-a-glance
+        // chip stays clean while audit info is one hover away.
+        badge.title = display +
+                      '  ·  user_id ' + uid +
+                      '  ·  role ' + role +
+                      '\nClick to switch.';
+      })
+      .catch(() => {
+        badge.innerHTML =
+          '<span class="identity-name muted">unknown</span>' +
+          '<span class="identity-arrow">↗</span>';
+      });
+  }
+
   function init(opts) {
     opts = opts || {};
     state.sidebar = document.querySelector(opts.sidebarSelector || '#sidebar');
@@ -190,6 +269,15 @@
       if (state.sidebarToggle.contains(e.target)) return;
       closeSidebar();
     });
+    // Identity badge mounting is handled by initNav() — that's the
+    // right-hand chrome and it runs AFTER it inserts the nav-spacer,
+    // so the badge lands on the right (next to the ⋮ menu). Mounting
+    // here in init() (which runs first on dishes/users/install) would
+    // mount BEFORE the spacer exists, parking the badge on the LEFT
+    // side of the header — that's the bug the user flagged
+    // 2026-05-28 ("user id at top needs to be on the right on all
+    // pages, not just recipes"). Idempotent so this isn't a regression
+    // for the recipe form (which only calls initNav).
   }
 
   // ============================================================
@@ -267,6 +355,11 @@
         spacer.className = 'nav-spacer';
         headerInner.appendChild(spacer);
       }
+      // Identity badge sits between the spacer (title-side) and the
+      // nav toggle. Idempotent — pages that ALSO call init() won't
+      // get a duplicate. Mounted from initNav too because the recipe
+      // form doesn't call init() (it has its own sidebar logic).
+      initIdentityBadge();
       headerInner.appendChild(toggle);
     } else {
       toggle.style.position = 'fixed';
@@ -334,6 +427,7 @@
   window.LibraryShell = {
     init,
     initNav,
+    initIdentityBadge,
     openSidebar,
     closeSidebar,
     toggleSidebar,

@@ -82,7 +82,7 @@ FETCH_TIMEOUT_S = 10
 # `fetch_with_ua_fallback`. Both go through the SAME UA chain so a URL
 # that the extract can fetch will always pass step 3's filter — no
 # more silent drops from UA mismatch. See [[single-path]].
-from to_markdown.html_to_markdown import fetch_with_ua_fallback
+from to_markdown.html_to_markdown import fetch_with_ua_fallback, fetch_with_full_fallback
 
 # Defaults now come from bcc_config.json via input.pipeline.config.
 # Re-exported under the historical names so existing CLI / callers
@@ -259,10 +259,13 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
 def _fetch_text(url: str) -> Optional[str]:
     """Fetch a URL and return lower-cased plain text. Returns None on any
     failure (HTTP error, timeout, parse error). Uses the canonical
-    fetch_with_ua_fallback so step 3's filter sees the same response
-    the step-7 extract would — no UA-mismatch silent drops."""
+    fetch_with_full_fallback (UA chain → Wayback Machine) so step 3's
+    filter sees the same response the step-7 extract would — no
+    UA-mismatch silent drops, and aggressive Cloudflare-fronted sites
+    (Kitchn, NYT, WaPo) get caught via Wayback snapshot rather than
+    dropping out of the batch entirely."""
     try:
-        resp, _ua_used = fetch_with_ua_fallback(url, timeout=FETCH_TIMEOUT_S)
+        resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S)
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()

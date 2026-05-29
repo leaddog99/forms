@@ -113,17 +113,139 @@ def fetch_with_ua_fallback(url: str, *,
     )
 
 
+WAYBACK_AVAILABILITY_URL = "https://archive.org/wayback/available"
+WAYBACK_RAW_URL_FMT = "https://web.archive.org/web/{ts}id_/{url}"
+
+
+def fetch_via_wayback(url: str, *,
+                      timeout: int = DEFAULT_TIMEOUT_SECONDS,
+                      ) -> Optional[tuple[requests.Response, str]]:
+    """Last-resort fallback: fetch the page from Internet Archive's
+    Wayback Machine when the live site refuses our UA chain. Returns
+    (response, wayback_timestamp) on success, None when no snapshot
+    exists or the fetch itself fails.
+
+    Why this exists: aggressive Cloudflare-fronted sites (Kitchn, NYT
+    Cooking, WaPo) increasingly 403 every UA we can rotate through.
+    The user's directive is "no manual harvest, no Playwright" — so
+    when direct fetch fails we ask Wayback for the most recent
+    snapshot and parse that instead. Recipe content is essentially
+    static; a snapshot from days/weeks/months ago is fine for
+    cohort matching, grading, and most user-facing extraction.
+
+    Snapshots may be missing (publisher excludes via robots.txt, very
+    new URLs not yet crawled) — caller treats None as "no fallback,
+    fail as before." Provenance crumb: the wayback timestamp is
+    returned so the extractor can stamp `_source.via = wayback:<ts>`
+    and the UI can surface "snapshot from YYYY-MM-DD."
+
+    The `id_` flag in the raw URL strips the Wayback toolbar so the
+    response body is the original page content byte-for-byte (modulo
+    any rewriting Wayback does to inline assets, which the recipe
+    JSON-LD survives cleanly).
+    """
+    try:
+        avail = requests.get(
+            WAYBACK_AVAILABILITY_URL,
+            params={"url": url},
+            timeout=timeout,
+            headers={"User-Agent": DEFAULT_USER_AGENT},
+        )
+        if not (200 <= avail.status_code < 300):
+            return None
+        data = avail.json()
+    except Exception as e:
+        print(f"[wayback] availability check failed for {url!r}: {e}")
+        return None
+
+    snap = ((data.get("archived_snapshots") or {}).get("closest") or {})
+    ts = snap.get("timestamp")
+    snap_url = snap.get("url")
+    if not ts or not snap_url:
+        return None
+
+    raw_url = WAYBACK_RAW_URL_FMT.format(ts=ts, url=url)
+    try:
+        resp = requests.get(
+            raw_url,
+            timeout=timeout,
+            headers={"User-Agent": DEFAULT_USER_AGENT},
+        )
+        if not (200 <= resp.status_code < 300):
+            return None
+    except Exception as e:
+        print(f"[wayback] fetch failed for {raw_url!r}: {e}")
+        return None
+    print(f"[wayback] hit snapshot {ts} for {url}")
+    return resp, ts
+
+
+def fetch_with_full_fallback(url: str, *,
+                              timeout: int = DEFAULT_TIMEOUT_SECONDS,
+                              try_wayback: bool = True,
+                              ) -> tuple[requests.Response, dict]:
+    """Tiered fetch: direct UA chain → Wayback fallback.
+
+    Returns (response, meta) where meta is:
+      {"source": "direct", "ua_used": "<ua>"}
+      {"source": "wayback", "timestamp": "20260128152348"}
+
+    Wayback is consulted only when the live UA chain raised. 404/410
+    are terminal (page doesn't exist now and didn't exist either) —
+    we don't fall to Wayback for those.
+    """
+    try:
+        resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
+        return resp, {"source": "direct", "ua_used": ua_used}
+    except requests.HTTPError as e:
+        # 404/410 came from a real response.raise_for_status() above
+        # → terminal, don't try Wayback.
+        status = getattr(e.response, "status_code", None) if e.response is not None else None
+        if status in (404, 410):
+            raise
+        if not try_wayback:
+            raise
+    except Exception:
+        if not try_wayback:
+            raise
+
+    wb = fetch_via_wayback(url, timeout=timeout)
+    if wb is None:
+        raise requests.HTTPError(
+            f"Direct fetch failed and no Wayback snapshot available for {url}"
+        )
+    resp, ts = wb
+    return resp, {"source": "wayback", "timestamp": ts}
+
+
 def fetch_html(url: str, *, timeout: int = DEFAULT_TIMEOUT_SECONDS,
-               user_agent: Optional[str] = None) -> tuple[str, str]:
-    """Return (html_text, final_url) after redirects. UA fallback chain
-    used by default; pass `user_agent` to force a single UA (e.g. tests).
+               user_agent: Optional[str] = None,
+               try_wayback: bool = True,
+               ) -> tuple[str, str, dict]:
+    """Return (html_text, final_url, meta) after redirects + fallbacks.
+
+    Default behavior:
+      - UA fallback chain (bot UA → Chrome UA)
+      - On failure, Wayback Machine snapshot fallback
+    Pass `user_agent=...` to force one UA + skip Wayback (used by tests).
+    Pass `try_wayback=False` to keep the UA chain but disable Wayback.
+
+    `meta` is a small dict describing the fetch:
+      {"source": "direct", "ua_used": "..."}
+      {"source": "wayback", "timestamp": "20260128152348"}
+
+    Callers that don't care about meta can ignore the third tuple
+    element — backward-compatible call sites continue to work because
+    Python tuple unpacking is positional and the prior signature was
+    `(html_text, final_url)`. Updated call sites pull the meta to
+    stamp `_source.via = wayback:<ts>` provenance.
     """
     if user_agent is not None:
         resp = requests.get(url, timeout=timeout, headers={"User-Agent": user_agent})
         resp.raise_for_status()
-        return resp.text, resp.url
-    resp, _ua_used = fetch_with_ua_fallback(url, timeout=timeout)
-    return resp.text, resp.url
+        return resp.text, resp.url, {"source": "direct", "ua_used": user_agent}
+    resp, meta = fetch_with_full_fallback(url, timeout=timeout, try_wayback=try_wayback)
+    return resp.text, resp.url, meta
 
 
 def _is_recipe_type(node_type: Any) -> bool:
@@ -266,6 +388,79 @@ def clean_for_markdown(node: Any) -> None:
             t.decompose()
 
 
+def _find_meta(soup: BeautifulSoup, *names: str) -> str:
+    """Search <meta> tags for the first name/property match in the
+    given list. Both `property=` and `name=` attribute forms are
+    checked because sites spell og: vs twitter: vs article: tags
+    inconsistently. Returns content string or empty."""
+    for nm in names:
+        for selector in ({"property": nm}, {"name": nm}):
+            tag = soup.find("meta", attrs=selector)
+            if tag and tag.get("content"):
+                return tag["content"].strip()
+    return ""
+
+
+def extract_og_meta(soup: BeautifulSoup, base_url: str) -> dict:
+    """Pull the useful Open Graph + Twitter Card + article: metadata
+    from a page's <head>. Returns a dict — empty strings for any field
+    the page didn't publish. Always returns the dict shape so callers
+    can index by key without guarding.
+
+    Fields (in order of preview-usefulness):
+      - image         og:image (preferred) or twitter:image
+                      The link-preview thumbnail URL. Cooped at extract.
+      - description   og:description / twitter:description
+                      The teaser sentence (typically 150-250 chars).
+                      Useful for tile mouseovers, accessibility, and as
+                      a fallback when our editorial.opinion isn't run.
+      - imageAlt      og:image:alt / twitter:image:alt
+                      Alt text for the image. Use on the cooped tile's
+                      <img alt=…> for accessibility.
+      - title         og:title (fallback to twitter:title)
+                      Sometimes cleaner than <title> (no site-name suffix).
+      - siteName      og:site_name
+                      Human-readable site name ("Bon Appétit") vs the
+                      raw hostname. Addresses the "friendly site-name
+                      display" item that's been in the to-do list.
+      - author        article:author
+                      Author name OR URL — sites use both shapes.
+      - publishedTime article:published_time (ISO 8601)
+      - modifiedTime  article:modified_time (ISO 8601)
+
+    Absolute-URL-resolves the image field against `base_url`; other
+    fields are passed through as-is.
+    """
+    from urllib.parse import urljoin
+
+    image_raw = _find_meta(soup, "og:image", "twitter:image")
+    image_abs = ""
+    if image_raw:
+        try:
+            image_abs = urljoin(base_url, image_raw)
+        except Exception:
+            image_abs = image_raw
+
+    return {
+        "image":         image_abs,
+        "description":   _find_meta(soup, "og:description", "twitter:description"),
+        "imageAlt":      _find_meta(soup, "og:image:alt", "twitter:image:alt"),
+        "title":         _find_meta(soup, "og:title", "twitter:title"),
+        "siteName":      _find_meta(soup, "og:site_name", "application-name"),
+        "author":        _find_meta(soup, "article:author", "author"),
+        "publishedTime": _find_meta(soup, "article:published_time"),
+        "modifiedTime":  _find_meta(soup, "article:modified_time"),
+    }
+
+
+def extract_og_image(soup: BeautifulSoup, base_url: str) -> str:
+    """Backward-compat shim — returns just the image URL from the
+    fuller `extract_og_meta` result. Kept so existing callers that
+    only care about the image field don't have to thread the dict.
+    """
+    return extract_og_meta(soup, base_url).get("image", "")
+
+
 def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
     """Fetch a URL and produce canonical markdown for recipe extraction.
 
@@ -284,10 +479,13 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
         html_parse_ms   bs4 + extruct + markdownify combined
     """
     t0 = time.perf_counter()
-    html, final_url = fetch_html(url)
+    html, final_url, fetch_meta = fetch_html(url)
     t_fetch = time.perf_counter()
     if timings is not None:
         timings["fetch_ms"] = int((t_fetch - t0) * 1000)
+        timings["fetch_source"] = fetch_meta.get("source")
+        if fetch_meta.get("source") == "wayback":
+            timings["wayback_timestamp"] = fetch_meta.get("timestamp")
 
     base_url = get_base_url(html, final_url)
     soup = BeautifulSoup(html, "lxml")
@@ -297,6 +495,8 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
         title = soup.title.string.strip()
 
     recipes_jsonld = extract_recipe_jsonld(html, base_url)
+    og_meta = extract_og_meta(soup, base_url)
+    og_image = og_meta.get("image", "")  # kept for back-compat with callers
 
     main = select_main_content(soup)
     clean_for_markdown(main)
@@ -326,6 +526,8 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
         "title": title,
         "has_jsonld": bool(recipes_jsonld),
         "jsonld": recipes_jsonld,
+        "og_image": og_image,   # kept for back-compat
+        "og_meta": og_meta,     # full dict — see extract_og_meta docstring
     }
 
 

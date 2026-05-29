@@ -77,6 +77,54 @@ body {
    Empty spacer pushes the nav-toggle to the right edge of the header's
    centered content column. */
 .nav-spacer { flex: 1; }
+
+/* Identity badge — text-only, editorial register.
+   Pattern reference: GitHub's "Signed in as" (top-right pill), Linear's
+   workspace switcher, Notion's account row. Common thread: italic
+   editor-page name with a subtle directional indicator, NO avatar
+   circle (avatars look out of place at form-page scale and even worse
+   on phones), NO underline link affordance. The whole thing reads as
+   "your byline" not "a button."
+
+   The right-up arrow is the click affordance — appears on hover so
+   the resting state is just the name. Tooltip carries the user_id +
+   role for explicit lookup. */
+.identity-badge {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 2px 8px;
+  color: var(--ink);
+  text-decoration: none;
+  flex-shrink: 0;
+  border-radius: 4px;
+  transition: background 120ms ease, color 120ms ease;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.92em;
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.3;
+  user-select: none;
+}
+.identity-badge:hover {
+  background: var(--accent-soft, rgba(155, 74, 34, 0.06));
+  color: var(--accent);
+}
+.identity-badge .identity-name { /* the actual name text */ }
+.identity-badge .identity-name.muted {
+  color: var(--muted);
+  font-weight: normal;
+}
+.identity-badge .identity-arrow {
+  font-size: 0.78em;
+  opacity: 0;
+  font-style: normal;
+  transition: opacity 120ms ease, transform 120ms ease;
+  display: inline-block;
+}
+.identity-badge:hover .identity-arrow {
+  opacity: 0.65;
+  transform: translate(1px, -1px);
+}
+
 .nav-toggle {
   background: var(--accent); color: #fff; border: none;
   width: 36px; height: 36px; border-radius: 8px;
@@ -361,6 +409,10 @@ body.sidebar-open {
   .app-header { height: 52px; }
   .app-header .header-inner { padding: 0 12px; gap: 10px; }
   .app-header h1 { font-size: 1em; }
+  .identity-badge { padding: 2px 6px; font-size: 0.85em; }
+  /* Always show the arrow on mobile (no hover state) — gives the
+     curator a visual anchor that this is the account chip. */
+  .identity-badge .identity-arrow { opacity: 0.5; }
   .container { padding: 14px; }
   .sidebar { width: 86vw; max-width: 320px; left: -100%; }
   .sidebar.open { left: 0; }
