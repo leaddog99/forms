@@ -85,6 +85,10 @@ FETCH_TIMEOUT_S = 10
 from to_markdown.html_to_markdown import (
     fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
 )
+from intake.translate import (
+    detect_language, translate_markdown, is_translation_plausible,
+    is_non_english, language_name,
+)
 
 # Defaults now come from bcc_config.json via input.pipeline.config.
 # Re-exported under the historical names so existing CLI / callers
@@ -258,11 +262,11 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _fetch_for_filter(url: str) -> Optional[tuple[str, bool]]:
-    """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld).
+def _fetch_for_filter(url: str) -> Optional[tuple[str, bool, str]]:
+    """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld, lang_code).
     Returns None on any failure (HTTP error, timeout, parse error).
 
-    Two signals returned in one round-trip:
+    Three signals returned in one round-trip:
       - `text` — phrase-scored against RECIPE_PHRASES for the English-
                   language is_recipe check.
       - `has_recipe_jsonld` — True iff the page publishes a
@@ -271,14 +275,20 @@ def _fetch_for_filter(url: str) -> Optional[tuple[str, bool]]:
                   a Recipe via structured data is, by author intent,
                   a recipe. We accept those unconditionally; the phrase
                   check is the fallback for pages without JSON-LD.
+      - `lang_code` — ISO 639-1 detected from <html lang>, Content-Language
+                  header, or fasttext on body text. Used by
+                  `_is_recipe_filter` to decide whether to translate
+                  before phrase-scoring; also stamped on the entry as
+                  `_lang` for downstream extraction-stage translation.
 
-    The dual signal landed 2026-05-29 after a Spanakorizo dish refresh
-    dropped 21 of 23 Greek-language sites — all of which publish
-    JSON-LD Recipe but failed the English-only phrase scorer. Trusting
-    JSON-LD when present unlocks every non-English recipe site that
-    follows the schema.org convention (which is virtually all of them).
+    The JSON-LD + language signal landed 2026-05-29 after a Spanakorizo
+    dish refresh dropped 21 of 23 Greek-language sites — all of which
+    publish JSON-LD Recipe but failed the English-only phrase scorer.
+    Trusting JSON-LD when present unlocks every non-English recipe site
+    that follows the schema.org convention (which is virtually all of
+    them); translation handles the rest.
 
-    Uses the canonical fetch_with_full_fallback (UA chain → Wayback)
+    Uses the canonical fetch_with_full_fallback (UA chain -> Wayback)
     so step 3's filter sees the same response step 7's extract would.
     """
     try:
@@ -295,10 +305,17 @@ def _fetch_for_filter(url: str) -> Optional[tuple[str, bool]]:
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
-        text = soup.get_text(separator=" ")
-        # Collapse whitespace and lowercase so phrase matching in
-        # score_recipe_text is consistent with markdown_to_recipe's path.
-        return " ".join(text.split()).lower(), has_recipe_jsonld
+        visible_text = soup.get_text(separator=" ")
+        normalized_text = " ".join(visible_text.split())
+        # Language detection runs on the visible text BEFORE we
+        # lower-case it; fasttext is mixed-case aware. Header dict is
+        # passed in case the server set Content-Language (some CDNs do).
+        lang_code = detect_language(
+            resp.text, headers=dict(resp.headers), visible_text=normalized_text,
+        )
+        # Phrase matching expects lower-cased text (RECIPE_PHRASES is
+        # all-lower); preserve that contract.
+        return normalized_text.lower(), has_recipe_jsonld, lang_code
     except Exception:
         return None
 
@@ -322,16 +339,25 @@ _JSONLD_PASS_SCORE = 100
 
 def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
-    phrase check as fallback. Stamps `recipe_score` on every entry.
+    phrase check (with translation for non-English pages) as fallback.
+    Stamps `recipe_score` and `_lang` on every entry.
 
     Decision tree:
-      1. Fetch fails (HTTP / timeout / parse) → DROP with reason 'fetch-failed'.
-      2. Page publishes schema.org/Recipe JSON-LD → KEEP with score=100.
+      1. Fetch fails (HTTP / timeout / parse) -> DROP with reason 'fetch-failed'.
+      2. Page publishes schema.org/Recipe JSON-LD -> KEEP with score=100.
          The site declared itself a recipe; we don't second-guess it.
          Catches non-English recipe sites where the phrase scorer would
-         have dropped them on language alone.
-      3. Otherwise → phrase-score against RECIPE_PHRASES; KEEP if
-         score ≥ IS_RECIPE_THRESHOLD, else DROP.
+         have dropped them on language alone — and skips translation cost
+         entirely, since JSON-LD is language-agnostic.
+      3. No JSON-LD, non-English page -> translate visible text via
+         Haiku, then phrase-score against RECIPE_PHRASES. Catches
+         non-English recipe sites that don't publish JSON-LD.
+      4. No JSON-LD, English page -> phrase-score directly.
+      5. KEEP if score >= IS_RECIPE_THRESHOLD, else DROP.
+
+    `_lang` is stamped on every kept entry so downstream extraction can
+    translate again at markdown_to_recipe time (one source of truth on
+    language detection — filter and extract agree).
 
     Returns (kept, dropped).
     """
@@ -345,16 +371,65 @@ def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
             dropped.append(e)
             print(f"  [{i:>2}/{len(entries)}] FETCH-FAIL  {url}")
             continue
-        text, has_recipe_jsonld = result
+        text, has_recipe_jsonld, lang_code = result
+        e["_lang"] = lang_code
 
         if has_recipe_jsonld:
             # Author declared this a recipe via structured data. Trust it.
+            # Language-agnostic; no translation needed at this stage.
             e["recipe_score"] = _JSONLD_PASS_SCORE
             e["jsonld_recipe"] = True
             kept.append(e)
-            print(f"  [{i:>2}/{len(entries)}] KEEP json-ld   {url}")
+            lang_tag = f" [{lang_code}]" if is_non_english(lang_code) else ""
+            print(f"  [{i:>2}/{len(entries)}] KEEP json-ld   {url}{lang_tag}")
             continue
 
+        # No JSON-LD. If the page is non-English, translate visible
+        # text before phrase-scoring; otherwise score the raw text.
+        # Translation here is filter-stage only (~$0.0005/page) — the
+        # downstream extraction stage handles its own translation for
+        # the canonical English recipe body.
+        if is_non_english(lang_code):
+            try:
+                tr = translate_markdown(text, lang_code)
+                ok, why = is_translation_plausible(text, tr.translated_markdown)
+                if not ok:
+                    e["_dropped_reason"] = f"translation-suspect:{why}"
+                    dropped.append(e)
+                    print(f"  [{i:>2}/{len(entries)}] DROP xlate-bad {url} [{lang_code}: {why}]")
+                    continue
+                # Phrase scorer expects lower-cased English.
+                scored_text = tr.translated_markdown.lower()
+                score = score_recipe_text(scored_text)
+                e["recipe_score"] = score
+                e["jsonld_recipe"] = False
+                e["_translated_for_filter"] = True
+                if score >= IS_RECIPE_THRESHOLD:
+                    kept.append(e)
+                    print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{lang_code}]  {url}")
+                else:
+                    e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
+                    dropped.append(e)
+                    print(f"  [{i:>2}/{len(entries)}] DROP xlate={score:>2} [{lang_code}]  {url}")
+            except Exception as ex:
+                # Translation API failure -> fall through to raw phrase
+                # check rather than dropping the URL. Logged loudly so
+                # we notice if Anthropic is flaking.
+                print(f"      [translate] {type(ex).__name__}: {ex} -- falling back to raw phrase check")
+                score = score_recipe_text(text)
+                e["recipe_score"] = score
+                e["jsonld_recipe"] = False
+                e["_translation_failed"] = True
+                if score >= IS_RECIPE_THRESHOLD:
+                    kept.append(e)
+                    print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{lang_code}, xlate-fail]  {url}")
+                else:
+                    e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
+                    dropped.append(e)
+                    print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{lang_code}, xlate-fail]  {url}")
+            continue
+
+        # English page, no JSON-LD. Phrase-score the raw text.
         score = score_recipe_text(text)
         e["recipe_score"] = score
         e["jsonld_recipe"] = False

@@ -117,6 +117,20 @@ _SOURCE_STATIC_SUBKEYS = frozenset({
                      # extract via input.pipeline.screenshot_pipeline.
                      # Survives claim/cache like the rest of the
                      # consent-given preview metadata.
+    "originalLanguage", # ISO 639-1 of the source page when non-English
+                     # (e.g. 'el' for Greek). Empty/absent for English
+                     # pages. Set by the extraction-stage translation
+                     # in intake/translate.py.
+    "translated",    # bool — True when the recipe body fields are the
+                     # English translation of a non-English source.
+                     # Lets the UI render a "Translated from X" pill +
+                     # offer a "view original" affordance.
+    "translatedAt",  # ISO 8601 timestamp of the translation call. Lets
+                     # us re-run translation later (improved prompt,
+                     # better model) and only on rows that have it set.
+    "originalTitle", # The source-language title preserved from the
+                     # page's <h1>/<title> before translation. Used by
+                     # the UI's "view original" link affordance.
 })
 
 
@@ -232,6 +246,15 @@ class SourceInfo(BaseModel):
     # `recipe-screens/<recipe_id>-<sha8>.jpg` lets us trace files
     # back to recipes independently of the DB.
     pageScreenshot: Optional[str] = ""
+    # === Translation provenance =====================================
+    # When the source page is non-English, the recipe body fields are
+    # the canonical English translation. These four keys carry the
+    # provenance signal so the UI can render a "Translated from X" pill
+    # and a "view original" link.
+    originalLanguage: Optional[str] = ""    # ISO 639-1 ("el", "it", ...)
+    translated: Optional[bool] = False
+    translatedAt: Optional[str] = ""        # ISO 8601 UTC
+    originalTitle: Optional[str] = ""       # source-language title
 
 
 # Dish-library provenance block — stamped on master_recipes rows so the
