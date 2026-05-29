@@ -85,6 +85,132 @@
     }
     .rejects-details[open] summary::before { content: '▾ '; }
 
+    /* Top recipes panel — the master rows from the last refresh.
+       Compact list with rank, name, source link, host, grade badge,
+       and PA/DA/OU. Distinct visual register from rejects (lighter
+       background) so the curated set reads as "the winners". */
+    .top-recipes-panel { margin-top: 4px; }
+    .top-recipes-header {
+      font-size: 1.0em;
+      margin: 0 0 8px;
+      color: var(--ink);
+      font-family: Georgia, 'Times New Roman', serif;
+      font-weight: 600;
+    }
+    .top-recipes-subline {
+      color: var(--muted, #74695f);
+      font-weight: normal;
+      font-style: italic;
+      font-size: 0.86em;
+      margin-left: 6px;
+    }
+    .top-recipes-list { display: flex; flex-direction: column; gap: 6px; }
+    .top-recipe-row {
+      display: flex;
+      gap: 12px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--accent-soft, rgba(155, 74, 34, 0.04));
+      font-size: 0.92em;
+      transition: background 120ms ease;
+    }
+    .top-recipe-row:hover { background: var(--accent-soft, rgba(155, 74, 34, 0.09)); }
+    .top-recipe-tile {
+      flex: 0 0 auto;
+      display: block;
+      width: 88px; height: 66px;     /* 4:3 — "link preview" shape */
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg, #f8f4ef);
+      border: 1px solid var(--line);
+    }
+    .top-recipe-tile img {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+    }
+    .top-recipe-tile.empty {
+      background:
+        repeating-linear-gradient(
+          45deg,
+          var(--bg, #f8f4ef) 0 8px,
+          var(--line) 8px 9px
+        );
+    }
+    .top-recipe-body { flex: 1; min-width: 0; }
+    .top-recipe-main {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .top-rank {
+      display: inline-block;
+      min-width: 28px;
+      padding: 2px 6px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.78em;
+      font-weight: 600;
+      text-align: center;
+    }
+    .top-recipe-title {
+      color: var(--ink);
+      font-weight: 600;
+      font-family: Georgia, 'Times New Roman', serif;
+    }
+    .top-recipe-host {
+      color: var(--muted, #74695f);
+      font-size: 0.85em;
+      font-style: italic;
+    }
+    .top-recipe-meta {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 4px;
+      font-size: 0.82em;
+      color: var(--muted, #74695f);
+    }
+    .top-scores {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    /* Action buttons — one primary (BCC copy), one secondary (source).
+       Editorial register, small, inline. Sit on their own row under
+       the meta strip. */
+    .top-recipe-actions {
+      display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+    }
+    .top-action {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 0.82em;
+      font-weight: 500;
+      text-decoration: none;
+      transition: background 120ms ease, color 120ms ease;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    .top-action-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .top-action-primary:hover {
+      background: var(--accent-dark, #7a3818);
+    }
+    .top-action-secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--line);
+    }
+    .top-action-secondary:hover {
+      background: var(--accent-soft, rgba(155, 74, 34, 0.06));
+      border-color: var(--accent);
+    }
+    .top-action-arrow {
+      font-size: 0.86em;
+      opacity: 0.75;
+    }
+
     .rejects-list { display: flex; flex-direction: column; gap: 8px; }
     .reject-row {
       padding: 8px 10px;
@@ -216,6 +342,23 @@
     <ul class="entity-list" id="dishList">
       <li class="empty-state">Loading…</li>
     </ul>
+
+    <!-- Suggested dishes — clusters of carded recipes whose
+         `_identity.likelyDish` doesn't match any library entry.
+         Powered by /dishes/suggestions; >=3-recipe threshold filters
+         out idiosyncratic LLM outputs. Each row is a one-click
+         pre-fill of the Add Dish form. -->
+    <div id="suggestionsSection" style="margin-top:18px;display:none">
+      <h3 style="font-size:0.95em;margin:0 0 6px;color:var(--muted)">
+        Suggested dishes
+        <span style="color:var(--muted);font-weight:normal" id="suggestionCount"></span>
+      </h3>
+      <div style="font-size:0.78em;color:var(--muted);margin-bottom:8px;line-height:1.4">
+        Recipes are calling these out as their dish, but no library entry exists.
+        Click to pre-fill <strong>Add new dish</strong>.
+      </div>
+      <ul class="entity-list" id="suggestionList" style="margin:0"></ul>
+    </div>
   </aside>
 
   <div class="container">
@@ -231,7 +374,7 @@
     <div class="button-row" id="footerButtons"></div>
   </footer>
 
-  <script src="/forms/library-shell.js?v=exc1"></script>
+  <script src="/forms/library-shell.js?v=20260528b"></script>
   <script>
     const API = window.location.origin;
     const $ = (sel) => document.querySelector(sel);
@@ -335,6 +478,7 @@
         `<div class="detail-card" id="detailCard">` +
           `<h2>${escapeHtml(d.name)} ${statusBadge(d)}</h2>` +
           `<div class="subline">` +
+            (d.chapter ? `<span class="pill">${escapeHtml(d.chapter)}</span>` : '') +
             `<span class="pill">SerpAPI ${escapeHtml(d.top_n_serpapi)}/query</span>` +
             `<span class="pill">top ${escapeHtml(d.top_n_final)}</span>` +
             `<span class="pill">TTL ${d.refresh_ttl_days == null ? 'manual' : (d.refresh_ttl_days + 'd')}</span>` +
@@ -343,7 +487,11 @@
               logLinkHtml +
             `</span>` +
           `</div>` +
-          `<div class="field full">` +
+          (d.description ? `<div class="field full">` +
+            `<label>Description</label>` +
+            `<div class="locked" style="font-family:inherit;background:transparent;border-style:solid;white-space:pre-wrap">${escapeHtml(d.description)}</div>` +
+          `</div>` : '') +
+          `<div class="field full"${d.description ? ' style="margin-top:14px"' : ''}>` +
             `<label>Queries</label>` +
             `<div class="locked">${queries.map(q => escapeHtml(q)).join('<br>')}</div>` +
           `</div>` +
@@ -351,6 +499,53 @@
             `<label>Notes</label>` +
             `<div class="locked" style="font-family:inherit;background:transparent;border-style:solid">${escapeHtml(d.notes)}</div>` +
           `</div>` : '') +
+          // Identity card — structured cohort fingerprint. The embed
+          // text the matcher sees is derived from this card, so what
+          // the curator sees here IS what the embedder sees.
+          (d.identity_card && d.identity_card.likelyDish ?
+            (() => {
+              const c = d.identity_card;
+              const primary = Array.isArray(c.primaryIngredients) ? c.primaryIngredients.join(', ') : '';
+              const roles = Array.isArray(c.ingredientRoles) ? c.ingredientRoles : [];
+              const rolesHtml = roles.map(r =>
+                `<tr><td style="padding:3px 6px">${escapeHtml(r.text || '')}</td>` +
+                `<td style="padding:3px 6px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Consolas,monospace">${escapeHtml(r.role || '')}</td></tr>`
+              ).join('');
+              return `<div class="field full" style="margin-top:14px">` +
+                `<label>Identity card <span class="hint">structured cohort fingerprint</span></label>` +
+                `<div style="padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:6px">` +
+                  `<div style="font-weight:600;color:var(--accent);font-size:1.02em;margin-bottom:6px">${escapeHtml(c.likelyDish)}</div>` +
+                  `<div style="display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:0.88em">` +
+                    `<div style="color:var(--muted)">Cuisine</div><div>${escapeHtml(c.cuisine || '—')}</div>` +
+                    `<div style="color:var(--muted)">Ethnicity</div><div>${escapeHtml(c.ethnicity || '—')}</div>` +
+                    `<div style="color:var(--muted)">Primary</div><div style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace">${escapeHtml(primary || '—')}</div>` +
+                    `<div style="color:var(--muted)">Technique</div><div>${escapeHtml(c.technique || '—')}</div>` +
+                    `<div style="color:var(--muted)">Serving</div><div>${escapeHtml(c.servingForm || '—')}</div>` +
+                  `</div>` +
+                  (rolesHtml ?
+                    `<details style="margin-top:10px;font-size:0.85em">` +
+                      `<summary style="cursor:pointer;color:var(--muted)">Ingredient roles (${roles.length})</summary>` +
+                      `<table style="width:100%;margin-top:6px;border-collapse:collapse">` +
+                        `<thead><tr style="text-align:left;border-bottom:1px solid var(--line)">` +
+                          `<th style="padding:4px 6px;font-weight:600;color:var(--muted)">Ingredient</th>` +
+                          `<th style="padding:4px 6px;font-weight:600;color:var(--muted)">Role</th>` +
+                        `</tr></thead><tbody>${rolesHtml}</tbody>` +
+                      `</table>` +
+                    `</details>`
+                  : '') +
+                `</div>` +
+              `</div>`;
+            })()
+          : '') +
+          // Matching profile — the exact text fed into the embedder,
+          // the model name, and when it was last computed. Lets the
+          // curator verify their description/card edits propagated.
+          (d.embedding_text ?
+            `<div class="field full" style="margin-top:14px">` +
+              `<label>Matching profile <span class="hint">(model ${escapeHtml(d.embedding_model || '—')} · embedded ${escapeHtml(fmtDate(d.embedding_updated_at))})</span></label>` +
+              `<div class="locked" style="font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:0.85em;background:transparent;border-style:solid;white-space:pre-wrap">${escapeHtml(d.embedding_text)}</div>` +
+            `</div>` : '') +
+          `<div id="topRecipesSection" style="margin-top:18px"></div>` +
           `<div id="rejectsSection" style="margin-top:18px"></div>` +
         `</div>`;
       $('#footerButtons').innerHTML =
@@ -366,6 +561,104 @@
       // the fetch returns, so an empty/never-refreshed dish doesn't
       // flash "Rejected URLs" briefly before disappearing.
       loadRejects(d.name);
+      // Top recipes — the master rows from the last refresh, with
+      // ranks + grades + links back to the original sources.
+      loadTopRecipes(d.name);
+    }
+
+    // ===== Top recipes section =====
+    // Fetches /dishes/<name>/top-recipes and renders the curated
+    // master rows. Each row links to its source URL (the original
+    // authoring site) and the BCC permalink (our saved master copy).
+    async function loadTopRecipes(dishName) {
+      const section = document.getElementById('topRecipesSection');
+      if (!section) return;
+      try {
+        const res = await fetch(`${API}/dishes/${encodeURIComponent(dishName)}/top-recipes`);
+        if (!res.ok) { section.innerHTML = ''; return; }
+        const payload = await res.json();
+        const recipes = payload.recipes || [];
+        if (!recipes.length) { section.innerHTML = ''; return; }
+        section.innerHTML = renderTopRecipes(payload);
+      } catch (err) {
+        section.innerHTML = '';
+        console.error('top-recipes fetch failed:', err);
+      }
+    }
+
+    function renderTopRecipes(payload) {
+      const recipes = payload.recipes || [];
+      const rows = recipes.map((r) => {
+        const hostname = (() => {
+          try { return new URL(r.source_url).hostname.replace(/^www\./, ''); }
+          catch { return r.source_url || '—'; }
+        })();
+        const rankBadge = (typeof r.rank === 'number')
+          ? `<span class="top-rank">#${r.rank}</span>` : '';
+        const excBadgeHtml = (r.grade && r.exc_score != null
+                              && window.LibraryShell && LibraryShell.renderExcBadge)
+          ? LibraryShell.renderExcBadge(
+              { grade: r.grade, score: r.exc_score, basis: r.exc_basis || {} },
+              { size: 'small' }
+            )
+          : '';
+        const scoreParts = [];
+        if (typeof r.da === 'number') scoreParts.push(`DA ${r.da.toFixed(0)}`);
+        if (typeof r.pa === 'number') scoreParts.push(`PA ${r.pa.toFixed(0)}`);
+        if (typeof r.ou === 'number') scoreParts.push(`OU ${r.ou.toFixed(2)}`);
+        const scoreLine = scoreParts.length
+          ? `<span class="top-scores">${escapeHtml(scoreParts.join(' · '))}</span>`
+          : '';
+        const sourceHref = r.source_url || '#';
+        const bccHref = r.bcc_url || '';
+        // Preview tile: cooped og:image (preferred, locally hosted)
+        // or the hotlinked schema.org image as a fallback for
+        // pre-coopt rows. Tile clicks to BCC (our copy) so the
+        // image-as-link affordance matches the primary action button.
+        // Source link is the explicit secondary button.
+        const previewSrc = (r.preview_image || r.fallback_image || '').trim();
+        const tileHref = bccHref || sourceHref;
+        const tile = previewSrc
+          ? `<a class="top-recipe-tile" href="${escapeHtml(tileHref)}" target="_blank" rel="noopener" title="Open in BCC">` +
+              `<img src="${escapeHtml(previewSrc)}" alt="" loading="lazy" />` +
+            `</a>`
+          : `<div class="top-recipe-tile empty"></div>`;
+        // Two-button choice: primary = our BCC copy, secondary = the
+        // original source. The user asked for explicit buttons so the
+        // choice isn't hidden in a tile-vs-title ambiguity.
+        const actionButtons =
+          `<div class="top-recipe-actions">` +
+            (bccHref
+              ? `<a class="top-action top-action-primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener" title="Open the saved copy in BCC">Open in BCC</a>`
+              : '') +
+            `<a class="top-action top-action-secondary" href="${escapeHtml(sourceHref)}" target="_blank" rel="noopener" title="${escapeHtml(r.source_url || '')}">View source <span class="top-action-arrow">↗</span></a>` +
+          `</div>`;
+        return (
+          `<div class="top-recipe-row">` +
+            tile +
+            `<div class="top-recipe-body">` +
+              `<div class="top-recipe-main">` +
+                rankBadge +
+                `<span class="top-recipe-title">${escapeHtml(r.name)}</span>` +
+                ` <span class="top-recipe-host">${escapeHtml(hostname)}</span>` +
+                (excBadgeHtml ? ' ' + excBadgeHtml : '') +
+              `</div>` +
+              `<div class="top-recipe-meta">` +
+                scoreLine +
+              `</div>` +
+              actionButtons +
+            `</div>` +
+          `</div>`
+        );
+      }).join('');
+      return (
+        `<div class="top-recipes-panel">` +
+          `<h3 class="top-recipes-header">` +
+            `Top recipes <span class="top-recipes-subline">(curated set, last refresh ${escapeHtml(fmtDate(payload.refreshed_at))})</span>` +
+          `</h3>` +
+          `<div class="top-recipes-list">${rows}</div>` +
+        `</div>`
+      );
     }
 
     // ===== Rejected URLs section =====
@@ -574,6 +867,10 @@
               `<input type="number" id="ed_ttl" min="1" value="${d.refresh_ttl_days == null ? '' : escapeHtml(d.refresh_ttl_days)}" placeholder="blank = manual only" /></div>` +
           `</div>` +
           `<div class="field full" style="margin-top:14px">` +
+            `<label>Description <span class="hint">(used for cohort matching — auto-generated if blank, curator can edit)</span></label>` +
+            `<textarea id="ed_description" rows="3" style="resize:vertical">${escapeHtml(d.description || '')}</textarea>` +
+          `</div>` +
+          `<div class="field full" style="margin-top:14px">` +
             `<label>Notes</label>` +
             `<input type="text" id="ed_notes" value="${escapeHtml(d.notes || '')}" />` +
           `</div>` +
@@ -620,6 +917,11 @@
               `<input type="number" id="ad_ttl" min="1" placeholder="30 (default) — blank = manual only" /></div>` +
           `</div>` +
           `<div class="field full" style="margin-top:14px">` +
+            `<label>Description (optional)</label>` +
+            `<textarea id="ad_description" rows="3" style="resize:vertical" placeholder="auto-generated if left blank — used for cohort matching"></textarea>` +
+            `<span class="hint">A one-line dish identity for the embedding matcher. Leave blank and the system will draft one; you can edit later.</span>` +
+          `</div>` +
+          `<div class="field full" style="margin-top:14px">` +
             `<label>Notes (optional)</label>` +
             `<input type="text" id="ad_notes" placeholder="curator note" />` +
           `</div>` +
@@ -636,8 +938,22 @@
         `<button type="button" class="secondary" id="cancelAddBtn">Cancel</button>` +
         `<div class="feedback" id="feedback"></div>`;
       $('#actionFooter').style.display = '';
+      // If the user got here by clicking a suggestion, pre-fill
+      // the form. SerpAPI handles phrasing variants, so a single
+      // canonical query is usually enough; we still let the curator
+      // edit before save. setTimeout: wait for innerHTML to settle.
+      if (pendingSuggestion) {
+        const sug = pendingSuggestion;
+        setTimeout(() => {
+          const nm = $('#ad_name'); if (nm) nm.value = sug.suggested || '';
+          const qs = $('#ad_queries'); if (qs) qs.value = sug.suggested || '';
+          // Note in the feedback area what's pre-filled from
+          setFeedback(`Pre-filled from ${sug.waiting} recipes calling this their dish. Review and Create.`, 'info');
+        }, 30);
+      }
       $('#createBtn').addEventListener('click', doCreate);
       $('#cancelAddBtn').addEventListener('click', () => {
+        pendingSuggestion = null;
         mode = selectedName ? 'view' : 'empty';
         renderDetail();
       });
@@ -664,6 +980,7 @@
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#ad_notes').value.trim() || null,
         auto_enrich: $('#ad_auto_enrich').checked,
+        description: $('#ad_description').value.trim() || null,
       };
       try {
         const res = await fetch(`${API}/dishes`, {
@@ -679,8 +996,11 @@
         dishes[result.name] = result;
         selectedName = result.name;
         mode = 'view';
+        pendingSuggestion = null;
         renderList();
         renderDetail();
+        // The new dish removes itself from the suggestions list.
+        loadSuggestions();
         setFeedback(`Created ${result.name}`, 'success');
       } catch (err) {
         setFeedback(err.message || String(err), 'error');
@@ -696,6 +1016,7 @@
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#ed_notes').value.trim() || null,
         auto_enrich: $('#ed_auto_enrich').checked,
+        description: $('#ed_description').value.trim() || null,
       };
       try {
         const res = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`, {
@@ -949,7 +1270,56 @@
         $('#dishList').innerHTML = `<li class="empty-state">Failed to load: ${escapeHtml(e.message || e)}</li>`;
       }
     }
+
+    // Pending suggestion to pre-fill the add form with. Set by
+    // clicking a suggestion; read by renderAddForm to populate.
+    let pendingSuggestion = null;
+
+    async function loadSuggestions() {
+      try {
+        const res = await fetch(`${API}/dishes/suggestions`);
+        if (!res.ok) return;
+        const arr = await res.json();
+        const section = $('#suggestionsSection');
+        const list = $('#suggestionList');
+        const count = $('#suggestionCount');
+        if (!arr || !arr.length) {
+          section.style.display = 'none';
+          return;
+        }
+        count.textContent = `(${arr.length})`;
+        list.innerHTML = '';
+        for (const s of arr) {
+          const chapters = (s.chapters || []).filter(Boolean).join(', ');
+          const cuisines = (s.cuisines || []).filter(Boolean).join(', ');
+          const li = document.createElement('li');
+          li.innerHTML =
+            `<div class="entity-name">${escapeHtml(s.suggested)} ` +
+            `<span class="badge badge-due" style="background:#e6f4ea;color:#1e6b3a">${s.waiting} waiting</span>` +
+            `</div>` +
+            `<div class="entity-meta">${chapters ? escapeHtml(chapters) : '—'}` +
+            (cuisines ? ` · ${escapeHtml(cuisines)}` : '') + `</div>`;
+          li.style.cursor = 'pointer';
+          li.title = `Pre-fill Add Dish form with "${s.suggested}"`;
+          li.addEventListener('click', () => {
+            pendingSuggestion = s;
+            selectedName = null;
+            mode = 'add';
+            renderList();
+            renderDetail();
+            closeOnNarrow();
+          });
+          list.appendChild(li);
+        }
+        section.style.display = '';
+      } catch (e) {
+        // Silent — suggestions are non-critical.
+        console.warn('suggestions load failed', e);
+      }
+    }
+
     loadDishes();
+    loadSuggestions();
   </script>
 </body>
 </html>

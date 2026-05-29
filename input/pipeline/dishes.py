@@ -73,6 +73,43 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dishes ADD COLUMN last_ou_fit TEXT")  # JSON
     if "last_run_bottom_ou" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN last_run_bottom_ou REAL")
+    # Migration (2026-05-28): cached embedding of `name + queries` used
+    # as the cohort-match key for harvest / personal / legacy saves
+    # that don't carry an explicit `_master.dish`. embedding_text is
+    # the exact string that was embedded — diff against current
+    # composition to detect staleness when queries change.
+    # See input/pipeline/embeddings.py for details.
+    if "embedding" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN embedding BLOB")
+    if "embedding_text" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN embedding_text TEXT")
+    if "embedding_model" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN embedding_model TEXT")
+    if "embedding_updated_at" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN embedding_updated_at TEXT")
+    # Curator-supplied prose to disambiguate the dish for the embedding
+    # matcher. Name + queries alone are often thin ("Pastitsio" → only
+    # name-token matches succeed); a one-line description like "Greek
+    # baked pasta with cinnamon and tomatoes, layered with bechamel"
+    # lets recipes titled "Greek Lasagna with Béchamel" still find the
+    # right cohort. Optional — dishes without it fall back to
+    # name+queries only.
+    if "description" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN description TEXT")
+    # Cookbook chapter (one of CHAPTERS in extract.chapter_classifier).
+    # Populated by chapter_classifier when the description is
+    # generated. Used as a SQL pre-filter in find_best_dish_match —
+    # only score against dishes in the recipe's chapter — so the
+    # cosine scan stays small as the dish library grows.
+    if "chapter" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN chapter TEXT")
+    # Identity card (extract.identity_card.generate_identity_card_for_dish
+    # output) — structured cohort fingerprint mirroring the recipe-side
+    # _identity field. Stored as JSON text. The matcher derives both
+    # dish and recipe embed text from the SAME card shape, which
+    # gives the cosine a clean apples-to-apples comparison.
+    if "identity_card" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN identity_card TEXT")  # JSON
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -316,7 +353,9 @@ def row_to_dict(row: tuple) -> dict:
     (name, queries_json, top_n_serpapi, top_n_final, ttl_days,
      last_refreshed, last_run_status, last_run_count, notes,
      created_at, updated_at, last_run_log_filename, auto_enrich,
-     last_ou_fit, last_run_bottom_ou) = row
+     last_ou_fit, last_run_bottom_ou, description, chapter,
+     embedding_text, embedding_model, embedding_updated_at,
+     identity_card_json) = row
     try:
         queries = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -325,6 +364,10 @@ def row_to_dict(row: tuple) -> dict:
         ou_fit = json.loads(last_ou_fit) if last_ou_fit else None
     except Exception:
         ou_fit = None
+    try:
+        identity_card = json.loads(identity_card_json) if identity_card_json else None
+    except Exception:
+        identity_card = None
     return {
         "name": name,
         "queries": queries,
@@ -343,6 +386,17 @@ def row_to_dict(row: tuple) -> dict:
         "auto_enrich": bool(auto_enrich),
         "last_ou_fit": ou_fit,
         "last_run_bottom_ou": last_run_bottom_ou,
+        "description": description,
+        "chapter": chapter,
+        # Embedding cache metadata (not the BLOB itself — 6KB of binary
+        # is useless to the client). The text + model + timestamp let
+        # the dish form show "this is what we fed the embedder, on
+        # this date, with this model" so the curator can verify
+        # matching is using the description they wrote.
+        "embedding_text": embedding_text,
+        "embedding_model": embedding_model,
+        "embedding_updated_at": embedding_updated_at,
+        "identity_card": identity_card,
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -351,7 +405,8 @@ _SELECT_ALL_COLS = (
     "name, queries, top_n_serpapi, top_n_final, refresh_ttl_days, "
     "last_refreshed, last_run_status, last_run_count, notes, "
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
-    "last_ou_fit, last_run_bottom_ou"
+    "last_ou_fit, last_run_bottom_ou, description, chapter, "
+    "embedding_text, embedding_model, embedding_updated_at, identity_card"
 )
 
 
@@ -372,10 +427,10 @@ def get_dish(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     return row_to_dict(row) if row else None
 
 
-def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str], bool]:
+def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str], bool, Optional[str]]:
     """Validate a POST /dishes body. Returns (name, queries, top_n_serpapi,
-    top_n_final, refresh_ttl_days, notes, auto_enrich). Raises ValueError
-    on any problem; the endpoint converts that to a 400."""
+    top_n_final, refresh_ttl_days, notes, auto_enrich, description).
+    Raises ValueError on any problem; the endpoint converts that to a 400."""
     name = (payload.get("name") or "").strip()
     if not name:
         raise ValueError("name is required and must be non-empty")
@@ -410,7 +465,12 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
     # during refresh; user opts in per-dish to run enrich on each row).
     auto_enrich = bool(payload.get("auto_enrich", False))
 
-    return name, queries, top_n_serpapi, top_n_final, ttl, notes, auto_enrich
+    description = payload.get("description")
+    if description is not None and not isinstance(description, str):
+        raise ValueError("description must be a string or null")
+    description = (description.strip() or None) if isinstance(description, str) else None
+
+    return name, queries, top_n_serpapi, top_n_final, ttl, notes, auto_enrich, description
 
 
 def create_dish(conn: sqlite3.Connection, *,
@@ -420,16 +480,17 @@ def create_dish(conn: sqlite3.Connection, *,
                 top_n_final: int = 10,
                 refresh_ttl_days: Optional[int] = 30,
                 notes: Optional[str] = None,
-                auto_enrich: bool = False) -> dict:
+                auto_enrich: bool = False,
+                description: Optional[str] = None) -> dict:
     """Insert a new dish. Raises sqlite3.IntegrityError on name
     collision (caller maps to 409). Returns the created dict."""
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "INSERT INTO dishes (name, queries, top_n_serpapi, top_n_final, "
-        "refresh_ttl_days, notes, created_at, updated_at, auto_enrich) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "refresh_ttl_days, notes, created_at, updated_at, auto_enrich, description) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (name, json.dumps(queries), top_n_serpapi, top_n_final,
-         refresh_ttl_days, notes, now, now, 1 if auto_enrich else 0),
+         refresh_ttl_days, notes, now, now, 1 if auto_enrich else 0, description),
     )
     conn.commit()
     return get_dish(conn, name)  # round-trip so we return the canonical shape
@@ -442,6 +503,7 @@ def create_dish(conn: sqlite3.Connection, *,
 _PATCHABLE = {
     "queries", "top_n_serpapi", "top_n_final",
     "refresh_ttl_days", "notes", "auto_enrich",
+    "description",
 }
 
 
@@ -508,6 +570,20 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
     if "auto_enrich" in patch:
         sets.append("auto_enrich = ?")
         params.append(1 if bool(patch["auto_enrich"]) else 0)
+
+    if "description" in patch:
+        d = patch["description"]
+        if d is None:
+            sets.append("description = NULL")
+        else:
+            if not isinstance(d, str):
+                raise ValueError("description must be a string or null")
+            stripped = d.strip()
+            if stripped:
+                sets.append("description = ?")
+                params.append(stripped)
+            else:
+                sets.append("description = NULL")
 
     extras = set(patch.keys()) - _PATCHABLE
     if extras:

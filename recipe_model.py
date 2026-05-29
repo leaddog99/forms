@@ -58,6 +58,12 @@ STATIC_TOP_LEVEL_FIELDS = frozenset({
     # URL-static (a URL was extracted from one batch; doesn't change per
     # owner). Keep so master/cache lineage survives a claim.
     "_batch",
+    # Structured dish identity card (extract.identity_card output) —
+    # ingredientRoles + cuisine + ethnicity + technique + likelyDish +
+    # primaryIngredients. URL-static: the dish IS the dish regardless
+    # of who owns the row, so the card travels through claim / cache
+    # / promote alongside provenance and classification.
+    "_identity",
 })
 
 # Fields tied to a specific row / owner — must be re-minted, dropped, or
@@ -89,6 +95,28 @@ _SOURCE_STATIC_SUBKEYS = frozenset({
     "type",          # 'web' | 'local' | 'cookbook'
     "origin",        # root domain or origin label
     "originalUrl",   # canonical URL — the cache key itself
+    "previewImage",  # og:image URL declared by the source for sharing
+                     # — the explicitly consent-given preview thumbnail.
+                     # Used by the TBOTB display as a clickable link tile.
+    "previewDescription",  # og:description — one-sentence teaser the
+                     # source publishes for social-card display. Useful
+                     # under tiles + as a fallback when editorial.opinion
+                     # hasn't run.
+    "previewImageAlt",  # og:image:alt — descriptive alt text for the
+                     # cooped image tile. Used for accessibility.
+    "siteName",      # og:site_name — human-readable site name
+                     # ("Bon Appétit") vs raw hostname. Display in
+                     # tile attribution + sidebar.
+    "author",        # article:author — site-published byline. Falls
+                     # back when JSON-LD recipe.author isn't set.
+    "publishedTime", # article:published_time (ISO 8601)
+    "modifiedTime",  # article:modified_time (ISO 8601)
+    "pageScreenshot", # captured screenshot of the source page (above-
+                     # fold view), processed to the standard 1500x1000
+                     # landscape via process_thumbnail. Stamped on
+                     # extract via input.pipeline.screenshot_pipeline.
+                     # Survives claim/cache like the rest of the
+                     # consent-given preview metadata.
 })
 
 
@@ -170,6 +198,40 @@ class SourceInfo(BaseModel):
     origin: Optional[str] = ""
     originalUrl: Optional[str] = ""
     affiliateUrl: Optional[str] = ""
+    # og:image / twitter:image URL the source explicitly declares for
+    # link-preview sharing. Extracted at fetch time in
+    # to_markdown.html_to_markdown.extract_og_meta and stamped on
+    # /extract-from-url + the in-process callable. Used as the
+    # TBOTB display tile because it's the consent-given preview
+    # image (vs. hotlinking the recipe's hero photo from JSON-LD).
+    previewImage: Optional[str] = ""
+    # og:description / twitter:description — the teaser sentence the
+    # source publishes for social-card display. Goes under the tile
+    # title as a one-liner; also a useful fallback when our
+    # LLM-generated editorial.opinion hasn't been run on the row.
+    previewDescription: Optional[str] = ""
+    # og:image:alt — descriptive alt text. Render as <img alt="…">
+    # on the cooped tile for accessibility.
+    previewImageAlt: Optional[str] = ""
+    # og:site_name — human-readable site name ("Bon Appétit") vs
+    # raw hostname. Use in tile attribution + sidebar where it
+    # exists; fall back to the parsed root domain otherwise.
+    siteName: Optional[str] = ""
+    # article:author — source-published byline. JSON-LD recipe.author
+    # is preferred when present; this is the fallback.
+    author: Optional[str] = ""
+    # article:published_time / article:modified_time — ISO 8601.
+    # Useful for "recipe last updated" UI + freshness scoring.
+    publishedTime: Optional[str] = ""
+    modifiedTime: Optional[str] = ""
+    # Captured screenshot of the source page (above-fold view, ~800px
+    # tall, then processed to the corpus-standard 1500×1000 landscape).
+    # Stored locally / S3 via image_store; URL points at our static
+    # mount. Gives the form + cookbook display a "this is what the
+    # source actually looked like" affordance. Filename pattern
+    # `recipe-screens/<recipe_id>-<sha8>.jpg` lets us trace files
+    # back to recipes independently of the DB.
+    pageScreenshot: Optional[str] = ""
 
 
 # Dish-library provenance block — stamped on master_recipes rows so the
