@@ -994,14 +994,19 @@
           return;
         }
         dishes[result.name] = result;
-        selectedName = result.name;
-        mode = 'view';
+        // Post-save UX (2026-05-29): return to the list-active state
+        // rather than staying on the detail card. Selection is cleared
+        // so no row is highlighted; the user lands looking at the list
+        // and decides what to do next (click the just-created dish, or
+        // something else). Same pattern as the recipe form's post-save.
+        selectedName = null;
+        mode = 'empty';
         pendingSuggestion = null;
         renderList();
         renderDetail();
-        // The new dish removes itself from the suggestions list.
         loadSuggestions();
-        setFeedback(`Created ${result.name}`, 'success');
+        LibraryShell && LibraryShell.openSidebar && LibraryShell.openSidebar();
+        setFeedback(`Created ${result.name} — pick a dish or add another.`, 'success');
       } catch (err) {
         setFeedback(err.message || String(err), 'error');
       }
@@ -1030,9 +1035,13 @@
           return;
         }
         dishes[result.name] = result;
-        mode = 'view';
+        // Post-edit-save UX: return to list-active state (consistent
+        // with doCreate above + the recipe form's post-save behavior).
+        selectedName = null;
+        mode = 'empty';
         renderList();
         renderDetail();
+        LibraryShell && LibraryShell.openSidebar && LibraryShell.openSidebar();
         setFeedback('Saved.', 'success');
       } catch (err) {
         setFeedback(err.message || String(err), 'error');

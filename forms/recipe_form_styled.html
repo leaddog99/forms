@@ -2362,7 +2362,9 @@
       const enrichBtn = document.getElementById('enrichBtn');
       const clearBtn = document.getElementById('clearBtn');
       const deleteBtn = document.getElementById('deleteBtn');
-      if (saveBtn) saveBtn.disabled = !hasContent;
+      // Honor in-flight Save (data-busy) the same way Enrich does —
+      // don't re-enable a button mid-request.
+      if (saveBtn && !saveBtn.dataset.busy) saveBtn.disabled = !hasContent;
       if (clearBtn) clearBtn.disabled = !hasContent;
       if (deleteBtn) deleteBtn.disabled = !isSavedToDb;
       // Enrich: need at least a name (enrich_recipe needs SOMETHING to
@@ -3374,6 +3376,18 @@
         return;
       }
 
+      // Save button busy state — mirror the Enrich pattern so the user
+      // can tell the request is in flight. data-busy stops
+      // updateButtonStates() from re-enabling the button mid-request.
+      const _saveBtn = document.getElementById('saveBtn');
+      let _saveOriginalLabel = '';
+      if (_saveBtn) {
+        _saveBtn.dataset.busy = '1';
+        _saveBtn.disabled = true;
+        _saveOriginalLabel = _saveBtn.textContent || 'Save';
+        _saveBtn.textContent = 'Saving…';
+      }
+
       const keywords = document.getElementById("keywords").value.split(/[,\n]/).map(k => k.trim()).filter(Boolean);
       const diets = document.getElementById("suitableForDiet").value.split(',').map(d => d.trim()).filter(Boolean);
 
@@ -3548,7 +3562,19 @@
         }
       }
 
-      await postSave(false);
+      try {
+        await postSave(false);
+      } finally {
+        if (_saveBtn) {
+          delete _saveBtn.dataset.busy;
+          _saveBtn.textContent = _saveOriginalLabel || 'Save';
+          // updateButtonStates picks the right disabled state based on
+          // form content. After Clear (which runs in the success path)
+          // the form is empty → Save disabled. If the save failed and
+          // content remains, Save re-enables.
+          if (typeof updateButtonStates === 'function') updateButtonStates();
+        }
+      }
     };
 
     document.getElementById("deleteBtn").onclick = async () => {
@@ -3638,6 +3664,18 @@
       const selfUid = String(getSelfUserId());
       if (!confirm(`Claim this recipe into your collection (user ${selfUid})?`)) return;
 
+      // Busy state on the button. The server-side claim is fast
+      // (SELECT + INSERT, <50ms), but historical perception was
+      // "processing" because the frontend did a full page navigation
+      // afterward. Now: post + in-place load via loadForm — snap-fast.
+      const _claimBtn = document.getElementById('claimBtn');
+      const _origLabel = _claimBtn ? _claimBtn.textContent : '';
+      if (_claimBtn) {
+        _claimBtn.dataset.busy = '1';
+        _claimBtn.disabled = true;
+        _claimBtn.textContent = 'Cloning…';
+      }
+
       const fd = new FormData();
       fd.append('target_user_id', selfUid);
       let res;
@@ -3647,18 +3685,66 @@
           body: fd,
         });
       } catch (err) {
+        if (_claimBtn) {
+          delete _claimBtn.dataset.busy;
+          _claimBtn.disabled = false;
+          _claimBtn.textContent = _origLabel || 'Claim';
+        }
         showFeedback('Claim failed: ' + (err && err.message ? err.message : err), 'error');
         return;
       }
       const result = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (_claimBtn) {
+          delete _claimBtn.dataset.busy;
+          _claimBtn.disabled = false;
+          _claimBtn.textContent = _origLabel || 'Claim';
+        }
         showFeedback('Claim failed: ' + (result.detail || `HTTP ${res.status}`), 'error');
         return;
       }
-      // Land the user on the claimed copy. /r/<id> redirects to the form
-      // with the right user_id, so the sidebar input lines up immediately
-      // and the next save targets the right table.
-      window.location.href = result.url || `/r/${result.recipe_id}`;
+
+      // In-place load — fetch the just-claimed row and call loadForm
+      // directly. Avoids the full-page-reload that made claim feel slow.
+      try {
+        const newId = result.recipe_id;
+        const freshRes = await fetch(
+          `${API}/recipes/${encodeURIComponent(newId)}?user_id=${encodeURIComponent(selfUid)}`
+        );
+        if (freshRes.ok) {
+          const claimedRecipe = await freshRes.json();
+          // Sidebar user_id input snaps to the cloning user so the
+          // sidebar list reflects the claimer's collection.
+          const userIdInput = document.getElementById('user_id');
+          if (userIdInput) userIdInput.value = selfUid;
+          loadForm(claimedRecipe);
+          loadRecipes();    // refresh sidebar so new clone shows up
+          // Address bar reflects the clone without a full reload.
+          try {
+            window.history.replaceState(null, '', '/r/' + newId);
+          } catch (e) { /* ignore */ }
+          showFeedback(
+            result.adopted_existing
+              ? 'You already had this — opened the existing copy.'
+              : 'Cloned to your collection.',
+            'success'
+          );
+        } else {
+          // Fall back to the legacy navigation if the in-place fetch fails.
+          window.location.href = result.url || `/r/${result.recipe_id}`;
+          return;
+        }
+      } catch (err) {
+        // Fall back to legacy nav on any error.
+        window.location.href = result.url || `/r/${result.recipe_id}`;
+        return;
+      } finally {
+        if (_claimBtn) {
+          delete _claimBtn.dataset.busy;
+          _claimBtn.disabled = false;
+          _claimBtn.textContent = _origLabel || 'Claim';
+        }
+      }
     };
 
     // Enrich button: opt-in cultural/historical context LLM call. Builds
