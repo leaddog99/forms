@@ -795,6 +795,16 @@ def build_batch(
 
     print(f"\n[5/7] custom OU fit (per-dish regression; "
           f"floor n>={_MIN_FIT_N}, else global formula)")
+    # Snapshot the (url, DA, PA) cohort that feeds _compute_custom_ou
+    # BEFORE the OU floor filter. Chapter-level aggregation depends on
+    # the full cohort the per-dish fit saw, not the saved-winners
+    # subset that survives extraction + save-gate. The handler will
+    # persist these to dish_run_data_points for chapter rollups.
+    fit_data_points = [
+        (e.get("url"), e.get("da"), e.get("pa"))
+        for e in entries
+        if isinstance(e.get("da"), (int, float)) and isinstance(e.get("pa"), (int, float))
+    ]
     ou_fit = _compute_custom_ou(entries)
 
     print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE})")
@@ -839,6 +849,11 @@ def build_batch(
         },
         "ou_fit": ou_fit,
         "entries": final,
+        # Full (url, DA, PA) cohort fed to _compute_custom_ou — the
+        # caller persists these to dish_run_data_points so the
+        # chapter-level fit aggregates the same URL universe the
+        # per-dish fit saw, not just the saved-winners subset.
+        "fit_data_points": fit_data_points,
     }
 
 
