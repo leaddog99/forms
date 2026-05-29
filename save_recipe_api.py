@@ -2047,8 +2047,15 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     for entry in entries:
         url = entry["url"]
         try:
+            # Dish refresh always force-refreshes the extract cache:
+            # the refresh has already paid SerpAPI + Moz quota; re-extracting
+            # is the cheap, deterministic step, and cache hits would
+            # mask updates to the extraction pipeline (e.g. extraction-
+            # stage translation provenance landing 2026-05-29). Cache
+            # is still useful for the interactive form / single-URL
+            # extracts that aren't part of a batch refresh.
             extract_result = await asyncio.to_thread(
-                extract_recipe_from_url, url, user_id=0,
+                extract_recipe_from_url, url, user_id=0, force_refresh=True,
             )
         except Exception as e:
             print(f"[REFRESH-DISH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
@@ -3210,6 +3217,49 @@ async def extract_from_markdown_endpoint(
         usage_log: list = []
         t_start = time.perf_counter()
 
+        # === Extraction-stage translation (bookmarklet path) =======
+        # Markdown comes from the bookmarklet/browser, so there are no
+        # HTTP headers or <html lang>. Detect language from the markdown
+        # body via fasttext (the third tier of detect_language). If
+        # non-English, translate before extraction. JSON-LD blob from
+        # the envelope is dropped on translation since its content
+        # would still be source-language.
+        translation_meta_bm: dict | None = None
+        try:
+            from intake.translate import (
+                is_non_english, detect_language, translate_extraction_markdown,
+            )
+            page_lang_bm = detect_language("", headers=None, visible_text=effective_md)
+            if is_non_english(page_lang_bm):
+                t_xlate0 = time.perf_counter()
+                try:
+                    xr = translate_extraction_markdown(effective_md, page_lang_bm)
+                    xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
+                    if xr.plausibility_ok:
+                        effective_md = xr.translated_markdown
+                        # Drop bookmarklet-harvested JSON-LD so the
+                        # downstream fast lane doesn't reach for the
+                        # original-language structured data.
+                        if envelope.get("jsonld"):
+                            envelope["jsonld"] = []
+                        translation_meta_bm = {
+                            "originalLanguage": xr.source_language,
+                            "translated": True,
+                            "translatedAt": datetime.now(timezone.utc).isoformat(),
+                            "originalTitle": xr.original_title or effective_title or "",
+                        }
+                        timings["translate_ms"] = xlate_ms
+                        print(f"[XLATE] (bookmarklet) translated from "
+                              f"{xr.source_language_name} ({xlate_ms}ms)")
+                    else:
+                        print(f"[XLATE] (bookmarklet) suspect "
+                              f"({xr.plausibility_reason}); using original")
+                except Exception as e:
+                    print(f"[XLATE] (bookmarklet) failed: "
+                          f"{type(e).__name__}: {e}; using original")
+        except ImportError:
+            pass
+
         url_norm = normalize_url(effective_url) if effective_url else ""
         recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
@@ -3261,6 +3311,16 @@ async def extract_from_markdown_endpoint(
                     print("[ERROR] Extraction failed - no result")
                     _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                     raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
+
+            # Stamp translation provenance on cache row (so refetch sees it).
+            if recipe is not None and translation_meta_bm:
+                src = recipe.get("_source") or {}
+                src["originalLanguage"] = translation_meta_bm["originalLanguage"]
+                src["translated"] = True
+                src["translatedAt"] = translation_meta_bm["translatedAt"]
+                if translation_meta_bm.get("originalTitle"):
+                    src["originalTitle"] = translation_meta_bm["originalTitle"]
+                recipe["_source"] = src
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
@@ -3366,7 +3426,54 @@ def extract_recipe_from_url(
 
     print(f"[EXTRACT] has_jsonld={md_result['has_jsonld']} "
           f"markdown_len={len(md_result['markdown'])} "
-          f"source_url={md_result['source_url']!r}")
+          f"source_url={md_result['source_url']!r} "
+          f"language={md_result.get('language', 'en')!r}")
+
+    # === Extraction-stage translation ===========================
+    # Non-English pages get translated to English BEFORE the LLM
+    # extract step, so the persisted recipe is canonical English.
+    # The JSON-LD section is stripped during translation so the
+    # extraction LLM falls back to deriving fields from the (now
+    # English) prose rather than trusting original-language JSON-LD.
+    # Provenance fields below carry the original-language signal so
+    # the UI can render a "Translated from X" pill + view-original link.
+    translation_meta: dict | None = None
+    page_lang = md_result.get("language") or "en"
+    try:
+        from intake.translate import (
+            is_non_english, language_name, translate_extraction_markdown,
+        )
+        if is_non_english(page_lang):
+            t_xlate0 = time.perf_counter()
+            try:
+                xr = translate_extraction_markdown(md_result["markdown"], page_lang)
+                xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
+                if xr.plausibility_ok:
+                    # Replace the markdown the LLM sees with translated
+                    # English; also force the LLM path (skip JSON-LD
+                    # fast lane) since the JSON-LD blob still holds
+                    # original-language strings.
+                    md_result["markdown"] = xr.translated_markdown
+                    md_result["has_jsonld"] = False
+                    md_result["jsonld"] = []
+                    translation_meta = {
+                        "originalLanguage": xr.source_language,
+                        "originalLanguageName": xr.source_language_name,
+                        "translated": True,
+                        "translatedAt": datetime.now(timezone.utc).isoformat(),
+                        "originalTitle": xr.original_title or md_result.get("title") or "",
+                    }
+                    timings["translate_ms"] = xlate_ms
+                    print(f"[XLATE] translated from {xr.source_language_name} "
+                          f"({xlate_ms}ms) - skip jsonld fast lane")
+                else:
+                    print(f"[XLATE] suspect ({xr.plausibility_reason}); "
+                          f"using original markdown")
+            except Exception as e:
+                print(f"[XLATE] failed: {type(e).__name__}: {e}; "
+                      f"using original markdown")
+    except ImportError:
+        pass
 
     url_norm = normalize_url(md_result["source_url"]) if md_result["source_url"] else ""
     recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
@@ -3416,6 +3523,19 @@ def extract_recipe_from_url(
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
                 raise RuntimeError(f"Extraction error: {e}") from e
+
+        # Stamp translation provenance BEFORE cache write so the cached
+        # recipe carries the same provenance fields a fresh extract
+        # would. _SOURCE_STATIC_SUBKEYS in recipe_model.py whitelists
+        # these four keys for claim/cache survival.
+        if recipe is not None and translation_meta:
+            src = recipe.get("_source") or {}
+            src["originalLanguage"] = translation_meta["originalLanguage"]
+            src["translated"] = True
+            src["translatedAt"] = translation_meta["translatedAt"]
+            if translation_meta.get("originalTitle"):
+                src["originalTitle"] = translation_meta["originalTitle"]
+            recipe["_source"] = src
 
         if recipe is not None:
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)

@@ -62,6 +62,26 @@ DROP_SELECTORS = [
 ]
 
 
+def _fix_response_encoding(resp: requests.Response) -> None:
+    """Override requests' ISO-8859-1 default when no charset is declared
+    in the HTTP Content-Type. Without this, non-UTF-8 East-Asian pages
+    (Shift-JIS, GB2312, EUC-KR) decode as mojibake even though the body
+    bytes are intact — `requests` only trusts the HTTP header and falls
+    back to Latin-1 when absent, which is wrong for ~every non-Latin
+    script. We let chardet sniff the body when the header is silent
+    or defaulted, which is the same logic `resp.text` would apply if
+    we deferred encoding choice — but doing it here makes the fix
+    visible across all downstream callers (BeautifulSoup, json-ld
+    parser, translator) instead of only the ones that re-read .text.
+
+    Cheap: chardet runs a few KB sample, not the full body.
+    """
+    if not resp.encoding or resp.encoding.lower() in ("iso-8859-1", "latin-1"):
+        sniffed = resp.apparent_encoding
+        if sniffed and sniffed.lower() not in ("ascii",):
+            resp.encoding = sniffed
+
+
 def fetch_with_ua_fallback(url: str, *,
                             timeout: int = DEFAULT_TIMEOUT_SECONDS,
                             user_agents: Optional[list[str]] = None
@@ -91,6 +111,7 @@ def fetch_with_ua_fallback(url: str, *,
         try:
             resp = requests.get(url, timeout=timeout, headers={"User-Agent": ua})
             if 200 <= resp.status_code < 300:
+                _fix_response_encoding(resp)
                 return resp, ua
             last_status = resp.status_code
             # Don't retry 404 — page genuinely doesn't exist, swapping
@@ -176,6 +197,7 @@ def fetch_via_wayback(url: str, *,
     except Exception as e:
         print(f"[wayback] fetch failed for {raw_url!r}: {e}")
         return None
+    _fix_response_encoding(resp)
     print(f"[wayback] hit snapshot {ts} for {url}")
     return resp, ts
 
@@ -520,6 +542,20 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
     parts.append("## PAGE CONTENT\n")
     parts.append(body_md)
 
+    # Language detection runs on the visible body text (no scripts /
+    # style noise). <html lang="..."> first, then Content-Language
+    # header (if present in the response — fetch_html doesn't return
+    # it directly, so we only get the HTML signal here), then fasttext
+    # on body text. Stamped on the return dict so extract_recipe_from_url
+    # can decide whether to invoke the translation pipeline without
+    # re-parsing the HTML.
+    try:
+        from intake.translate import detect_language
+        body_text = main.get_text(separator=" ", strip=True) if hasattr(main, "get_text") else ""
+        detected_lang = detect_language(html, headers=None, visible_text=body_text)
+    except Exception:
+        detected_lang = "en"
+
     return {
         "markdown": "\n".join(parts),
         "source_url": final_url,
@@ -528,6 +564,7 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
         "jsonld": recipes_jsonld,
         "og_image": og_image,   # kept for back-compat
         "og_meta": og_meta,     # full dict — see extract_og_meta docstring
+        "language": detected_lang,  # ISO 639-1; 'en' as conservative default.
     }
 
 
