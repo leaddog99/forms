@@ -1938,6 +1938,15 @@
             </div>
             <div class="form-group">
               <label for="originalUrl">URL</label>
+              <!-- name= is intentionally absent from MANY recipe-form
+                   inputs so form.reset() doesn't touch them — that
+                   pattern bit us once (the originalUrl-overwrite bug
+                   2026-05-29: form.reset() left the prior URL in the
+                   field, and the next save's URL-dedup adopted the
+                   prior recipe_id and clobbered the row). Explicit
+                   clears in clearBtn + always-write in
+                   populateFormFromRecipe + loadForm are now the
+                   single source of truth for this field's value. -->
               <input type="text" id="originalUrl" placeholder="https://..." />
             </div>
             <!-- BCC Permalink: read-only, server-computed canonical URL
@@ -3512,33 +3521,28 @@
 
         if (res.ok) {
           const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
-          const verb = result.adopted ? 'updated existing record' : 'saved successfully';
-          // Refresh sidebar so the saved/updated row appears with current state.
+          const verb = result.adopted ? 'updated existing record' : 'saved';
+          // New post-save UX (2026-05-29): clear the form + open the
+          // sidebar list. Treats each save as a discrete transaction
+          // — the user lands back at "the list" and chooses what to do
+          // next (open another recipe, or start a fresh entry). The
+          // older "reload the just-saved record back into the form"
+          // pattern was confusing on serial saves (form looked the
+          // same after each one) AND combined with the URL-field-not-
+          // cleared bug, made the next save overwrite the prior row.
           loadRecipes();
-          // Re-load the canonical post-save record from the DB and re-populate
-          // the form via loadForm. Moz scores, normalized URL, denormalized
-          // _scoring, cleared source_changed_at, persisted _extract_trace,
-          // and the (possibly adopted) recipe_id all come through. The user
-          // sees the finished saved product; the "New" button (clearBtn)
-          // reinits the form when they're done. Replaces the older
-          // reset+selectively-restore-some-fields pattern.
-          const finalRecipeId = result.recipe_id || document.getElementById("recipe_id").value;
-          if (finalRecipeId) {
-            try {
-              const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
-              const freshRes = await fetch(`${API}/recipes/${encodeURIComponent(finalRecipeId)}?user_id=${encodeURIComponent(uid)}`);
-              if (freshRes.ok) {
-                const saved = await freshRes.json();
-                loadForm(saved);  // clears feedback inside; we re-show below
-              }
-            } catch (err) {
-              console.error('Post-save reload failed:', err);
-            }
+          // Programmatic equivalent of clicking Clear — same handler
+          // ensures every name-less field is wiped (originalUrl
+          // chief among them). Don't dispatch a click event because
+          // updateButtonStates would race with our feedback show.
+          document.getElementById("clearBtn").click();
+          // Open the sidebar so the user lands on "the list."
+          if (window.LibraryShell && typeof LibraryShell.openSidebar === 'function') {
+            try { LibraryShell.openSidebar(); } catch (e) { /* ignore */ }
           }
-          // Show success feedback AFTER loadForm (which clears feedback as
-          // part of its normal init).
+          // Success feedback after the click handler clears it.
           const overrideMsg = forceSave ? ' (override)' : '';
-          showFeedback(`Recipe ${verb}!${seqMsg}${overrideMsg}`, 'success');
+          showFeedback(`Recipe ${verb}${seqMsg}${overrideMsg} — pick a recipe or paste/drop another.`, 'success');
         } else {
           showFeedback(`Error: ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`, 'error');
         }
@@ -3751,6 +3755,20 @@
       document.getElementById("recipeForm").reset();
       document.getElementById("recipe_id").value = "";
       document.getElementById("recipe_seq_id").value = "";
+      // form.reset() only resets controls with a `name` attribute.
+      // The recipe form has MANY name-less inputs (URL, hero image,
+      // affiliate URL, BCC permalink, source title, several
+      // classification fields). Without explicit clears here the
+      // PRIOR row's values bleed into the next save — most
+      // catastrophically the URL field, where lingering values cause
+      // dedup-by-URL to OVERWRITE the prior row (2026-05-29 bug).
+      ['originalUrl','affiliateUrl','sourceTitle','heroImageUrl',
+       'bccPermalink','provenance_ethnicity','provenance_region',
+       'classification_chapter','classification_hierarchy',
+       'classification_confidence','classification_reasoning',
+       'classification_story','editorial_opinion',
+       'editorial_score_commentary','editorial_sourcing_notes'
+      ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const claimBtnEl = document.getElementById("claimBtn");
       if (claimBtnEl) claimBtnEl.style.display = 'none';
       const promoteBtnEl = document.getElementById("promoteBtn");
@@ -3792,6 +3810,25 @@
 
     loadRecipes();
     updateButtonStates();
+
+    // Default state on page open: show the sidebar list. Exceptions:
+    //   - ?recipe_id=… (loading a specific saved record)
+    //   - ?staged=… (bookmarklet handoff)
+    //   - ?url=… (URL extract flow)
+    //   - small screens (sidebar takes the whole viewport; bad UX)
+    // In those cases the user is here to do something specific, not
+    // to browse the list. Otherwise — fresh page open — show the
+    // list so the user picks a recipe or starts a fresh entry.
+    (function defaultOpenSidebar() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('recipe_id') || params.get('staged') || params.get('url')) return;
+        if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) return;
+        if (window.LibraryShell && typeof LibraryShell.openSidebar === 'function') {
+          LibraryShell.openSidebar();
+        }
+      } catch (e) { /* ignore */ }
+    })();
 
     // Ingredient, Step, Equipment & Notes management
     const ingredientList = document.getElementById('ingredientList');
@@ -5079,13 +5116,18 @@
       });
       if (!r.equipment?.length) addEquipment();
 
-      // Source
+      // Source — always assign (not gated on r._source) so that a
+      // fresh image / paste / markdown extract with no source URL
+      // CLEARS the previous record's URL rather than inheriting it.
+      // Inheriting was the root cause of a save-overwrites-previous
+      // bug (2026-05-29): with originalUrl still holding the prior
+      // recipe's URL, the save flow's dedup-by-URL adopted the prior
+      // recipe_id and clobbered the previous row.
       document.getElementById("template").value = r.template || "classic";
-      if (r._source) {
-        document.getElementById("sourceTitle").value = r._source.origin || "";
-        document.getElementById("originalUrl").value = r._source.originalUrl || "";
-        document.getElementById("affiliateUrl").value = r._source.affiliateUrl || "";
-      }
+      const _src = r._source || {};
+      document.getElementById("sourceTitle").value = _src.origin || "";
+      document.getElementById("originalUrl").value = _src.originalUrl || "";
+      document.getElementById("affiliateUrl").value = _src.affiliateUrl || "";
       if (r.author) {
         document.getElementById("author").value = r.author.name || "";
       }
