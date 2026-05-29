@@ -294,6 +294,7 @@
   const NAV_ITEMS = [
     { page: 'recipes',   label: 'Recipes',   href: '/forms/recipe_form_styled.html' },
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes.html' },
+    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html' },
     { page: 'users',     label: 'Users',     href: '/forms/users.html' },
     { page: 'cookbooks', label: 'Cookbooks', comingSoon: true },
     { page: 'equipment', label: 'Equipment', comingSoon: true },

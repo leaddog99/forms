@@ -29,7 +29,7 @@ except Exception:
 from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -732,6 +732,8 @@ def init_db():
             ensure_bcc_token_journal_table(conn)
             ensure_llm_extract_cache_table(conn)
             dishes_lib.ensure_dishes_table(conn)
+            from input.pipeline.chapters import ensure_chapters_table
+            ensure_chapters_table(conn)
             jobs_lib.ensure_jobs_table(conn)
             # sqlite-vec virtual tables for dish + master recipe KNN.
             # Best-effort: if the extension is missing the cohort matcher
@@ -1943,6 +1945,161 @@ def delete_dish_endpoint(name: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/dishes/{name}/fit-data")
+def get_dish_fit_data_endpoint(name: str):
+    """Return the (URL, DA, PA) cohort the dish's last refresh fit
+    against, joined with a tiny status label per row:
+
+        - saved:        URL is in master_recipes for this dish (kept)
+        - rejected:     URL is in dish_rejects (post-Moz, failed
+                        extract / save / save-gate)
+        - dropped:      URL is in dish_run_data_points but neither
+                        of the above — it was dropped at the OU
+                        floor in this run
+
+    Used by the dish form to render an expandable "regression data"
+    table below the OU fit panel.
+    """
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail=f"Dish not found: {name}")
+            rows = conn.execute(
+                "SELECT url, da, pa FROM dish_run_data_points "
+                "WHERE dish_name = ? ORDER BY pa DESC NULLS LAST, da DESC",
+                (name,),
+            ).fetchall()
+            saved_urls = {
+                r[0] for r in conn.execute(
+                    "SELECT json_extract(data, '$._source.originalUrl') "
+                    "FROM master_recipes "
+                    "WHERE json_extract(data, '$._master.dish') = ?",
+                    (name,),
+                ).fetchall() if r[0]
+            }
+            rejected_urls = {
+                r[0] for r in conn.execute(
+                    "SELECT url FROM dish_rejects WHERE dish_name = ?",
+                    (name,),
+                ).fetchall()
+            }
+            out = []
+            for url, da, pa in rows:
+                if url in saved_urls:
+                    status = "saved"
+                elif url in rejected_urls:
+                    status = "rejected"
+                else:
+                    status = "dropped"
+                out.append({"url": url, "da": da, "pa": pa, "status": status})
+            return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] get_dish_fit_data({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+# =========================================================================
+# Chapters admin — list + detail + refresh-fit endpoints. The chapters
+# table holds the chapter-level OU regression fit used as the
+# grading fallback when per-dish cohorts are below_min_n. The form
+# (forms/chapters.html) is read-mostly: list every chapter, show its
+# fit status, allow recompute + curator notes. No add/delete — the
+# canonical chapter set is the CHAPTERS list in extract.chapter_classifier.
+# =========================================================================
+@app.get("/chapters")
+def list_chapters_endpoint():
+    try:
+        from input.pipeline.chapters import list_chapters_with_status
+        from extract.chapter_classifier import CHAPTERS
+        with sqlite3.connect(DB_PATH) as conn:
+            return list_chapters_with_status(conn, CHAPTERS)
+    except Exception as e:
+        print(f"[ERROR] list_chapters failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/chapters/{name}")
+def get_chapter_endpoint(name: str):
+    try:
+        from input.pipeline.chapters import get_chapter_detail
+        from extract.chapter_classifier import CHAPTERS
+        if name not in CHAPTERS:
+            raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
+        with sqlite3.connect(DB_PATH) as conn:
+            return get_chapter_detail(conn, name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] get_chapter({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/chapters/{name}/refresh")
+def refresh_chapter_endpoint(name: str):
+    """Recompute the OU fit for a single chapter from the current
+    master_recipes corpus. Returns the new fit + detail blob."""
+    try:
+        from input.pipeline.chapters import (
+            compute_and_store_chapter_fit, get_chapter_detail,
+        )
+        from extract.chapter_classifier import CHAPTERS
+        if name not in CHAPTERS:
+            raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
+        with sqlite3.connect(DB_PATH) as conn:
+            fit = compute_and_store_chapter_fit(conn, name)
+            detail = get_chapter_detail(conn, name)
+        print(f"[CHAPTER-FIT] {name!r}: n={fit.get('n')} used={fit.get('used')} model={fit.get('model')}")
+        return detail
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] refresh_chapter({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+
+
+@app.post("/chapters/refresh-all")
+def refresh_all_chapters_endpoint():
+    """One-pass recompute of every chapter's fit. Returns the summary
+    dict from backfill_all_chapters."""
+    try:
+        from input.pipeline.chapters import backfill_all_chapters
+        from extract.chapter_classifier import CHAPTERS
+        with sqlite3.connect(DB_PATH) as conn:
+            return backfill_all_chapters(
+                conn, [c for c in CHAPTERS if c != "Uncertain"],
+            )
+    except Exception as e:
+        print(f"[ERROR] refresh_all_chapters failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+
+
+@app.patch("/chapters/{name}")
+def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
+    """Update curator notes on a chapter row."""
+    try:
+        from input.pipeline.chapters import update_chapter_notes, get_chapter_detail
+        from extract.chapter_classifier import CHAPTERS
+        if name not in CHAPTERS:
+            raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
+        if "notes" in payload:
+            notes = payload["notes"]
+            if notes is not None and not isinstance(notes, str):
+                raise HTTPException(status_code=400, detail="notes must be a string or null")
+            notes = (notes.strip() or None) if isinstance(notes, str) else None
+            with sqlite3.connect(DB_PATH) as conn:
+                update_chapter_notes(conn, name, notes)
+        with sqlite3.connect(DB_PATH) as conn:
+            return get_chapter_detail(conn, name)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] patch_chapter({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
 # =========================================================================
 # Dish refresh — now a job handler, not a long-blocking endpoint.
 # POST /dishes/<name>/refresh enqueues a `dish_refresh` job and returns 202.
@@ -2007,6 +2164,22 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 
     entries = batch_result["entries"]
     print(f"[REFRESH-DISH] front-end yielded {len(entries)} candidates")
+
+    # Persist the (URL, DA, PA) cohort the dish fit saw — used by the
+    # chapter-level aggregate fit to grade niche dishes whose own
+    # cohort is below the n=25 floor. Done before saves so that even
+    # if the save loop crashes mid-way, the chapter rollups still
+    # have today's data.
+    fit_points = batch_result.get("fit_data_points") or []
+    if fit_points:
+        try:
+            from input.pipeline.chapters import replace_data_points_for_dish
+            with sqlite3.connect(DB_PATH) as conn:
+                n_written = replace_data_points_for_dish(conn, canonical_name, fit_points)
+            print(f"[REFRESH-DISH] persisted {n_written} data points "
+                  f"for chapter-fit aggregation")
+        except Exception as e:
+            print(f"[REFRESH-DISH] data-points persist failed (non-fatal): {e}")
 
     # Delete prior top-kind rows for this dish — editors_choice and
     # legacy survive. Done BEFORE saves so the (url_normalized,
@@ -2450,6 +2623,27 @@ def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
         except Exception as e:
             print(f"[GRADE] embedding match failed: {e}")
 
+    # Path 4 — chapter-level fallback. Triggered when neither the
+    # explicit dish fit nor the embedding-matched dish fit produced
+    # a usable grade (typical cause: dish cohort below_min_n=25).
+    # The chapter cohort is broader and noisier but covers the niche-
+    # dish gap so recipes still show grades rather than em-dashes.
+    if grade is None:
+        chapter = ((recipe_dict.get("classification") or {}).get("chapter") or "").strip()
+        if chapter:
+            try:
+                from input.pipeline.chapters import get_chapter_fit
+                with sqlite3.connect(DB_PATH) as conn:
+                    ch_fit = get_chapter_fit(conn, chapter)
+                if ch_fit and ch_fit.get("used"):
+                    grade = compute_exceptionalism(
+                        da, pa, ch_fit,
+                        matched_dish=chapter,
+                        match_method="chapter-fallback",
+                    )
+            except Exception as e:
+                print(f"[GRADE] chapter-fallback failed for {chapter!r}: {e}")
+
     if grade is None:
         print(f"[GRADE] no cohort match → ungraded")
         return
@@ -2852,7 +3046,25 @@ async def save_recipe(request: Request):
     # because Python treats 0 as falsy. Explicit None-check instead.
     uid_raw = payload.get("user_id")
     if uid_raw is not None and int(uid_raw) == 0:
+        # Master write. Gate the actor + preserve the explicit 0
+        # (don't overwrite with the caller's personal id below).
         _require_perm(request, "edit_master")
+    else:
+        # Personal save. Honor the X-Self-User-Id header (set by
+        # library-shell.js patchFetch from localStorage's
+        # app:self_user_id) over whatever the form's hidden user_id
+        # field defaulted to. The hidden field in
+        # recipe_form_styled.html defaults to "1" on fresh extracts,
+        # which silently routes every paste-extract save to user 1
+        # regardless of who's signed in — the bug user reported
+        # 2026-05-29 (John Landry/Official = user 5, paste-extracted
+        # recipes landing on user 1). The header is authoritative for
+        # which user owns the write; the hidden form field stays as a
+        # last-resort fallback when no header is set.
+        caller = _resolve_caller(request)
+        caller_uid = (caller or {}).get("user_id")
+        if caller_uid is not None and int(caller_uid) > 0:
+            payload["user_id"] = int(caller_uid)
     return await asyncio.to_thread(_save_recipe_core, payload)
 
 

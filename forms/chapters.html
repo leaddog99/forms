@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Chapters</title>
+  <link rel="stylesheet" href="/forms/library-shell.css">
+  <style>
+    /* ====================================================================
+       Clean minimalist override — Apple product-page aesthetic.
+       Pure white surfaces, hairline 1px borders, generous whitespace,
+       light font weights, monochrome palette with text-only emphasis.
+       ==================================================================== */
+    :root {
+      --ink: #1d1d1f;
+      --ink-soft: #424245;
+      --muted: #86868b;
+      --hairline: #e5e3df;
+      --hairline-soft: #f3f1ed;
+      --surface: #ffffff;
+      --surface-tint: #fbfaf7;
+      --accent: #8a5a3b;            /* single warm accent — caramel / coffee */
+      --accent-strong: #6f4628;
+      --accent-soft: rgba(138, 90, 59, 0.06);
+    }
+    html, body {
+      background: var(--surface);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 300;
+      font-size: 16px;
+      letter-spacing: -0.003em;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* --- Header ----------------------------------------------------- */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--hairline);
+      box-shadow: none;
+    }
+    .app-header h1 {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 500;
+      font-size: 1.05em;
+      letter-spacing: -0.01em;
+      color: var(--ink);
+    }
+    .sidebar-toggle {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--hairline);
+      box-shadow: none;
+      font-weight: 300;
+    }
+    .sidebar-toggle:hover {
+      background: var(--accent-soft);
+      border-color: var(--ink);
+    }
+    .nav-toggle {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--hairline);
+      box-shadow: none;
+    }
+    .nav-toggle:hover { background: var(--accent-soft); border-color: var(--ink); }
+    .identity-badge { color: var(--ink-soft); }
+    .identity-badge:hover { background: var(--accent-soft); color: var(--ink); }
+
+    /* --- Sidebar ---------------------------------------------------- */
+    .sidebar {
+      background: var(--surface);
+      box-shadow: 1px 0 0 var(--hairline);
+      padding: 20px 18px 28px;
+    }
+    .sidebar h2 {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 500;
+      font-size: 0.95em;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--hairline);
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+    }
+    .sidebar h2 .count {
+      color: var(--muted);
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.9em;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+    .sidebar-controls input[type="search"] {
+      border: 1px solid var(--hairline);
+      background: var(--surface);
+      font-weight: 300;
+      padding: 8px 11px;
+      border-radius: 6px;
+      font-size: 0.92em;
+    }
+    .sidebar-controls input[type="search"]:focus {
+      outline: none;
+      border-color: var(--ink);
+    }
+    .ghost-btn {
+      background: transparent;
+      border: 1px solid var(--hairline);
+      color: var(--ink);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 0.88em;
+      font-weight: 400;
+      cursor: pointer;
+      text-align: left;
+      letter-spacing: -0.003em;
+    }
+    .ghost-btn:hover {
+      border-color: var(--ink);
+      background: var(--accent-soft);
+    }
+    .ghost-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .entity-list li {
+      cursor: pointer;
+      padding: 12px 14px;
+      border: none;
+      border-bottom: 1px solid var(--hairline-soft);
+      border-radius: 0;
+      margin-bottom: 0;
+    }
+    .entity-list li:hover {
+      background: var(--accent-soft);
+    }
+    .entity-list li.selected {
+      background: var(--accent-soft);
+      border-color: var(--hairline-soft);
+    }
+    .entity-list .entity-name {
+      font-weight: 400;
+      font-size: 0.95em;
+      letter-spacing: -0.005em;
+      color: var(--ink);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .entity-list .entity-meta {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      color: var(--muted);
+      font-size: 0.78em;
+      margin-top: 4px;
+      font-weight: 300;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* --- Status pills ----------------------------------------------- */
+    .status-pill {
+      font-size: 0.68em;
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 1px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--hairline);
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      vertical-align: middle;
+    }
+    .status-pill.graded {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .status-pill.below {
+      color: var(--ink-soft);
+    }
+
+    /* --- Container & detail ----------------------------------------- */
+    .container {
+      max-width: 760px;
+      padding: 56px 40px 96px;
+    }
+    .detail-empty {
+      color: var(--muted);
+      font-weight: 300;
+      font-size: 1.05em;
+      line-height: 1.55;
+      max-width: 480px;
+    }
+    .detail-empty p { margin-bottom: 14px; }
+
+    h2.detail-title {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 500;
+      font-size: 1.8em;
+      letter-spacing: -0.022em;
+      color: var(--ink);
+      margin: 0;
+    }
+    .detail-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-bottom: 40px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .detail-head .meta {
+      color: var(--muted);
+      font-size: 0.85em;
+      font-weight: 300;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* --- Section blocks (no card chrome — just whitespace + hairline) - */
+    .section {
+      padding: 28px 0 32px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+    .section:last-child { border-bottom: none; }
+    .section-label {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 500;
+      font-size: 0.72em;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 18px 0;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      column-gap: 24px;
+      row-gap: 12px;
+      font-size: 0.95em;
+    }
+    .kv .k {
+      color: var(--muted);
+      font-weight: 300;
+    }
+    .kv .v {
+      color: var(--ink);
+      font-weight: 400;
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.005em;
+    }
+    .kv .v.note {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 300;
+      color: var(--ink-soft);
+    }
+    .formula {
+      margin-top: 24px;
+      padding: 14px 0 0 0;
+      border-top: 1px solid var(--hairline-soft);
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.88em;
+      color: var(--ink-soft);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+    }
+
+    .empty-fit {
+      color: var(--ink-soft);
+      font-size: 0.95em;
+      line-height: 1.55;
+      font-weight: 300;
+      max-width: 540px;
+    }
+    .empty-fit strong {
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    .notes-area {
+      width: 100%;
+      min-height: 96px;
+      padding: 10px 0;
+      border: none;
+      border-bottom: 1px solid var(--hairline);
+      font-family: inherit;
+      font-size: 0.94em;
+      font-weight: 300;
+      color: var(--ink);
+      background: transparent;
+      resize: vertical;
+      line-height: 1.55;
+    }
+    .notes-area:focus {
+      outline: none;
+      border-bottom-color: var(--accent);
+    }
+
+    /* --- Footer actions --------------------------------------------- */
+    .action-footer {
+      background: var(--surface);
+      border-top: 1px solid var(--hairline);
+      box-shadow: none;
+    }
+    .action-footer button {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--hairline);
+      padding: 9px 18px;
+      font-weight: 400;
+      font-size: 0.92em;
+      border-radius: 6px;
+      letter-spacing: -0.005em;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    }
+    .action-footer button:hover {
+      border-color: var(--ink);
+      background: var(--accent-soft);
+    }
+    .action-footer button.primary {
+      background: var(--accent);
+      color: var(--surface);
+      border-color: var(--accent);
+    }
+    .action-footer button.primary:hover {
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
+    .action-footer button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+      <h1>Chapters</h1>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar">
+    <h2>Chapters <span class="count" id="chapterCount"></span></h2>
+    <div class="sidebar-controls">
+      <button type="button" class="ghost-btn" id="refreshAllBtn">Refresh all fits</button>
+      <input type="search" id="searchInput" placeholder="Search…" />
+    </div>
+    <ul class="entity-list" id="chapterList">
+      <li class="empty-state">Loading…</li>
+    </ul>
+  </aside>
+
+  <div class="container">
+    <main id="detailPanel">
+      <div class="detail-empty">
+        <p>Select a chapter from the sidebar.</p>
+        <p>Each chapter holds an aggregate OU regression fit used as a grading fallback when a dish cohort is too small (n &lt; 25) to fit on its own. Niche dishes inherit grades from their chapter cohort.</p>
+      </div>
+    </main>
+  </div>
+
+  <footer class="action-footer" id="actionFooter" style="display:none">
+    <div class="button-row" id="footerButtons"></div>
+  </footer>
+
+  <script src="/forms/library-shell.js?v=20260529a"></script>
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const { escapeHtml, fmtDate, closeOnNarrow } = LibraryShell;
+
+    LibraryShell.init({
+      sidebarSelector: '#sidebar',
+      sidebarToggleSelector: '#sidebarToggle',
+    });
+    LibraryShell.initNav({ currentPage: 'chapters' });
+
+    let chapters = {};
+    let selectedName = null;
+    let searchTerm = '';
+
+    function statusPill(c) {
+      const s = c.fit_status;
+      const label =
+        s === 'graded' ? 'fit' :
+        s === 'below_min_n' ? 'n<' + 25 :
+        '—';
+      const cls = s === 'graded' ? 'graded' : (s === 'below_min_n' ? 'below' : '');
+      return `<span class="status-pill ${cls}">${label}</span>`;
+    }
+
+    function renderList() {
+      const term = searchTerm.toLowerCase();
+      const filtered = Object.values(chapters).filter(c =>
+        !term || c.name.toLowerCase().includes(term)
+      );
+      $('#chapterCount').textContent = String(filtered.length);
+      const listEl = $('#chapterList');
+      if (!filtered.length) {
+        listEl.innerHTML = '<li class="empty-state">No matches</li>';
+        return;
+      }
+      listEl.innerHTML = '';
+      for (const c of filtered) {
+        const li = document.createElement('li');
+        if (c.name === selectedName) li.classList.add('selected');
+        const fit = c.last_ou_fit || {};
+        const meta = fit.used
+          ? `n=${c.fit_recipe_count}  ·  ${fit.model}  ·  σ=${fit.sigma_effective}`
+          : `${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}`;
+        li.innerHTML =
+          `<div class="entity-name"><span>${escapeHtml(c.name)}</span>${statusPill(c)}</div>` +
+          `<div class="entity-meta">${escapeHtml(meta)}</div>`;
+        li.addEventListener('click', () => {
+          selectedName = c.name;
+          renderList();
+          renderDetail();
+          closeOnNarrow();
+        });
+        listEl.appendChild(li);
+      }
+    }
+
+    function fmtCoeffs(fit) {
+      if (!fit || !fit.coefficients) return '';
+      const c = fit.coefficients.map(x => Number(x).toFixed(4));
+      if (fit.model === 'linear')    return `predicted PA = ${c[0]} · DA + ${c[1]}`;
+      if (fit.model === 'quadratic') return `predicted PA = ${c[0]} · DA² + ${c[1]} · DA + ${c[2]}`;
+      if (fit.model === 'power')     return `predicted PA = ${c[0]} · DA ^ ${c[1]}`;
+      return c.join(', ');
+    }
+
+    function num(v, digits = 4) {
+      if (v == null) return '—';
+      const n = Number(v);
+      if (!isFinite(n)) return '—';
+      return n.toFixed(digits);
+    }
+
+    function renderDetail() {
+      const panel = $('#detailPanel');
+      if (!selectedName || !chapters[selectedName]) {
+        panel.innerHTML = '<div class="detail-empty"><p>Select a chapter from the sidebar.</p></div>';
+        $('#actionFooter').style.display = 'none';
+        return;
+      }
+      const c = chapters[selectedName];
+      const fit = c.last_ou_fit;
+
+      let fitSection;
+      if (fit && fit.used) {
+        fitSection = `
+          <section class="section">
+            <h3 class="section-label">OU regression fit</h3>
+            <div class="kv">
+              <div class="k">model</div><div class="v">${fit.model} · R² ${num(fit.r2_chosen)}</div>
+              <div class="k">corpus n</div><div class="v">${fit.n}</div>
+              <div class="k">σ observed</div><div class="v">${num(fit.sigma_observed)}</div>
+              <div class="k">σ effective</div><div class="v">${num(fit.sigma_effective)} · floor ${fit.exc_sigma_floor}</div>
+              <div class="k">R² linear / quadratic / power</div><div class="v">${num(fit.r2_linear)} · ${num(fit.r2_quadratic)} · ${num(fit.r2_power)}</div>
+              <div class="k">grade scale</div><div class="v">base ${fit.exc_base} · σ mult ${fit.exc_sigma_mult}</div>
+            </div>
+            <div class="formula">${fmtCoeffs(fit)}</div>
+          </section>
+        `;
+      } else if (fit) {
+        fitSection = `
+          <section class="section">
+            <h3 class="section-label">OU regression fit</h3>
+            <p class="empty-fit">
+              This chapter holds <strong>${c.current_recipe_count}</strong> saved recipe${c.current_recipe_count === 1 ? '' : 's'} —
+              the regression needs at least <strong>25</strong> to produce a stable fit. Recipes
+              in this chapter land ungraded until the corpus grows past the floor.
+            </p>
+          </section>
+        `;
+      } else {
+        fitSection = `
+          <section class="section">
+            <h3 class="section-label">OU regression fit</h3>
+            <p class="empty-fit">
+              No fit computed yet. Click <strong>Refresh fit</strong> to compute one from the
+              current corpus (${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}).
+            </p>
+          </section>
+        `;
+      }
+
+      const updated = c.fit_updated_at
+        ? `last fit ${fmtDate(c.fit_updated_at)}`
+        : 'never fit';
+
+      const drift = c.fit_recipe_count != null
+        ? (c.current_recipe_count - c.fit_recipe_count)
+        : null;
+      const driftStr = drift == null
+        ? '—'
+        : (drift === 0 ? '0' : (drift > 0 ? `+${drift}` : String(drift)));
+
+      panel.innerHTML = `
+        <div class="detail-head">
+          <h2 class="detail-title">${escapeHtml(c.name)} ${statusPill(c)}</h2>
+          <div class="meta">${updated}</div>
+        </div>
+
+        ${fitSection}
+
+        <section class="section">
+          <h3 class="section-label">Corpus</h3>
+          <div class="kv">
+            <div class="k">recipes in chapter, now</div><div class="v">${c.current_recipe_count}</div>
+            <div class="k">recipes when fit ran</div><div class="v">${c.fit_recipe_count ?? '—'}</div>
+            <div class="k">drift since last fit</div><div class="v">${driftStr}</div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h3 class="section-label">Notes</h3>
+          <textarea id="notesArea" class="notes-area"
+            placeholder="Editorial context, known issues, fit history…">${escapeHtml(c.notes || '')}</textarea>
+        </section>
+      `;
+
+      $('#actionFooter').style.display = 'block';
+      $('#footerButtons').innerHTML = `
+        <button type="button" id="refreshBtn" class="primary">Refresh fit</button>
+        <button type="button" id="saveNotesBtn">Save notes</button>
+      `;
+      $('#refreshBtn').addEventListener('click', () => doRefresh(c.name));
+      $('#saveNotesBtn').addEventListener('click', () => doSaveNotes(c.name));
+    }
+
+    async function loadChapters() {
+      const r = await fetch('/chapters');
+      if (!r.ok) { console.error('list chapters failed', r.status); return; }
+      const list = await r.json();
+      chapters = {};
+      for (const c of list) chapters[c.name] = c;
+      renderList();
+      if (selectedName && chapters[selectedName]) renderDetail();
+    }
+
+    async function doRefresh(name) {
+      const btn = $('#refreshBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+      try {
+        const r = await fetch(`/chapters/${encodeURIComponent(name)}/refresh`, { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const updated = await r.json();
+        chapters[name] = updated;
+        renderList();
+        renderDetail();
+      } catch (e) {
+        alert(`Refresh failed: ${e.message || e}`);
+        if (btn) { btn.disabled = false; btn.textContent = 'Refresh fit'; }
+      }
+    }
+
+    async function doSaveNotes(name) {
+      const notes = $('#notesArea').value;
+      const btn = $('#saveNotesBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      try {
+        const r = await fetch(`/chapters/${encodeURIComponent(name)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const updated = await r.json();
+        chapters[name] = updated;
+        if (btn) btn.textContent = 'Saved';
+        setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save notes'; } }, 1200);
+      } catch (e) {
+        alert(`Save failed: ${e.message || e}`);
+        if (btn) { btn.disabled = false; btn.textContent = 'Save notes'; }
+      }
+    }
+
+    $('#searchInput').addEventListener('input', (e) => {
+      searchTerm = e.target.value;
+      renderList();
+    });
+
+    $('#refreshAllBtn').addEventListener('click', async () => {
+      const btn = $('#refreshAllBtn');
+      btn.disabled = true; btn.textContent = 'Refreshing…';
+      try {
+        const r = await fetch('/chapters/refresh-all', { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await loadChapters();
+      } catch (e) {
+        alert(`Refresh all failed: ${e.message || e}`);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Refresh all fits';
+      }
+    });
+
+    loadChapters();
+  </script>
+</body>
+</html>
