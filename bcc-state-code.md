@@ -1382,6 +1382,74 @@ Trade to watch: any site that does *normal* anti-bot (blocks bots, allows Chrome
 ---
 
 ## To-do
+- **Internationalization (i18n) for UI messages (2026-05-29).** User flagged: we've been writing English strings inline throughout the codebase since day one; no infrastructure to swap to another language. Start NOW so we capture new strings into the pattern while it's fresh.
+
+  Recommended pattern (industry standard, minimal infrastructure):
+  - **JSON catalogs** per locale at `forms/i18n/<locale>.json` — flat key:value map. Keys are English-ish identifiers (`save.success`, `extract.failed_no_recipe`, `claim.cloning`), not English strings (avoids privileging English as the source).
+  - **`t(key, params)`** function in library-shell.js — resolves `t('save.success', {seq: 42})` against the active locale's catalog. Falls back to English catalog when key missing. Params interpolate via simple `{name}` placeholders.
+  - **Locale detection**: read from `localStorage['app:locale']`, fall back to `navigator.language`, fall back to `'en'`.
+  - **Server side**: same JSON catalog shape lives in `i18n/` at project root, with a tiny Python `t(key, locale, **kwargs)` helper. Server-rendered messages (FastAPI HTTPException details) and email/notification text route through it.
+  - **Migration**: incremental. New strings go through `t()` from day one. Existing strings get migrated when touched. After ~3-6 months, run a script that greps for inline strings missing from the catalog and reports them.
+
+  Things to remember as we go:
+  - When showing user-facing messages anywhere (showFeedback, error dialogs, button labels, toasts, modal text, alert strings, the new progress-UX work above): wrap in `t()`.
+  - Server-side: pass locale through from the X-Self-User-Id header → user.locale column (need to add) → response messages.
+  - Date formatting: use Intl.DateTimeFormat / Intl.NumberFormat on the client, locale-aware.
+  - When refactoring: don't try to do all of i18n at once. Do it module-by-module as files get touched. The catalog grows organically.
+
+  Memory worth saving: [[i18n-as-we-go]] — discipline note that every new user-facing string written from 2026-05-29 forward should go through `t()`. Existing strings get migrated lazily when files are otherwise edited.
+
+- **Non-English source pages — two-flavor extraction (2026-05-29).** Reported case: ran "spanakorizo" (Greek "rice with spinach") through a 25-URL batch; 21 of 23 sites rejected at the is_recipe filter — every Greek site (akispetretzikis.com, argiro.gr, gastronomos.gr, madameginger.com, bonappetit.gr, paxxi.gr…) failed because our phrase scorer (`RECIPE_PHRASES` in input/pipeline/config.py) only knows English phrases. Greek phrasings (`Συστατικά`, `Εκτέλεση`, `Μερίδες`) never matched → score=0 → rejected. Only `miakouppa.com` and `pbs.org/food` survived, and they're English-language.
+
+  **Strategic frame**: The best Greek/Italian/French recipes live on those countries' top recipe sites in their native languages. If our pipeline can ingest them and present them in English alongside English-language results, BCC becomes the only aggregator with access to genuinely-international recipe quality. Material competitive advantage.
+
+  **The design: two flavors per page, two phrase-check processes**:
+
+  ```
+                          Page fetch
+                              │
+              ┌───────────────┼───────────────┐
+              ▼                               ▼
+        FLAVOR A: untranslated        FLAVOR B: translated-to-English
+        (preserve original for         (the canonical working version
+         provenance + display)          we rank, embed, and display)
+              │                               │
+              ▼                               ▼
+        phrase check against            phrase check against the
+        language-specific phrase         standard English RECIPE_PHRASES
+        table (Greek / Italian /         (works because content is now
+         French / Spanish)               English markdown)
+  ```
+
+  Stored on the recipe:
+    - `_source.originalLanguage` (ISO 639-1: "el", "it", "fr", "es", "en")
+    - `_source.translated` (bool)
+    - `_source.translatedAt` (timestamp)
+    - `_source.originalTitle` (string — author's actual recipe name in source language; useful for "view original")
+    - Recipe body fields (name, description, ingredients, instructions) hold the TRANSLATED English version — that's what we rank + embed + match against the cohort + display in TBOTB
+
+  **Implementation order** (each ships independently):
+
+  1. **JSON-LD trust order swap (FREE, ship first, biggest immediate lift)** — most recipe sites publish schema.org `Recipe` JSON-LD regardless of language. Currently `_is_recipe_filter` runs the phrase check UNCONDITIONALLY before JSON-LD parsing. Invert: if the page has a `schema.org/Recipe` JSON-LD block, accept with full score; phrase check runs only as fallback. Free, catches ~80% of non-English recipe-site rejects on its own. Independent of translation.
+
+  2. **Language detection at fetch** — read `<html lang="...">` attribute (universal; recipe sites set it correctly). Fallback: character-set heuristic (Greek chars → "el", Cyrillic → "ru", CJK → respective codes). Stored on `_source.originalLanguage` regardless of translation decision.
+
+  3. **Translation via Haiku at fetch time** (~$0.0005 / 5K-char page) — when language ≠ "en", translate the cleaned markdown to English via a Haiku call with explicit recipe-aware prompt ("Preserve quantities, ingredient names that are loanwords like 'feta', cooking technique terms; translate prose"). Cache the translation URL-keyed in the existing `llm_extract_cache` shape. After translation, run the standard English pipeline (English phrases, English-prompted markdown_to_recipe). Result: recipe body in English; provenance fields stamped with originalLanguage + translated=true.
+
+  4. **Multi-language phrase tables for untranslated flavor** — add `RECIPE_PHRASES_GREEK`, `_ITALIAN`, `_FRENCH`, `_SPANISH` to config. Used when a user explicitly opts for "preserve original" mode, or as a fallback when translation fails. Routed by detected language.
+
+  5. **Form display** — small "Translated from Greek" pill next to the recipe title when `_source.translated`. Click pill → reveals original title + "View original" link to source URL. Same pattern as the page screenshot tile.
+
+  Recommendation: ship 1 first (immediate Greek-batch fix), then 2+3 together (the translation pipeline as a unit). 4 stays in reserve for the rare case where the curator wants the untranslated flavor — most TBOTB use is going to want translated. 5 ships with 3.
+
+- **Standardize progress + success/fail UX (2026-05-29).** Stop hijacking functional UI elements for status (the drop zone showing "Processing…" via a class is the worst offender — drop zone's job is to receive drops, not communicate state). Design pattern target:
+  - **Toast notifications** for transient success/info (slides in top-right or bottom-center, auto-dismisses after ~3-4s, stackable). Slack/Linear/GitHub aesthetic — small pill with icon + message.
+  - **In-flight progress indicator** for long-running ops (extract, claim, save, enrich, image-gen). Could be a small persistent strip in the header or a dedicated "now processing X" pill. Avoid blocking the user's view; let them keep scrolling.
+  - **Modal (JS popup)** for terminal results that need acknowledgement, OR for fail cases where the user needs to know what went wrong + offer next steps ("Retry" / "Cancel" / "Save as draft" buttons). Same `<dialog>` element pattern already used for the thin-recipe gate and the image-extract failure dialog.
+  - **Inline feedback text** stays for save/clear/delete confirmations within a single panel context (these are local feedback for local actions).
+
+  Audit pass needed across: drop zone (processing class), button text changes (Save → "Saving…", Enrich → "Enriching…", Claim → "Cloning…", Generate Image), `showFeedback()` calls throughout, `showErrorDialog` calls, `dropZone.classList.add('processing')` calls. Each should be reclassified into toast / progress-strip / modal / inline based on the rules above. Pattern lives in library-shell.js so dishes / users / install get it for free.
+
 - **Page screenshot capture + display.** Designed 2026-05-28 with the user. Add `_source.pageScreenshot` field, capture via Playwright headless Chromium (already installed in `sandbox/playwright/`), trim to above-fold + center-crop to 1500×800 then 1500×1000 via the existing `process_thumbnail` pipeline. Filename pattern: `recipe-screens/<recipe_id>-<sha8 of timestamp>.jpg` so files trace back to recipes if the DB link is lost (the user's concern about over-reliance on URL-hash naming). Add a smaller image well under the hero on the recipe form. Backfill for the existing 354 rows is one Playwright session, ~20-30 min wall time. Same `image_store` abstraction (LocalStore today, S3 when flipped). Manifest sidecar (`_manifest.jsonl`) makes the file→recipe mapping recoverable independent of the DB.
 - **Identity badge — consistent right-side mount across all pages.** Currently the recipe form has the badge on the RIGHT (it calls only `LibraryShell.initNav`, which mounts after inserting the spacer); other pages (dishes, users, install) call `LibraryShell.init` FIRST, which mounts the badge before the spacer exists, so it lands on the LEFT. Fix: drop the `initIdentityBadge()` call inside `init()`; rely on `initNav()` to mount it everywhere. Pages that don't call `initNav` (none today) would lose the badge; we'd add an explicit `initIdentityBadge` call there. Caught 2026-05-28 during the demo prep — user noted "the user id stuff at the top needs to be on the right on all pages, not just recipes."
 - **Next/prev navigation arrows on recipe + dish pages.** When viewing a single recipe (recipe_form_styled.html?recipe_id=…) or a single dish (dishes.html with a dish selected), surface ‹ / › arrows in the header to step through the sibling rows of the current scope. Scope rules to confirm at build time: recipe arrows step through the current sidebar's filtered+sorted list (so a chapter filter or search constrains the cycle); dish arrows step through `list_dishes` alphabetical or by `last_refreshed` desc (TBD). Keyboard shortcuts: `[` / `]` or arrow keys. Wraparound at end-of-list. The arrows belong in the same header strip as the identity badge; reuse the existing chevron pattern from the nav menu. Cheap to build (~50 lines per page), and dramatically improves cookbook-style review workflow ("look at all 10 Pastitsio recipes in order"). Worth noting: today every recipe view is a direct URL load (`?recipe_id=…`), so the navigation also needs to push the new URL via `history.pushState` rather than full page reload so the chrome stays stable.

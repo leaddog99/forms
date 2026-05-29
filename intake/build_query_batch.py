@@ -82,7 +82,9 @@ FETCH_TIMEOUT_S = 10
 # `fetch_with_ua_fallback`. Both go through the SAME UA chain so a URL
 # that the extract can fetch will always pass step 3's filter — no
 # more silent drops from UA mismatch. See [[single-path]].
-from to_markdown.html_to_markdown import fetch_with_ua_fallback, fetch_with_full_fallback
+from to_markdown.html_to_markdown import (
+    fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
+)
 
 # Defaults now come from bcc_config.json via input.pipeline.config.
 # Re-exported under the historical names so existing CLI / callers
@@ -256,47 +258,106 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _fetch_text(url: str) -> Optional[str]:
-    """Fetch a URL and return lower-cased plain text. Returns None on any
-    failure (HTTP error, timeout, parse error). Uses the canonical
-    fetch_with_full_fallback (UA chain → Wayback Machine) so step 3's
-    filter sees the same response the step-7 extract would — no
-    UA-mismatch silent drops, and aggressive Cloudflare-fronted sites
-    (Kitchn, NYT, WaPo) get caught via Wayback snapshot rather than
-    dropping out of the batch entirely."""
+def _fetch_for_filter(url: str) -> Optional[tuple[str, bool]]:
+    """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld).
+    Returns None on any failure (HTTP error, timeout, parse error).
+
+    Two signals returned in one round-trip:
+      - `text` — phrase-scored against RECIPE_PHRASES for the English-
+                  language is_recipe check.
+      - `has_recipe_jsonld` — True iff the page publishes a
+                  schema.org/Recipe block. Language-agnostic, and a
+                  STRONG positive signal: any page that declares itself
+                  a Recipe via structured data is, by author intent,
+                  a recipe. We accept those unconditionally; the phrase
+                  check is the fallback for pages without JSON-LD.
+
+    The dual signal landed 2026-05-29 after a Spanakorizo dish refresh
+    dropped 21 of 23 Greek-language sites — all of which publish
+    JSON-LD Recipe but failed the English-only phrase scorer. Trusting
+    JSON-LD when present unlocks every non-English recipe site that
+    follows the schema.org convention (which is virtually all of them).
+
+    Uses the canonical fetch_with_full_fallback (UA chain → Wayback)
+    so step 3's filter sees the same response step 7's extract would.
+    """
     try:
         resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S)
+        # JSON-LD lives in <script type="application/ld+json"> blocks —
+        # extract BEFORE we strip scripts for phrase-scoring text.
+        try:
+            jsonld_recipes = extract_recipe_jsonld(resp.text, resp.url)
+            has_recipe_jsonld = bool(jsonld_recipes)
+        except Exception as e:
+            print(f"      JSON-LD parse error for {url!r}: {e}")
+            has_recipe_jsonld = False
+
         soup = BeautifulSoup(resp.text, "html.parser")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
         text = soup.get_text(separator=" ")
         # Collapse whitespace and lowercase so phrase matching in
         # score_recipe_text is consistent with markdown_to_recipe's path.
-        return " ".join(text.split()).lower()
+        return " ".join(text.split()).lower(), has_recipe_jsonld
     except Exception:
         return None
 
 
+# Backward-compat alias — keeps any caller that imports _fetch_text by
+# name working. The new signature is preferred for new code.
+def _fetch_text(url: str) -> Optional[str]:
+    """Legacy single-return shim. Returns just the text component;
+    callers needing JSON-LD detection should use _fetch_for_filter."""
+    result = _fetch_for_filter(url)
+    return result[0] if result is not None else None
+
+
+# Score we stamp on entries whose JSON-LD detection passes them
+# without needing the phrase check. 100 is well above any phrase-derived
+# score (the scorer caps in the 50s on rich English pages), making the
+# stamp visually distinctive in the log + downstream display ("score=100
+# means JSON-LD bypass; score=NN means phrase-derived").
+_JSONLD_PASS_SCORE = 100
+
+
 def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Fetch each URL, run is_recipe on the page text, drop low-scoring.
-    Stamps `recipe_score` on every entry (kept and dropped) so the user
-    can see where the threshold landed. Threshold from
-    input.pipeline.config.IS_RECIPE_THRESHOLD.
+    """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
+    phrase check as fallback. Stamps `recipe_score` on every entry.
+
+    Decision tree:
+      1. Fetch fails (HTTP / timeout / parse) → DROP with reason 'fetch-failed'.
+      2. Page publishes schema.org/Recipe JSON-LD → KEEP with score=100.
+         The site declared itself a recipe; we don't second-guess it.
+         Catches non-English recipe sites where the phrase scorer would
+         have dropped them on language alone.
+      3. Otherwise → phrase-score against RECIPE_PHRASES; KEEP if
+         score ≥ IS_RECIPE_THRESHOLD, else DROP.
 
     Returns (kept, dropped).
     """
     kept, dropped = [], []
     for i, e in enumerate(entries, start=1):
         url = e["url"]
-        text = _fetch_text(url)
-        if text is None:
+        result = _fetch_for_filter(url)
+        if result is None:
             e["recipe_score"] = 0
             e["_dropped_reason"] = "fetch-failed"
             dropped.append(e)
             print(f"  [{i:>2}/{len(entries)}] FETCH-FAIL  {url}")
             continue
+        text, has_recipe_jsonld = result
+
+        if has_recipe_jsonld:
+            # Author declared this a recipe via structured data. Trust it.
+            e["recipe_score"] = _JSONLD_PASS_SCORE
+            e["jsonld_recipe"] = True
+            kept.append(e)
+            print(f"  [{i:>2}/{len(entries)}] KEEP json-ld   {url}")
+            continue
+
         score = score_recipe_text(text)
         e["recipe_score"] = score
+        e["jsonld_recipe"] = False
         if score >= IS_RECIPE_THRESHOLD:
             kept.append(e)
             print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2}  {url}")
