@@ -610,3 +610,15 @@
       '\nPage: ' + location.href);
   }
 })();
+
+// ============================================================================
+// EXECUTABLE BOOKMARKLET — copy this single line into a bookmark's URL.
+// ============================================================================
+// This is the LOADER: it opens the popup synchronously (iOS requirement), then
+// injects THIS file cache-busted (?Date.now()), so editing bookmarklet.js is
+// live on the very next click — no re-install. The loader itself rarely
+// changes; only re-copy this if the loader (not the logic above) is edited.
+// Kept in sync with the LOADER var in forms/install.html (the install page,
+// which also offers a Copy button + draggable link).
+//
+// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='https://recipes.tbotb.com/forms/bookmarklet.js?'+Date.now();(document.body||document.documentElement).appendChild(s);})();
