@@ -773,6 +773,10 @@ def init_db():
             from input.pipeline.chapters import ensure_chapters_table
             ensure_chapters_table(conn)
             jobs_lib.ensure_jobs_table(conn)
+            # Generic admin-managed tables (status_messages, etc.) — each
+            # registered AdminModel's table is created + seeded here.
+            from admin_models import ensure_admin_tables
+            ensure_admin_tables(conn)
             # sqlite-vec virtual tables for dish + master recipe KNN.
             # Best-effort: if the extension is missing the cohort matcher
             # falls back to the in-Python scan path (which has been
@@ -2070,6 +2074,15 @@ def get_dish_fit_data_endpoint(name: str):
 # fit status, allow recompute + curator notes. No add/delete — the
 # canonical chapter set is the CHAPTERS list in extract.chapter_classifier.
 # =========================================================================
+@app.get("/branding")
+def branding_config():
+    """Public app-shell branding (site name, logo, home link) for the
+    library-shell header. Sourced from bcc_config.json so swapping the
+    brand is a config edit, not a code change."""
+    from input.pipeline.config import BRAND_NAME, BRAND_LOGO_URL, BRAND_HOME_URL
+    return {"name": BRAND_NAME, "logo_url": BRAND_LOGO_URL, "home_url": BRAND_HOME_URL}
+
+
 @app.get("/chapters")
 def list_chapters_endpoint():
     try:
@@ -2159,6 +2172,159 @@ def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
     except Exception as e:
         print(f"[ERROR] patch_chapter({name!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+# =========================================================================
+# Generic admin scaffold — list + Add/Change/Delete for any model registered
+# in admin_models.ADMIN_MODELS, driven entirely by the model descriptor.
+# View: forms/admin.html?model=<name>. Adding an admin-managed table is one
+# edit (append an AdminModel) — no new endpoint, no new page. Writes are
+# restricted to each model's whitelisted editable fields, so the generic SQL
+# can't reach an arbitrary column/table. Unauthenticated like the rest of the
+# app today — gate before exposing publicly.
+# =========================================================================
+import admin_models as _admin
+
+
+def _admin_model_or_404(model: str):
+    m = _admin.get_model(model)
+    if m is None:
+        raise HTTPException(status_code=404, detail=f"Unknown admin model: {model}")
+    return m
+
+
+@app.get("/admin/models")
+def admin_list_models():
+    """The registered models, for the view's model switcher."""
+    return [{"name": m.name, "label": m.label} for m in _admin.ADMIN_MODELS.values()]
+
+
+@app.get("/admin/{model}/schema")
+def admin_model_schema(model: str):
+    """Field descriptors so the generic view can render list + form."""
+    return _admin_model_or_404(model).schema_json()
+
+
+@app.get("/admin/{model}")
+def admin_list_rows(model: str):
+    m = _admin_model_or_404(model)
+    cols = [f.name for f in m.fields]
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(cols)} FROM {m.table} ORDER BY {m.order_by}"
+            ).fetchall()
+        return {"model": m.schema_json(),
+                "rows": [dict(zip(cols, r)) for r in rows]}
+    except Exception as e:
+        print(f"[ERROR] admin_list({model!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/admin/{model}")
+def admin_create_row(model: str, payload: dict = Body(...)):
+    m = _admin_model_or_404(model)
+    try:
+        for f in m.fields:  # required check first, clearest error
+            if f.required and f.editable and (
+                f.name not in payload or payload[f.name] in (None, "")
+            ):
+                raise HTTPException(status_code=400, detail=f"{f.label} is required")
+        cols, vals = [], []
+        for name in m.editable_names():
+            if name in payload:
+                cols.append(name)
+                vals.append(m.coerce(name, payload[name]))
+        if not cols:
+            raise HTTPException(status_code=400, detail="no fields supplied")
+        ts = datetime.now(timezone.utc).isoformat()
+        if m.has_col("created_at"):
+            cols.append("created_at"); vals.append(ts)
+        if m.has_col("updated_at"):
+            cols.append("updated_at"); vals.append(ts)
+        ph = ", ".join("?" for _ in cols)
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.execute(
+                f"INSERT INTO {m.table} ({', '.join(cols)}) VALUES ({ph})", vals
+            )
+            new_id = cur.lastrowid
+        return {"ok": True, "id": new_id}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] admin_create({model!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.patch("/admin/{model}/{row_id}")
+def admin_update_row(model: str, row_id: int, payload: dict = Body(...)):
+    m = _admin_model_or_404(model)
+    try:
+        sets, vals = [], []
+        for name in m.editable_names():
+            if name in payload:
+                sets.append(f"{name} = ?")
+                vals.append(m.coerce(name, payload[name]))
+        if not sets:
+            raise HTTPException(status_code=400, detail="no editable fields supplied")
+        if m.has_col("updated_at"):
+            sets.append("updated_at = ?")
+            vals.append(datetime.now(timezone.utc).isoformat())
+        vals.append(row_id)
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.execute(
+                f"UPDATE {m.table} SET {', '.join(sets)} WHERE {m.pk} = ?", vals
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="row not found")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] admin_update({model!r}, {row_id}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.delete("/admin/{model}/{row_id}")
+def admin_delete_row(model: str, row_id: int):
+    m = _admin_model_or_404(model)
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            _enable_vec_for_delete(conn)  # vec-cleanup triggers need the module
+            cur = conn.execute(
+                f"DELETE FROM {m.table} WHERE {m.pk} = ?", (row_id,)
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="row not found")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] admin_delete({model!r}, {row_id}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/status-messages/active")
+def status_messages_active():
+    """Enabled status messages grouped by category, for the recipe form's
+    rotating-wait-message helper. Lean payload: ordered strings per category."""
+    try:
+        out: dict[str, list] = {}
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT category, message FROM status_messages "
+                "WHERE enabled = 1 ORDER BY category, sort_order, id"
+            ).fetchall()
+        for cat, msg in rows:
+            out.setdefault(cat, []).append(msg)
+        return out
+    except Exception as e:
+        print(f"[ERROR] status_messages_active failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
 # =========================================================================
