@@ -748,12 +748,18 @@
       const fitDetails = document.getElementById('fitDataDetails');
       if (fitDetails) {
         let loaded = false;
-        fitDetails.addEventListener('toggle', () => {
+        const ensureLoaded = () => {
           if (fitDetails.open && !loaded) {
             loaded = true;
             loadFitData(d.name);
           }
-        });
+        };
+        fitDetails.addEventListener('toggle', ensureLoaded);
+        // The panel renders with `open` set, so the `toggle` event never
+        // fires on initial mount — load now if it's already open. Without
+        // this the data-points table stays empty until the user manually
+        // closes and reopens the <details>.
+        ensureLoaded();
       }
       // Top recipes — the master rows from the last refresh, with
       // ranks + grades + links back to the original sources.
