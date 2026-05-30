@@ -161,6 +161,15 @@ SAVE_GATE_MIN_INSTRUCTIONS = int(_cfg.get("save_gate_min_instructions", 3))
 # either this or the legacy recipes.tbotb.com host to the form.
 BCC_PUBLIC_DOMAIN = str(_cfg.get("bcc_public_domain", "bestcooksclub.com"))
 
+# Host used for the user-facing "Open in BCC" links on the dishes page.
+# Normally the same as BCC_PUBLIC_DOMAIN, but overridable so the links
+# point at the Cloudflare tunnel host (recipes.tbotb.com — already a
+# /r/<id>-resolving self-host) while the bcc domain transfer is in flight
+# and BCC_PUBLIC_DOMAIN doesn't resolve yet. Drop the override key once
+# the domain is live. Scoped to the dishes button — the form permalink /
+# clipboard / save responses still mint canonical BCC_PUBLIC_DOMAIN URLs.
+BCC_LINK_DOMAIN = str(_cfg.get("bcc_link_domain", BCC_PUBLIC_DOMAIN))
+
 # DALL-E 3 dish-image generation.
 #   IMAGE_GEN_QUALITY: "standard" ($0.04/image, default for live form) or
 #     "hd" ($0.08, for cookbook-print-ready output). Cookbook export jobs
