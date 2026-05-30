@@ -2111,6 +2111,45 @@ def get_chapter_endpoint(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/chapters/{name}/recipes")
+def chapter_recipes_endpoint(name: str):
+    """Component records of a chapter: the master_recipes whose
+    classification.chapter matches, best (OU) first. Each links to BCC
+    via /r/<recipe_id>. Grade isn't stored (it's computed), so we surface
+    source + OU as the at-a-glance signal."""
+    from extract.chapter_classifier import CHAPTERS
+    if name not in CHAPTERS:
+        raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT recipe_id, "
+                "json_extract(data, '$.name'), "
+                "json_extract(data, '$._scoring.rootDomain'), "
+                "json_extract(data, '$._scoring.ouScore'), "
+                "json_extract(data, '$.classification.dishSignal') "
+                "FROM master_recipes "
+                "WHERE json_extract(data, '$.classification.chapter') = ? "
+                "ORDER BY json_extract(data, '$._scoring.ouScore') DESC NULLS LAST, "
+                "json_extract(data, '$.name')",
+                (name,),
+            ).fetchall()
+        return [
+            {
+                "id": rid,
+                "name": nm or "(untitled)",
+                "host": host or "",
+                "ou": ou,
+                "dish": dish or "",
+                "bcc_url": _bcc_link_permalink(rid) if rid else None,
+            }
+            for rid, nm, host, ou, dish in rows
+        ]
+    except Exception as e:
+        print(f"[ERROR] chapter_recipes({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.post("/chapters/{name}/refresh")
 def refresh_chapter_endpoint(name: str):
     """Recompute the OU fit for a single chapter from the current

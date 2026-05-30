@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Chapters</title>
   <link rel="stylesheet" href="/forms/library-shell.css">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
     /* ====================================================================
        Clean minimalist override — Apple product-page aesthetic.
@@ -42,7 +43,7 @@
     .app-header h1 {
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
       font-weight: 500;
-      font-size: 1.05em;
+      font-size: 1.7em;
       letter-spacing: -0.01em;
       color: var(--ink);
     }
@@ -91,7 +92,7 @@
       font-weight: 400;
       letter-spacing: 0;
     }
-    .sidebar-controls input[type="search"] {
+    .sidebar-controls input[type="search"], .sidebar-controls select {
       border: 1px solid var(--hairline);
       background: var(--surface);
       font-weight: 300;
@@ -99,7 +100,7 @@
       border-radius: 6px;
       font-size: 0.92em;
     }
-    .sidebar-controls input[type="search"]:focus {
+    .sidebar-controls input[type="search"]:focus, .sidebar-controls select:focus {
       outline: none;
       border-color: var(--ink);
     }
@@ -183,7 +184,7 @@
     /* --- Container & detail ----------------------------------------- */
     .container {
       max-width: 760px;
-      padding: 56px 40px 96px;
+      padding: 36px 56px 120px;
     }
     .detail-empty {
       color: var(--muted);
@@ -302,9 +303,16 @@
 
     /* --- Footer actions --------------------------------------------- */
     .action-footer {
-      background: var(--surface);
-      border-top: 1px solid var(--hairline);
+      background: transparent;
+      border-top: none;
       box-shadow: none;
+    }
+    .action-footer .button-row {
+      background: var(--surface);
+      border: 1px solid var(--hairline);
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(40, 30, 20, 0.12);
+      padding: 11px 16px;
     }
     .action-footer button {
       background: transparent;
@@ -334,13 +342,88 @@
       opacity: 0.5;
       cursor: default;
     }
+
+    /* === Editorial detail view (hero · info blocks · formula card ·
+       curator notes). Replaces the old spreadsheet kv layout. ====== */
+    .ch-hero { margin-bottom: 28px; }
+    .ch-title {
+      font-family: 'Playfair Display', Georgia, serif;
+      font-weight: 600; font-size: 2.3em; letter-spacing: -0.01em;
+      line-height: 1.1; color: var(--ink); margin: 0 0 10px;
+    }
+    .ch-summary {
+      margin: 0; font-size: 0.92em; font-weight: 300; color: var(--muted);
+      letter-spacing: -0.003em; line-height: 1.5;
+    }
+    .ch-summary .dot { margin: 0 9px; color: var(--hairline); }
+    .ch-summary .conf { color: var(--ink-soft); font-weight: 400; }
+    .ch-summary .conf.low { color: #994d1c; }      /* muted brick — not neon */
+    .inline-link { color: var(--accent); text-decoration: none;
+      border-bottom: 1px solid transparent; }
+    .inline-link:hover { border-bottom-color: var(--accent); }
+
+    .ch-section { margin-bottom: 28px; }
+    .ch-section-label {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 500; font-size: 0.72em; letter-spacing: 0.09em;
+      text-transform: uppercase; color: var(--muted); margin: 0 0 18px;
+    }
+    .ch-facts { margin: 0; display: grid; gap: 9px 0; }
+    .ch-facts .fact {
+      display: grid; grid-template-columns: 250px 1fr;
+      column-gap: 28px; align-items: baseline;
+    }
+    .ch-facts dt { margin: 0; color: var(--muted); font-weight: 300; font-size: 0.95em; }
+    .ch-facts dd {
+      margin: 0; color: var(--ink); font-weight: 400; font-size: 0.95em;
+      font-variant-numeric: tabular-nums;
+    }
+    .ch-facts .muted-note { color: var(--muted); font-weight: 300; }
+
+    .ch-formula {
+      margin: 0; padding: 24px 32px; border-radius: 8px;
+      background: var(--surface-tint); border: 1px solid var(--hairline-soft);
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.98em; color: var(--ink); letter-spacing: 0; line-height: 1.5;
+      white-space: pre-wrap; font-variant-numeric: tabular-nums;
+    }
+
+    .ch-notes { margin-top: 36px; padding-top: 22px;
+      border-top: 1px solid var(--hairline-soft); }
+    .ch-notes-label {
+      font-family: Georgia, 'Times New Roman', serif; font-style: italic;
+      font-weight: 400; font-size: 1.1em; color: var(--ink-soft);
+      letter-spacing: 0; text-transform: none; margin: 0 0 14px;
+    }
+    .ch-notes .notes-area { font-size: 14px; color: var(--ink-soft); }
+
+    /* Component records — the recipes that make up the chapter. */
+    .recipe-list { display: flex; flex-direction: column; }
+    .recipe-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 16px; padding: 9px 2px; border-bottom: 1px solid var(--hairline-soft);
+      text-decoration: none; color: var(--ink);
+    }
+    .recipe-row:last-child { border-bottom: none; }
+    .recipe-row:hover .recipe-name { color: var(--accent); text-decoration: underline; }
+    .recipe-name { font-size: 0.95em; font-weight: 400; }
+    .recipe-meta {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 0.78em; color: var(--muted); white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 560px) {
+      .ch-facts .fact { grid-template-columns: 1fr; gap: 2px; }
+      .container { padding: 40px 22px 96px; }
+    }
   </style>
 </head>
 <body>
   <header class="app-header">
     <div class="header-inner">
       <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
-      <h1>Chapters</h1>
+      <h1>Best Cooks Club</h1>
     </div>
   </header>
 
@@ -349,6 +432,12 @@
     <div class="sidebar-controls">
       <button type="button" class="ghost-btn" id="refreshAllBtn">Refresh all fits</button>
       <input type="search" id="searchInput" placeholder="Search…" />
+      <select id="sortSelect" aria-label="Sort chapters">
+        <option value="default">Sort: fit status</option>
+        <option value="name">Sort: name (A–Z)</option>
+        <option value="recipes">Sort: recipes (most)</option>
+        <option value="updated">Sort: last updated</option>
+      </select>
     </div>
     <ul class="entity-list" id="chapterList">
       <li class="empty-state">Loading…</li>
@@ -382,6 +471,7 @@
     let chapters = {};
     let selectedName = null;
     let searchTerm = '';
+    let sortKey = 'default';
 
     function statusPill(c) {
       const s = c.fit_status;
@@ -398,6 +488,13 @@
       const filtered = Object.values(chapters).filter(c =>
         !term || c.name.toLowerCase().includes(term)
       );
+      // Sort: 'default' keeps the server order (fit status, then name).
+      const sorters = {
+        name:    (a, b) => a.name.localeCompare(b.name),
+        recipes: (a, b) => (b.current_recipe_count || 0) - (a.current_recipe_count || 0) || a.name.localeCompare(b.name),
+        updated: (a, b) => String(b.fit_updated_at || '').localeCompare(String(a.fit_updated_at || '')) || a.name.localeCompare(b.name),
+      };
+      if (sorters[sortKey]) filtered.sort(sorters[sortKey]);
       $('#chapterCount').textContent = String(filtered.length);
       const listEl = $('#chapterList');
       if (!filtered.length) {
@@ -441,6 +538,26 @@
       return n.toFixed(digits);
     }
 
+    function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+    // Confidence label for the hero summary. `low` drives a muted
+    // brick-red treatment (editorial, not a neon alert banner).
+    function confidence(c) {
+      const fit = c.last_ou_fit;
+      if (fit && fit.used) {
+        const r2 = Number(fit.r2_chosen);
+        return (isFinite(r2) && r2 >= 0.5)
+          ? { label: 'High confidence fit', low: false }
+          : { label: 'Low confidence fit', low: true };
+      }
+      if (fit) return { label: 'Low confidence — corpus under 25', low: true };
+      return { label: 'Not yet fit', low: true };
+    }
+
+    function fact(label, value) {
+      return `<div class="fact"><dt>${label}</dt><dd>${value}</dd></div>`;
+    }
+
     function renderDetail() {
       const panel = $('#detailPanel');
       if (!selectedName || !chapters[selectedName]) {
@@ -454,72 +571,79 @@
       let fitSection;
       if (fit && fit.used) {
         fitSection = `
-          <section class="section">
-            <h3 class="section-label">OU regression fit</h3>
-            <div class="kv">
-              <div class="k">model</div><div class="v">${fit.model} · R² ${num(fit.r2_chosen)}</div>
-              <div class="k">corpus n</div><div class="v">${fit.n}</div>
-              <div class="k">σ observed</div><div class="v">${num(fit.sigma_observed)}</div>
-              <div class="k">σ effective</div><div class="v">${num(fit.sigma_effective)} · floor ${fit.exc_sigma_floor}</div>
-              <div class="k">R² linear / quadratic / power</div><div class="v">${num(fit.r2_linear)} · ${num(fit.r2_quadratic)} · ${num(fit.r2_power)}</div>
-              <div class="k">grade scale</div><div class="v">base ${fit.exc_base} · σ mult ${fit.exc_sigma_mult}</div>
-            </div>
-            <div class="formula">${fmtCoeffs(fit)}</div>
+          <section class="ch-section">
+            <h2 class="ch-section-label">Model fit</h2>
+            <dl class="ch-facts">
+              ${fact('Model type', cap(fit.model) + ' regression')}
+              ${fact('Recipes analyzed', fit.n)}
+              ${fact('Coefficient of determination', 'R² = ' + num(fit.r2_chosen))}
+              ${fact('Residual scatter (σ)', num(fit.sigma_observed))}
+              ${fact('Effective σ', num(fit.sigma_effective) + ' <span class="muted-note">· floor ' + fit.exc_sigma_floor + '</span>')}
+              ${fact('Candidate fits', 'linear ' + num(fit.r2_linear, 3) + ' · quadratic ' + num(fit.r2_quadratic, 3) + ' · power ' + num(fit.r2_power, 3))}
+              ${fact('Grade scale', 'base ' + fit.exc_base + ' · σ×' + fit.exc_sigma_mult)}
+            </dl>
+          </section>
+          <section class="ch-section">
+            <h2 class="ch-section-label">Predicted authority model</h2>
+            <pre class="ch-formula">${fmtCoeffs(fit)}</pre>
           </section>
         `;
       } else if (fit) {
         fitSection = `
-          <section class="section">
-            <h3 class="section-label">OU regression fit</h3>
-            <p class="empty-fit">
-              This chapter holds <strong>${c.current_recipe_count}</strong> saved recipe${c.current_recipe_count === 1 ? '' : 's'} —
-              the regression needs at least <strong>25</strong> to produce a stable fit. Recipes
-              in this chapter land ungraded until the corpus grows past the floor.
-            </p>
+          <section class="ch-section">
+            <h2 class="ch-section-label">Model fit</h2>
+            <p class="empty-fit">This chapter holds <strong>${c.current_recipe_count}</strong> saved recipe${c.current_recipe_count === 1 ? '' : 's'} — the regression needs at least <strong>25</strong> for a stable fit. Recipes here stay ungraded until the corpus grows past the floor.</p>
           </section>
         `;
       } else {
         fitSection = `
-          <section class="section">
-            <h3 class="section-label">OU regression fit</h3>
-            <p class="empty-fit">
-              No fit computed yet. Click <strong>Refresh fit</strong> to compute one from the
-              current corpus (${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}).
-            </p>
+          <section class="ch-section">
+            <h2 class="ch-section-label">Model fit</h2>
+            <p class="empty-fit">No fit computed yet. Use <strong>Refresh fit</strong> to compute one from the current corpus (${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}).</p>
           </section>
         `;
       }
-
-      const updated = c.fit_updated_at
-        ? `last fit ${fmtDate(c.fit_updated_at)}`
-        : 'never fit';
 
       const drift = c.fit_recipe_count != null
         ? (c.current_recipe_count - c.fit_recipe_count)
         : null;
       const driftStr = drift == null
         ? '—'
-        : (drift === 0 ? '0' : (drift > 0 ? `+${drift}` : String(drift)));
+        : (drift === 0 ? 'no change' : (drift > 0 ? `+${drift} since fit` : `${drift} since fit`));
+
+      // Hero summary line: confidence · recipes · R² · updated · (re-run if low)
+      const conf = confidence(c);
+      const bits = [`<span class="conf${conf.low ? ' low' : ''}">${conf.label}</span>`];
+      bits.push(`${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}`);
+      if (fit && fit.used) bits.push(`R² ${num(fit.r2_chosen, 2)}`);
+      bits.push(c.fit_updated_at ? `updated ${fmtDate(c.fit_updated_at)}` : 'never fit');
+      if (conf.low) bits.push(`<a href="#" class="inline-link" id="rerunLink">Re-run analysis</a>`);
+      const summary = bits.join('<span class="dot">·</span>');
 
       panel.innerHTML = `
-        <div class="detail-head">
-          <h2 class="detail-title">${escapeHtml(c.name)} ${statusPill(c)}</h2>
-          <div class="meta">${updated}</div>
-        </div>
+        <header class="ch-hero">
+          <h1 class="ch-title">${escapeHtml(c.name)}</h1>
+          <p class="ch-summary">${summary}</p>
+        </header>
+
+        <section class="ch-section" id="chapterRecipes">
+          <h2 class="ch-section-label">Recipes in this chapter</h2>
+          <div class="recipe-list" id="recipeList"><p class="empty-fit">Loading…</p></div>
+        </section>
 
         ${fitSection}
 
-        <section class="section">
-          <h3 class="section-label">Corpus</h3>
-          <div class="kv">
-            <div class="k">recipes in chapter, now</div><div class="v">${c.current_recipe_count}</div>
-            <div class="k">recipes when fit ran</div><div class="v">${c.fit_recipe_count ?? '—'}</div>
-            <div class="k">drift since last fit</div><div class="v">${driftStr}</div>
-          </div>
+        <section class="ch-section">
+          <h2 class="ch-section-label">Corpus</h2>
+          <dl class="ch-facts">
+            ${fact('Recipes in chapter, now', c.current_recipe_count)}
+            ${fact('Recipes when fit ran', c.fit_recipe_count ?? '—')}
+            ${fact('Drift', driftStr)}
+          </dl>
         </section>
 
-        <section class="section">
-          <h3 class="section-label">Notes</h3>
+        <section class="ch-notes">
+          <h2 class="ch-notes-label">Curator notes</h2>
           <textarea id="notesArea" class="notes-area"
             placeholder="Editorial context, known issues, fit history…">${escapeHtml(c.notes || '')}</textarea>
         </section>
@@ -532,6 +656,36 @@
       `;
       $('#refreshBtn').addEventListener('click', () => doRefresh(c.name));
       $('#saveNotesBtn').addEventListener('click', () => doSaveNotes(c.name));
+      const rerun = $('#rerunLink');
+      if (rerun) rerun.addEventListener('click', (e) => { e.preventDefault(); doRefresh(c.name); });
+      loadChapterRecipes(c.name);
+    }
+
+    // Component records: the master_recipes that make up this chapter,
+    // each opening in BCC (/r/<id>). Loaded async after the detail paints.
+    async function loadChapterRecipes(name) {
+      const wrap = $('#recipeList');
+      if (!wrap) return;
+      try {
+        const r = await fetch(`/chapters/${encodeURIComponent(name)}/recipes`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const recipes = await r.json();
+        if (!recipes.length) {
+          wrap.innerHTML = '<p class="empty-fit">No recipes in this chapter yet.</p>';
+          return;
+        }
+        wrap.innerHTML = recipes.map(rc => {
+          const ou = (rc.ou == null) ? '' : `OU ${Number(rc.ou).toFixed(1)}`;
+          const meta = [escapeHtml(rc.host || ''), ou].filter(Boolean).join(' · ');
+          const href = rc.bcc_url || '#';
+          return `<a class="recipe-row" href="${href}" target="_blank" rel="noopener">
+              <span class="recipe-name">${escapeHtml(rc.name)}</span>
+              <span class="recipe-meta">${meta}</span>
+            </a>`;
+        }).join('');
+      } catch (e) {
+        wrap.innerHTML = `<p class="empty-fit">Couldn't load recipes (${escapeHtml(String(e.message || e))}).</p>`;
+      }
     }
 
     async function loadChapters() {
@@ -573,8 +727,11 @@
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const updated = await r.json();
         chapters[name] = updated;
-        if (btn) btn.textContent = 'Saved';
-        setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = 'Save notes'; } }, 1200);
+        // Universal save flow: confirm, clear the form, return to sidebar.
+        LibraryShell.afterSave({
+          message: 'Notes saved',
+          onClear: () => { selectedName = null; renderList(); renderDetail(); },
+        });
       } catch (e) {
         alert(`Save failed: ${e.message || e}`);
         if (btn) { btn.disabled = false; btn.textContent = 'Save notes'; }
@@ -583,6 +740,11 @@
 
     $('#searchInput').addEventListener('input', (e) => {
       searchTerm = e.target.value;
+      renderList();
+    });
+
+    $('#sortSelect').addEventListener('change', (e) => {
+      sortKey = e.target.value;
       renderList();
     });
 
