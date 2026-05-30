@@ -134,6 +134,7 @@ PLACEHOLDER_USER_ID = 1
 # track the same single source of truth.
 from input.pipeline.config import (  # noqa: E402
     BCC_PUBLIC_DOMAIN,
+    BCC_LINK_DOMAIN,
     SAVE_GATE_MIN_INGREDIENTS,
     SAVE_GATE_MIN_INSTRUCTIONS,
 )
@@ -143,6 +144,15 @@ def _bcc_permalink(recipe_id: str) -> str:
     """Canonical BCC URL for any saved recipe — what gets displayed in
     the form's Permalink field and copied to the clipboard for sharing."""
     return f"https://{BCC_PUBLIC_DOMAIN}/r/{recipe_id}"
+
+
+def _bcc_link_permalink(recipe_id: str) -> str:
+    """User-facing "Open in BCC" link for the dishes page. Uses
+    BCC_LINK_DOMAIN, which normally equals BCC_PUBLIC_DOMAIN but can be
+    pointed at the Cloudflare tunnel host (recipes.tbotb.com) via
+    bcc_config.json while the bcc domain transfer is in flight. See the
+    BCC_LINK_DOMAIN note in input/pipeline/config.py."""
+    return f"https://{BCC_LINK_DOMAIN}/r/{recipe_id}"
 
 
 # Hosts that point at our own /r/<id> redirect. New self-URLs mint under
@@ -1860,7 +1870,7 @@ def list_dish_top_recipes(name: str):
                     "name": d.get("name") or "(no title)",
                     "rank": master.get("rank"),
                     "source_url": source.get("originalUrl") or "",
-                    "bcc_url": _bcc_permalink(recipe_uuid),
+                    "bcc_url": _bcc_link_permalink(recipe_uuid),
                     "queries": master.get("queries") or [],
                     "grade": exc.get("grade"),
                     "exc_score": exc.get("score"),
