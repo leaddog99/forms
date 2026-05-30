@@ -33,15 +33,20 @@ import anthropic
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
-# 24 canonical chapters. Order roughly follows menu progression
-# (openers → mains → sides → desserts → drinks → utilities).
-# "Uncertain" is the explicit escape hatch — better to flag than guess.
+# 24 canonical chapters + an "Uncertain" escape hatch. Order roughly
+# follows menu progression (openers → mains → sides → desserts → drinks
+# → utilities). Mostly identity chapters ("classify by what the dish is"),
+# with two deliberate FORMAT chapters that win over ingredient identity:
+# "Sandwiches, Pizza & Savory Pastry" (handheld dough that encloses a
+# filling) and "Casseroles & Baked Dishes" (composite mains baked and
+# served from a dish — classify by the object on the plate, not the
+# protein). "Uncertain" is better than a guess.
 CHAPTERS = [
     "Appetizers & Starters",
     "Soups & Stews",
     "Salads",
     "Eggs & Breakfast",
-    "Sandwiches",
+    "Sandwiches, Pizza & Savory Pastry",
     "Pasta & Noodles",
     "Rice & Grains",
     "Beans, Legumes & Tofu",
@@ -49,12 +54,12 @@ CHAPTERS = [
     "Fish & Shellfish",
     "Poultry",
     "Meat",
+    "Casseroles & Baked Dishes",
     "Sauces, Dressings & Condiments",
     "Breads",
     "Cakes",
     "Cookies & Bars",
-    "Pies and Pastries - Sweet",
-    "Pies and Pastries - Savory",
+    "Pies & Pastries",
     "Custards, Puddings & Mousses",
     "Frozen Desserts",
     "Fruit Desserts",
@@ -66,6 +71,18 @@ CHAPTERS = [
 
 _DEFER = "__DEFER__"
 _SHORTCUTS_PATH = Path(__file__).parent / "chapter_shortcuts.json"
+
+# Chapters whose shortcut phrases are "weak": a phrase like "tomato sauce"
+# is a real classification ONLY when the title essentially IS that thing
+# ("Tomato Sauce"), NOT when it's a modifier inside a larger dish title
+# ("Shrimp Enchiladas in Tomato Sauce" — that's a casserole that happens to
+# contain a sauce). For these chapters a shortcut fires only on a
+# whole-title match; embedded matches defer to the LLM, which has the
+# dish-vs-component tie-break rules (rule 11). Without this, a sauce noun
+# buried in a dish title hijacks the classification before the LLM is even
+# consulted — the exact bug that sent "Shrimp Enchiladas in Tomato Sauce"
+# to Sauces.
+_STANDALONE_ONLY_CHAPTERS = {"Sauces, Dressings & Condiments"}
 
 
 def _normalize(s: str) -> str:
@@ -157,28 +174,123 @@ def _shortcut_lookup(title: str) -> Optional[str]:
 
     matches = set()
     for phrase, chapter in _SHORTCUTS.items():
-        if phrase in norm:
-            matches.add(chapter)
+        if phrase not in norm:
+            continue
+        if chapter in _STANDALONE_ONLY_CHAPTERS and norm.strip() != phrase.strip():
+            # Weak phrase (e.g. a sauce noun) embedded in a larger dish
+            # title — don't let it classify; let the LLM judge the dish.
+            continue
+        matches.add(chapter)
     if len(matches) == 1:
         return next(iter(matches))
     return None
 
 
-# System prompt for the LLM fallback. Encodes the governing principle
-# plus the directional tie-break rules cookbook editors actually use —
-# the same rules that resolve the systematic collisions (salads vs
-# protein, soups vs braise, eggs-as-breakfast vs eggs-in-dessert, etc.).
-# These came out of the design conversation and replace what a labeled
-# eval set would otherwise teach the model the hard way.
+# =====================================================================
+# CLASSIFICATION RULES — the decision tree, in plain English.
+#
+# This is the human-readable spec. _SYSTEM_PROMPT below is the machine
+# encoding of exactly these rules; keep the two in sync. The philosophy,
+# in one sentence:
+#
+#   Classify by the structural object the cook recognizes ON THE PLATE,
+#   with structure outranking ingredients, cooking method, vessel, and
+#   name.
+#
+# The decision tree (apply in order; first rule that decides, wins):
+#
+#   R1. IDENTITY OVER INGREDIENTS — classify by what the dish IS, not
+#       what it contains. Lasagne is lasagne, not "pasta". Pizza is
+#       pizza, not bread.
+#   R2. PHYSICAL FORM OVER TECHNIQUE — "baked/fried/roasted/braised" is
+#       secondary. An empanada is an enclosed pastry however it's cooked.
+#   R3. THE DEFINING STRUCTURE WINS — remove one thing; what destroys the
+#       dish's identity? Remove a pot pie's CRUST → stew (crust defines
+#       it → Savory Pastry). Remove lasagne's LAYERING → pasta with sauce
+#       (assembly defines it → Casseroles). Remove chicken parm's CHICKEN
+#       → sauce with cheese (cutlet defines it → Poultry). Resolves most
+#       controversies.
+#   R4. CRUST BEATS FILLING — if a pastry/dough crust is the defining
+#       structure (pot pie, tourtière, meat pie, empanada, pasty,
+#       calzone, Jamaican patty, pizza) it's Sandwiches, Pizza & Savory
+#       Pastry, whatever the filling.
+#   R5. DISCRETE CENTERPIECE BEATS ASSEMBLY — an individual item served
+#       as itself (chicken/veal parmesan, meatloaf, crab cakes, stuffed
+#       peppers) classifies by its centerpiece; a portion CUT from a
+#       larger baked assembly (lasagne, moussaka, pastitsio, baked ziti)
+#       is Casseroles & Baked Dishes.
+#   R6. NAMES DON'T OVERRIDE STRUCTURE — shepherd's/cottage "pie" has no
+#       pastry crust → baked assembly → Casseroles. The word "pie"
+#       doesn't control; structure does.
+#   R7. SANITY CHECK — would a cook expect these to live together? If a
+#       placement breaks an obvious cluster, reconsider.
+#
+# Worked edge cases (the famously contested ones):
+#   Lasagne / Baked Ziti / Moussaka / Pastitsio  -> Casseroles & Baked Dishes (R5)
+#   Chicken Pot Pie / Steak & Kidney Pie / Tourtière / Empanada / Calzone
+#                                                 -> Sandwiches, Pizza & Savory Pastry (R4)
+#   Chicken Parmesan -> Poultry,  Veal Parmesan -> Meat,
+#   Eggplant Parmesan -> Vegetables               (R3/R5)
+#   Shepherd's Pie / Cottage Pie -> Casseroles & Baked Dishes (R6: no crust)
+#
+# Below the tree, SPECIFIC CASE RULES (numbered 1..13b in the prompt)
+# cover collisions the tree doesn't settle directly: salads vs protein,
+# soups/stews vs braise, brothy beans, noodles-in-broth, one-pot rice,
+# eggs-as-breakfast, standalone sauces, appetizers, quick breads, scones,
+# and the sweet-dessert subdivisions. These came out of the design
+# conversation and replace what a labeled eval set would otherwise teach
+# the model the hard way.
+# =====================================================================
+#
+# System prompt for the LLM fallback — the machine encoding of the rules
+# documented above.
 _SYSTEM_PROMPT = (
     "You are a cookbook editor classifying a recipe into one of "
     f"{len(CHAPTERS)} canonical chapters. Pick EXACTLY one.\n\n"
-    "GOVERNING PRINCIPLE: classify by the dish's identity and where a "
-    "cook would look for it in a cookbook, NOT by its most prominent "
-    "ingredient. Most misclassifications happen because the model "
-    "reaches for the loudest ingredient instead of the dish's actual "
-    "role on the table.\n\n"
-    "TIE-BREAK RULES (apply in order; first that fits wins):\n\n"
+    "CORE PRINCIPLE: classify by the structural object the cook "
+    "recognizes ON THE PLATE — structure outranks ingredients, cooking "
+    "method, vessel, and name. Ask \"what would a knowledgeable cook "
+    "call this dish?\" Most misclassifications come from reaching for "
+    "the loudest ingredient or the cooking technique instead of the "
+    "dish's actual identity.\n\n"
+    "DECISION TREE — apply in order; the first rule that decides, wins:\n\n"
+    "R1. IDENTITY OVER INGREDIENTS. Classify by what the dish IS, not "
+    "what it contains. Lasagne is lasagne (not \"pasta\"); chicken "
+    "parmesan is a chicken dish (not a casserole); pizza is pizza (not "
+    "bread).\n\n"
+    "R2. PHYSICAL FORM OVER TECHNIQUE. \"Baked / fried / roasted / "
+    "braised\" is usually secondary. An empanada and a calzone are "
+    "enclosed pastries; lasagne is a layered baked block; chicken "
+    "parmesan is a breaded cutlet — regardless of how they were "
+    "cooked.\n\n"
+    "R3. THE DEFINING STRUCTURE WINS. Ask: if I removed one thing, what "
+    "would destroy the dish's identity? Remove a chicken pot pie's "
+    "CRUST and you have stew → the crust defines it → Savory Pastry. "
+    "Remove lasagne's LAYERING and you have pasta with sauce → the "
+    "assembly defines it → Casseroles. Remove chicken parmesan's "
+    "CHICKEN and you have sauce with cheese → the cutlet defines it → "
+    "Poultry. This rule resolves most controversies.\n\n"
+    "R4. CRUST BEATS FILLING. If a pastry/dough crust is the defining "
+    "structure — pot pie, tourtière, meat pie, empanada, Cornish "
+    "pasty, calzone, Jamaican patty, pizza — it is \"Sandwiches, Pizza "
+    "& Savory Pastry\", whatever the filling.\n\n"
+    "R5. DISCRETE CENTERPIECE BEATS ASSEMBLY. An individual item served "
+    "as itself (chicken/veal parmesan, meatloaf, crab cakes, stuffed "
+    "peppers) classifies by its centerpiece protein/vegetable. A "
+    "portion CUT from a larger baked assembly (lasagne, moussaka, "
+    "pastitsio, baked ziti) is \"Casseroles & Baked Dishes\".\n\n"
+    "R6. NAMES DON'T OVERRIDE STRUCTURE. Some names lie: shepherd's pie "
+    "and cottage pie have NO pastry crust → they are baked assemblies → "
+    "\"Casseroles & Baked Dishes\". The word \"pie\" does not control "
+    "the classification; structure does.\n\n"
+    "R7. SANITY CHECK — would a cook expect these to live together? "
+    "Savory crust pies cluster (pot pie, steak & kidney pie, tourtière, "
+    "empanada, pasty); baked assemblies cluster (lasagne, moussaka, "
+    "pastitsio, baked ziti); chicken dishes cluster (parmesan, marsala, "
+    "piccata, cacciatore). If a placement breaks an obvious cluster, "
+    "reconsider.\n\n"
+    "SPECIFIC CASE RULES — for collisions the tree above doesn't settle "
+    "directly (first that fits wins):\n\n"
     "1. A dish built on greens or composed cold/room-temperature "
     "elements is \"Salads\" even when it contains chicken, beef, or "
     "seafood. The protein chapters (Poultry / Meat / Fish & Shellfish) "
@@ -208,14 +320,24 @@ _SYSTEM_PROMPT = (
     "when technically a savory tart or vegetable braise. BUT a "
     "dessert containing eggs (custard, sponge cake) is the relevant "
     "dessert chapter — course/sweetness overrides ingredient.\n\n"
-    "8. The bread recipe itself (focaccia, pizza dough, baguette) is "
-    "\"Breads\". A bread-based handheld assembly with fillings — "
-    "sandwich, grilled cheese, panini, sub, hoagie, gyro wrap, "
-    "shawarma wrap, sloppy joe, cheesesteak — is \"Sandwiches\". "
-    "Finished pizza, calzone, stromboli, empanada, pasty, meat pie, "
-    "chicken pot pie, and other enclosed/topped savory doughs are "
-    "\"Pies and Tarts - Savory\" (pizza is structurally a savory pie "
-    "with a flat crust + topping).\n\n"
+    "8. BREADS vs SANDWICHES/PIZZA/PASTRY. The bread recipe itself "
+    "(focaccia, pizza dough, baguette, dinner rolls, savory scones, "
+    "cornbread, biscuits) is \"Breads\". A finished handheld assembly — "
+    "sandwich, grilled cheese, panini, sub, hoagie, gyro/shawarma wrap, "
+    "sloppy joe, cheesesteak, quesadilla, burger — is \"Sandwiches, "
+    "Pizza & Savory Pastry\", which per R4 also holds pizza and all "
+    "crust-defined savory pies/pastries.\n\n"
+    "8b. \"Casseroles & Baked Dishes\" (per R5/R6) holds crustless "
+    "baked assemblies: enchiladas, lasagna, baked ziti, manicotti, "
+    "stuffed shells, cannelloni, baked mac & cheese, pastitsio, "
+    "moussaka, chicken/tuna-noodle casserole, tetrazzini, chicken "
+    "divan, king ranch chicken, shepherd's/cottage pie, tamale pie. "
+    "EXCEPTIONS that keep their identity chapter even when baked in a "
+    "dish: a breaded-cutlet centerpiece (chicken/veal/eggplant "
+    "parmesan) stays protein/vegetable; vegetable sides (green bean "
+    "casserole, gratins) stay \"Vegetables\"; breakfast bakes (strata, "
+    "egg/breakfast casserole) stay \"Eggs & Breakfast\"; a brothy thing "
+    "eaten with a spoon is still \"Soups & Stews\".\n\n"
     "9. \"Appetizers & Starters\" is reserved for things that exist "
     "ONLY as starters and don't fit a dish-type chapter (cheese boards, "
     "dips, mixed canapés, bar snacks). A small plate of meatballs is "
@@ -224,22 +346,20 @@ _SYSTEM_PROMPT = (
     "tarte tatin, lemon tart), choux pastries (éclair, profiteroles, "
     "cream puffs, Paris-Brest), laminated puff-pastry desserts "
     "(mille-feuille, palmiers), and phyllo desserts (baklava, "
-    "galaktoboureko, strudel) all go to \"Pies and Pastries - Sweet\" "
-    "— crust/dough form wins over filling. A baked custard with NO "
+    "galaktoboureko, strudel) all go to \"Pies & Pastries\" "
+    "— crust/dough form wins over filling. (\"Pies & Pastries\" is "
+    "SWEET ONLY. Judge by SWEETNESS, not by the word \"pie\" or the "
+    "presence of a crust: a SAVORY pie — spinach pie / spanakopita, "
+    "cheese pie / tiropita, börek, savory galette — must NEVER land "
+    "here; route it by rules 8/8b instead.) A baked custard with NO "
     "crust (crème brûlée, flan, pot de crème) is \"Custards, Puddings "
     "& Mousses\"; a fruit dish that's mostly fruit with topping "
     "(crisp, cobbler) is \"Fruit Desserts\"; anything churned or "
     "frozen is \"Frozen Desserts\"; sugar-based confections (fudge, "
     "caramels, brittle) are \"Candies & Confections\".\n\n"
-    "10b. Savory pies and pastries (chicken pot pie, beef pot pie, "
-    "meat pie, steak and kidney pie, Cornish pasty, tourtière, "
-    "empanada, calzone, stromboli, pizza, vol-au-vent, savory hand "
-    "pie) all go to \"Pies and Pastries - Savory\". Pizza is "
-    "structurally a savory open-faced pie. Quiche is genuinely "
-    "contested between Eggs & Breakfast and Pies and Pastries - "
-    "Savory — when the title says quiche, lean Eggs & Breakfast "
-    "unless the recipe emphasizes the crust as the dish's "
-    "identity.\n\n"
+    "10b. QUICHE leans \"Eggs & Breakfast\" (breakfast canon) unless "
+    "the recipe emphasizes the crust as the dish's identity, in which "
+    "case it is \"Sandwiches, Pizza & Savory Pastry\".\n\n"
     "11. Only the STANDALONE recipe for a sauce / dressing / "
     "condiment goes in \"Sauces, Dressings & Condiments\". A dish "
     "that prominently features a sauce still classifies by the dish. "
@@ -256,12 +376,12 @@ _SYSTEM_PROMPT = (
     "biscuits (US sense), corn muffins — all \"Breads\". "
     "\"Cakes\" is reserved for proper layer / sponge / pound / Bundt "
     "cake structures.\n\n"
-    "13b. SCONES are an exception to rule 13. Sweet scones (blueberry, "
-    "cream, currant, lemon, chocolate chip, glazed, etc.) go to "
-    "\"Pies and Pastries - Sweet\". Savory scones (cheese, herb, "
-    "chive, cheddar, bacon, etc.) go to \"Pies and Pastries - "
-    "Savory\". A bare \"Scones\" title without a flavor qualifier "
-    "leans \"Pies and Pastries - Sweet\" (the dominant tradition).\n\n"
+    "13b. SCONES: sweet scones (blueberry, cream, currant, lemon, "
+    "chocolate chip, glazed, etc.) go to \"Pies & Pastries\". Savory "
+    "scones (cheese, herb, chive, cheddar, bacon, etc.) are a savory "
+    "quick bread and go to \"Breads\". A bare \"Scones\" title without "
+    "a flavor qualifier leans \"Pies & Pastries\" (the dominant "
+    "tradition).\n\n"
     "If genuinely ambiguous after these rules, return \"Uncertain\". "
     "Don't hedge with a guess."
 )
