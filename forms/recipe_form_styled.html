@@ -1933,6 +1933,14 @@
               <input type="text" id="sourceTitle" placeholder="Mom's Recipe Box" />
             </div>
             <div class="form-group">
+              <!-- Friendly publisher name from og:site_name (e.g. "NYT
+                   Cooking" vs the raw "cooking.nytimes.com"). Stored at
+                   _source.siteName; populated on extract where the page
+                   declares it. Used in attribution + the dishes tile. -->
+              <label for="siteName">Site name</label>
+              <input type="text" id="siteName" placeholder="NYT Cooking" />
+            </div>
+            <div class="form-group">
               <label for="author">Author</label>
               <input type="text" id="author" placeholder="Julia Child" />
             </div>
@@ -2173,6 +2181,17 @@
     const API = window.location.origin;
     const listEl = document.getElementById("recipeList");
     const feedback = document.getElementById("feedback");
+
+    // Snapshot of the loaded recipe's `_source` so Save can preserve the
+    // rich, non-editable provenance keys it doesn't surface as inputs —
+    // previewImage / previewDescription / previewImageAlt / pageScreenshot
+    // / publishedTime / modifiedTime / translation provenance. Every one
+    // is a real SourceInfo field (recipe_model.py) that survives the
+    // round-trip; the only place they used to vanish was the form's
+    // save rebuild, which previously emitted just a handful of keys.
+    // Set on every load, reset on Clear / new recipe, spread back in at
+    // save time under the editable keys.
+    let _loadedSource = {};
 
     // "Who am I logged in as?" — read from localStorage.
     //
@@ -2808,6 +2827,14 @@
         try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
       };
 
+      // Friendly publisher name from og:site_name (_source.siteName),
+      // e.g. "NYT Cooking" instead of the raw host. Empty when the
+      // source didn't declare one — callers fall back to getDomain.
+      const getSiteName = r => {
+        const sn = r.data && r.data._source && r.data._source.siteName;
+        return (sn && typeof sn === 'string') ? decodeEntities(sn.trim()) : '';
+      };
+
       // Letter grade — Moz-derived headline score. Composite =
       // PA + max(0, OU): page authority plus an opportunity bonus when
       // the page punches above its domain baseline (positive OU means
@@ -2941,6 +2968,10 @@
         // 2026-05-26 to simplify the card; both helpers (gradeOf,
         // fmtRelDate) remain available for when they come back.
         const domain = getDomain(r);
+        // Prefer the friendly og:site_name; fall back to the bare host.
+        // (Resolves the prior "replace domain text with a friendly site
+        // name" TODO — the name now rides on _source.siteName.)
+        const siteLabel = getSiteName(r) || domain;
         const url = getUrl(r);
         const stale = isStale(r);
         if (domain || stale) {
@@ -2952,10 +2983,6 @@
             // plain text fallback for local-only recipes (no external
             // source). Skip the link for BCC self-URLs since those
             // round-trip back into this same form — not useful.
-            // TODO: replace `domain` text with a friendly site name
-            // (e.g. "Natasha's Kitchen" from "natashaskitchen.com")
-            // once we have a domain→display-name map. See bcc-state-
-            // code.md to-do.
             const isExternal = url && !url.startsWith('https://bestcooksclub.com/r/');
             if (isExternal) {
               const a = document.createElement('a');
@@ -2970,7 +2997,7 @@
               // via stroke: currentColor — quiet by default,
               // darkens on hover with the link text.
               a.innerHTML =
-                `${domain.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}` +
+                `${siteLabel.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}` +
                 `<svg class="ext-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
                   `<path d="M15 3h6v6"/>` +
                   `<path d="M10 14 21 3"/>` +
@@ -2980,7 +3007,7 @@
               srcLine.appendChild(a);
             } else {
               const s = document.createElement('span');
-              s.textContent = domain;
+              s.textContent = siteLabel;
               srcLine.appendChild(s);
             }
           }
@@ -3214,7 +3241,9 @@
 
       // Source
       document.getElementById("template").value = r.template || "classic";
+      _loadedSource = r._source ? { ...r._source } : {};
       document.getElementById("sourceTitle").value = r._source?.origin || "";
+      document.getElementById("siteName").value = r._source?.siteName || "";
       document.getElementById("author").value = r.author?.name || "";
       document.getElementById("originalUrl").value = r._source?.originalUrl || "";
       document.getElementById("affiliateUrl").value = r._source?.affiliateUrl || "";
@@ -3450,10 +3479,18 @@
         equipment: getEquipment(),
         template: document.getElementById("template").value,
         _source: {
+          // Preserve every rich provenance key the form doesn't expose
+          // (previewImage, pageScreenshot, translation provenance, etc.)
+          // by spreading the loaded source first, then overriding only
+          // the user-editable inputs. type falls back to "cookbook" for
+          // brand-new manual recipes (no loaded source) but preserves
+          // the real "web"/"local" type for edited extracted recipes.
+          ..._loadedSource,
           origin: document.getElementById("sourceTitle").value,
+          siteName: document.getElementById("siteName").value,
           originalUrl: document.getElementById("originalUrl").value,
           affiliateUrl: document.getElementById("affiliateUrl").value,
-          type: "cookbook"
+          type: _loadedSource.type || "cookbook"
         },
         author: { "@type": "Person", name: document.getElementById("author").value },
         image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : [],
@@ -3842,6 +3879,9 @@
       document.getElementById("recipeForm").reset();
       document.getElementById("recipe_id").value = "";
       document.getElementById("recipe_seq_id").value = "";
+      // Drop the preserved source snapshot so a fresh manual recipe
+      // doesn't inherit the previous row's provenance keys.
+      _loadedSource = {};
       // form.reset() only resets controls with a `name` attribute.
       // The recipe form has MANY name-less inputs (URL, hero image,
       // affiliate URL, BCC permalink, source title, several
@@ -3849,7 +3889,7 @@
       // PRIOR row's values bleed into the next save — most
       // catastrophically the URL field, where lingering values cause
       // dedup-by-URL to OVERWRITE the prior row (2026-05-29 bug).
-      ['originalUrl','affiliateUrl','sourceTitle','heroImageUrl',
+      ['originalUrl','affiliateUrl','sourceTitle','siteName','heroImageUrl',
        'bccPermalink','provenance_ethnicity','provenance_region',
        'classification_chapter','classification_hierarchy',
        'classification_confidence','classification_reasoning',
@@ -5212,7 +5252,9 @@
       // recipe_id and clobbered the previous row.
       document.getElementById("template").value = r.template || "classic";
       const _src = r._source || {};
+      _loadedSource = { ..._src };
       document.getElementById("sourceTitle").value = _src.origin || "";
+      document.getElementById("siteName").value = _src.siteName || "";
       document.getElementById("originalUrl").value = _src.originalUrl || "";
       document.getElementById("affiliateUrl").value = _src.affiliateUrl || "";
       if (r.author) {
