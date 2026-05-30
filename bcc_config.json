@@ -44,6 +44,11 @@
   "_comment_bcc_link_domain": "TEMPORARY override (2026-05-30): host for the dishes page 'Open in BCC' links. bcc_public_domain isn't resolving yet (domain transfer in flight), so point these at the Cloudflare tunnel host, which already routes /r/<id> to the form. Remove this key (or set it back to bestcooksclub.com) once the transfer completes.",
   "bcc_link_domain": "recipes.tbotb.com",
 
+  "_comment_brand_header": "App-shell header branding for the library pages (chapters, dishes, …). brand_name + brand_logo_url render in the top bar, linking to brand_home_url. Surfaced to the frontend via GET /branding. Empty brand_logo_url => text-only brand. brand_home_url won't resolve until the bestcooksclub.com transfer completes (same caveat as bcc_public_domain).",
+  "brand_name": "Best Cooks Club",
+  "brand_logo_url": "",
+  "brand_home_url": "https://bestcooksclub.com",
+
   "_comment_image_gen": "gpt-image-1 dish-image generation (replaces deprecated dall-e-3). quality=standard maps to gpt-image-1 'medium' (~$0.042/image, live form default); quality=hd maps to 'high' (~$0.167/image, cookbook-print-ready). The 'standard'/'hd' vocabulary is preserved here for caller stability across OpenAI's model renamings — image_gen_openai.py maps to the current API values. Size 1024x1024 is square; 1536x1024 (landscape) and 1024x1536 (portrait) are also valid. Per-call quality= overrides take precedence (cookbook export will pass 'hd' explicitly).",
   "image_gen_quality": "hd",
   "image_gen_size": "1024x1024"

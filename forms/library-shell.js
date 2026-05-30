@@ -97,6 +97,77 @@
     if (isNarrow()) closeSidebar();
   }
 
+  // Transient confirmation toast — universal across template children.
+  let _flashTimer = null;
+  function flash(message, isError) {
+    if (!document.getElementById('ls-flash-style')) {
+      const st = document.createElement('style');
+      st.id = 'ls-flash-style';
+      st.textContent =
+        '#ls-flash{position:fixed;left:50%;bottom:30px;' +
+        'transform:translateX(-50%) translateY(8px);background:var(--ink,#1d1d1f);' +
+        'color:#fff;padding:11px 20px;border-radius:9px;font:inherit;font-size:.92em;' +
+        'font-weight:400;letter-spacing:-.003em;box-shadow:0 6px 24px rgba(40,30,20,.22);' +
+        'z-index:1000;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;' +
+        'max-width:80vw;}#ls-flash.show{opacity:.97;transform:translateX(-50%) translateY(0);}' +
+        '#ls-flash.err{background:#a3382b;}';
+      document.head.appendChild(st);
+    }
+    let el = document.getElementById('ls-flash');
+    if (!el) { el = document.createElement('div'); el.id = 'ls-flash'; document.body.appendChild(el); }
+    el.textContent = message || 'Saved';
+    el.className = isError ? 'show err' : 'show';
+    if (_flashTimer) clearTimeout(_flashTimer);
+    _flashTimer = setTimeout(() => { el.className = ''; }, isError ? 4000 : 1800);
+  }
+
+  // Universal post-save flow for template children: flash a confirmation,
+  // let the page clear its own form (onClear), then return to the sidebar.
+  function afterSave(opts) {
+    opts = opts || {};
+    flash(opts.message || 'Saved', false);
+    if (typeof opts.onClear === 'function') {
+      try { opts.onClear(); } catch (e) { console.warn('[LibraryShell] afterSave onClear failed', e); }
+    }
+    if (opts.returnToSidebar !== false) openSidebar();
+  }
+
+  // App-shell header brand: site name + optional logo, linking home.
+  // Config-driven via GET /branding (bcc_config.json) with the BRAND
+  // const as a synchronous fallback so the header never flashes empty.
+  function applyBranding(brandEl, opts) {
+    opts = opts || {};
+    if (!brandEl) return;
+    brandEl.textContent = opts.brand || BRAND;   // immediate fallback
+    if (!document.getElementById('ls-brand-style')) {
+      const st = document.createElement('style');
+      st.id = 'ls-brand-style';
+      st.textContent =
+        '.app-header h1 .brand-link{display:inline-flex;align-items:center;gap:9px;' +
+        'color:inherit;text-decoration:none;}' +
+        '.app-header h1 .brand-link:hover .brand-name{text-decoration:underline;}' +
+        '.app-header h1 .brand-logo{height:1.3em;width:auto;display:block;}';
+      document.head.appendChild(st);
+    }
+    window.fetch('/branding').then(r => r.ok ? r.json() : null).then(b => {
+      if (!b) return;
+      const name = opts.brand || b.name || BRAND;
+      const a = document.createElement('a');
+      a.className = 'brand-link';
+      a.href = b.home_url || '#';
+      if (b.logo_url) {
+        const img = document.createElement('img');
+        img.className = 'brand-logo'; img.src = b.logo_url; img.alt = name;
+        a.appendChild(img);
+      }
+      const span = document.createElement('span');
+      span.className = 'brand-name'; span.textContent = name;
+      a.appendChild(span);
+      brandEl.innerHTML = '';
+      brandEl.appendChild(a);
+    }).catch(() => {});
+  }
+
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
       '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
@@ -252,6 +323,8 @@
       });
   }
 
+  const BRAND = 'Best Cooks Club';   // synchronous fallback; /branding is source of truth
+
   function init(opts) {
     opts = opts || {};
     state.sidebar = document.querySelector(opts.sidebarSelector || '#sidebar');
@@ -267,8 +340,28 @@
       if (!state.sidebar.classList.contains('open')) return;
       if (state.sidebar.contains(e.target)) return;
       if (state.sidebarToggle.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('.sidebar-opener')) return;
       closeSidebar();
     });
+
+    // The list toggle belongs WITH the list, not the page brand bar:
+    // move it into the sidebar's own header (next to the list title), so
+    // the header slot it vacated is free for the logo/brand. Inside the
+    // sidebar it can only CLOSE the list; the floating opener reopens it.
+    const listHeader = state.sidebar.querySelector('h2');
+    if (listHeader && state.sidebarToggle.parentElement !== listHeader) {
+      state.sidebarToggle.classList.add('in-list-header');
+      listHeader.insertBefore(state.sidebarToggle, listHeader.firstChild);
+    }
+    if (!document.querySelector('.sidebar-opener')) {
+      const opener = document.createElement('button');
+      opener.type = 'button';
+      opener.className = 'sidebar-opener';
+      opener.setAttribute('aria-label', 'Open list');
+      opener.textContent = '☰';
+      opener.addEventListener('click', (e) => { e.stopPropagation(); openSidebar(); });
+      document.body.appendChild(opener);
+    }
     // Identity badge mounting is handled by initNav() — that's the
     // right-hand chrome and it runs AFTER it inserts the nav-spacer,
     // so the badge lands on the right (next to the ⋮ menu). Mounting
@@ -278,6 +371,16 @@
     // 2026-05-28 ("user id at top needs to be on the right on all
     // pages, not just recipes"). Idempotent so this isn't a regression
     // for the recipe form (which only calls initNav).
+
+    // Top line is the site brand (config-driven via GET /branding), not
+    // the section name (the section lives in the sidebar h2 + active nav
+    // row). Universal across template children; override with
+    // init({ brand: '…' }).
+    applyBranding(document.querySelector('.app-header h1'), opts);
+
+    // Sidebar visible at startup for template children (the list is the
+    // landing surface). Opt out with init({ sidebarStartOpen: false }).
+    if (opts.sidebarStartOpen !== false) openSidebar();
   }
 
   // ============================================================
@@ -590,6 +693,9 @@
     toggleSidebar,
     isNarrow,
     closeOnNarrow,
+    flash,
+    afterSave,
+    applyBranding,
     escapeHtml,
     fmtDate,
     renderExcBadge,
@@ -597,5 +703,6 @@
     runQueuedJobs,
     queuedJobCount,
     NAV_ITEMS,
+    BRAND,
   };
 })();

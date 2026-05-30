@@ -2277,6 +2277,48 @@
       }
     }
 
+    // === Rotating wait messages ==========================================
+    // Owner-editable via /forms/admin.html?model=status_messages. Messages
+    // live in the DB (status_messages); fetched once + cached here. If the
+    // fetch hasn't landed or fails, a tiny built-in set keeps the overlay
+    // from going blank. A category with no enabled messages falls back to
+    // 'general'. This is what turns the up-to-45s screenshot poll from dead
+    // air into something that feels alive.
+    let STATUS_MESSAGES = null;            // {category: [strings]} once loaded
+    const STATUS_FALLBACK = ['Working some kitchen magic…', 'Stirring the pot…', 'Almost plated…'];
+    (async function loadStatusMessages() {
+      try {
+        const res = await fetch(`${API}/status-messages/active`);
+        if (res.ok) STATUS_MESSAGES = await res.json();
+      } catch (e) { /* keep STATUS_FALLBACK */ }
+    })();
+
+    function statusMessagesFor(category) {
+      const src = STATUS_MESSAGES || {};
+      let list = src[category];
+      if (!list || !list.length) list = src.general;
+      if (!list || !list.length) list = STATUS_FALLBACK;
+      return list;
+    }
+
+    // Rotate the .processing-text overlay through a category's messages.
+    // Shows one immediately, advances every intervalMs. Returns stop() —
+    // call it when the operation finishes (the caller still restores the
+    // original overlay text in its finally). Safe no-op if nothing matches.
+    function startStatusRotation(category, opts) {
+      const intervalMs = (opts && opts.intervalMs) || 3200;
+      const target = (opts && opts.el) || document.querySelector('.processing-text');
+      const list = statusMessagesFor(category);
+      if (!target || !list || !list.length) return function () {};
+      let i = 0;
+      target.textContent = list[0];
+      const id = setInterval(() => {
+        i = (i + 1) % list.length;
+        target.textContent = list[i];
+      }, intervalMs);
+      return function stop() { clearInterval(id); };
+    }
+
     // Manual-from-reject hydrate. Locks the user-id picker to 0
     // (master), disables the TBOTB toggle, and surfaces a sticky amber
     // banner so the user can SEE this save is a harvest. Server still
@@ -4820,9 +4862,11 @@
       dropZone.classList.add('processing');
       const processingEl = document.querySelector('.processing-text');
       const originalText = processingEl ? processingEl.textContent : '';
-      if (processingEl) processingEl.textContent = 'Waiting for screenshot...';
+      // Rotating "still working" messages during the up-to-45s screenshot poll.
+      const stopRotation = startStatusRotation('screenshot');
       try {
         const { b64, reason } = await fetchStagedImage(token);
+        stopRotation();
         if (!b64) {
           let message;
           if (reason === 'no-token') {
@@ -4839,7 +4883,7 @@
           });
           return false;
         }
-        if (processingEl) processingEl.textContent = 'Extracting recipe...';
+        // extractFromImage runs its own rotation for the OCR stage.
         // The bookmarklet's screenshot IS the source page, so passing
         // stagedSourceUrl/stagedTitle is correct here — the server's
         // url-keyed cache should hit/store under that URL. This is the
@@ -4849,6 +4893,7 @@
         await extractFromImage(b64ToFile(b64), stagedSourceUrl, stagedTitle);
         return true;
       } finally {
+        stopRotation();
         if (processingEl) processingEl.textContent = originalText || 'Extracting recipe...';
         dropZone.classList.remove('processing');
       }
@@ -4868,6 +4913,21 @@
       return hasName && hasIngredients && hasInstructions;
     }
 
+    // Auto-fall-back helper. If the bookmarklet supplied a staged screenshot
+    // token, use it silently when extraction fails or is incomplete — the
+    // user already paid for the screenshot, no need to make them click.
+    // Shared by extractFromUrl AND extractFromMarkdown: the bookmarklet's
+    // screenshot exists for exactly this "the page/markdown wasn't enough"
+    // case. extractFromStagedImage -> fetchStagedImage polls the 425 "still
+    // rendering" status, so this correctly WAITS for a screenshot that's
+    // still uploading after the popup navigated to the form.
+    async function autoFallbackToStagedImage(reason) {
+      if (!stagedToken) return false;
+      showFeedback(`Extraction ${reason} — falling back to bookmarklet screenshot…`, 'info');
+      const ok = await extractFromStagedImage(stagedToken);
+      return ok;
+    }
+
     // Image is OCR'd to markdown server-side and then run through the same
     // markdown extraction pipeline. source_url is taken ONLY from the
     // explicit `sourceUrl` arg — do NOT silently fall back to
@@ -4879,6 +4939,7 @@
     // bookmarklet fallback) pass it explicitly.
     async function extractFromImage(file, sourceUrl = '', title = '') {
       dropZone.classList.add('processing');
+      const stopRotation = startStatusRotation('image');
       try {
         const formData = new FormData();
         formData.append('image', file);
@@ -4916,6 +4977,7 @@
           showImageButton: false,
         });
       } finally {
+        stopRotation();
         dropZone.classList.remove('processing');
       }
     }
@@ -4928,7 +4990,8 @@
       dropZone.classList.add('processing');
       const processingEl = document.querySelector('.processing-text');
       const originalText = processingEl ? processingEl.textContent : '';
-      if (processingEl) processingEl.textContent = 'Rendering PDF pages…';
+      // 'Rendering PDF pages…' replaced by a rotating 'pdf' message set.
+      const stopRotation = startStatusRotation('pdf');
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -4970,6 +5033,7 @@
           showImageButton: false,
         });
       } finally {
+        stopRotation();
         if (processingEl) processingEl.textContent = originalText || 'Extracting recipe...';
         dropZone.classList.remove('processing');
       }
@@ -4983,16 +5047,7 @@
       const originalLabel = btn.textContent;
       btn.textContent = 'Extracting…';
       dropZone.classList.add('processing');
-
-      // Auto-fall-back helper. If the bookmarklet supplied a staged screenshot
-      // token, use it silently when URL extraction fails or is incomplete —
-      // the user already paid for the screenshot, no need to make them click.
-      async function autoFallbackToStagedImage(reason) {
-        if (!stagedToken) return false;
-        showFeedback(`URL extraction ${reason} — falling back to bookmarklet screenshot…`, 'info');
-        const ok = await extractFromStagedImage(stagedToken);
-        return ok;
-      }
+      const stopRotation = startStatusRotation('url');
 
       try {
         const formData = new FormData();
@@ -5005,6 +5060,7 @@
         // kills the handler. Read as text first, attempt JSON, fall
         // back to a useful error message that includes the status.
         const bodyText = await res.text();
+        stopRotation();
         let result;
         try { result = JSON.parse(bodyText); }
         catch (parseErr) {
@@ -5068,6 +5124,7 @@
           });
         }
       } finally {
+        stopRotation();
         dropZone.classList.remove('processing');
         btn.disabled = false;
         btn.textContent = originalLabel;
@@ -5077,6 +5134,7 @@
     // Extract recipe from markdown
     async function extractFromMarkdown(file, sourceUrl = '', title = '') {
       dropZone.classList.add('processing');
+      const stopRotation = startStatusRotation('extract');
 
       try {
         const formData = new FormData();
@@ -5091,6 +5149,7 @@
         });
 
         const result = await res.json();
+        stopRotation();
 
         if (res.ok && result.success) {
           // Coopt the hero image: if the bookmarklet captured + uploaded
@@ -5116,11 +5175,17 @@
             if (!result.recipe.name || !result.recipe.name.trim()) missing.push('name');
             if (!result.recipe.recipeIngredient || !result.recipe.recipeIngredient.length) missing.push('ingredients');
             if (!result.recipe.recipeInstructions || !result.recipe.recipeInstructions.length) missing.push('instructions');
-            showErrorDialog({
-              title: 'Extraction incomplete',
-              message: `The markdown didn't yield ${missing.join(', ')}. The page may be JS-rendered or paywalled. Try a screenshot instead — drop or pick an image to re-extract.`,
-              showImageButton: true,
-            });
+            // Auto-fall back to the bookmarklet screenshot before bothering
+            // the user — matches the URL-extract path. Only show the manual
+            // dialog if there's no staged screenshot or it didn't pan out.
+            const fellBack = await autoFallbackToStagedImage('was incomplete');
+            if (!fellBack) {
+              showErrorDialog({
+                title: 'Extraction incomplete',
+                message: `The markdown didn't yield ${missing.join(', ')}. The page may be JS-rendered or paywalled. Try a screenshot instead — drop or pick an image to re-extract.`,
+                showImageButton: true,
+              });
+            }
           } else {
             const status = result.recipe && result.recipe.current_status;
             if (status && status.value === 'rejected') {
@@ -5130,20 +5195,27 @@
             }
           }
         } else {
-          showErrorDialog({
-            title: 'Extraction failed',
-            message: result.detail || 'Server returned an error.',
-            showImageButton: true,
-          });
+          const fellBack = await autoFallbackToStagedImage('failed');
+          if (!fellBack) {
+            showErrorDialog({
+              title: 'Extraction failed',
+              message: result.detail || 'Server returned an error.',
+              showImageButton: true,
+            });
+          }
         }
       } catch (err) {
         console.error('Extraction error:', err);
-        showErrorDialog({
-          title: 'Extraction failed',
-          message: (err && err.message) || 'Unable to reach the extraction server.',
-          showImageButton: true,
-        });
+        const fellBack = await autoFallbackToStagedImage('errored');
+        if (!fellBack) {
+          showErrorDialog({
+            title: 'Extraction failed',
+            message: (err && err.message) || 'Unable to reach the extraction server.',
+            showImageButton: true,
+          });
+        }
       } finally {
+        stopRotation();
         dropZone.classList.remove('processing');
       }
     }

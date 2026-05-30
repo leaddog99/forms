@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Admin</title>
+  <style>
+    /* Shares the recipe-app palette (Apple-ish, hairline borders, one warm
+       caramel accent) so this generic admin feels native, but stays fully
+       self-contained — it renders ANY model from /admin/{model}/schema. */
+    :root {
+      --ink:#1d1d1f; --ink-soft:#424245; --muted:#86868b;
+      --hairline:#e5e3df; --hairline-soft:#f3f1ed;
+      --surface:#fff; --surface-tint:#fbfaf7;
+      --accent:#8a5a3b; --accent-strong:#6f4628; --accent-soft:rgba(138,90,59,.07);
+      --danger:#a3382b; --ok:#3b7a4b;
+    }
+    * { box-sizing:border-box; }
+    html,body{ margin:0; background:var(--surface); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+      font-weight:300; font-size:15px; letter-spacing:-.003em; -webkit-font-smoothing:antialiased; }
+    header{ border-bottom:1px solid var(--hairline); padding:18px 28px; display:flex;
+      align-items:baseline; gap:18px; flex-wrap:wrap; }
+    header h1{ font-weight:500; font-size:1.1em; margin:0; letter-spacing:-.01em; }
+    header .models{ display:flex; gap:8px; flex-wrap:wrap; }
+    header .models a{ text-decoration:none; color:var(--ink-soft); border:1px solid var(--hairline);
+      padding:5px 11px; border-radius:6px; font-size:.85em; }
+    header .models a:hover{ border-color:var(--ink); background:var(--accent-soft); }
+    header .models a.active{ color:#fff; background:var(--accent); border-color:var(--accent); }
+    main{ max-width:1080px; margin:0 auto; padding:26px 28px 80px; }
+    h2{ font-weight:500; font-size:.95em; letter-spacing:.02em; text-transform:uppercase;
+      color:var(--muted); margin:30px 0 12px; }
+    /* card / form */
+    .card{ border:1px solid var(--hairline); border-radius:10px; background:var(--surface);
+      padding:18px; }
+    .addgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px 16px;
+      align-items:end; }
+    label{ display:block; font-size:.8em; color:var(--muted); margin-bottom:5px; letter-spacing:0; }
+    .help{ color:var(--muted); font-size:.78em; font-weight:300; }
+    input[type=text], input[type=number], textarea, select{
+      width:100%; border:1px solid var(--hairline); border-radius:6px; background:var(--surface);
+      color:var(--ink); font:inherit; font-size:.92em; padding:8px 10px; }
+    textarea{ min-height:38px; resize:vertical; line-height:1.4; }
+    input:focus, textarea:focus, select:focus{ outline:none; border-color:var(--ink); }
+    input[type=checkbox]{ width:18px; height:18px; accent-color:var(--accent); }
+    button{ font:inherit; font-size:.86em; font-weight:400; cursor:pointer; border-radius:6px;
+      padding:8px 14px; border:1px solid var(--hairline); background:transparent; color:var(--ink); }
+    button:hover{ border-color:var(--ink); background:var(--accent-soft); }
+    button.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+    button.primary:hover{ background:var(--accent-strong); }
+    button.danger{ color:var(--danger); }
+    button.danger:hover{ border-color:var(--danger); background:rgba(163,56,43,.06); }
+    button:disabled{ opacity:.45; cursor:default; }
+    /* table */
+    table{ width:100%; border-collapse:collapse; margin-top:6px; }
+    th{ text-align:left; font-weight:500; font-size:.74em; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--muted); padding:10px 10px; border-bottom:1px solid var(--hairline); }
+    td{ padding:8px 10px; border-bottom:1px solid var(--hairline-soft); vertical-align:middle; }
+    tr:hover td{ background:var(--surface-tint); }
+    td.actions{ white-space:nowrap; text-align:right; }
+    td .id{ color:var(--muted); font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.85em; }
+    .rowctrls button{ padding:5px 10px; margin-left:6px; }
+    /* toast */
+    #toast{ position:fixed; left:50%; bottom:28px; transform:translateX(-50%);
+      background:var(--ink); color:#fff; padding:11px 18px; border-radius:8px; font-size:.9em;
+      opacity:0; transition:opacity .2s; pointer-events:none; max-width:80vw; }
+    #toast.show{ opacity:.96; }
+    #toast.err{ background:var(--danger); }
+    .empty{ color:var(--muted); padding:24px 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="title">Admin</h1>
+    <nav class="models" id="modelNav"></nav>
+  </header>
+  <main>
+    <h2>Add new</h2>
+    <div class="card"><div class="addgrid" id="addGrid"></div>
+      <div style="margin-top:14px"><button class="primary" id="addBtn">Add</button></div>
+    </div>
+
+    <h2 id="listHeading">Entries</h2>
+    <div id="listWrap"></div>
+  </main>
+  <div id="toast"></div>
+
+  <script src="list_control.js"></script>
+  <script>
+    // Same-origin: works on localhost AND through the recipes.tbotb.com tunnel.
+    const qs = new URLSearchParams(location.search);
+    let MODEL = qs.get('model') || '';
+    let schema = null;
+
+    const $ = (id) => document.getElementById(id);
+    function toast(msg, isErr) {
+      const t = $('toast'); t.textContent = msg; t.className = 'show' + (isErr ? ' err' : '');
+      setTimeout(() => { t.className = ''; }, isErr ? 4200 : 2200);
+    }
+
+    // Build an input element for a field + current value. Returns the element;
+    // read its value later via readField(). Generic across all field types.
+    function makeInput(f, value) {
+      let el;
+      if (f.type === 'textarea') { el = document.createElement('textarea'); el.value = value ?? ''; }
+      else if (f.type === 'bool') { el = document.createElement('input'); el.type = 'checkbox'; el.checked = !!(value === 1 || value === true || value === '1'); }
+      else if (f.type === 'select') {
+        el = document.createElement('select');
+        (f.options || []).forEach(opt => {
+          const o = document.createElement('option'); o.value = opt; o.textContent = opt;
+          if (String(value ?? f.default ?? '') === String(opt)) o.selected = true;
+          el.appendChild(o);
+        });
+      } else if (f.type === 'number') { el = document.createElement('input'); el.type = 'number'; el.value = (value ?? f.default ?? ''); }
+      else { el = document.createElement('input'); el.type = 'text'; el.value = value ?? ''; }
+      el.dataset.field = f.name;
+      return el;
+    }
+    function readField(el, f) {
+      if (f.type === 'bool') return el.checked ? 1 : 0;
+      if (f.type === 'number') return el.value === '' ? 0 : Number(el.value);
+      return el.value;
+    }
+
+    async function load() {
+      // Model switcher
+      const models = await (await fetch('/admin/models')).json();
+      if (!MODEL && models.length) MODEL = models[0].name;
+      const nav = $('modelNav'); nav.innerHTML = '';
+      models.forEach(m => {
+        const a = document.createElement('a');
+        a.href = '?model=' + encodeURIComponent(m.name); a.textContent = m.label;
+        if (m.name === MODEL) a.className = 'active';
+        nav.appendChild(a);
+      });
+
+      const res = await fetch('/admin/' + encodeURIComponent(MODEL));
+      if (!res.ok) { $('listWrap').innerHTML = '<div class="empty">Could not load model "' + MODEL + '".</div>'; return; }
+      const data = await res.json();
+      schema = data.model;
+      $('title').textContent = schema.label;
+      $('listHeading').textContent = schema.label + ' — ' + data.rows.length + ' entr' + (data.rows.length === 1 ? 'y' : 'ies');
+      document.title = schema.label + ' · Admin';
+      renderAddForm();
+      renderTable(data.rows);
+    }
+
+    function renderAddForm() {
+      const grid = $('addGrid'); grid.innerHTML = '';
+      schema.fields.filter(f => f.editable).forEach(f => {
+        const wrap = document.createElement('div');
+        const lab = document.createElement('label');
+        lab.textContent = f.label + (f.required ? ' *' : '');
+        wrap.appendChild(lab);
+        const inp = makeInput(f, f.default);
+        inp.classList.add('add-input');
+        wrap.appendChild(inp);
+        if (f.help) { const h = document.createElement('div'); h.className = 'help'; h.textContent = f.help; wrap.appendChild(h); }
+        grid.appendChild(wrap);
+      });
+    }
+
+    function renderTable(rows) {
+      const wrap = $('listWrap');
+      if (!rows.length) { wrap.innerHTML = '<div class="empty">No entries yet. Add one above.</div>'; return; }
+      const listFields = schema.fields.filter(f => f.in_list);
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const htr = document.createElement('tr');
+      listFields.forEach(f => { const th = document.createElement('th'); th.textContent = f.label; htr.appendChild(th); });
+      const tha = document.createElement('th'); tha.textContent = ''; htr.appendChild(tha);
+      thead.appendChild(htr); table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.dataset.id = row[schema.pk];
+        listFields.forEach(f => {
+          const td = document.createElement('td');
+          if (!f.editable) {
+            const span = document.createElement('span');
+            if (f.name === schema.pk) span.className = 'id';
+            span.textContent = row[f.name] ?? '';
+            td.appendChild(span);
+          } else {
+            td.appendChild(makeInput(f, row[f.name]));
+          }
+          tr.appendChild(td);
+        });
+        const act = document.createElement('td'); act.className = 'actions';
+        const ctrls = document.createElement('span'); ctrls.className = 'rowctrls';
+        const save = document.createElement('button'); save.textContent = 'Save';
+        save.onclick = () => saveRow(tr);
+        const del = document.createElement('button'); del.textContent = 'Delete'; del.className = 'danger';
+        del.onclick = () => deleteRow(tr, row);
+        ctrls.appendChild(save); ctrls.appendChild(del);
+        act.appendChild(ctrls); tr.appendChild(act);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.innerHTML = ''; wrap.appendChild(table);
+      enhanceTable(table, { searchPlaceholder: 'Search ' + schema.label + '…' });
+    }
+
+    function collect(scope) {
+      const payload = {};
+      schema.fields.filter(f => f.editable).forEach(f => {
+        const el = scope.querySelector('[data-field="' + f.name + '"]');
+        if (el) payload[f.name] = readField(el, f);
+      });
+      return payload;
+    }
+
+    async function addRow() {
+      const btn = $('addBtn'); btn.disabled = true;
+      try {
+        const payload = collect($('addGrid'));
+        const res = await fetch('/admin/' + encodeURIComponent(MODEL), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(out.detail || ('Add failed (HTTP ' + res.status + ')'), true); return; }
+        toast('Added.'); await load();
+      } catch (e) { toast('Add failed: ' + e.message, true); }
+      finally { btn.disabled = false; }
+    }
+
+    async function saveRow(tr) {
+      try {
+        const id = tr.dataset.id;
+        const res = await fetch('/admin/' + encodeURIComponent(MODEL) + '/' + encodeURIComponent(id), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(collect(tr)),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(out.detail || ('Save failed (HTTP ' + res.status + ')'), true); return; }
+        toast('Saved.');
+      } catch (e) { toast('Save failed: ' + e.message, true); }
+    }
+
+    async function deleteRow(tr, row) {
+      const id = tr.dataset.id;
+      const label = (row.message || row.name || id);
+      if (!confirm('Delete this entry?\n\n' + String(label).slice(0, 120))) return;
+      try {
+        const res = await fetch('/admin/' + encodeURIComponent(MODEL) + '/' + encodeURIComponent(id), { method: 'DELETE' });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) { toast(out.detail || ('Delete failed (HTTP ' + res.status + ')'), true); return; }
+        tr.remove(); toast('Deleted.');
+      } catch (e) { toast('Delete failed: ' + e.message, true); }
+    }
+
+    $('addBtn').onclick = addRow;
+    load().catch(e => toast('Load failed: ' + e.message, true));
+  </script>
+</body>
+</html>
