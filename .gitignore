@@ -56,6 +56,8 @@ generated/
 recipe_server.log
 recipe_database.db
 recipes.sqbpro
+# Daily scheduled-backup log (bcc_backup_scheduled.bat); runtime, not source.
+backup.log
 # uvicorn stdio is redirected to these files by bcc_start.bat —
 # regenerated every restart, never source.
 uvicorn_stdout.log
