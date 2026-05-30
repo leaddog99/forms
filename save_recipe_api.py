@@ -1970,8 +1970,29 @@ def get_dish_fit_data_endpoint(name: str):
                 "WHERE dish_name = ? ORDER BY pa DESC NULLS LAST, da DESC",
                 (name,),
             ).fetchall()
+            # dish_run_data_points stores the RAW SerpAPI URL (www., trailing
+            # slash, tracking params intact), while master_recipes and
+            # dish_rejects store the normalize_url'd form. Compare on the
+            # canonical form on BOTH sides or every saved/rejected row falls
+            # through to "dropped" (see the agnolotti run: 7 saved showed as
+            # dropped because honest-food.net/...-meat/ != ...-meat).
+            #
+            # A saved row's originalUrl can also be a Wayback snapshot when
+            # extraction fell back to archive.org (live site down at save
+            # time): https://web.archive.org/web/<ts>id_/https://real...
+            # Unwrap to the embedded live URL so it matches the cohort's
+            # live URL (agnolotti's mosthungry.com row).
+            def _canon(u):
+                if not u:
+                    return ""
+                pos = u.find("web.archive.org/web/")
+                if pos != -1:
+                    h = u.find("/http", pos)
+                    if h != -1:
+                        u = u[h + 1:]
+                return normalize_url(u)
             saved_urls = {
-                r[0] for r in conn.execute(
+                _canon(r[0]) for r in conn.execute(
                     "SELECT json_extract(data, '$._source.originalUrl') "
                     "FROM master_recipes "
                     "WHERE json_extract(data, '$._master.dish') = ?",
@@ -1979,16 +2000,17 @@ def get_dish_fit_data_endpoint(name: str):
                 ).fetchall() if r[0]
             }
             rejected_urls = {
-                r[0] for r in conn.execute(
+                _canon(r[0]) for r in conn.execute(
                     "SELECT url FROM dish_rejects WHERE dish_name = ?",
                     (name,),
-                ).fetchall()
+                ).fetchall() if r[0]
             }
             out = []
             for url, da, pa in rows:
-                if url in saved_urls:
+                norm = _canon(url)
+                if norm in saved_urls:
                     status = "saved"
-                elif url in rejected_urls:
+                elif norm in rejected_urls:
                     status = "rejected"
                 else:
                     status = "dropped"
@@ -2502,11 +2524,18 @@ async def job_stream_endpoint(job_id: int):
 async def start_job_runner():
     """Spawn the jobs runner as a background asyncio task. Runs for the
     life of the uvicorn worker, polling the jobs table every ~2s for
-    the next ready job and dispatching to the registered handler."""
-    asyncio.create_task(
-        jobs_lib.runner_loop(DB_PATH, LOGS_DIR, poll_interval=2.0)
-    )
-    print("[STARTUP] job runner spawned")
+    the next ready job and dispatching to the registered handler.
+
+    DISABLED during development: the 2s poll did a blocking sqlite3.connect
+    on the asyncio event loop every tick, stalling all request handling.
+    No background timer for now — invoke jobs manually when needed. To
+    re-enable, uncomment the create_task below (and consider moving the
+    DB calls off the loop via asyncio.to_thread first)."""
+    # asyncio.create_task(
+    #     jobs_lib.runner_loop(DB_PATH, LOGS_DIR, poll_interval=2.0)
+    # )
+    # print("[STARTUP] job runner spawned")
+    print("[STARTUP] job runner DISABLED (no background poll; invoke jobs manually)")
 
 
 # List recipes for the given owner. user_id=0 returns the master collection
