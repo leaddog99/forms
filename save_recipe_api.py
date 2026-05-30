@@ -2517,6 +2517,72 @@ async def job_stream_endpoint(job_id: int):
 
 
 # =========================================================================
+# On-demand queue drain
+# =========================================================================
+#
+# The background *poll* runner below is disabled on purpose (its 2s
+# sqlite poll stalled the event loop — see start_job_runner + memory
+# project_job_runner_disabled). The consequence: an enqueued job (a dish
+# refresh from the dishes form, etc.) sits in status='queued' forever
+# because nothing dispatches it. This endpoint is the event-driven
+# alternative — it runs ONLY when a human clicks "Run queued jobs" in
+# the nav menu, so it never sits polling. It drains serially because the
+# per-job stdout tee in jobs_lib is process-global; one job at a time,
+# exactly as runner_loop would have.
+
+_drain_task: Optional["asyncio.Task"] = None
+
+
+async def _drain_queued_jobs(job_ids: list) -> None:
+    """Run the given jobs serially via the same `_run_one_job` path the
+    (disabled) runner uses. Re-fetches each job fresh and skips any that
+    are no longer queued (cancelled, or a racing drain already took it)."""
+    global _drain_task
+    try:
+        for jid in job_ids:
+            with sqlite3.connect(DB_PATH) as conn:
+                job = jobs_lib.get_job(conn, jid)
+            if job is None or job["status"] != "queued":
+                continue
+            await jobs_lib._run_one_job(job, DB_PATH, LOGS_DIR)
+    finally:
+        _drain_task = None
+
+
+@app.post("/jobs/run-queued")
+async def run_queued_jobs_endpoint(request: Request):
+    """Drain the queued-jobs backlog on demand. Kicks off a single
+    background task that runs every currently-queued job serially and
+    returns immediately (202) with the ordered id list so the browser
+    can watch each one's /jobs/<id>/stream. Returns 200 with count=0 when
+    the queue is empty, or 409 if a drain is already in flight."""
+    _require_perm(request, "refresh_dishes")
+    global _drain_task
+    if _drain_task is not None and not _drain_task.done():
+        with sqlite3.connect(DB_PATH) as conn:
+            running = jobs_lib.list_jobs(conn, status="running", limit=10)
+        return JSONResponse(
+            status_code=409,
+            content={"error": "drain already running",
+                     "running": [j["id"] for j in running]},
+        )
+    with sqlite3.connect(DB_PATH) as conn:
+        queued = jobs_lib.list_jobs(conn, status="queued", limit=100)
+    queued.sort(key=lambda j: j["created_at"])  # oldest first
+    job_ids = [j["id"] for j in queued]
+    if not job_ids:
+        return JSONResponse(
+            status_code=200,
+            content={"count": 0, "job_ids": [], "message": "No queued jobs"},
+        )
+    _drain_task = asyncio.create_task(_drain_queued_jobs(job_ids))
+    return JSONResponse(
+        status_code=202,
+        content={"count": len(job_ids), "job_ids": job_ids},
+    )
+
+
+# =========================================================================
 # Job runner — background asyncio task
 # =========================================================================
 
