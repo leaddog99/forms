@@ -88,6 +88,94 @@ def ensure_vec_tables(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.commit()
+    ensure_vec_triggers(conn)
+
+
+def ensure_vec_triggers(conn: sqlite3.Connection) -> None:
+    """Create the AFTER DELETE triggers that keep the vec0 index tables
+    in lockstep with their base tables — recipes_master_vec↔master_recipes
+    (keyed by id) and dishes_vec↔dishes (keyed by name). Without them,
+    deleting a base row orphans its vector: there's no FK between a base
+    table and a vec0 virtual table (and vec0 can't be an FK target), so
+    SQLite has nothing to cascade.
+
+    IMPORTANT: the trigger bodies delete from vec0 tables, so ANY
+    connection that deletes from master_recipes / dishes must have
+    sqlite-vec loaded (enable_vec) or the DELETE fails. That's
+    intentional — a loud failure beats silently accumulating orphans.
+    All app delete paths load the extension; ensure_vec_tables runs at
+    startup with it loaded.
+    """
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_master_vec_cleanup
+        AFTER DELETE ON master_recipes
+        BEGIN
+            DELETE FROM recipes_master_vec WHERE id = OLD.id;
+        END
+        """
+    )
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_dish_vec_cleanup
+        AFTER DELETE ON dishes
+        BEGIN
+            DELETE FROM dishes_vec WHERE name = OLD.name;
+        END
+        """
+    )
+    conn.commit()
+
+
+def prune_orphaned_master_vectors(conn: sqlite3.Connection) -> int:
+    """Delete any recipes_master_vec rows whose id no longer exists in
+    master_recipes. The AFTER DELETE trigger prevents NEW orphans; this
+    is the one-shot / safety-net sweep that cleans pre-trigger debris.
+    Returns the number of vectors pruned."""
+    enable_vec(conn)
+    cur = conn.execute(
+        "DELETE FROM recipes_master_vec "
+        "WHERE id NOT IN (SELECT id FROM master_recipes)"
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def rebuild_master_vec_from_blobs(conn: sqlite3.Connection) -> int:
+    """Rebuild recipes_master_vec entirely from the source-of-truth
+    `master_recipes.embedding` BLOB column — the free, offline,
+    API-less regeneration path (mirrors how dishes_vec rebuilds from
+    dishes.embedding). Clears the vec table first, so this also drops
+    any orphans as a side effect. Returns the number of vectors written.
+
+    chapter/dish aux columns are derived from the row JSON so the
+    chapter-filtered KNN + same-dish-exclusion still work after a
+    rebuild. Rows with a NULL embedding BLOB are skipped (no vector to
+    index yet)."""
+    import json as _json
+    enable_vec(conn)
+    conn.execute("DELETE FROM recipes_master_vec")
+    rows = conn.execute(
+        "SELECT id, data, embedding FROM master_recipes "
+        "WHERE embedding IS NOT NULL"
+    ).fetchall()
+    written = 0
+    for rid, data_json, blob in rows:
+        # Decode inline with numpy (vector_store already imports np);
+        # embeddings.bytes_to_vec lives in a module that imports THIS one,
+        # so importing it here would be circular.
+        vec = np.frombuffer(blob, dtype="float32") if blob else None
+        if vec is None or vec.size != EMBED_DIM:
+            continue
+        try:
+            d = _json.loads(data_json) if data_json else {}
+        except Exception:
+            d = {}
+        chapter = ((d.get("classification") or {}).get("chapter") or None)
+        dish = ((d.get("_master") or {}).get("dish") or None)
+        upsert_recipe_vector(conn, rid, vec, chapter=chapter, dish=dish)
+        written += 1
+    return written
 
 
 # === Dish vec0 helpers ======================================================
