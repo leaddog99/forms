@@ -29,6 +29,18 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
+def _enable_vec_best_effort(conn: sqlite3.Connection) -> None:
+    """Load sqlite-vec on `conn` so the vec-cleanup AFTER DELETE triggers
+    can run. Lazy import keeps dishes.py importable without the extension
+    (tests, tooling); swallow failures — if vec is truly absent there's
+    no index to keep in sync."""
+    try:
+        from input.pipeline import vector_store
+        vector_store.enable_vec(conn)
+    except Exception as e:
+        print(f"[VEC] enable_vec (dishes delete) skipped: {e}")
+
+
 def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     """Create the dishes table and its indexes if absent. Idempotent —
     safe to call on every startup. Also runs lightweight ALTER TABLE
@@ -615,6 +627,11 @@ def delete_dish(conn: sqlite3.Connection, name: str) -> bool:
     stamped with `_master.dish == name` (if/when they exist) stay
     until the next batch refresh. Tracked in project_dish_library.md.
     """
+    # Load sqlite-vec so the trg_dish_vec_cleanup AFTER DELETE trigger
+    # (which deletes the dishes_vec row) can run; without the module
+    # loaded the DELETE below would fail. Best-effort — if the extension
+    # is genuinely absent there's no vec table to keep in sync anyway.
+    _enable_vec_best_effort(conn)
     # Wipe the per-run reject rows first so they don't dangle pointing
     # at a deleted dish.
     conn.execute("DELETE FROM dish_rejects WHERE dish_name = ?", (name,))
@@ -667,7 +684,12 @@ def delete_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
     deletion count. Used by the refresh-dish path to clear the prior
     top-N before re-populating; editors_choice and legacy rows are
     untouched because the kind filter excludes them.
+
+    The trg_master_vec_cleanup AFTER DELETE trigger drops each row's
+    recipes_master_vec vector automatically, so we load sqlite-vec first
+    (the trigger deletes from a vec0 table and needs the module).
     """
+    _enable_vec_best_effort(conn)
     cur = conn.execute(
         "DELETE FROM master_recipes "
         "WHERE json_extract(data, '$._master.dish') = ? "

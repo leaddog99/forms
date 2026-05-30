@@ -155,6 +155,23 @@ def _bcc_link_permalink(recipe_id: str) -> str:
     return f"https://{BCC_LINK_DOMAIN}/r/{recipe_id}"
 
 
+def _enable_vec_for_delete(conn) -> None:
+    """Load sqlite-vec on `conn` so the vec-cleanup AFTER DELETE triggers
+    (trg_master_vec_cleanup / trg_dish_vec_cleanup, created in
+    vector_store.ensure_vec_triggers) can run. Required on any path that
+    may DELETE from master_recipes or dishes — the triggers delete from
+    vec0 tables, so the module must be loaded or the DELETE fails. This
+    is the single place app delete paths funnel through for that
+    prerequisite; the trigger itself is the one canonical cleanup.
+    Best-effort: if sqlite-vec is genuinely absent there's no index to
+    keep in sync."""
+    try:
+        from input.pipeline import vector_store
+        vector_store.enable_vec(conn)
+    except Exception as e:
+        print(f"[VEC] enable_vec for delete skipped: {e}")
+
+
 # Hosts that point at our own /r/<id> redirect. New self-URLs mint under
 # BCC_PUBLIC_DOMAIN; recipes.tbotb.com is the legacy host the 16
 # pre-2026-05-22 self-URLs use. Either resolves to the same form via
@@ -689,6 +706,17 @@ def init_db():
                 )
             except sqlite3.IntegrityError as e:
                 print(f"[WARN] could not add master_recipes unique index: {e}")
+            # Migration (2026-05-30): source-of-truth embedding BLOB on the
+            # master row (mirrors dishes.embedding). recipes_master_vec is
+            # now a DERIVED index rebuilt from this column for free/offline
+            # via vector_store.rebuild_master_vec_from_blobs — so the git
+            # .sql dump (which excludes vec0 tables) no longer loses the
+            # master vectors, and the AFTER DELETE trigger keeps the index
+            # clean. 1536 float32 = 6144 bytes/row.
+            master_cols = {row[1] for row in conn.execute("PRAGMA table_info(master_recipes)")}
+            if "embedding" not in master_cols:
+                conn.execute("ALTER TABLE master_recipes ADD COLUMN embedding BLOB")
+                print("[MIGRATE] added master_recipes.embedding BLOB column")
 
             # === users ===
             # Test scaffolding for multi-user flows until Ghost (or another
@@ -3091,6 +3119,7 @@ def _save_recipe_core(payload: dict) -> dict:
                         compose_recipe_text, embed_text,
                     )
                     from input.pipeline import vector_store
+                    from input.pipeline.embeddings import vec_to_bytes
                     txt = compose_recipe_text(recipe_dict)
                     if txt.strip():
                         rec_vec = embed_text(txt)
@@ -3098,6 +3127,14 @@ def _save_recipe_core(payload: dict) -> dict:
                         master_block_for_vec = recipe_dict.get("_master") or {}
                         ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
                         dish_for_vec = master_block_for_vec.get("dish") or None
+                        # Source-of-truth: persist the vector on the row so
+                        # recipes_master_vec can be rebuilt for free (and the
+                        # .sql backup preserves it). The vec0 upsert is the
+                        # derived index used for live KNN.
+                        conn.execute(
+                            "UPDATE master_recipes SET embedding = ? WHERE id = ?",
+                            (vec_to_bytes(rec_vec), seq_id),
+                        )
                         vector_store.upsert_recipe_vector(
                             conn, seq_id, rec_vec,
                             chapter=ch, dish=dish_for_vec,
@@ -3236,6 +3273,7 @@ def delete_recipe(recipe_id: str, request: Request, user_id: int = PLACEHOLDER_U
     print(f"[DELETE] Delete recipe endpoint called for: {recipe_id} user_id={user_id} table={table}")
     try:
         with sqlite3.connect(DB_PATH) as conn:
+            _enable_vec_for_delete(conn)  # trg_master_vec_cleanup needs the module
             cursor = conn.cursor()
             cursor.execute(f"DELETE FROM {table} WHERE recipe_id = ? AND user_id = ?",
                            (recipe_id, user_id))

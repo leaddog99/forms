@@ -4,9 +4,12 @@ local .sql dump that lives in git).
 What it does, in order:
   1. Writes a fresh logical dump to ./recipes.sql — every real table as
      CREATE + INSERT text. The vec0 virtual tables (dishes_vec,
-     recipes_master_vec) are EXCLUDED: they're a derived index rebuilt from
-     dishes.embedding via input/pipeline/vector_store.py, and their shadow
-     tables can't be dumped/restored cleanly. The dump is the diffable,
+     recipes_master_vec) are EXCLUDED: they're a DERIVED index and their
+     shadow tables can't be dumped/restored cleanly. Both rebuild for
+     free/offline from their source-of-truth BLOB columns — dishes.embedding
+     and master_recipes.embedding — via vector_store.rebuild_master_vec_from_blobs
+     (and the dish equivalent). Those BLOB columns ARE in the dump, so the
+     git fallback no longer loses any vectors. The dump is the diffable,
      binary-independent fallback that gets committed to git.
   2. Copies recipes.db AND recipes.sql to ADAM (\\Adam\tbotb, mapped Z:)
      under Backups\recipes-db\ with a timestamp in the filename.
