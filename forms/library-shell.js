@@ -302,6 +302,8 @@
     // Utility / setup items sit at the bottom, separated from the
     // entity pages above. "Install bookmarklet" is the most-needed
     // utility today; future items (settings, exports, etc.) go here.
+    // `action` items run JS instead of navigating (see initNav wiring).
+    { page: 'run-jobs',  label: 'Run queued jobs', action: 'runQueuedJobs' },
     { page: 'install',   label: 'Install bookmarklet', href: '/forms/install.html' },
   ];
 
@@ -328,6 +330,149 @@
     overlay.querySelector('button').addEventListener('click', dismiss);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+  }
+
+  // ============================================================
+  //  Queued-jobs drain (nav action)
+  // ============================================================
+  //
+  // The server's background poll runner is disabled on purpose, so
+  // enqueued jobs (dish refreshes, etc.) sit in 'queued' until something
+  // dispatches them. POST /jobs/run-queued kicks off a single server-side
+  // background drain and returns the ordered job-id list; we watch each
+  // job's SSE stream in turn and tail its log into an overlay. Available
+  // from every page via the ⋮ menu.
+
+  // How many jobs are currently queued? Drives the count badge on the
+  // "Run queued jobs" menu row. Resolves to 0 on any error (badge hides).
+  function queuedJobCount() {
+    return window.fetch('/jobs?status=queued&limit=100')
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => Array.isArray(rows) ? rows.length : 0)
+      .catch(() => 0);
+  }
+
+  let _jobsOverlay = null;
+  function _ensureJobsOverlay() {
+    if (_jobsOverlay) return _jobsOverlay;
+    const overlay = document.createElement('div');
+    overlay.className = 'coming-soon-overlay';  // reuse dimmer + centering
+    overlay.innerHTML =
+      '<div class="coming-soon-card" style="max-width:640px;width:90vw;text-align:left">' +
+        '<h2 style="margin-top:0">Run queued jobs</h2>' +
+        '<p class="jobs-runner-status" style="margin:0 0 8px"></p>' +
+        '<pre class="jobs-runner-log" style="background:#0e0e0e;color:#cdd6cd;' +
+          'font:12px/1.45 ui-monospace,Menlo,monospace;padding:10px 12px;' +
+          'border-radius:8px;max-height:48vh;overflow:auto;white-space:pre-wrap;' +
+          'margin:0 0 12px;display:none"></pre>' +
+        '<div style="text-align:right">' +
+          '<button type="button" class="jobs-runner-close">Close</button>' +
+        '</div>' +
+      '</div>';
+    const close = () => { overlay.remove(); _jobsOverlay = null; };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.jobs-runner-close').addEventListener('click', close);
+    document.body.appendChild(overlay);
+    _jobsOverlay = overlay;
+    return overlay;
+  }
+
+  function _setJobsStatus(text) {
+    if (!_jobsOverlay) return;
+    _jobsOverlay.querySelector('.jobs-runner-status').textContent = text;
+  }
+  function _appendJobsLog(line) {
+    if (!_jobsOverlay) return;
+    const pre = _jobsOverlay.querySelector('.jobs-runner-log');
+    pre.style.display = 'block';
+    pre.textContent += (pre.textContent ? '\n' : '') + line;
+    pre.scrollTop = pre.scrollHeight;
+  }
+
+  // Watch one job's SSE stream to completion. Resolves with the final
+  // status string ('success' | 'error' | 'cancelled').
+  function _watchJob(jobId, idx, total) {
+    return new Promise((resolve) => {
+      const stream = new EventSource('/jobs/' + jobId + '/stream');
+      stream.addEventListener('status', (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          _setJobsStatus('Job #' + jobId + ' (' + idx + '/' + total + '): ' + d.status + '…');
+        } catch (_) { /* ignore */ }
+      });
+      stream.addEventListener('log', (e) => {
+        try { _appendJobsLog(JSON.parse(e.data).line); } catch (_) { /* ignore */ }
+      });
+      stream.addEventListener('done', (e) => {
+        let status = 'done';
+        try { status = JSON.parse(e.data).status; } catch (_) { /* ignore */ }
+        stream.close();
+        resolve(status);
+      });
+      stream.addEventListener('error', () => {
+        // Transient tunnel/network blip — EventSource auto-reconnects.
+        // If the job already finished, the next poll yields `done`.
+      });
+    });
+  }
+
+  let _draining = false;
+  function runQueuedJobs() {
+    if (_draining) { _ensureJobsOverlay(); return; }
+    _draining = true;
+    const overlay = _ensureJobsOverlay();
+    _setJobsStatus('Starting…');
+    window.fetch('/jobs/run-queued', { method: 'POST' })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 403) {
+          _setJobsStatus(data.detail || 'You don’t have permission to run jobs.');
+          return;
+        }
+        if (res.status === 409) {
+          _setJobsStatus('A drain is already running' +
+            (data.running && data.running.length ? ' (job #' + data.running[0] + ').' : '.'));
+          return;
+        }
+        if (!res.ok) { _setJobsStatus('Failed to start: HTTP ' + res.status); return; }
+        const ids = data.job_ids || [];
+        if (!ids.length) { _setJobsStatus(data.message || 'No queued jobs.'); return; }
+        let ok = 0, bad = 0;
+        for (let i = 0; i < ids.length; i++) {
+          const status = await _watchJob(ids[i], i + 1, ids.length);
+          if (status === 'success') ok++; else bad++;
+        }
+        _setJobsStatus('Done — ' + ok + ' succeeded' + (bad ? ', ' + bad + ' failed' : '') + '.');
+        _refreshJobBadges();  // queued count is now 0
+      })
+      .catch((err) => { _setJobsStatus('Error: ' + err); })
+      .finally(() => { _draining = false; });
+  }
+
+  // Action registry — nav items with `action: '<key>'` dispatch here.
+  const NAV_ACTIONS = {
+    runQueuedJobs: runQueuedJobs,
+  };
+
+  // Update every mounted "Run queued jobs" row's count badge.
+  function _refreshJobBadges() {
+    const rows = document.querySelectorAll('.nav-item[data-page="run-jobs"]');
+    if (!rows.length) return;
+    queuedJobCount().then(n => {
+      rows.forEach(row => {
+        let badge = row.querySelector('.badge-count');
+        if (n > 0) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'badge-soon badge-count';  // reuse pill styling
+            row.appendChild(badge);
+          }
+          badge.textContent = String(n);
+        } else if (badge) {
+          badge.remove();
+        }
+      });
+    });
   }
 
   function initNav(opts) {
@@ -377,21 +522,25 @@
     menu.innerHTML = items.map(item => {
       const isActive = item.page === currentPage;
       const cls = 'nav-item' + (isActive ? ' active' : '');
-      const tag = item.comingSoon ? 'button' : 'a';
-      const attrs = item.comingSoon
+      const isButton = item.comingSoon || item.action;
+      const tag = isButton ? 'button' : 'a';
+      const attrs = isButton
         ? `type="button" data-page="${escapeHtml(item.page)}"`
         : `href="${escapeHtml(item.href)}" data-page="${escapeHtml(item.page)}"`;
       const badge = item.comingSoon ? '<span class="badge-soon">soon</span>' : '';
       return `<${tag} class="${cls}" ${attrs}>${escapeHtml(item.label)}${badge}</${tag}>`;
     }).join('');
     document.body.appendChild(menu);
+    _refreshJobBadges();  // initial queued count on page load
 
     function closeMenu() { menu.classList.remove('open'); }
     function openMenu() { menu.classList.add('open'); }
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (menu.classList.contains('open')) closeMenu(); else openMenu();
+      if (menu.classList.contains('open')) { closeMenu(); return; }
+      _refreshJobBadges();  // keep the queued count fresh each open
+      openMenu();
     });
 
     // Click outside the menu (and outside the toggle) closes it.
@@ -407,7 +556,14 @@
     menu.querySelectorAll('.nav-item').forEach(el => {
       const page = el.getAttribute('data-page');
       const cfg = items.find(it => it.page === page);
-      if (cfg && cfg.comingSoon) {
+      if (cfg && cfg.action) {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          closeMenu();
+          const fn = NAV_ACTIONS[cfg.action];
+          if (fn) fn();
+        });
+      } else if (cfg && cfg.comingSoon) {
         el.addEventListener('click', (e) => {
           e.preventDefault();
           closeMenu();
@@ -438,6 +594,8 @@
     fmtDate,
     renderExcBadge,
     gradeToTier,
+    runQueuedJobs,
+    queuedJobCount,
     NAV_ITEMS,
   };
 })();
