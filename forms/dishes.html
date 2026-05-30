@@ -793,6 +793,9 @@
           try { return new URL(r.source_url).hostname.replace(/^www\./, ''); }
           catch { return r.source_url || '—'; }
         })();
+        // Prefer the friendly og:site_name when the source declared one
+        // ("NYT Cooking"); fall back to the bare host.
+        const siteLabel = (r.site_name && r.site_name.trim()) ? r.site_name.trim() : hostname;
         const rankBadge = (typeof r.rank === 'number')
           ? `<span class="top-rank">#${r.rank}</span>` : '';
         const excBadgeHtml = (r.grade && r.exc_score != null
@@ -840,7 +843,7 @@
               `<div class="top-recipe-main">` +
                 rankBadge +
                 `<span class="top-recipe-title">${escapeHtml(r.name)}</span>` +
-                ` <span class="top-recipe-host">${escapeHtml(hostname)}</span>` +
+                ` <span class="top-recipe-host">${escapeHtml(siteLabel)}</span>` +
                 (excBadgeHtml ? ' ' + excBadgeHtml : '') +
               `</div>` +
               `<div class="top-recipe-meta">` +

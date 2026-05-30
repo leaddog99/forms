@@ -1870,6 +1870,7 @@ def list_dish_top_recipes(name: str):
                     "name": d.get("name") or "(no title)",
                     "rank": master.get("rank"),
                     "source_url": source.get("originalUrl") or "",
+                    "site_name": source.get("siteName") or "",
                     "bcc_url": _bcc_link_permalink(recipe_uuid),
                     "queries": master.get("queries") or [],
                     "grade": exc.get("grade"),
