@@ -3,769 +3,423 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Chapters</title>
-  <link rel="stylesheet" href="/forms/library-shell.css">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
-  <style>
-    /* ====================================================================
-       Clean minimalist override — Apple product-page aesthetic.
-       Pure white surfaces, hairline 1px borders, generous whitespace,
-       light font weights, monochrome palette with text-only emphasis.
-       ==================================================================== */
-    :root {
-      --ink: #1d1d1f;
-      --ink-soft: #424245;
-      --muted: #86868b;
-      --hairline: #e5e3df;
-      --hairline-soft: #f3f1ed;
-      --surface: #ffffff;
-      --surface-tint: #fbfaf7;
-      --accent: #8a5a3b;            /* single warm accent — caramel / coffee */
-      --accent-strong: #6f4628;
-      --accent-soft: rgba(138, 90, 59, 0.06);
-    }
-    html, body {
-      background: var(--surface);
-      color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 300;
-      font-size: 16px;
-      letter-spacing: -0.003em;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* --- Header ----------------------------------------------------- */
-    .app-header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--hairline);
-      box-shadow: none;
-    }
-    /* Brand header is styled by library-shell.css (.app-header h1) — all sans, 2.0em. */
-    .sidebar-toggle {
-      background: transparent;
-      color: var(--ink);
-      border: 1px solid var(--hairline);
-      box-shadow: none;
-      font-weight: 300;
-    }
-    .sidebar-toggle:hover {
-      background: var(--accent-soft);
-      border-color: var(--ink);
-    }
-    .nav-toggle {
-      background: transparent;
-      color: var(--ink);
-      border: 1px solid var(--hairline);
-      box-shadow: none;
-    }
-    .nav-toggle:hover { background: var(--accent-soft); border-color: var(--ink); }
-    .identity-badge { color: var(--ink-soft); }
-    .identity-badge:hover { background: var(--accent-soft); color: var(--ink); }
-
-    /* --- Sidebar ---------------------------------------------------- */
-    .sidebar {
-      background: var(--surface);
-      box-shadow: 1px 0 0 var(--hairline);
-      padding: 20px 18px 28px;
-    }
-    .sidebar h2 {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 500;
-      font-size: 0.95em;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      color: var(--muted);
-      border-bottom: 1px solid var(--hairline);
-      padding-bottom: 10px;
-      margin-bottom: 14px;
-    }
-    .sidebar h2 .count {
-      color: var(--muted);
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      font-size: 0.9em;
-      font-weight: 400;
-      letter-spacing: 0;
-    }
-    .sidebar-controls input[type="search"], .sidebar-controls select {
-      border: 1px solid var(--hairline);
-      background: var(--surface);
-      font-weight: 300;
-      padding: 8px 11px;
-      border-radius: 6px;
-      font-size: 0.92em;
-    }
-    .sidebar-controls input[type="search"]:focus, .sidebar-controls select:focus {
-      outline: none;
-      border-color: var(--ink);
-    }
-    .ghost-btn {
-      background: transparent;
-      border: 1px solid var(--hairline);
-      color: var(--ink);
-      padding: 8px 12px;
-      border-radius: 6px;
-      font: inherit;
-      font-size: 0.88em;
-      font-weight: 400;
-      cursor: pointer;
-      text-align: left;
-      letter-spacing: -0.003em;
-    }
-    .ghost-btn:hover {
-      border-color: var(--ink);
-      background: var(--accent-soft);
-    }
-    .ghost-btn:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    .entity-list li {
-      cursor: pointer;
-      padding: 12px 14px;
-      border: none;
-      border-bottom: 1px solid var(--hairline-soft);
-      border-radius: 0;
-      margin-bottom: 0;
-    }
-    .entity-list li:hover {
-      background: var(--accent-soft);
-    }
-    .entity-list li.selected {
-      background: var(--accent-soft);
-      border-color: var(--hairline-soft);
-    }
-    .entity-list .entity-name {
-      font-weight: 400;
-      font-size: 0.95em;
-      letter-spacing: -0.005em;
-      color: var(--ink);
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 8px;
-    }
-    .entity-list .entity-meta {
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      color: var(--muted);
-      font-size: 0.78em;
-      margin-top: 4px;
-      font-weight: 300;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* --- Status pills ----------------------------------------------- */
-    .status-pill {
-      font-size: 0.68em;
-      font-weight: 400;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--muted);
-      padding: 1px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--hairline);
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      vertical-align: middle;
-    }
-    .status-pill.graded {
-      color: var(--accent);
-      border-color: var(--accent);
-    }
-    .status-pill.below {
-      color: var(--ink-soft);
-    }
-
-    /* --- Container & detail ----------------------------------------- */
-    .container {
-      max-width: 760px;
-      padding: 36px 56px 120px;
-    }
-    .detail-empty {
-      color: var(--muted);
-      font-weight: 300;
-      font-size: 1.05em;
-      line-height: 1.55;
-      max-width: 480px;
-    }
-    .detail-empty p { margin-bottom: 14px; }
-
-    h2.detail-title {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 500;
-      font-size: 1.8em;
-      letter-spacing: -0.022em;
-      color: var(--ink);
-      margin: 0;
-    }
-    .detail-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 18px;
-      flex-wrap: wrap;
-      margin-bottom: 40px;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--hairline);
-    }
-    .detail-head .meta {
-      color: var(--muted);
-      font-size: 0.85em;
-      font-weight: 300;
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* --- Section blocks (no card chrome — just whitespace + hairline) - */
-    .section {
-      padding: 28px 0 32px;
-      border-bottom: 1px solid var(--hairline-soft);
-    }
-    .section:last-child { border-bottom: none; }
-    .section-label {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 500;
-      font-size: 0.72em;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin: 0 0 18px 0;
-    }
-    .kv {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      column-gap: 24px;
-      row-gap: 12px;
-      font-size: 0.95em;
-    }
-    .kv .k {
-      color: var(--muted);
-      font-weight: 300;
-    }
-    .kv .v {
-      color: var(--ink);
-      font-weight: 400;
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.005em;
-    }
-    .kv .v.note {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 300;
-      color: var(--ink-soft);
-    }
-    .formula {
-      margin-top: 24px;
-      padding: 14px 0 0 0;
-      border-top: 1px solid var(--hairline-soft);
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      font-size: 0.88em;
-      color: var(--ink-soft);
-      font-variant-numeric: tabular-nums;
-      letter-spacing: 0;
-    }
-
-    .empty-fit {
-      color: var(--ink-soft);
-      font-size: 0.95em;
-      line-height: 1.55;
-      font-weight: 300;
-      max-width: 540px;
-    }
-    .empty-fit strong {
-      color: var(--ink);
-      font-weight: 500;
-    }
-
-    .notes-area {
-      width: 100%;
-      min-height: 96px;
-      padding: 10px 0;
-      border: none;
-      border-bottom: 1px solid var(--hairline);
-      font-family: inherit;
-      font-size: 0.94em;
-      font-weight: 300;
-      color: var(--ink);
-      background: transparent;
-      resize: vertical;
-      line-height: 1.55;
-    }
-    .notes-area:focus {
-      outline: none;
-      border-bottom-color: var(--accent);
-    }
-
-    /* --- Footer actions --------------------------------------------- */
-    .action-footer {
-      background: transparent;
-      border-top: none;
-      box-shadow: none;
-    }
-    .action-footer .button-row {
-      background: var(--surface);
-      border: 1px solid var(--hairline);
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(40, 30, 20, 0.12);
-      padding: 11px 16px;
-    }
-    .action-footer button {
-      background: transparent;
-      color: var(--ink);
-      border: 1px solid var(--hairline);
-      padding: 9px 18px;
-      font-weight: 400;
-      font-size: 0.92em;
-      border-radius: 6px;
-      letter-spacing: -0.005em;
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-    }
-    .action-footer button:hover {
-      border-color: var(--ink);
-      background: var(--accent-soft);
-    }
-    .action-footer button.primary {
-      background: var(--accent);
-      color: var(--surface);
-      border-color: var(--accent);
-    }
-    .action-footer button.primary:hover {
-      background: var(--accent-strong);
-      border-color: var(--accent-strong);
-    }
-    .action-footer button:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    /* === Editorial detail view (hero · info blocks · formula card ·
-       curator notes). Replaces the old spreadsheet kv layout. ====== */
-    .ch-hero { margin-bottom: 28px; }
-    .ch-title {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 300; font-size: 1.5em; letter-spacing: -0.01em;
-      line-height: 1.15; color: var(--ink); margin: 0 0 10px;
-    }
-    .ch-summary {
-      margin: 0; font-size: 0.92em; font-weight: 300; color: var(--muted);
-      letter-spacing: -0.003em; line-height: 1.5;
-    }
-    .ch-summary .dot { margin: 0 9px; color: var(--hairline); }
-    .ch-summary .conf { color: var(--ink-soft); font-weight: 400; }
-    .ch-summary .conf.low { color: #994d1c; }      /* muted brick — not neon */
-    .inline-link { color: var(--accent); text-decoration: none;
-      border-bottom: 1px solid transparent; }
-    .inline-link:hover { border-bottom-color: var(--accent); }
-
-    .ch-section { margin-bottom: 28px; }
-    .ch-section-label {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 500; font-size: 0.72em; letter-spacing: 0.09em;
-      text-transform: uppercase; color: var(--muted); margin: 0 0 18px;
-    }
-    .ch-facts { margin: 0; display: grid; gap: 9px 0; }
-    .ch-facts .fact {
-      display: grid; grid-template-columns: 250px 1fr;
-      column-gap: 28px; align-items: baseline;
-    }
-    .ch-facts dt { margin: 0; color: var(--muted); font-weight: 300; font-size: 0.95em; }
-    .ch-facts dd {
-      margin: 0; color: var(--ink); font-weight: 400; font-size: 0.95em;
-      font-variant-numeric: tabular-nums;
-    }
-    .ch-facts .muted-note { color: var(--muted); font-weight: 300; }
-
-    .ch-formula {
-      margin: 0; padding: 24px 32px; border-radius: 8px;
-      background: var(--surface-tint); border: 1px solid var(--hairline-soft);
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      font-size: 0.98em; color: var(--ink); letter-spacing: 0; line-height: 1.5;
-      white-space: pre-wrap; font-variant-numeric: tabular-nums;
-    }
-
-    .ch-notes { margin-top: 36px; padding-top: 22px;
-      border-top: 1px solid var(--hairline-soft); }
-    .ch-notes-label {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 500; font-size: 0.72em; letter-spacing: 0.09em;
-      text-transform: uppercase; color: var(--muted); margin: 0 0 18px;
-    }
-    .ch-notes .notes-area { font-size: 14px; color: var(--ink-soft); }
-
-    /* Metadata accordion — collapsed by default. */
-    .meta-accordion summary {
-      cursor: pointer; list-style: none; user-select: none;
-      display: flex; align-items: center; gap: 8px;
-      font-size: 0.92em; color: var(--ink-soft); padding: 2px 0;
-    }
-    .meta-accordion summary::-webkit-details-marker { display: none; }
-    .meta-accordion summary::before { content: '▸'; color: var(--accent); font-size: 0.8em; }
-    .meta-accordion[open] summary::before { content: '▾'; }
-    .meta-accordion .meta-count { color: var(--muted); font-size: 0.85em; }
-    .meta-accordion .recipe-list { margin-top: 10px; }
-
-    /* Source records — tight DA/PA cohort list (the formula's basis). */
-    .recipe-list { display: flex; flex-direction: column; }
-    .cohort-row {
-      display: flex; align-items: baseline; justify-content: space-between;
-      gap: 16px; padding: 4px 2px; border-bottom: 1px solid var(--hairline-soft);
-      text-decoration: none; color: var(--ink); min-width: 0;
-    }
-    .cohort-row:last-child { border-bottom: none; }
-    .cohort-url {
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78em;
-      color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .cohort-row:hover .cohort-url { color: var(--accent); }
-    .cohort-scores {
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78em;
-      color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums;
-    }
-
-    @media (max-width: 560px) {
-      .ch-facts .fact { grid-template-columns: 1fr; gap: 2px; }
-      .container { padding: 40px 22px 96px; }
-    }
-  </style>
+  <title>Best Cooks Club — Admin · Chapters</title>
+  <!-- Admin chapter editor on the shared master/detail editor shell.
+       editor-shell.css = the namespaced framework skin; library-shell.js
+       = behaviour (cross-page ⋮ nav, identity badge, X-Self-User-Id fetch
+       patch, helpers) + the initEditorNav controller (dock/overlay/back).
+       See memory/project_admin_editor_nav.md. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260531b">
 </head>
 <body>
   <header class="app-header">
     <div class="header-inner">
-      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
-      <h1>Best Cooks Club</h1>
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+      <!-- LibraryShell.initNav appends: .nav-spacer, .identity-badge, .nav-toggle(⋮) -->
     </div>
   </header>
+  <div class="ed-scrim" id="edScrim"></div>
 
-  <aside class="sidebar" id="sidebar">
-    <h2>Chapters <span class="count" id="chapterCount"></span></h2>
-    <div class="sidebar-controls">
-      <button type="button" class="ghost-btn" id="refreshAllBtn">Refresh all fits</button>
-      <input type="search" id="searchInput" placeholder="Search…" />
-      <select id="sortSelect" aria-label="Sort chapters">
-        <option value="default">Sort: fit status</option>
-        <option value="name">Sort: name (A–Z)</option>
-        <option value="recipes">Sort: recipes (most)</option>
-        <option value="updated">Sort: last updated</option>
-      </select>
-    </div>
-    <ul class="entity-list" id="chapterList">
-      <li class="empty-state">Loading…</li>
-    </ul>
-  </aside>
-
-  <div class="container">
-    <main id="detailPanel">
-      <div class="detail-empty">
-        <p>Select a chapter from the sidebar.</p>
-        <p>Each chapter holds an aggregate OU regression fit used as a grading fallback when a dish cohort is too small (n &lt; 25) to fit on its own. Niche dishes inherit grades from their chapter cohort.</p>
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Chapters <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search &amp; sort" aria-label="Search and sort">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="New chapter" aria-label="New chapter">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
       </div>
-    </main>
+
+      <div class="ed-attn" id="attn"><div class="ed-attn-title" id="attnTitle"></div><div class="ed-attn-copy" id="attnCopy"></div></div>
+
+      <div class="ed-controls" id="controls" hidden>
+        <button type="button" class="ed-ghost-btn" id="refreshAllBtn">Refresh all fits</button>
+        <input type="search" id="search" placeholder="Search chapters…">
+        <select id="sort" aria-label="Sort chapters">
+          <option value="attention">Sort: needs attention</option>
+          <option value="name">Sort: name (A–Z)</option>
+          <option value="recipes">Sort: recipes (most)</option>
+          <option value="updated">Sort: last fit</option>
+        </select>
+      </div>
+
+      <div class="ed-legend">
+        <span><i class="d ok"></i>healthy fit</span>
+        <span><i class="d warn"></i>needs attention</span>
+        <span><i class="d none"></i>no fit</span>
+      </div>
+
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <footer class="action-footer" id="actionFooter" style="display:none">
-    <div class="button-row" id="footerButtons"></div>
-  </footer>
-
-  <script src="/forms/library-shell.js?v=20260530a"></script>
+  <script src="/forms/library-shell.js?v=20260531a"></script>
   <script>
-    const $ = (sel) => document.querySelector(sel);
-    const { escapeHtml, fmtDate, closeOnNarrow } = LibraryShell;
+    const $ = (s) => document.querySelector(s);
 
-    LibraryShell.init({
-      sidebarSelector: '#sidebar',
-      sidebarToggleSelector: '#sidebarToggle',
-    });
     LibraryShell.initNav({ currentPage: 'chapters' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Chapters', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, fmtDate, flash } = LibraryShell;
 
     let chapters = {};
     let selectedName = null;
-    let searchTerm = '';
-    let sortKey = 'default';
+    let term = '';
+    let sortKey = 'attention';
 
-    function statusPill(c) {
-      const s = c.fit_status;
-      const label =
-        s === 'graded' ? 'fit' :
-        s === 'below_min_n' ? 'n<' + 25 :
-        '—';
-      const cls = s === 'graded' ? 'graded' : (s === 'below_min_n' ? 'below' : '');
-      return `<span class="status-pill ${cls}">${label}</span>`;
+    /* ----------------------------- derivations ----------------------------- */
+    const fitOf = (c) => c.last_ou_fit || {};
+    const isGraded = (c) => !!fitOf(c).used;
+    function num(v, d = 4){ if (v == null) return '—'; const n = Number(v); return isFinite(n) ? n.toFixed(d) : '—'; }
+    function cap(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+    function quality(c){
+      if (!isGraded(c)) return c.fit_status === 'below_min_n' ? 'Corpus too small' : 'Not yet fit';
+      const r2 = Number(fitOf(c).r2_chosen);
+      if (r2 >= 0.75) return 'Excellent fit';
+      if (r2 >= 0.60) return 'Healthy fit';
+      if (r2 >= 0.45) return 'Moderate fit';
+      return 'Weak fit';
+    }
+    function needsAttention(c){ return !(isGraded(c) && Number(fitOf(c).r2_chosen) >= 0.60); }
+    function flag(c){
+      if (isGraded(c)) return Number(fitOf(c).r2_chosen) >= 0.60 ? 'ok' : 'warn';
+      if (c.fit_status === 'below_min_n') return 'none';
+      return 'warn';
+    }
+    function listMeta(c){
+      const f = fitOf(c);
+      if (isGraded(c)) return `${f.n} records · ${f.model} · R² ${num(f.r2_chosen, 2)}`;
+      if (c.fit_status === 'below_min_n') return `${f.n ?? 0} of 25 records`;
+      return `no cohort yet`;
     }
 
-    function renderList() {
-      const term = searchTerm.toLowerCase();
-      const filtered = Object.values(chapters).filter(c =>
-        !term || c.name.toLowerCase().includes(term)
-      );
-      // Sort: 'default' keeps the server order (fit status, then name).
+    /* ----------------------------- list ----------------------------- */
+    function renderList(){
+      const t = term.toLowerCase();
+      let rows = Object.values(chapters).filter(c => !t || c.name.toLowerCase().includes(t));
       const sorters = {
+        attention: (a, b) => (needsAttention(b) - needsAttention(a)) || a.name.localeCompare(b.name),
         name:    (a, b) => a.name.localeCompare(b.name),
         recipes: (a, b) => (b.current_recipe_count || 0) - (a.current_recipe_count || 0) || a.name.localeCompare(b.name),
         updated: (a, b) => String(b.fit_updated_at || '').localeCompare(String(a.fit_updated_at || '')) || a.name.localeCompare(b.name),
       };
-      if (sorters[sortKey]) filtered.sort(sorters[sortKey]);
-      $('#chapterCount').textContent = String(filtered.length);
-      const listEl = $('#chapterList');
-      if (!filtered.length) {
-        listEl.innerHTML = '<li class="empty-state">No matches</li>';
-        return;
-      }
-      listEl.innerHTML = '';
-      for (const c of filtered) {
+      rows.sort(sorters[sortKey] || sorters.attention);
+      $('#count').textContent = `(${rows.length})`;
+
+      const attn = Object.values(chapters).filter(needsAttention).length;
+      const panel = $('#attn'), title = $('#attnTitle'), copy = $('#attnCopy');
+      if (attn){ panel.classList.remove('none'); title.textContent = `${attn} need attention`; copy.textContent = 'Weak fit, no fit, or corpus below the 25-recipe minimum.'; }
+      else { panel.classList.add('none'); title.textContent = 'All chapters healthy'; copy.textContent = 'Every chapter has a usable fit.'; }
+
+      const ul = $('#list'); ul.innerHTML = '';
+      if (!rows.length){ ul.innerHTML = '<li class="ed-empty">No matches</li>'; return; }
+      for (const c of rows){
         const li = document.createElement('li');
-        if (c.name === selectedName) li.classList.add('selected');
-        const fit = c.last_ou_fit || {};
-        const meta = fit.used
-          ? `n=${c.fit_recipe_count}  ·  ${fit.model}  ·  σ=${fit.sigma_effective}`
-          : `${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}`;
+        li.className = 'ed-item' + (c.name === selectedName ? ' selected' : '');
         li.innerHTML =
-          `<div class="entity-name"><span>${escapeHtml(c.name)}</span>${statusPill(c)}</div>` +
-          `<div class="entity-meta">${escapeHtml(meta)}</div>`;
-        li.addEventListener('click', () => {
-          selectedName = c.name;
-          renderList();
-          renderDetail();
-          closeOnNarrow();
-        });
-        listEl.appendChild(li);
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(c.name)}</span><span class="ed-item-flag ${flag(c)}"></span></div>` +
+          `<div class="ed-item-meta">${escapeHtml(listMeta(c))}</div>`;
+        li.addEventListener('click', () => { selectedName = c.name; renderList(); renderDetail(); nav.afterSelect(); });
+        ul.appendChild(li);
       }
     }
 
-    function fmtCoeffs(fit) {
+    /* ----------------------------- detail ----------------------------- */
+    function fmtCoeffs(fit){
       if (!fit || !fit.coefficients) return '';
-      const c = fit.coefficients.map(x => Number(x).toFixed(4));
-      if (fit.model === 'linear')    return `predicted PA = ${c[0]} · DA + ${c[1]}`;
-      if (fit.model === 'quadratic') return `predicted PA = ${c[0]} · DA² + ${c[1]} · DA + ${c[2]}`;
-      if (fit.model === 'power')     return `predicted PA = ${c[0]} · DA ^ ${c[1]}`;
-      return c.join(', ');
+      const c = fit.coefficients.map(x => Number(x));
+      let line, pa80;
+      if (fit.model === 'linear'){ line = `predicted PA  =  ${num(c[0],4)}·DA  +  ${num(c[1],2)}`; pa80 = c[0]*80 + c[1]; }
+      else if (fit.model === 'quadratic'){ line = `predicted PA  =  ${num(c[0],4)}·DA²  +  ${num(c[1],4)}·DA  +  ${num(c[2],2)}`; pa80 = c[0]*6400 + c[1]*80 + c[2]; }
+      else if (fit.model === 'power'){ line = `predicted PA  =  ${num(c[0],4)}·DA ^ ${num(c[1],4)}`; pa80 = c[0]*Math.pow(80, c[1]); }
+      else return c.map(x => num(x, 4)).join(', ');
+      return `${line}<span class="ex">at DA 80  →  PA ≈ ${isFinite(pa80) ? pa80.toFixed(1) : '—'}</span>`;
     }
 
-    function num(v, digits = 4) {
-      if (v == null) return '—';
-      const n = Number(v);
-      if (!isFinite(n)) return '—';
-      return n.toFixed(digits);
+    // The fitted regression VARIABLES (model parameters), labeled by term so
+    // they read as data, not just an equation string.
+    function coeffVars(f){
+      const c = (f.coefficients || []).map(x => Number(x));
+      if (f.model === 'linear')    return `slope·DA ${num(c[0], 4)} · intercept ${num(c[1], 2)}`;
+      if (f.model === 'quadratic') return `DA² ${num(c[0], 4)} · DA ${num(c[1], 4)} · intercept ${num(c[2], 2)}`;
+      if (f.model === 'power')     return `scale ${num(c[0], 4)} · exponent ${num(c[1], 4)}`;
+      return c.map(x => num(x, 4)).join(', ');
     }
 
-    function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
-
-    // Confidence label for the hero summary. `low` drives a muted
-    // brick-red treatment (editorial, not a neon alert banner).
-    function confidence(c) {
-      const fit = c.last_ou_fit;
-      if (fit && fit.used) {
-        const r2 = Number(fit.r2_chosen);
-        return (isFinite(r2) && r2 >= 0.5)
-          ? { label: 'High confidence fit', low: false }
-          : { label: 'Low confidence fit', low: true };
+    function modelFitBlock(c){
+      const f = fitOf(c);
+      if (!isGraded(c)){
+        const msg = c.fit_status === 'below_min_n'
+          ? `This chapter’s fit cohort has <strong>${f.n ?? 0}</strong> source-site record${f.n === 1 ? '' : 's'} — the regression needs at least <strong>25</strong>. (These are the SERP DA/PA records from the chapter’s dishes, not saved recipes.) Each dish refresh re-derives the cohort.`
+          : `No cohort yet — this chapter is fit on its dishes’ next refresh.`;
+        return `<section class="ed-block"><h3 class="ed-block-label">Model fit</h3><p class="ed-empty-fit">${msg}</p></section>`;
       }
-      if (fit) return { label: 'Low confidence — corpus under 25', low: true };
-      return { label: 'Not yet fit', low: true };
+      const candStr = ['linear','quadratic','power'].map(m => {
+        const v = num(f['r2_' + m], 3);
+        return m === f.model ? `<strong>${m} ${v}</strong>` : `${m} ${v}`;
+      }).join(' <span class="sub">·</span> ');
+      const floorTxt = (f.exc_sigma_floor != null && Number(f.sigma_effective) > Number(f.sigma_observed)) ? ' (applied)' : '';
+      return `
+        <section class="ed-block">
+          <h3 class="ed-block-label">Model fit</h3>
+          <div class="ed-kv">
+            <div class="k">Model type</div><div class="v">${cap(f.model)} regression</div>
+            <div class="k">Regression</div><div class="v">page authority (PA) ~ domain authority (DA)</div>
+            <div class="k">Fitted coefficients</div><div class="v">${coeffVars(f)}</div>
+            <div class="k">Source-site records</div><div class="v">${f.n ?? '—'}</div>
+            <div class="k">Coefficient of determination</div><div class="v">R² = ${num(f.r2_chosen, 2)} <span class="sub">· ${quality(c).replace(' fit','').toLowerCase()}</span></div>
+            <div class="k">Residual scatter (σ)</div><div class="v">${num(f.sigma_observed, 2)}</div>
+            <div class="k">Effective σ</div><div class="v">${num(f.sigma_effective, 2)} <span class="sub">· floor ${num(f.exc_sigma_floor, 1)}${floorTxt}</span></div>
+            <div class="k">Candidate fits</div><div class="v">${candStr}</div>
+            <div class="k">Grade scale</div><div class="v">base ${f.exc_base ?? '—'} <span class="sub">· σ×${f.exc_sigma_mult ?? '—'}</span></div>
+          </div>
+          <p class="ed-provenance">Computed automatically at the end of each dish run — last run ${fmtDate(c.fit_updated_at)}. Read-only here.</p>
+        </section>
+        <section class="ed-block">
+          <h3 class="ed-block-label">Predicted authority model</h3>
+          <pre class="ed-formula">${fmtCoeffs(f)}</pre>
+        </section>`;
     }
 
-    function fact(label, value) {
-      return `<div class="fact"><dt>${label}</dt><dd>${value}</dd></div>`;
-    }
-
-    function renderDetail() {
-      const panel = $('#detailPanel');
-      if (!selectedName || !chapters[selectedName]) {
-        panel.innerHTML = '<div class="detail-empty"><p>Select a chapter from the sidebar.</p></div>';
-        $('#actionFooter').style.display = 'none';
+    function renderDetail(){
+      const panel = $('#page');
+      if (selectedName === '__new__') return renderCreate();
+      if (!selectedName || !chapters[selectedName]){
+        panel.innerHTML = `<div class="ed-block" style="border-top:none;padding-top:8px"><p class="ed-empty-fit">Select a chapter from the list to review its authority-model fit and edit curator notes. Each chapter holds an aggregate OU regression used as a grading fallback when a dish cohort is too small (n &lt; 25) to fit on its own.</p></div>`;
         return;
       }
       const c = chapters[selectedName];
-      const fit = c.last_ou_fit;
-
-      let fitSection;
-      if (fit && fit.used) {
-        fitSection = `
-          <section class="ch-section">
-            <h2 class="ch-section-label">Model fit</h2>
-            <dl class="ch-facts">
-              ${fact('Model type', cap(fit.model) + ' regression')}
-              ${fact('Recipes analyzed', fit.n)}
-              ${fact('Coefficient of determination', 'R² = ' + num(fit.r2_chosen))}
-              ${fact('Residual scatter (σ)', num(fit.sigma_observed))}
-              ${fact('Effective σ', num(fit.sigma_effective) + ' <span class="muted-note">· floor ' + fit.exc_sigma_floor + '</span>')}
-              ${fact('Candidate fits', 'linear ' + num(fit.r2_linear, 3) + ' · quadratic ' + num(fit.r2_quadratic, 3) + ' · power ' + num(fit.r2_power, 3))}
-              ${fact('Grade scale', 'base ' + fit.exc_base + ' · σ×' + fit.exc_sigma_mult)}
-            </dl>
-          </section>
-          <section class="ch-section">
-            <h2 class="ch-section-label">Predicted authority model</h2>
-            <pre class="ch-formula">${fmtCoeffs(fit)}</pre>
-          </section>
-        `;
-      } else if (fit) {
-        fitSection = `
-          <section class="ch-section">
-            <h2 class="ch-section-label">Model fit</h2>
-            <p class="empty-fit">This chapter holds <strong>${c.current_recipe_count}</strong> saved recipe${c.current_recipe_count === 1 ? '' : 's'} — the regression needs at least <strong>25</strong> for a stable fit. Recipes here stay ungraded until the corpus grows past the floor.</p>
-          </section>
-        `;
-      } else {
-        fitSection = `
-          <section class="ch-section">
-            <h2 class="ch-section-label">Model fit</h2>
-            <p class="empty-fit">No fit computed yet. Use <strong>Refresh fit</strong> to compute one from the current corpus (${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}).</p>
-          </section>
-        `;
-      }
-
-      const drift = c.fit_recipe_count != null
-        ? (c.current_recipe_count - c.fit_recipe_count)
-        : null;
-      const driftStr = drift == null
-        ? '—'
-        : (drift === 0 ? 'no change' : (drift > 0 ? `+${drift} since fit` : `${drift} since fit`));
-
-      // Hero summary line: confidence · recipes · R² · updated · (re-run if low)
-      const conf = confidence(c);
-      const bits = [`<span class="conf${conf.low ? ' low' : ''}">${conf.label}</span>`];
-      bits.push(`${c.current_recipe_count} recipe${c.current_recipe_count === 1 ? '' : 's'}`);
-      if (fit && fit.used) bits.push(`R² ${num(fit.r2_chosen, 2)}`);
-      bits.push(c.fit_updated_at ? `updated ${fmtDate(c.fit_updated_at)}` : 'never fit');
-      if (conf.low) bits.push(`<a href="#" class="inline-link" id="rerunLink">Re-run analysis</a>`);
-      const summary = bits.join('<span class="dot">·</span>');
+      const f = fitOf(c);
+      const sub = isGraded(c)
+        ? `R² ${num(f.r2_chosen, 2)} · ${f.n} source-site records · last fit ${fmtDate(c.fit_updated_at)}`
+        : (c.fit_status === 'below_min_n'
+            ? `${f.n ?? 0} of 25 source-site records — fit withheld`
+            : `no cohort yet · awaiting a dish refresh`);
 
       panel.innerHTML = `
-        <header class="ch-hero">
-          <h1 class="ch-title">${escapeHtml(c.name)}</h1>
-          <p class="ch-summary">${summary}</p>
-        </header>
+        <div class="ed-kicker">
+          <button type="button" class="ed-purpose-toggle" id="purposeToggle">Admin · Edit Chapter <span id="purposeArrow">▾</span></button>
+          <div class="ed-purpose-pop" id="purposePop" hidden>
+            <strong>Purpose:</strong> review this chapter’s read-only authority fit, edit curator notes, and refresh the fit. Fits are recomputed by the dish pipeline at the end of each run.
+          </div>
+        </div>
 
-        ${fitSection}
+        <h1 class="ed-title">${escapeHtml(c.name)}</h1>
+        <div class="ed-status-strip">
+          <span class="ed-pill ${needsAttention(c) ? 'warn' : 'ok'}"><i class="d"></i>${quality(c)}</span>
+          <span class="ed-pill"><i class="d"></i>${isGraded(c) ? f.n + ' source-site records' : (c.fit_status === 'below_min_n' ? (f.n ?? 0) + ' of 25 records' : 'no cohort yet')}</span>
+          <span class="ed-pill"><i class="d"></i>Last fit ${fmtDate(c.fit_updated_at)}</span>
+        </div>
+        <p class="ed-submeta">${sub}</p>
 
-        <section class="ch-section">
-          <h2 class="ch-section-label">Corpus</h2>
-          <dl class="ch-facts">
-            ${fact('Recipes in chapter, now', c.current_recipe_count)}
-            ${fact('Recipes when fit ran', c.fit_recipe_count ?? '—')}
-            ${fact('Drift', driftStr)}
-          </dl>
+        ${modelFitBlock(c)}
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Top 10 recipes <span class="ed-count" id="top10count"></span></h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">The chapter’s 10 highest-OU recipes across its dishes — recomputed each dish refresh.</p>
+          <ol class="ed-t10" id="top10list"><li class="ed-empty-fit">Loading…</li></ol>
         </section>
 
-        <section class="ch-notes">
-          <h2 class="ch-notes-label">Curator notes</h2>
-          <textarea id="notesArea" class="notes-area"
-            placeholder="Editorial context, known issues, fit history…">${escapeHtml(c.notes || '')}</textarea>
-        </section>
-
-        <section class="ch-section ch-metadata">
-          <h2 class="ch-section-label">Metadata</h2>
-          <details class="meta-accordion">
-            <summary>Source records <span class="meta-count" id="recCount"></span></summary>
-            <div class="recipe-list" id="recipeList"><p class="empty-fit">Loading…</p></div>
+        <section class="ed-block">
+          <details class="ed-accordion">
+            <summary>Source sites <span class="ed-count" id="recCount">${(isGraded(c) || c.fit_status === 'below_min_n') ? '(' + (f.n ?? 0) + ')' : ''}</span></summary>
+            <p class="ed-notes-help" style="margin:12px 0 12px">The sites whose (DA, PA) records this chapter’s fit was computed on — the cohort drawn from the chapter’s dishes.</p>
+            <div class="ed-cohort" id="cohort" style="max-height:340px;overflow-y:auto"><p class="ed-empty-fit">Loading…</p></div>
           </details>
         </section>
-      `;
 
-      $('#actionFooter').style.display = 'block';
-      $('#footerButtons').innerHTML = `
-        <button type="button" id="refreshBtn" class="primary">Refresh fit</button>
-        <button type="button" id="saveNotesBtn">Save notes</button>
-      `;
+        <section class="ed-block">
+          <h3 class="ed-block-label">Curator notes</h3>
+          <p class="ed-notes-help">Scope decisions, classification exceptions, known corpus issues, follow-up work.</p>
+          <textarea id="notes" class="ed-notes" placeholder="Editorial context, known issues, scope decisions…">${escapeHtml(c.notes || '')}</textarea>
+        </section>
+
+        <div class="ed-actions">
+          <button type="button" class="ed-btn primary" id="refreshBtn">Refresh fit</button>
+          <button type="button" class="ed-btn" id="saveBtn">Save notes</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>`;
+
+      $('#purposeToggle').addEventListener('click', () => {
+        const p = $('#purposePop'), a = $('#purposeArrow');
+        p.hidden = !p.hidden; a.textContent = p.hidden ? '▾' : '▴';
+      });
       $('#refreshBtn').addEventListener('click', () => doRefresh(c.name));
-      $('#saveNotesBtn').addEventListener('click', () => doSaveNotes(c.name));
-      const rerun = $('#rerunLink');
-      if (rerun) rerun.addEventListener('click', (e) => { e.preventDefault(); doRefresh(c.name); });
-      // Lazy-load the component records only when the accordion is opened.
-      const acc = panel.querySelector('.meta-accordion');
+      $('#saveBtn').addEventListener('click', () => doSaveNotes(c.name));
+      loadChapterTop10(c.name);     // top-10 recipes — primary visible section
+      // Source-sites list is collapsed by default; lazy-load rows on first expand.
+      const acc = panel.querySelector('.ed-accordion');
       if (acc) acc.addEventListener('toggle', () => {
-        if (acc.open && !acc.dataset.loaded) { acc.dataset.loaded = '1'; loadChapterRecipes(c.name); }
+        if (acc.open && !acc.dataset.loaded){ acc.dataset.loaded = '1'; loadChapterRecipes(c.name); }
       });
     }
 
-    // Component records: the master_recipes that make up this chapter,
-    // each opening in BCC (/r/<id>). Loaded async after the detail paints.
-    async function loadChapterRecipes(name) {
-      const wrap = $('#recipeList');
+    async function loadChapterTop10(name){
+      const wrap = $('#top10list');
+      if (!wrap) return;
+      try {
+        const r = await fetch(`/chapters/${encodeURIComponent(name)}/top-recipes`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const payload = await r.json();
+        const recs = payload.recipes || [];
+        const cnt = $('#top10count'); if (cnt) cnt.textContent = recs.length ? `(${recs.length})` : '';
+        if (!recs.length){ wrap.innerHTML = '<li class="ed-empty-fit">No scored recipes for this chapter yet — populated on the next dish refresh.</li>'; return; }
+        wrap.innerHTML = recs.map((rec, i) => {
+          const href = rec.bcc_url || rec.source_url || '#';
+          const img = (rec.preview_image || rec.fallback_image || '').trim();
+          const thumb = img
+            ? `<span class="ed-t10-thumb"><img src="${escapeHtml(img)}" alt="" loading="lazy"></span>`
+            : `<span class="ed-t10-thumb"></span>`;
+          const host = rec.site_name || (rec.source_url || '').replace(/^https?:\/\//, '').split('/')[0];
+          const sub = [host, rec.dish].filter(Boolean).map(escapeHtml).join(' · ');
+          const ou = (typeof rec.ou === 'number') ? rec.ou.toFixed(1) : '—';
+          const grade = rec.grade ? `<span class="ed-t10-grade">${escapeHtml(rec.grade)}</span>` : '';
+          const dapa = `DA ${rec.da == null ? '—' : Math.round(rec.da)} · PA ${rec.pa == null ? '—' : Math.round(rec.pa)}`;
+          return `<a class="ed-t10-row" href="${escapeHtml(href)}" target="_blank" rel="noopener" title="Open in BCC">
+              <span class="ed-t10-rank">${i + 1}</span>
+              ${thumb}
+              <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(rec.name)}</span><span class="ed-t10-sub">${sub}</span></span>
+              <span class="ed-t10-metrics">
+                <span class="ed-t10-ouline"><span class="ed-t10-ou">${ou}<small>OU</small></span>${grade}</span>
+                <span class="ed-t10-dapa">${dapa}</span>
+              </span>
+            </a>`;
+        }).join('');
+      } catch (e) {
+        wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load top recipes (${escapeHtml(String(e.message || e))}).</li>`;
+      }
+    }
+
+    function renderCreate(){
+      const panel = $('#page');
+      panel.innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · New Chapter</button></div>
+        <h1 class="ed-title">Add a chapter</h1>
+        <p class="ed-notes-help" style="margin:0 0 20px;font-size:.95em">Creates a chapter row. It starts unfit — it’ll be fit once recipes are classified into it and a dish run (or Refresh fit) computes its authority model.</p>
+        <section class="ed-block" style="border-top:none;padding-top:0">
+          <div class="ed-form-grid">
+            <div class="ed-field full"><label for="newName">Chapter name</label><input id="newName" type="text" placeholder="e.g. Pickles &amp; Preserves" autocomplete="off"></div>
+            <div class="ed-field full"><label for="newNotes">Curator notes (optional)</label><textarea id="newNotes" class="ed-notes" style="min-height:110px" placeholder="Why this chapter exists, scope, edge cases…"></textarea></div>
+          </div>
+        </section>
+        <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
+          <button type="button" class="ed-btn primary" id="createBtn">Create chapter</button>
+          <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>`;
+      $('#newName').focus();
+      $('#cancelBtn').addEventListener('click', () => { selectedName = null; renderList(); renderDetail(); });
+      $('#createBtn').addEventListener('click', doCreate);
+    }
+
+    async function doCreate(){
+      const name = $('#newName').value.trim();
+      const notes = $('#newNotes').value.trim();
+      const hint = $('#hint'); const btn = $('#createBtn');
+      if (!name){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Chapter name is required'; $('#newName').focus(); return; }
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        const r = await fetch('/chapters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, notes }) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        await loadChapters();
+        selectedName = name;
+        renderList(); renderDetail();
+        flash('Chapter created');
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Create chapter';
+        hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
+      }
+    }
+
+    async function loadChapterRecipes(name){
+      const wrap = $('#cohort');
       if (!wrap) return;
       try {
         const r = await fetch(`/chapters/${encodeURIComponent(name)}/recipes`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const recs = await r.json();
         const cnt = $('#recCount'); if (cnt) cnt.textContent = `(${recs.length})`;
-        if (!recs.length) {
-          wrap.innerHTML = '<p class="empty-fit">No source records.</p>';
-          return;
-        }
+        if (!recs.length){ wrap.innerHTML = '<p class="ed-empty-fit">No source records.</p>'; return; }
         wrap.innerHTML = recs.map(rec => {
           const url = rec.url || '';
           const disp = url.replace(/^https?:\/\//, '');
           const da = rec.da == null ? '—' : Number(rec.da).toFixed(0);
           const pa = rec.pa == null ? '—' : Number(rec.pa).toFixed(0);
-          return `<a class="cohort-row" href="${escapeHtml(url)}" target="_blank" rel="noopener">
-              <span class="cohort-url">${escapeHtml(disp)}</span>
-              <span class="cohort-scores">DA ${da} · PA ${pa}</span>
-            </a>`;
+          return `<a class="ed-cohort-row" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+              <span class="ed-cohort-url">${escapeHtml(disp)}</span>
+              <span class="ed-cohort-scores">DA ${da} · PA ${pa}</span></a>`;
         }).join('');
       } catch (e) {
-        wrap.innerHTML = `<p class="empty-fit">Couldn't load records (${escapeHtml(String(e.message || e))}).</p>`;
+        wrap.innerHTML = `<p class="ed-empty-fit">Couldn’t load records (${escapeHtml(String(e.message || e))}).</p>`;
       }
     }
 
-    async function loadChapters() {
+    /* ----------------------------- data + actions ----------------------------- */
+    async function loadChapters(){
       const r = await fetch('/chapters');
-      if (!r.ok) { console.error('list chapters failed', r.status); return; }
+      if (!r.ok){ console.error('list chapters failed', r.status); return; }
       const list = await r.json();
       chapters = {};
       for (const c of list) chapters[c.name] = c;
       renderList();
-      if (selectedName && chapters[selectedName]) renderDetail();
+      renderDetail();
     }
 
-    async function doRefresh(name) {
+    async function doRefresh(name){
       const btn = $('#refreshBtn');
-      if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+      if (btn){ btn.disabled = true; btn.textContent = 'Refreshing…'; }
       try {
         const r = await fetch(`/chapters/${encodeURIComponent(name)}/refresh`, { method: 'POST' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const updated = await r.json();
-        chapters[name] = updated;
-        renderList();
-        renderDetail();
+        chapters[name] = await r.json();
+        renderList(); renderDetail();
+        flash('Fit refreshed');
       } catch (e) {
-        alert(`Refresh failed: ${e.message || e}`);
-        if (btn) { btn.disabled = false; btn.textContent = 'Refresh fit'; }
+        if (btn){ btn.disabled = false; btn.textContent = 'Refresh fit'; }
+        flash(`Refresh failed: ${e.message || e}`, true);
       }
     }
 
-    async function doSaveNotes(name) {
-      const notes = $('#notesArea').value;
-      const btn = $('#saveNotesBtn');
-      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    async function doSaveNotes(name){
+      const notes = $('#notes').value;
+      const btn = $('#saveBtn'); const hint = $('#hint');
+      btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
       try {
         const r = await fetch(`/chapters/${encodeURIComponent(name)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ notes }),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const updated = await r.json();
-        chapters[name] = updated;
-        // Universal save flow: confirm, clear the form, return to sidebar.
-        LibraryShell.afterSave({
-          message: 'Notes saved',
-          onClear: () => { selectedName = null; renderList(); renderDetail(); },
-        });
+        chapters[name] = await r.json();
+        btn.textContent = 'Saved ✓'; btn.classList.add('done');
+        if (hint) hint.textContent = 'Notes saved';
+        setTimeout(() => { btn.textContent = 'Save notes'; btn.classList.remove('done'); btn.disabled = false; }, 1900);
       } catch (e) {
-        alert(`Save failed: ${e.message || e}`);
-        if (btn) { btn.disabled = false; btn.textContent = 'Save notes'; }
+        btn.disabled = false; btn.textContent = 'Save notes';
+        flash(`Save failed: ${e.message || e}`, true);
       }
     }
 
-    $('#searchInput').addEventListener('input', (e) => {
-      searchTerm = e.target.value;
-      renderList();
+    /* ----------------------------- wiring ----------------------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls');
+      c.hidden = !c.hidden;
+      $('#searchToggle').classList.toggle('active', !c.hidden);
+      if (!c.hidden) $('#search').focus();
     });
-
-    $('#sortSelect').addEventListener('change', (e) => {
-      sortKey = e.target.value;
-      renderList();
-    });
-
+    $('#addToggle').addEventListener('click', () => { selectedName = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
+    $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
+    $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
     $('#refreshAllBtn').addEventListener('click', async () => {
       const btn = $('#refreshAllBtn');
       btn.disabled = true; btn.textContent = 'Refreshing…';
@@ -773,8 +427,9 @@
         const r = await fetch('/chapters/refresh-all', { method: 'POST' });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         await loadChapters();
+        flash('All fits refreshed');
       } catch (e) {
-        alert(`Refresh all failed: ${e.message || e}`);
+        flash(`Refresh all failed: ${e.message || e}`, true);
       } finally {
         btn.disabled = false; btn.textContent = 'Refresh all fits';
       }

@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Best Cooks Club — Admin · Edit Chapter</title>
+<!--
+  Chapters ADMIN editor — standalone mockup (no server, no shared CSS/JS).
+  Framework target: this is the template the a/c/d/v table editors will clone, so the
+  master/detail nav is built to be reusable, not chapters-specific.
+
+  NAV MODEL (option 2):
+    · Centered shell (--shell-w) so a docked list + a detail column fit two-pane on desktop.
+    · listMode per page: 'docked' (push two-pane) or 'overlay' (full-width detail, list floats).
+    · Mobile (<=860) is always overlay — the list is its own page; the detail's back returns to it.
+    · One header-left control = the back convention: collapse/show list (docked) or open/close (overlay).
+  DEMO CONTROLS (header right, dev-only): flip List mode + Shell width live to find the right feel.
+  The FIT is read-only here (recomputed each dish run). This screen edits notes + manages the list.
+-->
+<style>
+  :root{
+    --paper:#fbfaf7;
+    --surface:#fff;
+    --ink:#1d1d1f;
+    --ink-soft:#4a463f;
+    --key:#8a8176;
+    --muted:#a39b8f;
+    --hairline:#e9e4dc;
+    --hairline-soft:#eee9e2;
+    --accent:#8a5a3b;
+    --accent-strong:#6f4628;
+    --accent-soft:rgba(138,90,59,.06);
+    --warn:#b4541f;
+    --warn-bg:#fdf4ea;
+    --warn-border:#f0dcc2;
+    --ok:#6f7a3f;
+    --formula-bg:#faf7f2;
+    --formula-border:#eadfd2;
+    --header-h:58px;
+    --sidebar-w:308px;
+    --shell-w:1200px;     /* centered app width — tweakable live via the Width switch */
+    --shell-gap:18px;     /* space below the list so its text isn't flush to the window bottom */
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+    font-weight:300;
+    font-size:16px;
+    letter-spacing:-0.003em;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .app-header{
+    position:sticky; top:0; z-index:60;
+    height:var(--header-h);
+    display:flex;
+    padding:0 22px;
+    background:rgba(255,255,255,.96);
+    backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--hairline);
+  }
+  .header-inner{
+    max-width:var(--shell-w); width:100%; margin:0 auto;
+    display:flex; align-items:center; gap:14px;
+  }
+  .nav-toggle{
+    display:inline-flex; align-items:center; gap:6px;
+    height:34px; padding:0 10px; border-radius:8px;
+    background:transparent; border:1px solid var(--hairline);
+    color:var(--ink); cursor:pointer; font:inherit; font-size:.82em;
+  }
+  .nav-toggle:hover{ background:var(--accent-soft); border-color:var(--ink); }
+  .nav-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .brandline{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .brand{ font-size:1.05em; font-weight:600; letter-spacing:-.01em; white-space:nowrap; }
+  .module-badge{
+    font-size:.72em; letter-spacing:.12em; text-transform:uppercase; color:var(--accent);
+    border-left:1px solid var(--hairline); padding-left:10px; font-weight:600; white-space:nowrap;
+  }
+  .header-spacer{ flex:1; }
+
+  /* dev-only demo controls (test harness — NOT production chrome; gated/removed when this lifts to LibraryShell) */
+  .demo-controls{display:flex;align-items:center;gap:12px;margin-right:14px}
+  .demo-tag{font-size:.58em;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border:1px dashed var(--hairline);border-radius:5px;padding:2px 6px}
+  .seg{display:inline-flex;align-items:center;gap:7px}
+  .seg .seg-label{font-size:.66em;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .seg .seg-btns{display:inline-flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden}
+  .seg button{border:0;border-left:1px solid var(--hairline);background:transparent;padding:5px 9px;cursor:pointer;color:var(--key);font:inherit;font-size:.72em}
+  .seg button:first-child{border-left:0}
+  .seg button.active{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+
+  .badge{ display:flex; flex-direction:column; align-items:flex-end; line-height:1.2; font-size:.78em; }
+  .badge .who{ color:var(--ink); font-weight:500; }
+  .badge .mail{ color:var(--key); text-decoration:none; }
+
+  /* ---- Master/detail nav framework (per-page listMode: docked | overlay) ----
+     Docked: list shares layout (push two-pane); collapsing reclaims width.
+     Overlay: detail is always full width; the list floats over a scrim.
+     Mobile (<=860) always behaves as overlay regardless of mode. */
+  .app{
+    display:grid; grid-template-columns:var(--sidebar-w) 1fr;
+    transition:grid-template-columns .22s ease;
+    max-width:var(--shell-w); margin:0 auto;   /* centered shell */
+  }
+  body.list-collapsed .app{ grid-template-columns:0 1fr; }     /* docked, collapsed */
+
+  body.mode-overlay .app{ grid-template-columns:1fr; }         /* detail full width */
+  body.mode-overlay .sidebar{
+    position:fixed; top:var(--header-h); bottom:0; left:0; width:var(--sidebar-w);
+    transform:translateX(-110%); transition:transform .24s ease;
+    z-index:70; box-shadow:4px 0 24px rgba(60,40,20,.14); height:auto;
+  }
+  body.mode-overlay.drawer-open .sidebar{ transform:none; }
+  .scrim{ display:none; }
+  body.mode-overlay.drawer-open .scrim{
+    display:block; position:fixed; inset:var(--header-h) 0 0 0;
+    background:rgba(30,22,14,.28); z-index:65;
+  }
+
+  .sidebar{
+    position:sticky; top:var(--header-h);
+    height:calc(100vh - var(--header-h));
+    background:var(--surface);
+    border-right:1px solid var(--hairline);
+    padding:18px 16px 14px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+    min-width:0;
+  }
+  .sidebar-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom:10px; border-bottom:1px solid var(--hairline);
+    margin-bottom:12px; flex:0 0 auto;
+  }
+  .sidebar-head h2{
+    margin:0; font-size:.8em; font-weight:600; letter-spacing:.07em;
+    text-transform:uppercase; color:var(--key);
+  }
+  .head-actions{display:flex;gap:6px}
+  .icon-btn{
+    width:30px; height:30px;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid var(--hairline); border-radius:8px;
+    background:transparent; color:var(--key); cursor:pointer;
+  }
+  .icon-btn:hover{border-color:var(--ink);color:var(--ink);background:var(--accent-soft)}
+  .icon-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .icon-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  .attention-panel{
+    background:var(--warn-bg); border:1px solid var(--warn-border);
+    border-radius:11px; padding:10px 12px; margin:0 0 12px;
+  }
+  .attention-title{
+    color:var(--warn); font-size:.76em; font-weight:600; letter-spacing:.08em;
+    text-transform:uppercase; margin-bottom:6px;
+  }
+  .attention-copy{font-size:.78em;color:#7a4012;line-height:1.35}
+  .attention-panel.none{background:#f5f7ee;border-color:#dde0c4}
+  .attention-panel.none .attention-title{color:var(--ok)}
+  .attention-panel.none .attention-copy{color:#566127}
+
+  .controls{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  .controls[hidden]{display:none}
+  .controls input,.controls select{
+    width:100%; font:inherit; font-size:.9em; font-weight:300;
+    padding:8px 11px; border-radius:8px; border:1px solid var(--hairline);
+    background:var(--surface); color:var(--ink);
+  }
+  .controls input:focus,.controls select:focus{outline:none;border-color:var(--ink)}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.72em;color:var(--muted);padding:0 2px 12px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend .d{width:8px;height:8px;border-radius:50%}
+  .legend .d.ok{background:var(--accent)}
+  .legend .d.warn{background:var(--warn)}
+  .legend .d.none{border:1.5px solid var(--muted)}
+
+  .list{
+    list-style:none;margin:0;padding:0 2px var(--shell-gap);flex:1;min-height:0;overflow-y:auto;
+    scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--hairline) transparent;
+  }
+  .list::-webkit-scrollbar{width:8px}
+  .list::-webkit-scrollbar-thumb{background:var(--hairline);border-radius:8px}
+  .list::-webkit-scrollbar-track{background:transparent}
+  .item{cursor:pointer;padding:11px 12px;border-radius:9px;border:1px solid transparent;margin-bottom:3px}
+  .item:hover{background:var(--accent-soft)}
+  .item.selected{background:#fbf5ee;border-left:3px solid var(--accent);border-radius:0 9px 9px 0;padding-left:11px}
+  .item-top{display:flex;align-items:center;gap:8px}
+  .item-name{font-size:.95em;font-weight:400;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item-flag{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .item-flag.ok{background:var(--accent)}
+  .item-flag.warn{background:var(--warn)}
+  .item-flag.none{border:1.5px solid var(--muted)}
+  .item-meta{margin-top:4px;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.74em;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .content{min-width:0}
+  .page{max-width:780px;margin:0 auto;padding:26px 40px 40px}   /* detail reading width (separate knob from --shell-w) */
+  .form-kicker{ position:relative; margin-bottom:16px; }
+  .purpose-toggle{
+    border:0; background:transparent; padding:0; color:var(--accent);
+    font-size:.72em; font-weight:700; letter-spacing:.13em; text-transform:uppercase; cursor:pointer;
+  }
+  .purpose-toggle span{ margin-left:6px; color:var(--muted); }
+  .purpose-toggle:hover{ color:var(--accent-strong); }
+  .purpose-popover{
+    position:absolute; top:24px; left:0; z-index:20; max-width:470px;
+    padding:14px 16px; border:1px solid var(--hairline); border-radius:12px;
+    background:#fff; color:var(--key); font-size:.88em; line-height:1.45;
+    box-shadow:0 14px 34px rgba(60,40,20,.10);
+  }
+  .purpose-popover strong{ color:var(--ink-soft); font-weight:500; }
+
+  .detail-title{ margin:0 0 14px; font-size:1.85em; font-weight:300; letter-spacing:-0.022em; }
+  .status-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:.78em;font-weight:400;padding:4px 11px;border-radius:999px;
+    border:1px solid var(--hairline);color:var(--key);background:var(--surface);
+  }
+  .pill .d{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .pill.warn{color:var(--warn);border-color:var(--warn-border);background:var(--warn-bg)}
+  .pill.warn .d{background:var(--warn)}
+  .submeta{color:var(--muted);font-size:.85em;margin:2px 0 0;font-family:ui-monospace,'SF Mono',Menlo,monospace}
+
+  .block{border-top:1px solid var(--hairline-soft);padding:22px 0 4px}
+  .block-label{ margin:0 0 16px;font-size:.72em;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--key); }
+  .kv{display:grid;grid-template-columns:240px 1fr;row-gap:13px;column-gap:24px}
+  .kv .k{color:var(--key);font-weight:300;font-size:.95em}
+  .kv .v{color:var(--ink);font-weight:500;font-size:.95em;font-variant-numeric:tabular-nums}
+  .kv .sub{color:var(--muted);font-weight:300}
+  .provenance{margin:16px 0 0;font-size:.82em;color:var(--muted)}
+  .formula{
+    margin:0;padding:22px 26px;border-radius:14px;background:var(--formula-bg);
+    border:1px solid var(--formula-border);
+    font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.95em;color:var(--ink);line-height:1.5;white-space:pre-wrap;
+  }
+  .formula .ex{display:block;margin-top:12px;color:var(--key);font-size:.88em}
+  .notes-help{ margin:-4px 0 10px; color:var(--muted); font-size:.86em; line-height:1.45; }
+  .notes-area{
+    width:100%;min-height:170px;resize:vertical;font:inherit;font-size:.95em;font-weight:300;line-height:1.55;color:var(--ink);
+    padding:14px 16px;border:1px solid var(--hairline);border-radius:12px;background:var(--surface);
+  }
+  .notes-area:focus{outline:none;border-color:var(--accent)}
+
+  .field{margin-bottom:18px;max-width:460px}
+  .field label{display:block;font-size:.74em;color:var(--key);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
+  .field input{width:100%;font:inherit;font-weight:300;padding:10px 12px;border:1px solid var(--hairline);border-radius:10px;background:var(--surface)}
+  .field input:focus{outline:none;border-color:var(--accent)}
+
+  .actions{
+    position:sticky;bottom:0;margin-top:30px;
+    background:linear-gradient(180deg, rgba(251,250,247,0) 0%, var(--paper) 38%);
+    padding:18px 0 6px;display:flex;gap:10px;align-items:center;
+  }
+  .btn{
+    font:inherit;font-size:.92em;font-weight:400;cursor:pointer;padding:9px 18px;border-radius:9px;
+    border:1px solid var(--hairline);background:var(--surface);color:var(--ink);
+  }
+  .btn:hover{border-color:var(--ink);background:var(--accent-soft)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+  .btn.danger{color:var(--warn);border-color:var(--warn-border)}
+  .btn.danger:hover{background:var(--warn-bg);border-color:var(--warn)}
+  .btn.done{color:var(--ok);border-color:#dde0c4;background:#f7f8ef}
+  .btn:disabled{opacity:.55;cursor:default}
+  .save-hint{font-size:.8em;color:var(--muted);margin-left:auto}
+
+  @media(max-width:860px){
+    .app{grid-template-columns:1fr!important;max-width:none}
+    .sidebar{position:fixed;top:var(--header-h);bottom:0;left:0;width:88vw;max-width:360px;transform:translateX(-110%);transition:transform .26s ease;z-index:70;box-shadow:4px 0 24px rgba(60,40,20,.14);height:auto}
+    body.drawer-open .sidebar{transform:none}
+    body.drawer-open .scrim{display:block;position:fixed;inset:var(--header-h) 0 0 0;background:rgba(30,22,14,.28);z-index:65}
+    .page{padding:26px 20px 36px}
+    .demo-controls{display:none}
+    .module-badge{display:none}
+    .badge{display:none}
+  }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-inner">
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle list"></button>
+    <div class="brandline">
+      <div class="brand">Best Cooks Club</div>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="demo-controls">
+      <span class="demo-tag" title="Temporary test harness — not part of the shipped UI">dev</span>
+      <div class="seg" title="Demo: list layout. Docked = two-pane (pushes); Overlay = full-width detail with the list floating.">
+        <span class="seg-label">List</span>
+        <span class="seg-btns" id="modeSwitch">
+          <button data-mode="docked">Docked</button>
+          <button data-mode="overlay">Overlay</button>
+        </span>
+      </div>
+      <div class="seg" title="Demo: centered shell width.">
+        <span class="seg-label">Width</span>
+        <span class="seg-btns" id="widthSwitch">
+          <button data-w="1040">1040</button>
+          <button data-w="1200">1200</button>
+          <button data-w="1320">1320</button>
+          <button data-w="full">Full</button>
+        </span>
+      </div>
+    </div>
+    <div class="badge">
+      <span class="who">John Landry</span>
+      <a class="mail" href="mailto:johnlandryiii@gmail.com">johnlandryiii@gmail.com</a>
+    </div>
+  </div>
+</header>
+<div class="scrim" id="scrim"></div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <h2>Chapters <span id="count"></span></h2>
+      <div class="head-actions">
+        <button class="icon-btn" id="searchToggle" title="Search & sort" aria-label="Search and sort">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <button class="icon-btn" id="addToggle" title="New chapter" aria-label="New chapter">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="attention-panel" id="attnPanel">
+      <div class="attention-title" id="attnTitle"></div>
+      <div class="attention-copy" id="attnCopy"></div>
+    </div>
+
+    <div class="controls" id="controls" hidden>
+      <input type="search" id="search" placeholder="Search chapters…">
+      <select id="sort">
+        <option value="attention">Sort: needs attention</option>
+        <option value="name">Sort: name (A–Z)</option>
+        <option value="recipes">Sort: recipes (most)</option>
+        <option value="r2">Sort: confidence (R²)</option>
+      </select>
+    </div>
+
+    <div class="legend">
+      <span><i class="d ok"></i>healthy fit</span>
+      <span><i class="d warn"></i>needs attention</span>
+      <span><i class="d none"></i>no fit</span>
+    </div>
+    <ul class="list" id="list"></ul>
+  </aside>
+
+  <main class="content">
+    <div class="page" id="page"></div>
+  </main>
+</div>
+
+<script>
+const CHAPTERS = [
+  { name:'Breads & Quick Breads', state:'graded', model:'linear', r2:0.52, n:27, current:27, sigma:6.8, updatedMin:8640, coeffs:[0.81,10.2], notes:'' },
+  { name:'Cookies & Bars', state:'graded', model:'quadratic', r2:0.74, n:52, current:52, sigma:4.6, updatedMin:720, coeffs:[-0.004,0.90,12.8], notes:'' },
+  { name:'Fruit Desserts', state:'graded', model:'quadratic', r2:0.77, n:25, current:25, sigma:5.19, updatedMin:23, coeffs:[-0.006,1.05,8.7], notes:'' },
+  { name:'Pasta & Noodles', state:'graded', model:'quadratic', r2:0.73, n:46, current:46, sigma:4.8, updatedMin:1080, coeffs:[-0.004,0.92,12.3], notes:'Deep, stable cohort. No action needed.' },
+  { name:'Pies & Pastries', state:'graded', model:'quadratic', r2:0.69, n:34, current:34, sigma:5.5, updatedMin:1440, coeffs:[-0.005,0.98,10.1], notes:'' },
+  { name:'Poultry', state:'graded', model:'power', r2:0.82, n:58, current:58, sigma:4.1, updatedMin:300, coeffs:[2.1,0.78], notes:'Best fit in the book.' },
+  { name:'Rice & Grains', state:'graded', model:'linear', r2:0.58, n:26, current:26, sigma:6.1, updatedMin:11520, coeffs:[0.85,9.9], notes:'' },
+  { name:'Sandwiches, Pizza & Savory Pastry', state:'graded', model:'linear', r2:0.50, n:30, current:30, sigma:6.9, updatedMin:7200, coeffs:[0.78,10.8], notes:'' },
+  { name:'Seafood', state:'graded', model:'quadratic', r2:0.71, n:29, current:29, sigma:5.0, updatedMin:240, coeffs:[-0.005,0.95,11.0], notes:'' },
+  { name:'Soups & Stews', state:'graded', model:'linear', r2:0.61, n:31, current:31, sigma:6.0, updatedMin:4320, coeffs:[0.88,9.4], notes:'' },
+  { name:'Casseroles & Baked Dishes', state:'below_min_n', model:null, r2:null, n:null, current:16, sigma:null, updatedMin:null, coeffs:null, notes:'New chapter from the 05-30 taxonomy restructure.' },
+  { name:'Sauces', state:'unfit', model:null, r2:null, n:null, current:41, sigma:null, updatedMin:null, coeffs:null, notes:'Large corpus — awaiting first dish run.' }
+];
+
+// Global exceptionalism-grading constants (placeholders — swap in real values).
+const GRADE = { sigmaFloor:5.0, base:50, sigmaMult:1.5 };
+
+const $ = s => document.querySelector(s);
+let selected = 'Breads & Quick Breads';   // '__new__' = create form
+let term = '';
+let sortKey = 'attention';
+
+function needsAttention(c){ return c.state!=='graded' || c.r2 < .60; }
+function flag(c){ if(c.state!=='graded') return c.state==='below_min_n'?'none':'warn'; return needsAttention(c)?'warn':'ok'; }
+function ago(min){ if(min==null)return 'never'; if(min<60)return `${min} min ago`; if(min<1440)return `${Math.round(min/60)} hr ago`; return `${Math.round(min/1440)} days ago`; }
+function quality(c){ if(c.state!=='graded')return 'No fit'; if(c.r2>=.75)return 'Excellent fit'; if(c.r2>=.60)return 'Healthy fit'; if(c.r2>=.45)return 'Moderate fit'; return 'Weak fit'; }
+function meta(c){ if(c.state==='graded')return `n=${c.n} · ${c.model} · R² ${c.r2.toFixed(2)}`; if(c.state==='below_min_n')return `${c.current} recipes · corpus < 25`; return `${c.current} recipes · awaiting run`; }
+
+function candidates(c){
+  const r=c.r2, lower=[Math.max(0,r-0.04),Math.max(0,r-0.08)];
+  const out={}; let i=0;
+  for(const m of ['linear','quadratic','power']) out[m] = (m===c.model)?r:lower[i++];
+  return out;
+}
+
+function renderList(){
+  const sorters = {
+    attention:(a,b)=>(needsAttention(b)-needsAttention(a))||a.name.localeCompare(b.name),
+    name:(a,b)=>a.name.localeCompare(b.name),
+    recipes:(a,b)=>(b.current||0)-(a.current||0)||a.name.localeCompare(b.name),
+    r2:(a,b)=>(b.r2||-1)-(a.r2||-1)||a.name.localeCompare(b.name),
+  };
+  let rows = CHAPTERS.filter(c=>!term || c.name.toLowerCase().includes(term.toLowerCase()));
+  rows.sort(sorters[sortKey]||sorters.attention);
+  $('#count').textContent = `(${rows.length})`;
+
+  const attn = CHAPTERS.filter(needsAttention).length;
+  const panel=$('#attnPanel'), title=$('#attnTitle'), copy=$('#attnCopy');
+  if(attn){ panel.classList.remove('none'); title.textContent=`${attn} need attention`; copy.textContent='Weak fit, no fit, or corpus below minimum.'; }
+  else{ panel.classList.add('none'); title.textContent='All chapters healthy'; copy.textContent='Every chapter has a usable fit.'; }
+
+  $('#list').innerHTML='';
+  for(const c of rows){
+    const li=document.createElement('li');
+    li.className='item' + (c.name===selected?' selected':'');
+    li.innerHTML = `<div class="item-top"><span class="item-name">${c.name}</span><span class="item-flag ${flag(c)}"></span></div><div class="item-meta">${meta(c)}</div>`;
+    li.onclick=()=>{ stashNotes(); selected=c.name; renderList(); renderMain(); nav.afterSelect(); };
+    $('#list').appendChild(li);
+  }
+}
+
+function stashNotes(){ const ta=document.getElementById('notes'); if(ta){ const c=CHAPTERS.find(x=>x.name===selected); if(c) c.notes=ta.value; } }
+
+function formula(c){
+  if(!c.coeffs)return '';
+  const f=c.coeffs;
+  if(c.model==='linear') return `predicted PA  =  ${f[0]}·DA  +  ${f[1]}<span class="ex">at DA 80  →  PA ≈ ${(f[0]*80+f[1]).toFixed(1)}</span>`;
+  if(c.model==='quadratic') return `predicted PA  =  ${f[0]}·DA²  +  ${f[1]}·DA  +  ${f[2]}<span class="ex">at DA 80  →  PA ≈ ${(f[0]*6400+f[1]*80+f[2]).toFixed(1)}</span>`;
+  return `predicted PA  =  ${f[0]}·DA ^ ${f[1]}<span class="ex">at DA 80  →  PA ≈ ${(f[0]*Math.pow(80,f[1])).toFixed(1)}</span>`;
+}
+
+function renderMain(){
+  if(selected==='__new__') return renderCreate();
+  let c = CHAPTERS.find(x=>x.name===selected);
+  if(!c){ selected = CHAPTERS[0] ? CHAPTERS[0].name : null; if(!selected){ $('#page').innerHTML=''; return; } c = CHAPTERS[0]; }
+  renderDetail(c);
+}
+
+function renderDetail(c){
+  let effRow='—', candRow='—', scaleRow='—';
+  if(c.state==='graded'){
+    const cand=candidates(c);
+    candRow = ['linear','quadratic','power'].map(m=>{
+      const v=cand[m].toFixed(3);
+      return m===c.model ? `<strong>${m} ${v}</strong>` : `${m} ${v}`;
+    }).join(' <span class="sub">·</span> ');
+    const sEff=Math.max(c.sigma,GRADE.sigmaFloor), floored=sEff>c.sigma;
+    effRow = `${sEff.toFixed(2)} <span class="sub">· floor ${GRADE.sigmaFloor.toFixed(1)}${floored?' (applied)':''}</span>`;
+    scaleRow = `base ${GRADE.base} <span class="sub">· σ×${GRADE.sigmaMult}</span>`;
+  }
+
+  $('#page').innerHTML = `
+    <div class="form-kicker">
+      <button type="button" class="purpose-toggle" id="purposeToggle">
+        Admin · Edit Chapter <span id="purposeArrow">▾</span>
+      </button>
+      <div class="purpose-popover" id="purposePopover" hidden>
+        <strong>Purpose:</strong> review this chapter’s read-only authority fit, edit curator notes, and manage chapter membership rules. Fits are recomputed by the dish pipeline, not manually refreshed here.
+      </div>
+    </div>
+
+    <h1 class="detail-title">${c.name}</h1>
+    <div class="status-strip">
+      <span class="pill ${needsAttention(c)?'warn':''}"><i class="d"></i>${quality(c)}</span>
+      <span class="pill"><i class="d"></i>${c.state==='graded'?c.n:c.current} recipes ${c.state==='graded'?'analyzed':'available'}</span>
+      <span class="pill"><i class="d"></i>Last run ${ago(c.updatedMin)}</span>
+    </div>
+    <p class="submeta">${c.state==='graded' ? `R² ${c.r2.toFixed(2)} · ${c.n} recipes analyzed · last run ${ago(c.updatedMin)}` : `${c.current} recipes · no usable fit yet`}</p>
+
+    <section class="block">
+      <h3 class="block-label">Model fit</h3>
+      <div class="kv">
+        <div class="k">Model type</div><div class="v">${c.model ? c.model[0].toUpperCase()+c.model.slice(1)+' regression' : '—'}</div>
+        <div class="k">Recipes analyzed</div><div class="v">${c.n ?? '—'}</div>
+        <div class="k">Coefficient of determination</div><div class="v">${c.r2 ? 'R² = '+c.r2.toFixed(2) : '—'} <span class="sub">${c.r2 ? '· '+quality(c).replace(' fit','').toLowerCase() : ''}</span></div>
+        <div class="k">Residual scatter (σ)</div><div class="v">${c.sigma ?? '—'}</div>
+        <div class="k">Effective σ</div><div class="v">${effRow}</div>
+        <div class="k">Candidate fits</div><div class="v">${candRow}</div>
+        <div class="k">Grade scale</div><div class="v">${scaleRow}</div>
+      </div>
+      <p class="provenance">Computed automatically at the end of each dish run. Read-only here.</p>
+    </section>
+
+    ${c.state==='graded' ? `<section class="block"><h3 class="block-label">Predicted authority model</h3><pre class="formula">${formula(c)}</pre></section>` : ''}
+
+    <section class="block">
+      <h3 class="block-label">Curator notes</h3>
+      <p class="notes-help">Use this for scope decisions, classification exceptions, known corpus issues, and follow-up work.</p>
+      <textarea id="notes" class="notes-area" placeholder="Editorial context, known issues, scope decisions…">${c.notes||''}</textarea>
+    </section>
+
+    <div class="actions">
+      <button class="btn primary" id="saveBtn">Save notes</button>
+      <button class="btn danger" id="deleteBtn">Delete chapter</button>
+      <span class="save-hint" id="hint"></span>
+    </div>`;
+
+  $('#purposeToggle').onclick=()=>{
+    const pop=$('#purposePopover'), arrow=$('#purposeArrow');
+    pop.hidden=!pop.hidden; arrow.textContent=pop.hidden?'▾':'▴';
+  };
+  $('#saveBtn').onclick=()=>{
+    const btn=$('#saveBtn');
+    c.notes=$('#notes').value;
+    btn.disabled=true; btn.textContent='Saving…'; btn.classList.remove('done');
+    setTimeout(()=>{btn.textContent='Saved ✓';btn.classList.add('done');$('#hint').textContent='Notes saved';},600);
+    setTimeout(()=>{btn.textContent='Save notes';btn.classList.remove('done');btn.disabled=false;},1900);
+  };
+  $('#deleteBtn').onclick=()=>{
+    if(!confirm(`Delete chapter “${c.name}”?\n\n(Mockup only — nothing persisted.)`)) return;
+    const i=CHAPTERS.indexOf(c); if(i>=0) CHAPTERS.splice(i,1);
+    selected = CHAPTERS[0] ? CHAPTERS[0].name : null;
+    renderList(); renderMain();
+  };
+}
+
+function renderCreate(){
+  $('#page').innerHTML = `
+    <div class="form-kicker">
+      <button type="button" class="purpose-toggle" disabled style="cursor:default">Admin · New Chapter</button>
+    </div>
+    <h1 class="detail-title">Add a chapter</h1>
+    <p class="notes-help" style="margin:0 0 22px;font-size:.95em">A new chapter starts with no fit — the dish pipeline will fit it on its first run once the corpus reaches the 25-recipe minimum.</p>
+    <div class="field">
+      <label for="newName">Chapter name</label>
+      <input id="newName" type="text" placeholder="e.g. Pickles &amp; Preserves" autocomplete="off">
+    </div>
+    <div class="field" style="max-width:none">
+      <label for="newNotes">Curator notes (optional)</label>
+      <textarea id="newNotes" class="notes-area" style="min-height:110px" placeholder="Why this chapter exists, scope, edge cases…"></textarea>
+    </div>
+    <div class="actions" style="position:static;background:none;padding:8px 0 0">
+      <button class="btn primary" id="createBtn">Create chapter</button>
+      <button class="btn" id="cancelBtn">Cancel</button>
+    </div>`;
+  $('#newName').focus();
+  $('#cancelBtn').onclick=()=>{ selected = CHAPTERS[0] ? CHAPTERS[0].name : null; renderList(); renderMain(); };
+  $('#createBtn').onclick=()=>{
+    const name=$('#newName').value.trim();
+    if(!name){ $('#newName').focus(); return; }
+    if(CHAPTERS.some(c=>c.name.toLowerCase()===name.toLowerCase())){ alert(`A chapter named “${name}” already exists.`); return; }
+    CHAPTERS.push({ name, state:'below_min_n', model:null, r2:null, n:null, current:0, sigma:null, updatedMin:null, coeffs:null, notes:$('#newNotes').value.trim() });
+    selected=name; renderList(); renderMain();
+  };
+}
+
+/* ---- master/detail nav controller (reusable across a/c/d/v editors) ---- */
+const NAV_ICON = {
+  back:'<svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>',
+  collapse:'<svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>',
+  close:'<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+};
+const nav = {
+  mode: (new URLSearchParams(location.search).get('list')==='overlay') ? 'overlay' : 'docked', // per-page default
+  open: true,
+  isMobile(){ return matchMedia('(max-width:860px)').matches; },
+  isOverlay(){ return this.mode==='overlay' || this.isMobile(); },
+  init(){ this.open = !this.isOverlay(); this.apply(); },
+  apply(){
+    const b=document.body;
+    b.classList.toggle('mode-overlay', this.mode==='overlay' && !this.isMobile());
+    if(this.isOverlay()){ b.classList.toggle('drawer-open', this.open); b.classList.remove('list-collapsed'); }
+    else { b.classList.toggle('list-collapsed', !this.open); b.classList.remove('drawer-open'); }
+    this.render();
+  },
+  toggle(){ this.open=!this.open; this.apply(); },
+  afterSelect(){ if(this.isOverlay()){ this.open=false; this.apply(); } },
+  setMode(m){ this.mode=m; this.init(); },
+  render(){
+    const btn=$('#navToggle');
+    if(this.isOverlay() && this.open){ btn.innerHTML=NAV_ICON.close; btn.title='Close list'; }
+    else if(!this.open){ btn.innerHTML=`${NAV_ICON.back}<span>Chapters</span>`; btn.title='Show chapters'; }
+    else { btn.innerHTML=NAV_ICON.collapse; btn.title='Hide list'; }
+    const ms=$('#modeSwitch');
+    if(ms) ms.querySelectorAll('button').forEach(x=>x.classList.toggle('active', x.dataset.mode===this.mode));
+  },
+};
+
+$('#searchToggle').onclick=()=>{ $('#controls').hidden=!$('#controls').hidden; $('#searchToggle').classList.toggle('active',!$('#controls').hidden); if(!$('#controls').hidden) $('#search').focus(); };
+$('#addToggle').onclick=()=>{ selected='__new__'; renderList(); renderMain(); nav.afterSelect(); };
+$('#search').oninput=e=>{ term=e.target.value; renderList(); };
+$('#sort').onchange=e=>{ sortKey=e.target.value; renderList(); };
+$('#navToggle').onclick=()=> nav.toggle();
+$('#scrim').onclick=()=>{ nav.open=false; nav.apply(); };
+$('#modeSwitch').querySelectorAll('button').forEach(b=> b.onclick=()=> nav.setMode(b.dataset.mode));
+$('#widthSwitch').querySelectorAll('button').forEach(b=> b.onclick=()=>{
+  document.documentElement.style.setProperty('--shell-w', b.dataset.w==='full' ? 'none' : b.dataset.w+'px');
+  $('#widthSwitch').querySelectorAll('button').forEach(x=>x.classList.toggle('active', x===b));
+});
+matchMedia('(max-width:860px)').addEventListener('change', ()=> nav.init());
+
+// set initial Width-switch active state to match :root --shell-w (1200)
+$('#widthSwitch').querySelector('[data-w="1200"]').classList.add('active');
+
+renderList(); renderMain(); nav.init();
+</script>
+</body>
+</html>
