@@ -1417,6 +1417,39 @@ Captured-in-memory ideas not yet built: **dish-catalog table** (promote `chapter
 
 ---
 
+## Session log — 2026-05-31 (continued) — admin editor framework + chapter top-10
+
+### Master/detail editor framework lifted into LibraryShell (additive, namespaced)
+
+Designed the reusable a/c/d/v admin-editor shell in two standalone mockups first (`forms/chapters_mockup.html`, `forms/users_mockup.html`) — the design test bed — then lifted it into the real app without touching the existing shell. Decisions (see `memory/project_admin_editor_nav.md`):
+
+- **`forms/editor-shell.css`** — self-contained, namespaced (`.ed-*` + `body.ed-*`) so zero collision with `library-shell.css`/`forms.css`. Editor pages load THIS instead of library-shell.css, plus library-shell.js for behaviour. It also restyles the initNav-mounted chrome (`.app-header`/`.nav-toggle`/`.nav-menu`/`.identity-badge`/coming-soon overlay) so editor pages stay self-contained while still getting the cross-page ⋮ menu + identity badge.
+- **`LibraryShell.initEditorNav({backButton, scrim, listLabel, listMode, shellWidth})`** — the mechanical dock/overlay/back nav controller (drives `body.ed-mode-overlay/.ed-list-collapsed/.ed-drawer-open`); returns `{toggle, afterSelect, setMode, …}`. NOT a data-driven renderer — each editor stays a cloned hand-written template (clone-and-specialize, per `feedback_editor_template_not_runtime`).
+- **Layout model (option 2):** centered shell capped at `--ed-shell-w` (default **1200**); `listMode` `docked` (push two-pane, default for the light a/c/d editors) vs `overlay` (full-width detail + floating list, the opt-in for the field-heavy recipe/`v` editor); mobile (≤860) always overlay; one back-convention control top-left. Settled 1200/docked after live-toggling width (1040/1200/1320/full) + mode in the mockup's dev controls.
+- **`forms/chapters.html` migrated** onto the shell, wired to the real `/chapters` endpoints. `library-shell.css` and the other four pages (recipe form, dishes, users, install) UNTOUCHED — they migrate later. `users.html` is the next clone (the editable-record case the users mockup already proved).
+
+### Chapters: table is the source of truth (no data in code)
+
+Pushback (`memory/feedback_no_data_in_code.md`): chapters were gated on the hardcoded `chapter_classifier.CHAPTERS` constant even though a real `chapters` table exists (`update_chapter_notes` already INSERT-ed rows). Fixed — the **table is canonical now**: `list_chapters_with_status` seeds canonical names `INSERT OR IGNORE` then iterates the table; `_chapter_known()` accepts table rows; new **`POST /chapters`** create endpoint + `create_chapter()`/`chapter_exists()` helpers; the **＋ New chapter** affordance is wired in the editor. The `CHAPTERS` constant is now a bootstrap seed + the classifier's reasoning input. Remaining data-in-code (the classifier taxonomy/decision-tree) flagged as a deliberate follow-up, not refactored casually.
+
+### Chapter fit: no corpus drift; refit on every dish update
+
+Per-dish-batch refit means a chapter fit never drifts from its corpus, so all corpus-diff/drift UI was removed. Wired the recompute into the dish job: `_handle_dish_refresh_job` now calls `compute_and_store_chapter_fit(conn, dish['chapter'])` right after `replace_data_points_for_dish` — per dish (cheap, robust to interruption), confirmed as the intended model.
+
+### Count bug + regression variables surfaced
+
+Breads showed "31" while the fit message said "needs 25" and the cohort list showed 17 — three different numbers. Root cause: the editor mixed `current_recipe_count` (31 saved master *winners*) with the fit **cohort** `last_ou_fit.n` (17 SERP DA/PA records, the number the 25-floor checks). Fixed — the detail now references the cohort everywhere, "Recipes analyzed" relabeled **"Source-site records"**, and `/chapters/{name}/recipes` filtered to non-null DA&PA so the Source-sites list count == `fit.n`. Also surfaced the actual **regression variables**: a "Regression: PA ~ DA" row + **Fitted coefficients** (labeled by term) in Model fit. Source-sites is a collapsed peer-level section.
+
+### Chapter Top-10 recipes (new feature)
+
+The chapter's 10 highest-OU recipes across its dishes, stored as a `top_recipes` JSON snapshot on the `chapters` row (new column), **computed at fit time** in `compute_and_store_chapter_fit` (so it refreshes with every dish update). New `compute_chapter_top_recipes()`/`get_chapter_top_recipes()` + **`GET /chapters/{name}/top-recipes`** (decorated with the BCC permalink). New ranked, OU-forward UI (`.ed-t10`): rank · 52px cover thumbnail · name + `site · dish` · OU headline + grade chip + DA/PA. Populated all 24 chapters (14 non-empty). (Gotcha: forgot to bump `editor-shell.css?v=` → cached CSS served full-size images; bumped to `v=20260531b`.)
+
+### Notes
+
+Verified throughout with headless Playwright smoke tests. Server has no `--reload`; `bcc_restart.bat` didn't take this session (zombie-socket), so restarts were a manual PowerShell kill-owner+children + venv `uvicorn`. Mockups (`*_mockup.html`) kept as the design reference. New memories: `project_admin_editor_nav`, `feedback_no_data_in_code`.
+
+---
+
 ## To-do
 - **Internationalization (i18n) for UI messages (2026-05-29).** User flagged: we've been writing English strings inline throughout the codebase since day one; no infrastructure to swap to another language. Start NOW so we capture new strings into the pattern while it's fresh.
 

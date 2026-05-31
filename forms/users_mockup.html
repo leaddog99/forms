@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Best Cooks Club — Admin · Users</title>
+<!--
+  USERS admin editor — standalone mockup. Second clone of the a/c/d/v editor template
+  (first was chapters_mockup.html) to test the framework on an EDITABLE-record table.
+
+  Identical-to-chapters framework (the reusable part):
+    · centered shell (--shell-w), per-page listMode (docked/overlay), back-convention nav
+    · sidebar scaffold: head + magnifier search/sort + attention panel + legend + scrolling list
+    · header, dev demo-controls, scrim, mobile drawer — all the same
+  Specialized for users (the per-table part):
+    · data + list rendering (avatar, role/status, #uid)
+    · detail is an EDITABLE FORM (name/email/role/status/tier) with validation + Save states
+    · needsAttention = incomplete profile (missing email); flag = staff/member/incomplete
+    · extra actions: Log in as user; plus the read-only Master (#0) sentinel row
+-->
+<style>
+  :root{
+    --paper:#fbfaf7; --surface:#fff; --ink:#1d1d1f; --ink-soft:#4a463f;
+    --key:#8a8176; --muted:#a39b8f; --hairline:#e9e4dc; --hairline-soft:#eee9e2;
+    --accent:#8a5a3b; --accent-strong:#6f4628; --accent-soft:rgba(138,90,59,.06);
+    --warn:#b4541f; --warn-bg:#fdf4ea; --warn-border:#f0dcc2; --ok:#6f7a3f;
+    --header-h:58px; --sidebar-w:308px; --shell-w:1200px; --shell-gap:18px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',sans-serif;
+    font-weight:300; font-size:16px; letter-spacing:-0.003em; -webkit-font-smoothing:antialiased;
+  }
+
+  .app-header{
+    position:sticky; top:0; z-index:60; height:var(--header-h); display:flex; padding:0 22px;
+    background:rgba(255,255,255,.96); backdrop-filter:blur(12px); border-bottom:1px solid var(--hairline);
+  }
+  .header-inner{ max-width:var(--shell-w); width:100%; margin:0 auto; display:flex; align-items:center; gap:14px; }
+  .nav-toggle{
+    display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 10px; border-radius:8px;
+    background:transparent; border:1px solid var(--hairline); color:var(--ink); cursor:pointer; font:inherit; font-size:.82em;
+  }
+  .nav-toggle:hover{ background:var(--accent-soft); border-color:var(--ink); }
+  .nav-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .brandline{display:flex;align-items:baseline;gap:10px;min-width:0}
+  .brand{ font-size:1.05em; font-weight:600; letter-spacing:-.01em; white-space:nowrap; }
+  .header-spacer{ flex:1; }
+
+  .demo-controls{display:flex;align-items:center;gap:12px;margin-right:14px}
+  .demo-tag{font-size:.58em;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border:1px dashed var(--hairline);border-radius:5px;padding:2px 6px}
+  .seg{display:inline-flex;align-items:center;gap:7px}
+  .seg .seg-label{font-size:.66em;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .seg .seg-btns{display:inline-flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden}
+  .seg button{border:0;border-left:1px solid var(--hairline);background:transparent;padding:5px 9px;cursor:pointer;color:var(--key);font:inherit;font-size:.72em}
+  .seg button:first-child{border-left:0}
+  .seg button.active{background:var(--accent-soft);color:var(--accent-strong);font-weight:600}
+
+  .badge{ display:flex; flex-direction:column; align-items:flex-end; line-height:1.2; font-size:.78em; }
+  .badge .who{ color:var(--ink); font-weight:500; }
+  .badge .mail{ color:var(--key); text-decoration:none; }
+
+  /* ---- master/detail nav framework (identical to chapters editor) ---- */
+  .app{ display:grid; grid-template-columns:var(--sidebar-w) 1fr; transition:grid-template-columns .22s ease;
+        max-width:var(--shell-w); margin:0 auto; }
+  body.list-collapsed .app{ grid-template-columns:0 1fr; }
+  body.mode-overlay .app{ grid-template-columns:1fr; }
+  body.mode-overlay .sidebar{
+    position:fixed; top:var(--header-h); bottom:0; left:0; width:var(--sidebar-w);
+    transform:translateX(-110%); transition:transform .24s ease;
+    z-index:70; box-shadow:4px 0 24px rgba(60,40,20,.14); height:auto;
+  }
+  body.mode-overlay.drawer-open .sidebar{ transform:none; }
+  .scrim{ display:none; }
+  body.mode-overlay.drawer-open .scrim{ display:block; position:fixed; inset:var(--header-h) 0 0 0; background:rgba(30,22,14,.28); z-index:65; }
+
+  .sidebar{
+    position:sticky; top:var(--header-h); height:calc(100vh - var(--header-h));
+    background:var(--surface); border-right:1px solid var(--hairline);
+    padding:18px 16px 14px; display:flex; flex-direction:column; overflow:hidden; min-width:0;
+  }
+  .sidebar-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-bottom:10px; border-bottom:1px solid var(--hairline); margin-bottom:12px; flex:0 0 auto;
+  }
+  .sidebar-head h2{ margin:0; font-size:.8em; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--key); }
+  .head-actions{display:flex;gap:6px}
+  .icon-btn{
+    width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid var(--hairline); border-radius:8px; background:transparent; color:var(--key); cursor:pointer;
+  }
+  .icon-btn:hover{border-color:var(--ink);color:var(--ink);background:var(--accent-soft)}
+  .icon-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .icon-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  .attention-panel{ background:var(--warn-bg); border:1px solid var(--warn-border); border-radius:11px; padding:10px 12px; margin:0 0 12px; }
+  .attention-title{ color:var(--warn); font-size:.76em; font-weight:600; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
+  .attention-copy{font-size:.78em;color:#7a4012;line-height:1.35}
+  .attention-panel.none{background:#f5f7ee;border-color:#dde0c4}
+  .attention-panel.none .attention-title{color:var(--ok)}
+  .attention-panel.none .attention-copy{color:#566127}
+
+  .controls{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  .controls[hidden]{display:none}
+  .controls input,.controls select{
+    width:100%; font:inherit; font-size:.9em; font-weight:300; padding:8px 11px; border-radius:8px;
+    border:1px solid var(--hairline); background:var(--surface); color:var(--ink);
+  }
+  .controls input:focus,.controls select:focus{outline:none;border-color:var(--ink)}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.72em;color:var(--muted);padding:0 2px 12px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend .d{width:8px;height:8px;border-radius:50%}
+  .legend .d.ok{background:var(--accent)}
+  .legend .d.warn{background:var(--warn)}
+  .legend .d.none{border:1.5px solid var(--muted)}
+
+  .list{
+    list-style:none;margin:0;padding:0 2px var(--shell-gap);flex:1;min-height:0;overflow-y:auto;
+    scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:var(--hairline) transparent;
+  }
+  .list::-webkit-scrollbar{width:8px}
+  .list::-webkit-scrollbar-thumb{background:var(--hairline);border-radius:8px}
+  .list::-webkit-scrollbar-track{background:transparent}
+  .item{cursor:pointer;padding:10px 12px;border-radius:9px;border:1px solid transparent;margin-bottom:3px}
+  .item:hover{background:var(--accent-soft)}
+  .item.selected{background:#fbf5ee;border-left:3px solid var(--accent);border-radius:0 9px 9px 0;padding-left:11px}
+  .item-top{display:flex;align-items:center;gap:9px}
+  .item-name{font-size:.95em;font-weight:400;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item-flag{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .item-flag.ok{background:var(--accent)}
+  .item-flag.warn{background:var(--warn)}
+  .item-flag.none{border:1.5px solid var(--muted)}
+  .item-meta{margin-top:3px;margin-left:33px;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.73em;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item.special{margin-bottom:10px}
+  .item.special .item-meta{color:var(--accent)}
+
+  /* avatar */
+  .avatar{
+    width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:.6em;font-weight:700;flex:0 0 auto;letter-spacing:.02em;
+  }
+  .avatar.gated{background:#7a5e3a}
+  .avatar.lg{width:46px;height:46px;font-size:1.05em}
+
+  .content{min-width:0}
+  .page{max-width:780px;margin:0 auto;padding:26px 40px 40px}
+  .form-kicker{ position:relative; margin-bottom:16px; }
+  .purpose-toggle{ border:0; background:transparent; padding:0; color:var(--accent); font-size:.72em; font-weight:700; letter-spacing:.13em; text-transform:uppercase; cursor:pointer; }
+  .purpose-toggle span{ margin-left:6px; color:var(--muted); }
+  .purpose-toggle:hover{ color:var(--accent-strong); }
+  .purpose-popover{
+    position:absolute; top:24px; left:0; z-index:20; max-width:470px; padding:14px 16px;
+    border:1px solid var(--hairline); border-radius:12px; background:#fff; color:var(--key);
+    font-size:.88em; line-height:1.45; box-shadow:0 14px 34px rgba(60,40,20,.10);
+  }
+  .purpose-popover strong{ color:var(--ink-soft); font-weight:500; }
+
+  .detail-head{display:flex;align-items:center;gap:14px;margin:0 0 12px}
+  .detail-title{ margin:0; font-size:1.85em; font-weight:300; letter-spacing:-0.022em; }
+  .status-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px; font-size:.78em;font-weight:400;padding:4px 11px;border-radius:999px;
+    border:1px solid var(--hairline);color:var(--key);background:var(--surface);
+  }
+  .pill .d{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .pill.staff{color:var(--accent-strong);border-color:#e3d3c4}
+  .pill.staff .d{background:var(--accent)}
+  .pill.good{color:#566127;border-color:#dde0c4}
+  .pill.good .d{background:var(--ok)}
+  .pill.warn{color:var(--warn);border-color:var(--warn-border);background:var(--warn-bg)}
+  .pill.warn .d{background:var(--warn)}
+  .submeta{color:var(--muted);font-size:.85em;margin:2px 0 0;font-family:ui-monospace,'SF Mono',Menlo,monospace}
+
+  .block{border-top:1px solid var(--hairline-soft);padding:22px 0 4px}
+  .block-label{ margin:0 0 16px;font-size:.72em;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--key); }
+  .kv{display:grid;grid-template-columns:240px 1fr;row-gap:13px;column-gap:24px}
+  .kv .k{color:var(--key);font-weight:300;font-size:.95em}
+  .kv .v{color:var(--ink);font-weight:500;font-size:.95em;font-variant-numeric:tabular-nums}
+
+  /* editable form fields */
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 22px}
+  .field{margin:0}
+  .field.full{grid-column:1 / -1;max-width:none}
+  .field label{display:block;font-size:.74em;color:var(--key);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+  .field input,.field select{
+    width:100%;font:inherit;font-weight:300;font-size:.95em;padding:9px 12px;
+    border:1px solid var(--hairline);border-radius:10px;background:var(--surface);color:var(--ink);
+  }
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent)}
+  .field .hint{font-size:.78em;color:var(--muted);margin-top:5px}
+
+  .callout{display:flex;gap:10px;padding:13px 16px;border-radius:12px;font-size:.9em;line-height:1.45;font-weight:300}
+  .callout.info{background:var(--paper);border:1px solid var(--hairline);color:var(--key)}
+  .callout .mark{flex:0 0 auto;font-weight:500;color:var(--accent)}
+
+  .actions{
+    position:sticky;bottom:0;margin-top:30px;
+    background:linear-gradient(180deg, rgba(251,250,247,0) 0%, var(--paper) 38%);
+    padding:18px 0 6px;display:flex;gap:10px;align-items:center;
+  }
+  .btn{ font:inherit;font-size:.92em;font-weight:400;cursor:pointer;padding:9px 18px;border-radius:9px; border:1px solid var(--hairline);background:var(--surface);color:var(--ink); }
+  .btn:hover{border-color:var(--ink);background:var(--accent-soft)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+  .btn.danger{color:var(--warn);border-color:var(--warn-border)}
+  .btn.danger:hover{background:var(--warn-bg);border-color:var(--warn)}
+  .btn.done{color:var(--ok);border-color:#dde0c4;background:#f7f8ef}
+  .btn:disabled{opacity:.55;cursor:default}
+  .save-hint{font-size:.8em;color:var(--muted);margin-left:auto}
+
+  @media(max-width:860px){
+    .app{grid-template-columns:1fr!important;max-width:none}
+    .sidebar{position:fixed;top:var(--header-h);bottom:0;left:0;width:88vw;max-width:360px;transform:translateX(-110%);transition:transform .26s ease;z-index:70;box-shadow:4px 0 24px rgba(60,40,20,.14);height:auto}
+    body.drawer-open .sidebar{transform:none}
+    body.drawer-open .scrim{display:block;position:fixed;inset:var(--header-h) 0 0 0;background:rgba(30,22,14,.28);z-index:65}
+    .page{padding:26px 20px 36px}
+    .form-grid{grid-template-columns:1fr}
+    .demo-controls{display:none}
+    .badge{display:none}
+  }
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div class="header-inner">
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle list"></button>
+    <div class="brandline"><div class="brand">Best Cooks Club</div></div>
+    <div class="header-spacer"></div>
+    <div class="demo-controls">
+      <span class="demo-tag" title="Temporary test harness — not part of the shipped UI">dev</span>
+      <div class="seg" title="Demo: list layout. Docked = two-pane (pushes); Overlay = full-width detail with the list floating.">
+        <span class="seg-label">List</span>
+        <span class="seg-btns" id="modeSwitch">
+          <button data-mode="docked">Docked</button>
+          <button data-mode="overlay">Overlay</button>
+        </span>
+      </div>
+      <div class="seg" title="Demo: centered shell width.">
+        <span class="seg-label">Width</span>
+        <span class="seg-btns" id="widthSwitch">
+          <button data-w="1040">1040</button>
+          <button data-w="1200">1200</button>
+          <button data-w="1320">1320</button>
+          <button data-w="full">Full</button>
+        </span>
+      </div>
+    </div>
+    <div class="badge">
+      <span class="who">John Landry</span>
+      <a class="mail" href="mailto:johnlandryiii@gmail.com">johnlandryiii@gmail.com</a>
+    </div>
+  </div>
+</header>
+<div class="scrim" id="scrim"></div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <h2>Users <span id="count"></span></h2>
+      <div class="head-actions">
+        <button class="icon-btn" id="searchToggle" title="Search & sort" aria-label="Search and sort">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <button class="icon-btn" id="addToggle" title="New user" aria-label="New user">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="attention-panel" id="attnPanel">
+      <div class="attention-title" id="attnTitle"></div>
+      <div class="attention-copy" id="attnCopy"></div>
+    </div>
+
+    <div class="controls" id="controls" hidden>
+      <input type="search" id="search" placeholder="Search name or email…">
+      <select id="sort">
+        <option value="attention">Sort: needs attention</option>
+        <option value="name">Sort: name (A–Z)</option>
+        <option value="role">Sort: role (staff first)</option>
+        <option value="recipes">Sort: recipes (most)</option>
+        <option value="joined">Sort: newest</option>
+      </select>
+    </div>
+
+    <div class="legend">
+      <span><i class="d ok"></i>staff</span>
+      <span><i class="d none"></i>member</span>
+      <span><i class="d warn"></i>incomplete</span>
+    </div>
+    <ul class="list" id="list"></ul>
+  </aside>
+
+  <main class="content"><div class="page" id="page"></div></main>
+</div>
+
+<script>
+/* ----------------------------- sample data ----------------------------- */
+// joinedDays = days since signup; lastMin = minutes since last login.
+const USERS = [
+  { user_id:1,  name:'John Landry',   email:'johnlandryiii@gmail.com', role:'owner',       status:'paid',   tier:'Founder', recipes:142, joinedDays:280, lastMin:20 },
+  { user_id:2,  name:'Joe Marchetti', email:'joe@bestcooks.club',      role:'editor',      status:'comped', tier:'',        recipes:38,  joinedDays:120, lastMin:190 },
+  { user_id:3,  name:'Maria Gómez',   email:'maria.gomez@gmail.com',   role:'author',      status:'paid',   tier:'Pro',     recipes:21,  joinedDays:64,  lastMin:2880 },
+  { user_id:4,  name:'Test Importer', email:'',                        role:'member',      status:'test',   tier:'',        recipes:4,   joinedDays:9,   lastMin:60 },
+  { user_id:5,  name:'Sam Lee',       email:'sam.lee@outlook.com',     role:'member',      status:'free',   tier:'',        recipes:0,   joinedDays:5,   lastMin:7200 },
+  { user_id:6,  name:'Priya Nair',    email:'priya@bestcooks.club',    role:'admin',       status:'comped', tier:'',        recipes:60,  joinedDays:210, lastMin:340 },
+  { user_id:7,  name:'Guest Trial',   email:'',                        role:'member',      status:'test',   tier:'',        recipes:1,   joinedDays:1,   lastMin:30 },
+  { user_id:8,  name:'Chef Antoine',  email:'antoine@lefourneau.fr',   role:'author',      status:'paid',   tier:'Pro',     recipes:33,  joinedDays:95,  lastMin:1440 },
+  { user_id:9,  name:'Dana Whitfield',email:'dana.w@gmail.com',        role:'contributor', status:'free',   tier:'',        recipes:7,   joinedDays:40,  lastMin:5760 },
+  { user_id:10, name:'Ravi Patel',    email:'ravi.patel@gmail.com',    role:'member',      status:'paid',   tier:'Basic',   recipes:12,  joinedDays:33,  lastMin:480 },
+  { user_id:11, name:'Lena Brandt',   email:'lena@kochwelt.de',        role:'author',      status:'paid',   tier:'Pro',     recipes:18,  joinedDays:71,  lastMin:9990 },
+  { user_id:12, name:'Tom Okafor',    email:'',                        role:'member',      status:'free',   tier:'',        recipes:0,   joinedDays:2,   lastMin:120 },
+];
+
+const ROLES = ['owner','admin','editor','author','contributor','member'];
+const STATUSES = ['test','free','paid','comped'];
+const STAFF = new Set(['owner','admin','editor','author']);
+
+const $ = s => document.querySelector(s);
+let selected = 1;          // user_id | 0 (master) | '__new__'
+let term = '';
+let sortKey = 'attention';
+
+const isStaff = u => STAFF.has(u.role);
+const incomplete = u => !u.email;
+function needsAttention(u){ return incomplete(u); }
+function flag(u){ return incomplete(u) ? 'warn' : (isStaff(u) ? 'ok' : 'none'); }
+function initials(name){ const p=(name||'').trim().split(/\s+/); return ((p[0]?.[0]||'')+(p.length>1?p[p.length-1][0]:'')).toUpperCase() || '?'; }
+function ago(min){ if(min==null)return 'never'; if(min<60)return `${min} min ago`; if(min<1440)return `${Math.round(min/60)} hr ago`; return `${Math.round(min/1440)} days ago`; }
+function joinedAgo(d){ if(d==null)return '—'; if(d<1)return 'today'; if(d<30)return `${d} days ago`; if(d<365)return `${Math.round(d/30)} mo ago`; return `${(d/365).toFixed(1)} yr ago`; }
+function roleClass(u){ return isStaff(u)?'staff':''; }
+
+/* ----------------------------- list ----------------------------- */
+function renderList(){
+  const sorters = {
+    attention:(a,b)=>(needsAttention(b)-needsAttention(a))||a.name.localeCompare(b.name),
+    name:(a,b)=>a.name.localeCompare(b.name),
+    role:(a,b)=>(isStaff(b)-isStaff(a))||ROLES.indexOf(a.role)-ROLES.indexOf(b.role)||a.name.localeCompare(b.name),
+    recipes:(a,b)=>(b.recipes||0)-(a.recipes||0)||a.name.localeCompare(b.name),
+    joined:(a,b)=>(a.joinedDays||1e9)-(b.joinedDays||1e9),
+  };
+  let rows = USERS.filter(u=>{
+    if(!term) return true;
+    const t=term.toLowerCase();
+    return u.name.toLowerCase().includes(t) || (u.email||'').toLowerCase().includes(t);
+  });
+  rows.sort(sorters[sortKey]||sorters.attention);
+  $('#count').textContent = `(${rows.length})`;
+
+  const attn = USERS.filter(needsAttention).length;
+  const panel=$('#attnPanel'), title=$('#attnTitle'), copy=$('#attnCopy');
+  if(attn){ panel.classList.remove('none'); title.textContent=`${attn} incomplete`; copy.textContent='Missing email — can’t be contacted or linked to a Ghost member.'; }
+  else{ panel.classList.add('none'); title.textContent='All profiles complete'; copy.textContent='Every user has an email on file.'; }
+
+  const ul=$('#list'); ul.innerHTML='';
+
+  // Pinned, read-only Master sentinel (#0) — not in the users table.
+  const m=document.createElement('li');
+  m.className='item special'+(selected===0?' selected':'');
+  m.innerHTML=`<div class="item-top"><span class="avatar gated">M</span><span class="item-name">Master (curator collection)</span></div><div class="item-meta">#0 · role-gated</div>`;
+  m.onclick=()=>{ selected=0; renderList(); renderMain(); nav.afterSelect(); };
+  ul.appendChild(m);
+
+  for(const u of rows){
+    const li=document.createElement('li');
+    li.className='item'+(u.user_id===selected?' selected':'');
+    li.innerHTML=
+      `<div class="item-top"><span class="avatar">${initials(u.name)}</span>`+
+      `<span class="item-name">${u.name}</span><span class="item-flag ${flag(u)}"></span></div>`+
+      `<div class="item-meta">#${u.user_id} · ${u.email||'(no email)'} · ${u.role}</div>`;
+    li.onclick=()=>{ selected=u.user_id; renderList(); renderMain(); nav.afterSelect(); };
+    ul.appendChild(li);
+  }
+}
+
+/* ----------------------------- main dispatch ----------------------------- */
+function user(){ return USERS.find(u=>u.user_id===selected); }
+function renderMain(){
+  if(selected==='__new__') return renderCreate();
+  if(selected===0) return renderMaster();
+  let u=user();
+  if(!u){ selected = USERS[0]?USERS[0].user_id:0; return renderMain(); }
+  renderDetail(u);
+}
+
+function stripPills(u){
+  const out=[];
+  out.push(`<span class="pill ${roleClass(u)}"><i class="d"></i>${u.role}</span>`);
+  out.push(`<span class="pill ${u.status==='paid'?'good':''}"><i class="d"></i>${u.status}${u.tier?` · ${u.tier}`:''}</span>`);
+  if(incomplete(u)) out.push(`<span class="pill warn"><i class="d"></i>No email</span>`);
+  return out.join('');
+}
+
+function renderDetail(u){
+  $('#page').innerHTML = `
+    <div class="form-kicker">
+      <button type="button" class="purpose-toggle" id="purposeToggle">Admin · Edit User <span id="purposeArrow">▾</span></button>
+      <div class="purpose-popover" id="purposePopover" hidden>
+        <strong>Purpose:</strong> edit a user’s identity, role and billing status, log in as them for testing, or remove them. When Ghost is wired in, identity/role sync from the member session and most of this becomes read-only.
+      </div>
+    </div>
+
+    <div class="detail-head">
+      <span class="avatar lg">${initials(u.name)}</span>
+      <h1 class="detail-title" id="detailTitle">${u.name||'(no name)'}</h1>
+    </div>
+    <div class="status-strip" id="statusStrip">${stripPills(u)}</div>
+    <p class="submeta">user #${u.user_id} · ${u.recipes} recipes · joined ${joinedAgo(u.joinedDays)} · last login ${ago(u.lastMin)}</p>
+
+    <section class="block">
+      <h3 class="block-label">Identity</h3>
+      <div class="form-grid">
+        <div class="field"><label for="f_name">Name</label><input id="f_name" type="text" value="${u.name||''}"></div>
+        <div class="field"><label for="f_email">Email</label><input id="f_email" type="email" value="${u.email||''}" placeholder="name@example.com">
+          ${incomplete(u)?'<div class="hint" style="color:var(--warn)">No email on file — flagged incomplete.</div>':''}</div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3 class="block-label">Access &amp; billing</h3>
+      <div class="form-grid">
+        <div class="field"><label for="f_role">Role</label><select id="f_role">${ROLES.map(r=>`<option ${r===u.role?'selected':''}>${r}</option>`).join('')}</select></div>
+        <div class="field"><label for="f_status">Account status</label><select id="f_status">${STATUSES.map(s=>`<option ${s===u.status?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field full"><label for="f_tier">Subscription tier</label><input id="f_tier" type="text" value="${u.tier||''}" placeholder="e.g. Pro, Basic, Founder (optional)"></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h3 class="block-label">Activity</h3>
+      <div class="kv">
+        <div class="k">User ID</div><div class="v">#${u.user_id}</div>
+        <div class="k">Recipes owned</div><div class="v">${u.recipes}</div>
+        <div class="k">Joined</div><div class="v">${joinedAgo(u.joinedDays)}</div>
+        <div class="k">Last login</div><div class="v">${ago(u.lastMin)}</div>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="btn primary" id="saveBtn">Save changes</button>
+      <button class="btn" id="loginBtn">Log in as user</button>
+      <button class="btn danger" id="deleteBtn">Delete user</button>
+      <span class="save-hint" id="hint"></span>
+    </div>`;
+
+  $('#purposeToggle').onclick=()=>{ const p=$('#purposePopover'),a=$('#purposeArrow'); p.hidden=!p.hidden; a.textContent=p.hidden?'▾':'▴'; };
+  $('#saveBtn').onclick=()=>onSave(u);
+  $('#loginBtn').onclick=()=>{ $('#hint').style.color=''; $('#hint').textContent=`Would log in as #${u.user_id} and open the recipe form`; };
+  $('#deleteBtn').onclick=()=>onDelete(u);
+}
+
+function onSave(u){
+  const hint=$('#hint');
+  const name=$('#f_name').value.trim();
+  const email=$('#f_email').value.trim();
+  if(!name){ hint.style.color='var(--warn)'; hint.textContent='Name is required'; $('#f_name').focus(); return; }
+  if(email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ hint.style.color='var(--warn)'; hint.textContent='Enter a valid email'; $('#f_email').focus(); return; }
+  Object.assign(u,{ name, email, role:$('#f_role').value, status:$('#f_status').value, tier:$('#f_tier').value.trim() });
+  // update title + pills in place (no destructive re-render of the form), refresh list
+  $('#detailTitle').textContent=u.name;
+  $('#statusStrip').innerHTML=stripPills(u);
+  document.querySelector('.detail-head .avatar').textContent=initials(u.name);
+  renderList();
+  const btn=$('#saveBtn');
+  hint.style.color=''; btn.disabled=true; btn.textContent='Saving…'; btn.classList.remove('done');
+  setTimeout(()=>{ btn.textContent='Saved ✓'; btn.classList.add('done'); hint.textContent='Saved · '+new Date().toLocaleTimeString(); },600);
+  setTimeout(()=>{ btn.textContent='Save changes'; btn.classList.remove('done'); btn.disabled=false; },1900);
+}
+
+function onDelete(u){
+  if(!confirm(`Delete user “${u.name||'(no name)'}” (#${u.user_id})?\n\n(Mockup only — nothing persisted.)`)) return;
+  const i=USERS.indexOf(u); if(i>=0) USERS.splice(i,1);
+  selected = USERS[0]?USERS[0].user_id:0;
+  renderList(); renderMain();
+}
+
+function renderMaster(){
+  $('#page').innerHTML = `
+    <div class="form-kicker">
+      <button type="button" class="purpose-toggle" disabled style="cursor:default">Admin · Master Collection</button>
+    </div>
+    <div class="detail-head">
+      <span class="avatar lg gated">M</span>
+      <h1 class="detail-title">Master (curator collection)</h1>
+    </div>
+    <div class="status-strip"><span class="pill staff"><i class="d"></i>role-gated</span><span class="pill"><i class="d"></i>user #0 · sentinel</span></div>
+    <p class="submeta">Not a real user — the dispatch target for the curated master collection.</p>
+
+    <section class="block">
+      <h3 class="block-label">Access</h3>
+      <div class="callout info"><span class="mark">○</span><span>There’s no “Master” account to log in as. Anyone with <strong>owner / admin / editor / author</strong> can save to the master collection from the recipe form — access is role-gated, not a separate identity. Saving as user #0 routes writes to <code>master_recipes</code>.</span></div>
+    </section>
+
+    <section class="block">
+      <h3 class="block-label">Notes</h3>
+      <div class="kv">
+        <div class="k">Sentinel ID</div><div class="v">#0</div>
+        <div class="k">Editable here</div><div class="v">No — read-only</div>
+      </div>
+    </section>`;
+}
+
+function renderCreate(){
+  $('#page').innerHTML = `
+    <div class="form-kicker"><button type="button" class="purpose-toggle" disabled style="cursor:default">Admin · New User</button></div>
+    <h1 class="detail-title" style="margin:0 0 18px">Add a user</h1>
+    <section class="block" style="border-top:none;padding-top:0">
+      <div class="form-grid">
+        <div class="field"><label for="n_name">Name</label><input id="n_name" type="text" placeholder="Required" autocomplete="off"></div>
+        <div class="field"><label for="n_email">Email</label><input id="n_email" type="email" placeholder="name@example.com (optional)" autocomplete="off"></div>
+        <div class="field"><label for="n_role">Role</label><select id="n_role">${ROLES.map(r=>`<option ${r==='member'?'selected':''}>${r}</option>`).join('')}</select></div>
+        <div class="field"><label for="n_status">Account status</label><select id="n_status">${STATUSES.map(s=>`<option ${s==='test'?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field full"><label for="n_tier">Subscription tier</label><input id="n_tier" type="text" placeholder="optional"></div>
+      </div>
+    </section>
+    <div class="actions" style="position:static;background:none;padding:8px 0 0">
+      <button class="btn primary" id="createBtn">Create user</button>
+      <button class="btn" id="cancelBtn">Cancel</button>
+      <span class="save-hint" id="hint"></span>
+    </div>`;
+  $('#n_name').focus();
+  $('#cancelBtn').onclick=()=>{ selected = USERS[0]?USERS[0].user_id:0; renderList(); renderMain(); };
+  $('#createBtn').onclick=()=>{
+    const hint=$('#hint');
+    const name=$('#n_name').value.trim();
+    const email=$('#n_email').value.trim();
+    if(!name){ hint.style.color='var(--warn)'; hint.textContent='Name is required'; $('#n_name').focus(); return; }
+    if(email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ hint.style.color='var(--warn)'; hint.textContent='Enter a valid email'; $('#n_email').focus(); return; }
+    const user_id = Math.max(0,...USERS.map(u=>u.user_id))+1;
+    USERS.push({ user_id, name, email, role:$('#n_role').value, status:$('#n_status').value, tier:$('#n_tier').value.trim(), recipes:0, joinedDays:0, lastMin:null });
+    selected=user_id; renderList(); renderMain();
+  };
+}
+
+/* ---- master/detail nav controller (identical to the chapters editor) ---- */
+const NAV_ICON = {
+  back:'<svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>',
+  collapse:'<svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>',
+  close:'<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+};
+const nav = {
+  mode:(new URLSearchParams(location.search).get('list')==='overlay')?'overlay':'docked',
+  open:true,
+  isMobile(){ return matchMedia('(max-width:860px)').matches; },
+  isOverlay(){ return this.mode==='overlay' || this.isMobile(); },
+  init(){ this.open=!this.isOverlay(); this.apply(); },
+  apply(){
+    const b=document.body;
+    b.classList.toggle('mode-overlay', this.mode==='overlay' && !this.isMobile());
+    if(this.isOverlay()){ b.classList.toggle('drawer-open', this.open); b.classList.remove('list-collapsed'); }
+    else { b.classList.toggle('list-collapsed', !this.open); b.classList.remove('drawer-open'); }
+    this.render();
+  },
+  toggle(){ this.open=!this.open; this.apply(); },
+  afterSelect(){ if(this.isOverlay()){ this.open=false; this.apply(); } },
+  setMode(m){ this.mode=m; this.init(); },
+  render(){
+    const btn=$('#navToggle');
+    if(this.isOverlay() && this.open){ btn.innerHTML=NAV_ICON.close; btn.title='Close list'; }
+    else if(!this.open){ btn.innerHTML=`${NAV_ICON.back}<span>Users</span>`; btn.title='Show users'; }
+    else { btn.innerHTML=NAV_ICON.collapse; btn.title='Hide list'; }
+    const ms=$('#modeSwitch'); if(ms) ms.querySelectorAll('button').forEach(x=>x.classList.toggle('active', x.dataset.mode===this.mode));
+  },
+};
+
+$('#searchToggle').onclick=()=>{ $('#controls').hidden=!$('#controls').hidden; $('#searchToggle').classList.toggle('active',!$('#controls').hidden); if(!$('#controls').hidden) $('#search').focus(); };
+$('#addToggle').onclick=()=>{ selected='__new__'; renderList(); renderMain(); nav.afterSelect(); };
+$('#search').oninput=e=>{ term=e.target.value; renderList(); };
+$('#sort').onchange=e=>{ sortKey=e.target.value; renderList(); };
+$('#navToggle').onclick=()=> nav.toggle();
+$('#scrim').onclick=()=>{ nav.open=false; nav.apply(); };
+$('#modeSwitch').querySelectorAll('button').forEach(b=> b.onclick=()=> nav.setMode(b.dataset.mode));
+$('#widthSwitch').querySelectorAll('button').forEach(b=> b.onclick=()=>{
+  document.documentElement.style.setProperty('--shell-w', b.dataset.w==='full'?'none':b.dataset.w+'px');
+  $('#widthSwitch').querySelectorAll('button').forEach(x=>x.classList.toggle('active', x===b));
+});
+matchMedia('(max-width:860px)').addEventListener('change', ()=> nav.init());
+$('#widthSwitch').querySelector('[data-w="1200"]').classList.add('active');
+
+renderList(); renderMain(); nav.init();
+</script>
+</body>
+</html>

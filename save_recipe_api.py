@@ -2095,12 +2095,50 @@ def list_chapters_endpoint():
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+def _chapter_known(name: str) -> bool:
+    """Valid if in the classifier taxonomy OR present as a chapters-table row
+    (curator-created). The table is the source of truth; the code constant is
+    a bootstrap seed — see memory/feedback_no_data_in_code.md."""
+    from extract.chapter_classifier import CHAPTERS
+    if name in CHAPTERS:
+        return True
+    from input.pipeline.chapters import ensure_chapters_table, chapter_exists
+    with sqlite3.connect(DB_PATH) as conn:
+        ensure_chapters_table(conn)
+        return chapter_exists(conn, name)
+
+
+@app.post("/chapters")
+def create_chapter_endpoint(payload: dict = Body(...)):
+    """Create a curator-defined chapter (a row in the chapters table). A fresh
+    chapter starts unfit until recipes are classified into it + a refresh runs."""
+    from input.pipeline.chapters import (
+        ensure_chapters_table, create_chapter, get_chapter_detail,
+    )
+    name = (payload.get("name") or "").strip()
+    notes = payload.get("notes")
+    if not name:
+        raise HTTPException(status_code=400, detail="Chapter name is required")
+    if notes is not None and not isinstance(notes, str):
+        raise HTTPException(status_code=400, detail="notes must be a string")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            ensure_chapters_table(conn)
+            create_chapter(conn, name, (notes or "").strip() or None)
+            return get_chapter_detail(conn, name)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] create_chapter failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Create error: {e}")
+
+
 @app.get("/chapters/{name}")
 def get_chapter_endpoint(name: str):
     try:
         from input.pipeline.chapters import get_chapter_detail
         from extract.chapter_classifier import CHAPTERS
-        if name not in CHAPTERS:
+        if not _chapter_known(name):
             raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
         with sqlite3.connect(DB_PATH) as conn:
             return get_chapter_detail(conn, name)
@@ -2118,8 +2156,7 @@ def chapter_recipes_endpoint(name: str):
     formula is fit on, not just the saved winners. Editorial/curated picks
     live only in master_recipes and are never in this cohort, so the fit
     excludes them by construction."""
-    from extract.chapter_classifier import CHAPTERS
-    if name not in CHAPTERS:
+    if not _chapter_known(name):
         raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -2128,12 +2165,35 @@ def chapter_recipes_endpoint(name: str):
                 "FROM dish_run_data_points dp "
                 "JOIN dishes d ON d.name = dp.dish_name "
                 "WHERE d.chapter = ? "
-                "ORDER BY dp.da DESC NULLS LAST, dp.pa DESC NULLS LAST",
+                # Only records the regression actually consumes (both DA & PA
+                # present) — so this list's count == last_ou_fit.n, the number
+                # checked against the 25-record minimum. No apples-vs-oranges.
+                "AND dp.da IS NOT NULL AND dp.pa IS NOT NULL "
+                "ORDER BY dp.da DESC, dp.pa DESC",
                 (name,),
             ).fetchall()
         return [{"url": u, "da": da, "pa": pa} for u, da, pa in rows]
     except Exception as e:
         print(f"[ERROR] chapter_recipes({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/chapters/{name}/top-recipes")
+def chapter_top_recipes_endpoint(name: str):
+    """The chapter's top-10 recipes by OU (snapshot stored on the chapter
+    row at fit time), decorated with the BCC permalink."""
+    if not _chapter_known(name):
+        raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
+    try:
+        from input.pipeline.chapters import get_chapter_top_recipes
+        with sqlite3.connect(DB_PATH) as conn:
+            recs = get_chapter_top_recipes(conn, name)
+        for r in recs:
+            if r.get("recipe_id"):
+                r["bcc_url"] = _bcc_link_permalink(r["recipe_id"])
+        return {"chapter": name, "count": len(recs), "recipes": recs}
+    except Exception as e:
+        print(f"[ERROR] chapter_top_recipes({name!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
@@ -2146,7 +2206,7 @@ def refresh_chapter_endpoint(name: str):
             compute_and_store_chapter_fit, get_chapter_detail,
         )
         from extract.chapter_classifier import CHAPTERS
-        if name not in CHAPTERS:
+        if not _chapter_known(name):
             raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
         with sqlite3.connect(DB_PATH) as conn:
             fit = compute_and_store_chapter_fit(conn, name)
@@ -2182,7 +2242,7 @@ def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
     try:
         from input.pipeline.chapters import update_chapter_notes, get_chapter_detail
         from extract.chapter_classifier import CHAPTERS
-        if name not in CHAPTERS:
+        if not _chapter_known(name):
             raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
         if "notes" in payload:
             notes = payload["notes"]
@@ -2433,6 +2493,22 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
                   f"for chapter-fit aggregation")
         except Exception as e:
             print(f"[REFRESH-DISH] data-points persist failed (non-fatal): {e}")
+
+    # Recompute + persist THIS dish's chapter fit now that its cohort data
+    # points are refreshed. Every dish update keeps the chapter formula
+    # current, so chapter fits never drift from the dish corpus — there is
+    # no corpus-diff to surface in the chapters editor (the fit IS the
+    # corpus, re-derived each batch). See memory/project_admin_editor_nav.md.
+    dish_chapter = dish.get("chapter") if isinstance(dish, dict) else None
+    if dish_chapter and dish_chapter != "Uncertain":
+        try:
+            from input.pipeline.chapters import compute_and_store_chapter_fit
+            with sqlite3.connect(DB_PATH) as conn:
+                cf = compute_and_store_chapter_fit(conn, dish_chapter)
+            print(f"[REFRESH-DISH] recomputed chapter fit {dish_chapter!r}: "
+                  f"n={cf.get('n')} used={cf.get('used')} model={cf.get('model')}")
+        except Exception as e:
+            print(f"[REFRESH-DISH] chapter-fit recompute failed (non-fatal): {e}")
 
     # Delete prior top-kind rows for this dish — editors_choice and
     # legacy survive. Done BEFORE saves so the (url_normalized,

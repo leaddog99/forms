@@ -682,9 +682,80 @@
     });
   }
 
+  // ============================================================
+  //  Master/detail editor nav controller (a/c/d/v editors)
+  // ============================================================
+  //
+  // The MECHANICAL nav for editor-shell.css pages: dock/overlay list,
+  // back-convention control, scrim, mobile drawer, listMode + shellWidth.
+  // It is deliberately NOT a data-driven renderer — each editor page is a
+  // cloned, hand-written template that supplies its own list/detail render
+  // (see memory/project_admin_editor_nav.md + feedback_editor_template_not_runtime).
+  //
+  // Drives body classes consumed by editor-shell.css:
+  //   .ed-mode-overlay  .ed-list-collapsed  .ed-drawer-open
+  //
+  // Usage:
+  //   const nav = LibraryShell.initEditorNav({
+  //     backButton: '#edBack', scrim: '#edScrim',
+  //     listLabel: 'Chapters', listMode: 'docked', shellWidth: 1200,
+  //   });
+  //   // after the page selects a list row:  nav.afterSelect();
+  // Returns { toggle, afterSelect, setMode, open, close, isOverlay }.
+  const _EDNAV_ICONS = {
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>',
+    collapse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+  };
+  function initEditorNav(opts) {
+    opts = opts || {};
+    const backBtn = document.querySelector(opts.backButton || '#edBack');
+    const scrim = document.querySelector(opts.scrim || '#edScrim');
+    const label = opts.listLabel || 'List';
+    if (opts.shellWidth != null) {
+      const w = (typeof opts.shellWidth === 'number') ? opts.shellWidth + 'px' : opts.shellWidth;
+      document.documentElement.style.setProperty('--ed-shell-w', w);
+    }
+    const mq = window.matchMedia('(max-width: 860px)');
+    const ctl = {
+      mode: opts.listMode === 'overlay' ? 'overlay' : 'docked',
+      open: true,
+      isMobile() { return mq.matches; },
+      isOverlay() { return this.mode === 'overlay' || this.isMobile(); },
+      render() {
+        if (!backBtn) return;
+        if (this.isOverlay() && this.open) { backBtn.innerHTML = _EDNAV_ICONS.close; backBtn.title = 'Close ' + label; }
+        else if (!this.open) { backBtn.innerHTML = _EDNAV_ICONS.back + '<span>' + escapeHtml(label) + '</span>'; backBtn.title = 'Show ' + label; }
+        else { backBtn.innerHTML = _EDNAV_ICONS.collapse; backBtn.title = 'Hide ' + label; }
+      },
+      apply() {
+        const b = document.body;
+        b.classList.toggle('ed-mode-overlay', this.mode === 'overlay' && !this.isMobile());
+        if (this.isOverlay()) { b.classList.toggle('ed-drawer-open', this.open); b.classList.remove('ed-list-collapsed'); }
+        else { b.classList.toggle('ed-list-collapsed', !this.open); b.classList.remove('ed-drawer-open'); }
+        this.render();
+      },
+      toggle() { this.open = !this.open; this.apply(); },
+      open_() { this.open = true; this.apply(); },
+      close() { this.open = false; this.apply(); },
+      afterSelect() { if (this.isOverlay()) { this.open = false; this.apply(); } },
+      setMode(m) { this.mode = (m === 'overlay') ? 'overlay' : 'docked'; this.open = !this.isOverlay(); this.apply(); },
+    };
+    if (backBtn) backBtn.addEventListener('click', () => ctl.toggle());
+    if (scrim) scrim.addEventListener('click', () => ctl.close());
+    // Reset the default open state when crossing the mobile breakpoint.
+    (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(
+      () => { ctl.open = !ctl.isOverlay(); ctl.apply(); }
+    );
+    ctl.open = !ctl.isOverlay();
+    ctl.apply();
+    return ctl;
+  }
+
   window.LibraryShell = {
     init,
     initNav,
+    initEditorNav,
     initIdentityBadge,
     openSidebar,
     closeSidebar,

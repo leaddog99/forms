@@ -57,6 +57,11 @@ def ensure_chapters_table(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Top-10 recipes for the chapter (highest OU across its dishes), a JSON
+    # snapshot recomputed at fit time. Added via ALTER for pre-existing DBs.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(chapters)").fetchall()}
+    if "top_recipes" not in cols:
+        conn.execute("ALTER TABLE chapters ADD COLUMN top_recipes TEXT")
     # dish_run_data_points captures the FULL (DA, PA) cohort each dish
     # refresh feeds into _compute_custom_ou — including URLs that later
     # got dropped at the OU floor or failed extraction. That's the
@@ -234,6 +239,65 @@ def _fit_da_pa(da_arr: np.ndarray, pa_arr: np.ndarray) -> dict:
     }
 
 
+def compute_chapter_top_recipes(
+    conn: sqlite3.Connection, chapter: str, limit: int = 10,
+) -> list[dict]:
+    """The chapter's `limit` highest-OU master_recipes across all its dishes
+    (joined via _master.dish → dishes.chapter). A compact snapshot stored on
+    the chapter row at fit time — independent of the regression (works even
+    when the chapter is below the fit minimum)."""
+    rows = conn.execute(
+        """
+        SELECT mr.recipe_id, mr.data
+        FROM master_recipes mr
+        JOIN dishes d ON d.name = json_extract(mr.data, '$._master.dish')
+        WHERE d.chapter = ?
+          AND json_extract(mr.data, '$._scoring.ouScore') IS NOT NULL
+        ORDER BY CAST(json_extract(mr.data, '$._scoring.ouScore') AS REAL) DESC, mr.id
+        LIMIT ?
+        """,
+        (chapter, limit),
+    ).fetchall()
+    out: list[dict] = []
+    for recipe_uuid, dj in rows:
+        try:
+            d = json.loads(dj)
+        except Exception:
+            continue
+        s = d.get("_scoring") or {}
+        m = d.get("_master") or {}
+        exc = m.get("exceptionalism") or {}
+        src = d.get("_source") or {}
+        img = d.get("image")
+        out.append({
+            "recipe_id": recipe_uuid,
+            "name": d.get("name") or "(no title)",
+            "dish": m.get("dish") or "",
+            "ou": s.get("ouScore"),
+            "da": s.get("domainAuthority"),
+            "pa": s.get("pageAuthority"),
+            "grade": exc.get("grade"),
+            "site_name": src.get("siteName") or "",
+            "source_url": src.get("originalUrl") or "",
+            "preview_image": src.get("previewImage") or "",
+            "fallback_image": (img[0] if isinstance(img, list) and img else None),
+        })
+    return out
+
+
+def get_chapter_top_recipes(conn: sqlite3.Connection, name: str) -> list[dict]:
+    """Parsed top-recipes snapshot stored on the chapter row (or [])."""
+    row = conn.execute(
+        "SELECT top_recipes FROM chapters WHERE name = ?", (name,),
+    ).fetchone()
+    if not row or not row[0]:
+        return []
+    try:
+        return json.loads(row[0])
+    except Exception:
+        return []
+
+
 def compute_and_store_chapter_fit(conn: sqlite3.Connection, chapter: str) -> dict:
     """Pull every saved master_recipe in `chapter`, fit the chapter-wide
     OU regression, store on the chapters row. Returns the fit dict (used
@@ -276,16 +340,22 @@ def compute_and_store_chapter_fit(conn: sqlite3.Connection, chapter: str) -> dic
     else:
         fit = _fit_da_pa(np.array(da_vals), np.array(pa_vals))
 
+    # Snapshot the chapter's top-10 recipes by OU at the same time, so the
+    # chapter record always carries a current "best of" set.
+    ensure_chapters_table(conn)
+    top = compute_chapter_top_recipes(conn, chapter, limit=10)
+
     conn.execute(
         """
-        INSERT INTO chapters (name, last_ou_fit, fit_recipe_count, fit_updated_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO chapters (name, last_ou_fit, fit_recipe_count, fit_updated_at, top_recipes)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(name) DO UPDATE SET
             last_ou_fit      = excluded.last_ou_fit,
             fit_recipe_count = excluded.fit_recipe_count,
-            fit_updated_at   = excluded.fit_updated_at
+            fit_updated_at   = excluded.fit_updated_at,
+            top_recipes      = excluded.top_recipes
         """,
-        (chapter, json.dumps(fit), n, now_iso),
+        (chapter, json.dumps(fit), n, now_iso, json.dumps(top)),
     )
     conn.commit()
     return fit
@@ -320,6 +390,15 @@ def list_chapters_with_status(
           current_recipe_count, fit_status: 'graded'|'below_min_n'|'never'
         }
     """
+    ensure_chapters_table(conn)
+    # The chapters TABLE is the source of truth for which chapters exist.
+    # Seed canonical (classifier-taxonomy) names lacking a row so the DB
+    # stays authoritative — chapter data lives in the DB, not only in code.
+    conn.executemany(
+        "INSERT OR IGNORE INTO chapters (name) VALUES (?)",
+        [(n,) for n in canonical_names if n != "Uncertain"],
+    )
+    conn.commit()
     # One pass: pull every row from the chapters table + every chapter's
     # current recipe count from master_recipes.
     fit_rows = {
@@ -335,8 +414,10 @@ def list_chapters_with_status(
             "WHERE chapter IS NOT NULL GROUP BY chapter"
         ).fetchall()
     }
+    # Iterate the TABLE (now seeded with canonical names + any curator-created
+    # chapters), not the code constant — the DB is the source of truth.
     out: list[dict] = []
-    for name in canonical_names:
+    for name in fit_rows.keys():
         if name == "Uncertain":
             continue
         fit_row = fit_rows.get(name)
@@ -424,6 +505,34 @@ def update_chapter_notes(
         "INSERT INTO chapters (name, notes, fit_updated_at) VALUES (?, ?, ?) "
         "ON CONFLICT(name) DO UPDATE SET notes = excluded.notes",
         (name, notes, now_iso),
+    )
+    conn.commit()
+
+
+def chapter_exists(conn: sqlite3.Connection, name: str) -> bool:
+    """True if a row for this chapter exists in the chapters table (the
+    source of truth for which chapters exist)."""
+    return bool(conn.execute(
+        "SELECT 1 FROM chapters WHERE name = ?", ((name or "").strip(),),
+    ).fetchone())
+
+
+def create_chapter(
+    conn: sqlite3.Connection, name: str, notes: Optional[str] = None,
+) -> None:
+    """Insert a new curator-created chapter row. Raises ValueError on a
+    blank name or a duplicate. A fresh chapter starts unfit (no recipes
+    classified into it yet) until populated + refreshed."""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Chapter name is required")
+    ensure_chapters_table(conn)
+    if chapter_exists(conn, name):
+        raise ValueError(f"Chapter '{name}' already exists")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO chapters (name, notes, fit_updated_at) VALUES (?, ?, ?)",
+        (name, (notes or None), now_iso),
     )
     conn.commit()
 
