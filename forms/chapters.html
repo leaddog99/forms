@@ -103,16 +103,20 @@
     }
 
     /* ----------------------------- list ----------------------------- */
-    function renderList(){
+    function sortedRows(){
       const t = term.toLowerCase();
-      let rows = Object.values(chapters).filter(c => !t || c.name.toLowerCase().includes(t));
+      const rows = Object.values(chapters).filter(c => !t || c.name.toLowerCase().includes(t));
       const sorters = {
         attention: (a, b) => (needsAttention(b) - needsAttention(a)) || a.name.localeCompare(b.name),
         name:    (a, b) => a.name.localeCompare(b.name),
         recipes: (a, b) => (b.current_recipe_count || 0) - (a.current_recipe_count || 0) || a.name.localeCompare(b.name),
         updated: (a, b) => String(b.fit_updated_at || '').localeCompare(String(a.fit_updated_at || '')) || a.name.localeCompare(b.name),
       };
-      rows.sort(sorters[sortKey] || sorters.attention);
+      return rows.sort(sorters[sortKey] || sorters.attention);
+    }
+
+    function renderList(){
+      const rows = sortedRows();
       $('#count').textContent = `(${rows.length})`;
 
       const attn = Object.values(chapters).filter(needsAttention).length;
@@ -371,6 +375,8 @@
       const list = await r.json();
       chapters = {};
       for (const c of list) chapters[c.name] = c;
+      // Land on the first row so the page is populated on load, not a splash.
+      if (!selectedName) { const first = sortedRows()[0]; if (first) selectedName = first.name; }
       renderList();
       renderDetail();
     }
