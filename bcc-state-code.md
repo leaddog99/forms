@@ -1,4 +1,4 @@
-# bcc-state-code
+the # bcc-state-code
 
 Running state log for the recipe forms project. Append-only style; prune as items complete.
 
@@ -1378,6 +1378,42 @@ Trade to watch: any site that does *normal* anti-bot (blocks bots, allows Chrome
 - Updated `memory/feedback_single_path.md` lessons concretized — fetcher consistency was an *exact* instance of the canonical-path principle. The fix wasn't "add a workaround in step 3"; it was "share the fetcher."
 - Exceptionalism's `sigma_effective` persists in `last_ou_fit` JSON on the dish row, so future harvest grading has the originating run's scale available. Harvest-time grading not yet wired (tomorrow's work).
 - `dish_rejects` table got `exc_score` + `exc_grade` columns via ALTER TABLE migration.
+
+---
+
+## Session log — 2026-05-30 / 05-31
+
+### Cookbook chapter taxonomy: restructure + codified rules
+
+Two enchilada recipes mis-filed surfaced the problem: "Enchiladas Verdes" → the old *Pies and Pastries - Savory*, and "Shrimp Enchiladas in Tomato Sauce" → *Sauces* — the latter because the Tier-1 shortcut phrase `tomato sauce` matched a *modifier* inside the dish title and short-circuited the LLM before its dish-vs-component rule could fire. Restructure: merged the two Pie chapters into one sweet **Pies & Pastries**; renamed **Sandwiches → Sandwiches, Pizza & Savory Pastry**; added **Casseroles & Baked Dishes**. Net 24 real chapters + Uncertain.
+
+Codified a **7-rule structural decision tree** into the classifier's LLM system prompt *and* as plain-English docs above `_SYSTEM_PROMPT` (`extract/chapter_classifier.py`): identity > ingredients, physical-form > technique, defining-structure-wins, crust-beats-filling, discrete-centerpiece-vs-assembly, names-don't-override-structure, cluster sanity check. Governing line: *classify by the structural object the cook recognizes on the plate, with structure outranking ingredients, cooking method, vessel, and name.* Worked the famous edge cases (lasagne/moussaka/pastitsio → Casseroles; pot pie/calzone/empanada → Savory Pastry; chicken parm → Poultry; shepherd's pie → Casserole because no crust). Shortcut layer hardened: sauce-chapter phrases are **standalone-only** (fire only when the whole title IS the sauce), so a sauce noun embedded in a dish title no longer hijacks classification — embedded sauces defer to the LLM (rule 11). Spanakopita + fajitas pinned deterministically (savory phyllo was leaking into the now-sweet Pies chapter).
+
+Migration `scripts/migrate_chapters.py` (dry-run default, **scoped** to the restructured chapters so unrelated borderline dishes aren't re-litigated) re-derived chapters across recipes + master_recipes + dishes (441 items) and reconciled the `chapters` registry. Applied + verified live.
+
+### Library-shell UI overhaul (universal across chapters / dishes / users)
+
+- **Config-driven branding**: `brand_name` / `brand_logo_url` / `brand_home_url` in `bcc_config.json` → `GET /branding` → `LibraryShell.applyBranding` renders a home-linked wordmark in the header. Site name is **Best Cooks Club** (bestcooksclub.com) — distinct from the "The Best of the Best" master cookbook (user_id 0). Logo URL still TBD (text-only until set).
+- **Sidebar opens at startup**; the ☰ list-toggle moved OUT of the page header into the sidebar's own list header (with a small floating opener shown only when the list is closed), freeing the header's left slot for the logo.
+- **`LibraryShell.afterSave({message, onClear})`** — universal save flow: flash confirmation → clear the form → return to the sidebar. Wired into chapters' Save notes; **dishes still uses its own save flow (TODO: adopt afterSave).**
+- **Floating action bar** lifted off the bottom edge as a card; **header taller** (`--header-h` 68px).
+- **Identity badge** restyled: two lines, no italic — user name (links to the user switcher) over a **live `mailto:` email link** (`/auth/me` provides name + email).
+
+### Chapters editorial detail view + the source-records cohort (key correction)
+
+Replaced the spreadsheet `kv` detail with an editorial layout: hero + one-line summary, conversational fact blocks, a premium formula card, muted low-confidence treatment (`#994d1c`, no neon alert), curator notes as a footer postscript. Typography: **dropped Playfair/Georgia, all-sans** — brand 2.0em, page title 1.5em weight 300, section labels (incl. Curator Notes) all-caps.
+
+**Correction logged so we don't relearn it:** the chapter OU formula is fit on `dish_run_data_points` — the FULL **pre-Moz-trim** SERP cohort from the chapter's underlying dishes — **NOT** the saved `master_recipes` winners. (Confirmed: fit n=76 = the cohort, not the 46 winners.) So the bottom **Metadata → Source records** accordion (collapsed by default, after notes) lists that cohort tightly: `url · DA · PA`, via `GET /chapters/{name}/recipes`. Editorial/curated picks live only in `master_recipes` and are never in the cohort, so the fit excludes them by construction — hardened with a `kind IN ('top','harvest')` guard on `backfill_data_points_from_corpus` so a future `editors_choice` carrying a `_master.dish` can never skew the regression baseline.
+
+### Admin scaffold built — then course-corrected
+
+Built a generic metadata-driven admin RUNTIME (`admin_models.py` declarative `AdminModel` + `forms/admin.html` rendering any registered model + `forms/list_control.js` drop-in sort/search), and used it for a `status_messages` table (rotating wait-messages — `project_friendly_status_messages`). The user then clarified the wanted pattern is the OPPOSITE: a **template cloned + specialized per table** (Rails-scaffold style, derived from the dish editor), with per-field lookups / edit rules as custom code — NOT a generic execution environment. The runtime scaffold is committed but slated to be superseded. See `memory/feedback_editor_template_not_runtime.md`.
+
+### Shipped
+
+All committed to `master` + pushed (10 commits: taxonomy, admin scaffold, branding, library-shell UI, chapters editorial + cohort, typography/identity). `recipes.db` snapshot committed. Feature branch `chapter-taxonomy-restructure` fast-forward-merged to master + deleted (local + remote). Concurrent work landed on the branch between turns (jobs drainer, run-queued nav, BCC link-domain config, siteName wiring, vec index) — preserved, my commits stayed additive.
+
+Captured-in-memory ideas not yet built: **dish-catalog table** (promote `chapter_shortcuts.json` to a DB "canonical dish dictionary" — origin/ethnicity/story/embedding derived once per dish, free thereafter; the BASIS the curated dishes library is promoted from — `project_dish_catalog_table`); **re-derive / preview button** on the recipe form (`project_rederive_preview_button`).
 
 ---
 
