@@ -264,13 +264,9 @@
     if (!headerInner) return;
     if (headerInner.querySelector('.identity-badge')) return;  // idempotent
 
-    const badge = document.createElement('a');
+    const badge = document.createElement('div');
     badge.className = 'identity-badge';
-    badge.href = '/forms/users.html';
-    badge.title = 'Click to switch user';
-    badge.innerHTML =
-      '<span class="identity-name muted">…</span>' +
-      '<span class="identity-arrow">↗</span>';
+    badge.innerHTML = '<span class="identity-name muted">…</span>';
 
     // Sit to the RIGHT, adjacent to the nav toggle. The .nav-spacer
     // (flex:1) sits between the title and the badge, so the badge
@@ -297,24 +293,26 @@
         const u = data && data.user;
         if (!u) {
           badge.innerHTML =
-            '<span class="identity-name muted">not signed in</span>' +
-            '<span class="identity-arrow">↗</span>';
-          badge.title = 'Click to pick a user';
+            '<a class="identity-name muted" href="/forms/users.html" title="Pick a user">' +
+            'not signed in <span class="identity-arrow">↗</span></a>';
           return;
         }
         const nm = (u.name || u.email || '').trim();
         const uid = u.user_id;
         const role = (data.role || 'member');
-        const display = nm || ('user ' + uid);
-        badge.innerHTML =
-          '<span class="identity-name">' + escapeHtml(display) + '</span>' +
-          '<span class="identity-arrow">↗</span>';
-        // Tooltip carries the precise lookup data so the at-a-glance
-        // chip stays clean while audit info is one hover away.
-        badge.title = display +
-                      '  ·  user_id ' + uid +
-                      '  ·  role ' + role +
-                      '\nClick to switch.';
+        const email = (u.email || '').trim();
+        const display = escapeHtml(nm || ('user ' + uid));
+        // Two lines: name (links to the user switcher) over a live mailto
+        // email link. The arrow is the switch-user affordance.
+        const nameLink =
+          '<a class="identity-name" href="/forms/users.html" ' +
+          'title="user_id ' + uid + ' · role ' + escapeHtml(role) + ' · click to switch">' +
+          display + ' <span class="identity-arrow">↗</span></a>';
+        const emailLink = email
+          ? '<a class="identity-email" href="mailto:' + escapeHtml(email) + '">' +
+            escapeHtml(email) + '</a>'
+          : '';
+        badge.innerHTML = nameLink + emailLink;
       })
       .catch(() => {
         badge.innerHTML =

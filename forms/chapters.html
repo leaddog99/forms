@@ -40,13 +40,7 @@
       border-bottom: 1px solid var(--hairline);
       box-shadow: none;
     }
-    .app-header h1 {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-weight: 500;
-      font-size: 1.7em;
-      letter-spacing: -0.01em;
-      color: var(--ink);
-    }
+    /* Brand header is styled by library-shell.css (.app-header h1) — all sans, 2.0em. */
     .sidebar-toggle {
       background: transparent;
       color: var(--ink);
@@ -347,9 +341,9 @@
        curator notes). Replaces the old spreadsheet kv layout. ====== */
     .ch-hero { margin-bottom: 28px; }
     .ch-title {
-      font-family: 'Playfair Display', Georgia, serif;
-      font-weight: 600; font-size: 2.3em; letter-spacing: -0.01em;
-      line-height: 1.1; color: var(--ink); margin: 0 0 10px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 300; font-size: 1.5em; letter-spacing: -0.01em;
+      line-height: 1.15; color: var(--ink); margin: 0 0 10px;
     }
     .ch-summary {
       margin: 0; font-size: 0.92em; font-weight: 300; color: var(--muted);
@@ -391,26 +385,41 @@
     .ch-notes { margin-top: 36px; padding-top: 22px;
       border-top: 1px solid var(--hairline-soft); }
     .ch-notes-label {
-      font-family: Georgia, 'Times New Roman', serif; font-style: italic;
-      font-weight: 400; font-size: 1.1em; color: var(--ink-soft);
-      letter-spacing: 0; text-transform: none; margin: 0 0 14px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-weight: 500; font-size: 0.72em; letter-spacing: 0.09em;
+      text-transform: uppercase; color: var(--muted); margin: 0 0 18px;
     }
     .ch-notes .notes-area { font-size: 14px; color: var(--ink-soft); }
 
-    /* Component records — the recipes that make up the chapter. */
-    .recipe-list { display: flex; flex-direction: column; }
-    .recipe-row {
-      display: flex; align-items: baseline; justify-content: space-between;
-      gap: 16px; padding: 9px 2px; border-bottom: 1px solid var(--hairline-soft);
-      text-decoration: none; color: var(--ink);
+    /* Metadata accordion — collapsed by default. */
+    .meta-accordion summary {
+      cursor: pointer; list-style: none; user-select: none;
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.92em; color: var(--ink-soft); padding: 2px 0;
     }
-    .recipe-row:last-child { border-bottom: none; }
-    .recipe-row:hover .recipe-name { color: var(--accent); text-decoration: underline; }
-    .recipe-name { font-size: 0.95em; font-weight: 400; }
-    .recipe-meta {
-      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-      font-size: 0.78em; color: var(--muted); white-space: nowrap;
-      font-variant-numeric: tabular-nums;
+    .meta-accordion summary::-webkit-details-marker { display: none; }
+    .meta-accordion summary::before { content: '▸'; color: var(--accent); font-size: 0.8em; }
+    .meta-accordion[open] summary::before { content: '▾'; }
+    .meta-accordion .meta-count { color: var(--muted); font-size: 0.85em; }
+    .meta-accordion .recipe-list { margin-top: 10px; }
+
+    /* Source records — tight DA/PA cohort list (the formula's basis). */
+    .recipe-list { display: flex; flex-direction: column; }
+    .cohort-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 16px; padding: 4px 2px; border-bottom: 1px solid var(--hairline-soft);
+      text-decoration: none; color: var(--ink); min-width: 0;
+    }
+    .cohort-row:last-child { border-bottom: none; }
+    .cohort-url {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78em;
+      color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cohort-row:hover .cohort-url { color: var(--accent); }
+    .cohort-scores {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.78em;
+      color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums;
     }
 
     @media (max-width: 560px) {
@@ -626,11 +635,6 @@
           <p class="ch-summary">${summary}</p>
         </header>
 
-        <section class="ch-section" id="chapterRecipes">
-          <h2 class="ch-section-label">Recipes in this chapter</h2>
-          <div class="recipe-list" id="recipeList"><p class="empty-fit">Loading…</p></div>
-        </section>
-
         ${fitSection}
 
         <section class="ch-section">
@@ -647,6 +651,14 @@
           <textarea id="notesArea" class="notes-area"
             placeholder="Editorial context, known issues, fit history…">${escapeHtml(c.notes || '')}</textarea>
         </section>
+
+        <section class="ch-section ch-metadata">
+          <h2 class="ch-section-label">Metadata</h2>
+          <details class="meta-accordion">
+            <summary>Source records <span class="meta-count" id="recCount"></span></summary>
+            <div class="recipe-list" id="recipeList"><p class="empty-fit">Loading…</p></div>
+          </details>
+        </section>
       `;
 
       $('#actionFooter').style.display = 'block';
@@ -658,7 +670,11 @@
       $('#saveNotesBtn').addEventListener('click', () => doSaveNotes(c.name));
       const rerun = $('#rerunLink');
       if (rerun) rerun.addEventListener('click', (e) => { e.preventDefault(); doRefresh(c.name); });
-      loadChapterRecipes(c.name);
+      // Lazy-load the component records only when the accordion is opened.
+      const acc = panel.querySelector('.meta-accordion');
+      if (acc) acc.addEventListener('toggle', () => {
+        if (acc.open && !acc.dataset.loaded) { acc.dataset.loaded = '1'; loadChapterRecipes(c.name); }
+      });
     }
 
     // Component records: the master_recipes that make up this chapter,
@@ -669,22 +685,24 @@
       try {
         const r = await fetch(`/chapters/${encodeURIComponent(name)}/recipes`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const recipes = await r.json();
-        if (!recipes.length) {
-          wrap.innerHTML = '<p class="empty-fit">No recipes in this chapter yet.</p>';
+        const recs = await r.json();
+        const cnt = $('#recCount'); if (cnt) cnt.textContent = `(${recs.length})`;
+        if (!recs.length) {
+          wrap.innerHTML = '<p class="empty-fit">No source records.</p>';
           return;
         }
-        wrap.innerHTML = recipes.map(rc => {
-          const ou = (rc.ou == null) ? '' : `OU ${Number(rc.ou).toFixed(1)}`;
-          const meta = [escapeHtml(rc.host || ''), ou].filter(Boolean).join(' · ');
-          const href = rc.bcc_url || '#';
-          return `<a class="recipe-row" href="${href}" target="_blank" rel="noopener">
-              <span class="recipe-name">${escapeHtml(rc.name)}</span>
-              <span class="recipe-meta">${meta}</span>
+        wrap.innerHTML = recs.map(rec => {
+          const url = rec.url || '';
+          const disp = url.replace(/^https?:\/\//, '');
+          const da = rec.da == null ? '—' : Number(rec.da).toFixed(0);
+          const pa = rec.pa == null ? '—' : Number(rec.pa).toFixed(0);
+          return `<a class="cohort-row" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+              <span class="cohort-url">${escapeHtml(disp)}</span>
+              <span class="cohort-scores">DA ${da} · PA ${pa}</span>
             </a>`;
         }).join('');
       } catch (e) {
-        wrap.innerHTML = `<p class="empty-fit">Couldn't load recipes (${escapeHtml(String(e.message || e))}).</p>`;
+        wrap.innerHTML = `<p class="empty-fit">Couldn't load records (${escapeHtml(String(e.message || e))}).</p>`;
       }
     }
 

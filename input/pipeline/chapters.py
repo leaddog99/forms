@@ -132,6 +132,11 @@ def backfill_data_points_from_corpus(conn: sqlite3.Connection) -> dict:
             ?
         FROM master_recipes
         WHERE json_extract(data, '$._master.dish') IS NOT NULL
+          -- Algorithmic source only: the OU fit must reflect the organic
+          -- SERP authority landscape, NOT editorially curated picks
+          -- (editors_choice / legacy). Those are exceptions by design and
+          -- would skew the regression baseline.
+          AND json_extract(data, '$._master.kind') IN ('top', 'harvest')
           AND json_extract(data, '$._scoring.domainAuthority') IS NOT NULL
           AND json_extract(data, '$._scoring.pageAuthority') IS NOT NULL
         """,
