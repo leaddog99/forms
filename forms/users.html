@@ -3,457 +3,355 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Pick a User</title>
-  <!-- Shared design tokens + base components (palette, body font,
-       input/button baseline, badge). See forms.css. Anything below in
-       <style> is page-specific layout only. -->
-  <link rel="stylesheet" href="/forms/forms.css">
+  <title>Best Cooks Club — Admin · Users</title>
+  <!-- Users admin editor on the shared master/detail editor shell
+       (editor-shell.css + LibraryShell.initEditorNav). Second clone of the
+       a/c/d/v template — the editable-record case. See
+       memory/project_admin_editor_nav.md. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260531b">
   <style>
-    /* ===== Page layout ===== */
-    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
-    h1 { font-family: 'Playfair Display', Georgia, serif;
-      font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.01em; }
-    .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.95rem; }
-    .section-title { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
-      color: var(--muted); margin: 24px 0 12px; }
-
-    /* ===== User row card ===== */
-    .users { display: grid; grid-template-columns: 1fr; gap: 10px; }
-    .user-card {
-      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-      padding: 14px 18px; transition: border-color 0.15s ease;
-      display: flex; align-items: center; gap: 16px;
-    }
-    .user-card:hover { border-color: var(--accent); }
-    .user-card .avatar {
-      width: 44px; height: 44px; border-radius: 50%; background: var(--accent);
-      color: #fff; display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 1.05rem; flex-shrink: 0;
-    }
-    .user-card .info { flex: 1; min-width: 0; }
-    .user-card .name { font-weight: 600; font-size: 1.02rem; display: flex;
-      align-items: center; gap: 8px; }
-    .user-card .meta { color: var(--muted); font-size: 0.86rem; margin-top: 2px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    /* user_id pill — always visible in BOTH read and edit modes so the
-       user can see at a glance which uid each row binds to. Distinct
-       from the status badge: monospace, accent border, no fill. */
-    .uid-pill {
-      display: inline-block; padding: 2px 8px; border-radius: 6px;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em;
-      color: var(--accent); background: #fff;
-      border: 1.5px solid var(--accent);
-    }
-
-    /* ===== Per-row action buttons =====
-       Override the global button vocabulary from forms.css: smaller,
-       tighter, three explicit affordances (Login / Edit / Delete) so
-       there is no ambiguous whole-card click. */
-    .actions { display: flex; gap: 6px; flex-shrink: 0; }
-    .actions button {
-      font-family: Georgia, serif; font-size: 0.85rem; font-weight: 600;
-      padding: 6px 12px; border-radius: 8px; border: 1px solid transparent;
-      cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
-      box-shadow: none;
-    }
-    .actions button.login { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .actions button.login:hover { background: var(--accent-dark); border-color: var(--accent-dark); transform: none; }
-    .actions button.edit { background: transparent; color: var(--accent); border-color: var(--accent); }
-    .actions button.edit:hover { background: var(--accent-soft); }
-    .actions button.delete { background: transparent; color: var(--danger); border-color: var(--danger); }
-    .actions button.delete:hover { background: var(--danger-soft); }
-    .actions button.save { background: #2f7a3a; color: #fff; border-color: #2f7a3a; }
-    .actions button.cancel { background: transparent; color: var(--muted); border-color: var(--line); }
-
-    /* ===== Inline edit form =====
-       Replaces the read-only info block when Edit is clicked. Inputs
-       are slightly tighter than the forms.css default to fit two-up
-       inside the card. */
-    .edit-grid {
-      flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0;
-    }
-    .edit-grid input, .edit-grid select {
-      font-size: 0.92rem; padding: 7px 9px; border-radius: 7px;
-    }
-    .row-err { color: var(--danger); font-size: 0.82rem; padding: 6px 18px 0; }
-
-    /* ===== Create-user box ===== */
-    .create-box {
-      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-      padding: 18px; margin-top: 20px;
-    }
-    .create-box h2 { font-family: 'Playfair Display', Georgia, serif;
-      font-size: 1.05rem; margin: 0 0 12px; font-weight: 600; }
-    .create-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .create-row.full { grid-template-columns: 1fr; }
-    .create-actions { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
-    .err { color: var(--danger); font-size: 0.86rem; margin-left: auto; }
-    .note { color: var(--muted); font-size: 0.82rem; margin-top: 16px; }
-    .empty { color: var(--muted); font-style: italic; padding: 12px 0; }
-    /* Role pill — accent-toned for staff (owner/admin/editor/author),
-       muted-grey for members. Same vocabulary as the uid-pill so both
-       read as inline labels. */
-    .role-pill {
-      display: inline-block; padding: 2px 8px; border-radius: 6px;
-      font-family: ui-monospace, "SF Mono", Menlo, monospace;
-      font-size: 0.74rem; font-weight: 600; letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-    .role-pill.member      { color: var(--muted); background: #f4ebdd; }
-    .role-pill.contributor { color: var(--muted); background: #f4ebdd; }
-    .role-pill.author      { color: var(--accent-dark); background: #f4ebdd; }
-    .role-pill.editor      { color: var(--accent-dark); background: #f4ebdd; border: 1px solid var(--accent-soft); }
-    .role-pill.admin       { color: #fff; background: var(--accent); }
-    .role-pill.owner       { color: #fff; background: var(--accent-dark); }
-
-    /* ---------- Right-side cross-page nav (⋮) ----------
-       Inlined from library-shell.css. users.html doesn't use the
-       library-shell layout (no fixed app-header), so the button mounts
-       as a fixed top-right element — initNav() detects the absence of
-       .app-header .header-inner and falls back automatically. */
-    .nav-toggle {
-      background: var(--accent); color: #fff; border: none;
-      width: 36px; height: 36px; border-radius: 8px;
-      cursor: pointer; font-size: 1.3em; line-height: 1;
-      box-shadow: 0 2px 8px rgba(0,0,0,.15);
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 0;
-    }
-    .nav-toggle:hover { background: var(--accent-dark); }
-    .nav-menu {
-      position: fixed; top: 60px; right: 16px;
-      background: var(--card);
-      border: 1px solid var(--line); border-radius: 10px;
-      padding: 6px; min-width: 200px;
-      box-shadow: 0 6px 20px rgba(60,40,20,.18);
-      z-index: 101;
-      display: none;
-    }
-    .nav-menu.open { display: block; }
-    .nav-menu .nav-item {
-      display: flex; align-items: center; justify-content: space-between;
-      width: 100%;
-      padding: 9px 12px; border-radius: 6px;
-      color: var(--ink); text-decoration: none;
-      background: transparent; border: none;
-      font: inherit; font-size: 0.95em; text-align: left;
-      cursor: pointer; box-sizing: border-box;
-    }
-    .nav-menu .nav-item:hover { background: var(--accent-soft); }
-    .nav-menu .nav-item.active {
-      background: var(--accent-soft); color: var(--accent); font-weight: 600;
-    }
-    .nav-menu .badge-soon {
-      font-size: 0.72em; color: var(--muted);
-      font-style: italic; margin-left: 8px;
-    }
-    .coming-soon-overlay {
-      position: fixed; inset: 0;
-      background: rgba(42, 33, 27, 0.45);
-      z-index: 200;
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-    }
-    .coming-soon-card {
-      background: var(--card);
-      border-radius: 14px; padding: 28px 32px;
-      max-width: 400px; text-align: center;
-      box-shadow: 0 12px 36px rgba(60,40,20,.3);
-    }
-    .coming-soon-card h2 {
-      font-family: 'Playfair Display', Georgia, serif;
-      font-size: 1.5em; margin: 0 0 8px;
-    }
-    .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
-    .coming-soon-card button {
-      background: var(--accent); color: #fff; border: none;
-      padding: 9px 22px; border-radius: 8px;
-      font-weight: 600; cursor: pointer; font-size: 0.95em;
-      font-family: Georgia, serif;
-    }
-    .coming-soon-card button:hover { background: var(--accent-dark); }
+    /* page-specific bits (avatar, identity strip) — shell stays generic */
+    .u-avatar{ width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff;
+      display:flex; align-items:center; justify-content:center; font-size:.6em; font-weight:700;
+      flex:0 0 auto; letter-spacing:.02em; }
+    .u-avatar.gated{ background:#7a5e3a; }
+    .u-avatar.lg{ width:46px; height:46px; font-size:1.05em; }
+    .u-head{ display:flex; align-items:center; gap:14px; margin:0 0 12px; }
+    .u-head .ed-title{ margin:0; }
+    .ed-field .warn-hint{ color:var(--ed-warn); font-size:.78em; margin-top:5px; }
   </style>
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
-  <script src="/forms/library-shell.js?v=20260530a"></script>
-  <!-- Pull Playfair Display from the same Google Fonts entry the recipe
-       form uses so headings here match it exactly. -->
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="wrap">
-    <h1>Pick a User</h1>
-    <p class="sub">Test login. Each row has its own Login / Edit / Delete actions — clicking the row itself does nothing on purpose.</p>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
 
-    <!-- Synthetic Master (curator) row — NOT in the users table.
-         user_id=0 is the dispatch sentinel for master_recipes; clicking
-         Login sets app:self_user_id=0 so subsequent saves route to the
-         master table and the sidebar lists master_recipes. First-pass
-         curator login — see memory/project_master_recipes_ui.md. -->
-    <div class="section-title">Master collection</div>
-    <div class="users">
-      <div class="user-card" id="masterCard">
-        <div class="avatar" style="background:#7a5e3a">M</div>
-        <div class="info">
-          <div class="name">
-            <span class="uid-pill">#0</span>
-            <span>Master (curator collection)</span>
-          </div>
-          <div class="meta">
-            Access controlled by role — anyone with <strong>owner / admin / editor / author</strong>
-            can save to master from the recipe form. There's no "Master user" to log in as;
-            log in as yourself and your role permissions determine whether master writes are allowed.
-          </div>
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Users <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search &amp; sort" aria-label="Search and sort">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="New user" aria-label="New user">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
         </div>
-        <span class="role-pill admin">role-gated</span>
       </div>
-    </div>
 
-    <div class="section-title">Existing users</div>
-    <div class="users" id="userList"><div class="empty">Loading…</div></div>
+      <div class="ed-attn" id="attn"><div class="ed-attn-title" id="attnTitle"></div><div class="ed-attn-copy" id="attnCopy"></div></div>
 
-    <div class="create-box">
-      <h2>Create a new user</h2>
-      <form id="createForm" autocomplete="off">
-        <div class="create-row">
-          <input type="text" name="name" placeholder="Name (required)" required />
-          <input type="email" name="email" placeholder="Email (optional)" />
-        </div>
-        <div class="create-row" style="margin-top: 10px;">
-          <select name="status">
-            <option value="test">test</option>
-            <option value="free">free</option>
-            <option value="paid">paid</option>
-            <option value="comped">comped</option>
-          </select>
-          <input type="text" name="subscription_tier" placeholder="Subscription tier (optional)" />
-        </div>
-        <div class="create-actions">
-          <button type="submit" class="primary">Create user</button>
-          <span class="err" id="createErr"></span>
-        </div>
-      </form>
-    </div>
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search name or email…">
+        <select id="sort" aria-label="Sort users">
+          <option value="attention">Sort: needs attention</option>
+          <option value="name">Sort: name (A–Z)</option>
+          <option value="role">Sort: role (staff first)</option>
+          <option value="newest">Sort: newest</option>
+        </select>
+      </div>
 
-    <p class="note">Once Ghost is wired in, this page becomes a redirect — Ghost's member session takes over and our <code>user_id</code> becomes a server-side lookup keyed by <code>ghost_uuid</code> / <code>email</code>.</p>
+      <div class="ed-legend">
+        <span><i class="d ok"></i>staff</span>
+        <span><i class="d none"></i>member</span>
+        <span><i class="d warn"></i>incomplete</span>
+      </div>
+
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
+  <script src="/forms/library-shell.js?v=20260531a"></script>
   <script>
-    const API = window.location.origin;
-    const listEl = document.getElementById('userList');
-    const createForm = document.getElementById('createForm');
-    const errEl = document.getElementById('createErr');
+    const $ = (s) => document.querySelector(s);
 
-    // Cross-page nav (right-side ⋮). No .app-header on this page, so
-    // initNav() will mount the toggle as a fixed top-right button.
-    if (window.LibraryShell && LibraryShell.initNav) {
-      LibraryShell.initNav({ currentPage: 'users' });
+    LibraryShell.initNav({ currentPage: 'users' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Users', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, fmtDate, flash } = LibraryShell;
+
+    const ROLES = ['owner', 'admin', 'editor', 'author', 'contributor', 'member'];
+    const STATUSES = ['test', 'free', 'paid', 'comped'];
+    const STAFF = new Set(['owner', 'admin', 'editor', 'author']);
+
+    let users = {};               // keyed by user_id
+    let selected = null;          // user_id | 0 (master) | '__new__'
+    let term = '';
+    let sortKey = 'attention';
+
+    const isStaff = (u) => STAFF.has(u.role);
+    const incomplete = (u) => !u.email;
+    const needsAttention = (u) => incomplete(u);
+    const flag = (u) => incomplete(u) ? 'warn' : (isStaff(u) ? 'ok' : 'none');
+    function initials(name){
+      const p = (name || '').trim().split(/\s+/);
+      return ((p[0]?.[0] || '') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase() || '?';
     }
 
-    function escapeHtml(s) {
-      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
-        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
-      }[c]));
+    function sortedUsers(){
+      const t = term.toLowerCase();
+      const rows = Object.values(users).filter(u =>
+        !t || u.name.toLowerCase().includes(t) || (u.email || '').toLowerCase().includes(t));
+      const sorters = {
+        attention: (a, b) => (needsAttention(b) - needsAttention(a)) || a.name.localeCompare(b.name),
+        name:    (a, b) => a.name.localeCompare(b.name),
+        role:    (a, b) => (isStaff(b) - isStaff(a)) || ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || a.name.localeCompare(b.name),
+        newest:  (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')),
+      };
+      return rows.sort(sorters[sortKey] || sorters.attention);
     }
 
-    function initial(name) {
-      const s = (name || '').trim();
-      if (!s) return '?';
-      const parts = s.split(/\s+/);
-      return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] || '' : '')).toUpperCase();
+    /* ----------------------------- list ----------------------------- */
+    function renderList(){
+      const rows = sortedUsers();
+      $('#count').textContent = `(${rows.length})`;
+
+      const attn = Object.values(users).filter(needsAttention).length;
+      const panel = $('#attn'), title = $('#attnTitle'), copy = $('#attnCopy');
+      if (attn){ panel.classList.remove('none'); title.textContent = `${attn} incomplete`; copy.textContent = 'Missing email — can’t be contacted or linked to a Ghost member.'; }
+      else { panel.classList.add('none'); title.textContent = 'All profiles complete'; copy.textContent = 'Every user has an email on file.'; }
+
+      const ul = $('#list'); ul.innerHTML = '';
+
+      // Pinned, read-only Master sentinel (#0) — not in the users table.
+      const m = document.createElement('li');
+      m.className = 'ed-item' + (selected === 0 ? ' selected' : '');
+      m.style.marginBottom = '10px';
+      m.innerHTML = `<div class="ed-item-top"><span class="u-avatar gated">M</span><span class="ed-item-name">Master (curator collection)</span></div><div class="ed-item-meta" style="margin-left:33px;color:var(--accent)">#0 · role-gated</div>`;
+      m.addEventListener('click', () => { selected = 0; renderList(); renderMain(); nav.afterSelect(); });
+      ul.appendChild(m);
+
+      if (!rows.length){ ul.insertAdjacentHTML('beforeend', '<li class="ed-empty">No matches</li>'); return; }
+      for (const u of rows){
+        const li = document.createElement('li');
+        li.className = 'ed-item' + (u.user_id === selected ? ' selected' : '');
+        li.innerHTML =
+          `<div class="ed-item-top"><span class="u-avatar">${escapeHtml(initials(u.name))}</span>` +
+          `<span class="ed-item-name">${escapeHtml(u.name)}</span><span class="ed-item-flag ${flag(u)}"></span></div>` +
+          `<div class="ed-item-meta" style="margin-left:33px">#${u.user_id} · ${escapeHtml(u.email || '(no email)')} · ${escapeHtml(u.role)}</div>`;
+        li.addEventListener('click', () => { selected = u.user_id; renderList(); renderMain(); nav.afterSelect(); });
+        ul.appendChild(li);
+      }
     }
 
-    function metaLine(u) {
-      // user_id is rendered separately as a prominent uid-pill on the
-      // card; don't repeat it here.
-      const bits = [];
-      if (u.email) bits.push(u.email);
-      else bits.push('(no email)');
-      if (u.subscription_tier) bits.push(u.subscription_tier);
-      return bits.join(' · ');
+    /* ----------------------------- dispatch ----------------------------- */
+    function user(){ return users[selected]; }
+    function renderMain(){
+      if (selected === '__new__') return renderCreate();
+      if (selected === 0) return renderMaster();
+      const u = user();
+      if (!u){ const first = sortedUsers()[0]; selected = first ? first.user_id : 0; return renderMain(); }
+      renderDetail(u);
     }
 
-    function pickUser(uid) {
-      // Two distinct keys with distinct meanings:
-      //   app:self_user_id  — the user's *identity* (who am I logged in
-      //     as). Set ONLY here, by an explicit picker click. The Claim
-      //     button reads this to know which collection to claim INTO.
-      //   sidebar:user_id   — the *current view* (whose recipes is the
-      //     sidebar listing). Driven by TBOTB and the sidebar input.
-      // Without this split, hitting TBOTB after login would overwrite
-      // the identity to 0 (master) and Claim would no longer know who
-      // the user is.
+    function stripPills(u){
+      const out = [];
+      out.push(`<span class="ed-pill ${isStaff(u) ? 'ok' : ''}"><i class="d"></i>${escapeHtml(u.role)}</span>`);
+      out.push(`<span class="ed-pill ${u.status === 'paid' ? 'good' : ''}"><i class="d"></i>${escapeHtml(u.status || 'test')}${u.subscription_tier ? ' · ' + escapeHtml(u.subscription_tier) : ''}</span>`);
+      if (incomplete(u)) out.push(`<span class="ed-pill warn"><i class="d"></i>No email</span>`);
+      return out.join('');
+    }
+
+    function renderDetail(u){
+      $('#page').innerHTML = `
+        <div class="ed-kicker">
+          <button type="button" class="ed-purpose-toggle" id="purposeToggle">Admin · Edit User <span id="purposeArrow">▾</span></button>
+          <div class="ed-purpose-pop" id="purposePop" hidden>
+            <strong>Purpose:</strong> edit a user’s identity, role and billing status, log in as them for testing, or remove them. When Ghost is wired in, identity/role sync from the member session and most of this becomes read-only.
+          </div>
+        </div>
+
+        <div class="u-head">
+          <span class="u-avatar lg">${escapeHtml(initials(u.name))}</span>
+          <h1 class="ed-title" id="detailTitle">${escapeHtml(u.name || '(no name)')}</h1>
+        </div>
+        <div class="ed-status-strip" id="statusStrip">${stripPills(u)}</div>
+        <p class="ed-submeta">user #${u.user_id} · joined ${fmtDate(u.created_at)} · updated ${fmtDate(u.updated_at)}</p>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Identity</h3>
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="f_name">Name</label><input id="f_name" type="text" value="${escapeHtml(u.name || '')}"></div>
+            <div class="ed-field"><label for="f_email">Email</label><input id="f_email" type="email" value="${escapeHtml(u.email || '')}" placeholder="name@example.com">
+              ${incomplete(u) ? '<div class="warn-hint">No email on file — flagged incomplete.</div>' : ''}</div>
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Access &amp; billing</h3>
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="f_role">Role</label><select id="f_role">${ROLES.map(r => `<option ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+            <div class="ed-field"><label for="f_status">Account status</label><select id="f_status">${STATUSES.map(s => `<option ${s === (u.status || 'test') ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+            <div class="ed-field full"><label for="f_tier">Subscription tier</label><input id="f_tier" type="text" value="${escapeHtml(u.subscription_tier || '')}" placeholder="e.g. Pro, Basic, Admin (optional)"></div>
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Activity</h3>
+          <div class="ed-kv">
+            <div class="k">User ID</div><div class="v">#${u.user_id}</div>
+            <div class="k">Joined</div><div class="v">${fmtDate(u.created_at)}</div>
+            <div class="k">Last updated</div><div class="v">${fmtDate(u.updated_at)}</div>
+            <div class="k">Ghost member</div><div class="v">${u.ghost_uuid ? 'linked' : 'not linked'}</div>
+          </div>
+        </section>
+
+        <div class="ed-actions">
+          <button type="button" class="ed-btn primary" id="saveBtn">Save changes</button>
+          <button type="button" class="ed-btn" id="loginBtn">Log in as user</button>
+          <button type="button" class="ed-btn danger" id="deleteBtn">Delete user</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>`;
+
+      $('#purposeToggle').addEventListener('click', () => {
+        const p = $('#purposePop'), a = $('#purposeArrow');
+        p.hidden = !p.hidden; a.textContent = p.hidden ? '▾' : '▴';
+      });
+      $('#saveBtn').addEventListener('click', () => doSave(u));
+      $('#loginBtn').addEventListener('click', () => login(u.user_id));
+      $('#deleteBtn').addEventListener('click', () => doDelete(u));
+    }
+
+    function login(uid){
+      // The user switcher: set identity + current view, open the recipe form
+      // as that user (same behaviour as the old picker's pickUser).
       try {
         localStorage.setItem('app:self_user_id', String(uid));
         localStorage.setItem('sidebar:user_id', String(uid));
       } catch (e) { /* private mode */ }
-      // Redirect to the form. The form's restoreSidebarState() reads
-      // sidebar:user_id on boot and renders that user's recipe list.
       window.location.href = '/forms/recipe_form_styled.html';
     }
 
-    function renderReadCard(u) {
-      const card = document.createElement('div');
-      card.className = 'user-card';
-      card.dataset.userId = String(u.user_id);
-      const role = u.role || 'member';
-      card.innerHTML =
-        `<div class="avatar">${escapeHtml(initial(u.name))}</div>` +
-        `<div class="info">` +
-          `<div class="name">` +
-            `<span class="uid-pill">#${escapeHtml(u.user_id)}</span>` +
-            `<span>${escapeHtml(u.name || '(no name)')}</span>` +
-            `<span class="role-pill ${escapeHtml(role)}">${escapeHtml(role)}</span>` +
-          `</div>` +
-          `<div class="meta">${escapeHtml(metaLine(u))}</div>` +
-        `</div>` +
-        `<span class="badge ${escapeHtml(u.status || 'test')}">${escapeHtml(u.status || 'test')}</span>` +
-        `<div class="actions">` +
-          `<button type="button" class="login">Login</button>` +
-          `<button type="button" class="edit">Edit</button>` +
-          `<button type="button" class="delete">Delete</button>` +
-        `</div>`;
-      card.querySelector('.login').addEventListener('click', () => pickUser(u.user_id));
-      card.querySelector('.edit').addEventListener('click', () => swapToEdit(card, u));
-      card.querySelector('.delete').addEventListener('click', () => deleteUser(card, u));
-      return card;
-    }
-
-    function swapToEdit(card, u) {
-      // Replace the info block + actions with an inline form. Keep the
-      // avatar and badge so the row still reads as the same user. Save
-      // PATCHes; Cancel restores the read-only card from the cached row.
-      const statuses = ['test', 'free', 'paid', 'comped'];
-      const roles = ['owner', 'admin', 'editor', 'author', 'contributor', 'member'];
-      const currentRole = u.role || 'member';
-      card.innerHTML =
-        `<div class="avatar">${escapeHtml(initial(u.name))}</div>` +
-        `<span class="uid-pill">#${escapeHtml(u.user_id)}</span>` +
-        `<div class="edit-grid">` +
-          `<input type="text" name="name" value="${escapeHtml(u.name || '')}" placeholder="Name" />` +
-          `<input type="email" name="email" value="${escapeHtml(u.email || '')}" placeholder="Email (optional)" />` +
-          `<select name="status">` +
-            statuses.map(s =>
-              `<option value="${s}" ${s === (u.status || 'test') ? 'selected' : ''}>${s}</option>`
-            ).join('') +
-          `</select>` +
-          `<input type="text" name="subscription_tier" value="${escapeHtml(u.subscription_tier || '')}" placeholder="Subscription tier" />` +
-          `<select name="role" style="grid-column: span 2">` +
-            roles.map(r =>
-              `<option value="${r}" ${r === currentRole ? 'selected' : ''}>${r}</option>`
-            ).join('') +
-          `</select>` +
-        `</div>` +
-        `<div class="actions">` +
-          `<button type="button" class="save">Save</button>` +
-          `<button type="button" class="cancel">Cancel</button>` +
-        `</div>`;
-      const errLine = document.createElement('div');
-      errLine.className = 'row-err';
-      card.appendChild(errLine);
-      card.querySelector('input[name="name"]').focus();
-
-      card.querySelector('.save').addEventListener('click', async () => {
-        errLine.textContent = '';
-        const body = {
-          name: card.querySelector('input[name="name"]').value,
-          email: card.querySelector('input[name="email"]').value,
-          status: card.querySelector('select[name="status"]').value,
-          subscription_tier: card.querySelector('input[name="subscription_tier"]').value,
-          role: card.querySelector('select[name="role"]').value,
-        };
-        try {
-          const res = await fetch(`${API}/users/${u.user_id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const result = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            errLine.textContent = result.detail || `HTTP ${res.status}`;
-            return;
-          }
-          const fresh = renderReadCard(result);
-          card.replaceWith(fresh);
-        } catch (err) {
-          errLine.textContent = err.message || String(err);
-        }
-      });
-      card.querySelector('.cancel').addEventListener('click', () => {
-        const restored = renderReadCard(u);
-        card.replaceWith(restored);
-      });
-    }
-
-    async function deleteUser(card, u) {
-      if (!confirm(`Delete user "${u.name || '(no name)'}" (#${u.user_id})?`)) return;
+    async function doSave(u){
+      const hint = $('#hint'); const btn = $('#saveBtn');
+      const name = $('#f_name').value.trim();
+      const email = $('#f_email').value.trim();
+      if (!name){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Name is required'; $('#f_name').focus(); return; }
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Enter a valid email'; $('#f_email').focus(); return; }
+      const body = { name, email, role: $('#f_role').value, status: $('#f_status').value, subscription_tier: $('#f_tier').value.trim() };
+      hint.style.color = ''; btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
       try {
-        const res = await fetch(`${API}/users/${u.user_id}`, { method: 'DELETE' });
-        const result = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          alert(result.detail || `HTTP ${res.status}`);
-          return;
-        }
-        card.remove();
-        // If the list ends up empty after this, show the empty hint.
-        if (!listEl.querySelector('.user-card')) {
-          listEl.innerHTML = '<div class="empty">No users yet. Create one below.</div>';
-        }
-      } catch (err) {
-        alert(err.message || String(err));
-      }
-    }
-
-    async function loadUsers() {
-      try {
-        const res = await fetch(`${API}/users`);
-        const users = await res.json();
-        if (!Array.isArray(users) || users.length === 0) {
-          listEl.innerHTML = '<div class="empty">No users yet. Create one below.</div>';
-          return;
-        }
-        listEl.innerHTML = '';
-        for (const u of users) listEl.appendChild(renderReadCard(u));
+        const r = await fetch(`/users/${u.user_id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        users[u.user_id] = data;                       // adopt server's canonical row
+        // Update title/pills/avatar in place — no destructive re-render.
+        $('#detailTitle').textContent = data.name;
+        $('#statusStrip').innerHTML = stripPills(data);
+        document.querySelector('.u-head .u-avatar').textContent = initials(data.name);
+        renderList();
+        btn.textContent = 'Saved ✓'; btn.classList.add('done'); hint.textContent = 'Saved';
+        setTimeout(() => { btn.textContent = 'Save changes'; btn.classList.remove('done'); btn.disabled = false; }, 1900);
       } catch (e) {
-        listEl.innerHTML = `<div class="empty">Failed to load: ${e.message || e}</div>`;
+        btn.disabled = false; btn.textContent = 'Save changes';
+        hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
       }
     }
 
-    createForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      errEl.textContent = '';
-      const fd = new FormData(createForm);
-      const body = {
-        name: fd.get('name'),
-        email: fd.get('email'),
-        status: fd.get('status'),
-        subscription_tier: fd.get('subscription_tier'),
-      };
+    async function doDelete(u){
+      if (!confirm(`Delete user “${u.name || '(no name)'}” (#${u.user_id})?`)) return;
       try {
-        const res = await fetch(`${API}/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const result = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          errEl.textContent = result.detail || `HTTP ${res.status}`;
-          return;
-        }
-        // Auto-pick the new user — the user's intent on clicking "Create"
-        // is almost always "and use that user now."
-        pickUser(result.user_id);
-      } catch (err) {
-        errEl.textContent = err.message || String(err);
+        const r = await fetch(`/users/${u.user_id}`, { method: 'DELETE' });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        delete users[u.user_id];
+        const first = sortedUsers()[0];
+        selected = first ? first.user_id : 0;
+        renderList(); renderMain();
+        flash('User deleted');
+      } catch (e) {
+        // 409 = user still owns recipes (server refuses) — surface it clearly.
+        flash(String(e.message || e), true);
       }
-    });
+    }
 
-    // The Master "Login" button was removed 2026-05-27 — logging in
-    // as user_id=0 left you anonymous to the role-based auth system
-    // (master is a save-target sentinel, not an identity). Master
-    // access is now role-gated: log in as yourself, and your role
-    // determines whether your saves can write to master_recipes.
+    function renderMaster(){
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · Master Collection</button></div>
+        <div class="u-head"><span class="u-avatar lg gated">M</span><h1 class="ed-title">Master (curator collection)</h1></div>
+        <div class="ed-status-strip"><span class="ed-pill ok"><i class="d"></i>role-gated</span><span class="ed-pill"><i class="d"></i>user #0 · sentinel</span></div>
+        <p class="ed-submeta">Not a real user — the dispatch target for the curated master collection.</p>
+        <section class="ed-block">
+          <h3 class="ed-block-label">Access</h3>
+          <div class="ed-callout info"><span class="mark">○</span><span>There’s no “Master” account to log in as. Anyone with <strong>owner / admin / editor / author</strong> can save to the master collection from the recipe form — access is role-gated, not a separate identity. (user_id 0 is reserved and not editable here.)</span></div>
+        </section>`;
+    }
+
+    function renderCreate(){
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · New User</button></div>
+        <h1 class="ed-title" style="margin:0 0 18px">Add a user</h1>
+        <section class="ed-block" style="border-top:none;padding-top:0">
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="n_name">Name</label><input id="n_name" type="text" placeholder="Required" autocomplete="off"></div>
+            <div class="ed-field"><label for="n_email">Email</label><input id="n_email" type="email" placeholder="name@example.com (optional)" autocomplete="off"></div>
+            <div class="ed-field"><label for="n_role">Role</label><select id="n_role">${ROLES.map(r => `<option ${r === 'member' ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+            <div class="ed-field"><label for="n_status">Account status</label><select id="n_status">${STATUSES.map(s => `<option ${s === 'test' ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+            <div class="ed-field full"><label for="n_tier">Subscription tier</label><input id="n_tier" type="text" placeholder="optional"></div>
+          </div>
+        </section>
+        <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
+          <button type="button" class="ed-btn primary" id="createBtn">Create user</button>
+          <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>`;
+      $('#n_name').focus();
+      $('#cancelBtn').addEventListener('click', () => { const first = sortedUsers()[0]; selected = first ? first.user_id : 0; renderList(); renderMain(); });
+      $('#createBtn').addEventListener('click', doCreate);
+    }
+
+    async function doCreate(){
+      const hint = $('#hint'); const btn = $('#createBtn');
+      const name = $('#n_name').value.trim();
+      const email = $('#n_email').value.trim();
+      if (!name){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Name is required'; $('#n_name').focus(); return; }
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Enter a valid email'; $('#n_email').focus(); return; }
+      const body = { name, email, role: $('#n_role').value, status: $('#n_status').value, subscription_tier: $('#n_tier').value.trim() };
+      hint.style.color = ''; btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        const r = await fetch('/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        users[data.user_id] = data;
+        selected = data.user_id;
+        renderList(); renderMain();
+        flash('User created');
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Create user';
+        hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
+      }
+    }
+
+    /* ----------------------------- data + wiring ----------------------------- */
+    async function loadUsers(){
+      const r = await fetch('/users');
+      if (!r.ok){ $('#list').innerHTML = `<li class="ed-empty">Failed to load (${r.status})</li>`; return; }
+      const list = await r.json();
+      users = {};
+      for (const u of list) users[u.user_id] = u;
+      // Land on the first real user so the page is populated, not a splash.
+      if (selected == null) { const first = sortedUsers()[0]; selected = first ? first.user_id : 0; }
+      renderList();
+      renderMain();
+    }
+
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls'); c.hidden = !c.hidden;
+      $('#searchToggle').classList.toggle('active', !c.hidden);
+      if (!c.hidden) $('#search').focus();
+    });
+    $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
+    $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
+    $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
 
     loadUsers();
   </script>
