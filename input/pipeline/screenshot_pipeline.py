@@ -77,6 +77,62 @@ def _key_for(recipe_id: str) -> str:
     return f"recipe-screens/{recipe_id}-{sha8}.jpg"
 
 
+def _capture_raw_bytes(url: str,
+                       viewport_w: int = VIEWPORT_W,
+                       viewport_h: int = VIEWPORT_H,
+                       capture_h: int = CAPTURE_HEIGHT) -> Optional[bytes]:
+    """Drive headless Chromium (in a subprocess) and return the raw
+    above-fold screenshot bytes for `url`. None on any failure.
+
+    Run in a subprocess because Playwright's sync API can't be called
+    from a thread inside uvicorn's asyncio context on Windows —
+    `sync_playwright()` raises NotImplementedError there (the parent's
+    ProactorEventLoop can't spawn subprocess children from worker
+    threads). A fresh Python process has its own event-loop policy and
+    works cleanly. Trade-off: ~200ms subprocess startup per capture; at
+    2-3s/page total it's noise.
+
+    Shared by capture_screenshot (image_store URL) and
+    capture_and_store_blob (media.db BLOB).
+    """
+    if not url or not url.strip():
+        return None
+    import subprocess
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    worker_path = (_Path(__file__).resolve().parent.parent.parent
+                   / "scripts" / "_capture_screenshot_worker.py")
+    if not worker_path.exists():
+        print(f"[screenshot] worker not found: {worker_path}")
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                _sys.executable, str(worker_path),
+                url,
+                str(viewport_w), str(viewport_h),
+                str(capture_h),
+                str(SETTLE_MS),
+                str(NAV_TIMEOUT_MS),
+            ],
+            capture_output=True,
+            timeout=(NAV_TIMEOUT_MS // 1000) + 15,  # buffer for browser+settle
+        )
+        if result.returncode != 0:
+            print(f"[screenshot] worker exit {result.returncode} for "
+                  f"{url!r}: {result.stderr.decode('utf-8', errors='replace')[:200]}")
+            return None
+        return result.stdout or None
+    except subprocess.TimeoutExpired:
+        print(f"[screenshot] worker timeout for {url!r}")
+        return None
+    except Exception as e:
+        print(f"[screenshot] worker spawn failed: {e}")
+        return None
+
+
 def capture_screenshot(url: str, recipe_id: str, *,
                         viewport_w: int = VIEWPORT_W,
                         viewport_h: int = VIEWPORT_H,
@@ -99,50 +155,7 @@ def capture_screenshot(url: str, recipe_id: str, *,
     if not recipe_id:
         return None
 
-    # Run Playwright in a subprocess. The sync API can't be called
-    # from a thread that lives inside uvicorn's asyncio context on
-    # Windows — `sync_playwright()` raises NotImplementedError
-    # because the parent's ProactorEventLoop can't spawn subprocess
-    # children from worker threads. A fresh Python process has its
-    # own event-loop policy and works cleanly. Trade-off: ~200ms
-    # subprocess startup overhead per capture; at 2-3s/page total
-    # it's noise.
-    import subprocess
-    import sys as _sys
-    from pathlib import Path as _Path
-
-    worker_path = (_Path(__file__).resolve().parent.parent.parent
-                   / "scripts" / "_capture_screenshot_worker.py")
-    if not worker_path.exists():
-        print(f"[screenshot] worker not found: {worker_path}")
-        return None
-
-    raw_bytes: Optional[bytes] = None
-    try:
-        result = subprocess.run(
-            [
-                _sys.executable, str(worker_path),
-                url,
-                str(viewport_w), str(viewport_h),
-                str(capture_h),
-                str(SETTLE_MS),
-                str(NAV_TIMEOUT_MS),
-            ],
-            capture_output=True,
-            timeout=(NAV_TIMEOUT_MS // 1000) + 15,  # buffer for browser+settle
-        )
-        if result.returncode != 0:
-            print(f"[screenshot] worker exit {result.returncode} for "
-                  f"{url!r}: {result.stderr.decode('utf-8', errors='replace')[:200]}")
-            return None
-        raw_bytes = result.stdout
-    except subprocess.TimeoutExpired:
-        print(f"[screenshot] worker timeout for {url!r}")
-        return None
-    except Exception as e:
-        print(f"[screenshot] worker spawn failed: {e}")
-        return None
-
+    raw_bytes = _capture_raw_bytes(url, viewport_w, viewport_h, capture_h)
     if not raw_bytes:
         return None
 
@@ -175,3 +188,109 @@ def capture_screenshot(url: str, recipe_id: str, *,
     except Exception as e:
         print(f"[screenshot] store put failed: {e}")
         return None
+
+
+# === Durable screenshot BLOB store (media.db) ==============================
+# Screenshots live in a SEPARATE git-ignored media.db (NOT recipes.db) so the
+# binary never bloats the git-tracked recipe DB. Keyed by url_normalized so a
+# re-extract of the same URL overwrites exactly one row (dedup). The recipe
+# carries only the short /screenshot/<id> URL; the table-reading endpoint
+# serves the BLOB on demand. Regenerable on re-extract, so "not in git" is
+# safe — even total loss of media.db is recovered by the next extraction.
+
+def screenshot_id_for(url_normalized: str) -> str:
+    """Deterministic 16-char id from the normalized URL — both the public
+    /screenshot/<id> path component and the BLOB table primary key. Stable
+    across re-extracts so the same URL overwrites one row."""
+    return hashlib.sha256((url_normalized or "").encode("utf-8")).hexdigest()[:16]
+
+
+def ensure_page_screenshots_table(conn) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS page_screenshots (
+               screenshot_id  TEXT PRIMARY KEY,
+               url_normalized TEXT NOT NULL,
+               jpeg           BLOB NOT NULL,
+               created_at     TEXT NOT NULL
+           )"""
+    )
+    conn.commit()
+
+
+def _to_blob_jpeg(raw_bytes: bytes, *, max_w: int = 800, quality: int = 65) -> Optional[bytes]:
+    """Downscale + re-encode the raw capture to a compact JPEG. The page
+    screenshot is a 'real source on a real site' signal, not a hero image,
+    so 800px wide @ q65 (~30-60KB) is plenty and keeps media.db lean."""
+    try:
+        import io as _io
+        from PIL import Image
+        im = Image.open(_io.BytesIO(raw_bytes)).convert("RGB")
+        if im.width > max_w:
+            h = max(1, round(im.height * max_w / im.width))
+            im = im.resize((max_w, h), Image.LANCZOS)
+        out = _io.BytesIO()
+        im.save(out, format="JPEG", quality=quality, optimize=True)
+        return out.getvalue()
+    except Exception as e:
+        print(f"[screenshot] blob encode failed: {e}")
+        return None
+
+
+def store_screenshot_blob(db_path: str, url_normalized: str, jpeg_bytes: bytes) -> Optional[str]:
+    """Upsert the JPEG BLOB for this URL into media.db. Returns the public
+    /screenshot/<id> path, or None on failure / empty input."""
+    if not url_normalized or not jpeg_bytes:
+        return None
+    sid = screenshot_id_for(url_normalized)
+    try:
+        import sqlite3 as _sqlite3
+        with _sqlite3.connect(db_path) as conn:
+            ensure_page_screenshots_table(conn)
+            conn.execute(
+                """INSERT INTO page_screenshots
+                       (screenshot_id, url_normalized, jpeg, created_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(screenshot_id) DO UPDATE SET
+                       jpeg       = excluded.jpeg,
+                       created_at = excluded.created_at""",
+                (sid, url_normalized, jpeg_bytes,
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+        return f"/screenshot/{sid}"
+    except Exception as e:
+        print(f"[screenshot] blob store failed: {e}")
+        return None
+
+
+def read_screenshot_blob(db_path: str, screenshot_id: str) -> Optional[bytes]:
+    """Fetch a stored JPEG BLOB by id. None on miss / error."""
+    if not screenshot_id:
+        return None
+    try:
+        import sqlite3 as _sqlite3
+        with _sqlite3.connect(db_path) as conn:
+            ensure_page_screenshots_table(conn)
+            row = conn.execute(
+                "SELECT jpeg FROM page_screenshots WHERE screenshot_id = ?",
+                (screenshot_id,),
+            ).fetchone()
+            return row[0] if row else None
+    except Exception as e:
+        print(f"[screenshot] blob read failed: {e}")
+        return None
+
+
+def capture_and_store_blob(url: str, url_normalized: str, db_path: str) -> Optional[str]:
+    """Capture the source page, shrink to a compact JPEG, store the BLOB in
+    media.db keyed by url_normalized, and return the public /screenshot/<id>
+    URL. None on any failure (caller leaves pageScreenshot unset)."""
+    if not url or not url_normalized:
+        return None
+    raw = _capture_raw_bytes(url)
+    if not raw:
+        return None
+    blob = _to_blob_jpeg(raw)
+    if not blob:
+        return None
+    return store_screenshot_blob(db_path, url_normalized, blob)

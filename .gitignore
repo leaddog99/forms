@@ -8,6 +8,18 @@
 *.pem
 *.key
 
+# Databases — the binary recipes.db is NOT tracked (git can't delta a 29MB+
+# binary, so every commit stored a fresh full copy). The diffable text dump
+# recipes.sql IS tracked and serves as the git-side backup + restore source;
+# the live .db is backed up to ADAM/GitHub via bcc_backup.bat. media.db holds
+# regenerable binary (page screenshots) and is never tracked.
+recipes.db
+recipes.db-wal
+recipes.db-shm
+media.db
+media.db-wal
+media.db-shm
+
 # Python build artifacts
 __pycache__/
 *.py[cod]
@@ -72,3 +84,6 @@ intake/__pycache__/
 
 # Loose capture artifacts that landed in repo root
 /momsAsparagusAuGratin.png
+
+# DataForSEO API creds (local only)
+scripts/.dataforseo.env

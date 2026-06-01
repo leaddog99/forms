@@ -31,7 +31,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from pydantic import ValidationError
@@ -123,6 +123,11 @@ except Exception as e:
 print("[START] Starting API setup...")
 
 DB_PATH = "recipes.db"
+
+# Binary media (page screenshots) live in a SEPARATE, git-ignored DB so the
+# 29MB+ git-tracked recipes.db never accumulates BLOBs. Regenerable on
+# re-extract; backed up to ADAM/S3, not git. See screenshot_pipeline.py.
+MEDIA_DB_PATH = "media.db"
 
 # Placeholder user id until the user-identity field is wired into the form
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
@@ -592,6 +597,21 @@ def _attach_moz_scoring(recipe, url_normalized):
             recipe["_scoring"] = scoring
     except Exception as e:
         print(f"[WARN] Moz scoring at extract failed for {url_normalized!r}: {e}")
+
+
+def _cache_row_complete(recipe) -> bool:
+    """True when a cached recipe already carries the EXPENSIVE URL-static
+    enrichment — page screenshot + identity card — so a cache hit can be
+    served without re-running them (the ~2s Haiku + ~3-5s screenshot that
+    made cache hits feel slow). Rows written before this enrichment was
+    cached lack these; they read as incomplete so the full path re-caches
+    them once, after which future hits go straight to the fast path."""
+    if not recipe:
+        return False
+    has_shot = bool((recipe.get("_source") or {}).get("pageScreenshot"))
+    idy = recipe.get("_identity")
+    has_idy = isinstance(idy, dict) and bool((idy.get("likelyDish") or "").strip())
+    return has_shot and has_idy
 
 
 def _maybe_stamp_source_drift(timings, *, user_id):
@@ -3650,7 +3670,6 @@ async def extract_from_image_endpoint(
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
-        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
@@ -3667,6 +3686,9 @@ async def extract_from_image_endpoint(
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         _maybe_stamp_source_drift(timings, user_id=user_id)
 
+        # Stamp total AFTER the enrich tail (chapter/moz/identity) so the
+        # reported time is true wall-clock, not just up to the cache write.
+        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         print("[OK] Extraction successful")
         return {
             "success": True,
@@ -3767,7 +3789,6 @@ async def extract_from_pdf_endpoint(
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
-        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
@@ -3778,6 +3799,8 @@ async def extract_from_pdf_endpoint(
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         _maybe_stamp_source_drift(timings, user_id=user_id)
 
+        # Stamp total AFTER the enrich tail for true wall-clock timing.
+        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         print("[OK] PDF extraction successful")
         return {
             "success": True,
@@ -3948,7 +3971,6 @@ async def extract_from_markdown_endpoint(
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
-        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
@@ -3960,6 +3982,8 @@ async def extract_from_markdown_endpoint(
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         _maybe_stamp_source_drift(timings, user_id=user_id)
 
+        # Stamp total AFTER the enrich tail for true wall-clock timing.
+        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
         print("[OK] Extraction successful")
         return {
             "success": True,
@@ -4026,6 +4050,48 @@ def extract_recipe_from_url(
     prompts: dict = {}
     usage_log: list = []
     t_start = time.perf_counter()
+
+    # === Speculative cache fast-path ===========================
+    # Probe the cache on the normalized INPUT url BEFORE paying for
+    # HEAD + fetch + parse. For a plainly-pasted url this equals the
+    # post-redirect url we'd key on below, so a COMPLETE fresh hit
+    # (has screenshot + identity card) lets us skip the network
+    # round-trip, HTML parse, screenshot (~3-5s) and identity (~2s)
+    # calls entirely — a genuinely sub-second cache hit. A miss or an
+    # incomplete/pre-caching row falls through to the full path, which
+    # keys on the resolved url and re-caches to self-heal. Batch
+    # (pre_scored/batch_overrides) and force_refresh always take the
+    # full path so their authoritative fields / fresh extracts apply.
+    if not force_refresh and not pre_scored and not batch_overrides:
+        spec_norm = normalize_url(url)
+        spec_log: list = []
+        spec_recipe, _spec_fp, spec_status = _extract_cache_lookup(
+            spec_norm, usage_log=spec_log)
+        if spec_recipe is not None and _cache_row_complete(spec_recipe):
+            usage_log.extend(spec_log)   # journal the hit only if we serve it
+            spec_recipe["id"] = new_recipe_id
+            _attach_chapter(spec_recipe, usage_log=usage_log)   # no-op if cached
+            t_moz = time.perf_counter()
+            _attach_moz_scoring(spec_recipe, spec_norm)         # metabase cache read
+            timings["moz_ms"] = int((time.perf_counter() - t_moz) * 1000)
+            _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+            timings["path"] = "cache-hit"
+            timings["fast_path"] = True
+            _stamp_cache_timings(timings, status=spec_status, url_normalized=spec_norm)
+            timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+            return {
+                "success": True,
+                "recipe_id": new_recipe_id,
+                "recipe": spec_recipe,
+                "source": {
+                    "url": (spec_recipe.get("_source") or {}).get("originalUrl") or url,
+                    "title": spec_recipe.get("name") or "",
+                    "has_jsonld": False,
+                },
+                "_timings": timings,
+                "_prompt": prompts,
+                "_usage": usage_log,
+            }
 
     # Probe Content-Type so we can route PDFs through pdf_to_markdown
     # instead of html_to_markdown. (Same routing logic as the endpoint.)
@@ -4115,7 +4181,12 @@ def extract_recipe_from_url(
 
     if recipe is not None:
         path_used = "cache-hit"
+        # A row written before screenshot/identity were cached reads as
+        # incomplete — fall through the enrichment below and RE-WRITE it
+        # so it self-heals (future hits then take the fast path up top).
+        was_incomplete = not _cache_row_complete(recipe)
     else:
+        was_incomplete = False
         if md_result.get("jsonld"):
             try:
                 recipe = jsonld_to_recipe(
@@ -4161,29 +4232,25 @@ def extract_recipe_from_url(
                 src["originalTitle"] = translation_meta["originalTitle"]
             recipe["_source"] = src
 
-        if recipe is not None:
-            cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
-
     if recipe is None:
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         raise RuntimeError("Failed to extract recipe from URL")
 
-    timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-    timings["path"] = path_used
-    _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
-
+    # === Enrichment tail — runs BEFORE the cache write so its expensive,
+    # URL-static outputs (chapter, cooped preview image, identity card,
+    # page screenshot) land in the cached recipe_json and are served free
+    # on every future hit. Each step is idempotent / guarded so a complete
+    # cache hit re-stamps nothing. (Previously this ran AFTER the write,
+    # so a cache hit re-paid the ~2s identity + ~3-5s screenshot calls.) ===
     _attach_chapter(recipe, usage_log=usage_log)
 
-    # Stamp the full og: meta block on _source: cooped preview image
-    # (locally hosted, no hotlinking), description, alt text, site
-    # name, author + timestamps. These come from the page's <meta>
-    # tags — the source's own consent-given preview data.
+    # og: meta block — preview image/description/site name from the page's
+    # <meta> tags. The text fields are free to re-stamp; cooping the image
+    # refetches + Pillow-processes, so skip it when previewImage is already
+    # set (a cache hit carries it).
     og_meta = md_result.get("og_meta") or {}
     if og_meta:
         src = recipe.get("_source") or {}
-        # Stash the non-image text fields directly — cheap, no fetch
-        # required. UI surfaces (tile description, alt text, site
-        # name attribution) can consume immediately.
         for src_key, meta_key in (
             ("previewDescription", "description"),
             ("previewImageAlt",    "imageAlt"),
@@ -4195,15 +4262,13 @@ def extract_recipe_from_url(
             val = (og_meta.get(meta_key) or "").strip()
             if val:
                 src[src_key] = val
-        # Coopt the image — fetch + Pillow process + store via active
-        # backend (Local or S3). Best-effort: failure leaves
-        # previewImage unset and the UI falls back to schema.org
-        # image[0]. Skipped when og:image is missing.
         og_image_url = (og_meta.get("image") or "").strip()
-        if og_image_url:
+        if og_image_url and not src.get("previewImage"):
             try:
                 from input.pipeline.image_pipeline import coopt_image
+                t_coopt = time.perf_counter()
                 cooped = coopt_image(og_image_url)
+                timings["image_coopt_ms"] = int((time.perf_counter() - t_coopt) * 1000)
                 if cooped:
                     src["previewImage"] = cooped
                     print(f"[OG-IMAGE] cooped {og_image_url[:80]!r} -> {cooped}")
@@ -4211,14 +4276,50 @@ def extract_recipe_from_url(
                 print(f"[OG-IMAGE] coopt failed (continuing): {e}")
         recipe["_source"] = src
 
-    # Scoring: when the caller (typically batch ingestion) provides
-    # pre_scored values, trust those as canonical and SKIP _attach_moz_scoring
-    # entirely. _attach_moz_scoring unconditionally overwrites recipe._scoring
-    # from the metabase_url cache / Moz API — fine for the form's interactive
-    # path where no upstream scores exist, but wrong for batch where the
-    # upstream pipeline has already produced authoritative numbers. Side
-    # effect: metabase_url isn't refreshed from batch runs; the form's
-    # metadata-refresh path remains the way to update it.
+    # Moz scoring. Batch (pre_scored) trusts upstream numbers and skips the
+    # Moz call to save quota; its authoritative override is applied AFTER
+    # the cache write (below) so batch scores never pollute the shared row.
+    # The interactive path's scores ARE cached (cheap metabase read).
+    if not pre_scored:
+        t_moz = time.perf_counter()
+        _attach_moz_scoring(recipe, url_norm)
+        timings["moz_ms"] = int((time.perf_counter() - t_moz) * 1000)
+
+    # Identity card (~2s Haiku) — idempotent: no-op if _identity present.
+    t_idy = time.perf_counter()
+    _attach_identity_card(recipe, usage_log=usage_log)
+    timings["identity_ms"] = int((time.perf_counter() - t_idy) * 1000)
+
+    # Page screenshot — capture only when missing (guards a complete cache
+    # hit from re-capturing). Stored as a compact JPEG BLOB in media.db
+    # keyed by url_normalized; _source.pageScreenshot holds the short
+    # /screenshot/<id> URL the blob endpoint serves. Durable alongside the
+    # cache row (image_store's generated/ is git-ignored + ephemeral).
+    if url_norm and not (recipe.get("_source") or {}).get("pageScreenshot"):
+        try:
+            from input.pipeline.screenshot_pipeline import capture_and_store_blob
+            t_shot = time.perf_counter()
+            shot_url = capture_and_store_blob(url, url_norm, MEDIA_DB_PATH)
+            timings["screenshot_ms"] = int((time.perf_counter() - t_shot) * 1000)
+            if shot_url:
+                src = recipe.get("_source") or {}
+                src["pageScreenshot"] = shot_url
+                recipe["_source"] = src
+                print(f"[SCREENSHOT] stored blob: {shot_url}")
+        except Exception as e:
+            print(f"[SCREENSHOT] capture failed (continuing): {e}")
+
+    # Cache write AFTER enrichment so screenshot/identity/preview travel with
+    # the row. Write on a fresh extract, or to self-heal a hit row that
+    # predated screenshot/identity caching.
+    if path_used != "cache-hit" or was_incomplete:
+        cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
+
+    timings["path"] = path_used
+    _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
+
+    # Batch pre_scored override — authoritative upstream numbers win, applied
+    # AFTER the cache write so they don't pollute the shared cache row.
     if pre_scored:
         scoring = recipe.get("_scoring") or {}
         for k in ("pageAuthority", "domainAuthority", "ouScore", "rootDomain", "rawTitle"):
@@ -4226,8 +4327,7 @@ def extract_recipe_from_url(
             if v is not None and v != "":
                 scoring[k] = v
         recipe["_scoring"] = scoring
-    else:
-        _attach_moz_scoring(recipe, url_norm)
+
     recipe["id"] = new_recipe_id
     _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
     _maybe_stamp_source_drift(timings, user_id=user_id)
@@ -4235,7 +4335,8 @@ def extract_recipe_from_url(
     # Batch overrides: authoritative fields the upstream batch declared.
     # Apply LAST so they win over anything extract/enrich derived. Shallow-
     # merge nested dicts (don't replace classification wholesale — overlay
-    # only the keys the batch supplied).
+    # only the keys the batch supplied). Applied after the cache write so
+    # batch-specific fields stay out of the shared cache row.
     if batch_overrides:
         for k, v in batch_overrides.items():
             if isinstance(v, dict) and isinstance(recipe.get(k), dict):
@@ -4243,26 +4344,7 @@ def extract_recipe_from_url(
             else:
                 recipe[k] = v
 
-    # Identity card — populates the form's cohort matching panel
-    # immediately on extract, before save. See _attach_identity_card.
-    _attach_identity_card(recipe, usage_log=usage_log)
-
-    # Page screenshot — capture the above-fold view of the source page
-    # via Playwright + store via image_store. Stamps the URL on
-    # _source.pageScreenshot so the form can show "this is what the
-    # source actually looked like." Best-effort: failures don't block
-    # the extract. ~3-5s per call.
-    try:
-        from input.pipeline.screenshot_pipeline import capture_screenshot
-        screen_url = capture_screenshot(url, new_recipe_id)
-        if screen_url:
-            src = recipe.get("_source") or {}
-            src["pageScreenshot"] = screen_url
-            recipe["_source"] = src
-            print(f"[SCREENSHOT] stamped: {screen_url}")
-    except Exception as e:
-        print(f"[SCREENSHOT] capture failed (continuing): {e}")
-
+    timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
     return {
         "success": True,
         "recipe_id": new_recipe_id,
@@ -4311,6 +4393,23 @@ async def extract_from_url_endpoint(
         if msg.startswith("Failed to fetch/convert URL"):
             raise HTTPException(status_code=502, detail=msg)
         raise HTTPException(status_code=500, detail=msg)
+
+
+@app.get("/screenshot/{screenshot_id}")
+async def screenshot_blob_endpoint(screenshot_id: str):
+    """Serve a page screenshot stored as a JPEG BLOB in media.db. The
+    recipe's _source.pageScreenshot holds /screenshot/<id>; this reads the
+    BLOB and returns it as image/jpeg. 404 when the id isn't present (e.g.
+    media.db wiped — a re-extract regenerates it)."""
+    from input.pipeline.screenshot_pipeline import read_screenshot_blob
+    data = read_screenshot_blob(MEDIA_DB_PATH, screenshot_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="screenshot not found")
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 # Stage markdown from a bookmarklet so the form can pick it up on load.

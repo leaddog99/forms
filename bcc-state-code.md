@@ -1450,6 +1450,30 @@ Verified throughout with headless Playwright smoke tests. Server has no `--reloa
 
 ---
 
+## Session log — 2026-06-01 — extract-cache hits made actually fast + durable screenshots, recipes.db out of git
+
+Trigger: a cache hit on `sallysbakingaddiction.com/best-banana-bread-recipe` reported `Total 894ms` but took ~6s wall-clock. Root cause: the extract "cache" only short-circuits the ~25s LLM extract — the whole enrichment tail (chapter, og-image coopt, identity card ~2s, **page screenshot ~3-5s**) ran on *every* hit because it executed AFTER the cache write, and the displayed `total_ms` was stamped right after the cache lookup, so it never counted the tail.
+
+### Cache hits now serve the enriched recipe (the 6s → sub-second fix)
+- Moved the enrichment tail to run **before** `_extract_cache_write` in `extract_recipe_from_url` (`save_recipe_api.py`). `_source.pageScreenshot` and `_identity` were already whitelisted in `static_subset` (`recipe_model.py`), so they now ride *in* the cached `recipe_json` and a hit serves them free. Each step is idempotent/guarded (skip coopt if `previewImage` set, skip screenshot if `pageScreenshot` set, identity already no-ops).
+- **Self-heal:** new `_cache_row_complete(recipe)` (has screenshot + identity). A hit on a pre-caching row reads as incomplete → full path re-enriches and **re-writes** the row (`path_used != "cache-hit" or was_incomplete`), so the next hit is complete.
+- **Speculative fast-path:** before HEAD+fetch+parse, probe the cache on `normalize_url(input_url)`. A *complete* fresh hit returns immediately — no network, no parse, no screenshot (`fast_path: true`). Misses/redirects fall through to the resolved-URL path. Batch (`pre_scored`/`batch_overrides`) + `force_refresh` always take the full path; batch's `pre_scored`/overrides apply AFTER the write so they never pollute the shared cache row.
+
+### Honest timer
+`total_ms` now stamped just before `return` on all four extract paths (url/image/pdf/staged) = true wall-clock. Added per-step rows on the URL path: `moz_ms`, `identity_ms`, `screenshot_ms`, `image_coopt_ms`.
+
+### Screenshots → durable, git-ignored `media.db` (design decision)
+- New `page_screenshots(screenshot_id PK, url_normalized, jpeg BLOB, created_at)` in a **separate `media.db`** (`MEDIA_DB_PATH`). Compact JPEG (800px wide, q65, ~30-60KB), keyed by `url_normalized` → one row per URL (dedup, not per-recipe). New helpers in `screenshot_pipeline.py`: `screenshot_id_for`, `ensure_page_screenshots_table`, `_to_blob_jpeg`, `store_screenshot_blob`, `read_screenshot_blob`, `capture_and_store_blob`; refactored capture into shared `_capture_raw_bytes`.
+- Recipe carries only the short `/screenshot/<id>` URL; new **`GET /screenshot/{id}`** endpoint serves the BLOB. Old image_store `/generated/...` URLs still resolve (drop-in). Why a separate DB: `generated/` is git-ignored + ephemeral, while the cache row is durable — the screenshot now lives as durably as the row that references it, without bloating the git-tracked recipe DB.
+
+### recipes.db removed from git (design decision)
+The 29MB binary was tracked → every touching commit stored a fresh full copy (git can't delta binary). `git rm --cached recipes.db` (file stays on disk); `.gitignore` += `recipes.db`/`media.db` (+ `-wal`/`-shm`). The diffable **`recipes.sql` dump is now the sole git-side backup** (refreshed by `bcc_backup.bat`; ADAM tier unchanged). Updated `memory/project_db_backup.md`.
+
+### Verification + remaining
+Both files `py_compile` clean, module imports, `/screenshot` route registered, BLOB store passed a store/read/dedup/miss roundtrip test. **Not yet live-tested** against the running server (no `--reload`; needs `bcc_restart.bat`). Follow-up: image/pdf/staged paths got the timer fix but NOT the identity-card-before-write restructure (no screenshot there; URL path was the reported case) — easy parity later.
+
+---
+
 ## To-do
 - **Public read-only "cookbook" pages — SEO + AI-bot compatible (2026-06-01).** Today `/r/<id>` resolves to the JS editor *form*, which bots see as an empty shell — wrong surface to expose. Build a **separate, server-rendered, read-only recipe page**: complete resolved HTML (no editor chrome), crawlable. Big head start: recipes are already stored in **schema.org shape**, so the page can emit a `<script type="application/ld+json">` **Recipe** block nearly for free (Google Recipe rich-results *and* AI crawlers parse it) + plain semantic HTML (title/hero/ingredients `<ul>`/steps `<ol>`/times/yield) + OpenGraph/Twitter meta + `<link rel=canonical>`. **Scope:** curated/cookbook set only (master_recipes / a `published` visibility flag) — private user saves stay non-crawlable. **Discovery:** `sitemap.xml` of public recipe URLs + `robots.txt` (+ optional `llms.txt`). **Payoff that closes a loop:** a public page *with* JSON-LD is itself extractable — so "paste a BCC URL" would then legitimately work against the cookbook page, not the form. **Generation fork:** (1) on-demand SSR — app renders each page live from current data, always fresh, no queue, CDN in front for bot load (start here); (2) pre-generated static — a regen *queue* renders each published recipe to a static `.html` on publish/edit, served from disk/CDN, best crawl perf + survives app downtime (graduate to this with the Fly.io/Ghost production move). Ties to the **Production hosting** + **Ghost integration** items below (`bestcooksclub.com` public domain). **Decisions to make:** (a) which recipes are public (master/cookbook only, gated by a flag?); (b) on-demand SSR vs pre-generated static first; (c) URL scheme — keep `/r/<id>` vs a human/SEO slug like `/recipes/banana-bread-<id>`. Note: the editor form moves to an explicit admin path so the clean public URL is the read-only page.
 - **Internationalization (i18n) for UI messages (2026-05-29).** User flagged: we've been writing English strings inline throughout the codebase since day one; no infrastructure to swap to another language. Start NOW so we capture new strings into the pattern while it's fresh.
