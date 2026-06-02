@@ -133,10 +133,16 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     if not SERPAPI_KEY:
         raise RuntimeError("SERPAPI_KEY not set in .env")
 
-    # Verbatim: the admin's query string IS the search, unmodified. Domain
-    # exclusion happens downstream in _filter_disallowed (deterministic,
-    # not subject to Google's mystery operator precedence). See docstring.
-    full_query = query
+    # Verbatim — with ONE normalization: smart/curly quotes → straight. An
+    # editor/OS autocorrect turns "..." into "..." (“ ”), and Google
+    # only honors STRAIGHT double-quotes as phrase delimiters — curly ones are
+    # ignored, silently demoting a quoted query to a loose one (this is exactly
+    # how a `"Banana Bread"` query still let healthline's banana article in).
+    # Curly→straight preserves the admin's INTENT; everything else is verbatim.
+    # Domain exclusion stays downstream in _filter_disallowed.
+    full_query = (query or "").translate(str.maketrans({
+        "“": '"', "”": '"', "‘": "'", "’": "'",
+    }))
 
     out: list[dict] = []
     seen_urls: set[str] = set()
