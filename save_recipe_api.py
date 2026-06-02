@@ -3508,11 +3508,13 @@ def _save_recipe_core(payload: dict) -> dict:
                     txt = compose_recipe_text(recipe_dict)
                     if txt.strip():
                         rec_vec = embed_text(txt)
-                        conn.execute(
-                            f"UPDATE {table} SET embedding = ? WHERE id = ?",
-                            (vec_to_bytes(rec_vec), seq_id),
-                        )
                         if user_id == 0:
+                            # Master: store the source-of-truth vector + the
+                            # derived KNN index the recommender reads.
+                            conn.execute(
+                                "UPDATE master_recipes SET embedding = ? WHERE id = ?",
+                                (vec_to_bytes(rec_vec), seq_id),
+                            )
                             vector_store.enable_vec(conn)
                             ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
                             dish_for_vec = (recipe_dict.get("_master") or {}).get("dish") or None
@@ -3521,9 +3523,39 @@ def _save_recipe_core(payload: dict) -> dict:
                             )
                             print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
                         else:
-                            print(f"[VEC] embedded user recipe {seq_id} -> recipes.embedding")
+                            # User recipe: store the vector AND match it to a dish
+                            # (master rows already carry _master.dish). Reuse the
+                            # vector we just computed — no second embed. L2 distance
+                            # <= MATCH_MAX_DIST is a confident match (validated
+                            # 2026-06-02: Banana Bread 0.20 / Chicken Piccata 0.25
+                            # confident; Mac&Cheese 1.02 / Salmon 0.98 = no real dish
+                            # in the set → not confident). Persisted as `_match` so
+                            # the form + future user-recipe scoring can read it.
+                            MATCH_MAX_DIST = 0.8
+                            vector_store.enable_vec(conn)
+                            cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
+                            if cands:
+                                best = cands[0]
+                                confident = best["distance"] <= MATCH_MAX_DIST
+                                recipe_dict["_match"] = {
+                                    "dish": best["name"] if confident else None,
+                                    "distance": round(best["distance"], 4),
+                                    "confident": confident,
+                                    "candidates": [
+                                        {"dish": m["name"], "distance": round(m["distance"], 4)}
+                                        for m in cands
+                                    ],
+                                    "matched_at": datetime.now(timezone.utc).isoformat(),
+                                }
+                                print(f"[MATCH] user recipe {seq_id} -> {best['name']!r} "
+                                      f"d={best['distance']:.3f} confident={confident}  candidates="
+                                      + ", ".join(f"{m['name']}({m['distance']:.2f})" for m in cands))
+                            conn.execute(
+                                "UPDATE recipes SET embedding = ?, data = ? WHERE id = ?",
+                                (vec_to_bytes(rec_vec), json.dumps(recipe_dict), seq_id),
+                            )
                 except Exception as e:
-                    print(f"[VEC] recipe embed/upsert failed: {e}")
+                    print(f"[VEC] recipe embed/match failed: {e}")
     except Exception as e:
         print(f"[ERROR] Database error: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
