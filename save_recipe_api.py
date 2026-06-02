@@ -1900,14 +1900,21 @@ def list_dish_top_recipes(name: str):
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
             rows = conn.execute(
-                "SELECT id, recipe_id, data FROM master_recipes "
-                "WHERE json_extract(data, '$._master.dish') = ? "
-                "AND json_extract(data, '$._master.kind') = 'top' "
-                "ORDER BY CAST(json_extract(data, '$._master.rank') AS INTEGER) ASC, id",
-                (existing["name"],),
+                """
+                SELECT m.id, m.recipe_id, m.data,
+                       dp.rank_score, dp.ou_percentile, dp.power_percentile
+                FROM master_recipes m
+                LEFT JOIN dish_run_data_points dp
+                  ON dp.dish_name = :dish AND dp.url = m.url_normalized
+                WHERE json_extract(m.data, '$._master.dish') = :dish
+                  AND json_extract(m.data, '$._master.kind') = 'top'
+                ORDER BY dp.rank_score IS NULL, dp.rank_score DESC,
+                         CAST(json_extract(m.data, '$._master.rank') AS INTEGER) ASC, m.id
+                """,
+                {"dish": existing["name"]},
             ).fetchall()
             out: list[dict] = []
-            for seq_id, recipe_uuid, dj in rows:
+            for seq_id, recipe_uuid, dj, rank_score, ou_pct, pwr_pct in rows:
                 try:
                     d = json.loads(dj)
                 except Exception:
@@ -1931,6 +1938,11 @@ def list_dish_top_recipes(name: str):
                     "pa": scoring.get("pageAuthority"),
                     "da": scoring.get("domainAuthority"),
                     "ou": scoring.get("ouScore"),
+                    # Final SQL-computed blend score + percentiles from the
+                    # scoring ledger (null if this dish hasn't been scored yet).
+                    "rank_score": rank_score,
+                    "ou_percentile": ou_pct,
+                    "power_percentile": pwr_pct,
                     # Cooped og:image thumbnail (preferred) — falls
                     # back to the hotlinked schema.org image[0] when
                     # the row pre-dates the coopt pipeline. UI prefers

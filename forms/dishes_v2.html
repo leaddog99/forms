@@ -8,7 +8,7 @@
        separate from the working dishes.html (operational backup / candidate
        successor). Third clone of the a/c/d/v template (the heaviest table).
        Wired to the real /dishes API. See memory/project_admin_editor_nav.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260531c">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260602a">
   <style>
     .d-check{ display:flex; align-items:center; gap:9px; }
     .d-check input{ width:auto; }
@@ -65,7 +65,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260531c"></script>
+  <script src="/forms/library-shell.js?v=20260602a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -296,37 +296,50 @@
       loadCohort(d.name);
     }
 
+    // Shared row for both the winners list and the cohort list. rank_score
+    // is the headline; ou% / pwr% sit in fixed-width right-aligned columns
+    // (.ed-t10-stats) so the numbers line up straight down each column.
+    // Caller maps its payload to {rank_score, ou_pct, pwr_pct, name, domain,
+    // thumb, grade, selected, href, title}.
+    function scoreRow(r, i){
+      const thumb = r.thumb ? `<span class="ed-t10-thumb"><img src="${escapeHtml(r.thumb)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
+      const star  = r.selected ? ' <span class="ed-t10-grade" title="selected winner">★</span>' : '';
+      const grade = r.grade ? ` <span class="ed-t10-grade">${escapeHtml(r.grade)}</span>` : '';
+      const rk  = (typeof r.rank_score === 'number') ? r.rank_score.toFixed(1) : '—';
+      const oup = (typeof r.ou_pct === 'number') ? Math.round(r.ou_pct) : '—';
+      const pwp = (typeof r.pwr_pct === 'number') ? Math.round(r.pwr_pct) : '—';
+      return `<a class="ed-t10-row" href="${escapeHtml(r.href || '#')}" target="_blank" rel="noopener" title="${escapeHtml(r.title || 'Open')}">
+          <span class="ed-t10-rank">${i + 1}</span>${thumb}
+          <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(r.name)}${star}</span><span class="ed-t10-sub">${escapeHtml(r.domain)}${grade}</span></span>
+          <span class="ed-t10-stats">
+            <span class="ed-t10-stat score"><span class="v">${rk}</span><span class="l">score</span></span>
+            <span class="ed-t10-stat pct"><span class="v">${oup}</span><span class="l">ou%</span></span>
+            <span class="ed-t10-stat pct"><span class="v">${pwp}</span><span class="l">pwr%</span></span>
+          </span>
+        </a>`;
+    }
+
     async function loadTopRecipes(name){
       const wrap = $('#toplist'); if (!wrap) return;
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(name)}/top-recipes`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const payload = await r.json();
-        // Endpoint returns _master.rank order, now the OU/power blend rank.
-        // Render in that order — don't re-sort by OU. Un-ranked rows last.
-        const recs = (payload.recipes || []).slice().sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
+        // Order by the final blend score (rank_score); fall back to _master.rank.
+        const recs = (payload.recipes || []).slice().sort((a, b) =>
+          (b.rank_score ?? -Infinity) - (a.rank_score ?? -Infinity) || (a.rank ?? Infinity) - (b.rank ?? Infinity));
         const cnt = $('#topcount'); if (cnt) cnt.textContent = recs.length ? `(${recs.length})` : '';
         if (!recs.length){ wrap.innerHTML = '<li class="ed-empty-fit">No winners yet — refresh the dish.</li>'; return; }
-        wrap.innerHTML = recs.map((rec, i) => {
-          // Inspect link: same-origin /r/<id> so it always resolves on whatever
-          // host you're viewing from (localhost / LAN / tunnel). The previous
-          // bcc_url pointed at the external bcc_link_domain (recipes.tbotb.com),
-          // which fails to open when the viewing device can't reach that host.
-          const href = rec.recipe_id ? `/r/${encodeURIComponent(rec.recipe_id)}` : (rec.source_url || '#');
-          const img = (rec.preview_image || rec.fallback_image || '').trim();
-          const thumb = img ? `<span class="ed-t10-thumb"><img src="${escapeHtml(img)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
-          const host = rec.site_name || (rec.source_url || '').replace(/^https?:\/\//, '').split('/')[0];
-          const ou = (typeof rec.ou === 'number') ? rec.ou.toFixed(1) : '—';
-          const grade = rec.grade ? `<span class="ed-t10-grade">${escapeHtml(rec.grade)}</span>` : '';
-          // power = DA+PA, the 30% term blended with OU to produce the rank order.
-          const pwr = (typeof rec.da === 'number' && typeof rec.pa === 'number') ? Math.round(rec.da + rec.pa) : null;
-          const dapa = `DA ${rec.da == null ? '—' : Math.round(rec.da)} · PA ${rec.pa == null ? '—' : Math.round(rec.pa)}${pwr == null ? '' : ` · pwr ${pwr}`}`;
-          return `<a class="ed-t10-row" href="${escapeHtml(href)}" target="_blank" rel="noopener" title="Open recipe">
-              <span class="ed-t10-rank">${i + 1}</span>${thumb}
-              <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(rec.name)}</span><span class="ed-t10-sub">${escapeHtml(host)}</span></span>
-              <span class="ed-t10-metrics"><span class="ed-t10-ouline"><span class="ed-t10-ou">${ou}<small>OU</small></span>${grade}</span><span class="ed-t10-dapa">${dapa}</span></span>
-            </a>`;
-        }).join('');
+        // Winners list — same-origin /r/<id> link (resolves on any host).
+        wrap.innerHTML = recs.map((rec, i) => scoreRow({
+          rank_score: rec.rank_score, ou_pct: rec.ou_percentile, pwr_pct: rec.power_percentile,
+          name: rec.name,
+          domain: rec.site_name || (rec.source_url || '').replace(/^https?:\/\//, '').split('/')[0],
+          thumb: (rec.preview_image || rec.fallback_image || '').trim(),
+          grade: rec.grade, selected: false,   // whole list is winners — no ★ needed
+          href: rec.recipe_id ? `/r/${encodeURIComponent(rec.recipe_id)}` : (rec.source_url || '#'),
+          title: 'Open recipe',
+        }, i)).join('');
       } catch (e) {
         wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load winners (${escapeHtml(String(e.message || e))}).</li>`;
       }
@@ -347,19 +360,13 @@
         // candidates show domain + scores only.
         wrap.innerHTML = rows.map((c, i) => {
           const domain = (c.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-          const label = c.name || domain;
-          const img = (c.preview_image || '').trim();
-          const thumb = img ? `<span class="ed-t10-thumb"><img src="${escapeHtml(img)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
-          const star = c.selected ? `<span class="ed-t10-grade" title="selected winner">★</span>` : '';
-          const grade = c.grade ? `<span class="ed-t10-grade">${escapeHtml(c.grade)}</span>` : '';
-          const rk = (typeof c.rank_score === 'number') ? c.rank_score.toFixed(1) : '—';
-          const oup = (typeof c.ou_percentile === 'number') ? Math.round(c.ou_percentile) : '—';
-          const pwp = (typeof c.power_percentile === 'number') ? Math.round(c.power_percentile) : '—';
-          return `<a class="ed-t10-row" href="${escapeHtml(c.url || '#')}" target="_blank" rel="noopener" title="Open source page">
-              <span class="ed-t10-rank">${i + 1}</span>${thumb}
-              <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(label)} ${star}</span><span class="ed-t10-sub">${escapeHtml(domain)}</span></span>
-              <span class="ed-t10-metrics"><span class="ed-t10-ouline"><span class="ed-t10-ou">${rk}<small>RANK</small></span>${grade}</span><span class="ed-t10-dapa">ou ${oup} · pwr ${pwp}</span></span>
-            </a>`;
+          return scoreRow({
+            rank_score: c.rank_score, ou_pct: c.ou_percentile, pwr_pct: c.power_percentile,
+            name: c.name || domain, domain,
+            thumb: (c.preview_image || '').trim(),
+            grade: c.grade, selected: !!c.selected,
+            href: c.url || '#', title: 'Open source page',
+          }, i);
         }).join('');
       } catch (e) {
         wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load cohort (${escapeHtml(String(e.message || e))}).</li>`;

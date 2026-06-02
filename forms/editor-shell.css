@@ -249,6 +249,17 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
   padding:1px 6px; border-radius:5px; border:1px solid #e3d3c4; color:var(--accent-dark); }
 .ed-t10-dapa{ font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.7em; color:var(--muted);
   white-space:nowrap; font-variant-numeric:tabular-nums; }
+/* Aligned numeric columns (score / ou% / pwr%) for the dish top + cohort
+   lists. Fixed-width, right-aligned, tabular-nums → values line up straight
+   down each column instead of ragged-right. rank_score is the headline. */
+.ed-t10-stats{ flex:0 0 auto; display:flex; align-items:flex-start; gap:14px; }
+.ed-t10-stat{ display:inline-flex; flex-direction:column; align-items:flex-end; text-align:right; }
+.ed-t10-stat .v{ font-variant-numeric:tabular-nums; font-weight:700; line-height:1; color:var(--accent-dark); }
+.ed-t10-stat .l{ font-size:.5em; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-top:4px; }
+.ed-t10-stat.score{ width:48px; }
+.ed-t10-stat.score .v{ font-size:1.3em; }
+.ed-t10-stat.pct{ width:32px; }
+.ed-t10-stat.pct .v{ font-size:.9em; font-weight:600; color:var(--muted); }
 @media(max-width:640px){ .ed-t10-thumb{ width:44px; height:44px; } }
 
 /* ---------- Actions ---------- */
@@ -264,7 +275,9 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-save-hint{ font-size:.8em; color:var(--muted); margin-left:auto; }
 
 /* ---------- Mobile: list becomes an overlay drawer ---------- */
-@media(max-width:860px){
+/* 1024 (not ~760) so an iPhone in Safari "Request Desktop" mode (~980px) and
+   big iPhones in landscape (~932px) still get the mobile drawer layout. */
+@media(max-width:1024px){
   .ed-app{ grid-template-columns:1fr!important; max-width:none; }
   .ed-sidebar{ position:fixed; top:var(--ed-header-h); bottom:0; left:0; width:88vw; max-width:360px; transform:translateX(-110%); transition:transform .26s ease; z-index:70; box-shadow:4px 0 24px rgba(60,40,20,.14); height:auto; }
   body.ed-drawer-open .ed-sidebar{ transform:none; }
