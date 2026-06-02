@@ -2506,13 +2506,24 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     fit_points = batch_result.get("fit_data_points") or []
     if fit_points:
         try:
-            from input.pipeline.chapters import replace_data_points_for_dish
+            from input.pipeline.chapters import (
+                replace_data_points_for_dish, score_data_points_for_dish,
+            )
+            from input.pipeline.config import POWER_BLEND_WEIGHT
+            job_id = job.get("id")
+            ou_fit = batch_result.get("ou_fit") or {}
+            winner_urls = [e["url"] for e in entries if e.get("url")]
             with sqlite3.connect(DB_PATH) as conn:
-                n_written = replace_data_points_for_dish(conn, canonical_name, fit_points)
+                n_written = replace_data_points_for_dish(
+                    conn, canonical_name, fit_points, model_version=job_id)
+                # SQL scorer: fills ou/power/percentiles/rank_score over the
+                # full cohort + flags selected winners (model_version=job id).
+                n_scored = score_data_points_for_dish(
+                    conn, canonical_name, ou_fit, POWER_BLEND_WEIGHT, winner_urls)
             print(f"[REFRESH-DISH] persisted {n_written} data points "
-                  f"for chapter-fit aggregation")
+                  f"(model_version={job_id}); SQL-scored {n_scored}")
         except Exception as e:
-            print(f"[REFRESH-DISH] data-points persist failed (non-fatal): {e}")
+            print(f"[REFRESH-DISH] data-points persist/score failed (non-fatal): {e}")
 
     # Recompute + persist THIS dish's chapter fit now that its cohort data
     # points are refreshed. Every dish update keeps the chapter formula

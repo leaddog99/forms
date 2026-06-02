@@ -95,22 +95,96 @@ def replace_data_points_for_dish(
     conn: sqlite3.Connection,
     dish_name: str,
     points: list[tuple[str, float | None, float | None]],
+    model_version: Optional[int] = None,
 ) -> int:
     """Wipe + rewrite the (URL, DA, PA) points for one dish. Called
     after each successful dish refresh's _compute_custom_ou step.
 
     `points` is a list of (url, da, pa) tuples — exactly the entries
     that fed the regression. None values for DA or PA are accepted
-    and stored (filtered out at chapter-fit time)."""
+    and stored (filtered out at chapter-fit time).
+
+    `model_version` is the dish_refresh job id that produced this cohort —
+    stamped on every row so a point traces back to the job (and thus the
+    fit + counts) that scored it. The scoring columns (ou/power/percentiles/
+    rank_score/selected) are filled by score_data_points_for_dish next."""
     now_iso = datetime.now(timezone.utc).isoformat()
     conn.execute("DELETE FROM dish_run_data_points WHERE dish_name = ?", (dish_name,))
     conn.executemany(
-        "INSERT INTO dish_run_data_points (dish_name, url, da, pa, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        [(dish_name, u, da, pa, now_iso) for u, da, pa in points],
+        "INSERT INTO dish_run_data_points (dish_name, url, da, pa, created_at, model_version) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [(dish_name, u, da, pa, now_iso, model_version) for u, da, pa in points],
     )
     conn.commit()
     return len(points)
+
+
+def score_data_points_for_dish(
+    conn: sqlite3.Connection,
+    dish_name: str,
+    ou_fit: Optional[dict],
+    power_weight: float,
+    selected_urls: "list[str] | tuple[str, ...]" = (),
+) -> int:
+    """Fill the scoring columns on dish_run_data_points for one dish, in SQL.
+
+    OU = residual against the dish's fitted quadratic curve; power = DA+PA;
+    ou_percentile / power_percentile via PERCENT_RANK over the dish's whole
+    cohort (0..100); rank_score = ((100-w)*ou_pct + w*power_pct)/100 where w
+    = power_weight. `selected` = 1 for the URLs the batch kept as winners.
+
+    SQL is the canonical scorer (PERCENT_RANK) — see
+    memory/project_ou_power_blend.md. Coefficients come from `ou_fit` (the
+    dict _compute_custom_ou returns) at FULL precision. Only fitted dishes
+    (ou_fit.used, quadratic) get scored; a below-min-n dish has no per-dish
+    curve, so its scoring columns stay NULL — those recipes grade via the
+    chapter fallback instead. Returns the number of rows scored."""
+    if not (ou_fit and ou_fit.get("used") and ou_fit.get("model") == "quadratic"):
+        return 0
+    a0, a1, a2 = (float(x) for x in ou_fit["coefficients"])
+    pw = float(power_weight)
+    # !r => full-precision float literal (no rounding drift); our own
+    # coefficients, never user input, so no injection concern.
+    ou_expr = f"pa - ({a0!r}*da*da + {a1!r}*da + {a2!r})"
+    conn.execute(
+        f"""
+        WITH scored AS (
+            SELECT url,
+                   ({ou_expr})                                    AS ou,
+                   da + pa                                        AS power,
+                   PERCENT_RANK() OVER (ORDER BY ({ou_expr})) * 100.0 AS ou_pct,
+                   PERCENT_RANK() OVER (ORDER BY da + pa)      * 100.0 AS power_pct
+            FROM dish_run_data_points
+            WHERE dish_name = :d AND da IS NOT NULL AND pa IS NOT NULL
+        )
+        UPDATE dish_run_data_points AS p
+        SET ou               = (SELECT ou       FROM scored s WHERE s.url = p.url),
+            power            = (SELECT power     FROM scored s WHERE s.url = p.url),
+            ou_percentile    = (SELECT ou_pct    FROM scored s WHERE s.url = p.url),
+            power_percentile = (SELECT power_pct FROM scored s WHERE s.url = p.url),
+            rank_score       = (SELECT ({100.0 - pw!r} * ou_pct + {pw!r} * power_pct) / 100.0
+                                FROM scored s WHERE s.url = p.url)
+        WHERE p.dish_name = :d AND p.url IN (SELECT url FROM scored)
+        """,
+        {"d": dish_name},
+    )
+    conn.execute(
+        "UPDATE dish_run_data_points SET selected = 0 WHERE dish_name = ?", (dish_name,)
+    )
+    urls = [u for u in (selected_urls or []) if u]
+    if urls:
+        marks = ",".join("?" * len(urls))
+        conn.execute(
+            f"UPDATE dish_run_data_points SET selected = 1 "
+            f"WHERE dish_name = ? AND url IN ({marks})",
+            (dish_name, *urls),
+        )
+    conn.commit()
+    return conn.execute(
+        "SELECT COUNT(*) FROM dish_run_data_points "
+        "WHERE dish_name = ? AND rank_score IS NOT NULL",
+        (dish_name,),
+    ).fetchone()[0]
 
 
 def backfill_data_points_from_corpus(conn: sqlite3.Connection) -> dict:
