@@ -1703,6 +1703,18 @@
           </div>
         </div>
 
+        <!-- "Recipes you'd like" recommender: temp-embeds the current recipe
+             and queries the curated master set for the top-ranked similar
+             recipes (recipe→recipe similarity; deliberately bypasses dish
+             matching). POSTs current form state to /recipes/similar-master. -->
+        <div class="similar-block" style="margin:0 0 16px">
+          <button type="button" id="similarBtn"
+            style="font:inherit;font-size:.9em;padding:8px 14px;border:1px solid #d8c4b2;background:#fbf6f0;color:#8a5a3b;border-radius:8px;cursor:pointer">
+            ✨ Show top recipes like this
+          </button>
+          <div id="similarResults" hidden style="margin-top:10px;border:1px solid #eaddd0;border-radius:11px;padding:6px"></div>
+        </div>
+
         <!-- Header: Title/Desc Left, Image Right -->
         <div class="header-row">
           <div class="header-left">
@@ -3865,6 +3877,61 @@
           _claimBtn.disabled = false;
           _claimBtn.textContent = _origLabel || 'Claim';
         }
+      }
+    };
+
+    // "Show top recipes like this": temp-embeds the current recipe (server
+    // side) and returns the curated master recipes most similar to it,
+    // ranked by rank_score. Recipe→recipe similarity — no dish-match step.
+    document.getElementById("similarBtn").onclick = async () => {
+      const btn = document.getElementById("similarBtn");
+      const out = document.getElementById("similarResults");
+      const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      const name = (document.getElementById('name').value || '').trim();
+      if (!name) { showFeedback("Need a recipe before finding similar ones.", "error"); return; }
+      const recipePayload = {
+        ...(lastExtractedRecipe || {}),
+        name,
+        description: document.getElementById('description').value || '',
+        recipeIngredient: getIngredients(),
+        recipeCategory: document.getElementById('recipeCategory').value || '',
+        recipeCuisine: document.getElementById('recipeCuisine').value || '',
+      };
+      btn.disabled = true; const lbl = btn.textContent; btn.textContent = "Finding…";
+      out.hidden = false;
+      out.innerHTML = '<div style="color:#8a7a6a;font-size:.88em;padding:6px 8px">Searching our top recipes…</div>';
+      try {
+        const res = await fetch(`${API}/recipes/similar-master`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipe: recipePayload, k: 6 }),
+        });
+        const data = await res.json();
+        const rows = (data && data.results) || [];
+        if (!rows.length) {
+          out.innerHTML = '<div style="color:#8a7a6a;font-size:.88em;padding:6px 8px">No close matches in our collection yet.</div>';
+          return;
+        }
+        out.innerHTML = rows.map(r => {
+          const thumb = r.preview_image
+            ? `<img src="${esc(r.preview_image)}" alt="" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex:0 0 auto">`
+            : `<span style="width:46px;height:46px;border-radius:8px;background:#efe7df;flex:0 0 auto"></span>`;
+          const meta = [r.dish, r.grade ? `grade ${r.grade}` : null, (r.rank_score != null ? `rank ${r.rank_score}` : null)]
+            .filter(Boolean).join(' · ');
+          return `<a href="${esc(r.bcc_url)}" target="_blank" rel="noopener"
+              style="display:flex;align-items:center;gap:11px;padding:7px 8px;border-radius:9px;text-decoration:none;color:inherit">
+              ${thumb}
+              <span style="flex:1;min-width:0">
+                <span style="display:block;font-size:.95em;color:#3a2e25">${esc(r.name)}</span>
+                <span style="display:block;font-size:.76em;color:#8a7a6a">${esc(meta)}</span>
+              </span>
+              <span style="font-size:.72em;color:#a89684;font-variant-numeric:tabular-nums">d ${esc(r.distance)}</span>
+            </a>`;
+        }).join('');
+      } catch (e) {
+        out.innerHTML = `<div style="color:#b4543a;font-size:.88em;padding:6px 8px">Couldn’t load similar recipes (${esc(e.message || e)}).</div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = lbl;
       }
     };
 

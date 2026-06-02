@@ -963,6 +963,87 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.post("/recipes/similar-master")
+def similar_master_recipes(payload: dict = Body(...)):
+    """Recommender: given a recipe (the one the user just extracted — may be
+    unsaved), temp-embed it and return the curated MASTER recipes most similar
+    to it, re-sorted by rank_score so the *best* of the similar set surfaces
+    first. Recipe→recipe similarity (recipes_master_vec) — deliberately
+    bypasses dish-matching; answers "show me great recipes like this", not
+    "what dish is this / how good is mine".
+
+    Body: {"recipe": {...recipe data...}, "k": <optional int, default 8>}.
+    Matches with L2 distance > SIMILAR_MAX_DIST are dropped — we'd rather
+    return nothing than "closest but unrelated" when there's no real match.
+    Each result: recipe_id, name, dish, grade, rank_score, distance,
+    preview_image, bcc_url, source_url."""
+    SIMILAR_MAX_DIST = 0.8
+    recipe = (payload or {}).get("recipe") or {}
+    want = max(1, min(int((payload or {}).get("k") or 8), 25))
+    from input.pipeline.embeddings import compose_recipe_text, embed_text
+    from input.pipeline import vector_store
+
+    txt = compose_recipe_text(recipe)
+    if not txt.strip():
+        return {"query_name": recipe.get("name") or "", "results": [], "considered": 0, "shown": 0}
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            vector_store.enable_vec(conn)
+            qvec = embed_text(txt)
+            raw = vector_store.find_similar_master_recipes(conn, qvec, k=max(want * 4, 20))
+            near = [r for r in raw if r["distance"] <= SIMILAR_MAX_DIST]
+            results: list[dict] = []
+            for r in near:
+                row = conn.execute(
+                    "SELECT recipe_id, data, url_normalized FROM master_recipes WHERE id = ?",
+                    (r["id"],),
+                ).fetchone()
+                if not row:
+                    continue
+                rid, dj, urln = row
+                try:
+                    d = json.loads(dj)
+                except Exception:
+                    continue
+                m = d.get("_master") or {}
+                exc = m.get("exceptionalism") or {}
+                src = d.get("_source") or {}
+                img = d.get("image")
+                dish = m.get("dish")
+                rs = conn.execute(
+                    "SELECT rank_score FROM dish_run_data_points WHERE dish_name = ? AND url = ?",
+                    (dish, urln),
+                ).fetchone() if dish else None
+                results.append({
+                    "recipe_id": rid,
+                    "name": d.get("name") or "(no title)",
+                    "dish": dish,
+                    "grade": exc.get("grade"),
+                    "rank_score": (round(rs[0], 1) if rs and rs[0] is not None else None),
+                    "distance": round(r["distance"], 4),
+                    "preview_image": src.get("previewImage")
+                                     or (img[0] if isinstance(img, list) and img else None),
+                    "bcc_url": _bcc_link_permalink(rid),
+                    "source_url": src.get("originalUrl") or "",
+                })
+            # Highest-ranked similar first: rank_score desc (None last),
+            # then nearer distance as the tiebreaker.
+            results.sort(key=lambda x: (x["rank_score"] is None,
+                                        -(x["rank_score"] or 0.0), x["distance"]))
+            results = results[:want]
+            print(f"[SIMILAR] {recipe.get('name','')!r} -> {len(results)} shown "
+                  f"(of {len(near)} within {SIMILAR_MAX_DIST}, {len(raw)} scanned)")
+            return {
+                "query_name": recipe.get("name") or "",
+                "considered": len(near),
+                "shown": len(results),
+                "results": results,
+            }
+    except Exception as e:
+        print(f"[ERROR] similar_master_recipes failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Similar lookup failed: {e}")
+
+
 # Claim a recipe — fast in-DB copy from wherever it lives (master or
 # another user) into the target user's personal collection. Pure SQL,
 # no LLM, no re-extract. Use cases:
