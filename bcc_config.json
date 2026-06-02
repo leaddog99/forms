@@ -6,6 +6,9 @@
   "min_ou_score": 0.0,
   "min_da_score": 30.0,
 
+  "_comment_blend": "Final batch ranking blends OU (exceptionalism: a page punching above its domain weight) with raw power (DA+PA). power_blend_weight is power's share out of 100; OU gets the remainder (70 here). 0 = pure OU (obscure one-keyword flukes can win); 100 = pure power (popularity contest). Both signals become in-cohort percentile ranks before blending, so one mega-authority site can't compress the power term. User call 2026-06-01.",
+  "power_blend_weight": 30.0,
+
   "_comment_blacklists": "Domain blacklist runs at the cheap pre-fetch filter stage in batch. Path blacklist catches roundup/article patterns that survive is_recipe (e.g. /articles/24-the-best-beef-stew).",
   "disallowed_domains": [
     "youtube.com",

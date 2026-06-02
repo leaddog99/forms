@@ -787,7 +787,10 @@
     }
 
     function renderTopRecipes(payload) {
-      const recipes = payload.recipes || [];
+      // Show in blended-rank order (OU/power blend) — the endpoint returns
+      // _master.rank ascending, which is now the blend rank. Don't re-sort by
+      // OU: the list is no longer OU-ordered by design. Un-ranked rows last.
+      const recipes = (payload.recipes || []).slice().sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
       const rows = recipes.map((r) => {
         const hostname = (() => {
           try { return new URL(r.source_url).hostname.replace(/^www\./, ''); }

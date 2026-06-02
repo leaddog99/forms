@@ -31,6 +31,8 @@ from typing import Optional
 
 import numpy as np
 
+from input.pipeline.blend import rank_by_blend
+
 
 # Mirror constants from intake.build_query_batch. Keep in sync — if the
 # batch path's grade scale changes, this fallback path must change too
@@ -242,10 +244,17 @@ def _fit_da_pa(da_arr: np.ndarray, pa_arr: np.ndarray) -> dict:
 def compute_chapter_top_recipes(
     conn: sqlite3.Connection, chapter: str, limit: int = 10,
 ) -> list[dict]:
-    """The chapter's `limit` highest-OU master_recipes across all its dishes
-    (joined via _master.dish → dishes.chapter). A compact snapshot stored on
-    the chapter row at fit time — independent of the regression (works even
-    when the chapter is below the fit minimum)."""
+    """The chapter's `limit` top master_recipes across all its dishes
+    (joined via _master.dish → dishes.chapter), ranked by the OU/power
+    percentile blend — the same blend the batch selector uses (see
+    input.pipeline.blend). A compact snapshot stored on the chapter row at
+    fit time, independent of the regression (works even when the chapter
+    is below the fit minimum).
+
+    The blend is computed over the whole chapter cohort here (cross-dish),
+    which is why we fetch every qualifying row and rank in Python rather
+    than ORDER BY in SQL: per-dish `_master.rank` isn't comparable across
+    dishes, and the percentile is only meaningful against a fixed cohort."""
     rows = conn.execute(
         """
         SELECT mr.recipe_id, mr.data
@@ -253,12 +262,11 @@ def compute_chapter_top_recipes(
         JOIN dishes d ON d.name = json_extract(mr.data, '$._master.dish')
         WHERE d.chapter = ?
           AND json_extract(mr.data, '$._scoring.ouScore') IS NOT NULL
-        ORDER BY CAST(json_extract(mr.data, '$._scoring.ouScore') AS REAL) DESC, mr.id
-        LIMIT ?
+        ORDER BY mr.id
         """,
-        (chapter, limit),
+        (chapter,),
     ).fetchall()
-    out: list[dict] = []
+    cand: list[dict] = []
     for recipe_uuid, dj in rows:
         try:
             d = json.loads(dj)
@@ -269,7 +277,7 @@ def compute_chapter_top_recipes(
         exc = m.get("exceptionalism") or {}
         src = d.get("_source") or {}
         img = d.get("image")
-        out.append({
+        cand.append({
             "recipe_id": recipe_uuid,
             "name": d.get("name") or "(no title)",
             "dish": m.get("dish") or "",
@@ -282,7 +290,9 @@ def compute_chapter_top_recipes(
             "preview_image": src.get("previewImage") or "",
             "fallback_image": (img[0] if isinstance(img, list) and img else None),
         })
-    return out
+    # Blend-rank over the full chapter cohort, then keep the top `limit`.
+    # rank_by_blend stamps power/ou_pct/power_pct/blend_score onto each row.
+    return rank_by_blend(cand)[:limit]
 
 
 def get_chapter_top_recipes(conn: sqlite3.Connection, name: str) -> list[dict]:

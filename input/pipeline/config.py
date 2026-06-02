@@ -133,6 +133,14 @@ IS_RECIPE_THRESHOLD = int(_cfg.get("is_recipe_threshold", 7))
 # through every other filter; this catches that pattern cleanly.
 MIN_OU_SCORE = float(_cfg.get("min_ou_score", 0.0))
 
+# Final batch ranking blends OU (exceptionalism) with raw power (DA+PA).
+# This is power's weight out of 100; OU gets the remainder. Both signals
+# are converted to in-cohort percentile ranks before blending so a single
+# mega-authority site can't compress the power term (the reason we rank
+# rather than min-max scale). 0 = pure OU; 100 = pure power. User call
+# 2026-06-01 — see _rank_blended in build_query_batch.py.
+POWER_BLEND_WEIGHT = float(_cfg.get("power_blend_weight", 30.0))
+
 # Domain-authority floor for the batch front-end. The enrichment
 # editor commentary on low-DA pages frequently flags them as low
 # quality — this filter drops them before the LLM extract spend even

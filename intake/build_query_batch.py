@@ -67,8 +67,10 @@ from input.pipeline.config import (  # noqa: E402
     IS_RECIPE_THRESHOLD,
     MIN_DA_SCORE,
     MIN_OU_SCORE,
+    POWER_BLEND_WEIGHT,
     SERPAPI_MAX_PAGES as _CFG_SERPAPI_MAX_PAGES,
 )
+from input.pipeline.blend import rank_by_blend                              # noqa: E402
 from input.pipeline.url_scoring import score_url_via_moz                    # noqa: E402
 from input.pipeline.url_utils import normalize_url, root_domain             # noqa: E402
 from input.pipeline.validators import is_recipe, score_recipe_text          # noqa: E402
@@ -726,15 +728,14 @@ def _min_ou_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _rank_by_ou(entries: list[dict], top_n_final: int) -> list[dict]:
-    """Sort by OU descending, keep top_n_final, stamp 1-indexed rank."""
-    # None OU sorts to the bottom (treated as -inf so it always loses).
-    entries_sorted = sorted(
-        entries,
-        key=lambda e: (e.get("ou") if e.get("ou") is not None else -1e9),
-        reverse=True,
-    )
-    kept = entries_sorted[:top_n_final]
+def _rank_blended(entries: list[dict], top_n_final: int) -> list[dict]:
+    """Final ranking: the canonical OU/power percentile blend (see
+    input.pipeline.blend.rank_by_blend), sliced to top_n_final and
+    stamped with a 1-indexed `rank`. Entries already carry `ou`, `da`,
+    `pa` from the Moz/OU stages — rank_by_blend stamps `power`, `ou_pct`,
+    `power_pct`, `blend_score` onto each."""
+    ranked = rank_by_blend(entries)
+    kept = ranked[:top_n_final]
     for rank, e in enumerate(kept, start=1):
         e["rank"] = rank
     return kept
@@ -811,8 +812,10 @@ def build_batch(
     entries, dropped_low_ou = _min_ou_filter(entries)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_low_ou)}")
 
-    print(f"\n[7/7] rank by OU descending, keep top {top_n_final}")
-    final = _rank_by_ou(entries, top_n_final)
+    print(f"\n[7/7] rank by OU/power blend "
+          f"(OU {100 - POWER_BLEND_WEIGHT:.0f} / power {POWER_BLEND_WEIGHT:.0f}, "
+          f"percentile), keep top {top_n_final}")
+    final = _rank_blended(entries, top_n_final)
     print(f"      -> final batch: {len(final)} URLs")
 
     elapsed = time.perf_counter() - t0
