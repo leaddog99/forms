@@ -219,8 +219,8 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Search config</h3>
           <div class="ed-field full" style="margin-bottom:16px">
-            <label for="f_queries">Search queries <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(one per line)</span></label>
-            <textarea id="f_queries" class="ed-notes" style="min-height:90px">${escapeHtml(queriesText)}</textarea>
+            <label for="f_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim — one per line; <code>"…"</code>, <code>|</code> OR, <code>-site:</code> pass through to Google as typed)</span></label>
+            <textarea id="f_queries" class="ed-notes" style="min-height:90px" placeholder='"banana bread" | "banana nut bread"'>${escapeHtml(queriesText)}</textarea>
           </div>
           <div class="ed-form-grid">
             <div class="ed-field"><label for="f_serp">SerpAPI candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" value="${d.top_n_serpapi ?? ''}"></div>
@@ -299,14 +299,20 @@
         const cnt = $('#topcount'); if (cnt) cnt.textContent = recs.length ? `(${recs.length})` : '';
         if (!recs.length){ wrap.innerHTML = '<li class="ed-empty-fit">No winners yet — refresh the dish.</li>'; return; }
         wrap.innerHTML = recs.map((rec, i) => {
-          const href = rec.bcc_url || rec.source_url || '#';
+          // Inspect link: same-origin /r/<id> so it always resolves on whatever
+          // host you're viewing from (localhost / LAN / tunnel). The previous
+          // bcc_url pointed at the external bcc_link_domain (recipes.tbotb.com),
+          // which fails to open when the viewing device can't reach that host.
+          const href = rec.recipe_id ? `/r/${encodeURIComponent(rec.recipe_id)}` : (rec.source_url || '#');
           const img = (rec.preview_image || rec.fallback_image || '').trim();
           const thumb = img ? `<span class="ed-t10-thumb"><img src="${escapeHtml(img)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
           const host = rec.site_name || (rec.source_url || '').replace(/^https?:\/\//, '').split('/')[0];
           const ou = (typeof rec.ou === 'number') ? rec.ou.toFixed(1) : '—';
           const grade = rec.grade ? `<span class="ed-t10-grade">${escapeHtml(rec.grade)}</span>` : '';
-          const dapa = `DA ${rec.da == null ? '—' : Math.round(rec.da)} · PA ${rec.pa == null ? '—' : Math.round(rec.pa)}`;
-          return `<a class="ed-t10-row" href="${escapeHtml(href)}" target="_blank" rel="noopener" title="Open in BCC">
+          // power = DA+PA, the 30% term blended with OU to produce the rank order.
+          const pwr = (typeof rec.da === 'number' && typeof rec.pa === 'number') ? Math.round(rec.da + rec.pa) : null;
+          const dapa = `DA ${rec.da == null ? '—' : Math.round(rec.da)} · PA ${rec.pa == null ? '—' : Math.round(rec.pa)}${pwr == null ? '' : ` · pwr ${pwr}`}`;
+          return `<a class="ed-t10-row" href="${escapeHtml(href)}" target="_blank" rel="noopener" title="Open recipe">
               <span class="ed-t10-rank">${i + 1}</span>${thumb}
               <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(rec.name)}</span><span class="ed-t10-sub">${escapeHtml(host)}</span></span>
               <span class="ed-t10-metrics"><span class="ed-t10-ouline"><span class="ed-t10-ou">${ou}<small>OU</small></span>${grade}</span><span class="ed-t10-dapa">${dapa}</span></span>
@@ -382,7 +388,7 @@
         <h1 class="ed-title" style="margin:0 0 18px">Add a dish</h1>
         <section class="ed-block" style="border-top:none;padding-top:0">
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off"></div>
-          <div class="ed-field full" style="margin-bottom:16px"><label for="n_queries">Search queries (one per line)</label><textarea id="n_queries" class="ed-notes" style="min-height:90px" placeholder="best spaghetti and meat sauce&#10;authentic bolognese"></textarea></div>
+          <div class="ed-field full" style="margin-bottom:16px"><label for="n_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim, one per line)</span></label><textarea id="n_queries" class="ed-notes" style="min-height:90px" placeholder='&quot;spaghetti and meat sauce&quot; | &quot;spaghetti with meat sauce&quot;'></textarea></div>
           <div class="ed-form-grid">
             <div class="ed-field"><label for="n_serp">SerpAPI candidates</label><input id="n_serp" type="number" min="1" value="25"></div>
             <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" value="10"></div>

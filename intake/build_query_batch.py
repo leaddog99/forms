@@ -107,19 +107,25 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     """SerpAPI Google engine, paginated until we hit target_n or run out
     of organic results. Returns [{url, title, google_rank, domain}].
 
-    Three improvements over a single-page call (the obvious mistake we
-    hit on the beef-stew test, which returned only 7 of a requested 50):
+    `query` is sent to Google VERBATIM — whatever the admin authored on
+    the dish (quotes, `|` OR, `-site:` operators) goes straight into `q`.
+    We do NOT quote, OR-join, or splice exclusions: Google's NOT/AND/OR
+    precedence is unreliable (in testing, parenthesizing a quoted OR
+    silently dragged back the off-topic banana-fruit results we were
+    trying to exclude), so query construction belongs to the human who
+    knows the dish. Domain blacklisting is handled deterministically
+    downstream by _filter_disallowed instead.
+
+    Two mechanics we DO own — they're *how we fetch*, not *what we search*:
 
       - **Pagination via `start`**: Google's first page is heavily
         decorated with featured snippets, People Also Ask, video rows,
         and recipe carousels — typically only 7-9 slots are actual
         organic links. Subsequent pages return more cleanly. Each page
-        costs one SerpAPI quota unit; we cap at _SERPAPI_MAX_PAGES.
-      - **Site-exclusion operators in the query**: appending
-        `-site:youtube.com -site:wikipedia.org ...` keeps known-bad
-        domains out of Google's results entirely, so organic slots go
-        to real recipe sites instead of being burned and then
-        post-filtered by us.
+        costs one SerpAPI quota unit; we cap at _SERPAPI_MAX_PAGES. A
+        tight query just runs out of pages early — the caller surfaces
+        the shortfall; there is NO silent fallback to a looser query
+        (that would re-admit exactly the junk a tight query excludes).
       - **Locale + dedup params**: `gl=us hl=en` pins to a stable SERP
         and `filter=0` disables Google's automatic similar-page
         collapsing for more candidate variety.
@@ -127,11 +133,10 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     if not SERPAPI_KEY:
         raise RuntimeError("SERPAPI_KEY not set in .env")
 
-    # Splice -site:domain operators into the query. Costs nothing extra
-    # (still one quota unit per page) but stops Google from spending
-    # organic slots on already-blocked domains.
-    excluded = " ".join(f"-site:{d}" for d in sorted(DISALLOWED_DOMAINS))
-    full_query = f"{query} {excluded}" if excluded else query
+    # Verbatim: the admin's query string IS the search, unmodified. Domain
+    # exclusion happens downstream in _filter_disallowed (deterministic,
+    # not subject to Google's mystery operator precedence). See docstring.
+    full_query = query
 
     out: list[dict] = []
     seen_urls: set[str] = set()
@@ -621,14 +626,15 @@ def _compute_custom_ou(entries: list[dict]) -> dict:
     else:
         pwr_a, pwr_b, r2_pwr, pred_pwr, power_available = 0.0, 0.0, float("-inf"), None, False
 
-    # Pick the model with the highest R². Power and quadratic can each
-    # beat linear depending on the dish's PA-DA shape; we let the data
-    # choose.
-    candidates = [("linear",    r2_lin,  coeffs_lin,  pred_lin),
-                  ("quadratic", r2_quad, coeffs_quad, pred_quad)]
-    if power_available:
-        candidates.append(("power", r2_pwr, np.array([pwr_a, pwr_b]), pred_pwr))
-    chosen_name, chosen_r2, chosen_coeffs, chosen_pred = max(candidates, key=lambda c: c[1])
+    # Standardized on QUADRATIC (user call 2026-06-02). Quadratic won the
+    # best-R² selection on every dish (24/24), its margin over linear was
+    # tiny, and pinning the model (a) kills "model-flip jitter" — a dish's
+    # grades lurching because best-R² flipped quad↔power on a trivial data
+    # shift — and (b) gives the SQL scorer ONE fixed formula shape
+    # (a*DA^2 + b*DA + c). Linear/power are still computed above and
+    # reported below for transparency; they're just never chosen.
+    chosen_name, chosen_r2, chosen_coeffs, chosen_pred = (
+        "quadratic", r2_quad, coeffs_quad, pred_quad)
 
     # Pretty-print the chosen model + the full comparison.
     if chosen_name == "quadratic":
@@ -775,12 +781,21 @@ def build_batch(
         dish = queries[0]
 
     t0 = time.perf_counter()
-    print(f"\n[1/7] SerpAPI lookup: dish={dish!r} queries={queries} "
-          f"target_n_per_query={top_n_serpapi}")
+    print(f"\n[1/7] SerpAPI lookup (verbatim queries): dish={dish!r} "
+          f"queries={queries} target_n_per_query={top_n_serpapi}")
     entries = _multi_query_lookup(queries, top_n_serpapi)
     serpapi_union = len(entries)
     print(f"      -> {serpapi_union} unique URLs across {len(queries)} "
-          f"queries (paginated, site-exclusion applied)")
+          f"verbatim queries (paginated)")
+    # Surface a thin candidate pool rather than silently loosening the
+    # query. A tight (quoted) query legitimately returns fewer matches;
+    # the admin broadens it by hand if they want more. We never fall back
+    # to an unquoted query — that would re-admit exactly the junk a tight
+    # query was written to exclude.
+    if serpapi_union < top_n_serpapi:
+        print(f"      [thin] only {serpapi_union} candidate(s) for a target "
+              f"of {top_n_serpapi} — broaden the query (add a `| \"phrasing\"` "
+              f"term, or relax quotes) if you want more.")
 
     print(f"\n[2/7] filter_disallowed (domain + URL-path blacklist)")
     entries, dropped_disallowed = _filter_disallowed(entries)

@@ -212,13 +212,13 @@ def _fit_da_pa(da_arr: np.ndarray, pa_arr: np.ndarray) -> dict:
     else:
         pwr_a, pwr_b, r2_pwr, pred_pwr, power_available = 0.0, 0.0, float("-inf"), None, False
 
-    candidates = [
-        ("linear", r2_lin, coeffs_lin, pred_lin),
-        ("quadratic", r2_quad, coeffs_quad, pred_quad),
-    ]
-    if power_available:
-        candidates.append(("power", r2_pwr, np.array([pwr_a, pwr_b]), pred_pwr))
-    chosen_name, chosen_r2, chosen_coeffs, chosen_pred = max(candidates, key=lambda c: c[1])
+    # Standardized on QUADRATIC to match the batch fit (user call
+    # 2026-06-02 — see _compute_custom_ou in build_query_batch). Linear /
+    # power are still computed above and reported for transparency, just
+    # never chosen; pinning the model keeps chapter and dish grades on the
+    # same fixed formula shape and avoids model-flip jitter.
+    chosen_name, chosen_r2, chosen_coeffs, chosen_pred = (
+        "quadratic", r2_quad, coeffs_quad, pred_quad)
 
     residuals = pa_arr - chosen_pred
     sigma_observed = float(np.std(residuals, ddof=0))

@@ -811,6 +811,8 @@
         const scoreParts = [];
         if (typeof r.da === 'number') scoreParts.push(`DA ${r.da.toFixed(0)}`);
         if (typeof r.pa === 'number') scoreParts.push(`PA ${r.pa.toFixed(0)}`);
+        // power = DA+PA, the 30% term blended with OU to produce the rank order.
+        if (typeof r.da === 'number' && typeof r.pa === 'number') scoreParts.push(`pwr ${(r.da + r.pa).toFixed(0)}`);
         if (typeof r.ou === 'number') scoreParts.push(`OU ${r.ou.toFixed(2)}`);
         const scoreLine = scoreParts.length
           ? `<span class="top-scores">${escapeHtml(scoreParts.join(' · '))}</span>`
