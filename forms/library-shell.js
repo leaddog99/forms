@@ -394,7 +394,7 @@
   // page actually exists.
   const NAV_ITEMS = [
     { page: 'recipes',   label: 'Recipes',   href: '/forms/recipe_form_styled.html' },
-    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes.html' },
+    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html' },
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html' },
     { page: 'users',     label: 'Users',     href: '/forms/users.html' },
     { page: 'cookbooks', label: 'Cookbooks', comingSoon: true },
@@ -716,7 +716,7 @@
       const w = (typeof opts.shellWidth === 'number') ? opts.shellWidth + 'px' : opts.shellWidth;
       document.documentElement.style.setProperty('--ed-shell-w', w);
     }
-    const mq = window.matchMedia('(max-width: 860px)');
+    const mq = window.matchMedia('(max-width: 1024px)');   // match editor-shell.css breakpoint
     const ctl = {
       mode: opts.listMode === 'overlay' ? 'overlay' : 'docked',
       open: true,
@@ -747,7 +747,10 @@
     (mq.addEventListener ? mq.addEventListener.bind(mq, 'change') : mq.addListener.bind(mq))(
       () => { ctl.open = !ctl.isOverlay(); ctl.apply(); }
     );
-    ctl.open = !ctl.isOverlay();
+    // Open the list on load: two-pane on desktop, drawer OPEN on mobile/overlay
+    // (land on the list, drill into a detail) rather than dropping into a
+    // detail with the list hidden.
+    ctl.open = true;
     ctl.apply();
     return ctl;
   }
