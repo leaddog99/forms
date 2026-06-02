@@ -453,6 +453,39 @@
       .catch(() => 0);
   }
 
+  // Draggable-window helper: grab `handle`, move `win` via pointer events
+  // (works for mouse + touch). On first grab it pins `win` to fixed
+  // positioning at its current spot, so it leaves the overlay's flex
+  // centering and stays where you drop it. Stays on-screen.
+  function _makeDraggable(win, handle) {
+    if (!win || !handle) return;
+    handle.style.cursor = 'move';
+    handle.style.touchAction = 'none';
+    handle.title = 'Drag to move';
+    let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+    handle.addEventListener('pointerdown', (e) => {
+      const r = win.getBoundingClientRect();
+      win.style.position = 'fixed';
+      win.style.margin = '0';
+      win.style.left = r.left + 'px';
+      win.style.top = r.top + 'px';
+      ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY; dragging = true;
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      let nx = ox + (e.clientX - sx), ny = oy + (e.clientY - sy);
+      nx = Math.max(0, Math.min(nx, window.innerWidth - 80));   // keep a grab-edge on-screen
+      ny = Math.max(0, Math.min(ny, window.innerHeight - 40));
+      win.style.left = nx + 'px';
+      win.style.top = ny + 'px';
+    });
+    const end = (e) => { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch (_) {} };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
   let _jobsOverlay = null;
   function _ensureJobsOverlay() {
     if (_jobsOverlay) return _jobsOverlay;
@@ -474,6 +507,8 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     overlay.querySelector('.jobs-runner-close').addEventListener('click', close);
     document.body.appendChild(overlay);
+    _makeDraggable(overlay.querySelector('.coming-soon-card'),
+                   overlay.querySelector('.coming-soon-card h2'));
     _jobsOverlay = overlay;
     return overlay;
   }
