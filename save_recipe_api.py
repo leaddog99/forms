@@ -1955,6 +1955,66 @@ def list_dish_top_recipes(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/dishes/{name}/cohort")
+def list_dish_cohort(name: str):
+    """The full SCORED cohort for a dish, straight from dish_run_data_points
+    — every candidate the last batch fit saw, with its SQL-computed
+    ou / power / percentiles / rank_score and the `selected` winner flag.
+    Winners (rows whose normalized url has a saved master_recipe) are joined
+    to pull name / thumbnail / grade; non-winners (never extracted) carry
+    only url + scores. Ordered by rank_score desc, unscored last.
+
+    A diagnostic / validation view — lets you see whether rank_score's
+    top-N matches the `selected` winners (the check we want before making
+    SQL the selector). Distinct from /top-recipes (winners-only, full
+    presentation). Direct read of the ledger; no per-row recompute."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            dish = existing["name"]
+            rows = conn.execute(
+                """
+                SELECT p.url, p.da, p.pa, p.ou, p.power,
+                       p.ou_percentile, p.power_percentile, p.rank_score,
+                       p.selected, p.model_version,
+                       m.name, m.preview_image, m.grade
+                FROM dish_run_data_points p
+                LEFT JOIN (
+                    SELECT url_normalized,
+                           json_extract(data, '$.name') AS name,
+                           COALESCE(json_extract(data, '$._source.previewImage'),
+                                    json_extract(data, '$.image[0]')) AS preview_image,
+                           json_extract(data, '$._master.exceptionalism.grade') AS grade
+                    FROM master_recipes
+                    WHERE user_id = 0
+                      AND json_extract(data, '$._master.dish') = :dish
+                    GROUP BY url_normalized
+                ) m ON m.url_normalized = p.url
+                WHERE p.dish_name = :dish
+                ORDER BY p.rank_score IS NULL, p.rank_score DESC, p.url
+                """,
+                {"dish": dish},
+            ).fetchall()
+            cols = ["url", "da", "pa", "ou", "power", "ou_percentile",
+                    "power_percentile", "rank_score", "selected",
+                    "model_version", "name", "preview_image", "grade"]
+            cohort = [dict(zip(cols, r)) for r in rows]
+            return {
+                "dish": dish,
+                "count": len(cohort),
+                "scored": sum(1 for c in cohort if c["rank_score"] is not None),
+                "selected": sum(1 for c in cohort if c["selected"]),
+                "cohort": cohort,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] list_dish_cohort({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.get("/dishes/{name}/rejects")
 def list_dish_rejects(name: str):
     """Return the URLs from the dish's last refresh that made it past

@@ -247,6 +247,12 @@
         </section>
 
         <section class="ed-block">
+          <h3 class="ed-block-label">Scored cohort <span class="ed-count" id="cohortcount"></span></h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">Every candidate the last fit scored — the full cohort by <code>rank_score</code> (OU/power blend), straight from the ledger. ★ = selected winner; winners show their thumbnail.</p>
+          <ol class="ed-t10" id="cohortlist"><li class="ed-empty-fit">Loading…</li></ol>
+        </section>
+
+        <section class="ed-block">
           <h3 class="ed-block-label">Last run</h3>
           <div class="ed-kv">
             <div class="k">Status</div><div class="v">${escapeHtml(d.last_run_status || '—')}</div>
@@ -285,6 +291,7 @@
       $('#deleteBtn').addEventListener('click', () => doDelete(d));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       loadTopRecipes(d.name);
+      loadCohort(d.name);
     }
 
     async function loadTopRecipes(name){
@@ -320,6 +327,40 @@
         }).join('');
       } catch (e) {
         wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load winners (${escapeHtml(String(e.message || e))}).</li>`;
+      }
+    }
+
+    async function loadCohort(name){
+      const wrap = $('#cohortlist'); if (!wrap) return;
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/cohort`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const payload = await r.json();
+        const rows = payload.cohort || [];
+        const cnt = $('#cohortcount');
+        if (cnt) cnt.textContent = rows.length ? `(${payload.selected}★ / ${payload.scored} scored / ${rows.length})` : '';
+        if (!rows.length){ wrap.innerHTML = '<li class="ed-empty-fit">No scored cohort yet — refresh the dish.</li>'; return; }
+        // Direct ledger read: full cohort by rank_score. Winners (joined to a
+        // saved master_recipe) show name+thumbnail+grade; non-extracted
+        // candidates show domain + scores only.
+        wrap.innerHTML = rows.map((c, i) => {
+          const domain = (c.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+          const label = c.name || domain;
+          const img = (c.preview_image || '').trim();
+          const thumb = img ? `<span class="ed-t10-thumb"><img src="${escapeHtml(img)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
+          const star = c.selected ? `<span class="ed-t10-grade" title="selected winner">★</span>` : '';
+          const grade = c.grade ? `<span class="ed-t10-grade">${escapeHtml(c.grade)}</span>` : '';
+          const rk = (typeof c.rank_score === 'number') ? c.rank_score.toFixed(1) : '—';
+          const oup = (typeof c.ou_percentile === 'number') ? Math.round(c.ou_percentile) : '—';
+          const pwp = (typeof c.power_percentile === 'number') ? Math.round(c.power_percentile) : '—';
+          return `<a class="ed-t10-row" href="${escapeHtml(c.url || '#')}" target="_blank" rel="noopener" title="Open source page">
+              <span class="ed-t10-rank">${i + 1}</span>${thumb}
+              <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(label)} ${star}</span><span class="ed-t10-sub">${escapeHtml(domain)}</span></span>
+              <span class="ed-t10-metrics"><span class="ed-t10-ouline"><span class="ed-t10-ou">${rk}<small>RANK</small></span>${grade}</span><span class="ed-t10-dapa">ou ${oup} · pwr ${pwp}</span></span>
+            </a>`;
+        }).join('');
+      } catch (e) {
+        wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load cohort (${escapeHtml(String(e.message || e))}).</li>`;
       }
     }
 

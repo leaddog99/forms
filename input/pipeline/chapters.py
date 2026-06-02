@@ -32,6 +32,7 @@ from typing import Optional
 import numpy as np
 
 from input.pipeline.blend import rank_by_blend
+from input.pipeline.url_utils import normalize_url
 
 
 # Mirror constants from intake.build_query_batch. Keep in sync — if the
@@ -113,7 +114,13 @@ def replace_data_points_for_dish(
     conn.executemany(
         "INSERT INTO dish_run_data_points (dish_name, url, da, pa, created_at, model_version) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        [(dish_name, u, da, pa, now_iso, model_version) for u, da, pa in points],
+        # Store the NORMALIZED url — the canonical key the rest of the system
+        # uses (extract cache PK, master_recipes.url_normalized). Lets the
+        # cohort view join master_recipes cleanly for winner thumbnails, and
+        # collapses slash/www/tracking variants. (Cohort was already deduped
+        # by normalize_url at _multi_query_lookup, so no PK collisions here.)
+        [(dish_name, normalize_url(u) or u, da, pa, now_iso, model_version)
+         for u, da, pa in points],
     )
     conn.commit()
     return len(points)
@@ -171,7 +178,7 @@ def score_data_points_for_dish(
     conn.execute(
         "UPDATE dish_run_data_points SET selected = 0 WHERE dish_name = ?", (dish_name,)
     )
-    urls = [u for u in (selected_urls or []) if u]
+    urls = [normalize_url(u) or u for u in (selected_urls or []) if u]  # match the normalized rows
     if urls:
         marks = ",".join("?" * len(urls))
         conn.execute(
