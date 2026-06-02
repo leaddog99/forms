@@ -1693,6 +1693,14 @@
             </span>
             <span class="exc-chip-basis" id="score_exc_basis"></span>
           </div>
+          <!-- Matched dish: the vector NN match stored on _match at save time
+               (which canonical dish this recipe is). Shows the confident dish +
+               distance, or the closest candidates when nothing cleared the bar. -->
+          <div class="score-chip" id="score_match_chip">
+            <span class="score-label">Matched dish</span>
+            <span class="score-value empty" id="score_match_value">—</span>
+            <span class="exc-chip-basis" id="score_match_basis"></span>
+          </div>
         </div>
 
         <!-- Header: Title/Desc Left, Image Right -->
@@ -2490,13 +2498,46 @@
         excBasisEl.textContent = parts.join(' · ');
       }
 
+      // Matched dish — the vector NN match stored on _match at save time.
+      // Confident match shows the dish + distance; otherwise the closest
+      // candidates so the curator can see what it was near. textContent
+      // (not innerHTML) — dish names are data, keep them un-evaluated.
+      const match = (recipe && recipe._match) || null;
+      const matchValEl = document.getElementById('score_match_value');
+      const matchBasisEl = document.getElementById('score_match_basis');
+      const hasMatch = !!(match && (match.dish || (match.candidates && match.candidates.length)));
+      if (matchValEl) {
+        if (match && match.dish) {
+          matchValEl.textContent = match.dish;
+          matchValEl.classList.remove('empty');
+        } else if (match && match.candidates && match.candidates.length) {
+          matchValEl.textContent = 'no confident match';
+          matchValEl.classList.add('empty');
+        } else {
+          matchValEl.textContent = '—';
+          matchValEl.classList.add('empty');
+        }
+      }
+      if (matchBasisEl) {
+        let b = '';
+        if (match && match.dish) {
+          b = 'distance ' + (typeof match.distance === 'number' ? match.distance.toFixed(2) : '—');
+        } else if (match && match.candidates && match.candidates.length) {
+          b = 'closest: ' + match.candidates.slice(0, 3)
+            .map(c => c.dish + ' (' + (typeof c.distance === 'number' ? c.distance.toFixed(2) : '?') + ')')
+            .join(', ');
+        }
+        matchBasisEl.textContent = b;
+      }
+
       const strip = document.getElementById('scoringStrip');
       const hasAny = (
         sc.pageAuthority !== undefined ||
         sc.domainAuthority !== undefined ||
         sc.ouScore !== undefined ||
         sc.recipeScore !== undefined ||
-        (exc && exc.grade)
+        (exc && exc.grade) ||
+        hasMatch
       );
       if (strip) strip.classList.toggle('hidden', !hasAny);
     }
