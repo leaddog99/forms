@@ -737,6 +737,13 @@ def init_db():
             if "embedding" not in master_cols:
                 conn.execute("ALTER TABLE master_recipes ADD COLUMN embedding BLOB")
                 print("[MIGRATE] added master_recipes.embedding BLOB column")
+            # Same source-of-truth embedding on USER recipes: every save embeds
+            # the recipe so its vector is available for dish-matching, "find
+            # similar", dedup, and recommendations (not single-use). 2026-06-02.
+            recipes_cols = {row[1] for row in conn.execute("PRAGMA table_info(recipes)")}
+            if "embedding" not in recipes_cols:
+                conn.execute("ALTER TABLE recipes ADD COLUMN embedding BLOB")
+                print("[MIGRATE] added recipes.embedding BLOB column")
 
             # === users ===
             # Test scaffolding for multi-user flows until Ghost (or another
@@ -3484,35 +3491,39 @@ def _save_recipe_core(payload: dict) -> dict:
             # identity cleanly. Best-effort: failure doesn't break the
             # save (sqlite-vec may be absent, the embedder may fail,
             # etc. — the row still lands).
-            if user_id == 0 and seq_id is not None:
+            # Embed EVERY saved recipe (master AND user) and persist the vector
+            # on its row's `embedding` BLOB — the source of truth for
+            # dish-matching, "find similar", dedup, and recommendations.
+            # compose_recipe_text leans on the identity card / dishSignal so the
+            # vector captures dish identity cleanly. Master rows additionally
+            # upsert the recipes_master_vec KNN index (the live recommender);
+            # user rows just store the BLOB (a recipes_vec index can derive from
+            # it later). Best-effort: a failure here never breaks the save.
+            if seq_id is not None:
                 try:
                     from input.pipeline.embeddings import (
-                        compose_recipe_text, embed_text,
+                        compose_recipe_text, embed_text, vec_to_bytes,
                     )
                     from input.pipeline import vector_store
-                    from input.pipeline.embeddings import vec_to_bytes
                     txt = compose_recipe_text(recipe_dict)
                     if txt.strip():
                         rec_vec = embed_text(txt)
-                        vector_store.enable_vec(conn)
-                        master_block_for_vec = recipe_dict.get("_master") or {}
-                        ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
-                        dish_for_vec = master_block_for_vec.get("dish") or None
-                        # Source-of-truth: persist the vector on the row so
-                        # recipes_master_vec can be rebuilt for free (and the
-                        # .sql backup preserves it). The vec0 upsert is the
-                        # derived index used for live KNN.
                         conn.execute(
-                            "UPDATE master_recipes SET embedding = ? WHERE id = ?",
+                            f"UPDATE {table} SET embedding = ? WHERE id = ?",
                             (vec_to_bytes(rec_vec), seq_id),
                         )
-                        vector_store.upsert_recipe_vector(
-                            conn, seq_id, rec_vec,
-                            chapter=ch, dish=dish_for_vec,
-                        )
-                        print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
+                        if user_id == 0:
+                            vector_store.enable_vec(conn)
+                            ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
+                            dish_for_vec = (recipe_dict.get("_master") or {}).get("dish") or None
+                            vector_store.upsert_recipe_vector(
+                                conn, seq_id, rec_vec, chapter=ch, dish=dish_for_vec,
+                            )
+                            print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
+                        else:
+                            print(f"[VEC] embedded user recipe {seq_id} -> recipes.embedding")
                 except Exception as e:
-                    print(f"[VEC] master recipe vec upsert failed: {e}")
+                    print(f"[VEC] recipe embed/upsert failed: {e}")
     except Exception as e:
         print(f"[ERROR] Database error: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
