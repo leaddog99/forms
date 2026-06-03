@@ -4215,55 +4215,59 @@ async def extract_from_markdown_endpoint(
         usage_log: list = []
         t_start = time.perf_counter()
 
-        # === Extraction-stage translation (bookmarklet path) =======
-        # Markdown comes from the bookmarklet/browser, so there are no
-        # HTTP headers or <html lang>. Detect language from the markdown
-        # body via fasttext (the third tier of detect_language). If
-        # non-English, translate before extraction. JSON-LD blob from
-        # the envelope is dropped on translation since its content
-        # would still be source-language.
-        translation_meta_bm: dict | None = None
-        try:
-            from intake.translate import (
-                is_non_english, detect_language, translate_extraction_markdown,
-            )
-            page_lang_bm = detect_language("", headers=None, visible_text=effective_md)
-            if is_non_english(page_lang_bm):
-                t_xlate0 = time.perf_counter()
-                try:
-                    xr = translate_extraction_markdown(effective_md, page_lang_bm)
-                    xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
-                    if xr.plausibility_ok:
-                        effective_md = xr.translated_markdown
-                        # Drop bookmarklet-harvested JSON-LD so the
-                        # downstream fast lane doesn't reach for the
-                        # original-language structured data.
-                        if envelope.get("jsonld"):
-                            envelope["jsonld"] = []
-                        translation_meta_bm = {
-                            "originalLanguage": xr.source_language,
-                            "translated": True,
-                            "translatedAt": datetime.now(timezone.utc).isoformat(),
-                            "originalTitle": xr.original_title or effective_title or "",
-                        }
-                        timings["translate_ms"] = xlate_ms
-                        print(f"[XLATE] (bookmarklet) translated from "
-                              f"{xr.source_language_name} ({xlate_ms}ms)")
-                    else:
-                        print(f"[XLATE] (bookmarklet) suspect "
-                              f"({xr.plausibility_reason}); using original")
-                except Exception as e:
-                    print(f"[XLATE] (bookmarklet) failed: "
-                          f"{type(e).__name__}: {e}; using original")
-        except ImportError:
-            pass
-
+        # Cache lookup FIRST — before the expensive translation. A non-English
+        # bookmarklet recipe that is already cached (stored as translated
+        # English) must return instantly, NOT pay the ~30s translation before
+        # the lookup even runs. This mirrors the URL path's speculative
+        # fast-path: never do expensive work for a result we already have.
         url_norm = normalize_url(effective_url) if effective_url else ""
         recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
         path_used = "cache-hit" if recipe is not None else ""
+        translation_meta_bm: dict | None = None
 
         if recipe is None:
+            # === Extraction-stage translation (bookmarklet path), MISS only ===
+            # Markdown comes from the bookmarklet/browser, so there are no HTTP
+            # headers or <html lang>. Detect language from the markdown body via
+            # fasttext (tier 3 of detect_language). If non-English, translate
+            # before extraction. JSON-LD blob from the envelope is dropped on
+            # translation since its content would still be source-language.
+            try:
+                from intake.translate import (
+                    is_non_english, detect_language, translate_extraction_markdown,
+                )
+                page_lang_bm = detect_language("", headers=None, visible_text=effective_md)
+                if is_non_english(page_lang_bm):
+                    t_xlate0 = time.perf_counter()
+                    try:
+                        xr = translate_extraction_markdown(effective_md, page_lang_bm)
+                        xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
+                        if xr.plausibility_ok:
+                            effective_md = xr.translated_markdown
+                            # Drop bookmarklet-harvested JSON-LD so the
+                            # downstream fast lane doesn't reach for the
+                            # original-language structured data.
+                            if envelope.get("jsonld"):
+                                envelope["jsonld"] = []
+                            translation_meta_bm = {
+                                "originalLanguage": xr.source_language,
+                                "translated": True,
+                                "translatedAt": datetime.now(timezone.utc).isoformat(),
+                                "originalTitle": xr.original_title or effective_title or "",
+                            }
+                            timings["translate_ms"] = xlate_ms
+                            print(f"[XLATE] (bookmarklet) translated from "
+                                  f"{xr.source_language_name} ({xlate_ms}ms)")
+                        else:
+                            print(f"[XLATE] (bookmarklet) suspect "
+                                  f"({xr.plausibility_reason}); using original")
+                    except Exception as e:
+                        print(f"[XLATE] (bookmarklet) failed: "
+                              f"{type(e).__name__}: {e}; using original")
+            except ImportError:
+                pass
+
             # JSON-LD fast lane — the bookmarklet harvests JSON-LD in the
             # browser and embeds it in the markdown body under a fenced
             # ```json``` block. When that block exists and parses to a
@@ -4483,7 +4487,23 @@ def extract_recipe_from_url(
     try:
         from intake.translate import (
             is_non_english, language_name, translate_extraction_markdown,
+            detect_language,
         )
+        # `md_result['language']` is detected on the narrowed main-content node
+        # and trusts <html lang> outright, so a thin sample or a bilingual
+        # template (English <html lang>, foreign content) can mislabel a
+        # foreign page 'en'. That silently skips translation -> the recipe is
+        # left in the source language AND is_recipe scores untranslated text
+        # (the jsonld-direct fast lane has no translation of its own, so a miss
+        # here is exactly how a Greek recipe + recipeScore=0 lands). When the
+        # cheap signal says English, re-detect on the FULL assembled markdown
+        # (JSON-LD + body) the way the staged/bookmarklet path already does; a
+        # non-English result wins, because a miss biases to the unsafe
+        # "no translation" direction.
+        if not is_non_english(page_lang):
+            page_lang = detect_language(
+                "", headers=None, visible_text=md_result.get("markdown", "")
+            ) or page_lang
         if is_non_english(page_lang):
             t_xlate0 = time.perf_counter()
             try:

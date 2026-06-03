@@ -21,6 +21,7 @@ The JSON-LD section is omitted when no Recipe block is found. Page chrome
 """
 import copy
 import json
+import re
 import time
 from typing import Any, Optional
 
@@ -278,14 +279,57 @@ def _is_recipe_type(node_type: Any) -> bool:
     return False
 
 
+# Leading <?xml ... encoding="..."?> declaration. lxml (under extruct) refuses
+# to parse a *str* that carries one ("Unicode strings with encoding declaration
+# are not supported"); some Joomla/older-CMS pages emit it inside what is served
+# as text/html (e.g. e-sofia.gr). We strip it and retry.
+_XML_DECL_RE = re.compile(r"^\s*<\?xml[^>]*\?>", re.IGNORECASE)
+
+# Un-wrap a Wayback Machine URL to the original publisher URL it archived:
+# `https://web.archive.org/web/<ts>id_/https://site/path` -> `https://site/path`.
+# Wayback is a fetch *transport* for dead live pages; provenance, cache-key, and
+# Moz scoring must key on the real publisher, not archive.org (DA 94). This
+# handles the case where the INPUT url is already an archive URL (the batch
+# stamps the working snapshot as the entry url for dead pages).
+_WAYBACK_RE = re.compile(r"^https?://web\.archive\.org/web/[^/]+/(https?://.+)$",
+                         re.IGNORECASE)
+
+
+def _unwrap_wayback_url(u: str) -> str:
+    m = _WAYBACK_RE.match(u or "")
+    return m.group(1) if m else (u or "")
+
+
 def extract_recipe_jsonld(html: str, base_url: str) -> list[dict]:
     """Return all JSON-LD objects whose @type is (or includes) Recipe.
 
     Handles the common @graph wrapper that schema.org sites use to nest
     multiple linked-data nodes inside a single script block.
+
+    Resilient by contract: JSON-LD is an *optional* enrichment, so any parser
+    failure returns [] rather than propagating — a page that can't be
+    JSON-LD-parsed still converts to markdown and extracts via the LLM path.
     """
-    data = extruct.extract(html, base_url=base_url, syntaxes=["json-ld"],
-                           uniform=True)
+    try:
+        data = extruct.extract(html, base_url=base_url, syntaxes=["json-ld"],
+                               uniform=True)
+    except ValueError as e:
+        # Encoding-declaration case is recoverable: strip the leading <?xml ?>
+        # and retry once. Anything else → JSON-LD is optional, return [].
+        if "encoding declaration" in str(e).lower():
+            try:
+                data = extruct.extract(_XML_DECL_RE.sub("", html, count=1).lstrip(),
+                                       base_url=base_url, syntaxes=["json-ld"],
+                                       uniform=True)
+            except Exception as e2:
+                print(f"[jsonld] parse failed after decl-strip for {base_url!r}: {e2}")
+                return []
+        else:
+            print(f"[jsonld] parse failed for {base_url!r}: {e}")
+            return []
+    except Exception as e:
+        print(f"[jsonld] parse failed for {base_url!r}: {e}")
+        return []
     out: list[dict] = []
     for item in data.get("json-ld", []) or []:
         if _is_recipe_type(item.get("@type")):
@@ -510,6 +554,18 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
             timings["wayback_timestamp"] = fetch_meta.get("timestamp")
 
     base_url = get_base_url(html, final_url)
+    # When the page was served from the Wayback Machine, `final_url` is an
+    # archive.org URL — but that is only the fetch *transport*. For provenance,
+    # cache-keying, and Moz scoring we must use the ORIGINAL site URL, or the
+    # recipe gets stamped (and scored) as archive.org (DA 94) instead of the
+    # real publisher. base_url stays the archive URL so relative links in the
+    # archived HTML still resolve.
+    source_url = url if fetch_meta.get("source") == "wayback" else final_url
+    # Un-wrap an archive.org URL to the original publisher — covers BOTH an
+    # internal Wayback fallback (final_url is archive) AND an input that is
+    # already an archive snapshot (the batch passes the working snapshot for a
+    # dead live page). Without this the recipe is keyed/scored as archive.org.
+    source_url = _unwrap_wayback_url(source_url)
     soup = BeautifulSoup(html, "lxml")
 
     title = ""

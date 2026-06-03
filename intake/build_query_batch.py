@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -723,7 +724,33 @@ def _compute_custom_ou(entries: list[dict]) -> dict:
     }
 
 
-def _min_ou_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
+# Two-letter TLDs that are used like generic gTLDs rather than as a real
+# country signal — a `site:` operator on one of these is NOT treated as a
+# foreign-locale batch. Any OTHER two-letter TLD (.gr, .it, .fr, .de, .es, …)
+# in a `site:` operator IS.
+_GENERIC_2L_TLDS = {"io", "co", "ai", "me", "tv", "cc", "ly", "fm", "gg", "app", "dev"}
+_SITE_TLD_RE = re.compile(r"site:\s*(?:https?://)?(?:www\.)?[^\s/]*\.([a-z]{2})\b",
+                          re.IGNORECASE)
+
+
+def _query_targets_foreign_country(queries: list[str]) -> bool:
+    """TEMPORARY heuristic: True when a query pins results to a country via a
+    `site:.<ccTLD>` operator (e.g. `site:.gr`). Such batches harvest
+    low-authority foreign publishers that the global/US-calibrated OU baseline
+    scores negative almost by construction, so the min-OU floor is relaxed for
+    them (see `_min_ou_filter`). Replace once dishes carry an explicit
+    locale/country field — see docs/dish-variants-membership.md §5/§7.
+    """
+    for q in queries or []:
+        for m in _SITE_TLD_RE.finditer(q or ""):
+            tld = m.group(1).lower()
+            if tld != "us" and tld not in _GENERIC_2L_TLDS:
+                return True
+    return False
+
+
+def _min_ou_filter(entries: list[dict], *,
+                   drop_below_threshold: bool = True) -> tuple[list[dict], list[dict]]:
     """Drop entries whose Moz OU score is below MIN_OU_SCORE (default 0.0).
 
     Negative OU is Moz literally saying the page under-performs its
@@ -732,14 +759,24 @@ def _min_ou_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     beef-stew case (OU=-6.64, slipped through every other filter on
     the first beef stew run) is the motivating example. Page-quality
     floor — separate concern from rank_by_ou's top-N truncation.
+
+    `drop_below_threshold=False` relaxes the negative-OU floor for
+    foreign-locale batches (e.g. `site:.gr`): the global/US-calibrated OU
+    baseline scores low-authority foreign publishers negative almost by
+    construction, so the floor would cull genuine hero recipes purely for
+    being non-US. Unscoreable (None) entries are still dropped — ranking
+    needs an OU. TEMPORARY until foreign cohorts get their own fit
+    (docs/dish-variants-membership.md §5).
     """
     kept, dropped = [], []
     for i, e in enumerate(entries, start=1):
         ou = e.get("ou")
         # None OU happens when Moz didn't return ou_score for the page;
-        # treat as "can't decide quality" and drop. Stricter than the
-        # rank step's -1e9 sentinel which only pushes them to the back.
-        if ou is None or ou < MIN_OU_SCORE:
+        # treat as "can't decide quality" and drop (always — ranking needs
+        # an OU). The negative-threshold cut is what the relax flag governs.
+        unscoreable = ou is None
+        below = (not unscoreable) and drop_below_threshold and ou < MIN_OU_SCORE
+        if unscoreable or below:
             e["_dropped_reason"] = f"ou<{MIN_OU_SCORE} (ou={ou})"
             dropped.append(e)
             ou_disp = f"{ou:.2f}" if isinstance(ou, (int, float)) else str(ou)
@@ -838,8 +875,15 @@ def build_batch(
     ]
     ou_fit = _compute_custom_ou(entries)
 
-    print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE})")
-    entries, dropped_low_ou = _min_ou_filter(entries)
+    # Foreign-locale batches (e.g. `site:.gr`) harvest low-authority
+    # publishers the global/US-calibrated OU baseline scores negative by
+    # construction; relax the negative-OU floor so they aren't culled for
+    # being non-US. TEMPORARY heuristic off the query text until dishes carry
+    # an explicit locale (docs/dish-variants-membership.md §5/§7).
+    foreign_locale = _query_targets_foreign_country(queries)
+    relax_note = "  — RELAXED (foreign-locale batch)" if foreign_locale else ""
+    print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE}){relax_note}")
+    entries, dropped_low_ou = _min_ou_filter(entries, drop_below_threshold=not foreign_locale)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_low_ou)}")
 
     print(f"\n[7/7] rank by OU/power blend "

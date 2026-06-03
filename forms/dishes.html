@@ -397,13 +397,28 @@
         <p>Or click <strong>+ Add new dish</strong> to create one.</p>
       </div>
     </main>
+    <!-- Run-log panel, pinned at the bottom of the detail column. It is a
+         SIBLING of #detailPanel (which renderDetail rebuilds via innerHTML),
+         so it survives clicks/re-renders instead of vanishing. Shows the
+         selected dish's latest SAVED log inline, streams live during a run,
+         and offers a direct download of the saved log file. -->
+    <section class="live-log" id="dishLogPanel" style="display:none">
+      <div class="live-log-header">
+        <strong id="dishLogTitle">Run log</strong>
+        <span class="live-log-status" id="dishLogStatus">idle</span>
+        <span id="dishLogMeta" style="font-size:0.8em;color:var(--muted)"></span>
+        <a id="dishLogDownload" download href="#"
+           style="margin-left:auto;color:#d8c7a8;font-size:0.82em;text-decoration:underline">download</a>
+      </div>
+      <pre class="live-log-body" id="dishLogBody"></pre>
+    </section>
   </div>
 
   <footer class="action-footer" id="actionFooter" style="display:none">
     <div class="button-row" id="footerButtons"></div>
   </footer>
 
-  <script src="/forms/library-shell.js?v=20260603a"></script>
+  <script src="/forms/library-shell.js?v=20260603b"></script>
   <script>
     const API = window.location.origin;
     const $ = (sel) => document.querySelector(sel);
@@ -515,6 +530,11 @@
 
     // ===== Detail panel rendering =====
     function renderDetail() {
+      // Hide the persistent log panel by default; renderViewCard's
+      // loadDishLog re-shows it (with the selected dish's saved log) when a
+      // dish is actually in view. Add/edit/empty modes have no log.
+      const _lp = document.getElementById('dishLogPanel');
+      if (_lp) _lp.style.display = 'none';
       if (mode === 'empty' || (mode === 'view' && !dishes[selectedName])) {
         $('#detailPanel').innerHTML =
           `<div class="detail-empty">` +
@@ -651,9 +671,9 @@
 
     function renderViewCard(d) {
       const queries = Array.isArray(d.queries) ? d.queries : [];
-      const logLinkHtml = d.last_run_log_url
-        ? ` · <a href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline">view latest log</a>`
-        : '';
+      // The run log now lives in the persistent panel pinned at the bottom
+      // (loadDishLog below) — no more new-tab "view latest log" window.
+      const logLinkHtml = '';
       $('#detailPanel').innerHTML =
         `<div class="detail-card" id="detailCard">` +
           `<h2>${escapeHtml(d.name)} ${statusBadge(d)}</h2>` +
@@ -742,6 +762,9 @@
       // the fetch returns, so an empty/never-refreshed dish doesn't
       // flash "Rejected URLs" briefly before disappearing.
       loadRejects(d.name);
+      // Load this dish's latest saved run log into the persistent bottom
+      // panel (or hide it when the dish has never been run).
+      loadDishLog(d);
       // Wire the lazy data-points table: load the (URL, DA, PA) rows
       // the first time the <details> is opened. Free for dishes whose
       // curator never expands it.
@@ -1318,8 +1341,25 @@
         return;
       }
 
-      // Build / reveal the live-log panel
+      // The background poll runner is off, so a freshly-enqueued job sits
+      // 'queued' until something drains it. Kick the server-side drain so THIS
+      // dish's job actually runs and streams into the in-form panel below —
+      // the whole run stays in the dish form; no nav "Run queued jobs" overlay.
+      // (Best-effort: on 409 the job is already in flight, which is fine.)
+      try {
+        await fetch(`${API}/jobs/run-queued`, { method: 'POST' });
+      } catch (e) { /* the stream still attaches if it ran elsewhere */ }
+
+      // Build / reveal the live-log panel (clear any saved-log text first so
+      // the live stream starts clean).
       const liveLog = ensureLiveLogPanel(job_id);
+      liveLog.bodyEl.innerHTML = '';
+      liveLog.statusEl.textContent = 'queued';
+      liveLog.statusEl.className = 'live-log-status queued';
+      document.getElementById('dishLogMeta').textContent = '';
+      // The panel is pinned at the bottom of a long detail page; bring it into
+      // view so the run is visible without scrolling down.
+      document.getElementById('dishLogPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
       setFeedback(`Job #${job_id} queued`, 'info');
 
       // Connect to the SSE stream
@@ -1349,6 +1389,8 @@
         let data = {};
         try { data = JSON.parse(e.data); } catch (err) {}
         stream.close();
+        liveLog.statusEl.textContent = data.status || 'done';
+        liveLog.statusEl.className = 'live-log-status ' + statusClass(data.status);
         // Refetch dish row + result panel from the completed job.
         try {
           const dishRes = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`);
@@ -1358,13 +1400,11 @@
             mode = 'view';
             renderList();
             renderDetail();
-            // Re-attach the live log to the new view card so the user
-            // can still see the trace + then append the result panel.
-            const refreshedLive = ensureLiveLogPanel(job_id);
-            // Restore the lines we already streamed (renderDetail wiped them)
-            refreshedLive.bodyEl.innerHTML = liveLog.bodyEl.innerHTML;
-            refreshedLive.statusEl.textContent = data.status || 'done';
-            refreshedLive.statusEl.className = 'live-log-status ' + (data.status || 'done');
+            // The log panel is a sibling of #detailPanel, so renderDetail
+            // didn't wipe it — renderViewCard -> loadDishLog reloads the
+            // dish's COMPLETE saved log (better than the partial streamed
+            // lines) and sets the final status pill. Just append the
+            // run-result summary to the rebuilt detail card.
             if (data.result) appendResultPanel(data.result);
             if (data.error_detail) appendErrorPanel(data.error_detail);
           }
@@ -1391,28 +1431,62 @@
     // Live log panel: a console-style growing div pinned under the dish
     // header that shows lines as they stream in from the SSE 'log' event.
     function ensureLiveLogPanel(job_id) {
-      let panel = document.getElementById('liveLog');
-      if (panel) return {
-        statusEl: panel.querySelector('.live-log-status'),
-        bodyEl: panel.querySelector('.live-log-body'),
-      };
-      const detail = document.getElementById('detailCard');
-      if (!detail) return { statusEl: { textContent: '', className: '' }, bodyEl: { appendChild() {}, innerHTML: '' } };
-      panel = document.createElement('div');
-      panel.id = 'liveLog';
-      panel.className = 'live-log';
-      panel.innerHTML =
-        `<div class="live-log-header">` +
-          `<strong>Job #${job_id}</strong>` +
-          `<span class="live-log-status queued">queued</span>` +
-          `<a href="/jobs/${job_id}" target="_blank" rel="noopener" style="color:var(--muted);font-size:0.82em;margin-left:auto">status JSON →</a>` +
-        `</div>` +
-        `<pre class="live-log-body"></pre>`;
-      detail.appendChild(panel);
+      // The persistent panel pinned at the bottom of the detail column. We
+      // stream into the SAME element used to show saved logs, so the live
+      // trace appears in place and survives re-renders.
+      const panel = document.getElementById('dishLogPanel');
+      panel.style.display = '';
+      if (job_id != null) {
+        document.getElementById('dishLogTitle').textContent = `Run log · Job #${job_id}`;
+      }
       return {
-        statusEl: panel.querySelector('.live-log-status'),
-        bodyEl: panel.querySelector('.live-log-body'),
+        statusEl: document.getElementById('dishLogStatus'),
+        bodyEl: document.getElementById('dishLogBody'),
       };
+    }
+
+    // Map a run status ('success' | 'error:<reason>' | 'running' | 'queued'
+    // | 'cancelled') to a live-log-status CSS modifier.
+    function statusClass(s) {
+      s = (s || '').toLowerCase();
+      if (s.startsWith('error') || s.includes('error') || s === 'cancelled') return 'error';
+      if (s === 'success') return 'success';
+      if (s === 'running') return 'running';
+      if (s === 'queued') return 'queued';
+      return '';
+    }
+
+    // Load a dish's latest SAVED run log into the persistent bottom panel.
+    // The per-run file (logs/job_dish-refresh_<n>_<dish>_<ts>.log) is written
+    // server-side every refresh; showing it inline means the selected dish's
+    // trace is always visible in the form — no new tab, no disappearing
+    // window — and the header's "download" anchor saves that exact file.
+    async function loadDishLog(d) {
+      const panel  = document.getElementById('dishLogPanel');
+      const body   = document.getElementById('dishLogBody');
+      const status = document.getElementById('dishLogStatus');
+      const title  = document.getElementById('dishLogTitle');
+      const meta   = document.getElementById('dishLogMeta');
+      const dl     = document.getElementById('dishLogDownload');
+      if (!d || !d.last_run_log_url) { panel.style.display = 'none'; return; }
+      panel.style.display = '';
+      title.textContent = 'Run log · ' + d.name;
+      status.textContent = d.last_run_status || 'done';
+      status.className = 'live-log-status ' + statusClass(d.last_run_status);
+      meta.textContent =
+        (d.last_refreshed ? 'last run ' + fmtDate(d.last_refreshed) : '') +
+        (d.last_run_count != null ? ' · ' + d.last_run_count + ' saved' : '');
+      dl.href = d.last_run_log_url;
+      dl.download = d.last_run_log_filename || ('dish-log-' + d.name + '.log');
+      body.textContent = 'Loading…';
+      try {
+        const res = await fetch(d.last_run_log_url);
+        body.textContent = res.ok ? (await res.text())
+                                  : ('Could not load log (' + res.status + ')');
+      } catch (err) {
+        body.textContent = 'Failed to load log: ' + ((err && err.message) || err);
+      }
+      body.scrollTop = body.scrollHeight;
     }
 
     function appendLiveLogLine(liveLog, line) {

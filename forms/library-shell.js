@@ -79,6 +79,11 @@
     if (!state.sidebar) return;
     state.sidebar.classList.add('open');
     document.body.classList.add('sidebar-open');
+    // The menu lives at the top of the document, so on a scrolled-down page
+    // it opens above the fold. Auto-scroll to the top so it's visible without
+    // the user manually scrolling up.
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    catch (_) { window.scrollTo(0, 0); }
   }
   function closeSidebar() {
     if (!state.sidebar) return;
