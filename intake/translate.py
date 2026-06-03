@@ -180,17 +180,32 @@ RULES:
    term a cookbook editor would use: αυγολέμονο -> avgolemono (loanword) NOT
    "egg-lemon sauce".
 
-6. When a fenced ```json``` block appears (typically schema.org Recipe JSON-LD),
+6. Normalize recipe SECTION HEADINGS and standard recipe labels to the
+   canonical English culinary term, NOT a literal word-for-word translation.
+   Map to the word an English cookbook uses (Greek shown; apply the equivalent
+   for whatever source language you translate):
+     - Υλικά / Συστατικά         -> "Ingredients"  (never "Materials"/"Components")
+     - Εκτέλεση / Διαδικασία /
+       Οδηγίες / Μέθοδος          -> "Instructions" or "Method"
+                                     (never "Implementation"/"Execution"/"Procedure")
+     - Μερίδες                    -> "Servings"     (never "Portions")
+     - Χρόνος προετοιμασίας -> "Prep time"; Χρόνος μαγειρέματος/ψησίματος -> "Cook time"
+     - Συμβουλές / Μυστικά        -> "Tips"         (never "Advice"/"Secrets")
+     - Παρασκευή / Προετοιμασία   -> "Preparation"
+   A recipe detector keys on these exact words, so a literal mistranslation
+   makes a real recipe look like none.
+
+7. When a fenced ```json``` block appears (typically schema.org Recipe JSON-LD),
    preserve the JSON structure exactly — keys, brackets, commas, types — but
    translate the string VALUES. So `"name": "Σπανακόρυζο"` becomes
    `"name": "Spanakorizo"`, and `"recipeIngredient": ["σπανάκι 500γρ"]` becomes
    `"recipeIngredient": ["spinach 500g"]`. Numeric values, ISO duration strings
    ("PT15M"), URLs, and @type / @context values stay untouched.
 
-7. Preserve markdown structure exactly: headings, lists, links, image URLs.
-   Do not invent or omit sections.
+8. Preserve markdown STRUCTURE exactly — headings, lists, links, image URLs —
+   but translate heading WORDING per rule 6. Do not invent or omit sections.
 
-8. Preserve author names, brand names, and URLs in original form.
+9. Preserve author names, brand names, and URLs in original form.
 
 Output ONLY the translated markdown. No preamble, no explanation, no code fences."""
 
