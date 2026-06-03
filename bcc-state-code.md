@@ -1472,6 +1472,9 @@ The 29MB binary was tracked → every touching commit stored a fresh full copy (
 ### Verification + remaining
 Both files `py_compile` clean, module imports, `/screenshot` route registered, BLOB store passed a store/read/dedup/miss roundtrip test. **Not yet live-tested** against the running server (no `--reload`; needs `bcc_restart.bat`). Follow-up: image/pdf/staged paths got the timer fix but NOT the identity-card-before-write restructure (no screenshot there; URL path was the reported case) — easy parity later.
 
+### Docs
+Full plain-English walkthrough of the whole caching system written to **`docs/extract-cache.md`** — the two stores (`llm_extract_cache` / `media.db`), url-only key + freshness columns, 30-day TTL, the `static_subset` boundary, the speculative fast-path, complete-vs-incomplete self-healing, the screenshot BLOB store, and the "894ms-but-6s" bug explained. Start there for anything cache-related.
+
 ---
 
 ## Session log — 2026-06-02 — verbatim SERP queries, quadratic-only OU, Stage-2 scoring ledger + cohort panel; DataForSEO rejected
