@@ -8,7 +8,7 @@
        (editor-shell.css + LibraryShell.initEditorNav). Second clone of the
        a/c/d/v template — the editable-record case. See
        memory/project_admin_editor_nav.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260531b">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260603a">
   <style>
     /* page-specific bits (avatar, identity strip) — shell stays generic */
     .u-avatar{ width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff;
@@ -68,7 +68,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260531a"></script>
+  <script src="/forms/library-shell.js?v=20260603a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -206,9 +206,9 @@
         </section>
 
         <div class="ed-actions">
-          <button type="button" class="ed-btn primary" id="saveBtn">Save changes</button>
-          <button type="button" class="ed-btn" id="loginBtn">Log in as user</button>
-          <button type="button" class="ed-btn danger" id="deleteBtn">Delete user</button>
+          <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
+          <button type="button" class="ed-btn" id="loginBtn">Log in</button>
+          <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
 
@@ -219,6 +219,7 @@
       $('#saveBtn').addEventListener('click', () => doSave(u));
       $('#loginBtn').addEventListener('click', () => login(u.user_id));
       $('#deleteBtn').addEventListener('click', () => doDelete(u));
+      $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
     }
 
     function login(uid){
@@ -250,9 +251,9 @@
         document.querySelector('.u-head .u-avatar').textContent = initials(data.name);
         renderList();
         btn.textContent = 'Saved ✓'; btn.classList.add('done'); hint.textContent = 'Saved';
-        setTimeout(() => { btn.textContent = 'Save changes'; btn.classList.remove('done'); btn.disabled = false; }, 1900);
+        setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('done'); }, 1900);  // stays disabled until next edit
       } catch (e) {
-        btn.disabled = false; btn.textContent = 'Save changes';
+        btn.disabled = false; btn.textContent = 'Save';
         hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
       }
     }
@@ -300,7 +301,7 @@
           </div>
         </section>
         <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
-          <button type="button" class="ed-btn primary" id="createBtn">Create user</button>
+          <button type="button" class="ed-btn primary" id="createBtn">Create</button>
           <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
@@ -326,7 +327,7 @@
         renderList(); renderMain();
         flash('User created');
       } catch (e) {
-        btn.disabled = false; btn.textContent = 'Create user';
+        btn.disabled = false; btn.textContent = 'Create';
         hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
       }
     }
@@ -349,6 +350,10 @@
       $('#searchToggle').classList.toggle('active', !c.hidden);
       if (!c.hidden) $('#search').focus();
     });
+    // Dirty-tracker: Save stays disabled until something in the detail changes.
+    const _markDirty = () => { const b = $('#saveBtn'); if (b) b.disabled = false; };
+    $('#page').addEventListener('input', _markDirty);
+    $('#page').addEventListener('change', _markDirty);
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });

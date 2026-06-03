@@ -32,6 +32,7 @@ from typing import Optional
 import numpy as np
 
 from input.pipeline.blend import rank_by_blend
+from input.pipeline.site_names import friendly_site_name
 from input.pipeline.url_utils import normalize_url
 
 
@@ -366,7 +367,8 @@ def compute_chapter_top_recipes(
             "da": s.get("domainAuthority"),
             "pa": s.get("pageAuthority"),
             "grade": exc.get("grade"),
-            "site_name": src.get("siteName") or "",
+            "site_name": friendly_site_name(
+                src.get("siteName"), src.get("originalUrl")),
             "source_url": src.get("originalUrl") or "",
             "preview_image": src.get("previewImage") or "",
             "fallback_image": (img[0] if isinstance(img, list) and img else None),

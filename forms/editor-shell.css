@@ -207,6 +207,11 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-field label{ display:block; font-size:.74em; color:var(--ed-key); text-transform:uppercase; letter-spacing:.06em; margin-bottom:7px; }
 .ed-field input,.ed-field select{ width:100%; font:inherit; font-weight:300; font-size:.95em; padding:9px 12px; border:1px solid var(--ed-hairline); border-radius:10px; background:var(--card); color:var(--ink); }
 .ed-field input:focus,.ed-field select:focus{ outline:none; border-color:var(--accent); }
+/* inline checkbox + label (e.g. the domains "allowed" flag) — overrides the
+   uppercase block label style above for a normal-case inline control. */
+.ed-check{ display:flex; align-items:center; gap:9px; font-size:.95em; font-weight:300;
+  text-transform:none; letter-spacing:normal; color:var(--ink); cursor:pointer; margin-top:6px; }
+.ed-check input{ width:auto; margin:0; accent-color:var(--accent); }
 
 /* metadata accordion (source records) */
 /* summary styled like .ed-block-label so a collapsible header sits at the

@@ -74,6 +74,9 @@ backup.log
 # regenerated every restart, never source.
 uvicorn_stdout.log
 uvicorn_stderr.log
+# Same, for detached agent-launched restarts.
+uvicorn_stdout_agent.log
+uvicorn_stderr_agent.log
 # Per-job runtime logs from the async job system. The dishes form
 # links to the latest via /logs/<filename>; never source.
 logs/

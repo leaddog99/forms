@@ -143,6 +143,7 @@ from input.pipeline.config import (  # noqa: E402
     SAVE_GATE_MIN_INGREDIENTS,
     SAVE_GATE_MIN_INSTRUCTIONS,
 )
+from input.pipeline.site_names import friendly_site_name  # noqa: E402
 
 
 def _bcc_permalink(recipe_id: str) -> str:
@@ -2018,7 +2019,8 @@ def list_dish_top_recipes(name: str):
                     "name": d.get("name") or "(no title)",
                     "rank": master.get("rank"),
                     "source_url": source.get("originalUrl") or "",
-                    "site_name": source.get("siteName") or "",
+                    "site_name": friendly_site_name(
+                        source.get("siteName"), source.get("originalUrl")),
                     "bcc_url": _bcc_link_permalink(recipe_uuid),
                     "queries": master.get("queries") or [],
                     "grade": exc.get("grade"),
@@ -2439,6 +2441,133 @@ def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
     except Exception as e:
         print(f"[ERROR] patch_chapter({name!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+# =========================================================================
+# Domain master — the canonical per-publisher record (display name, story,
+# extraction tips, country/language provenance, allow/deny, DA). Backs the
+# friendly-site-name resolver and the a/c/d Domains editor. The `domains`
+# table is the source of truth; domain_display_names.json is its seed.
+# =========================================================================
+@app.get("/domains")
+def list_domains_endpoint():
+    """All domain-master rows, seeded from the JSON bootstrap on first call."""
+    try:
+        from input.pipeline import domains_lib
+        with sqlite3.connect(DB_PATH) as conn:
+            domains_lib.ensure_domains_table(conn)
+            if conn.execute("SELECT COUNT(*) FROM domains").fetchone()[0] == 0:
+                domains_lib.seed_domains(conn)
+            return domains_lib.list_domains(conn)
+    except Exception as e:
+        print(f"[ERROR] list_domains failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/domains")
+def create_domain_endpoint(payload: dict = Body(...)):
+    """Create a curator-defined domain row (host is the key)."""
+    # TODO: gate with _require_perm(request, "edit_master") when the admin
+    # surface is exposed publicly — ungated in dev to match the chapters editor.
+    from input.pipeline import domains_lib
+    host = (payload.get("domain") or "").strip()
+    if not host:
+        raise HTTPException(status_code=400, detail="domain (host) is required")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return domains_lib.create_domain(conn, host, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] create_domain failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Create error: {e}")
+
+
+@app.get("/domains/{domain}")
+def get_domain_endpoint(domain: str):
+    try:
+        from input.pipeline import domains_lib
+        with sqlite3.connect(DB_PATH) as conn:
+            row = domains_lib.get_domain(conn, domain)
+            if row is None:
+                raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
+            return row
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] get_domain({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/domains/{domain}/recipes")
+def domain_recipes_endpoint(domain: str):
+    """Recipes sourced from this domain, split master vs user, for the
+    editor's browse dropdowns. Computed live and stores the two counts back
+    on the domain row (refresh-on-open); the lists themselves are not stored."""
+    try:
+        from input.pipeline import domains_lib
+        with sqlite3.connect(DB_PATH) as conn:
+            return domains_lib.recipes_for_domain(conn, domain)
+    except Exception as e:
+        print(f"[ERROR] domain_recipes({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/domains/{domain}/enrich")
+def enrich_domain_endpoint(domain: str):
+    """Quick Haiku profile of a domain — story, language, country, cuisine
+    focus, logo. Returns the SUGGESTED fields (does not save); the editor
+    populates them so the curator can review + Save. Token-journaled."""
+    # TODO: gate with _require_perm when exposed publicly (see POST /domains).
+    from input.pipeline import domains_lib
+    from extract.domain_enrich import enrich_domain
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = domains_lib.get_domain(conn, domain)
+        display_name = (row or {}).get("display_name") or ""
+        usage_log: list = []
+        result = enrich_domain(domain, display_name=display_name, usage_log=usage_log)
+        _journal_usage(usage_log, recipe_id=f"domain:{domain.strip().lower()}", user_id=0)
+        if result is None:
+            raise HTTPException(status_code=502, detail="Enrichment failed — the model returned nothing.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] enrich_domain({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Enrich error: {e}")
+
+
+@app.patch("/domains/{domain}")
+def patch_domain_endpoint(domain: str, payload: dict = Body(...)):
+    """Update editable fields on a domain row."""
+    # TODO: gate with _require_perm when exposed publicly (see POST /domains).
+    try:
+        from input.pipeline import domains_lib
+        with sqlite3.connect(DB_PATH) as conn:
+            return domains_lib.update_domain(conn, domain, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] patch_domain({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+@app.delete("/domains/{domain}")
+def delete_domain_endpoint(domain: str):
+    # TODO: gate with _require_perm when exposed publicly (see POST /domains).
+    try:
+        from input.pipeline import domains_lib
+        with sqlite3.connect(DB_PATH) as conn:
+            ok = domains_lib.delete_domain(conn, domain)
+            if not ok:
+                raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
+            return {"deleted": domain}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] delete_domain({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
 
 
 # =========================================================================
@@ -3358,6 +3487,20 @@ def _save_recipe_core(payload: dict) -> dict:
     if normalized_source_url and normalized_source_url != raw_source_url:
         source["originalUrl"] = normalized_source_url
         recipe_dict["_source"] = source
+
+    # Friendly publisher name -> _source.siteName, STORED on the model so
+    # every list (recipe sidebar, master winners, chapter top-10) reads one
+    # field. Prefer the page's captured og:site_name; fall back to the
+    # curated domain map for known publishers. Runs on every save path
+    # (paste, bookmarklet, markdown, batch) — this is the single chokepoint
+    # all writes funnel through, including the job-runner's master writes.
+    try:
+        resolved_site = friendly_site_name(source.get("siteName"), raw_source_url)
+        if resolved_site and resolved_site != (source.get("siteName") or ""):
+            source["siteName"] = resolved_site
+            recipe_dict["_source"] = source
+    except Exception as e:
+        print(f"[SITENAME] resolve failed (continuing): {e}")
 
     # "Copy not subscription": claimed rows are detached from the source
     # URL. The `_source.claimedFrom` stamp (set by /recipes/<id>/claim)
@@ -4483,6 +4626,21 @@ def extract_recipe_from_url(
             except Exception as e:
                 print(f"[OG-IMAGE] coopt failed (continuing): {e}")
         recipe["_source"] = src
+
+    # Friendly publisher name on the EXTRACT response so the recipe form's
+    # "Site name" field is populated before the user saves. Prefer the page's
+    # captured og:site_name (stamped just above); fall back to the domain
+    # master for known publishers. Runs regardless of og-meta presence so a
+    # cache-served or markdown path still fills the field. Save re-resolves
+    # at the chokepoint, so this is just for in-form display.
+    try:
+        _src = recipe.get("_source") or {}
+        _resolved = friendly_site_name(_src.get("siteName"), _src.get("originalUrl") or url_norm)
+        if _resolved and _resolved != (_src.get("siteName") or ""):
+            _src["siteName"] = _resolved
+            recipe["_source"] = _src
+    except Exception as e:
+        print(f"[SITENAME] extract resolve failed (continuing): {e}")
 
     # Moz scoring. Batch (pre_scored) trusts upstream numbers and skips the
     # Moz call to save quota; its authoritative override is applied AFTER

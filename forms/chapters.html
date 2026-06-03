@@ -9,7 +9,7 @@
        = behaviour (cross-page ⋮ nav, identity badge, X-Self-User-Id fetch
        patch, helpers) + the initEditorNav controller (dock/overlay/back).
        See memory/project_admin_editor_nav.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260531b">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260603a">
 </head>
 <body>
   <header class="app-header">
@@ -60,7 +60,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260531a"></script>
+  <script src="/forms/library-shell.js?v=20260603a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -248,8 +248,8 @@
         </section>
 
         <div class="ed-actions">
-          <button type="button" class="ed-btn primary" id="refreshBtn">Refresh fit</button>
-          <button type="button" class="ed-btn" id="saveBtn">Save notes</button>
+          <button type="button" class="ed-btn primary" id="refreshBtn">Refresh</button>
+          <button type="button" class="ed-btn" id="saveBtn">Save</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
 
@@ -259,6 +259,7 @@
       });
       $('#refreshBtn').addEventListener('click', () => doRefresh(c.name));
       $('#saveBtn').addEventListener('click', () => doSaveNotes(c.name));
+      $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       loadChapterTop10(c.name);     // top-10 recipes — primary visible section
       // Source-sites list is collapsed by default; lazy-load rows on first expand.
       const acc = panel.querySelector('.ed-accordion');
@@ -308,7 +309,7 @@
       panel.innerHTML = `
         <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · New Chapter</button></div>
         <h1 class="ed-title">Add a chapter</h1>
-        <p class="ed-notes-help" style="margin:0 0 20px;font-size:.95em">Creates a chapter row. It starts unfit — it’ll be fit once recipes are classified into it and a dish run (or Refresh fit) computes its authority model.</p>
+        <p class="ed-notes-help" style="margin:0 0 20px;font-size:.95em">Creates a chapter row. It starts unfit — it’ll be fit once recipes are classified into it and a dish run (or Refresh) computes its authority model.</p>
         <section class="ed-block" style="border-top:none;padding-top:0">
           <div class="ed-form-grid">
             <div class="ed-field full"><label for="newName">Chapter name</label><input id="newName" type="text" placeholder="e.g. Pickles &amp; Preserves" autocomplete="off"></div>
@@ -391,7 +392,7 @@
         renderList(); renderDetail();
         flash('Fit refreshed');
       } catch (e) {
-        if (btn){ btn.disabled = false; btn.textContent = 'Refresh fit'; }
+        if (btn){ btn.disabled = false; btn.textContent = 'Refresh'; }
         flash(`Refresh failed: ${e.message || e}`, true);
       }
     }
@@ -409,9 +410,9 @@
         chapters[name] = await r.json();
         btn.textContent = 'Saved ✓'; btn.classList.add('done');
         if (hint) hint.textContent = 'Notes saved';
-        setTimeout(() => { btn.textContent = 'Save notes'; btn.classList.remove('done'); btn.disabled = false; }, 1900);
+        setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('done'); }, 1900);  // stays disabled until next edit
       } catch (e) {
-        btn.disabled = false; btn.textContent = 'Save notes';
+        btn.disabled = false; btn.textContent = 'Save';
         flash(`Save failed: ${e.message || e}`, true);
       }
     }
@@ -423,6 +424,10 @@
       $('#searchToggle').classList.toggle('active', !c.hidden);
       if (!c.hidden) $('#search').focus();
     });
+    // Dirty-tracker: Save stays disabled until something in the detail changes.
+    const _markDirty = () => { const b = $('#saveBtn'); if (b) b.disabled = false; };
+    $('#page').addEventListener('input', _markDirty);
+    $('#page').addEventListener('change', _markDirty);
     $('#addToggle').addEventListener('click', () => { selectedName = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });

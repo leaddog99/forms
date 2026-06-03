@@ -257,7 +257,16 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     best-beef-stew used the same recipe vocabulary as a real recipe
     page but is structurally an article)."""
     kept, dropped = [], []
-    domain_block = {d.lower() for d in DISALLOWED_DOMAINS}
+    # The domains table is the source of truth for blocking (allowed = 0);
+    # the config list is unioned in as a safety net so nothing is lost if the
+    # table hasn't been seeded yet. Both are root-domain grain, matching the
+    # entry's root_domain(url).
+    try:
+        from input.pipeline.domains_lib import get_blocked_root_domains
+        table_block = get_blocked_root_domains()
+    except Exception:
+        table_block = set()
+    domain_block = {d.lower() for d in DISALLOWED_DOMAINS} | table_block
     path_block = {f.lower() for f in DISALLOWED_URL_PATH_FRAGMENTS}
     for e in entries:
         domain = (e.get("domain") or "").lower()

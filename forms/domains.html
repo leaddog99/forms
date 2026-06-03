@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Domains</title>
+  <!-- Domain master editor on the shared master/detail editor shell. A
+       domain (full host) owns everything we know about a source site
+       independent of any recipe: friendly name, story, country/language
+       provenance, extraction tips, allow/deny, domain authority. The
+       `domains` table is the source of truth; domain_display_names.json is
+       its bootstrap seed. Cloned from chapters.html per
+       memory/feedback_editor_template_not_runtime.md. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260603a">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+      <!-- LibraryShell.initNav appends: .nav-spacer, .identity-badge, .nav-toggle(⋮) -->
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Domains <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search &amp; sort" aria-label="Search and sort">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="New domain" aria-label="New domain">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search domains…">
+        <select id="sort" aria-label="Sort domains">
+          <option value="domain">Sort: domain (A–Z)</option>
+          <option value="name">Sort: display name</option>
+          <option value="da">Sort: domain authority</option>
+          <option value="blocked">Sort: blocked first</option>
+        </select>
+      </div>
+
+      <div class="ed-legend">
+        <span><i class="d ok"></i>allowed</span>
+        <span><i class="d none"></i>blocked</span>
+      </div>
+
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260603a"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+
+    LibraryShell.initNav({ currentPage: 'domains' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Domains', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, fmtDate, flash } = LibraryShell;
+
+    const STRATEGIES = ['plain', 'playwright', 'bookmarklet_only', 'skip'];
+
+    let domains = {};        // keyed by domain (host)
+    let selected = null;     // host string, or '__new__'
+    let term = '';
+    let sortKey = 'domain';
+
+    /* ----------------------------- derivations ----------------------------- */
+    const isAllowed = (d) => d.allowed === undefined || !!d.allowed;
+    function listMeta(d){
+      const bits = [];
+      if (d.display_name) bits.push(d.display_name);
+      if (d.country) bits.push(d.country);
+      if (d.domain_authority != null) bits.push('DA ' + Math.round(d.domain_authority));
+      const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
+      if (m || u) bits.push(`${m}m · ${u}u`);
+      if (!isAllowed(d)) bits.push('blocked');
+      return bits.join(' · ') || '—';
+    }
+
+    /* ----------------------------- list ----------------------------- */
+    function sortedRows(){
+      const t = term.toLowerCase();
+      const rows = Object.values(domains).filter(d =>
+        !t || d.domain.toLowerCase().includes(t) || (d.display_name || '').toLowerCase().includes(t));
+      const sorters = {
+        domain:  (a, b) => a.domain.localeCompare(b.domain),
+        name:    (a, b) => (a.display_name || '').localeCompare(b.display_name || '') || a.domain.localeCompare(b.domain),
+        da:      (a, b) => (b.domain_authority || 0) - (a.domain_authority || 0) || a.domain.localeCompare(b.domain),
+        blocked: (a, b) => (isAllowed(a) - isAllowed(b)) || a.domain.localeCompare(b.domain),
+      };
+      return rows.sort(sorters[sortKey] || sorters.domain);
+    }
+
+    function renderList(){
+      const rows = sortedRows();
+      $('#count').textContent = `(${rows.length})`;
+      const ul = $('#list'); ul.innerHTML = '';
+      if (!rows.length){ ul.innerHTML = '<li class="ed-empty">No matches</li>'; return; }
+      for (const d of rows){
+        const li = document.createElement('li');
+        li.className = 'ed-item' + (d.domain === selected ? ' selected' : '');
+        li.innerHTML =
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span><span class="ed-item-flag ${isAllowed(d) ? 'ok' : 'none'}"></span></div>` +
+          `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
+        li.addEventListener('click', () => { selected = d.domain; renderList(); renderDetail(); nav.afterSelect(); });
+        ul.appendChild(li);
+      }
+    }
+
+    /* ----------------------------- detail ----------------------------- */
+    function field(id, label, value, opts = {}){
+      const v = value == null ? '' : String(value);
+      const full = opts.full ? ' full' : '';
+      if (opts.textarea){
+        return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
+          `<textarea id="${id}" class="ed-notes"${opts.minh ? ` style="min-height:${opts.minh}px"` : ''} placeholder="${escapeHtml(opts.ph || '')}">${escapeHtml(v)}</textarea></div>`;
+      }
+      if (opts.select){
+        const opts_html = opts.select.map(o => `<option value="${o}"${o === v ? ' selected' : ''}>${o}</option>`).join('');
+        return `<div class="ed-field${full}"><label for="${id}">${label}</label><select id="${id}">${opts_html}</select></div>`;
+      }
+      if (opts.checkbox){
+        return `<div class="ed-field${full}"><label class="ed-check"><input type="checkbox" id="${id}"${value ? ' checked' : ''}> ${label}</label></div>`;
+      }
+      const ro = opts.readonly ? ' readonly' : '';
+      return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
+        `<input id="${id}" type="${opts.type || 'text'}" value="${escapeHtml(v)}"${ro} placeholder="${escapeHtml(opts.ph || '')}"${opts.readonly ? ' tabindex="-1"' : ''}></div>`;
+    }
+
+    function renderDetail(){
+      const panel = $('#page');
+      if (selected === '__new__') return renderCreate();
+      if (!selected || !domains[selected]){
+        panel.innerHTML = `<div class="ed-block" style="border-top:none;padding-top:8px"><p class="ed-empty-fit">Select a domain to edit its friendly name, story, country/language provenance, extraction tips, allow/deny, and domain authority. A domain (full host, e.g. <code>cooking.nytimes.com</code>) is the canonical record for a source site — everything we know about it independent of any single recipe.</p></div>`;
+        return;
+      }
+      const d = domains[selected];
+
+      panel.innerHTML = `
+        <div class="ed-kicker">
+          <button type="button" class="ed-purpose-toggle" id="purposeToggle">Admin · Edit Domain <span id="purposeArrow">▾</span></button>
+          <div class="ed-purpose-pop" id="purposePop" hidden>
+            <strong>Purpose:</strong> the canonical per-publisher record. Friendly name flows onto every recipe’s source attribution; country/language seed the multilingual pipeline; extraction tips + allow/deny steer the batch fetcher; DA is the domain-grain authority (per-URL PA lives on metabase_url). Recipe ethnicity/cuisine stays dish-derived — <code>cuisine_focus</code> here is only a hint.
+          </div>
+        </div>
+
+        <h1 class="ed-title">${escapeHtml(d.domain)}</h1>
+        <div class="ed-status-strip">
+          <span class="ed-pill ${isAllowed(d) ? 'ok' : 'warn'}"><i class="d"></i>${isAllowed(d) ? 'Allowed' : 'Blocked'}</span>
+          ${d.root_domain ? `<span class="ed-pill"><i class="d"></i>root ${escapeHtml(d.root_domain)}</span>` : ''}
+          ${d.domain_authority != null ? `<span class="ed-pill"><i class="d"></i>DA ${Math.round(d.domain_authority)}</span>` : ''}
+        </div>
+        <p class="ed-submeta">Updated ${fmtDate(d.updated_at)}${d.created_at ? ' · created ' + fmtDate(d.created_at) : ''}</p>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Editorial</h3>
+          <div class="ed-form-grid">
+            ${field('f_display_name', 'Display name', d.display_name, { ph: 'NYT Cooking' })}
+            ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://…' })}
+            ${field('f_story', 'Story', d.story, { textarea: true, full: true, minh: 90, ph: 'A short editorial bio of this site…' })}
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Provenance</h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">Where the publisher is based + its primary language (a default for non-English ingestion). <strong>cuisine_focus</strong> is a hint only — a Greek site can still post a taco; authoritative recipe ethnicity comes from the dish.</p>
+          <div class="ed-form-grid">
+            ${field('f_country', 'Country', d.country, { ph: 'Greece' })}
+            ${field('f_language', 'Language (ISO 639-1)', d.language, { ph: 'el' })}
+            ${field('f_cuisine_focus', 'Cuisine focus (hint)', d.cuisine_focus, { ph: 'Greek' })}
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Extraction</h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">How the batch fetcher should handle this site (the domain-quirks registry).</p>
+          <div class="ed-form-grid">
+            ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
+            ${field('f_custom_extractor', 'Custom extractor (module path)', d.custom_extractor, { ph: 'intake.parsers.foo' })}
+            ${field('f_extract_notes', 'Extraction notes', d.extract_notes, { textarea: true, full: true, minh: 70, ph: 'JSON-LD reliable · needs www for Moz · paywalled — use screenshot…' })}
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Gatekeeping &amp; authority</h3>
+          <div class="ed-form-grid">
+            ${field('f_allowed', 'Allowed (ingest from this site)', isAllowed(d), { checkbox: true, full: true })}
+            ${field('f_domain_authority', 'Domain authority (DA)', d.domain_authority, { type: 'number' })}
+            ${field('f_da_last_scored', 'DA last scored', d.da_last_scored ? fmtDate(d.da_last_scored) : '', { readonly: true })}
+            ${field('f_failure_count', 'Failure count', d.failure_count, { type: 'number' })}
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Recipes from this domain</h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">Counts are stored on the row and refreshed each time this domain is opened; pick one to jump to it.</p>
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="masterPicker">Master recipes <span class="ed-count" id="masterCount"></span></label>
+              <select id="masterPicker"><option value="">Loading…</option></select></div>
+            <div class="ed-field"><label for="userPicker">User recipes <span class="ed-count" id="userCount"></span></label>
+              <select id="userPicker"><option value="">Loading…</option></select></div>
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Curator notes</h3>
+          <textarea id="f_notes" class="ed-notes" placeholder="Anything else worth recording about this site…">${escapeHtml(d.notes || '')}</textarea>
+        </section>
+
+        <div class="ed-actions">
+          <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
+          <button type="button" class="ed-btn" id="enrichBtn" title="Profile this site with a quick LLM query (story, language, country, cuisine, logo)">✨ Enrich</button>
+          <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>`;
+
+      $('#purposeToggle').addEventListener('click', () => {
+        const p = $('#purposePop'), a = $('#purposeArrow');
+        p.hidden = !p.hidden; a.textContent = p.hidden ? '▾' : '▴';
+      });
+      $('#saveBtn').addEventListener('click', () => doSave(d.domain));
+      $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
+      $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
+      $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
+      loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
+    }
+
+    // Quick LLM profile of the site → fills story / language / country /
+    // cuisine_focus / logo_url in the form for review. Does NOT save — marks
+    // the form dirty so the curator eyeballs the result and clicks Save.
+    async function doEnrich(domain){
+      const btn = $('#enrichBtn'); const hint = $('#hint');
+      btn.disabled = true; const label = btn.textContent; btn.textContent = 'Enriching…';
+      if (hint){ hint.style.color = ''; hint.textContent = 'Profiling the site…'; }
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/enrich`, { method: 'POST' });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        // Fill each field when the model returned something; leave existing
+        // values for fields the model left blank.
+        const set = (id, v) => { if (v){ const el = $('#' + id); if (el) el.value = v; } };
+        set('f_story', data.story);
+        set('f_language', data.language);
+        set('f_country', data.country);
+        set('f_cuisine_focus', data.cuisine_focus);
+        set('f_logo_url', data.logo_url);
+        $('#saveBtn').disabled = false;   // ready to commit
+        if (hint){
+          hint.style.color = data.recognized ? '' : 'var(--ed-warn)';
+          hint.textContent = data.recognized
+            ? 'Profiled — review and Save.'
+            : 'Low confidence (guessed from the name) — review carefully before Save.';
+        }
+      } catch (e) {
+        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Enrich failed: ${e.message || e}`; }
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    }
+
+    // Live per-domain recipe lists for the two browse dropdowns. The server
+    // also stores the counts on the row as a side effect, so the next list
+    // render shows them. Selecting an option opens that recipe in a new tab.
+    async function loadDomainRecipes(domain){
+      const mp = $('#masterPicker'), up = $('#userPicker');
+      if (!mp || !up) return;
+      const fill = (sel, bucket, noun) => {
+        const items = bucket.items || [];
+        const opts = [`<option value="">${items.length ? `${items.length} ${noun}…` : `No ${noun}`}</option>`]
+          .concat(items.map(it => `<option value="${escapeHtml(it.recipe_id)}">${escapeHtml(it.name)}</option>`));
+        sel.innerHTML = opts.join('');
+        sel.disabled = !items.length;
+      };
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/recipes`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        fill(mp, data.master || {}, 'master recipes');
+        fill(up, data.user || {}, 'user recipes');
+        const mc = $('#masterCount'), uc = $('#userCount');
+        if (mc) mc.textContent = `(${(data.master || {}).count || 0})`;
+        if (uc) uc.textContent = `(${(data.user || {}).count || 0})`;
+        // Reflect the freshly-stored counts in the in-memory row + list.
+        if (domains[domain]){
+          domains[domain].master_recipe_count = (data.master || {}).count || 0;
+          domains[domain].user_recipe_count = (data.user || {}).count || 0;
+        }
+        const jump = (sel) => sel.addEventListener('change', (e) => {
+          e.stopPropagation();   // don't trip the form dirty-tracker on a browse jump
+          if (sel.value){ window.open(`/r/${encodeURIComponent(sel.value)}`, '_blank', 'noopener'); sel.value = ''; }
+        });
+        jump(mp); jump(up);
+      } catch (e) {
+        mp.innerHTML = up.innerHTML = `<option value="">Couldn’t load (${escapeHtml(String(e.message || e))})</option>`;
+      }
+    }
+
+    // Collect the editable fields off the detail form into a PATCH payload.
+    function collectFields(){
+      const numOrNull = (v) => { const s = String(v).trim(); return s === '' ? null : Number(s); };
+      return {
+        display_name: $('#f_display_name').value.trim(),
+        logo_url: $('#f_logo_url').value.trim(),
+        story: $('#f_story').value.trim(),
+        country: $('#f_country').value.trim(),
+        language: $('#f_language').value.trim(),
+        cuisine_focus: $('#f_cuisine_focus').value.trim(),
+        fetch_strategy: $('#f_fetch_strategy').value,
+        custom_extractor: $('#f_custom_extractor').value.trim(),
+        extract_notes: $('#f_extract_notes').value.trim(),
+        allowed: $('#f_allowed').checked ? 1 : 0,
+        domain_authority: numOrNull($('#f_domain_authority').value),
+        failure_count: numOrNull($('#f_failure_count').value) || 0,
+        notes: $('#f_notes').value.trim(),
+      };
+    }
+
+    /* ----------------------------- create ----------------------------- */
+    function renderCreate(){
+      const panel = $('#page');
+      panel.innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · New Domain</button></div>
+        <h1 class="ed-title">Add a domain</h1>
+        <p class="ed-notes-help" style="margin:0 0 20px;font-size:.95em">Creates a domain-master row, keyed on the full host (no scheme, no <code>www.</code>). Fill what you know now; the rest is editable later.</p>
+        <section class="ed-block" style="border-top:none;padding-top:0">
+          <div class="ed-form-grid">
+            <div class="ed-field full"><label for="newDomain">Domain (host)</label><input id="newDomain" type="text" placeholder="e.g. cooking.nytimes.com" autocomplete="off"></div>
+            <div class="ed-field full"><label for="newName">Display name</label><input id="newName" type="text" placeholder="e.g. NYT Cooking" autocomplete="off"></div>
+            <div class="ed-field"><label for="newCountry">Country</label><input id="newCountry" type="text" placeholder="Greece"></div>
+            <div class="ed-field"><label for="newLanguage">Language</label><input id="newLanguage" type="text" placeholder="el"></div>
+          </div>
+        </section>
+        <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
+          <button type="button" class="ed-btn primary" id="createBtn">Create domain</button>
+          <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>`;
+      $('#newDomain').focus();
+      $('#cancelBtn').addEventListener('click', () => { selected = null; renderList(); renderDetail(); });
+      $('#createBtn').addEventListener('click', doCreate);
+    }
+
+    async function doCreate(){
+      const domain = $('#newDomain').value.trim();
+      const hint = $('#hint'); const btn = $('#createBtn');
+      if (!domain){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Domain (host) is required'; $('#newDomain').focus(); return; }
+      const payload = {
+        domain,
+        display_name: $('#newName').value.trim(),
+        country: $('#newCountry').value.trim(),
+        language: $('#newLanguage').value.trim(),
+      };
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        const r = await fetch('/domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        await loadDomains();
+        selected = data.domain || domain;
+        renderList(); renderDetail();
+        flash('Domain created');
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Create domain';
+        hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
+      }
+    }
+
+    /* ----------------------------- data + actions ----------------------------- */
+    async function loadDomains(){
+      const r = await fetch('/domains');
+      if (!r.ok){ console.error('list domains failed', r.status); return; }
+      const list = await r.json();
+      domains = {};
+      for (const d of list) domains[d.domain] = d;
+      if (!selected){ const first = sortedRows()[0]; if (first) selected = first.domain; }
+      renderList();
+      renderDetail();
+    }
+
+    async function doSave(domain){
+      const btn = $('#saveBtn'); const hint = $('#hint');
+      btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(collectFields()),
+        });
+        if (!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${r.status}`); }
+        domains[domain] = await r.json();
+        renderList();
+        btn.textContent = 'Saved ✓'; btn.classList.add('done');
+        if (hint){ hint.style.color = ''; hint.textContent = 'Saved'; }
+        setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('done'); }, 1900);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Save';
+        flash(`Save failed: ${e.message || e}`, true);
+      }
+    }
+
+    async function doDelete(domain){
+      if (!confirm(`Delete domain “${domain}”? This removes its master record (recipes are untouched).`)) return;
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+        if (!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${r.status}`); }
+        delete domains[domain];
+        selected = null;
+        await loadDomains();
+        flash('Domain deleted');
+      } catch (e) {
+        flash(`Delete failed: ${e.message || e}`, true);
+      }
+    }
+
+    /* ----------------------------- wiring ----------------------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls');
+      c.hidden = !c.hidden;
+      $('#searchToggle').classList.toggle('active', !c.hidden);
+      if (!c.hidden) $('#search').focus();
+    });
+    const _markDirty = () => { const b = $('#saveBtn'); if (b) b.disabled = false; };
+    $('#page').addEventListener('input', _markDirty);
+    $('#page').addEventListener('change', _markDirty);
+    $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
+    $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
+    $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
+
+    loadDomains();
+  </script>
+</body>
+</html>

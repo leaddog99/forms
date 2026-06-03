@@ -396,6 +396,7 @@
     { page: 'recipes',   label: 'Recipes',   href: '/forms/recipe_form_styled.html' },
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html' },
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html' },
+    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html' },
     { page: 'users',     label: 'Users',     href: '/forms/users.html' },
     { page: 'cookbooks', label: 'Cookbooks', comingSoon: true },
     { page: 'equipment', label: 'Equipment', comingSoon: true },
@@ -405,6 +406,7 @@
     // utility today; future items (settings, exports, etc.) go here.
     // `action` items run JS instead of navigating (see initNav wiring).
     { page: 'run-jobs',  label: 'Run queued jobs', action: 'runQueuedJobs' },
+    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages' },
     { page: 'install',   label: 'Install bookmarklet', href: '/forms/install.html' },
   ];
 
