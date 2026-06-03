@@ -1508,6 +1508,45 @@ The dish is the **scoring anchor**: it holds the fit + cohort + invariant identi
 
 ---
 
+## Session log — 2026-06-02 (evening) — vector matching live, recommender, curly-quote fix, product-catalog foundation
+
+Continued from the day's scoring-ledger work. Theme: put the embeddings to work, fix the lingering banana-pancakes junk, polish dishes_v2, and lay the commerce/product subsystem foundation.
+
+### Vector matching is live for user recipes (commits 19b407b, 3041536, 4de13fa)
+- **Validated the matcher first:** NN dish-match on 277 dish-tagged master recipes → **97.5% top-1, 100% top-3** (the 7 "misses" are genuine near-twins: bone-in vs boneless thighs, potato-asparagus gratin). The identity-embedding matcher reliably recovers the right dish.
+- **Embed every recipe at SAVE** (user *and* master) → new `recipes.embedding` BLOB. User recipes were never embedded; now the vector's there for matching / find-similar / dedup / recs (user: "we'll want it beyond this example"). Backfilled all 218 existing user recipes.
+- **Match user recipes to a dish at save** → `_match` block `{dish (null if not confident), distance, confident (L2≤0.8), candidates[top-3], matched_at}`. Reuses the just-computed vector (no 2nd embed); logs `[MATCH]` to uvicorn_stdout.log. Backfilled 218 → 103 confident / 115 no-confident-dish (quantifies the catalog need).
+- **Form:** a "Matched dish" chip in the recipe scoring strip.
+
+### "Recipes you'd like" recommender (commit 714f8b6)
+`POST /recipes/similar-master`: temp-embeds the (possibly unsaved) recipe → KNN over `recipes_master_vec` → drop far matches (L2>0.8) → re-sort by `rank_score`. **Recipe→recipe similarity — deliberately bypasses dish-matching** ("show me great recipes like this"). Form button "✨ Show top recipes like this" → top-6. Surfaced the lingering **"Banana Pancakes" (healthline) at rank 100** still in the Banana Bread set.
+
+### The healthline root cause: CURLY QUOTES (commit c8e5509)
+The Banana Bread query was `"Banana Bread"|"Banana Nut Bread"` **with smart/curly quotes** (`“ ”`) — Google ignores those (only straight `"` delimit phrases), so the "quoted" query silently ran loose and healthline returned. `_serpapi_lookup` now normalizes curly→straight before sending (intent-preserving, still verbatim otherwise). Verified: the stored query now returns only recipe sites; a re-run also clears stale junk via delete-and-replace.
+
+### dishes_v2 + nav polish (commits b9d2ac8, 8510d48, 6cd3e71)
+Both winner + cohort lists **headline `rank_score`** in **aligned fixed-width columns** (score/ou%/pwr%, tabular-nums) — no more ragged zig-zag; top-recipes endpoint LEFT-JOINs the ledger for rank_score; backfill-scored all 24 fitted dishes. "Scored cohort" = default-collapsed accordion; nav **Dishes → dishes_v2**; **Run-queued-jobs popup is now a draggable window**.
+
+### Product / commerce subsystem — foundation (commit 60dffdb)
+- Hierarchy decided: **3 levels mirroring recipes** — `product_category`≈chapter, `product_class`≈dish, `product`≈master_recipe. The **review site is provenance** (≈ a recipe's source domain), NOT a tier; a product aggregates MANY sources → a homogenization step. Ingestion unit = one bookmarkleted review.
+- **`product_model.py`** (recipe-model analog): ProductClass / ReviewSource / Product (multi-source `verdicts`, brand-safe `bcc_blurb`/`critique`, our-own `RetailerOffer.affiliate_url`).
+- **`intake/products/review_parsers.py`**: `detect_source()` + deterministic `parse_atk()` (custom code per source). Proven on a real ATK loaf-pan review fixture: **13 products** (tier/specs/price/retailers), no LLM, hydrating the Pydantic model.
+- Brand-safety: verdicts record only what a *real fetched* review said (curator bookmarklets the actual page = verified by construction); BCC blurb is our own voice; affiliate links are ours, a source's tagged URL is identity-only; review URL kept for provenance but never rendered (don't send users away).
+
+### Ops note
+A detached restart window (`Start-Process bcc_restart.bat`) got `^C`'d → uvicorn died → cloudflare **502** until restarted. Lesson: run the server in a **persistent terminal**, not repeated detached restarts.
+
+### Queued / next (designed; captured in memory)
+- **Jobs need their own process** — they run inside uvicorn, so a deploy-restart kills in-flight batches (killed a Beef Stew run). Move to a **standalone worker** (also fixes the event-loop block that disabled the auto-runner); home for **queue kill/pause** controls. [[project_job_runner_disabled]]
+- **Dish-invariant facts derive-once** (ethnicity/region/cuisine/story) → pulled from the dish at read-time; technique/servingForm stay recipe-level. [[project_dish_catalog_table]]
+- **Batch = sole master ingestion path**; "Promote" button repurposed → add a URL to a dish's `editors_choice` (run through the batch). [[project_master_recipes_ui]]
+- **User-recipe scoring** — borrow the matched dish's fit/cohort → percentile/grade (held "scores panel"). [[project_ou_power_blend]]
+- **Catalog build** (~1,600 dishes into the dishes table, embedded) — match universe for arbitrary user recipes.
+- **Product layers:** homogenization (2+ sources) → buy-enrichment (our affiliate links + live prices) → DB tables → ingestion endpoint + bookmarklet → master form (4th editor clone) → display popup → `equipment`→`product_class` link. [[project_affiliate_catalog]]
+- **Re-quote existing dish queries** to verbatim quoted form; **Stage 3** (SQL `rank_score` as selector, retire `rank_by_blend`).
+
+---
+
 ## To-do
 - **Public read-only "cookbook" pages — SEO + AI-bot compatible (2026-06-01).** Today `/r/<id>` resolves to the JS editor *form*, which bots see as an empty shell — wrong surface to expose. Build a **separate, server-rendered, read-only recipe page**: complete resolved HTML (no editor chrome), crawlable. Big head start: recipes are already stored in **schema.org shape**, so the page can emit a `<script type="application/ld+json">` **Recipe** block nearly for free (Google Recipe rich-results *and* AI crawlers parse it) + plain semantic HTML (title/hero/ingredients `<ul>`/steps `<ol>`/times/yield) + OpenGraph/Twitter meta + `<link rel=canonical>`. **Scope:** curated/cookbook set only (master_recipes / a `published` visibility flag) — private user saves stay non-crawlable. **Discovery:** `sitemap.xml` of public recipe URLs + `robots.txt` (+ optional `llms.txt`). **Payoff that closes a loop:** a public page *with* JSON-LD is itself extractable — so "paste a BCC URL" would then legitimately work against the cookbook page, not the form. **Generation fork:** (1) on-demand SSR — app renders each page live from current data, always fresh, no queue, CDN in front for bot load (start here); (2) pre-generated static — a regen *queue* renders each published recipe to a static `.html` on publish/edit, served from disk/CDN, best crawl perf + survives app downtime (graduate to this with the Fly.io/Ghost production move). Ties to the **Production hosting** + **Ghost integration** items below (`bestcooksclub.com` public domain). **Decisions to make:** (a) which recipes are public (master/cookbook only, gated by a flag?); (b) on-demand SSR vs pre-generated static first; (c) URL scheme — keep `/r/<id>` vs a human/SEO slug like `/recipes/banana-bread-<id>`. Note: the editor form moves to an explicit admin path so the clean public URL is the read-only page.
 - **Internationalization (i18n) for UI messages (2026-05-29).** User flagged: we've been writing English strings inline throughout the codebase since day one; no infrastructure to swap to another language. Start NOW so we capture new strings into the pattern while it's fresh.
