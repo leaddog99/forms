@@ -967,8 +967,8 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
 def similar_master_recipes(payload: dict = Body(...)):
     """Recommender: given a recipe (the one the user just extracted — may be
     unsaved), temp-embed it and return the curated MASTER recipes most similar
-    to it, re-sorted by rank_score so the *best* of the similar set surfaces
-    first. Recipe→recipe similarity (recipes_master_vec) — deliberately
+    to it, ordered by vector distance (most similar first); rank_score rides
+    along as a quality cue. Recipe→recipe similarity (recipes_master_vec) — deliberately
     bypasses dish-matching; answers "show me great recipes like this", not
     "what dish is this / how good is mine".
 
@@ -1026,10 +1026,11 @@ def similar_master_recipes(payload: dict = Body(...)):
                     "bcc_url": _bcc_link_permalink(rid),
                     "source_url": src.get("originalUrl") or "",
                 })
-            # Highest-ranked similar first: rank_score desc (None last),
-            # then nearer distance as the tiebreaker.
-            results.sort(key=lambda x: (x["rank_score"] is None,
-                                        -(x["rank_score"] or 0.0), x["distance"]))
+            # Most SIMILAR first — order by vector distance ascending. rank_score
+            # still rides along as a quality cue, but similarity drives the order
+            # (user call 2026-06-03; pure rank_score sort wrongly floated the
+            # least-similar high-rank item, e.g. the healthline pancakes, to #1).
+            results.sort(key=lambda x: x["distance"])
             results = results[:want]
             print(f"[SIMILAR] {recipe.get('name','')!r} -> {len(results)} shown "
                   f"(of {len(near)} within {SIMILAR_MAX_DIST}, {len(raw)} scanned)")
