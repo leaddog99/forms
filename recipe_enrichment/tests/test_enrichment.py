@@ -112,6 +112,39 @@ def test_unknown_profile_raises():
         apply_profile({"name": "x"}, "bogus")
 
 
+# --- JSON-LD fast-lane coercion (the video-quirk fix) ---------------------
+
+def test_coerce_video_thumbnail_list_to_string():
+    from recipe_enrichment.api import _coerce_jsonld_for_fastlane
+    src = {"name": "x", "video": {"@type": "VideoObject",
+                                  "thumbnailUrl": ["https://a/1.jpg", "https://a/2.jpg"]}}
+    out = _coerce_jsonld_for_fastlane(src)
+    assert out["video"]["thumbnailUrl"] == "https://a/1.jpg"
+    assert isinstance(src["video"]["thumbnailUrl"], list)  # input not mutated
+
+
+def test_coerce_video_list_to_single_dict():
+    from recipe_enrichment.api import _coerce_jsonld_for_fastlane
+    out = _coerce_jsonld_for_fastlane(
+        {"name": "x", "video": [{"@type": "VideoObject", "thumbnailUrl": ["https://a/1.jpg"]}]}
+    )
+    assert isinstance(out["video"], dict)
+    assert out["video"]["thumbnailUrl"] == "https://a/1.jpg"
+
+
+def test_coerce_drops_unusable_video():
+    from recipe_enrichment.api import _coerce_jsonld_for_fastlane
+    out = _coerce_jsonld_for_fastlane({"name": "x", "video": 12345})
+    assert "video" not in out
+
+
+def test_fastlane_diagnostic_never_raises():
+    # Best-effort diagnostic: must never throw, even on junk.
+    from recipe_enrichment.api import _log_fastlane_validation_errors
+    _log_fastlane_validation_errors({"name": "x"}, "https://example.com/x")
+    _log_fastlane_validation_errors({}, "")
+
+
 # --- HTTP surface ---------------------------------------------------------
 
 def test_http_health_and_enrich_and_seal():

@@ -99,6 +99,81 @@ class EnrichmentResult:
     meta: dict = field(default_factory=dict)  # timings + token usage, for the caller to journal
 
 
+def _coerce_jsonld_for_fastlane(jsonld: dict) -> dict:
+    """Pre-coerce known JSON-LD quirks that would otherwise fail RecipeModel
+    validation and needlessly force the expensive markdown-LLM fallback.
+
+    The fast lane is high value (≈1s vs ≈17s), so a single malformed PERIPHERAL
+    field must not sink it. Currently handled: the `video` field — publishers
+    (e.g. WP Recipe Maker, the Sally's case) ship a VideoObject whose
+    `thumbnailUrl` is a LIST of URLs, but RecipeModel wants a string, and that
+    lone field rejected the whole recipe. We normalize video to a single object
+    with a string thumbnailUrl. Returns a shallow copy; never mutates the input.
+    Extend here as new peripheral quirks surface.
+
+    NB (DL): this fix lives ONLY in the enrichment API (per the user) — the
+    legacy inline extract path keeps the old behavior, so the API path is now
+    strictly faster on these pages.
+    """
+    if not isinstance(jsonld, dict):
+        return jsonld
+    out = dict(jsonld)
+    v = out.get("video")
+    if isinstance(v, list):
+        v = next((x for x in v if isinstance(x, dict)), None)
+    if isinstance(v, dict):
+        v = dict(v)
+        tu = v.get("thumbnailUrl")
+        if isinstance(tu, list):
+            v["thumbnailUrl"] = next((u for u in tu if isinstance(u, str)), "")
+        out["video"] = v
+    elif v is not None and not isinstance(v, str):
+        out.pop("video", None)  # unusable shape -> drop (video is non-essential)
+    return out
+
+
+def _log_fastlane_validation_errors(jsonld: dict, source_url: str) -> None:
+    """Surface the ACTUAL pydantic field errors when the JSON-LD fast lane
+    misses — we're still discovering RecipeModel quirks, and each one silently
+    costs the ~17s LLM fallback. `jsonld_to_recipe` builds the model and swallows
+    the ValidationError, so we replay the same construction here (flatten +
+    sanitize + model_validate) purely to capture the errors as ONE greppable
+    line. Best-effort: a diagnostic must NEVER break extraction.
+
+    Greppable marker: `PYDANTIC FAST-LANE MISS`.
+    """
+    try:
+        from pydantic import ValidationError
+        from recipe_model import RecipeModel
+        from sanitize_recipe_data import sanitize_recipe_data
+        from extract.jsonld_to_recipe import _flatten_instructions
+    except Exception:
+        return  # deps unavailable — say nothing rather than break
+
+    # The ValidationError can originate in EITHER sanitize_recipe_data (it
+    # validates) OR model_validate — one try so we catch it wherever it fires.
+    try:
+        payload = dict(jsonld)
+        payload["recipeInstructions"] = _flatten_instructions(
+            payload.get("recipeInstructions")
+        )
+        sanitized = sanitize_recipe_data(payload)
+        RecipeModel.model_validate(sanitized)
+        # No pydantic error reproduced -> the miss was structural (thin data,
+        # missing name/ingredients/instructions), not a model quirk.
+        print(f"[enrich] FAST-LANE MISS (non-pydantic; thin/ineligible JSON-LD) "
+              f"-> ~17s LLM. url={source_url!r}")
+    except ValidationError as ve:
+        fields = "; ".join(
+            f"{'.'.join(str(p) for p in e.get('loc', ()))}={e.get('type')}"
+            for e in ve.errors()
+        )
+        print(f"[enrich] PYDANTIC FAST-LANE MISS -> ~17s LLM. "
+              f"url={source_url!r} fields=[{fields}]")
+    except Exception as diag_err:  # diagnostics never break the extract
+        print(f"[enrich] (fast-lane diagnostic skipped: {type(diag_err).__name__})")
+
+
 def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     """Run the per-recipe transform on already-fetched content.
 
@@ -134,16 +209,35 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     recipe: Optional[dict] = None
     extract_path = ""
     if req.jsonld:
+        from extract.jsonld_to_recipe import jsonld_to_recipe
+        fixed = _coerce_jsonld_for_fastlane(req.jsonld)
         try:
-            from extract.jsonld_to_recipe import jsonld_to_recipe
             recipe = jsonld_to_recipe(
-                req.jsonld, source_url=req.source_url, title=req.title,
+                fixed, source_url=req.source_url, title=req.title,
                 timings=timings,
             )
+            if recipe is None and fixed.get("video") is not None:
+                # A peripheral video field can still reject the recipe; drop it
+                # and retry once before paying ~17s for the LLM fallback.
+                no_video = dict(fixed)
+                no_video.pop("video", None)
+                recipe = jsonld_to_recipe(
+                    no_video, source_url=req.source_url, title=req.title,
+                    timings=timings,
+                )
+                if recipe is not None:
+                    print("[enrich] fast lane RECOVERED by dropping the video field "
+                          "(peripheral field was failing validation)")
             if recipe is not None:
                 extract_path = "jsonld-direct"
+            else:
+                # We HAD structured data but couldn't use it — a silent ~17s tax.
+                # Surface the actual field-level pydantic errors so the quirk is
+                # findable and fixable (we're still discovering them).
+                _log_fastlane_validation_errors(fixed, req.source_url)
         except Exception as e:  # parity with the monolith's fall-back-to-LLM
-            print(f"[enrich] jsonld_to_recipe raised, falling back to LLM: {e}")
+            print(f"[enrich] WARNING: jsonld_to_recipe raised ({e}) -> markdown LLM "
+                  f"fallback (~17s). url={req.source_url!r}")
             recipe = None
 
     if recipe is None:

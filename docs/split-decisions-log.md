@@ -97,3 +97,28 @@ the monolith's hot path.
 7. the batch (TBOTB) path → its own fetch + the SAME `enrich()`.
 Each: reroute behind the flag, verify, then delete the bypassed inline code
 (the empirical cut, SplitSpec Phase 3 gate).
+
+### DL-10 (2026-06-06) — JSON-LD fast-lane fix + pydantic-error logging, API-ONLY (user directive).
+Live test showed a fresh Sally's extract took 24s on the `markdown-llm` path even
+though the page shipped JSON-LD (`has_jsonld=True`). Root cause (diagnosed from
+the page): `RecipeModel` rejects `video.thumbnailUrl` when it's a LIST of URLs
+(it wants a string) — one peripheral field sank the whole fast lane, forcing the
+~17s LLM fallback. The user directed: **fix it ONLY in the API code**, not the
+legacy `jsonld_to_recipe`/monolith — so the API path becomes strictly faster on
+these pages (another reason to migrate; the inline path keeps the bug until cut).
+
+Fix (in `recipe_enrichment/api.py`):
+- `_coerce_jsonld_for_fastlane()` — normalizes `video` before the fast lane
+  (list→single dict; `thumbnailUrl` list→string; unusable shape→dropped).
+  Confirmed: Sally's now extracts via `jsonld-direct` (~1s vs ~25s).
+- drop-`video` retry as a safety net before paying for the LLM.
+
+Logging (user: "any pydantic error should be logged.. we're still finding them"):
+`jsonld_to_recipe` builds `RecipeModel.model_validate` and SWALLOWS the
+`ValidationError` (prints a buried multi-line blob, returns None), so the API
+never saw which field failed. Added `_log_fastlane_validation_errors()` — on every
+fast-lane miss it replays flatten+sanitize+validate and logs ONE greppable line
+with the exact fields: `PYDANTIC FAST-LANE MISS -> ~17s LLM. url=... fields=[video.VideoObject.thumbnailUrl=string_type; ...]`.
+Note the ValidationError can originate in `sanitize_recipe_data` (it validates)
+OR `model_validate` — caught either way. Best-effort: never breaks the extract.
+Verified + 4 new regression tests (12/12 pass).
