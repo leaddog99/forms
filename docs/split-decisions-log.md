@@ -122,3 +122,23 @@ with the exact fields: `PYDANTIC FAST-LANE MISS -> ~17s LLM. url=... fields=[vid
 Note the ValidationError can originate in `sanitize_recipe_data` (it validates)
 OR `model_validate` — caught either way. Best-effort: never breaks the extract.
 Verified + 4 new regression tests (12/12 pass).
+
+### DL-11 (2026-06-06) — Enrich carve: /enrich-recipe through the API, INDIVIDUALLY selectable blocks.
+User requirement: "each item in enrich (critique, etc) should be selectable
+individually.. there will be more." The legacy `enrich_recipe()` runs ALL blocks
+all-or-nothing, so the API needed its own per-block runner.
+
+- `run_enrichment_blocks(recipe, block_names=None, *, llm_key=None)` — runs only
+  the SELECTED blocks (None=all), registry-driven off `ENRICHMENT_BLOCKS`, one
+  parallel LLM call per block, per-block failure isolated. Delegates to the
+  existing `_run_block`/`_build_user_prompt` (strangler: one implementation).
+- `available_enrichment_blocks()` — enumerates the registry so the form/UI can
+  render a checkbox per block; "there will be more" needs no code change here.
+- `enrich()` now runs `req.enrich` (the selected set) after extract.
+- `/enrich-recipe` reroutes through `run_enrichment_blocks(recipe, payload["blocks"])`
+  behind `BCC_ENRICHMENT_API` (default OFF -> legacy all-blocks). `blocks` omitted
+  -> all (back-comat). path = "enrich-api" when on.
+- BYOK accepted but not yet injected (DL-5); the form UI for per-block checkboxes
+  is a separate Local task (the API + endpoint support it now).
+- Verified: selection logic (empty/unknown -> no LLM), single-block isolation;
+  2 new tests (14/14). Live LLM path verified via the running server.

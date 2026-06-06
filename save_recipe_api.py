@@ -4882,11 +4882,28 @@ async def enrich_recipe_endpoint(request: Request):
     if user_id is None:
         user_id = PLACEHOLDER_USER_ID
 
+    # `blocks`: optional list of enrichment block names to run individually
+    # (e.g. ["provenance"], ["editorial","classification"]). Omitted/None -> all
+    # blocks (legacy behavior). Only honored on the API path.
+    blocks = payload.get("blocks")
     try:
-        enriched = await asyncio.to_thread(
-            enrich_recipe, recipe,
-            timings=timings, prompts=prompts, usage_log=usage_log,
-        )
+        if _USE_ENRICHMENT_API:
+            # Strangler reroute (DL-11): run the SELECTED enrichment blocks via
+            # the Recipe Enrichment API instead of the all-or-nothing legacy call.
+            from recipe_enrichment import run_enrichment_blocks
+            e_meta = await asyncio.to_thread(
+                run_enrichment_blocks, recipe, blocks,
+            )
+            timings.update(e_meta.get("timings") or {})
+            usage_log.extend(e_meta.get("usage") or [])
+            if e_meta.get("prompts"):
+                prompts["enrich"] = e_meta["prompts"]
+            enriched = recipe
+        else:
+            enriched = await asyncio.to_thread(
+                enrich_recipe, recipe,
+                timings=timings, prompts=prompts, usage_log=usage_log,
+            )
     except Exception as e:
         print(f"[ERROR] enrich_recipe failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
@@ -4894,7 +4911,7 @@ async def enrich_recipe_endpoint(request: Request):
         raise HTTPException(status_code=500, detail=f"Enrichment error: {e}")
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-    timings["path"] = "enrich-only"
+    timings["path"] = "enrich-api" if _USE_ENRICHMENT_API else "enrich-only"
     _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
 
     print("[OK] Enrichment successful")

@@ -11,6 +11,8 @@ from .api import (
     EnrichmentError,
     Profile,
     enrich,
+    run_enrichment_blocks,
+    available_enrichment_blocks,
 )
 
 __all__ = [
@@ -19,4 +21,6 @@ __all__ = [
     "EnrichmentError",
     "Profile",
     "enrich",
+    "run_enrichment_blocks",
+    "available_enrichment_blocks",
 ]

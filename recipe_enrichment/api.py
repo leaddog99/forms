@@ -252,7 +252,15 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     if recipe is None:
         raise EnrichmentError("extraction produced no usable recipe")
 
-    # --- steps 2-6: deferred carves (see DL-4); currently handled by the caller ---
+    # --- 4. Enrichment blocks — INDIVIDUALLY selectable via req.enrich (a set
+    #        of block names off the live registry). identity/translate/embed
+    #        remain deferred carves (DL-4). ---
+    if req.enrich:
+        e_meta = run_enrichment_blocks(recipe, req.enrich, llm_key=req.llm_key)
+        timings.update(e_meta.get("timings") or {})
+        usage_log.extend(e_meta.get("usage") or [])
+        if e_meta.get("prompts"):
+            prompts["enrich"] = e_meta["prompts"]
 
     # --- 7. Seal / shape by profile (full = identity). ---
     from .serialize import apply_profile
@@ -268,3 +276,101 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
             "extract_path": extract_path,  # 'jsonld-direct' | 'markdown-llm'
         },
     )
+
+
+def available_enrichment_blocks() -> tuple[str, ...]:
+    """The enrichment block names available to request, read off the live
+    ENRICHMENT_BLOCKS registry. Registry-driven so a new block (nutrition,
+    dietary tags, …) becomes selectable with no change here — and the form/UI
+    can enumerate the checkboxes from this. Falls back to the known three if the
+    registry can't be imported."""
+    try:
+        from extract.enrich_recipe import ENRICHMENT_BLOCKS
+        return tuple(b.name for b in ENRICHMENT_BLOCKS)
+    except Exception:
+        return ("provenance", "classification", "editorial")
+
+
+def run_enrichment_blocks(
+    recipe: dict,
+    block_names=None,
+    *,
+    model: str = "claude-haiku-4-5",
+    llm_key: Optional[str] = None,
+) -> dict:
+    """Run the SELECTED enrichment blocks on `recipe` in place, merging each
+    block's output into recipe[block.name]. The whole point (per the user):
+    every block is INDIVIDUALLY selectable, and "there will be more".
+
+    block_names:
+        None        -> all registry blocks (legacy enrich_recipe behavior)
+        iterable    -> only those names (unknown names ignored with a warning)
+
+    Registry-driven: blocks + their order come from ENRICHMENT_BLOCKS, so adding
+    a block needs no change here. Each block is one parallel LLM call (the cost
+    unit). Per-block failure is isolated (other blocks still land). Returns meta
+    {timings, prompts, usage, blocks_run}. Best-effort: a block raising never
+    aborts the others.
+
+    Delegates to the existing block machinery (_run_block / _build_user_prompt)
+    during build-up — the strangler keeps ONE implementation. BYOK (llm_key) is
+    accepted for the eventual per-request key injection (DL-5); today _run_block
+    uses the ambient env key.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from extract.enrich_recipe import (
+        ENRICHMENT_BLOCKS, _build_user_prompt, _run_block,
+    )
+    from input.pipeline.token_journal import build_usage_entry
+
+    timings: dict = {}
+    usage: list = []
+
+    if block_names is None:
+        selected = list(ENRICHMENT_BLOCKS)
+    else:
+        wanted = set(block_names)
+        known = {b.name for b in ENRICHMENT_BLOCKS}
+        unknown = wanted - known
+        if unknown:
+            print(f"[enrich] ignoring unknown enrichment blocks: {sorted(unknown)} "
+                  f"(known: {sorted(known)})")
+        selected = [b for b in ENRICHMENT_BLOCKS if b.name in wanted]
+
+    if not selected:
+        return {"timings": timings, "prompts": {}, "usage": usage, "blocks_run": []}
+
+    user_prompt = _build_user_prompt(recipe)
+    results: dict = {}
+    with ThreadPoolExecutor(max_workers=len(selected),
+                            thread_name_prefix="enrich-api") as pool:
+        futs = {pool.submit(_run_block, b, user_prompt, model): b for b in selected}
+        for fut, b in futs.items():
+            try:
+                results[b.name] = (fut.result(), None)
+            except Exception as e:  # isolate per-block failure
+                results[b.name] = (None, e)
+
+    for b in selected:  # registry order -> deterministic merge + usage order
+        res, err = results.get(b.name, (None, None))
+        if err is not None:
+            print(f"[enrich] block {b.name!r} failed ({err}); leaving defaults")
+            timings[f"enrich_{b.name}_ms"] = 0
+            continue
+        response, parsed, elapsed_ms = res
+        timings[f"enrich_{b.name}_ms"] = elapsed_ms
+        if response is not None:
+            usage.append(build_usage_entry(b.operation, model, response))
+        if isinstance(parsed, dict):
+            recipe[b.name] = {**(recipe.get(b.name) or {}), **parsed}
+
+    blocks_run = [b.name for b in selected]
+    timings["enrich_blocks_ms"] = sum(
+        v for k, v in timings.items() if k.startswith("enrich_") and k.endswith("_ms")
+    )
+    return {
+        "timings": timings,
+        "prompts": {"model": model, "blocks": blocks_run},
+        "usage": usage,
+        "blocks_run": blocks_run,
+    }

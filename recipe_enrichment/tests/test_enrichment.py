@@ -145,6 +145,25 @@ def test_fastlane_diagnostic_never_raises():
     _log_fastlane_validation_errors({}, "")
 
 
+# --- enrichment block selection (individually selectable) -----------------
+
+def test_available_enrichment_blocks_lists_registry():
+    from recipe_enrichment import available_enrichment_blocks
+    blocks = available_enrichment_blocks()
+    assert "provenance" in blocks
+    assert "classification" in blocks
+    assert "editorial" in blocks
+
+
+def test_run_enrichment_blocks_empty_and_unknown_skip_llm():
+    # Empty or all-unknown selection must NOT call the LLM — returns no blocks.
+    from recipe_enrichment import run_enrichment_blocks
+    r = {"name": "X", "recipeIngredient": ["a"], "recipeInstructions": [{"text": "b"}]}
+    assert run_enrichment_blocks(r, [])["blocks_run"] == []
+    assert run_enrichment_blocks(r, ["bogus", "nope"])["blocks_run"] == []
+    assert "provenance" not in r and "editorial" not in r  # nothing mutated
+
+
 # --- HTTP surface ---------------------------------------------------------
 
 def test_http_health_and_enrich_and_seal():
