@@ -85,7 +85,34 @@ code: the HTTP surface (`service.py`) and package tests. Both advance the base
 architecture (the real network boundary + durable verification) without touching
 the monolith's hot path.
 
+### DL-12 (2026-06-06) — Non-English: translate the JSON-LD, don't discard it (use the fast lane).
+User insight: "if there's a JSON-LD component we can use its info to feed our
+algos." The old non-English path translated the markdown and DROPPED the JSON-LD
+(`md_result["jsonld"]=[]`), forcing the ~17s markdown-LLM. Now `enrich()` does a
+translate step BEFORE extract: if the page is non-English and ships JSON-LD, it
+translates the JSON-LD's STRING VALUES to English (one Haiku call via
+intake.translate's recipe-aware prompt, structure preserved) and runs the FAST
+LANE on it (jsonld-direct, ~1s). Falls back to translating the markdown for the
+LLM path if JSON-LD translation fails/mangles. Original preserved on
+`_source.originalLanguage`/`originalTitle` (the two-flavor goal). The monolith's
+URL-path translation is gated on `not _USE_ENRICHMENT_API` (flag off = legacy
+translate-then-drop; flag on = enrich does JSON-LD-first). New API helpers:
+`_translate_jsonld_for_fastlane`, `_translate_markdown_for_llm`,
+`_extract_json_block`. Verified live: Greek Spanakopita JSON-LD → English via
+jsonld-direct, provenance stamped. (api-only + a one-line monolith gate.)
+
 ### Noted follow-ups (small, deferred)
+- **Staged/bookmarklet path not carved yet (2026-06-06):** the misko.gr case
+  (and any bot-blocked site) flows through the STAGED path (`/extract-from-markdown`),
+  which is NOT yet rerouted through `enrich()` — so the JSON-LD-translation win
+  above only applies to the URL-paste path until the staged path is carved
+  (carve-plan #6). Do that so the bookmarklet benefits.
+- **Playwright browser-simulation (user wants to revisit):** drive a real
+  (headless) browser server-side so the corpus crawl can fetch bot-protected /
+  Cloudflare-challenged pages (bostonchefs, misko.gr) that block our direct
+  fetch. Distinct from the bookmarklet (user session). Relates to SplitSpec
+  §177-181 (the corpus is the bot; respect robots/UA/rate-limit). Restart this
+  convo later.
 - **Extract error message wording (2026-06-06):** when the SOURCE site bot-blocks
   our server fetch (e.g. bostonchefs/Cloudflare), the endpoint returns 502 and
   Cloudflare-in-front-of-tbotb.com repaints it as a branded 502 page; the form's

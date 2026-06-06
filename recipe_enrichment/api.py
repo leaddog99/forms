@@ -39,8 +39,15 @@ cost during build-up. The identical logic is exposed over HTTP in `service.py`
 """
 from __future__ import annotations
 
+import json as _json
+import re as _re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Literal, Optional
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 # Output-shaping profiles. The seal lives in one canonical serializer:
 #   full   — everything (internal processing; the body included)
@@ -182,6 +189,92 @@ def _log_fastlane_validation_errors(jsonld: dict, source_url: str) -> None:
         print(f"[enrich] (fast-lane diagnostic skipped: {type(diag_err).__name__})")
 
 
+def _extract_json_block(text: str) -> Optional[dict]:
+    """Pull a JSON object out of an LLM reply that may be fenced or prefaced."""
+    if not text:
+        return None
+    t = text.strip()
+    m = _re.search(r"```(?:json)?\s*(\{.*\})\s*```", t, _re.DOTALL)
+    if m:
+        t = m.group(1)
+    elif not t.startswith("{"):
+        i, j = t.find("{"), t.rfind("}")
+        if i != -1 and j != -1 and j > i:
+            t = t[i:j + 1]
+    try:
+        obj = _json.loads(t)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def _translate_jsonld_for_fastlane(jsonld: dict, src_lang: str):
+    """Translate a non-English JSON-LD Recipe's STRING VALUES to English while
+    preserving structure, so the fast lane can run on it — instead of discarding
+    the JSON-LD (the old non-English behavior) and paying for the slow markdown
+    LLM. One Haiku call via the recipe-aware translator (its prompt rule #7
+    preserves JSON shape + leaves URLs/@type/ISO durations untouched).
+
+    Returns (translated_jsonld, translation_meta) or (None, None) on failure —
+    caller then falls back to translating the markdown for the LLM path.
+    """
+    try:
+        from intake.translate import translate_markdown, language_name
+    except Exception:
+        return None, None
+    try:
+        original_title = (jsonld.get("name") or "").strip() or None
+        block = "```json\n" + _json.dumps(jsonld, ensure_ascii=False, indent=2) + "\n```"
+        tr = translate_markdown(block, src_lang)
+        translated = _extract_json_block(tr.translated_markdown or "")
+        # Sanity: must still look like a recipe (name + ingredients), else the
+        # translation mangled it — fall back to markdown.
+        if not isinstance(translated, dict) or not (translated.get("name") or "").strip():
+            return None, None
+        if not (translated.get("recipeIngredient")):
+            return None, None
+        meta = {
+            "originalLanguage": src_lang,
+            "originalLanguageName": language_name(src_lang),
+            "translated": True,
+            "translatedAt": _now_iso(),
+            "originalTitle": original_title,
+        }
+        return translated, meta
+    except Exception as e:
+        print(f"[enrich] JSON-LD translation failed ({e}); will try markdown path")
+        return None, None
+
+
+def _translate_markdown_for_llm(markdown: str, src_lang: str, meta):
+    """Fallback: translate the markdown to English for the LLM extract path
+    (when there's no usable JSON-LD). Reuses the existing extraction-stage
+    translator + plausibility check. Returns (markdown, meta) — original markdown
+    on suspect/failed translation (so we never feed garbage downstream)."""
+    try:
+        from intake.translate import translate_extraction_markdown, language_name
+    except Exception:
+        return markdown, meta
+    try:
+        xr = translate_extraction_markdown(markdown, src_lang)
+        if not xr.plausibility_ok:
+            print(f"[enrich] markdown translation suspect ({xr.plausibility_reason}); "
+                  f"using original")
+            return markdown, meta
+        m = dict(meta or {})
+        m.update({
+            "originalLanguage": xr.source_language,
+            "originalLanguageName": xr.source_language_name,
+            "translated": True,
+            "translatedAt": _now_iso(),
+            "originalTitle": (m.get("originalTitle") or xr.original_title or ""),
+        })
+        return xr.translated_markdown, m
+    except Exception as e:
+        print(f"[enrich] markdown translation failed ({e}); using original")
+        return markdown, meta
+
+
 def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     """Run the per-recipe transform on already-fetched content.
 
@@ -212,13 +305,39 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     prompts: dict = {}
     usage_log: list = []
 
-    # --- 1. Extract: JSON-LD fast lane, else the markdown LLM call. Exact same
-    #        selection logic the monolith used inline (delegate, don't reimpl). ---
+    # --- 2/3. Translate non-English content to English BEFORE extract. PREFER
+    #          translating the JSON-LD (structured) so the fast lane can run on
+    #          it; only fall back to translating the markdown for the LLM path.
+    #          English pages: no-op. This is the "use the JSON-LD, don't discard
+    #          it" change for non-English sources — jsonld-direct (~1s) instead
+    #          of markdown-llm (~17s), original preserved for provenance. ---
+    eff_jsonld = req.jsonld
+    eff_markdown = req.markdown
+    translation_meta = None
+    try:
+        from intake.translate import is_non_english
+        if is_non_english(req.page_language):
+            if eff_jsonld:
+                t_jsonld, translation_meta = _translate_jsonld_for_fastlane(
+                    eff_jsonld, req.page_language)
+                if t_jsonld is not None:
+                    eff_jsonld = t_jsonld
+                    print(f"[enrich] translated JSON-LD from {req.page_language!r} "
+                          f"-> fast lane (kept structured data, skipped ~17s LLM)")
+                else:
+                    eff_jsonld = None  # jsonld translation failed -> markdown path
+            if not eff_jsonld and eff_markdown:
+                eff_markdown, translation_meta = _translate_markdown_for_llm(
+                    eff_markdown, req.page_language, translation_meta)
+    except Exception as e:
+        print(f"[enrich] translation step failed ({e}); proceeding untranslated")
+
+    # --- 1. Extract: JSON-LD fast lane, else the markdown LLM call. ---
     recipe: Optional[dict] = None
     extract_path = ""
-    if req.jsonld:
+    if eff_jsonld:
         from extract.jsonld_to_recipe import jsonld_to_recipe
-        fixed = _coerce_jsonld_for_fastlane(req.jsonld)
+        fixed = _coerce_jsonld_for_fastlane(eff_jsonld)
         try:
             recipe = jsonld_to_recipe(
                 fixed, source_url=req.source_url, title=req.title,
@@ -251,7 +370,7 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     if recipe is None:
         from extract.markdown_to_recipe import markdown_to_recipe
         recipe = markdown_to_recipe(
-            req.markdown, source_name="", source_url=req.source_url,
+            eff_markdown, source_name="", source_url=req.source_url,
             title=req.title, timings=timings, prompts=prompts,
             usage_log=usage_log,
         )
@@ -259,6 +378,16 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
 
     if recipe is None:
         raise EnrichmentError("extraction produced no usable recipe")
+
+    # Translation provenance -> _source (so the UI can show "Translated from X").
+    if translation_meta:
+        src = recipe.get("_source") or {}
+        src["originalLanguage"] = translation_meta.get("originalLanguage", "")
+        src["translated"] = True
+        src["translatedAt"] = translation_meta.get("translatedAt", "")
+        if translation_meta.get("originalTitle"):
+            src["originalTitle"] = translation_meta["originalTitle"]
+        recipe["_source"] = src
 
     # Caller-supplied authority scores (from TBOTB) -> stamp onto _scoring so the
     # editorial scoreCommentary block can interpret them. The API never fetches

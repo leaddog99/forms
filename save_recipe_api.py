@@ -4563,7 +4563,12 @@ def extract_recipe_from_url(
             page_lang = detect_language(
                 "", headers=None, visible_text=md_result.get("markdown", "")
             ) or page_lang
-        if is_non_english(page_lang):
+        # When routing through the enrichment API, DON'T translate here — pass
+        # the raw markdown + JSON-LD + page_language to enrich(), which now
+        # translates the JSON-LD (structured) and runs the fast lane instead of
+        # discarding it. Language detection above still runs so page_lang is
+        # accurate for enrich(). (Flag OFF: legacy translate-then-drop-jsonld.)
+        if is_non_english(page_lang) and not _USE_ENRICHMENT_API:
             t_xlate0 = time.perf_counter()
             try:
                 xr = translate_extraction_markdown(md_result["markdown"], page_lang)
