@@ -85,6 +85,14 @@ code: the HTTP surface (`service.py`) and package tests. Both advance the base
 architecture (the real network boundary + durable verification) without touching
 the monolith's hot path.
 
+### Noted follow-ups (small, deferred)
+- **Extract error message wording (2026-06-06):** when the SOURCE site bot-blocks
+  our server fetch (e.g. bostonchefs/Cloudflare), the endpoint returns 502 and
+  Cloudflare-in-front-of-tbotb.com repaints it as a branded 502 page; the form's
+  sniffer then says "Cloudflare/bot challenge on the source page" — right
+  conclusion, confusing finger-point (it names the tunnel's Cloudflare). Reword to
+  plainly: "the source site blocked our fetch — use the bookmarklet." Low priority.
+
 ### Carve plan (for review — order of future reroutes)
 1. ✅ extract (jsonld/markdown selection) — DONE, flag-gated.
 2. identity card — move `generate_identity_card_for_recipe` into `enrich()`

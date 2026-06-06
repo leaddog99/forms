@@ -19,13 +19,42 @@ from __future__ import annotations
 
 from typing import Optional
 
+from pathlib import Path
+
+# Load .env so the standalone service has LLM keys for its calls. Harmless when
+# mounted in the main server (which already loaded .env) — env is process-wide.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from .api import EnrichmentError, EnrichmentRequest, enrich
+from .api import (
+    EnrichmentError, EnrichmentRequest, available_enrichment_blocks, enrich,
+)
 from .serialize import SealError
 
 app = FastAPI(title="Recipe Enrichment API", version="0.1.0")
+
+_TEST_FORM = Path(__file__).resolve().parent / "test_form.html"
+
+
+@app.get("/")
+def test_form():
+    """Self-contained test harness for the API (same-origin, no CORS). Open this
+    in a browser to exercise extract + profiles + per-block selection."""
+    return FileResponse(str(_TEST_FORM), media_type="text/html")
+
+
+@app.get("/blocks")
+def list_blocks() -> dict:
+    """The enrichment block names available to request — read off the live
+    registry so the test form (and any caller) can enumerate them."""
+    return {"blocks": list(available_enrichment_blocks())}
 
 
 class EnrichBody(BaseModel):

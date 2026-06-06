@@ -893,6 +893,19 @@ try:
 except Exception as e:
     print(f"[WARN] Generated images mount failed: {e}")
 
+# Mount the Recipe Enrichment API (the third entity) as a sub-app so its test
+# harness + /enrich are reachable through the main server (and thus the tunnel):
+#   /enrich-api/        -> test form     /enrich-api/enrich -> POST
+#   /enrich-api/blocks  -> registry      /enrich-api/health
+# Build-up convenience: lets us exercise the API in-process / over the tunnel
+# before it has its own deployment. The form's fetches are mount-relative.
+try:
+    from recipe_enrichment.service import app as _enrichment_app
+    app.mount("/enrich-api", _enrichment_app, name="enrichment_api")
+    print("[OK] Recipe Enrichment API mounted at /enrich-api")
+except Exception as e:
+    print(f"[WARN] Enrichment API mount failed: {e}")
+
 
 # Per-job Tee/lock/log-filename used to live here; moved to
 # input/pipeline/jobs.py once the dish refresh became a job. The runner

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recipe Enrichment API — test harness</title>
+  <style>
+    :root { --line:#d9d9e3; --muted:#6b7280; --bg:#fafafb; --accent:#7c3aed; }
+    * { box-sizing: border-box; }
+    body { font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; margin:0; color:#1f2330; background:#f4f4f7; }
+    header { padding:14px 20px; background:#1f2330; color:#fff; }
+    header h1 { margin:0; font-size:16px; font-weight:600; }
+    header .sub { font-size:12px; color:#b9bdc9; margin-top:2px; }
+    .wrap { display:grid; grid-template-columns: 430px 1fr; gap:0; height:calc(100vh - 56px); }
+    .panel { padding:18px 20px; overflow:auto; }
+    .panel.left { border-right:1px solid var(--line); background:#fff; }
+    h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 8px; }
+    h3:not(:first-child) { margin-top:22px; }
+    label { display:block; font-weight:600; font-size:12px; margin:14px 0 4px; }
+    label .hint { font-weight:400; color:var(--muted); font-style:italic; }
+    input[type=text], input[type=url], input[type=password], textarea, select {
+      width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px;
+      font:inherit; background:var(--bg); }
+    textarea { min-height:96px; resize:vertical; font-family: ui-monospace, Consolas, monospace; font-size:12px; }
+    .row { display:flex; gap:10px; }
+    .row > * { flex:1; }
+    .checks { display:flex; flex-wrap:wrap; gap:10px 16px; margin-top:4px; }
+    .checks label { display:flex; align-items:center; gap:6px; font-weight:400; margin:0; }
+    .checks input { width:auto; }
+    button { margin-top:18px; width:100%; padding:11px; border:0; border-radius:8px;
+      background:var(--accent); color:#fff; font-weight:600; font-size:14px; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:wait; }
+    .meta { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0 12px; }
+    .badge { background:#eef0f6; border:1px solid var(--line); border-radius:999px;
+      padding:3px 10px; font-size:12px; }
+    .badge b { color:var(--accent); }
+    pre { background:#1f2330; color:#e6e8ef; padding:14px; border-radius:8px; overflow:auto;
+      font:12px/1.5 ui-monospace, Consolas, monospace; white-space:pre-wrap; word-break:break-word; margin:0; }
+    pre.payload { background:#0f1117; border:1px solid #2b2f3a; }
+    .err { color:#b42318; background:#fef2f2; border:1px solid #fecaca; padding:10px; border-radius:7px; margin-bottom:10px; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Recipe Enrichment API — test harness</h1>
+    <div class="sub">Content in → structured recipe out. The payload on the right updates live as you change options; <b>Run</b> POSTs exactly that.</div>
+  </header>
+  <div class="wrap">
+    <div class="panel left">
+      <label>Markdown <span class="hint">— page content (used when no JSON-LD)</span></label>
+      <textarea id="markdown" placeholder="# Banana Bread&#10;2 bananas, 1 cup flour...&#10;Mash and bake."></textarea>
+
+      <label>JSON-LD <span class="hint">— paste a schema.org Recipe block (takes the fast lane)</span></label>
+      <textarea id="jsonld" placeholder='{"@type":"Recipe","name":"...","recipeIngredient":[...],"recipeInstructions":[...]}'></textarea>
+
+      <div class="row">
+        <div>
+          <label>Source URL</label>
+          <input type="url" id="source_url" placeholder="https://example.com/recipe" />
+        </div>
+        <div>
+          <label>Title</label>
+          <input type="text" id="title" placeholder="Recipe title" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Profile <span class="hint">(seal)</span></label>
+          <select id="profile">
+            <option value="full">full — everything</option>
+            <option value="static">static — body kept, owner fields dropped</option>
+            <option value="public">public — body SEALED (work-product + link)</option>
+          </select>
+        </div>
+        <div>
+          <label>Page language</label>
+          <input type="text" id="page_language" value="en" />
+        </div>
+      </div>
+
+      <label>Enrichment blocks <span class="hint">— individually selectable (live registry)</span></label>
+      <div class="checks" id="blockChecks"><span class="hint">loading…</span></div>
+
+      <div class="checks" style="margin-top:10px">
+        <label><input type="checkbox" id="do_identity" /> identity card</label>
+        <label><input type="checkbox" id="do_embed" /> embedding (deferred)</label>
+      </div>
+
+      <label>LLM key (BYOK) <span class="hint">— optional; stub today, uses env key (DL-5)</span></label>
+      <input type="password" id="llm_key" placeholder="leave blank to use server env key" autocomplete="off" />
+
+      <button id="run">Run /enrich</button>
+    </div>
+
+    <div class="panel right">
+      <h3>Request payload <span class="hint" style="text-transform:none;font-weight:400">— POST <span id="endpoint">/enrich</span></span></h3>
+      <pre id="payload" class="payload"></pre>
+
+      <h3>Response</h3>
+      <div id="metaBar" class="meta hidden"></div>
+      <div id="errBox" class="err hidden"></div>
+      <pre id="out">Run the API to see the result here.</pre>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    // Mount-agnostic base: works whether served at / (standalone) or
+    // /enrich-api/ (mounted on the main server, reachable via the tunnel).
+    const BASE = location.pathname.replace(/\/+$/, '');
+    $('endpoint').textContent = (BASE || '') + '/enrich';
+
+    // Build the EXACT body that will be POSTed (used by the live preview AND Run).
+    function buildBody() {
+      const body = {
+        markdown: $('markdown').value,
+        source_url: $('source_url').value.trim(),
+        title: $('title').value.trim(),
+        page_language: $('page_language').value.trim() || 'en',
+        profile: $('profile').value,
+        do_identity: $('do_identity').checked,
+        do_embed: $('do_embed').checked,
+        enrich: [...document.querySelectorAll('.blk:checked')].map(c => c.value),
+      };
+      const key = $('llm_key').value.trim();
+      if (key) body.llm_key_encrypted = key;
+      const rawJsonld = $('jsonld').value.trim();
+      if (rawJsonld) {
+        try { body.jsonld = JSON.parse(rawJsonld); body.__jsonldOk = true; }
+        catch (e) { body.__jsonldError = e.message; }
+      }
+      return body;
+    }
+
+    // Live payload preview — re-render on any input change.
+    function renderPayload() {
+      const b = buildBody();
+      const note = b.__jsonldError ? `// ⚠ JSON-LD is not valid JSON: ${b.__jsonldError}\n` : '';
+      delete b.__jsonldOk; delete b.__jsonldError;
+      $('payload').textContent = note + JSON.stringify(b, null, 2);
+    }
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      el.addEventListener('input', renderPayload);
+      el.addEventListener('change', renderPayload);
+    });
+
+    // Populate enrichment-block checkboxes from the live registry.
+    fetch(BASE + '/blocks').then(r => r.json()).then(d => {
+      const box = $('blockChecks');
+      box.innerHTML = '';
+      (d.blocks || []).forEach(name => {
+        const l = document.createElement('label');
+        l.innerHTML = `<input type="checkbox" value="${name}" class="blk"> ${name}`;
+        l.querySelector('input').addEventListener('change', renderPayload);
+        box.appendChild(l);
+      });
+      if (!(d.blocks || []).length) box.innerHTML = '<span class="hint">none</span>';
+      renderPayload();
+    }).catch(() => { $('blockChecks').innerHTML = '<span class="hint">/blocks unavailable</span>'; renderPayload(); });
+
+    renderPayload();
+
+    $('run').addEventListener('click', async () => {
+      const btn = $('run');
+      const errBox = $('errBox'), metaBar = $('metaBar'), out = $('out');
+      errBox.classList.add('hidden'); metaBar.classList.add('hidden');
+
+      const body = buildBody();
+      if (body.__jsonldError) {
+        errBox.textContent = 'JSON-LD is not valid JSON: ' + body.__jsonldError;
+        errBox.classList.remove('hidden'); return;
+      }
+      delete body.__jsonldOk; delete body.__jsonldError;
+
+      btn.disabled = true; out.textContent = 'Running…';
+      const t0 = performance.now();
+      try {
+        const res = await fetch(BASE + '/enrich', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const ms = Math.round(performance.now() - t0);
+        const data = await res.json();
+        if (!res.ok) {
+          errBox.textContent = `HTTP ${res.status}: ${data.detail || JSON.stringify(data)}`;
+          errBox.classList.remove('hidden'); out.textContent = ''; return;
+        }
+        const m = data.meta || {};
+        metaBar.innerHTML = [
+          `<span class="badge">client <b>${ms} ms</b></span>`,
+          m.extract_path ? `<span class="badge">extract path <b>${m.extract_path}</b></span>` : '',
+          (m.prompts && m.prompts.blocks) ? `<span class="badge">blocks <b>${(m.prompts.blocks.join(', ')) || '—'}</b></span>` : '',
+          `<span class="badge">profile <b>${body.profile}</b></span>`,
+          ('recipeIngredient' in (data.recipe||{})) ? `<span class="badge">body <b>present</b></span>` : `<span class="badge">body <b>sealed</b></span>`,
+        ].filter(Boolean).join('');
+        metaBar.classList.remove('hidden');
+        out.textContent = JSON.stringify(data.recipe, null, 2);
+      } catch (e) {
+        errBox.textContent = 'Request failed: ' + e.message;
+        errBox.classList.remove('hidden'); out.textContent = '';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
