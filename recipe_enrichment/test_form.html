@@ -80,6 +80,18 @@
         </div>
       </div>
 
+      <label>Scores <span class="hint">— from TBOTB; the API doesn't fetch Moz. Used by editorial.scoreCommentary.</span></label>
+      <div class="row">
+        <input type="text" id="score_pa" placeholder="PA" />
+        <input type="text" id="score_da" placeholder="DA" />
+        <input type="text" id="score_ou" placeholder="OU" />
+        <input type="text" id="score_root" placeholder="rootDomain" />
+      </div>
+      <button type="button" id="fetchMoz"
+              style="margin-top:8px;background:#4b5563;font-size:12px;padding:8px">
+        Fetch Moz for source URL (TBOTB-side)
+      </button>
+
       <label>Enrichment blocks <span class="hint">— individually selectable (live registry)</span></label>
       <div class="checks" id="blockChecks"><span class="hint">loading…</span></div>
 
@@ -124,6 +136,12 @@
         do_embed: $('do_embed').checked,
         enrich: [...document.querySelectorAll('.blk:checked')].map(c => c.value),
       };
+      const scoring = {};
+      const pa = $('score_pa').value.trim(); if (pa !== '') scoring.pageAuthority = Number(pa);
+      const da = $('score_da').value.trim(); if (da !== '') scoring.domainAuthority = Number(da);
+      const ou = $('score_ou').value.trim(); if (ou !== '') scoring.ouScore = Number(ou);
+      const root = $('score_root').value.trim(); if (root) scoring.rootDomain = root;
+      if (Object.keys(scoring).length) body.scoring = scoring;
       const key = $('llm_key').value.trim();
       if (key) body.llm_key_encrypted = key;
       const rawJsonld = $('jsonld').value.trim();
@@ -161,6 +179,30 @@
     }).catch(() => { $('blockChecks').innerHTML = '<span class="hint">/blocks unavailable</span>'; renderPayload(); });
 
     renderPayload();
+
+    // Convenience: fetch Moz scores from TBOTB (the main server's /url-metadata)
+    // and fill the score fields. This is a SEPARATE call to a TBOTB capability —
+    // it deliberately does NOT go through the neutral enrichment API. (Absolute
+    // path -> the main app at the tunnel root, not /enrich-api.)
+    $('fetchMoz').addEventListener('click', async () => {
+      const url = $('source_url').value.trim();
+      if (!url) { alert('Enter a source URL first.'); return; }
+      const btn = $('fetchMoz'); const old = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Fetching from TBOTB…';
+      try {
+        const res = await fetch('/url-metadata?url=' + encodeURIComponent(url));
+        const m = await res.json();
+        if (m.page_authority != null) $('score_pa').value = m.page_authority;
+        if (m.domain_authority != null) $('score_da').value = m.domain_authority;
+        if (m.ou_score != null) $('score_ou').value = m.ou_score;
+        if (m.root_domain) $('score_root').value = m.root_domain;
+        renderPayload();
+      } catch (e) {
+        alert('Moz fetch failed (TBOTB /url-metadata): ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = old;
+      }
+    });
 
     $('run').addEventListener('click', async () => {
       const btn = $('run');

@@ -68,6 +68,10 @@ class EnrichBody(BaseModel):
     do_identity: bool = True
     do_embed: bool = False
     profile: str = "full"                              # full | static | public
+    # Authority scores from TBOTB (not fetched here) — interpreted by the
+    # editorial scoreCommentary block. {pageAuthority, domainAuthority, ouScore,
+    # rootDomain, ...}
+    scoring: Optional[dict] = None
     # BYOK: the caller's own LLM key, encrypted to THIS service's public key.
     # Decrypted at this edge (see _decrypt_byok), used for the inference call,
     # then discarded. NEVER persisted, NEVER logged.
@@ -100,6 +104,7 @@ def enrich_endpoint(body: EnrichBody) -> EnrichResponse:
         do_identity=body.do_identity,
         do_embed=body.do_embed,
         profile=body.profile,        # type: ignore[arg-type]
+        scoring=body.scoring,
         llm_key=llm_key,
     )
     try:

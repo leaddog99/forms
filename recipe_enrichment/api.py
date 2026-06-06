@@ -85,6 +85,14 @@ class EnrichmentRequest:
     do_embed: bool = False                # generate the embedding vector
     profile: Profile = "full"             # output shaping / seal
 
+    # --- authority scores supplied BY THE CALLER (TBOTB), not fetched here ---
+    # Moz PA/DA/OU live in TBOTB's metabase_url store and are its moat; this API
+    # is stateless / no-DB / no-scoring, so it never fetches them. But the
+    # editorial `scoreCommentary` block INTERPRETS them, so the caller may pass
+    # them in and we stamp recipe._scoring before enrichment. Shape (any subset):
+    # {pageAuthority, domainAuthority, ouScore, rootDomain, rawTitle}.
+    scoring: Optional[dict] = None
+
     # --- BYOK ---
     # The caller's OWN llm credential. Decrypted at the HTTP edge (`service.py`);
     # in-process callers pass plaintext. Used for the inference call(s), then
@@ -251,6 +259,12 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
 
     if recipe is None:
         raise EnrichmentError("extraction produced no usable recipe")
+
+    # Caller-supplied authority scores (from TBOTB) -> stamp onto _scoring so the
+    # editorial scoreCommentary block can interpret them. The API never fetches
+    # Moz itself (stateless / no DB / no scoring).
+    if req.scoring:
+        recipe["_scoring"] = {**(recipe.get("_scoring") or {}), **req.scoring}
 
     # --- 4. Enrichment blocks — INDIVIDUALLY selectable via req.enrich (a set
     #        of block names off the live registry). identity/translate/embed
