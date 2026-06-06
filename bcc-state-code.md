@@ -1614,6 +1614,29 @@ A long design thread (Greek vs US vs vegan "variants" of one dish). Walked throu
 
 ---
 
+## Session log — 2026-06-05 — THE SPLIT begins: three-entity architecture + Recipe Enrichment API (branch, autonomous)
+
+Per `SplitSpec.md`, started separating the codebase into independent products. This session was run **autonomously** (user offline); all judgment calls are in **`docs/split-decisions-log.md`** (DL-1..9). Work is on branch **`split/enrichment-api`** to keep master shippable (DL-1) — NOT merged.
+
+### Terminology locked (with the user, before he went offline)
+- **TBOTB** = the master/corpus = "best of the best" engine + search-engine *destination*. Crawls, scores, critiques, ranks; owns the master DB. Public surface emits **work-product + JSON-LD rich-result envelope + link only — never a substitute recipe**.
+- **BCC** = the Local tool — the user's personal capture/possess/cook app.
+- **Recipe Enrichment API** = a **third, neutral entity** (productized shared core); BCC + TBOTB are its first two customers (SplitSpec §43). Content → structured recipe; **no fetch · BYOK · stateless · no scoring · seal-at-emit**. Inference billed by the LLM vendor to the caller's own account (BYOK) so the API's fee is a constant value-add toll. Scoring stays in TBOTB (the moat); the API only generates the vector. Subscription relationship = **"ask TBOTB live" read API** (vector + DA/PA up, never stored; grade/rank down).
+
+### Phase 1 map (`docs/split-phase1-map.md`) — every table/module/endpoint/job/UI bucketed
+Headline entanglements flagged: **promote-to-master** (user→corpus pipe — CUT), the **local extract reading `llm_extract_cache`** (the no-bridge trap — *this is the caching work from 06-01; it lands on the chopping block for the Local side*), **claim** (copies the corpus body down), and the **shared `recipes.db`** (must physically split). Still-open calls: auth/users ownership, `domains` extraction-tips routing, config split.
+
+### Built this session — `recipe_enrichment/` package (strangler pattern)
+- **`api.py`** — `enrich(EnrichmentRequest) -> EnrichmentResult`. v1 owns the **extract** step (JSON-LD fast lane → markdown LLM), delegating to the existing `extract/*` (no code moved — DL-2). Enrichment blocks selected **by name off the live `ENRICHMENT_BLOCKS` registry** (add-as-we-go, no-data-in-code). Steps 2-6 (translate/sanitize/enrich/identity/embed) are accepted-but-deferred carves.
+- **`serialize.py`** — the canonical **`full | static | public`** profile serializer. `corpus_public_view()` is a strict WHITELIST (work-product + envelope + keys + **mandatory source link**; refuses to emit without one); seals the body, prose, and our cooped image.
+- **`service.py`** — the HTTP surface (`POST /enrich`, `/health`) BCC/TBOTB call at the split, with the BYOK-at-edge stub. Not used in build-up (monolith calls in-process).
+- **`tests/`** — 8 deterministic tests (JSON-LD path, no LLM), runnable with pytest OR standalone; **8/8 pass**.
+- **Monolith reroute** — `extract_recipe_from_url` routes its extract step through `enrich()` via `_extract_via_enrichment_api`, gated by **`BCC_ENRICHMENT_API` (default OFF)** — with it off the path is byte-for-byte the current code (DL-6). Verified by construction + unit smoke; did NOT restart the live server onto the branch (DL-8). The bypassed inline code becomes the empirical cut list once the flag runs on (SplitSpec Phase 3 gate).
+
+Commits on branch: `b36fcfe` (map+package), `df03879` (flag-gated reroute), `0ef7976` (service+tests). **Next carve = identity card** (see the carve plan in the decision log).
+
+---
+
 ## To-do
 - **Public read-only "cookbook" pages — SEO + AI-bot compatible (2026-06-01).** Today `/r/<id>` resolves to the JS editor *form*, which bots see as an empty shell — wrong surface to expose. Build a **separate, server-rendered, read-only recipe page**: complete resolved HTML (no editor chrome), crawlable. Big head start: recipes are already stored in **schema.org shape**, so the page can emit a `<script type="application/ld+json">` **Recipe** block nearly for free (Google Recipe rich-results *and* AI crawlers parse it) + plain semantic HTML (title/hero/ingredients `<ul>`/steps `<ol>`/times/yield) + OpenGraph/Twitter meta + `<link rel=canonical>`. **Scope:** curated/cookbook set only (master_recipes / a `published` visibility flag) — private user saves stay non-crawlable. **Discovery:** `sitemap.xml` of public recipe URLs + `robots.txt` (+ optional `llms.txt`). **Payoff that closes a loop:** a public page *with* JSON-LD is itself extractable — so "paste a BCC URL" would then legitimately work against the cookbook page, not the form. **Generation fork:** (1) on-demand SSR — app renders each page live from current data, always fresh, no queue, CDN in front for bot load (start here); (2) pre-generated static — a regen *queue* renders each published recipe to a static `.html` on publish/edit, served from disk/CDN, best crawl perf + survives app downtime (graduate to this with the Fly.io/Ghost production move). Ties to the **Production hosting** + **Ghost integration** items below (`bestcooksclub.com` public domain). **Decisions to make:** (a) which recipes are public (master/cookbook only, gated by a flag?); (b) on-demand SSR vs pre-generated static first; (c) URL scheme — keep `/r/<id>` vs a human/SEO slug like `/recipes/banana-bread-<id>`. Note: the editor form moves to an explicit admin path so the clean public URL is the read-only page.
 - **Internationalization (i18n) for UI messages (2026-05-29).** User flagged: we've been writing English strings inline throughout the codebase since day one; no infrastructure to swap to another language. Start NOW so we capture new strings into the pattern while it's fresh.
