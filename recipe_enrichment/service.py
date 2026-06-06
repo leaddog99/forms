@@ -63,7 +63,8 @@ class EnrichBody(BaseModel):
     jsonld: Optional[dict] = None
     source_url: str = ""
     title: str = ""
-    page_language: str = "en"
+    page_language: str = "en"             # source language
+    target_language: str = "en"           # canonical language to land in
     enrich: list[str] = Field(default_factory=list)   # enrichment block names
     do_identity: bool = True
     do_embed: bool = False
@@ -100,6 +101,7 @@ def enrich_endpoint(body: EnrichBody) -> EnrichResponse:
         source_url=body.source_url,
         title=body.title,
         page_language=body.page_language,
+        target_language=body.target_language,
         enrich=frozenset(body.enrich),
         do_identity=body.do_identity,
         do_embed=body.do_embed,

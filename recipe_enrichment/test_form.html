@@ -75,8 +75,12 @@
           </select>
         </div>
         <div>
-          <label>Page language</label>
+          <label>Page lang <span class="hint">(source)</span></label>
           <input type="text" id="page_language" value="en" />
+        </div>
+        <div>
+          <label>Target lang <span class="hint">(canonical)</span></label>
+          <input type="text" id="target_language" value="en" />
         </div>
       </div>
 
@@ -131,6 +135,7 @@
         source_url: $('source_url').value.trim(),
         title: $('title').value.trim(),
         page_language: $('page_language').value.trim() || 'en',
+        target_language: $('target_language').value.trim() || 'en',
         profile: $('profile').value,
         do_identity: $('do_identity').checked,
         do_embed: $('do_embed').checked,

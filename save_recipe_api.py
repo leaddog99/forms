@@ -137,6 +137,13 @@ MEDIA_DB_PATH = "media.db"
 _USE_ENRICHMENT_API = os.getenv("BCC_ENRICHMENT_API", "0").strip() == "1"
 print(f"[SPLIT] Enrichment API extract path: {'ON' if _USE_ENRICHMENT_API else 'off'}")
 
+# Instance default canonical language (portable-package: a Greek deployment runs
+# BCC_TARGET_LANGUAGE=el). The enrichment API translates IFF source != target, so
+# the default "en" preserves today's behavior exactly. A per-user preference,
+# once wired, takes precedence over this instance default.
+INSTANCE_TARGET_LANGUAGE = (os.getenv("BCC_TARGET_LANGUAGE", "en").strip().lower()[:2] or "en")
+print(f"[SPLIT] Instance target language: {INSTANCE_TARGET_LANGUAGE}")
+
 # Placeholder user id until the user-identity field is wired into the form
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
 PLACEHOLDER_USER_ID = 1
@@ -4396,6 +4403,7 @@ def _extract_via_enrichment_api(md_result, page_lang, timings, prompts,
         source_url=md_result["source_url"],
         title=md_result["title"],
         page_language=page_lang,
+        target_language=INSTANCE_TARGET_LANGUAGE,  # per-user override TODO
         do_identity=False,        # identity stays in the tail (DL-4)
         enrich=frozenset(),
         profile="full",

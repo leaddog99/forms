@@ -73,7 +73,12 @@ class EnrichmentRequest:
     jsonld: Optional[dict] = None         # schema.org Recipe block, if the page shipped one
     source_url: str = ""                  # canonical source URL — provenance + dedup key
     title: str = ""                       # page <title>/<h1> hint
-    page_language: str = "en"             # ISO 639-1; drives the translate step
+    page_language: str = "en"             # ISO 639-1 of the SOURCE page
+    # The canonical language to land in — resolved by the caller as
+    # per-user-preference -> instance-default -> "en". Translate IFF
+    # page_language != target_language. Default "en" keeps today's behavior
+    # exactly (so a Greek instance + Greek recipe simply never translates).
+    target_language: str = "en"
 
     # --- which transforms to run (callers opt in to the heavy ones) ---
     # Enrichment work-product blocks to generate, BY NAME. Each name = one
@@ -314,23 +319,33 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     eff_jsonld = req.jsonld
     eff_markdown = req.markdown
     translation_meta = None
-    try:
-        from intake.translate import is_non_english
-        if is_non_english(req.page_language):
+    src_lang = (req.page_language or "en").strip().lower()[:2]
+    tgt_lang = (req.target_language or "en").strip().lower()[:2]
+    needs_translation = bool(src_lang) and src_lang != tgt_lang
+    if needs_translation and tgt_lang != "en":
+        # The recipe-aware translator targets English today, so we can't yet
+        # land a non-English target (e.g. en->el for a Greek instance). Keep the
+        # source untranslated rather than mistranslate. NB: the common localized
+        # case (Greek instance + Greek recipe) never gets here — source==target.
+        print(f"[enrich] target_language={tgt_lang!r} not yet a supported "
+              f"translation TARGET; keeping source ({src_lang!r}) untranslated")
+        needs_translation = False
+    if needs_translation:  # implies tgt_lang == 'en' and src_lang != 'en'
+        try:
             if eff_jsonld:
                 t_jsonld, translation_meta = _translate_jsonld_for_fastlane(
-                    eff_jsonld, req.page_language)
+                    eff_jsonld, src_lang)
                 if t_jsonld is not None:
                     eff_jsonld = t_jsonld
-                    print(f"[enrich] translated JSON-LD from {req.page_language!r} "
+                    print(f"[enrich] translated JSON-LD {src_lang!r}->en "
                           f"-> fast lane (kept structured data, skipped ~17s LLM)")
                 else:
                     eff_jsonld = None  # jsonld translation failed -> markdown path
             if not eff_jsonld and eff_markdown:
                 eff_markdown, translation_meta = _translate_markdown_for_llm(
-                    eff_markdown, req.page_language, translation_meta)
-    except Exception as e:
-        print(f"[enrich] translation step failed ({e}); proceeding untranslated")
+                    eff_markdown, src_lang, translation_meta)
+        except Exception as e:
+            print(f"[enrich] translation step failed ({e}); proceeding untranslated")
 
     # --- 1. Extract: JSON-LD fast lane, else the markdown LLM call. ---
     recipe: Optional[dict] = None

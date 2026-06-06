@@ -101,7 +101,28 @@ translate-then-drop; flag on = enrich does JSON-LD-first). New API helpers:
 `_extract_json_block`. Verified live: Greek Spanakopita JSON-LD → English via
 jsonld-direct, provenance stamped. (api-only + a one-line monolith gate.)
 
+### DL-13 (2026-06-06) — Translation target is the INSTANCE/USER language, not "English".
+User: "what if the product is Greek, the user is Greek, the recipe is Greek?" — then
+translating to English is wrong. Reframed: translate IFF `page_language != target_language`,
+where target = per-user-preference -> instance-default -> "en". Added
+`target_language` to EnrichmentRequest + service EnrichBody + the harness; the
+monolith reroute passes `INSTANCE_TARGET_LANGUAGE` (env `BCC_TARGET_LANGUAGE`,
+default "en"; per-user override is a TODO). Default "en" makes behavior IDENTICAL
+to before (source!=en == old is_non_english), so nothing breaks — the new path
+only triggers for a non-en target. CAVEAT: the recipe-aware translator targets
+English only today, so a non-English TARGET (e.g. en->el) is not yet translated —
+we skip + log rather than mistranslate; the common localized case (Greek instance
++ Greek recipe) needs no translation anyway (source==target). Verified live:
+el+target el -> Greek kept (no translation, jsonld-direct); el+target en ->
+English. Portable-package aligned ([[project_portable_package]]); generalizing the
+translator to arbitrary targets is the follow-up.
+
 ### Noted follow-ups (small, deferred)
+- **Translate to non-English targets:** generalize intake.translate (its prompt
+  targets English) so a Greek/Italian/etc. instance can translate FOREIGN recipes
+  INTO its language (en->el). Today only ->en is supported; non-en targets skip.
+- **Per-user target language:** wire a user language preference (form/Ghost) so
+  one instance serves mixed locales; today the monolith uses the instance default.
 - **Staged/bookmarklet path not carved yet (2026-06-06):** the misko.gr case
   (and any bot-blocked site) flows through the STAGED path (`/extract-from-markdown`),
   which is NOT yet rerouted through `enrich()` — so the JSON-LD-translation win
