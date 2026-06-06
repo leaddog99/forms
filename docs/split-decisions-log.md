@@ -1,0 +1,64 @@
+# Split — Autonomous Decision Log
+
+Running log of judgment calls made while executing the split (SplitSpec.md +
+docs/split-phase1-map.md) autonomously. Each entry: the call, and *why*. The
+user is offline; these are for review on return.
+
+Format: `DL-n (date) — decision — rationale`.
+
+---
+
+### DL-1 (2026-06-05) — Work on a feature branch `split/enrichment-api`, not master.
+A multi-hour strangler refactor can destabilize; the user explicitly cares about
+"a functional master." Branch keeps master shippable; merge when proven. Master's
+last good state is the caching work + docs (already pushed).
+
+### DL-2 (2026-06-05) — Strangler by delegation, not code-move (yet).
+`recipe_enrichment.enrich()` *imports and calls* the existing monolith functions
+(`extract/*`, `sanitize`, serializer) rather than moving their code into the
+package. Rationale: one implementation, zero behavior change, lowest risk. The
+physical code-move into the package is a later step, once the seam is proven and
+each path is rerouted. (SplitSpec Phase 2 build-up philosophy.)
+
+### DL-3 (2026-06-05) — Verification bar: NOT "byte-identical" for fresh extracts.
+`markdown_to_recipe` is a non-deterministic LLM call, so two fresh extracts can
+never be byte-identical — that bar was wrong. Replaced with: (a) **equivalence by
+construction** — enrich() calls the *same* functions with the *same* args, so the
+rerouted path is the same computation; (b) a **live smoke test** against the
+running server; (c) **structural validity** of the returned recipe; (d) the
+deterministic **cache-hit** path stays genuinely identical. Code review covers
+the rest.
+
+### DL-4 (2026-06-05) — First carve = extraction only; identity/translate/enrich/embed deferred.
+`enrich()` v1 owns ONLY the extract step (JSON-LD fast lane → markdown LLM
+fallback, same selection the monolith used inline) + the profile seal. Identity
+card, extraction-stage translation, the enrich blocks, sanitize, and embedding
+generation are carved in LATER, one at a time, each verified. Rationale: narrowest
+safe slice proves the seam with near-zero blast radius; widen incrementally.
+
+### DL-5 (2026-06-05) — BYOK deferred for customer-zero (in-process).
+In-process, the existing Anthropic client reads `ANTHROPIC_API_KEY` from env, so
+`llm_key=None` and nothing changes. BYOK-over-the-wire (caller passes an encrypted
+key) belongs to the HTTP surface (`service.py`), built when the network boundary
+goes up — not needed while the monolith calls enrich() in-process.
+
+### DL-6 (2026-06-05) — Reroute behind an OFF-by-default flag.
+The monolith chooses inline-vs-API via a single env flag
+(`BCC_ENRICHMENT_API=1`), default OFF. With it off, behavior is byte-for-byte the
+current code (the new path is dead). Flip it on to exercise the seam; flip off to
+revert instantly. No deletion of inline code until the flag has run on in
+practice (then the bypassed code is the empirical cut — SplitSpec Phase 3 gate).
+
+### DL-7 (2026-06-05) — First-cut `corpus_public_view` (the `public` seal) — whitelist.
+Implemented the seal serializer now (it's base architecture, "what doesn't come
+back"), as a strict WHITELIST per SplitSpec §131. Emits: rich-result envelope
+(name/image/times/yield/rating/nutrition/author/publisher) + our work-product
+(editorial/classification/provenance/_scoring/_identity/_master) + keys
+(originalUrl/domain/dates) + a MANDATORY source link (refuses to emit without
+one). SEALS by omission: recipeIngredient, recipeInstructions, raw description &
+notes prose, video, equipment, the JSON-LD blob, AND our cooped `previewImage`
+(conservative — the cooped copy is the *local* image-rights posture per §149;
+public uses thumbnail-and-link via the original `image` URL). Marked to revisit:
+whether to emit a short attributed publisher-description snippet, and the
+thumbnail policy. The `public` profile is not yet exercised (extract path uses
+`full`); building it now so the chokepoint exists.
