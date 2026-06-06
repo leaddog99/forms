@@ -129,6 +129,13 @@ DB_PATH = "recipes.db"
 # re-extract; backed up to ADAM/S3, not git. See screenshot_pipeline.py.
 MEDIA_DB_PATH = "media.db"
 
+# Strangler flag (DL-6, docs/split-decisions-log.md): route the EXTRACT step
+# through the Recipe Enrichment API (recipe_enrichment.enrich) instead of the
+# inline extract calls. OFF by default — with it off, the extract path is
+# byte-for-byte the current inline code and the API path is dead. Set
+# BCC_ENRICHMENT_API=1 to exercise the seam; unset to revert instantly.
+_USE_ENRICHMENT_API = os.getenv("BCC_ENRICHMENT_API", "0").strip() == "1"
+
 # Placeholder user id until the user-identity field is wired into the form
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
 PLACEHOLDER_USER_ID = 1
@@ -4357,6 +4364,44 @@ async def extract_from_markdown_endpoint(
         raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
 
 
+def _extract_via_enrichment_api(md_result, page_lang, timings, prompts,
+                                usage_log, new_recipe_id, user_id):
+    """Strangler reroute (DL-4/DL-6): run the EXTRACT step through the Recipe
+    Enrichment API instead of the inline jsonld/markdown calls. Same selection
+    (JSON-LD fast lane -> markdown LLM). Returns (recipe, path_used).
+
+    Identity/translate/enrich-blocks/embed stay in the caller's tail for now
+    (carved in later, one at a time). Merges the API's trace back into the
+    caller's timings/prompts/usage_log so journaling + the trace panel are
+    unchanged. Raises RuntimeError on failure to match the inline error contract.
+    """
+    from recipe_enrichment import enrich, EnrichmentRequest
+    req = EnrichmentRequest(
+        markdown=md_result["markdown"],
+        jsonld=(md_result["jsonld"][0] if md_result.get("jsonld") else None),
+        source_url=md_result["source_url"],
+        title=md_result["title"],
+        page_language=page_lang,
+        do_identity=False,        # identity stays in the tail (DL-4)
+        enrich=frozenset(),
+        profile="full",
+    )
+    try:
+        result = enrich(req)
+    except Exception as e:
+        print(f"[ERROR] Enrichment-API extract failed: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+        raise RuntimeError(f"Extraction error: {e}") from e
+    if timings is not None:
+        timings.update(result.meta.get("timings") or {})
+    if prompts is not None and result.meta.get("prompts"):
+        prompts.update(result.meta["prompts"])
+    if usage_log is not None:
+        usage_log.extend(result.meta.get("usage") or [])
+    return result.recipe, (result.meta.get("extract_path") or "markdown-llm")
+
+
 # Extract recipe from a web page URL (no save). Fetches the page, pulls any
 # schema.org Recipe JSON-LD via to_markdown/html_to_markdown, then runs the
 # single canonical markdown -> RecipeModel call. Mirrors the JSON shape of
@@ -4558,7 +4603,15 @@ def extract_recipe_from_url(
         was_incomplete = not _cache_row_complete(recipe)
     else:
         was_incomplete = False
-        if md_result.get("jsonld"):
+        if _USE_ENRICHMENT_API:
+            # Strangler reroute: the extract step goes through the Enrichment
+            # API. enrich() raises on no-recipe, so `recipe` is non-None here and
+            # the markdown fallback below is skipped.
+            recipe, path_used = _extract_via_enrichment_api(
+                md_result, page_lang, timings, prompts, usage_log,
+                new_recipe_id, user_id,
+            )
+        elif md_result.get("jsonld"):
             try:
                 recipe = jsonld_to_recipe(
                     md_result["jsonld"][0],

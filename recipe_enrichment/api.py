@@ -132,6 +132,7 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     # --- 1. Extract: JSON-LD fast lane, else the markdown LLM call. Exact same
     #        selection logic the monolith used inline (delegate, don't reimpl). ---
     recipe: Optional[dict] = None
+    extract_path = ""
     if req.jsonld:
         try:
             from extract.jsonld_to_recipe import jsonld_to_recipe
@@ -139,6 +140,8 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
                 req.jsonld, source_url=req.source_url, title=req.title,
                 timings=timings,
             )
+            if recipe is not None:
+                extract_path = "jsonld-direct"
         except Exception as e:  # parity with the monolith's fall-back-to-LLM
             print(f"[enrich] jsonld_to_recipe raised, falling back to LLM: {e}")
             recipe = None
@@ -150,6 +153,7 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
             title=req.title, timings=timings, prompts=prompts,
             usage_log=usage_log,
         )
+        extract_path = "markdown-llm"
 
     if recipe is None:
         raise EnrichmentError("extraction produced no usable recipe")
@@ -163,5 +167,10 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     return EnrichmentResult(
         recipe=recipe,
         embedding=None,  # do_embed deferred (DL-4)
-        meta={"timings": timings, "prompts": prompts, "usage": usage_log},
+        meta={
+            "timings": timings,
+            "prompts": prompts,
+            "usage": usage_log,
+            "extract_path": extract_path,  # 'jsonld-direct' | 'markdown-llm'
+        },
     )

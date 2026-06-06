@@ -62,3 +62,38 @@ public uses thumbnail-and-link via the original `image` URL). Marked to revisit:
 whether to emit a short attributed publisher-description snippet, and the
 thumbnail policy. The `public` profile is not yet exercised (extract path uses
 `full`); building it now so the chokepoint exists.
+
+### DL-8 (2026-06-05) — Verified at unit level; did NOT restart the live server onto the branch.
+The reroute is verified by (a) `enrich()` producing a valid recipe through the
+real `jsonld_to_recipe`/`markdown_to_recipe` (jsonld path is deterministic — ran
+it), (b) `_extract_via_enrichment_api` producing a valid recipe + correct
+`path_used` + merged trace, (c) `save_recipe_api` imports with the flag defaulting
+False. I did NOT restart the running dev server onto this branch with
+`BCC_ENRICHMENT_API=1`: the server currently serves master (the caching work) and
+the user may rely on it; restarting onto a branch would leave it in a surprising
+state, and the `.bat` restart is finicky through PowerShell. A live flag-on smoke
+test is the recommended next step on the user's return (or on merge) — risk is
+nil because the flag is OFF by default.
+
+### DL-9 (2026-06-05) — Stop carving after the EXTRACT step this session; build the HTTP surface instead.
+Further carves (identity, translate, sanitize, enrich-blocks) touch
+cache-entangled, tail-ordered code that really wants a live flag-on verification I
+chose not to run (DL-8). Rather than stack partially-verified refactors of the
+running path while unsupervised, I'm leaving a clean, proven, flag-gated extract
+carve + a documented carve plan, and spending remaining time on ZERO-RISK new
+code: the HTTP surface (`service.py`) and package tests. Both advance the base
+architecture (the real network boundary + durable verification) without touching
+the monolith's hot path.
+
+### Carve plan (for review — order of future reroutes)
+1. ✅ extract (jsonld/markdown selection) — DONE, flag-gated.
+2. identity card — move `generate_identity_card_for_recipe` into `enrich()`
+   (`do_identity`); make the tail's `_attach_identity_card` the idempotent
+   fallback. Watch the cache interaction (identity is cached pre-write).
+3. extraction-stage translation — move into `enrich()` (`page_language`).
+4. sanitize + the enrich blocks (`enrich={...}` by registry name).
+5. embedding generation (`do_embed`).
+6. the other extract endpoints: image / pdf / staged-markdown.
+7. the batch (TBOTB) path → its own fetch + the SAME `enrich()`.
+Each: reroute behind the flag, verify, then delete the bypassed inline code
+(the empirical cut, SplitSpec Phase 3 gate).
