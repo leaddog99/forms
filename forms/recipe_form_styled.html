@@ -1779,8 +1779,7 @@
                  has no source URL OR no screenshot was captured. -->
             <div id="pageScreenshotBlock" style="margin-top:14px;display:none">
               <label style="font-size:0.85em;color:var(--muted);display:block;margin-bottom:6px">
-                Source page screenshot
-                <span style="font-size:0.86em;font-style:italic">— above-fold view, captured at extract</span>
+                Screenshot
               </label>
               <a id="pageScreenshotLink" href="#" target="_blank" rel="noopener"
                  title="Open source page in new tab"
@@ -1788,6 +1787,27 @@
                 <img id="pageScreenshotImg" src="" alt=""
                      style="width:100%;display:block;aspect-ratio:3/2;object-fit:cover" />
               </a>
+            </div>
+            <!-- Source how-to video (the page's schema.org VideoObject).
+                 Read-only: a thumbnail with a play overlay that opens the
+                 source video in a new tab. Hidden when the recipe has no
+                 video. Round-trips on save via payload.video. -->
+            <div id="videoBlock" style="margin-top:14px;display:none">
+              <label style="font-size:0.85em;color:var(--muted);display:block;margin-bottom:6px">
+                Video
+              </label>
+              <a id="videoLink" href="#" target="_blank" rel="noopener"
+                 title="Play the source video in a new tab"
+                 style="position:relative;display:block;width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);text-decoration:none">
+                <img id="videoThumb" src="" alt=""
+                     style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover" />
+                <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+                  <span style="width:54px;height:54px;border-radius:50%;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center">
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
+                  </span>
+                </span>
+              </a>
+              <div id="videoCaption" style="font-size:0.8em;color:var(--muted);margin-top:4px"></div>
             </div>
           </div>
         </div>
@@ -3374,6 +3394,32 @@
         }
       })();
 
+      // Source video — show the VideoObject as a clickable thumbnail
+      // (read-only; opens in a new tab). Hidden when absent. `video` is
+      // Union[VideoObject, str]; handle both.
+      (function showVideo() {
+        const block = document.getElementById('videoBlock');
+        const link = document.getElementById('videoLink');
+        const img = document.getElementById('videoThumb');
+        const cap = document.getElementById('videoCaption');
+        if (!block || !link || !img) return;
+        const v = r.video;
+        const url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
+        if (!url) { block.style.display = 'none'; img.removeAttribute('src'); return; }
+        const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
+        link.href = url;
+        if (thumb) {
+          img.src = thumb;
+          img.alt = (v && v.name) || r.name || 'Source video';
+          img.style.display = 'block';
+        } else {
+          img.removeAttribute('src');
+          img.style.display = 'none';
+        }
+        if (cap) cap.textContent = (v && typeof v === 'object' && v.name) ? v.name : '';
+        block.style.display = '';
+      })();
+
       // Invalidate technical metadata (root domain etc. from /url-metadata)
       // and seed the scoring strip from the recipe's own _scoring (Moz +
       // recipe-text score were denormalized into it at extract time).
@@ -4063,6 +4109,8 @@
       catch (e) { /* ignore */ }
       heroImage.style.display = 'none';
       heroPlaceholder.style.display = 'flex';
+      const _videoBlock = document.getElementById('videoBlock');
+      if (_videoBlock) _videoBlock.style.display = 'none';
       heroSectionEl.classList.remove('has-image');
       heroSectionEl.style.removeProperty('--hero-aspect');
       // Image-gen tweak textarea — no `name` attribute so form.reset()
@@ -5465,6 +5513,31 @@
         } else {
           block.style.display = 'none';
         }
+      })();
+
+      // Source video — same logic as loadForm (thumbnail links to the source
+      // video; hidden when absent; handles VideoObject or string).
+      (function showVideo() {
+        const block = document.getElementById('videoBlock');
+        const link = document.getElementById('videoLink');
+        const img = document.getElementById('videoThumb');
+        const cap = document.getElementById('videoCaption');
+        if (!block || !link || !img) return;
+        const v = r.video;
+        const url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
+        if (!url) { block.style.display = 'none'; img.removeAttribute('src'); return; }
+        const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
+        link.href = url;
+        if (thumb) {
+          img.src = thumb;
+          img.alt = (v && v.name) || r.name || 'Source video';
+          img.style.display = 'block';
+        } else {
+          img.removeAttribute('src');
+          img.style.display = 'none';
+        }
+        if (cap) cap.textContent = (v && typeof v === 'object' && v.name) ? v.name : '';
+        block.style.display = '';
       })();
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
