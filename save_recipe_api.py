@@ -135,6 +135,7 @@ MEDIA_DB_PATH = "media.db"
 # byte-for-byte the current inline code and the API path is dead. Set
 # BCC_ENRICHMENT_API=1 to exercise the seam; unset to revert instantly.
 _USE_ENRICHMENT_API = os.getenv("BCC_ENRICHMENT_API", "0").strip() == "1"
+print(f"[SPLIT] Enrichment API extract path: {'ON' if _USE_ENRICHMENT_API else 'off'}")
 
 # Placeholder user id until the user-identity field is wired into the form
 # (will eventually come from Ghost). Recipes and token-journal rows both use it.
