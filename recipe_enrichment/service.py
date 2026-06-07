@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from .api import (
     EnrichmentError, EnrichmentRequest, available_enrichment_blocks, enrich,
 )
+from .measurement import convert as convert_measure, resolve_canonical
 from .serialize import SealError
 
 app = FastAPI(title="Recipe Enrichment API", version="0.1.0")
@@ -57,6 +58,49 @@ def list_blocks() -> dict:
     return {"blocks": list(available_enrichment_blocks())}
 
 
+class ConvertBody(BaseModel):
+    """One ingredient-aware unit conversion. Deterministic — no LLM, no fetch."""
+    amount: float
+    from_unit: str
+    to_unit: str
+    ingredient: Optional[str] = None          # canonical/alias name -> KA density
+    density_g_per_ml: Optional[float] = None   # override / supply for volume<->mass
+    grams_per_item: Optional[float] = None     # override / supply for count<->mass
+
+
+@app.post("/convert")
+def convert_endpoint(body: ConvertBody) -> dict:
+    """Single ingredient-context-aware conversion (cup<->g<->ml<->oz<->each…).
+    Cross-domain needs a density/per-item bridge: pass `ingredient=` to look one
+    up in the King Arthur table (alias/fuzzy/unit-aware, same resolver the recipe
+    pass uses), or supply it explicitly. Returns the converted amount, the matched
+    canonical ingredient, and the resolution `path` for debugging."""
+    density, per_item = body.density_g_per_ml, body.grams_per_item
+    canonical = None
+    ing_arg = None
+    if body.ingredient and density is None and per_item is None:
+        # Smart-resolve the name (try both units for count context like "clove").
+        ing = (resolve_canonical(body.ingredient, body.from_unit)
+               or resolve_canonical(body.ingredient, body.to_unit))
+        if ing is not None:
+            canonical, density, per_item = ing.name, ing.g_per_ml, ing.grams_per_item
+        else:
+            ing_arg = body.ingredient  # let the engine raise a clear 404
+    try:
+        r = convert_measure(
+            body.amount, body.from_unit, body.to_unit, ing_arg,
+            density_g_per_ml=density, grams_per_item=per_item,
+        )
+    except KeyError as e:  # unknown ingredient
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:  # unknown unit / missing bridge constant
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "amount": r.amount, "to_unit": r.to_unit, "grams": r.grams,
+        "canonical": canonical, "path": r.path,
+    }
+
+
 class EnrichBody(BaseModel):
     """Already-fetched content + transform options. Mirrors EnrichmentRequest."""
     markdown: str = ""
@@ -68,6 +112,7 @@ class EnrichBody(BaseModel):
     enrich: list[str] = Field(default_factory=list)   # enrichment block names
     do_identity: bool = True
     do_embed: bool = False
+    do_measurements: bool = False                      # ingredient-aware unit conversion
     profile: str = "full"                              # full | static | public
     # Authority scores from TBOTB (not fetched here) — interpreted by the
     # editorial scoreCommentary block. {pageAuthority, domainAuthority, ouScore,
@@ -105,6 +150,7 @@ def enrich_endpoint(body: EnrichBody) -> EnrichResponse:
         enrich=frozenset(body.enrich),
         do_identity=body.do_identity,
         do_embed=body.do_embed,
+        do_measurements=body.do_measurements,
         profile=body.profile,        # type: ignore[arg-type]
         scoring=body.scoring,
         llm_key=llm_key,

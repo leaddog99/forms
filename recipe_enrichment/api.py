@@ -95,6 +95,12 @@ class EnrichmentRequest:
     enrich: frozenset[str] = frozenset()
     do_identity: bool = True              # dish identity card (fingerprint for matching)
     do_embed: bool = False                # generate the embedding vector
+    # Ingredient-context-aware measurement conversion (recipe_enrichment.measurement).
+    # DETERMINISTIC engine (KA densities); a per-line LLM fallback fires ONLY for
+    # ingredient strings the free parser/resolver can't handle. Writes a
+    # `_measurements` block aligned 1:1 with recipeIngredient — the metric/weight
+    # layer beside the source's own strings. Off by default (opt-in cost).
+    do_measurements: bool = False
     profile: Profile = "full"             # output shaping / seal
 
     # --- authority scores supplied BY THE CALLER (TBOTB), not fetched here ---
@@ -409,6 +415,21 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
     # Moz itself (stateless / no DB / no scoring).
     if req.scoring:
         recipe["_scoring"] = {**(recipe.get("_scoring") or {}), **req.scoring}
+
+    # --- Measurement conversion (deterministic engine + LLM fallback on misses).
+    #     Writes recipe['_measurements'] (1:1 with recipeIngredient). Runs on the
+    #     post-extract recipe (translated ingredients are already English here, so
+    #     the parser sees parseable text). Best-effort: a failure leaves the
+    #     recipe without the block rather than aborting the transform. ---
+    if req.do_measurements:
+        try:
+            from .measurement import convert_recipe_measurements
+            m_meta = convert_recipe_measurements(recipe, llm_key=req.llm_key)
+            timings.update(m_meta.get("timings") or {})
+            usage_log.extend(m_meta.get("usage") or [])
+            timings["measure_counts"] = m_meta.get("counts") or {}
+        except Exception as e:
+            print(f"[enrich] measurement pass failed ({e}); skipping _measurements")
 
     # --- 4. Enrichment blocks — INDIVIDUALLY selectable via req.enrich (a set
     #        of block names off the live registry). identity/translate/embed

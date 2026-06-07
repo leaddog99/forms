@@ -14,6 +14,7 @@ from .api import (
     run_enrichment_blocks,
     available_enrichment_blocks,
 )
+from .measurement import convert, convert_recipe_measurements
 
 __all__ = [
     "EnrichmentRequest",
@@ -23,4 +24,6 @@ __all__ = [
     "enrich",
     "run_enrichment_blocks",
     "available_enrichment_blocks",
+    "convert",
+    "convert_recipe_measurements",
 ]

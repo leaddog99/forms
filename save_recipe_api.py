@@ -3530,6 +3530,24 @@ def _save_recipe_core(payload: dict) -> dict:
     except Exception as e:
         print(f"[SITENAME] resolve failed (continuing): {e}")
 
+    # Ingredient-aware measurements (_measurements) — RECOMPUTED from the
+    # current ingredient list on every save so the metric/imperial toggle data
+    # always matches what's actually stored (adds/edits/reorders stay in sync).
+    # Deterministic-only here: free + instant, no LLM on the save path. Any
+    # exotic ingredient an EXTRACT-time LLM pass already resolved is carried
+    # forward by string (prior=incoming _measurements), so a plain save never
+    # downgrades or re-pays for it. Covers ALL save paths (paste, bookmarklet,
+    # image, pdf, manual), not just the URL extract.
+    try:
+        from recipe_enrichment.measurement import convert_recipe_measurements
+        convert_recipe_measurements(
+            recipe_dict,
+            use_llm_fallback=False,
+            prior=recipe_dict.get("_measurements"),
+        )
+    except Exception as e:
+        print(f"[MEASURE] recompute on save failed (continuing): {e}")
+
     # "Copy not subscription": claimed rows are detached from the source
     # URL. The `_source.claimedFrom` stamp (set by /recipes/<id>/claim)
     # marks the row as a clone. For claimed rows:
@@ -4405,6 +4423,8 @@ def _extract_via_enrichment_api(md_result, page_lang, timings, prompts,
         page_language=page_lang,
         target_language=INSTANCE_TARGET_LANGUAGE,  # per-user override TODO
         do_identity=False,        # identity stays in the tail (DL-4)
+        do_measurements=True,     # ingredient-aware metric/imperial conversion
+                                  # -> recipe['_measurements'], powers the editor toggle
         enrich=frozenset(),
         profile="full",
     )
@@ -4947,6 +4967,48 @@ async def enrich_recipe_endpoint(request: Request):
         "_timings": timings,
         "_prompt": prompts,
         "_usage": usage_log,
+    }
+
+
+@app.post("/recipes/measure")
+async def measure_recipe_endpoint(request: Request):
+    """Ingredient-context-aware measurement conversion for the CURRENT ingredient
+    list — backs the editor's "Refresh measurements" button. Stateless: takes
+    the ingredients (+ optional prior _measurements to carry exotic resolutions
+    forward), runs the deterministic engine with the LLM fallback for misses
+    (this is the deliberate, user-clicked moment), and returns _measurements.
+    Does NOT save — the form merges the result and the next save persists it."""
+    print("[MEASURE] Refresh-measurements endpoint called")
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+    ingredients = payload.get("recipeIngredient") or []
+    if not isinstance(ingredients, list) or not ingredients:
+        raise HTTPException(status_code=400, detail="recipeIngredient list required")
+
+    recipe_id = payload.get("recipe_id")
+    user_id = payload.get("user_id")
+    if user_id is None:
+        user_id = PLACEHOLDER_USER_ID
+
+    work = {"recipeIngredient": ingredients}
+    try:
+        from recipe_enrichment.measurement import convert_recipe_measurements
+        meta = await asyncio.to_thread(
+            convert_recipe_measurements, work,
+            use_llm_fallback=True, prior=payload.get("_measurements"),
+        )
+    except Exception as e:
+        print(f"[ERROR] measure failed: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Measurement error: {e}")
+
+    _journal_usage(meta.get("usage") or [], recipe_id=recipe_id, user_id=user_id)
+    return {
+        "success": True,
+        "_measurements": work.get("_measurements") or [],
+        "counts": meta.get("counts") or {},
     }
 
 

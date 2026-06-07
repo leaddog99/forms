@@ -102,7 +102,18 @@
       <div class="checks" style="margin-top:10px">
         <label><input type="checkbox" id="do_identity" /> identity card</label>
         <label><input type="checkbox" id="do_embed" /> embedding (deferred)</label>
+        <label><input type="checkbox" id="do_measurements" /> measurements <span class="hint">(g/mL, food-aware)</span></label>
       </div>
+
+      <h3 style="margin-top:24px">Quick convert <span class="hint" style="text-transform:none;font-weight:400">— deterministic, POST /convert</span></h3>
+      <div class="row">
+        <input type="text" id="cv_amount" placeholder="amount" value="1" />
+        <input type="text" id="cv_from" placeholder="from (cup)" value="cup" />
+        <input type="text" id="cv_to" placeholder="to (g)" value="g" />
+      </div>
+      <input type="text" id="cv_ing" placeholder="ingredient (flour) — needed to cross volume↔weight" style="margin-top:8px" />
+      <button type="button" id="cvRun" style="margin-top:8px;background:#0f766e;font-size:13px;padding:9px">Convert</button>
+      <div id="cvOut" class="meta" style="margin-top:8px"></div>
 
       <label>LLM key (BYOK) <span class="hint">— optional; stub today, uses env key (DL-5)</span></label>
       <input type="password" id="llm_key" placeholder="leave blank to use server env key" autocomplete="off" />
@@ -139,6 +150,7 @@
         profile: $('profile').value,
         do_identity: $('do_identity').checked,
         do_embed: $('do_embed').checked,
+        do_measurements: $('do_measurements').checked,
         enrich: [...document.querySelectorAll('.blk:checked')].map(c => c.value),
       };
       const scoring = {};
@@ -209,6 +221,33 @@
       }
     });
 
+    // Quick single conversion — deterministic, hits POST /convert.
+    $('cvRun').addEventListener('click', async () => {
+      const out = $('cvOut');
+      const payload = {
+        amount: Number($('cv_amount').value || '0'),
+        from_unit: $('cv_from').value.trim(),
+        to_unit: $('cv_to').value.trim(),
+      };
+      const ing = $('cv_ing').value.trim();
+      if (ing) payload.ingredient = ing;
+      out.innerHTML = '<span class="badge">converting…</span>';
+      try {
+        const res = await fetch(BASE + '/convert', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const d = await res.json();
+        if (!res.ok) { out.innerHTML = `<span class="badge" style="color:#b42318">${res.status}: ${d.detail || ''}</span>`; return; }
+        const g = d.grams != null ? `, ${(+d.grams).toFixed(1)} g` : '';
+        const canon = d.canonical ? `<span class="badge">matched <b>${d.canonical}</b></span>` : '';
+        out.innerHTML = `<span class="badge">= <b>${(+d.amount).toFixed(2)} ${d.to_unit}</b>${g}</span>` + canon
+          + `<span class="badge" style="font-size:11px">${(d.path||[]).join('  →  ')}</span>`;
+      } catch (e) {
+        out.innerHTML = `<span class="badge" style="color:#b42318">failed: ${e.message}</span>`;
+      }
+    });
+
     $('run').addEventListener('click', async () => {
       const btn = $('run');
       const errBox = $('errBox'), metaBar = $('metaBar'), out = $('out');
@@ -235,10 +274,12 @@
           errBox.classList.remove('hidden'); out.textContent = ''; return;
         }
         const m = data.meta || {};
+        const mc = (m.timings && m.timings.measure_counts) || null;
         metaBar.innerHTML = [
           `<span class="badge">client <b>${ms} ms</b></span>`,
           m.extract_path ? `<span class="badge">extract path <b>${m.extract_path}</b></span>` : '',
           (m.prompts && m.prompts.blocks) ? `<span class="badge">blocks <b>${(m.prompts.blocks.join(', ')) || '—'}</b></span>` : '',
+          mc ? `<span class="badge">measured <b>${mc.deterministic} det + ${mc.llm} llm</b>, ${mc.unconverted} skipped</span>` : '',
           `<span class="badge">profile <b>${body.profile}</b></span>`,
           ('recipeIngredient' in (data.recipe||{})) ? `<span class="badge">body <b>present</b></span>` : `<span class="badge">body <b>sealed</b></span>`,
         ].filter(Boolean).join('');

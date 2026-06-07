@@ -1551,6 +1551,56 @@
       font-family: Georgia, serif;
     }
     .coming-soon-card button:hover { background: var(--accent-dark); }
+
+    /* Ingredients header row: label on the left, metric toggle on the right. */
+    .ingredients-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px;
+    }
+    .ingredients-head > label { margin: 0; }
+    /* Apple-style on/off switch (off = imperial, default). */
+    .unit-toggle {
+      display: inline-flex; align-items: center; gap: 8px;
+      cursor: pointer; user-select: none; margin: 0;
+    }
+    .unit-toggle .unit-label {
+      font-size: 0.8em; font-weight: 600; letter-spacing: .02em;
+      color: var(--muted); text-transform: uppercase;
+    }
+    .unit-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .unit-toggle .switch {
+      position: relative; width: 42px; height: 24px; flex: none;
+      background: #d4d2cc; border-radius: 999px;
+      transition: background .2s ease;
+    }
+    .unit-toggle .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 20px; height: 20px; border-radius: 50%; background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .2s ease;
+    }
+    .unit-toggle input:checked + .switch { background: var(--accent); }
+    .unit-toggle input:checked + .switch::after { transform: translateX(18px); }
+    .unit-toggle input:focus-visible + .switch {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
+    .unit-toggle input:checked ~ .unit-label { color: var(--accent); }
+    /* Converted rows shown in metric view: read-only, subtly distinct. */
+    .ingredient-item.metric-view textarea {
+      background: var(--bg); color: var(--text); cursor: default;
+    }
+    /* "Refresh measurements" button — muted secondary, mirrors Enrich. */
+    .measure-refresh {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--line); border-radius: 7px;
+      padding: 5px 10px; font-size: 0.78em; font-weight: 600;
+      cursor: pointer; line-height: 1; transition: all .15s ease;
+    }
+    .measure-refresh:hover { color: var(--accent); border-color: var(--accent); }
+    .measure-refresh:disabled { opacity: .55; cursor: wait; }
+    .measure-refresh svg { flex: none; }
+    .measure-refresh.spinning svg { animation: measure-spin .8s linear infinite; }
+    @keyframes measure-spin { to { transform: rotate(360deg); } }
   </style>
   <!-- Shared identity-badge + nav-toggle + nav-menu styles. Loaded
        BEFORE the form's own <style> would be ideal, but the form's
@@ -1815,10 +1865,27 @@
         <!-- Ingredients & Method Side by Side -->
         <div class="recipe-columns">
           <div class="recipe-content-area" id="ingredientsArea">
-            <label>
-              <span class="icon"><svg viewBox="0 0 24 24" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6"/><path d="M9 12h6M9 16h6"/></svg></span>
-              Ingredients<span class="required-star">*</span>
-            </label>
+            <div class="ingredients-head">
+              <label>
+                <span class="icon"><svg viewBox="0 0 24 24" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012-2h2a2 2 0 012 2M9 5h6"/><path d="M9 12h6M9 16h6"/></svg></span>
+                Ingredients<span class="required-star">*</span>
+              </label>
+              <div style="display:flex;align-items:center;gap:12px">
+                <button type="button" id="refreshMeasureBtn" class="measure-refresh"
+                        title="Compute food-aware metric weights for these ingredients">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+                       stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                       stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg>
+                  <span>Measurements</span>
+                </button>
+                <label class="unit-toggle" id="unitToggleWrap" style="display:none"
+                       title="Show ingredient amounts in metric (food-aware weights)">
+                  <span class="unit-label">Metric</span>
+                  <input type="checkbox" id="metricToggle" />
+                  <span class="switch"></span>
+                </label>
+              </div>
+            </div>
             <ul class="ingredient-list" id="ingredientList"></ul>
             <div class="error-msg">At least one ingredient is required</div>
           </div>
@@ -2670,6 +2737,10 @@
       const form = document.getElementById('recipeForm');
       if (form) form.addEventListener('input', updateButtonStates);
       updateButtonStates();
+      const metricToggle = document.getElementById('metricToggle');
+      if (metricToggle) metricToggle.addEventListener('change', applyUnitMode);
+      const refreshBtn = document.getElementById('refreshMeasureBtn');
+      if (refreshBtn) refreshBtn.addEventListener('click', refreshMeasurements);
     });
 
     // Populate the sidebar's chapter filter from the same CHAPTERS list
@@ -3293,10 +3364,15 @@
       document.getElementById("name").value = r.name || "";
       document.getElementById("description").value = r.description || "";
 
-      // Load ingredients
+      // Load ingredients (+ precomputed metric forms for the unit toggle)
       ingredientList.innerHTML = '';
-      (r.recipeIngredient || []).forEach(ing => addIngredient(ing));
+      {
+        const metricByRaw = buildMetricByRaw(r._measurements);
+        (r.recipeIngredient || []).forEach(ing =>
+          addIngredient(ing, null, metricByRaw[ing] || ''));
+      }
       if (!r.recipeIngredient?.length) addIngredient();
+      refreshUnitToggleVisibility();
 
       // Load steps
       stepList.innerHTML = '';
@@ -3664,6 +3740,11 @@
           payload.classification = { ...r0.classification, ...payload.classification };
         }
         if (r0._scoring) payload._scoring = r0._scoring;
+        // Send prior measurements so the server can carry forward exotic
+        // (LLM-resolved) ingredients when it RECOMPUTES _measurements on save.
+        // The server rebuilds the list from the current ingredients
+        // deterministically, so this is a hint, not the source of truth.
+        if (r0._measurements) payload._measurements = r0._measurements;
         if (r0.nutrition) payload.nutrition = r0.nutrition;
         if (r0.aggregateRating) payload.aggregateRating = r0.aggregateRating;
         if (r0.video) payload.video = r0.video;
@@ -4203,7 +4284,7 @@
       });
     }
 
-    function addIngredient(value = '', afterElement = null) {
+    function addIngredient(value = '', afterElement = null, metric = '') {
       const li = document.createElement('li');
       li.className = 'ingredient-item';
       li.draggable = true;
@@ -4211,11 +4292,19 @@
       setupDrag(li, ingredientList);
       const input = li.querySelector('textarea');
       input.value = value;
+      // The imperial string is the SAVED source of truth; the metric string is a
+      // precomputed display form (recipe._measurements). The toggle only swaps
+      // what's shown — getIngredients() always persists dataset.imperial.
+      li.dataset.imperial = value;
+      if (metric) li.dataset.metric = metric;
       const insertBtn = li.querySelector('.insert');
       const deleteBtn = li.querySelector('.delete');
 
       input.addEventListener('input', () => {
         autoGrow(input);
+        // Edits happen in imperial view (metric rows are read-only); keep the
+        // source of truth in sync so a save captures the edit.
+        if (!li.classList.contains('metric-view')) li.dataset.imperial = input.value;
         document.getElementById('ingredientsArea').classList.remove('section-error');
       });
       input.addEventListener('keydown', (e) => {
@@ -4250,7 +4339,118 @@
       // viewport mid-page on a fresh form load (see feedback memory:
       // post-extract-scroll, async-focus failure mode).
       if (!value && afterElement) input.focus();
+      applyRowUnitMode(li);
       autoGrow(input);
+    }
+
+    // --- Metric / imperial display toggle -----------------------------------
+    // Off (default) = imperial: the source strings, editable. On = metric: rows
+    // with a precomputed metric form show it read-only; rows without one stay
+    // imperial+editable. Purely a display swap (instant, no server call).
+    function isMetricMode() {
+      const t = document.getElementById('metricToggle');
+      return !!(t && t.checked);
+    }
+
+    // Map an ingredient's imperial string -> its metric display, keyed by the
+    // entry's `raw`. Matching by string (not index) keeps the toggle correct
+    // after the user reorders or edits ingredients — edited rows simply won't
+    // match and fall back to imperial until the recipe is re-extracted.
+    function buildMetricByRaw(measurements) {
+      const map = {};
+      (Array.isArray(measurements) ? measurements : []).forEach(m => {
+        if (m && m.raw && m.metric) map[m.raw] = m.metric;
+      });
+      return map;
+    }
+
+    function applyRowUnitMode(li) {
+      const input = li.querySelector('textarea');
+      if (!input) return;
+      const metric = li.dataset.metric;
+      if (isMetricMode() && metric) {
+        if (!li.classList.contains('metric-view')) li.dataset.imperial = li.dataset.imperial ?? input.value;
+        input.value = metric;
+        input.readOnly = true;
+        li.classList.add('metric-view');
+      } else {
+        input.value = li.dataset.imperial ?? input.value;
+        input.readOnly = false;
+        li.classList.remove('metric-view');
+      }
+      autoGrow(input);
+    }
+
+    function applyUnitMode() {
+      ingredientList.querySelectorAll('.ingredient-item').forEach(applyRowUnitMode);
+    }
+
+    // Show the toggle only when there's at least one convertible ingredient,
+    // so it's never a dead switch.
+    function refreshUnitToggleVisibility() {
+      const wrap = document.getElementById('unitToggleWrap');
+      if (!wrap) return;
+      const hasMetric = [...ingredientList.querySelectorAll('.ingredient-item')]
+        .some(li => li.dataset.metric);
+      wrap.style.display = hasMetric ? '' : 'none';
+      if (!hasMetric) {
+        const t = document.getElementById('metricToggle');
+        if (t) t.checked = false;
+        applyUnitMode();
+      }
+    }
+
+    // "Refresh measurements": (re)generate food-aware metric conversions for the
+    // CURRENT ingredient list via the server (deterministic + LLM for exotic
+    // ones), then update the toggle data and reveal it. Explicit + on-demand, so
+    // it works for any recipe (extracted, manual, edited) regardless of flags.
+    async function refreshMeasurements() {
+      const btn = document.getElementById('refreshMeasureBtn');
+      const ings = getIngredients();
+      if (!ings.length) { showFeedback('Add some ingredients first.', 'error'); return; }
+      const prior = (lastExtractedRecipe && lastExtractedRecipe._measurements) || undefined;
+      if (btn) { btn.disabled = true; btn.classList.add('spinning'); }
+      try {
+        const res = await fetch(`${API}/recipes/measure`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipeIngredient: ings,
+            _measurements: prior,
+            recipe_id: (document.getElementById('recipe_id') || {}).value || undefined,
+            user_id: parseInt((document.getElementById('user_id') || {}).value || '1', 10) || 1,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error((data && data.detail) || ('HTTP ' + res.status));
+        const measurements = data._measurements || [];
+        // Stash so the next save persists it (passthrough -> server carry-forward).
+        if (!lastExtractedRecipe) lastExtractedRecipe = {};
+        lastExtractedRecipe._measurements = measurements;
+        // Re-key metric data onto the rows by ingredient string.
+        const metricByRaw = buildMetricByRaw(measurements);
+        ingredientList.querySelectorAll('.ingredient-item').forEach(li => {
+          const ta = li.querySelector('textarea');
+          const imp = li.dataset.imperial != null ? li.dataset.imperial : (ta ? ta.value : '');
+          const m = metricByRaw[imp];
+          if (m) li.dataset.metric = m; else delete li.dataset.metric;
+        });
+        refreshUnitToggleVisibility();
+        const c = data.counts || {};
+        const converted = (c.deterministic || 0) + (c.llm || 0) + (c.carried || 0);
+        if (converted > 0) {
+          const t = document.getElementById('metricToggle');
+          if (t) t.checked = true;           // show the result immediately
+          applyUnitMode();
+          const ai = c.llm ? `, ${c.llm} via AI` : '';
+          showFeedback(`Metric measurements ready (${converted} converted${ai}).`, 'success');
+        } else {
+          showFeedback('No convertible ingredients found.', 'info');
+        }
+      } catch (e) {
+        showFeedback('Couldn’t compute measurements: ' + (e.message || e), 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.classList.remove('spinning'); }
+      }
     }
 
     function addStep(value = '', afterElement = null) {
@@ -4342,7 +4542,15 @@
     }
 
     function getIngredients() {
-      return [...ingredientList.querySelectorAll('textarea')].map(i => i.value).filter(Boolean);
+      // Always persist the IMPERIAL source — never the metric display, even when
+      // the toggle is on. dataset.imperial is kept in sync on every edit.
+      return [...ingredientList.querySelectorAll('.ingredient-item')]
+        .map(li => {
+          const ta = li.querySelector('textarea');
+          const imp = li.dataset.imperial;
+          return (imp != null ? imp : (ta ? ta.value : '')).trim();
+        })
+        .filter(Boolean);
     }
 
     function getSteps() {
@@ -5403,10 +5611,15 @@
       document.getElementById("name").value = r.name || "";
       document.getElementById("description").value = r.description || "";
 
-      // Ingredients
+      // Ingredients (+ precomputed metric forms for the unit toggle)
       ingredientList.innerHTML = '';
-      (r.recipeIngredient || []).forEach(ing => addIngredient(ing));
+      {
+        const metricByRaw = buildMetricByRaw(r._measurements);
+        (r.recipeIngredient || []).forEach(ing =>
+          addIngredient(ing, null, metricByRaw[ing] || ''));
+      }
       if (!r.recipeIngredient?.length) addIngredient();
+      refreshUnitToggleVisibility();
 
       // Steps
       stepList.innerHTML = '';
