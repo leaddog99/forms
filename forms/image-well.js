@@ -370,6 +370,9 @@
       // (an image paste fires here and is caught by the dialog paste handler;
       // a URL paste lands in the field).
       try { urlin.focus(); } catch (e) {}
+      // Let the host populate dialog fields it owns (e.g. restore the saved
+      // generate-tweak into #imageGenExtraPrompt) after the dialog is built.
+      if (opts.onDialogOpen) { try { opts.onDialogOpen(dialog); } catch (e) {} }
     }
 
     render();

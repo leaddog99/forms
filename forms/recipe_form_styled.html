@@ -1608,7 +1608,7 @@
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
   <script src="/forms/library-shell.js?v=20260608b"></script>
-  <script src="/forms/image-well.js?v=20260608m"></script>
+  <script src="/forms/image-well.js?v=20260608n"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -3438,6 +3438,7 @@
       const firstImageLoad = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
       heroImageUrl.value = previewLoad || firstImageLoad || '';
       _heroImageMeta = r._imageMeta || null;   // restore stored image metadata
+      _imageGenTweak = (r._imageMeta && r._imageMeta.tweak) || '';   // restore the saved generate tweak
       applyHeroImageFromUrl();
 
       // Page screenshot — display when present + source URL exists.
@@ -3709,9 +3710,12 @@
         author: { "@type": "Person", name: document.getElementById("author").value },
         image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : [],
         // Hero-image metadata (dims/format/bytes/orientation/localized) from the
-        // last coopt/upload; cleared when the hero is cleared. Persists per
+        // last coopt/upload, plus the last generate `tweak` so it survives + re-
+        // shows in the dialog; cleared when the hero is cleared. Persists per
         // recipe_model._imageMeta (STATIC field).
-        _imageMeta: (heroImageUrl.value || '').trim() ? _heroImageMeta : null,
+        _imageMeta: (heroImageUrl.value || '').trim()
+          ? Object.assign({}, _heroImageMeta || {}, _imageGenTweak ? { tweak: _imageGenTweak } : {})
+          : null,
         provenance: userProvenance,
         classification: userClassification,
         editorial: userEditorial
@@ -4663,11 +4667,13 @@
     // unchanged. applyHeroImageFromUrl() stays as a thin shim those callers use.
     const heroImageUrl = document.getElementById('heroImageUrl');
     let _heroImageMeta = null;   // imageMeta from the last coopt/upload (Phase 1)
+    let _imageGenTweak = '';     // last generate tweak — saved + restored into the dialog
     const heroWell = ImageWell.mount(document.getElementById('heroWell'), {
       feedback: (msg, kind) => showFeedback(msg, kind),
       onChange: (url, meta) => {
         heroImageUrl.value = url || '';
         if (meta !== undefined) _heroImageMeta = url ? meta : null;
+        if (!url) _imageGenTweak = '';   // clearing the image clears the saved tweak
         // A programmatic .value set doesn't fire 'input', so the Save/Clear
         // enable logic wouldn't see the image — re-evaluate it explicitly so
         // adding an image alone enables Save.
@@ -4677,6 +4683,12 @@
       // dialog (next to Generate), not on the main form. The generate hook below
       // reads #imageGenExtraPrompt from the open dialog.
       generatePanel: document.getElementById('imageGenPanelTemplate').innerHTML,
+      // Restore the last-used tweak into the dialog so it reappears instead of
+      // being discarded each open.
+      onDialogOpen: (dlg) => {
+        const ta = dlg.querySelector('#imageGenExtraPrompt');
+        if (ta) ta.value = _imageGenTweak || '';
+      },
       // Generate dish image — needs a saved recipe (the endpoint looks it up by
       // recipe_id + name) and reads the optional tweak-prompt textarea. Returns
       // the new absolute, cache-busted URL for the well to display, or null.
@@ -4687,6 +4699,7 @@
         if (!name) { showFeedback('Add a recipe name first (the name is the prompt).', 'error'); return null; }
         const extraEl = document.getElementById('imageGenExtraPrompt');
         const extraPrompt = ((extraEl && extraEl.value) || '').trim();
+        _imageGenTweak = extraPrompt;   // remember it: saved with the recipe + re-shown in the dialog
         showFeedback('Generating dish image (gpt-image-1, ~30-50s for hd)…', 'info');
         const res = await fetch(`${API}/recipes/${encodeURIComponent(recipeId)}/generate-image`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
