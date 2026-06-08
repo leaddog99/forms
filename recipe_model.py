@@ -65,7 +65,7 @@ STATIC_TOP_LEVEL_FIELDS = frozenset({
     # / promote alongside provenance and classification.
     "_identity",
     # Ingredient-context-aware measurement conversions, one entry per
-    # recipeIngredient (recipe_enrichment.measurement). Derived purely from
+    # recipeIngredient (enrich.measurement). Derived purely from
     # the recipe content (King Arthur densities), so URL-static: same for
     # every owner. Powers the metric/imperial toggle in the editor.
     "_measurements",
@@ -372,7 +372,7 @@ class RecipeModel(BaseModel):
     classification: Optional[ClassificationMetadata] = None
     editorial: Optional[EditorialMetadata] = None
     # Ingredient-context-aware measurement conversions — one entry per
-    # recipeIngredient (see recipe_enrichment.measurement). Declared
+    # recipeIngredient (see enrich.measurement). Declared
     # explicitly (like _source/_scoring) so it survives model_dump(by_alias);
     # left as List[dict] to stay flexible as the entry shape evolves.
     measurements: Optional[List[dict]] = Field(default=None, alias="_measurements")

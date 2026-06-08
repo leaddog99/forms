@@ -198,3 +198,46 @@ all-or-nothing, so the API needed its own per-block runner.
   is a separate Local task (the API + endpoint support it now).
 - Verified: selection logic (empty/unknown -> no LLM), single-block isolation;
   2 new tests (14/14). Live LLM path verified via the running server.
+
+### DL-14 (2026-06-07) — Enrich is its own product directory AND owns its own reference DBs.
+Two linked calls, both with the user (in conversation, not autonomous):
+
+1. **Rename `recipe_enrichment/` → `enrich/`** (`git mv`, history preserved). The
+   product is "Enrich"; one home, so the eventual physical split is a directory
+   move, not an archaeology dig. Only `save_recipe_api.py` (6 imports) +
+   `recipe_model.py` (2 comments) referenced it externally; all rewritten. 40
+   tests pass.
+
+2. **"Stateless" was over-stated. The correct rule is: Enrich persists no
+   *caller* content (no recipe, no corpus, BYOK, seal-at-emit) — but it OWNS the
+   curated *reference* data it needs to do its job.** A currency-conversion API
+   owning an exchange-rate table isn't "stateful" in the way that matters. So
+   Enrich gets its **own database** (`enrich/data/enrich.db`, git-ignored,
+   regenerable), physically separate from BCC's `recipes.db` and TBOTB's corpus —
+   so when the API splits to its own process the data travels with it (mirrors
+   how `media.db` was split out). Admin surfaces are **Enrich's own** (its own
+   hamburger nav `enrich/enrich-nav.js`, served at the `/enrich-api` mount), NOT
+   BCC's `library-shell.js` / nav. Memory: [[project_split_architecture]] updated.
+
+### DL-15 (2026-06-07) — Measurement reference store: SQL table canonical, JSON seed, pure engine, honest provenance.
+First reference dataset to land in `enrich.db`, establishing the pattern:
+- **`ingredient_measures` table is canonical**, edited via an a/c/d admin
+  (`/enrich-api/measures`, cloned-in-spirit from chapters/domains). The committed
+  JSON (`kingarthur_ingredient_weights.json` + `curated_liquids.json`) is the
+  **bootstrap seed + portable snapshot**, not the source of truth (no-data-in-code).
+- **The math engine stays pure/DB-free.** `convert.py` consumes a plain dataset
+  dict; `store.py` is the only DB-aware piece — it seeds the table from the JSON
+  and feeds the engine via `sync_engine()` (cache-invalidate-on-edit, like
+  `domains_lib`). Keeps the engine unit-testable with no DB.
+- **Provenance tiers drive an honest asterisk:** `king_arthur` + `measured` (user
+  weighed it) are authoritative (clean number); `curated_reference` (our liquid
+  additions) + `llm_derived` (the AI grams-per-cup estimate) show a `*`. A
+  mass→mass conversion (e.g. "1 (15-oz) can" → 425 g) is exact and never starred,
+  regardless of the row's density provenance.
+- **Enrich has its OWN token journal** (`enrich_token_journal` in `enrich.db`) —
+  the AI-estimate LLM cost is the product's cost, logged with Enrich, not in BCC's
+  `bcc_token_journal`.
+- Shipped alongside: curated cooking-liquids (broth/wine/sauces…), de-parenthesized
+  KA name resolution ("strawberries" → "Strawberries (fresh, sliced)"),
+  calc-by-calc conversion trace, parenthetical-size parsing ("1 (15-ounce) can"),
+  and a one-time curator-assisted AI grams-per-cup estimate. 40 tests pass.

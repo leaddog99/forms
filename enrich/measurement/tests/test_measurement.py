@@ -2,12 +2,12 @@
 recipe pass). No LLM, no network — the recipe-pass tests run with
 use_llm_fallback=False. Run from the repo root:
 
-    python -m pytest recipe_enrichment/measurement/tests/ -q
-    python -m recipe_enrichment.measurement.tests.test_measurement   # no-pytest fallback
+    python -m pytest enrich/measurement/tests/ -q
+    python -m enrich.measurement.tests.test_measurement   # no-pytest fallback
 """
 from contextlib import contextmanager
 
-from recipe_enrichment.measurement import (
+from enrich.measurement import (
     convert, parse_ingredient, resolve_canonical, convert_recipe_measurements,
 )
 

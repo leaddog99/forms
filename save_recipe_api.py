@@ -130,7 +130,7 @@ DB_PATH = "recipes.db"
 MEDIA_DB_PATH = "media.db"
 
 # Strangler flag (DL-6, docs/split-decisions-log.md): route the EXTRACT step
-# through the Recipe Enrichment API (recipe_enrichment.enrich) instead of the
+# through the Recipe Enrichment API (enrich.enrich) instead of the
 # inline extract calls. OFF by default — with it off, the extract path is
 # byte-for-byte the current inline code and the API path is dead. Set
 # BCC_ENRICHMENT_API=1 to exercise the seam; unset to revert instantly.
@@ -665,6 +665,21 @@ def init_db():
     print("[SETUP] Creating database tables if needed...")
     try:
         with sqlite3.connect(DB_PATH) as conn:
+            # WAL is a hard prerequisite for running batch jobs as their own
+            # out-of-process executable (docs/jobs-as-executables.md §6): a job
+            # process and the server both writing recipes.db under the default
+            # journal_mode=delete collide on the whole-file write lock and blow
+            # past busy_timeout with "database is locked". WAL lets one writer +
+            # many readers coexist across processes. The mode is PERSISTENT —
+            # stored in the DB header, so setting it once here sticks for every
+            # future connection in any process. The -wal/-shm side files are not
+            # a backup concern: our backup is the recipes.sql dump + ADAM disk,
+            # and .gitignore already excludes -wal/-shm.
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if str(mode).lower() != "wal":
+                print(f"[WARN] requested WAL journal_mode but DB reports '{mode}'")
+            else:
+                print("[SETUP] recipes.db journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS recipes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -816,6 +831,8 @@ def init_db():
             from input.pipeline.chapters import ensure_chapters_table
             ensure_chapters_table(conn)
             jobs_lib.ensure_jobs_table(conn)
+            from input.pipeline.system_config import ensure_system_config_table
+            ensure_system_config_table(conn)
             # Generic admin-managed tables (status_messages, etc.) — each
             # registered AdminModel's table is created + seeded here.
             from admin_models import ensure_admin_tables
@@ -907,7 +924,7 @@ except Exception as e:
 # Build-up convenience: lets us exercise the API in-process / over the tunnel
 # before it has its own deployment. The form's fetches are mount-relative.
 try:
-    from recipe_enrichment.service import app as _enrichment_app
+    from enrich.service import app as _enrichment_app
     app.mount("/enrich-api", _enrichment_app, name="enrichment_api")
     print("[OK] Recipe Enrichment API mounted at /enrich-api")
 except Exception as e:
@@ -2472,6 +2489,66 @@ def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
 
 
 # =========================================================================
+# System config — the DB-resident "config file" (the system record). Backs the
+# System admin editor. `system_config` table is canonical; bcc_config.json is
+# its bootstrap seed (migrating in incrementally). See
+# memory/project_system_config.md. First consumer: the dish scheduler.
+# =========================================================================
+
+# Keys the admin UI must NOT write — system-maintained (e.g. the scheduler
+# stamps its own last-pass time). The editor renders these read-only too.
+_SYSCONFIG_READONLY = {"scheduler_last_tick_at"}
+
+
+@app.get("/system-config")
+def list_system_config_endpoint():
+    """All settings, decoded + grouped-ready (ordered by category, key)."""
+    from input.pipeline.system_config import ensure_system_config_table, list_settings
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            ensure_system_config_table(conn)
+            return list_settings(conn)
+    except Exception as e:
+        print(f"[ERROR] list_system_config failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/system-config")
+def update_system_config_endpoint(payload: dict = Body(...)):
+    """Update setting value(s). Accepts either a single {key, value} or a bulk
+    {updates: {key: value, ...}}. Unknown keys are rejected; read-only keys are
+    refused. Returns the full settings list so the UI re-renders fresh."""
+    # TODO: gate with _require_perm(request, "edit_master") before public exposure.
+    from input.pipeline.system_config import (
+        ensure_system_config_table, set_setting, list_settings,
+    )
+    if "updates" in payload and isinstance(payload["updates"], dict):
+        updates = payload["updates"]
+    elif "key" in payload:
+        updates = {payload["key"]: payload.get("value")}
+    else:
+        raise HTTPException(status_code=400,
+                            detail="Body must be {key, value} or {updates: {...}}")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            ensure_system_config_table(conn)
+            known = {r["key"] for r in list_settings(conn)}
+            for key, value in updates.items():
+                if key in _SYSCONFIG_READONLY:
+                    raise HTTPException(status_code=400,
+                                        detail=f"{key!r} is read-only (system-maintained)")
+                if key not in known:
+                    raise HTTPException(status_code=400, detail=f"Unknown setting {key!r}")
+                set_setting(conn, key, value)
+            return list_settings(conn)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] update_system_config failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+# =========================================================================
 # Domain master — the canonical per-publisher record (display name, story,
 # extraction tips, country/language provenance, allow/deny, DA). Backs the
 # friendly-site-name resolver and the a/c/d Domains editor. The `domains`
@@ -3539,7 +3616,7 @@ def _save_recipe_core(payload: dict) -> dict:
     # downgrades or re-pays for it. Covers ALL save paths (paste, bookmarklet,
     # image, pdf, manual), not just the URL extract.
     try:
-        from recipe_enrichment.measurement import convert_recipe_measurements
+        from enrich.measurement import convert_recipe_measurements
         convert_recipe_measurements(
             recipe_dict,
             use_llm_fallback=False,
@@ -4414,7 +4491,7 @@ def _extract_via_enrichment_api(md_result, page_lang, timings, prompts,
     caller's timings/prompts/usage_log so journaling + the trace panel are
     unchanged. Raises RuntimeError on failure to match the inline error contract.
     """
-    from recipe_enrichment import enrich, EnrichmentRequest
+    from enrich import enrich, EnrichmentRequest
     req = EnrichmentRequest(
         markdown=md_result["markdown"],
         jsonld=(md_result["jsonld"][0] if md_result.get("jsonld") else None),
@@ -4936,7 +5013,7 @@ async def enrich_recipe_endpoint(request: Request):
         if _USE_ENRICHMENT_API:
             # Strangler reroute (DL-11): run the SELECTED enrichment blocks via
             # the Recipe Enrichment API instead of the all-or-nothing legacy call.
-            from recipe_enrichment import run_enrichment_blocks
+            from enrich import run_enrichment_blocks
             e_meta = await asyncio.to_thread(
                 run_enrichment_blocks, recipe, blocks,
             )
@@ -4994,7 +5071,7 @@ async def measure_recipe_endpoint(request: Request):
 
     work = {"recipeIngredient": ingredients}
     try:
-        from recipe_enrichment.measurement import convert_recipe_measurements
+        from enrich.measurement import convert_recipe_measurements
         meta = await asyncio.to_thread(
             convert_recipe_measurements, work,
             use_llm_fallback=True, prior=payload.get("_measurements"),

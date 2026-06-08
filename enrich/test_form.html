@@ -239,10 +239,17 @@
         });
         const d = await res.json();
         if (!res.ok) { out.innerHTML = `<span class="badge" style="color:#b42318">${res.status}: ${d.detail || ''}</span>`; return; }
-        const g = d.grams != null ? `, ${(+d.grams).toFixed(1)} g` : '';
-        const canon = d.canonical ? `<span class="badge">matched <b>${d.canonical}</b></span>` : '';
-        out.innerHTML = `<span class="badge">= <b>${(+d.amount).toFixed(2)} ${d.to_unit}</b>${g}</span>` + canon
-          + `<span class="badge" style="font-size:11px">${(d.path||[]).join('  →  ')}</span>`;
+        const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        const canon = d.canonical
+          ? `matched <b>${esc(d.canonical)}</b>` : `<span style="color:#b42318">no ingredient match</span>`;
+        const steps = (d.path || []).map((s, i) =>
+          `<li style="margin:2px 0"><span style="color:#9aa3b2">${i + 1}.</span> ${esc(s)}</li>`).join('');
+        out.innerHTML =
+          `<div style="font-size:16px;margin-bottom:4px">= <b>${(+d.amount).toFixed(2)} ${esc(d.to_unit)}</b></div>` +
+          `<div class="hint" style="text-transform:none;margin-bottom:8px">${canon}</div>` +
+          `<div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fff">` +
+          `<div class="hint" style="text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">How it computed it</div>` +
+          `<ol style="margin:0;padding-left:20px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7">${steps}</ol></div>`;
       } catch (e) {
         out.innerHTML = `<span class="badge" style="color:#b42318">failed: ${e.message}</span>`;
       }
@@ -293,5 +300,6 @@
       }
     });
   </script>
+  <script src="enrich-nav.js"></script>
 </body>
 </html>

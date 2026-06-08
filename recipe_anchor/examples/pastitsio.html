@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Pastitsio &mdash; step-anchored</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400;1,9..144,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f1e6;
+    --card:#fffdf7;
+    --ink:#2a2420;
+    --ink-soft:#6f6456;
+    --clay:#bd4c2a;
+    --clay-deep:#9c3c1f;
+    --clay-bg:#f1e3d4;
+    --sea:#3c6a5d;
+    --sea-deep:#2f5448;
+    --sea-bg:#e8efe3;
+    --line:rgba(42,36,32,0.12);
+    --shadow:0 1px 2px rgba(42,36,32,.06), 0 8px 24px rgba(42,36,32,.07);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--paper);
+    background-image:radial-gradient(rgba(42,36,32,.025) 1px, transparent 1px);
+    background-size:18px 18px;
+    color:var(--ink);
+    font-family:"Source Serif 4", Georgia, serif;
+    font-size:18px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    padding:0 0 96px;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:0 20px;}
+
+  /* ---------- Header ---------- */
+  header{padding:38px 0 18px;}
+  .kicker{font-family:"Source Serif 4",serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--clay);font-weight:600;margin:0 0 14px;}
+  h1{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(40px,11vw,62px);line-height:.96;margin:0 0 6px;letter-spacing:-.01em;}
+  h1 .it{font-style:italic;font-weight:500;display:block;color:var(--clay-deep);}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:18px 0 0;font-size:14.5px;color:var(--ink-soft);letter-spacing:.02em;}
+  .meta span{display:inline-flex;align-items:center;gap:7px;}
+  .meta b{color:var(--ink);font-weight:600;}
+  .blurb{margin:20px 0 0;font-size:16.5px;color:var(--ink-soft);line-height:1.62;border-left:3px solid var(--sea-bg);padding-left:16px;}
+
+  /* ---------- Preferences ---------- */
+  .prefs{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    margin:22px 0 0;padding:13px 16px 13px 18px;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+  }
+  .prefs-label{font-family:"Source Serif 4",serif;font-size:11.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-soft);}
+  .seg{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px;}
+  .seg-btn{
+    border:0;background:none;cursor:pointer;
+    font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;letter-spacing:.02em;
+    color:var(--ink-soft);padding:7px 18px;border-radius:999px;transition:color .2s ease, background .25s ease;
+  }
+  .seg-btn.active{background:var(--clay);color:#fff;box-shadow:0 1px 3px rgba(42,36,32,.18);}
+
+  /* ---------- Shopping list ---------- */
+  details.shop{margin:16px 0 8px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;}
+  details.shop summary{list-style:none;cursor:pointer;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;font-family:"Fraunces",serif;font-weight:600;font-size:17px;}
+  details.shop summary::-webkit-details-marker{display:none;}
+  .chev{transition:transform .25s ease;color:var(--clay);font-size:14px;}
+  details.shop[open] .chev{transform:rotate(180deg);}
+  .shoplist{padding:2px 20px 18px;margin:0;list-style:none;}
+  .shoplist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;}
+  .shoplist li:first-child{border-top:none;}
+  .shoplist .q{color:var(--clay-deep);font-weight:600;white-space:nowrap;}
+  .shoplist .n{text-align:right;color:var(--ink);}
+  .eqlist{padding:2px 20px 18px;margin:0;list-style:none;}
+  .eqlist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;align-items:baseline;}
+  .eqlist li:first-child{border-top:none;}
+  .eqlist .e-name{color:var(--ink);}
+  .eqlist .e-name b{font-weight:600;}
+  .eqlist .e-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14.5px;text-align:right;}
+  .eqlist .e-size.none{color:var(--ink-soft);opacity:.55;font-weight:400;font-style:normal;}
+
+  /* Equipment items that expand to product picks */
+  .eqwrap{padding:4px 14px 14px;}
+  details.eq-item{border-top:1px dashed var(--line);}
+  details.eq-item:first-child{border-top:none;}
+  details.eq-item>summary{list-style:none;cursor:pointer;padding:12px 6px;display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:16px;}
+  details.eq-item>summary::-webkit-details-marker{display:none;}
+  .eq-item .e-name{color:var(--ink);}
+  .eq-item .e-name b{font-weight:600;}
+  .eq-right{display:inline-flex;align-items:baseline;gap:10px;flex:0 0 auto;}
+  .eq-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14px;}
+  .eq-size.none{color:var(--ink-soft);opacity:.5;font-style:normal;font-weight:400;}
+  .eq-caret{color:var(--clay);font-size:12px;transition:transform .25s ease;}
+  details.eq-item[open] .eq-caret{transform:rotate(180deg);}
+  .eq-panel{padding:0 6px 16px;}
+  .eq-sum{margin:0 0 12px;font-size:14.5px;line-height:1.5;color:var(--ink-soft);font-style:italic;}
+  .prod-grid{display:flex;flex-direction:column;gap:9px;}
+  .prod{display:flex;gap:12px;align-items:center;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--paper);}
+  .prod-thumb{width:52px;height:52px;border-radius:10px;display:grid;place-items:center;font-size:27px;background:var(--card);border:1px solid var(--line);flex:0 0 auto;}
+  .prod-info{flex:1;min-width:0;}
+  .prod-name{font-family:"Fraunces",serif;font-weight:600;font-size:15px;color:var(--ink);line-height:1.2;}
+  .prod-desc{font-size:13px;color:var(--ink-soft);line-height:1.4;margin-top:2px;}
+  .prod-meta{display:flex;align-items:center;gap:10px;margin-top:4px;}
+  .prod-price{color:var(--clay-deep);font-weight:600;font-size:14px;}
+  .prod-stars{font-size:11px;color:var(--clay);letter-spacing:1.5px;}
+  .eq-note{margin:11px 6px 0;font-size:11.5px;color:var(--ink-soft);opacity:.7;font-style:italic;text-align:center;}
+
+  /* ---------- Section rule ---------- */
+  .rule{display:flex;align-items:center;gap:14px;margin:34px 0 22px;font-family:"Source Serif 4",serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);}
+  .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ---------- Steps ---------- */
+  .step{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);
+    padding:18px 20px 14px;margin:0 0 16px;
+    scroll-margin-top:14px;
+    transition:opacity .35s ease, border-color .35s ease;
+  }
+  .step.done{opacity:.55;border-color:var(--sea);}
+  .num-row{display:flex;align-items:center;gap:11px;margin:0 0 14px;}
+  .num{
+    flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+    font-family:"Fraunces",serif;font-weight:600;font-size:16px;
+    background:var(--clay);color:#fff;transition:background .3s ease;
+  }
+  .step.done .num{background:var(--sea);}
+  .step-name{font-family:"Fraunces",serif;font-weight:600;font-size:18px;color:var(--ink);}
+
+  /* Gather bands — label on its own line above content */
+  .need{display:block;margin:0 0 9px;padding:10px 13px;border-radius:10px;font-size:15.5px;line-height:1.5;}
+  .need .tag{display:block;font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin:0 0 5px;white-space:nowrap;}
+  .need .body{display:block;}
+  .equip{background:var(--clay-bg);}
+  .equip .tag{color:var(--clay);}
+  .equip .body{color:#7a4a31;}
+  .equip .body b{color:var(--clay-deep);font-weight:600;}
+  .equip .spec{font-style:italic;opacity:.9;}
+  .uses{background:var(--sea-bg);}
+  .uses .tag{color:var(--sea);}
+  .uses .body{font-family:"Fraunces",serif;font-style:italic;color:var(--sea-deep);}
+  .uses .q{font-weight:500;color:var(--clay-deep);}
+  .uses.none .body{color:var(--ink-soft);}
+  .uses.none{background:transparent;border:1px dashed var(--line);}
+  .dot{opacity:.5;padding:0 3px;}
+
+  .instr{margin:14px 0 0;font-size:18.5px;line-height:1.56;}
+  .instr .ing{font-weight:600;}
+  .instr .ing .amt{color:var(--ink);}
+
+  /* Check control — foot of the step */
+  .check-row{
+    display:flex;align-items:center;gap:12px;width:100%;
+    margin:16px 0 0;padding:13px 0 3px;border-top:1px solid var(--line);
+    background:none;border-left:0;border-right:0;border-bottom:0;
+    font-family:"Source Serif 4",serif;font-size:15px;font-weight:600;
+    letter-spacing:.03em;color:var(--clay-deep);cursor:pointer;text-align:left;
+    transition:color .3s ease;
+  }
+  .box{
+    flex:0 0 auto;width:26px;height:26px;border:2px solid var(--clay);border-radius:8px;
+    background:var(--card);position:relative;transition:background .25s ease,border-color .25s ease,transform .12s ease;
+  }
+  .check-row:active .box{transform:scale(.9);}
+  .box::after{
+    content:"✓";position:absolute;inset:0;display:grid;place-items:center;
+    color:#fff;font-size:16px;font-weight:700;opacity:0;transform:scale(.5);
+    transition:opacity .2s ease, transform .2s ease;
+  }
+  .step.done .box{background:var(--sea);border-color:var(--sea);}
+  .step.done .box::after{opacity:1;transform:scale(1);}
+  .step.done .check-row{color:var(--sea-deep);}
+  .lbl-done{display:none;}
+  .step.done .lbl-todo{display:none;}
+  .step.done .lbl-done{display:inline;}
+
+  /* ---------- Controls ---------- */
+  .barwrap{position:fixed;left:0;right:0;bottom:0;padding:14px 20px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top, var(--paper) 70%, rgba(246,241,230,0));display:flex;gap:12px;justify-content:center;}
+  .btn{font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;letter-spacing:.04em;padding:11px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  .btn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
+  .credit{text-align:center;font-size:13.5px;color:var(--ink-soft);margin:30px 0 0;line-height:1.6;font-style:italic;}
+
+  .prefs.stack{flex-direction:column;align-items:stretch;gap:12px;}
+  .prefs-row{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+  .picker-select{font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:8px 30px 8px 14px;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23bd4c2a' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;}
+  .grouphdr{padding:14px 0 4px;font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);}
+  .miselist{padding:2px 20px 10px;margin:0;list-style:none;}
+  .miselist li{padding:10px 0;border-top:1px dashed var(--line);font-size:15.5px;line-height:1.5;color:var(--ink);}
+  .miselist li:first-child{border-top:none;}
+  .mlabel{font-family:"Fraunces",serif;font-weight:600;color:var(--clay-deep);}
+  .bref{font-weight:600;color:var(--clay-deep);}
+  .misenote{padding:0 20px 16px;margin:0;font-size:12.5px;color:var(--ink-soft);font-style:italic;opacity:.8;}
+  .chefnote{margin:26px 0 0;padding:16px 18px;background:var(--sea-bg);border:1px solid var(--line);border-radius:14px;}
+  .chefnote .cn-label{font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--sea);margin:0 0 6px;}
+  .chefnote p{margin:0;font-size:16px;line-height:1.6;color:var(--sea-deep);font-style:italic;}
+</style>
+
+</head><body>
+<div class="wrap">
+  <header>
+    <p class="kicker">Akis Petretzikis &mdash; reworked</p>
+    <h1>Traditional<span class="it">Pastitsio</span></h1>
+    <div class="meta"><span>👥 Serves <b>8</b></span><span>⏱ <b>~2&frac12; hr</b> (1 hr active)</span><span>🇬🇷 Greek pasta bake</span></div>
+    <p class="blurb">Pastitsio lives or dies on whether the layers hold when you cut it &mdash; and this is the Akis approach that makes them behave: egg white through the pasta to set the base, yolks and cheese in the béchamel to enrich the top, a ladle of that béchamel stirred into the meat to bind the middle. The trick to a calm kitchen is the <b>bundling</b> below: everything is measured and combined first, so each step just reaches for what&rsquo;s already there.</p>
+  </header>
+  <div class="prefs stack">
+    <div class="prefs-row"><span class="prefs-label">Measurements</span>
+      <div class="seg" role="group" aria-label="Measurement units">
+        <button class="seg-btn active" data-units="imp">Imperial</button><button class="seg-btn" data-units="met">Metric</button>
+      </div></div>
+    <div class="prefs-row"><span class="prefs-label">Warm spices</span>
+      <select class="picker-select" id="spiceForm" aria-label="Warm spice form">
+        <option value="whole">Whole (stick &amp; berries)</option><option value="ground">Ground</option>
+      </select></div>
+    <div class="prefs-row"><span class="prefs-label">Hard cheese</span>
+      <select class="picker-select" id="cheeseForm" aria-label="Hard cheese">
+        <option value="kefalotyri">Kefalot&yacute;ri</option><option value="graviera">Graviera</option>
+        <option value="gruyere">Gruy&egrave;re</option><option value="parmesan">Parmesan</option>
+      </select></div>
+  </div>
+  <details class="shop mise" open><summary>Bundling &mdash; combine these before you start <span class="chev">&#9662;</span></summary>
+    <ul class="miselist">
+      <li><span class="mlabel">Aromatics</span> &mdash; <span class="u" data-imp="1&frac12; cups" data-met="200 g">1&frac12; cups</span> onion, finely chopped, + <span class="u" data-imp="2 tsp" data-met="6 g">2 tsp</span> garlic, minced</li>
+      <li><span class="mlabel">Spices 1</span> &mdash; <span class="spice-mise"></span></li>
+      <li><span class="mlabel">Tomato</span> &mdash; <span class="u" data-imp="1 can (14 oz)" data-met="400 g">1 can (14 oz)</span> crushed tomatoes stirred with 1 tsp sugar</li>
+      <li><span class="mlabel">Salted pasta water</span> &mdash; <span class="u" data-imp="4 qt" data-met="4 L">4 qt</span> water + <span class="u" data-imp="2 Tbsp" data-met="40 g">2 Tbsp</span> salt, in the large pot, ready to boil</li>
+      <li><span class="mlabel">Pasta dressing</span> &mdash; the 3 egg whites + <span class="u" data-imp="3&frac12; oz" data-met="100 g">3&frac12; oz</span> feta, crumbled (a little pepper)</li>
+      <li><span class="mlabel">B&eacute;chamel seasoning</span> &mdash; &frac14; tsp grated nutmeg + <span class="u" data-imp="&frac12; tsp" data-met="3 g">&frac12; tsp</span> salt + white pepper, in one small bowl</li>
+      <li><span class="mlabel">Cheese, grated</span> &mdash; <span class="u" data-imp="1&frac12; cups" data-met="150 g">1&frac12; cups</span> hard cheese (<span class="cheese-name"></span>), with <span class="u" data-imp="2 Tbsp" data-met="15 g">2 Tbsp</span> set aside for the top</li>
+      <li><span class="mlabel">Measured &amp; ready</span> &mdash; <span class="u" data-imp="1&frac12; lb" data-met="700 g">1&frac12; lb</span> ground beef &middot; <span class="u" data-imp="&frac14; cup" data-met="60 ml">&frac14; cup</span> olive oil &middot; <span class="u" data-imp="2 Tbsp" data-met="30 g">2 Tbsp</span> tomato paste &middot; <span class="u" data-imp="&frac12; cup" data-met="120 ml">&frac12; cup</span> red wine &middot; <span class="u" data-imp="1 tsp" data-met="6 g">1 tsp</span> kosher salt &middot; <span class="u" data-imp="7 Tbsp" data-met="100 g">7 Tbsp</span> butter &middot; <span class="u" data-imp="1 cup" data-met="120 g">1 cup</span> flour &middot; <span class="u" data-imp="4&frac14; cups" data-met="1 L">4&frac14; cups</span> milk (warmed) &middot; the 3 egg yolks</li>
+    </ul>
+    <p class="misenote">Bundled because each group goes into the pot at the same moment. Kept separate where timing or texture needs it &mdash; the tomato paste blooms on its own, and the roux comes together in the pan.</p>
+  </details>
+  <details class="shop"><summary>Ingredient list <span class="chev">&#9662;</span></summary>
+    <ul class="shoplist">
+      <li class="grouphdr">For the meat sauce</li>
+      <li><span class="q"><span class="u" data-imp="1&frac12; lb" data-met="700 g">1&frac12; lb</span></span><span class="n">ground beef</span></li>
+      <li><span class="q"><span class="u" data-imp="&frac14; cup" data-met="60 ml">&frac14; cup</span></span><span class="n">olive oil</span></li>
+      <li><span class="q"><span class="u" data-imp="1&frac12; cups" data-met="200 g">1&frac12; cups</span></span><span class="n">onion, finely chopped (1 large)</span></li>
+      <li><span class="q"><span class="u" data-imp="2 tsp" data-met="6 g">2 tsp</span></span><span class="n">garlic, minced (&asymp; 2 cloves)</span></li>
+      <li><span class="q"></span><span class="n"><span class="spice-list"></span></span></li>
+      <li><span class="q"><span class="u" data-imp="&frac12; cup" data-met="120 ml">&frac12; cup</span></span><span class="n">red wine</span></li>
+      <li><span class="q"><span class="u" data-imp="2 Tbsp" data-met="30 g">2 Tbsp</span></span><span class="n">tomato paste</span></li>
+      <li><span class="q"><span class="u" data-imp="1 can (14 oz)" data-met="400 g">1 can (14 oz)</span></span><span class="n">crushed tomatoes</span></li>
+      <li><span class="q">1 tsp</span><span class="n">sugar</span></li>
+      <li><span class="q"><span class="u" data-imp="1 tsp" data-met="6 g">1 tsp</span></span><span class="n">kosher salt (+ pepper), for the sauce</span></li>
+      <li class="grouphdr">For the pasta layer</li>
+      <li><span class="q"><span class="u" data-imp="1 lb" data-met="500 g">1 lb</span></span><span class="n">pasta &mdash; bucatini, ziti, or pastitsio no. 2 (tubes with a hole)</span></li>
+      <li><span class="q">3</span><span class="n">eggs, separated (whites → pasta, yolks → b&eacute;chamel)</span></li>
+      <li><span class="q"><span class="u" data-imp="3&frac12; oz" data-met="100 g">3&frac12; oz</span></span><span class="n">feta, crumbled</span></li>
+      <li class="grouphdr">For the b&eacute;chamel</li>
+      <li><span class="q"><span class="u" data-imp="7 Tbsp" data-met="100 g">7 Tbsp</span></span><span class="n">butter</span></li>
+      <li><span class="q"><span class="u" data-imp="1 cup" data-met="120 g">1 cup</span></span><span class="n">all-purpose flour</span></li>
+      <li><span class="q"><span class="u" data-imp="4&frac14; cups" data-met="1 L">4&frac14; cups</span></span><span class="n">milk, warmed</span></li>
+      <li><span class="q">&frac14; tsp</span><span class="n">nutmeg, grated</span></li>
+      <li><span class="q"><span class="cheese-name"></span></span><span class="n">grated hard cheese (<span class="u" data-imp="1&frac12; cups" data-met="150 g">1&frac12; cups</span>, reserve <span class="u" data-imp="2 Tbsp" data-met="15 g">2 Tbsp</span> for the top)</span></li>
+      <li><span class="q"><span class="u" data-imp="&frac12; tsp" data-met="3 g">&frac12; tsp</span></span><span class="n">salt (+ white pepper), for the b&eacute;chamel</span></li>
+    </ul>
+  </details>
+  <details class="shop"><summary>Equipment list <span class="chev">&#9662;</span></summary>
+    <div class="eqwrap">
+      <details class="eq-item"><summary><span class="e-name"><b>Large deep pot / Dutch oven</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="5&ndash;6 qt" data-met="5&ndash;6 L">5&ndash;6 qt</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">Holds the beef in one layer to brown, then the whole simmering sauce.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍲</div><div class="prod-info"><div class="prod-name">Bestcooks Club 6-qt Dutch Oven</div><div class="prod-desc">Enameled, steady heat.</div><div class="prod-meta"><span class="prod-price">$95</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍲</div><div class="prod-info"><div class="prod-name">Bestcooks Club 5.5-qt Sauté Pot</div><div class="prod-desc">Wide base, browns well.</div><div class="prod-meta"><span class="prod-price">$72</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍲</div><div class="prod-info"><div class="prod-name">Bestcooks Club Everyday Braiser</div><div class="prod-desc">Low and wide.</div><div class="prod-meta"><span class="prod-price">$80</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Wooden spoon</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To break up the beef and stir the sauce.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥄</div><div class="prod-info"><div class="prod-name">Bestcooks Club Olivewood Spoon</div><div class="prod-desc">Won’t scratch.</div><div class="prod-meta"><span class="prod-price">$12</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥄</div><div class="prod-info"><div class="prod-name">Bestcooks Club Beechwood Set of 3</div><div class="prod-desc">Flat edge.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥄</div><div class="prod-info"><div class="prod-name">Bestcooks Club Silicone Spoonula</div><div class="prod-desc">Spoon + scraper.</div><div class="prod-meta"><span class="prod-price">$11</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Large pasta pot</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="6&ndash;8 qt" data-met="6&ndash;8 L">6&ndash;8 qt</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For a pound of pasta in plenty of salted water.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍝</div><div class="prod-info"><div class="prod-name">Bestcooks Club 8-qt Stockpot</div><div class="prod-desc">Fast to the boil.</div><div class="prod-meta"><span class="prod-price">$49</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍝</div><div class="prod-info"><div class="prod-name">Bestcooks Club Pasta Pot + Insert</div><div class="prod-desc">Lift to drain.</div><div class="prod-meta"><span class="prod-price">$58</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍝</div><div class="prod-info"><div class="prod-name">Bestcooks Club 6-qt Everyday Pot</div><div class="prod-desc">Right size for a pound.</div><div class="prod-meta"><span class="prod-price">$39</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Colander</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="5 qt+" data-met="5 L+">5 qt+</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To drain the pasta.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club 5-qt Footed Colander</div><div class="prod-desc">Stands above the water.</div><div class="prod-meta"><span class="prod-price">$22</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Mesh Strainer, 8 in</div><div class="prod-desc">Fine holes.</div><div class="prod-meta"><span class="prod-price">$16</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Collapsible Colander</div><div class="prod-desc">Folds flat.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Box grater</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the hard cheese (and nutmeg, on the fine side).</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🧀</div><div class="prod-info"><div class="prod-name">Bestcooks Club 4-Sided Box Grater</div><div class="prod-desc">Four cuts, stable.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧀</div><div class="prod-info"><div class="prod-name">Bestcooks Club Rotary Grater</div><div class="prod-desc">Fast for hard cheese.</div><div class="prod-meta"><span class="prod-price">$24</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧀</div><div class="prod-info"><div class="prod-name">Bestcooks Club Fine Rasp</div><div class="prod-desc">Nutmeg and zest.</div><div class="prod-meta"><span class="prod-price">$14</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Large mixing bowl</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="4&ndash;5 qt" data-met="4&ndash;5 L">4&ndash;5 qt</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To toss the hot pasta with the Pasta dressing.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club 6-qt Steel Bowl</div><div class="prod-desc">Wide, flat base.</div><div class="prod-meta"><span class="prod-price">$24</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Glass Bowl, 5 qt</div><div class="prod-desc">See what you’re tossing.</div><div class="prod-meta"><span class="prod-price">$19</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Nested Prep Set</div><div class="prod-desc">5 / 3 / 1.5 qt.</div><div class="prod-meta"><span class="prod-price">$32</span><span class="prod-stars">★★★★★</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>A set of prep bowls</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To hold the bundles — Spices 1, Tomato, Pasta dressing, seasoning, cheese.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥚</div><div class="prod-info"><div class="prod-name">Bestcooks Club Glass Prep Bowls (7)</div><div class="prod-desc">Nest and stack.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥚</div><div class="prod-info"><div class="prod-name">Bestcooks Club Pinch Bowls (6)</div><div class="prod-desc">For the small stuff.</div><div class="prod-meta"><span class="prod-price">$12</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥚</div><div class="prod-info"><div class="prod-name">Bestcooks Club Stainless Prep Set</div><div class="prod-desc">Lightweight, lids.</div><div class="prod-meta"><span class="prod-price">$22</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Saucepan</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="3 qt" data-met="3 L">3 qt</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the béchamel — a full liter of milk needs room.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥛</div><div class="prod-info"><div class="prod-name">Bestcooks Club 3-qt Saucepan</div><div class="prod-desc">Heavy base.</div><div class="prod-meta"><span class="prod-price">$45</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥛</div><div class="prod-info"><div class="prod-name">Bestcooks Club Nonstick Saucier</div><div class="prod-desc">Curved for whisking.</div><div class="prod-meta"><span class="prod-price">$52</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥛</div><div class="prod-info"><div class="prod-name">Bestcooks Club 2.5-qt Pot</div><div class="prod-desc">Compact but deep.</div><div class="prod-meta"><span class="prod-price">$38</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Whisk</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To keep the béchamel smooth as the milk goes in.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Balloon Whisk</div><div class="prod-desc">Lots of wires.</div><div class="prod-meta"><span class="prod-price">$11</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Flat Roux Whisk</div><div class="prod-desc">Reaches pan corners.</div><div class="prod-meta"><span class="prod-price">$13</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Silicone Whisk</div><div class="prod-desc">Won’t scratch.</div><div class="prod-meta"><span class="prod-price">$12</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Deep baking dish</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="9×13 in" data-met="23×33 cm">9×13 in</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">Deep enough for three layers; this size serves 8. About <span class="amt u" data-imp="3 in" data-met="7 cm">3 in</span> deep.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍽️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Deep Ceramic Baker</div><div class="prod-desc">9×13, 3 in deep.</div><div class="prod-meta"><span class="prod-price">$42</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍽️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Lasagna Pan</div><div class="prod-desc">Steel, tall sides.</div><div class="prod-meta"><span class="prod-price">$36</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍽️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Glass Baker</div><div class="prod-desc">See the layers.</div><div class="prod-meta"><span class="prod-price">$28</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Timer</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the simmer, the bake, and the all-important rest.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">⏲️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Magnetic Digital Timer</div><div class="prod-desc">Loud; sticks to the hood.</div><div class="prod-meta"><span class="prod-price">$13</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">⏲️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Triple Timer</div><div class="prod-desc">Three things at once.</div><div class="prod-meta"><span class="prod-price">$19</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">⏲️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Analog Ring Timer</div><div class="prod-desc">No batteries.</div><div class="prod-meta"><span class="prod-price">$11</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+    </div>
+    <p class="eq-note">Sample product picks &mdash; placeholder data for the prototype.</p>
+  </details>
+  <div class="rule">Method</div>
+  <div id="steps">
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">1</div><div class="step-name">Brown the beef</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>large deep pot / Dutch oven</b> <span class="spec">(<span class="amt u" data-imp="5&ndash;6 qt" data-met="5&ndash;6 L">5&ndash;6 qt</span>)</span> &middot; a <b>wooden spoon</b></span></div>
+      <p class="instr">Heat the <span class="ing"><span class="amt u" data-imp="&frac14; cup" data-met="60 ml">&frac14; cup</span> olive oil</span> in the pot over high heat. Add the <span class="ing"><span class="amt u" data-imp="1&frac12; lb" data-met="700 g">1&frac12; lb</span> ground beef</span> in a single layer and let it sear undisturbed for 2&ndash;3 minutes before you break it up, then brown it well. Colour is flavour &mdash; beef that steams instead of sears makes a pale, flat sauce.</p>
+      <button class="check-row" aria-label="Mark step 1 done"><span class="box"></span><span class="lbl-todo">Done &mdash; next step ↓</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">2</div><div class="step-name">Build &amp; simmer the meat sauce</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">The <b>same pot</b> <span class="spec">(from step 1)</span></span></div>
+      <p class="instr">Stir in the <span class="bref">Aromatics</span> (<span class="u" data-imp="1&frac12; cups" data-met="200 g">1&frac12; cups</span> onion + <span class="u" data-imp="2 tsp" data-met="6 g">2 tsp</span> garlic); cook until soft, 4&ndash;5 minutes. Add the <span class="bref">Spices&nbsp;1</span> (<span class="spice-list"></span>); cook 1 minute. Stir in the <span class="ing"><span class="amt u" data-imp="2 Tbsp" data-met="30 g">2 Tbsp</span> tomato paste</span> and let it darken a shade, then deglaze with the <span class="ing"><span class="amt u" data-imp="&frac12; cup" data-met="120 ml">&frac12; cup</span> red wine</span>, about 1 minute. Add the <span class="bref">Tomato</span> (<span class="u" data-imp="1 can (14 oz)" data-met="400 g">1 can (14 oz)</span> crushed tomatoes + 1 tsp sugar), then season with the <span class="ing"><span class="amt u" data-imp="1 tsp" data-met="6 g">1 tsp</span> salt</span> and pepper. Simmer, partly covered, until thick, about <span class="ing"><span class="amt">30 minutes</span></span>; taste and adjust salt, keeping it light &mdash; the feta and cheese to come are salty. <b>Meanwhile, boil the pasta and make the béchamel.</b></p>
+      <button class="check-row" aria-label="Mark step 2 done"><span class="box"></span><span class="lbl-todo">Done &mdash; next step ↓</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">3</div><div class="step-name">Boil the pasta and dress it</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>large pasta pot</b> <span class="spec">(<span class="amt u" data-imp="6&ndash;8 qt" data-met="6&ndash;8 L">6&ndash;8 qt</span>)</span> &middot; a <b>colander</b> &middot; a <b>large mixing bowl</b></span></div>
+      <p class="instr">Bring the <span class="bref">Salted&nbsp;water</span> (<span class="u" data-imp="4 qt" data-met="4 L">4 qt</span> water + <span class="u" data-imp="2 Tbsp" data-met="40 g">2 Tbsp</span> salt) to a boil. Cook the <span class="ing"><span class="amt u" data-imp="1 lb" data-met="500 g">1 lb</span> pasta</span> <span class="ing"><span class="amt">2 minutes</span></span> short of the package time &mdash; it finishes in the oven &mdash; then drain. Toss the hot pasta with the <span class="bref">Pasta&nbsp;dressing</span> (3 egg whites + <span class="u" data-imp="3&frac12; oz" data-met="100 g">3&frac12; oz</span> crumbled feta): the egg sets the bottom layer so it slices clean.</p>
+      <button class="check-row" aria-label="Mark step 3 done"><span class="box"></span><span class="lbl-todo">Done &mdash; next step ↓</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">4</div><div class="step-name">Make the b&eacute;chamel</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>saucepan</b> <span class="spec">(<span class="amt u" data-imp="3 qt" data-met="3 L">3 qt</span>)</span> &middot; a <b>whisk</b></span></div>
+      <p class="instr">Warm the <span class="ing"><span class="amt u" data-imp="4&frac14; cups" data-met="1 L">4&frac14; cups</span> milk</span>. Melt the <span class="ing"><span class="amt u" data-imp="7 Tbsp" data-met="100 g">7 Tbsp</span> butter</span> in the saucepan over medium heat, whisk in the <span class="ing"><span class="amt u" data-imp="1 cup" data-met="120 g">1 cup</span> flour</span>, and cook 2&ndash;3 minutes to lose the raw-flour taste. Add the warm milk a little at a time, whisking smooth between each, until it thickens to a heavy sauce. Off the heat, whisk in the <span class="bref">Béchamel&nbsp;seasoning</span> (&frac14; tsp nutmeg + <span class="u" data-imp="&frac12; tsp" data-met="3 g">&frac12; tsp</span> salt + white pepper), most of the <span class="bref">Cheese</span> (<span class="u" data-imp="1&frac12; cups" data-met="150 g">1&frac12; cups</span> grated <span class="cheese-name"></span>; keep <span class="u" data-imp="2 Tbsp" data-met="15 g">2 Tbsp</span> for the top), then the 3 egg yolks &mdash; off the heat, so they enrich without scrambling.</p>
+      <button class="check-row" aria-label="Mark step 4 done"><span class="box"></span><span class="lbl-todo">Done &mdash; next step ↓</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">5</div><div class="step-name">Bind and layer</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>deep baking dish</b> <span class="spec">(<span class="amt u" data-imp="9×13 in" data-met="23×33 cm">9×13 in</span>)</span> &middot; the <b>oven</b></span></div>
+      <p class="instr">Heat the oven to <span class="ing"><span class="amt u" data-imp="350&deg;F" data-met="180&deg;C">350&deg;F</span></span>. <span class="spice-remove"></span>Stir the <span class="ing"><span class="amt u" data-imp="1 cup" data-met="240 ml">1 cup</span> béchamel</span> into the meat sauce &mdash; this binds the middle so the layers hold. Oil the dish; spread the pasta in an even bed, then the meat sauce, then pour the remaining béchamel over and smooth the top. Sprinkle with the reserved <span class="ing"><span class="cheese-name"></span></span>.</p>
+      <button class="check-row" aria-label="Mark step 5 done"><span class="box"></span><span class="lbl-todo">Done &mdash; next step ↓</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">6</div><div class="step-name">Bake</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">The <b>oven</b> &middot; a <b>timer</b></span></div>
+      <p class="instr">Bake at <span class="ing"><span class="amt u" data-imp="350&deg;F" data-met="180&deg;C">350&deg;F</span></span> for about <span class="ing"><span class="amt">45 minutes</span></span>, until the top is golden with dark freckles and the centre is set when you jiggle the dish.</p>
+      <button class="check-row" aria-label="Mark step 6 done"><span class="box"></span><span class="lbl-todo">Done &mdash; next step ↓</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">7</div><div class="step-name">Rest, then serve</div></div>
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>timer</b></span></div>
+      <p class="instr">Let it rest <span class="ing"><span class="amt">20&ndash;30 minutes</span></span> before cutting. This is not optional &mdash; it&rsquo;s what lets the layers firm up so you lift clean squares instead of a landslide. Cut, lift, and serve.</p>
+      <button class="check-row" aria-label="Mark step 7 done"><span class="box"></span><span class="lbl-todo">Done &mdash; kalí órexi 🍽️</span><span class="lbl-done">Completed ✓</span></button>
+    </div>
+
+  </div>
+  <div class="chefnote">
+    <p class="cn-label">A cook&rsquo;s note</p>
+    <p>The rest at the end is the difference between a clean slice and a delicious mess &mdash; don&rsquo;t skip it. Pastitsio is, if anything, better the next day; the layers set in the fridge and reheat beautifully, covered, in a low oven.</p>
+  </div>
+  <p class="credit">Rebuilt from the traditional pastitsio method of <em>Akis Petretzikis</em>; quantities standardized for a 9&times;13 dish. Verify against the original at akispetretzikis.com.</p>
+</div>
+<div class="barwrap">
+  <button class="btn" id="reset">↺ Reset steps</button>
+  <button class="btn" id="awake">☀ Keep screen awake</button>
+</div>
+
+<script>
+  var currentSpice='whole', currentCheese='kefalotyri';
+  var SPICE = {
+    whole:  {list:'1 cinnamon stick, 3 cloves, 3 allspice berries, 1 bay leaf',
+             mise:'1 cinnamon stick, 3 cloves, 3 allspice berries + 1 bay leaf — tie the whole spices in cheesecloth or a tea ball so they lift out in one go',
+             remove:'Fish out and discard Spices\u00A01 — the bay leaf, cinnamon stick, cloves, and allspice. '},
+    ground: {list:'½ tsp cinnamon, ⅛ tsp ground cloves, ¼ tsp ground allspice, 1 bay leaf',
+             mise:'½ tsp cinnamon, ⅛ tsp ground cloves, ¼ tsp ground allspice + 1 bay leaf — whisk the ground spices together; keep the bay leaf whole',
+             remove:'Fish out and discard the bay leaf. '}
+  };
+  var CHEESE = { kefalotyri:'kefalotýri', graviera:'graviera', gruyere:'gruyère', parmesan:'parmesan' };
+  function refreshSpice(){
+    var s=SPICE[currentSpice];
+    document.querySelectorAll('.spice-list').forEach(function(el){ el.textContent=s.list; });
+    document.querySelectorAll('.spice-mise').forEach(function(el){ el.textContent=s.mise; });
+    document.querySelectorAll('.spice-remove').forEach(function(el){ el.textContent=s.remove; });
+  }
+  function refreshCheese(){ var n=CHEESE[currentCheese]; document.querySelectorAll('.cheese-name').forEach(function(el){ el.textContent=n; }); }
+  var unitButtons=Array.prototype.slice.call(document.querySelectorAll('.seg-btn'));
+  function setUnits(u){
+    document.querySelectorAll('.u').forEach(function(el){ el.textContent=(u==='met')?el.getAttribute('data-met'):el.getAttribute('data-imp'); });
+    unitButtons.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-units')===u); });
+  }
+  unitButtons.forEach(function(b){ b.addEventListener('click', function(){ setUnits(b.getAttribute('data-units')); }); });
+  var sp=document.getElementById('spiceForm'); sp.addEventListener('change', function(){ currentSpice=sp.value; refreshSpice(); });
+  var ch=document.getElementById('cheeseForm'); ch.addEventListener('change', function(){ currentCheese=ch.value; refreshCheese(); });
+  refreshSpice(); refreshCheese();
+  var steps=Array.prototype.slice.call(document.querySelectorAll('[data-step]'));
+  steps.forEach(function(step,i){
+    step.querySelector('.check-row').addEventListener('click', function(){
+      var was=step.classList.contains('done'); step.classList.toggle('done');
+      if(!was){ var n=steps[i+1]; if(n){ setTimeout(function(){ n.scrollIntoView({behavior:'smooth',block:'start'}); },180); } }
+    });
+  });
+  document.getElementById('reset').addEventListener('click', function(){ steps.forEach(function(s){s.classList.remove('done');}); window.scrollTo({top:0,behavior:'smooth'}); });
+  var wakeLock=null, awakeBtn=document.getElementById('awake');
+  awakeBtn.addEventListener('click', async function(){
+    if(!('wakeLock' in navigator)){ awakeBtn.textContent='✕ Not supported'; return; }
+    try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; awakeBtn.classList.remove('on'); awakeBtn.textContent='☀ Keep screen awake'; }
+      else { wakeLock=await navigator.wakeLock.request('screen'); awakeBtn.classList.add('on'); awakeBtn.textContent='☀ Screen staying on';
+        wakeLock.addEventListener('release', function(){ awakeBtn.classList.remove('on'); awakeBtn.textContent='☀ Keep screen awake'; }); } }
+    catch(err){ awakeBtn.textContent='✕ Unavailable'; }
+  });
+  document.addEventListener('visibilitychange', async function(){ if(wakeLock&&document.visibilityState==='visible'){ try{ wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} } });
+</script>
+</body></html>

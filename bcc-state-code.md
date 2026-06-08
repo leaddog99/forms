@@ -239,6 +239,39 @@ Took the measurement-conversion starter kit (Desktop Claude, 2026-05-31; King Ar
 
 ---
 
+## Session log — 2026-06-08 — batch off FastAPI (jobs CLI + WAL), dish scheduler, DB system config, two-hamburger nav
+
+A long session that took the jobs-as-executables design (docs/jobs-as-executables.md) from spec to a working standalone batch runner, then opened the DB-resident system-config subsystem and split the nav into admin/user hamburgers. Still on branch `split/enrichment-api` (not merged).
+
+### Recipe master: delete clears the form
+Delete now runs the canonical **Clear** path (full teardown — lists, hero image, scoring strip, badges, `/r/<id>` URL bar) instead of a partial `form.reset()`, which left the deleted recipe's dynamic content on screen. Feedback message shown after the clear (which wipes feedback). `recipe_form_styled.html`.
+
+### Batch runs are now independent of FastAPI — `python -m jobs`
+- **WAL prerequisite DONE**: `init_db` sets `PRAGMA journal_mode=WAL` as its first statement (persistent in the DB header → inherited by every process; default `sqlite3.connect` 5s busy_timeout makes concurrent server+job writers queue, not collide). Verified live `journal_mode=wal`.
+- New top-level **`jobs/` package** (`python -m jobs run|schedule|next|drain|list`) — promotes `scripts/run_next_job.py` to a first-class entrypoint. Every run funnels through the existing `_run_one_job` (same path as the form Run button), entity-locked, exits 0/1 so Task Scheduler sees pass/fail. **§3.1 rule honored**: `--dish` passes dish IDENTITY only; the SERP query (with embedded straight quotes) is read from the DB, never argv — no `--query` flag. Both decision forks resolved (L1 logs, three triggers) in the design doc.
+
+### Dish scheduler (per-dish next-run date)
+- `dishes.next_run_at(ttl, last_refreshed)` — DERIVED (not stored), surfaced in `row_to_dict` + the `dishes_v2.html` detail (status pill "next run …" + Next-run KV row). Verified: Carbonara ttl=59 → 07/31.
+- `python -m jobs schedule` runs every due dish (`find_due_dishes`), entity-locked; honors DB config (see below); `--force` / `--dry-run`. The long-referenced `refresh_due_dishes.py` agent is now this command.
+- **Windows Task Scheduler `BCC Dish Schedule`** registered as an **hourly heartbeat** (`bcc_schedule.bat`, CRLF, 3h kill-cap, no-overlap). The real cadence + on/off live in the DB, not the OS.
+
+### DB-resident system config — the "system record" apex begins
+User steer: scheduler cadence (and config generally) belongs in a **DB-resident config file edited via an admin UI**, not baked into Task Scheduler — the apex of the portable-package model. Built the scheduler slice:
+- **`system_config` table** (key/value rows: `key, value(JSON-typed), type, category, label, description`) + bootstrap seed; `get_setting()` cached + invalidated on write; `set_setting`/`list_settings`. `input/pipeline/system_config.py`.
+- `/system-config` GET/POST (read-only + unknown-key guards → 400; TestClient-verified).
+- **`forms/system.html`** single-record settings editor (grouped by category, typed inputs, read-only last-tick) + **System** nav item. Verified live (toggle/interval/save).
+- The scheduler reads `scheduler_enabled` + `scheduler_interval_hours` (gate vs `scheduler_last_tick_at`); `bcc_config.json` stays the file seed, migrating in incrementally. Memory: [[project_system_config]].
+
+### Two-hamburger nav (admin / user split) — groundwork for the TBOTB/BCC split
+- `library-shell.js` `initNav` now renders **two burgers**: a user burger (always) + an admin burger (shown only when `/auth/me` role is admin/owner, or you're already on an admin page). `NAV_ITEMS` tagged `group: 'user'|'admin'`: user = Recipes/Cookbooks/Equipment/Gourmet/Install; admin = Dishes/Chapters/Domains/Users/Run-jobs/System/Messages. Distinct dark color for the admin burger. **Both burgers added to admin.html (Messages)** (it had no nav before → fixed-fallback burgers).
+- Verified live via Playwright (owner sees both; member sees user-only on user pages; both on admin pages).
+- **Overlay bug fixed**: the dropdown was `position:absolute` but positioned with viewport coords, so on a scrolled page it opened near the document top (you had to scroll up). Now `position:fixed` on open → overlays the current viewport under the (fixed/sticky) header toggle. Also fixed `system.html` missing `library-shell.css` (unstyled, unresponsive burgers). Asset version bumped `20260608a → b`.
+
+### Ops
+- Server restarted onto the branch code via detached venv uvicorn (logging `uvicorn_*_agent.log`); `BCC_ENRICHMENT_API` unchanged. `jobs_schedule.log` gitignored. New memories: [[project_jobs_as_executables]] (forks resolved), [[project_system_config]], [[feedback_cli_args_identity_not_query]].
+
+---
+
 ## To-do
 - **Public read-only "cookbook" pages — SEO + AI-bot compatible (2026-06-01).** Today `/r/<id>` resolves to the JS editor *form*, which bots see as an empty shell — wrong surface to expose. Build a **separate, server-rendered, read-only recipe page**: complete resolved HTML (no editor chrome), crawlable. Big head start: recipes are already stored in **schema.org shape**, so the page can emit a `<script type="application/ld+json">` **Recipe** block nearly for free (Google Recipe rich-results *and* AI crawlers parse it) + plain semantic HTML (title/hero/ingredients `<ul>`/steps `<ol>`/times/yield) + OpenGraph/Twitter meta + `<link rel=canonical>`. **Scope:** curated/cookbook set only (master_recipes / a `published` visibility flag) — private user saves stay non-crawlable. **Discovery:** `sitemap.xml` of public recipe URLs + `robots.txt` (+ optional `llms.txt`). **Payoff that closes a loop:** a public page *with* JSON-LD is itself extractable — so "paste a BCC URL" would then legitimately work against the cookbook page, not the form. **Generation fork:** (1) on-demand SSR — app renders each page live from current data, always fresh, no queue, CDN in front for bot load (start here); (2) pre-generated static — a regen *queue* renders each published recipe to a static `.html` on publish/edit, served from disk/CDN, best crawl perf + survives app downtime (graduate to this with the Fly.io/Ghost production move). Ties to the **Production hosting** + **Ghost integration** items below (`bestcooksclub.com` public domain). **Decisions to make:** (a) which recipes are public (master/cookbook only, gated by a flag?); (b) on-demand SSR vs pre-generated static first; (c) URL scheme — keep `/r/<id>` vs a human/SEO slug like `/recipes/banana-bread-<id>`. Note: the editor form moves to an explicit admin path so the clean public URL is the read-only page.
 - **Internationalization (i18n) for UI messages (2026-05-29).** User flagged: we've been writing English strings inline throughout the codebase since day one; no infrastructure to swap to another language. Start NOW so we capture new strings into the pattern while it's fresh.

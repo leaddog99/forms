@@ -38,18 +38,23 @@ def _singular(word: str) -> str:
 def _candidates(name: str, unit: Optional[str]) -> list[str]:
     """Ordered candidate keys to try before fuzzy matching."""
     name = name.strip().lower()
-    cands = [name]
     words = name.split()
+    sing = None
     if words:
         # singularize the last word ("eggs" -> "egg", "berries" -> "berry")
-        sing = " ".join(words[:-1] + [_singular(words[-1])])
-        if sing != name:
-            cands.append(sing)
-    # Count context: "garlic" + clove -> "garlic clove"; bare "egg" already a key.
+        s = " ".join(words[:-1] + [_singular(words[-1])])
+        if s != name:
+            sing = s
+    cands: list[str] = []
+    # Count context FIRST: with a count unit, "garlic" + clove should prefer the
+    # count item "garlic clove" over a de-parenthesized density row also keyed
+    # "garlic". (bare "egg" is already a count key, so it still resolves.)
     if unit and unit.lower().rstrip("s") in COUNT_UNITS:
         u = unit.lower().rstrip("s")
-        cands.append(f"{name} {u}")
-        cands.append(f"{u} {name}")
+        cands += [f"{name} {u}", f"{u} {name}"]
+    cands.append(name)
+    if sing:
+        cands.append(sing)
     return cands
 
 

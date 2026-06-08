@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>{{ doc.name }} — step-anchored</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400;1,9..144,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f1e6;
+    --card:#fffdf7;
+    --ink:#2a2420;
+    --ink-soft:#6f6456;
+    --clay:#bd4c2a;
+    --clay-deep:#9c3c1f;
+    --clay-bg:#f1e3d4;
+    --sea:#3c6a5d;
+    --sea-deep:#2f5448;
+    --sea-bg:#e8efe3;
+    --line:rgba(42,36,32,0.12);
+    --shadow:0 1px 2px rgba(42,36,32,.06), 0 8px 24px rgba(42,36,32,.07);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--paper);
+    background-image:radial-gradient(rgba(42,36,32,.025) 1px, transparent 1px);
+    background-size:18px 18px;
+    color:var(--ink);
+    font-family:"Source Serif 4", Georgia, serif;
+    font-size:18px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    padding:0 0 96px;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:0 20px;}
+
+  /* ---------- Header ---------- */
+  header{padding:38px 0 18px;}
+  .kicker{font-family:"Source Serif 4",serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--clay);font-weight:600;margin:0 0 14px;}
+  h1{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(40px,11vw,62px);line-height:.96;margin:0 0 6px;letter-spacing:-.01em;}
+  h1 .it{font-style:italic;font-weight:500;display:block;color:var(--clay-deep);}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:18px 0 0;font-size:14.5px;color:var(--ink-soft);letter-spacing:.02em;}
+  .meta span{display:inline-flex;align-items:center;gap:7px;}
+  .meta b{color:var(--ink);font-weight:600;}
+  .blurb{margin:20px 0 0;font-size:16.5px;color:var(--ink-soft);line-height:1.62;border-left:3px solid var(--sea-bg);padding-left:16px;}
+
+  /* ---------- Preferences ---------- */
+  .prefs{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    margin:22px 0 0;padding:13px 16px 13px 18px;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+  }
+  .prefs-label{font-family:"Source Serif 4",serif;font-size:11.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-soft);}
+  .seg{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px;}
+  .seg-btn{
+    border:0;background:none;cursor:pointer;
+    font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;letter-spacing:.02em;
+    color:var(--ink-soft);padding:7px 18px;border-radius:999px;transition:color .2s ease, background .25s ease;
+  }
+  .seg-btn.active{background:var(--clay);color:#fff;box-shadow:0 1px 3px rgba(42,36,32,.18);}
+
+  /* ---------- Shopping list ---------- */
+  details.shop{margin:16px 0 8px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;}
+  details.shop summary{list-style:none;cursor:pointer;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;font-family:"Fraunces",serif;font-weight:600;font-size:17px;}
+  details.shop summary::-webkit-details-marker{display:none;}
+  .chev{transition:transform .25s ease;color:var(--clay);font-size:14px;}
+  details.shop[open] .chev{transform:rotate(180deg);}
+  .shoplist{padding:2px 20px 18px;margin:0;list-style:none;}
+  .shoplist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;}
+  .shoplist li:first-child{border-top:none;}
+  .shoplist .q{color:var(--clay-deep);font-weight:600;white-space:nowrap;}
+  .shoplist .n{text-align:right;color:var(--ink);}
+  .eqlist{padding:2px 20px 18px;margin:0;list-style:none;}
+  .eqlist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;align-items:baseline;}
+  .eqlist li:first-child{border-top:none;}
+  .eqlist .e-name{color:var(--ink);}
+  .eqlist .e-name b{font-weight:600;}
+  .eqlist .e-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14.5px;text-align:right;}
+  .eqlist .e-size.none{color:var(--ink-soft);opacity:.55;font-weight:400;font-style:normal;}
+
+  /* Equipment items that expand to product picks */
+  .eqwrap{padding:4px 14px 14px;}
+  details.eq-item{border-top:1px dashed var(--line);}
+  details.eq-item:first-child{border-top:none;}
+  details.eq-item>summary{list-style:none;cursor:pointer;padding:12px 6px;display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:16px;}
+  details.eq-item>summary::-webkit-details-marker{display:none;}
+  .eq-item .e-name{color:var(--ink);}
+  .eq-item .e-name b{font-weight:600;}
+  .eq-right{display:inline-flex;align-items:baseline;gap:10px;flex:0 0 auto;}
+  .eq-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14px;}
+  .eq-size.none{color:var(--ink-soft);opacity:.5;font-style:normal;font-weight:400;}
+  .eq-caret{color:var(--clay);font-size:12px;transition:transform .25s ease;}
+  details.eq-item[open] .eq-caret{transform:rotate(180deg);}
+  .eq-panel{padding:0 6px 16px;}
+  .eq-sum{margin:0 0 12px;font-size:14.5px;line-height:1.5;color:var(--ink-soft);font-style:italic;}
+  .prod-grid{display:flex;flex-direction:column;gap:9px;}
+  .prod{display:flex;gap:12px;align-items:center;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--paper);}
+  .prod-thumb{width:52px;height:52px;border-radius:10px;display:grid;place-items:center;font-size:27px;background:var(--card);border:1px solid var(--line);flex:0 0 auto;}
+  .prod-info{flex:1;min-width:0;}
+  .prod-name{font-family:"Fraunces",serif;font-weight:600;font-size:15px;color:var(--ink);line-height:1.2;}
+  .prod-desc{font-size:13px;color:var(--ink-soft);line-height:1.4;margin-top:2px;}
+  .prod-meta{display:flex;align-items:center;gap:10px;margin-top:4px;}
+  .prod-price{color:var(--clay-deep);font-weight:600;font-size:14px;}
+  .prod-stars{font-size:11px;color:var(--clay);letter-spacing:1.5px;}
+  .eq-note{margin:11px 6px 0;font-size:11.5px;color:var(--ink-soft);opacity:.7;font-style:italic;text-align:center;}
+
+  /* ---------- Section rule ---------- */
+  .rule{display:flex;align-items:center;gap:14px;margin:34px 0 22px;font-family:"Source Serif 4",serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);}
+  .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ---------- Steps ---------- */
+  .step{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);
+    padding:18px 20px 14px;margin:0 0 16px;
+    scroll-margin-top:14px;
+    transition:opacity .35s ease, border-color .35s ease;
+  }
+  .step.done{opacity:.55;border-color:var(--sea);}
+  .num-row{display:flex;align-items:center;gap:11px;margin:0 0 14px;}
+  .num{
+    flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+    font-family:"Fraunces",serif;font-weight:600;font-size:16px;
+    background:var(--clay);color:#fff;transition:background .3s ease;
+  }
+  .step.done .num{background:var(--sea);}
+  .step-name{font-family:"Fraunces",serif;font-weight:600;font-size:18px;color:var(--ink);}
+
+  /* Gather bands — label on its own line above content */
+  .need{display:block;margin:0 0 9px;padding:10px 13px;border-radius:10px;font-size:15.5px;line-height:1.5;}
+  .need .tag{display:block;font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin:0 0 5px;white-space:nowrap;}
+  .need .body{display:block;}
+  .equip{background:var(--clay-bg);}
+  .equip .tag{color:var(--clay);}
+  .equip .body{color:#7a4a31;}
+  .equip .body b{color:var(--clay-deep);font-weight:600;}
+  .equip .spec{font-style:italic;opacity:.9;}
+  .uses{background:var(--sea-bg);}
+  .uses .tag{color:var(--sea);}
+  .uses .body{font-family:"Fraunces",serif;font-style:italic;color:var(--sea-deep);}
+  .uses .q{font-weight:500;color:var(--clay-deep);}
+  .uses.none .body{color:var(--ink-soft);}
+  .uses.none{background:transparent;border:1px dashed var(--line);}
+  .dot{opacity:.5;padding:0 3px;}
+
+  .instr{margin:14px 0 0;font-size:18.5px;line-height:1.56;}
+  .instr .ing{font-weight:600;}
+  .instr .ing .amt{color:var(--ink);}
+
+  /* Check control — foot of the step */
+  .check-row{
+    display:flex;align-items:center;gap:12px;width:100%;
+    margin:16px 0 0;padding:13px 0 3px;border-top:1px solid var(--line);
+    background:none;border-left:0;border-right:0;border-bottom:0;
+    font-family:"Source Serif 4",serif;font-size:15px;font-weight:600;
+    letter-spacing:.03em;color:var(--clay-deep);cursor:pointer;text-align:left;
+    transition:color .3s ease;
+  }
+  .box{
+    flex:0 0 auto;width:26px;height:26px;border:2px solid var(--clay);border-radius:8px;
+    background:var(--card);position:relative;transition:background .25s ease,border-color .25s ease,transform .12s ease;
+  }
+  .check-row:active .box{transform:scale(.9);}
+  .box::after{
+    content:"✓";position:absolute;inset:0;display:grid;place-items:center;
+    color:#fff;font-size:16px;font-weight:700;opacity:0;transform:scale(.5);
+    transition:opacity .2s ease, transform .2s ease;
+  }
+  .step.done .box{background:var(--sea);border-color:var(--sea);}
+  .step.done .box::after{opacity:1;transform:scale(1);}
+  .step.done .check-row{color:var(--sea-deep);}
+  .lbl-done{display:none;}
+  .step.done .lbl-todo{display:none;}
+  .step.done .lbl-done{display:inline;}
+
+  /* ---------- Controls ---------- */
+  .barwrap{position:fixed;left:0;right:0;bottom:0;padding:14px 20px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top, var(--paper) 70%, rgba(246,241,230,0));display:flex;gap:12px;justify-content:center;}
+  .btn{font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;letter-spacing:.04em;padding:11px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  .btn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
+  .credit{text-align:center;font-size:13.5px;color:var(--ink-soft);margin:30px 0 0;line-height:1.6;font-style:italic;}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    {% if doc.author %}<p class="kicker">{{ doc.author }}</p>{% endif %}
+    <h1>{{ doc.name }}{% if doc.subtitle %}<span class="it">{{ doc.subtitle }}</span>{% endif %}</h1>
+    <div class="meta">
+      <span>\U0001F465 Serves <b>{{ doc.recipe_yield }}</b></span>
+      {% if doc.total_time_minutes %}<span>\u23F1 About <b>{{ doc.total_time_minutes }} min</b></span>{% endif %}
+    </div>
+  </header>
+
+  <div class="prefs">
+    <span class="prefs-label">Measurements</span>
+    <div class="seg" role="group" aria-label="Measurement units">
+      <button class="seg-btn active" data-units="imp">Imperial</button>
+      <button class="seg-btn" data-units="met">Metric</button>
+    </div>
+  </div>
+
+  <details class="shop">
+    <summary>Ingredient list <span class="chev">\u25BE</span></summary>
+    <ul class="shoplist">
+      {% for ing in doc.ingredients %}
+      <li><span class="q">{% if ing.amount.convertible and ing.amount.imperial != ing.amount.metric %}<span class="u" data-imp="{{ ing.amount.imperial }}" data-met="{{ ing.amount.metric }}">{{ ing.amount.imperial }}</span>{% else %}{{ ing.amount.imperial }}{% endif %}</span><span class="n">{{ ing.name }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  <details class="shop">
+    <summary>Equipment list <span class="chev">\u25BE</span></summary>
+    <div class="eqwrap">
+      {% for row in equipment %}
+      <details class="eq-item">
+        <summary><span class="e-name"><b>{{ row.eq.name }}</b></span><span class="eq-right">{% if row.eq.size_matters and row.eq.size %}<span class="eq-size">{% if row.eq.size.convertible and row.eq.size.imperial != row.eq.size.metric %}<span class="u" data-imp="{{ row.eq.size.imperial }}" data-met="{{ row.eq.size.metric }}">{{ row.eq.size.imperial }}</span>{% else %}{{ row.eq.size.imperial }}{% endif %}</span>{% else %}<span class="eq-size none">any</span>{% endif %}<span class="eq-caret">\u25BE</span></span></summary>
+        <div class="eq-panel">
+          {% if row.eq.why %}<p class="eq-sum">{{ row.eq.why }}</p>{% endif %}
+          <div class="prod-grid">
+            {% for p in row.products %}
+            <div class="prod"><div class="prod-thumb">{{ p.emoji }}</div><div class="prod-info"><div class="prod-name">{{ p.name }}</div><div class="prod-desc">{{ p.desc }}</div><div class="prod-meta"><span class="prod-price">{{ p.price }}</span><span class="prod-stars">{{ "\u2605" * p.stars }}{{ "\u2606" * (5 - p.stars) }}</span></div></div></div>
+            {% endfor %}
+          </div>
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    <p class="eq-note">Sample product picks \u2014 placeholder data for the prototype.</p>
+  </details>
+
+  <div class="rule">Method</div>
+
+  <div id="steps">
+    {% for s in steps %}
+    <div class="step" data-step>
+      <div class="num-row"><div class="num">{{ s.step.number }}</div><div class="step-name">{{ s.step.name }}</div></div>
+      {% if s.equipment %}
+      <div class="need equip"><span class="tag">Equipment</span><span class="body">
+        {%- for e in s.equipment -%}
+          {%- if not loop.first %} \u00B7 {% endif -%}
+          <b>{{ e.eq.name }}</b>
+          {%- if e.eq.size_matters and e.eq.size %} <span class="spec">({% if e.eq.size.convertible and e.eq.size.imperial != e.eq.size.metric %}<span class="u" data-imp="{{ e.eq.size.imperial }}" data-met="{{ e.eq.size.metric }}">{{ e.eq.size.imperial }}</span>{% else %}{{ e.eq.size.imperial }}{% endif %})</span>{% endif -%}
+          {%- if e.reused_from %} <span class="spec">(from step {{ e.reused_from }})</span>{% endif -%}
+        {%- endfor -%}
+      </span></div>
+      {% endif %}
+      <p class="instr">{{ s.instruction_html | safe }}</p>
+      <button class="check-row" aria-label="Mark step {{ s.step.number }} done"><span class="box"></span><span class="lbl-todo">{% if s.is_last %}Done \u2014 buon appetito \U0001F35D{% else %}Done \u2014 next step \u2193{% endif %}</span><span class="lbl-done">Completed \u2713</span></button>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if doc.source_url %}<p class="credit">Recipe adapted from <a href="{{ doc.source_url }}">the original source</a>.</p>{% endif %}
+</div>
+
+<div class="barwrap">
+  <button class="btn" id="reset">\u21BA Reset steps</button>
+  <button class="btn" id="awake">\u2600 Keep screen awake</button>
+</div>
+
+<script>
+  var unitButtons = Array.prototype.slice.call(document.querySelectorAll('.seg-btn'));
+  function setUnits(u){
+    document.querySelectorAll('.u').forEach(function(el){
+      el.textContent = (u === 'met') ? el.getAttribute('data-met') : el.getAttribute('data-imp');
+    });
+    unitButtons.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-units') === u); });
+  }
+  unitButtons.forEach(function(b){ b.addEventListener('click', function(){ setUnits(b.getAttribute('data-units')); }); });
+
+  var steps = Array.prototype.slice.call(document.querySelectorAll('[data-step]'));
+  steps.forEach(function(step, i){
+    var btn = step.querySelector('.check-row');
+    btn.addEventListener('click', function(){
+      var wasDone = step.classList.contains('done');
+      step.classList.toggle('done');
+      if(!wasDone){ var next = steps[i+1]; if(next){ setTimeout(function(){ next.scrollIntoView({behavior:'smooth', block:'start'}); }, 180); } }
+    });
+  });
+  document.getElementById('reset').addEventListener('click', function(){
+    steps.forEach(function(s){ s.classList.remove('done'); });
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+
+  var wakeLock = null, awakeBtn = document.getElementById('awake');
+  awakeBtn.addEventListener('click', async function(){
+    if(!('wakeLock' in navigator)){ awakeBtn.textContent = '\u2715 Not supported'; return; }
+    try{
+      if(wakeLock){ await wakeLock.release(); wakeLock = null; awakeBtn.classList.remove('on'); awakeBtn.textContent = '\u2600 Keep screen awake'; }
+      else { wakeLock = await navigator.wakeLock.request('screen'); awakeBtn.classList.add('on'); awakeBtn.textContent = '\u2600 Screen staying on';
+        wakeLock.addEventListener('release', function(){ awakeBtn.classList.remove('on'); awakeBtn.textContent = '\u2600 Keep screen awake'; }); }
+    }catch(err){ awakeBtn.textContent = '\u2715 Unavailable'; }
+  });
+  document.addEventListener('visibilitychange', async function(){
+    if(wakeLock && document.visibilityState === 'visible'){ try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){} }
+  });
+</script>
+</body>
+</html>

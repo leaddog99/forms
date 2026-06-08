@@ -24,9 +24,14 @@ import json
 import time
 from typing import Optional
 
-from .convert import convert, resolve_unit, Domain
+from .convert import convert, resolve_unit, Domain, NON_KA_PROVENANCE
 from .parse import parse_ingredient, clean_name
 from .resolve import resolve_canonical
+
+# Marker appended to a metric amount whose density isn't authoritative King
+# Arthur data (our curated reference values, or an LLM-supplied density). Lets
+# the UI footnote "* estimated, not King Arthur" without re-deriving provenance.
+ESTIMATED_MARK = "*"
 
 
 def _fmt(x: float) -> str:
@@ -34,23 +39,27 @@ def _fmt(x: float) -> str:
     return str(int(x)) if float(x).is_integer() else str(x)
 
 
-def _metric_amount(grams, ml, dom) -> Optional[str]:
+def _metric_amount(grams, ml, dom, estimated: bool = False) -> Optional[str]:
     """The metric AMOUNT to show in the toggle. Food-aware weight is the whole
     point, so prefer grams; fall back to mL for pure-volume with no density;
-    None for counts (a count like '3 eggs' is unchanged in metric)."""
+    None for counts (a count like '3 eggs' is unchanged in metric). `estimated`
+    appends an asterisk when the density isn't authoritative King Arthur data."""
     if dom is Domain.COUNT:
         return None
     if grams is not None:
-        return f"{_fmt(grams)} g"
-    if ml is not None:
-        return f"{_fmt(ml)} ml"
-    return None
+        val, unit = grams, "g"
+    elif ml is not None:
+        val, unit = ml, "ml"
+    else:
+        return None
+    mark = ESTIMATED_MARK if estimated else ""
+    return f"{_fmt(val)}{mark} {unit}"
 
 
-def _metric_line(grams, ml, dom, name_part: str) -> Optional[str]:
+def _metric_line(grams, ml, dom, name_part: str, estimated: bool = False) -> Optional[str]:
     """Full metric display line ('120 g all-purpose flour'), or None when there's
     no metric form to show (count / unconvertible) — the form then shows raw."""
-    amt = _metric_amount(grams, ml, dom)
+    amt = _metric_amount(grams, ml, dom, estimated=estimated)
     if not amt:
         return None
     name_part = (name_part or "").strip()
@@ -88,7 +97,7 @@ def _compute(qty, unit, *, density=None, per_item=None) -> tuple[Optional[float]
 
 def _entry(raw, qty, unit, name, *, canonical=None, grams=None, ml=None,
            convertible=False, resolved_by=None, source="", note="",
-           metric=None) -> dict:
+           metric=None, provenance=None) -> dict:
     e = {
         "raw": raw,           # imperial display = the source's original string
         "metric": metric,     # metric display string, or None -> show raw
@@ -105,6 +114,8 @@ def _entry(raw, qty, unit, name, *, canonical=None, grams=None, ml=None,
         e["source"] = source
     if note:
         e["note"] = note
+    if provenance:
+        e["provenance"] = provenance   # king_arthur | curated_reference | llm_derived
     return e
 
 
@@ -154,7 +165,13 @@ def convert_recipe_measurements(
         needs_bridge = dom in (Domain.VOLUME, Domain.COUNT)
         resolved = ing is not None
         if resolved or grams is not None or (dom is Domain.MASS):
-            metric = _metric_line(grams, ml, dom, p.name_raw or p.name)
+            # Asterisk only when the weight actually leaned on a non-KA density/
+            # per-item bridge. A mass source (oz/lb/g) converts EXACTLY, whatever
+            # the ingredient's density provenance — so "15 oz can" gets no star.
+            estimated = bool(ing and ing.provenance in NON_KA_PROVENANCE
+                             and dom is not Domain.MASS)
+            metric = _metric_line(grams, ml, dom, p.name_raw or p.name,
+                                  estimated=estimated)
             entries[i] = _entry(
                 raw, p.qty, p.unit, p.name,
                 canonical=ing.name if ing else None,
@@ -162,6 +179,7 @@ def convert_recipe_measurements(
                 convertible=grams is not None or ml is not None,
                 resolved_by="deterministic" if resolved else None,
                 source=(ing.source if ing else ""), note=p.note,
+                provenance=(ing.provenance if ing else None),
             )
             if resolved:
                 n_det += 1
@@ -331,11 +349,12 @@ def _llm_resolve_misses(ingredients, entries, misses, *, model, usage) -> int:
             dom, _f = resolve_unit(unit)
         except ValueError:
             dom = None
-        metric = _metric_line(grams, ml, dom, name)
+        metric = _metric_line(grams, ml, dom, name, estimated=True)
         entries[i] = _entry(
             raw, qty, unit, name, canonical=item.get("ingredient"),
             grams=grams, ml=ml, metric=metric,
             convertible=True, resolved_by="llm", source="LLM (reference density)",
+            provenance="llm_derived",
         )
         converted += 1
     return converted

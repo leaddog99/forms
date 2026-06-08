@@ -95,7 +95,7 @@ class EnrichmentRequest:
     enrich: frozenset[str] = frozenset()
     do_identity: bool = True              # dish identity card (fingerprint for matching)
     do_embed: bool = False                # generate the embedding vector
-    # Ingredient-context-aware measurement conversion (recipe_enrichment.measurement).
+    # Ingredient-context-aware measurement conversion (enrich.measurement).
     # DETERMINISTIC engine (KA densities); a per-line LLM fallback fires ONLY for
     # ingredient strings the free parser/resolver can't handle. Writes a
     # `_measurements` block aligned 1:1 with recipeIngredient — the metric/weight

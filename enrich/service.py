@@ -6,7 +6,7 @@ NOT use this module; it exists so the boundary is real, runnable, and testable
 now. At the split, BCC/TBOTB call `POST /enrich` over the network with their own
 (encrypted) LLM key.
 
-Run standalone:  uvicorn recipe_enrichment.service:app --port 8011
+Run standalone:  uvicorn enrich.service:app --port 8011
 
 Contract reminders (enforced by enrich(), surfaced here):
   • no fetch — the caller passes already-fetched content in
@@ -37,11 +37,25 @@ from .api import (
     EnrichmentError, EnrichmentRequest, available_enrichment_blocks, enrich,
 )
 from .measurement import convert as convert_measure, resolve_canonical
+from .measurement import store as measures_store
 from .serialize import SealError
 
 app = FastAPI(title="Recipe Enrichment API", version="0.1.0")
 
 _TEST_FORM = Path(__file__).resolve().parent / "test_form.html"
+_MEASURES_ADMIN = Path(__file__).resolve().parent / "measures_admin.html"
+
+
+@app.on_event("startup")
+def _seed_and_sync_reference_data() -> None:
+    """Seed Enrich's reference table on first boot and point the engine at the
+    live (editable) table, so admin edits are authoritative at runtime."""
+    try:
+        n = measures_store.sync_engine()
+        print(f"[OK] Enrich measurement table synced ({n} engine entries)")
+    except Exception as e:
+        print(f"[WARN] measurement table sync failed ({e}); "
+              f"engine stays on the bundled JSON seed")
 
 
 @app.get("/")
@@ -49,6 +63,15 @@ def test_form():
     """Self-contained test harness for the API (same-origin, no CORS). Open this
     in a browser to exercise extract + profiles + per-block selection."""
     return FileResponse(str(_TEST_FORM), media_type="text/html")
+
+
+_ENRICH_NAV = Path(__file__).resolve().parent / "enrich-nav.js"
+
+
+@app.get("/enrich-nav.js")
+def enrich_nav_js():
+    """Enrich's own cross-page hamburger nav, shared by every Enrich page."""
+    return FileResponse(str(_ENRICH_NAV), media_type="application/javascript")
 
 
 @app.get("/blocks")
@@ -133,6 +156,121 @@ class EnrichResponse(BaseModel):
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "recipe-enrichment", "version": "0.1.0"}
+
+
+# --------------------------------------------------------------------------- #
+# Measurement reference admin (a/c/d) — Enrich's OWN curated ingredient table.
+# Admin-only surface (gate at deployment, like the other a/c/d editors). The
+# page and its fetches are served from this same mount, so Enrich stays a
+# self-contained product with its own admin chrome.
+# --------------------------------------------------------------------------- #
+
+class MeasureBody(BaseModel):
+    """One ingredient_measures row from the editor. Numbers may arrive as null
+    for the bridge that doesn't apply to the row's kind."""
+    name: str
+    kind: str = "density"                       # density | count
+    g_per_ml: Optional[float] = None
+    grams_per_item: Optional[float] = None
+    grams_per_cup: Optional[float] = None
+    aliases: list[str] = Field(default_factory=list)
+    provenance: str = "curated_reference"       # king_arthur|curated_reference|llm_derived|measured
+    source_note: Optional[str] = None
+    notes: Optional[str] = None
+    description: Optional[str] = None            # free text; also feeds the LLM estimate
+
+
+@app.get("/measures")
+def measures_admin_page():
+    """The a/c/d editor for the ingredient measurement table (HTML)."""
+    return FileResponse(str(_MEASURES_ADMIN), media_type="text/html")
+
+
+@app.get("/measures/rows")
+def measures_list(search: Optional[str] = None) -> dict:
+    """All ingredient rows (optionally substring-filtered by name/alias)."""
+    return {"rows": measures_store.list_rows(search)}
+
+
+@app.get("/measures/rows/{row_id}")
+def measures_get(row_id: int) -> dict:
+    row = measures_store.get_row(row_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="ingredient not found")
+    return row
+
+
+@app.post("/measures/rows")
+def measures_create(body: MeasureBody) -> dict:
+    try:
+        new_id = measures_store.create_row(body.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return measures_store.get_row(new_id)
+
+
+@app.put("/measures/rows/{row_id}")
+def measures_update(row_id: int, body: MeasureBody) -> dict:
+    if measures_store.get_row(row_id) is None:
+        raise HTTPException(status_code=404, detail="ingredient not found")
+    measures_store.update_row(row_id, body.model_dump())
+    return measures_store.get_row(row_id)
+
+
+@app.delete("/measures/rows/{row_id}")
+def measures_delete(row_id: int) -> dict:
+    if not measures_store.delete_row(row_id):
+        raise HTTPException(status_code=404, detail="ingredient not found")
+    return {"deleted": row_id}
+
+
+@app.post("/measures/export")
+def measures_export() -> dict:
+    """Dump the live table to a JSON snapshot a fresh Enrich node can boot from
+    (the 'produce the file on demand' path)."""
+    out = Path(__file__).resolve().parent / "data" / "ingredient_weights.generated.json"
+    n = measures_store.export_snapshot(str(out))
+    return {"exported": n, "path": str(out)}
+
+
+class EstimateBody(BaseModel):
+    """Ask the LLM for a grams-per-cup estimate for a food item we have no
+    measured/reference value for. Name + aliases + description are the context."""
+    name: str
+    aliases: list[str] = Field(default_factory=list)
+    description: str = ""
+    kind: str = "density"
+
+
+@app.post("/measures/estimate")
+def measures_estimate(body: EstimateBody) -> dict:
+    """One-time, curator-assisted estimate: the model proposes grams_per_cup
+    (helped by aliases + description); the curator reviews and saves it into the
+    row. After that the deterministic engine resolves it for free forever. The
+    LLM cost is logged to Enrich's OWN token journal (enrich.db), not BCC's."""
+    from .measurement.estimate import estimate_cup_weight, EstimateError
+    from . import journal
+    if body.kind == "count":
+        raise HTTPException(status_code=400,
+                            detail="estimate is for per-cup weight (density); "
+                                   "count items use grams-per-item")
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+    try:
+        out = estimate_cup_weight(body.name, aliases=tuple(body.aliases),
+                                  description=body.description)
+    except EstimateError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"estimate failed: {e}")
+    # Log the LLM cost to Enrich's own journal (best-effort, never breaks).
+    usage = out.pop("usage", [])
+    try:
+        journal.write_usage(usage, context=f"estimate: {body.name.strip()}")
+    except Exception as e:
+        print(f"[WARN] enrich journal write skipped: {e}")
+    out["provenance"] = "llm_derived"   # suggested provenance for the saved row
+    return out
 
 
 @app.post("/enrich", response_model=EnrichResponse)

@@ -19,6 +19,13 @@ recipes.db-shm
 media.db
 media.db-wal
 media.db-shm
+# Enrich's own reference DB (enrich/data/enrich.db). Canonical at runtime, but
+# regenerable from the committed JSON seeds (KA chart + curated_liquids.json),
+# so the binary itself is never tracked.
+enrich/data/*.db
+enrich/data/*.db-wal
+enrich/data/*.db-shm
+enrich/data/*.generated.json
 
 # Python build artifacts
 __pycache__/
@@ -90,3 +97,9 @@ intake/__pycache__/
 
 # DataForSEO API creds (local only)
 scripts/.dataforseo.env
+
+# Scheduler tick log (runtime, like uvicorn_*_agent.log)
+jobs_schedule.log
+
+# Stray IDE-created empty SQLite (JetBrains data source)
+identifier.sqlite

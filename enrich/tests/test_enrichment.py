@@ -3,8 +3,8 @@
 All tests use the JSON-LD fast lane (no LLM call) so they are deterministic,
 free, and offline-safe. Run from the repo root:
 
-    python -m pytest recipe_enrichment/tests/ -q          # if pytest is installed
-    python -m recipe_enrichment.tests.test_enrichment     # no-pytest fallback runner
+    python -m pytest enrich/tests/ -q          # if pytest is installed
+    python -m enrich.tests.test_enrichment     # no-pytest fallback runner
 """
 from contextlib import contextmanager
 
@@ -20,8 +20,8 @@ def _raises(exc):
     raise AssertionError(f"expected {exc.__name__} to be raised")
 
 
-from recipe_enrichment import EnrichmentRequest, enrich
-from recipe_enrichment.serialize import (
+from enrich import EnrichmentRequest, enrich
+from enrich.serialize import (
     SealError,
     apply_profile,
     corpus_public_view,
@@ -115,7 +115,7 @@ def test_unknown_profile_raises():
 # --- JSON-LD fast-lane coercion (the video-quirk fix) ---------------------
 
 def test_coerce_video_thumbnail_list_to_string():
-    from recipe_enrichment.api import _coerce_jsonld_for_fastlane
+    from enrich.api import _coerce_jsonld_for_fastlane
     src = {"name": "x", "video": {"@type": "VideoObject",
                                   "thumbnailUrl": ["https://a/1.jpg", "https://a/2.jpg"]}}
     out = _coerce_jsonld_for_fastlane(src)
@@ -124,7 +124,7 @@ def test_coerce_video_thumbnail_list_to_string():
 
 
 def test_coerce_video_list_to_single_dict():
-    from recipe_enrichment.api import _coerce_jsonld_for_fastlane
+    from enrich.api import _coerce_jsonld_for_fastlane
     out = _coerce_jsonld_for_fastlane(
         {"name": "x", "video": [{"@type": "VideoObject", "thumbnailUrl": ["https://a/1.jpg"]}]}
     )
@@ -133,14 +133,14 @@ def test_coerce_video_list_to_single_dict():
 
 
 def test_coerce_drops_unusable_video():
-    from recipe_enrichment.api import _coerce_jsonld_for_fastlane
+    from enrich.api import _coerce_jsonld_for_fastlane
     out = _coerce_jsonld_for_fastlane({"name": "x", "video": 12345})
     assert "video" not in out
 
 
 def test_fastlane_diagnostic_never_raises():
     # Best-effort diagnostic: must never throw, even on junk.
-    from recipe_enrichment.api import _log_fastlane_validation_errors
+    from enrich.api import _log_fastlane_validation_errors
     _log_fastlane_validation_errors({"name": "x"}, "https://example.com/x")
     _log_fastlane_validation_errors({}, "")
 
@@ -148,7 +148,7 @@ def test_fastlane_diagnostic_never_raises():
 # --- enrichment block selection (individually selectable) -----------------
 
 def test_available_enrichment_blocks_lists_registry():
-    from recipe_enrichment import available_enrichment_blocks
+    from enrich import available_enrichment_blocks
     blocks = available_enrichment_blocks()
     assert "provenance" in blocks
     assert "classification" in blocks
@@ -157,7 +157,7 @@ def test_available_enrichment_blocks_lists_registry():
 
 def test_run_enrichment_blocks_empty_and_unknown_skip_llm():
     # Empty or all-unknown selection must NOT call the LLM — returns no blocks.
-    from recipe_enrichment import run_enrichment_blocks
+    from enrich import run_enrichment_blocks
     r = {"name": "X", "recipeIngredient": ["a"], "recipeInstructions": [{"text": "b"}]}
     assert run_enrichment_blocks(r, [])["blocks_run"] == []
     assert run_enrichment_blocks(r, ["bogus", "nope"])["blocks_run"] == []
@@ -168,7 +168,7 @@ def test_run_enrichment_blocks_empty_and_unknown_skip_llm():
 
 def test_http_health_and_enrich_and_seal():
     from fastapi.testclient import TestClient
-    from recipe_enrichment.service import app
+    from enrich.service import app
 
     c = TestClient(app)
     assert c.get("/health").json()["status"] == "ok"

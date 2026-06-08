@@ -86,6 +86,17 @@
   <div id="toast"></div>
 
   <script src="list_control.js"></script>
+  <!-- Shared library shell: gives this generic admin page BOTH hamburgers
+       (user + admin) like every other page. This header isn't the
+       .app-header/.header-inner the shell mounts into, so initNav falls back
+       to fixed top-right burgers — which is exactly what we want here. -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260608a">
+  <script src="/forms/library-shell.js?v=20260608b"></script>
+  <script>
+    if (window.LibraryShell && LibraryShell.initNav) {
+      LibraryShell.initNav({ currentPage: 'messages' });
+    }
+  </script>
   <script>
     // Same-origin: works on localhost AND through the recipes.tbotb.com tunnel.
     const qs = new URLSearchParams(location.search);

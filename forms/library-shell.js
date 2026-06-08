@@ -397,23 +397,43 @@
   // `comingSoon: true` means clicking the row opens the coming-soon
   // overlay instead of navigating; promote to a real href when the
   // page actually exists.
+  // Each item carries a `group`: 'user' or 'admin'. The nav renders TWO
+  // hamburgers — a user burger (always shown) and an admin burger (shown
+  // only when /auth/me reports an admin role). This separation is deliberate
+  // groundwork for the TBOTB (corpus/back-office) vs BCC (personal tool)
+  // split: the admin group is the TBOTB-side management surface, the user
+  // group is the BCC-side personal cook tool. Reallocate by editing `group`.
   const NAV_ITEMS = [
-    { page: 'recipes',   label: 'Recipes',   href: '/forms/recipe_form_styled.html' },
-    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html' },
-    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html' },
-    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html' },
-    { page: 'users',     label: 'Users',     href: '/forms/users.html' },
-    { page: 'cookbooks', label: 'Cookbooks', comingSoon: true },
-    { page: 'equipment', label: 'Equipment', comingSoon: true },
-    { page: 'gourmet',   label: 'Gourmet',   comingSoon: true },
-    // Utility / setup items sit at the bottom, separated from the
-    // entity pages above. "Install bookmarklet" is the most-needed
-    // utility today; future items (settings, exports, etc.) go here.
+    // --- user group (the personal cook tool — BCC side) ---
+    { page: 'recipes',   label: 'Recipes',   href: '/forms/recipe_form_styled.html', group: 'user' },
+    { page: 'cookbooks', label: 'Cookbooks', comingSoon: true, group: 'user' },
+    { page: 'equipment', label: 'Equipment', comingSoon: true, group: 'user' },
+    { page: 'gourmet',   label: 'Gourmet',   comingSoon: true, group: 'user' },
+    { page: 'install',   label: 'Install bookmarklet', href: '/forms/install.html', group: 'user' },
+    // --- admin group (corpus + system back-office — TBOTB side) ---
+    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
+    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
+    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
+    { page: 'users',     label: 'Users',     href: '/forms/users.html', group: 'admin' },
     // `action` items run JS instead of navigating (see initNav wiring).
-    { page: 'run-jobs',  label: 'Run queued jobs', action: 'runQueuedJobs' },
-    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages' },
-    { page: 'install',   label: 'Install bookmarklet', href: '/forms/install.html' },
+    { page: 'run-jobs',  label: 'Run queued jobs', action: 'runQueuedJobs', group: 'admin' },
+    { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
+    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', group: 'admin' },
   ];
+
+  // Cached one-shot role probe. Resolves to the role string ('admin',
+  // 'member', …) or '' when unknown / not signed in. Shared by the admin
+  // burger gate (and anything else that needs to know).
+  let _rolePromise = null;
+  function fetchRole() {
+    if (_rolePromise) return _rolePromise;
+    _rolePromise = window.fetch('/auth/me')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => (data && data.role) || '')
+      .catch(() => '');
+    return _rolePromise;
+  }
+  function isAdminRole(role) { return role === 'admin' || role === 'owner'; }
 
   function showComingSoon(label) {
     // Take-over overlay (dimmer + centered card). Backdrop click or
@@ -618,48 +638,19 @@
     });
   }
 
-  function initNav(opts) {
-    opts = opts || {};
-    const currentPage = opts.currentPage || '';
-    const items = opts.items || NAV_ITEMS;
-
-    // Where to mount the toggle button:
-    //   - If the page uses the library-shell .header-inner, append the
-    //     toggle there (header is fixed, content is centered).
-    //   - Otherwise, mount the toggle as a fixed top-right button.
-    const headerInner = document.querySelector('.app-header .header-inner');
-
+  // Build one hamburger (toggle button + dropdown menu) for a set of items.
+  // Returns { toggle, menu }. Both are appended by the caller. The menu is
+  // mounted on body and positioned under its own toggle on open (so two
+  // burgers don't collide at the fixed right edge the CSS would give them).
+  function _buildBurger(items, currentPage, toggleOpts) {
     const toggle = document.createElement('button');
     toggle.type = 'button';
-    toggle.className = 'nav-toggle';
-    toggle.setAttribute('aria-label', 'Open page navigation');
-    toggle.innerHTML = '⋮';
+    toggle.className = 'nav-toggle' + (toggleOpts.cls ? ' ' + toggleOpts.cls : '');
+    toggle.setAttribute('aria-label', toggleOpts.ariaLabel || 'Open navigation');
+    toggle.title = toggleOpts.title || '';
+    toggle.innerHTML = '☰';
+    if (toggleOpts.bg) toggle.style.background = toggleOpts.bg;
 
-    if (headerInner) {
-      // Push the toggle to the right edge with a spacer if the header
-      // doesn't already have one. The spacer ate `flex: 1` so any title
-      // on the left stays left and the toggle sits hard right.
-      if (!headerInner.querySelector('.nav-spacer')) {
-        const spacer = document.createElement('div');
-        spacer.className = 'nav-spacer';
-        headerInner.appendChild(spacer);
-      }
-      // Identity badge sits between the spacer (title-side) and the
-      // nav toggle. Idempotent — pages that ALSO call init() won't
-      // get a duplicate. Mounted from initNav too because the recipe
-      // form doesn't call init() (it has its own sidebar logic).
-      initIdentityBadge();
-      headerInner.appendChild(toggle);
-    } else {
-      toggle.style.position = 'fixed';
-      toggle.style.top = '14px';
-      toggle.style.right = '16px';
-      toggle.style.zIndex = '101';
-      document.body.appendChild(toggle);
-    }
-
-    // Dropdown markup (mounted on body so its absolute positioning is
-    // viewport-relative regardless of any transformed ancestor).
     const menu = document.createElement('div');
     menu.className = 'nav-menu';
     menu.innerHTML = items.map(item => {
@@ -674,19 +665,29 @@
       return `<${tag} class="${cls}" ${attrs}>${escapeHtml(item.label)}${badge}</${tag}>`;
     }).join('');
     document.body.appendChild(menu);
-    _refreshJobBadges();  // initial queued count on page load
 
     function closeMenu() { menu.classList.remove('open'); }
-    function openMenu() { menu.classList.add('open'); }
+    function openMenu() {
+      // Anchor the menu under THIS toggle. position:FIXED (not the CSS
+      // default absolute) so getBoundingClientRect's viewport coords land it
+      // correctly — an absolute menu on a scrolled page opens near the
+      // document top, off-screen ("have to scroll up to see it"). Fixed makes
+      // it overlay the current viewport under the (fixed/sticky) header toggle.
+      const r = toggle.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.top = (r.bottom + 6) + 'px';
+      menu.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+      menu.classList.add('open');
+    }
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
+      // Close any other open burger first.
+      document.querySelectorAll('.nav-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open'); });
       if (menu.classList.contains('open')) { closeMenu(); return; }
-      _refreshJobBadges();  // keep the queued count fresh each open
+      _refreshJobBadges();
       openMenu();
     });
-
-    // Click outside the menu (and outside the toggle) closes it.
     document.addEventListener('click', (e) => {
       if (!menu.classList.contains('open')) return;
       if (menu.contains(e.target)) return;
@@ -694,34 +695,70 @@
       closeMenu();
     });
 
-    // Wire each item: real links navigate normally; coming-soon items
-    // intercept and show the overlay.
     menu.querySelectorAll('.nav-item').forEach(el => {
       const page = el.getAttribute('data-page');
       const cfg = items.find(it => it.page === page);
       if (cfg && cfg.action) {
-        el.addEventListener('click', (e) => {
-          e.preventDefault();
-          closeMenu();
-          const fn = NAV_ACTIONS[cfg.action];
-          if (fn) fn();
-        });
+        el.addEventListener('click', (e) => { e.preventDefault(); closeMenu();
+          const fn = NAV_ACTIONS[cfg.action]; if (fn) fn(); });
       } else if (cfg && cfg.comingSoon) {
-        el.addEventListener('click', (e) => {
-          e.preventDefault();
-          closeMenu();
-          showComingSoon(cfg.label);
-        });
-      } else {
-        // Active row = current page; clicking does nothing but close.
-        if (page === currentPage) {
-          el.addEventListener('click', (e) => {
-            e.preventDefault();
-            closeMenu();
-          });
-        }
+        el.addEventListener('click', (e) => { e.preventDefault(); closeMenu(); showComingSoon(cfg.label); });
+      } else if (page === currentPage) {
+        el.addEventListener('click', (e) => { e.preventDefault(); closeMenu(); });
       }
     });
+
+    return { toggle, menu };
+  }
+
+  function initNav(opts) {
+    opts = opts || {};
+    const currentPage = opts.currentPage || '';
+    const allItems = opts.items || NAV_ITEMS;
+    const userItems = allItems.filter(it => (it.group || 'admin') === 'user');
+    const adminItems = allItems.filter(it => it.group === 'admin');
+
+    const headerInner = document.querySelector('.app-header .header-inner');
+
+    // User burger — always present (accent color, the default look).
+    const userBurger = _buildBurger(userItems, currentPage, {
+      ariaLabel: 'Open menu', title: 'Menu', cls: 'nav-toggle--user',
+    });
+    // Admin burger — hidden until the role probe confirms admin. Distinct
+    // dark "system" color so the two burgers read as different surfaces.
+    const adminBurger = _buildBurger(adminItems, currentPage, {
+      ariaLabel: 'Open admin menu', title: 'Admin', cls: 'nav-toggle--admin',
+      bg: '#4a4039',
+    });
+    adminBurger.toggle.style.display = 'none';
+
+    // If the CURRENT page is an admin page, reveal the admin burger
+    // immediately (you're already on it) so it never flickers/vanishes.
+    const onAdminPage = adminItems.some(it => it.page === currentPage);
+    fetchRole().then(role => {
+      if (isAdminRole(role) || onAdminPage) adminBurger.toggle.style.display = '';
+    });
+
+    if (headerInner) {
+      if (!headerInner.querySelector('.nav-spacer')) {
+        const spacer = document.createElement('div');
+        spacer.className = 'nav-spacer';
+        headerInner.appendChild(spacer);
+      }
+      initIdentityBadge();
+      // Admin burger sits left of the user burger (back-office tucked inside,
+      // personal tool outermost/rightmost).
+      headerInner.appendChild(adminBurger.toggle);
+      headerInner.appendChild(userBurger.toggle);
+    } else {
+      // No library-shell header — mount both as fixed top-right buttons.
+      userBurger.toggle.style.cssText += ';position:fixed;top:14px;right:16px;z-index:101;';
+      adminBurger.toggle.style.cssText += ';position:fixed;top:14px;right:60px;z-index:101;';
+      document.body.appendChild(userBurger.toggle);
+      document.body.appendChild(adminBurger.toggle);
+    }
+
+    _refreshJobBadges();  // initial queued count on page load
   }
 
   // ============================================================

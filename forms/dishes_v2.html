@@ -65,7 +65,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260603b"></script>
+  <script src="/forms/library-shell.js?v=20260608b"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -194,7 +194,15 @@
     }
 
     function renderDetail(d){
-      const dueLabel = d.is_due ? 'due for refresh' : 'within TTL';
+      // Next scheduled auto-refresh (derived server-side as
+      // last_refreshed + refresh_ttl_days). Manual-only dishes (no TTL) have
+      // next_run_at = null and never auto-fire; the scheduler runs the due ones.
+      const nextRunLabel = d.refresh_ttl_days == null
+        ? 'manual — no auto-refresh'
+        : (d.is_due ? 'due now' : `next run ${fmtDate(d.next_run_at)}`);
+      const nextRunValue = d.refresh_ttl_days == null
+        ? 'manual (no schedule)'
+        : (d.is_due ? 'due now' : fmtDate(d.next_run_at));
       const ttlLabel = d.refresh_ttl_days == null ? 'manual' : (d.refresh_ttl_days + 'd');
       const statusCls = isError(d) ? 'warn' : (neverRun(d) ? '' : 'good');
       const queriesText = (d.queries || []).join('\n');
@@ -210,7 +218,7 @@
         <h1 class="ed-title">${escapeHtml(d.name)}</h1>
         <div class="ed-status-strip">
           <span class="ed-pill ${statusCls}"><i class="d"></i>${neverRun(d) ? 'never run' : escapeHtml(d.last_run_status || 'unknown')}</span>
-          <span class="ed-pill ${d.is_due ? 'warn' : ''}"><i class="d"></i>${dueLabel}</span>
+          <span class="ed-pill ${d.is_due ? 'warn' : ''}"><i class="d"></i>${nextRunLabel}</span>
           <span class="ed-pill"><i class="d"></i>top ${d.top_n_final} · TTL ${ttlLabel}</span>
           ${d.chapter ? `<span class="ed-pill"><i class="d"></i>${escapeHtml(d.chapter)}</span>` : ''}
         </div>
@@ -261,6 +269,7 @@
             <div class="k">Recipes kept</div><div class="v">${d.last_run_count ?? '—'}</div>
             <div class="k">Bottom OU (cutoff)</div><div class="v">${num(d.last_run_bottom_ou,2)}</div>
             <div class="k">Last refreshed</div><div class="v">${fmtDate(d.last_refreshed)}</div>
+            <div class="k">Next run</div><div class="v">${nextRunValue}</div>
             <div class="k">Log</div><div class="v">${d.last_run_log_url ? `<a class="d-loglink" href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener">view log</a>` : '—'}</div>
           </div>
         </section>

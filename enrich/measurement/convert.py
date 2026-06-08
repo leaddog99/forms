@@ -125,44 +125,117 @@ class Ingredient:
     grams_per_cup: Optional[float] = None   # provenance / display
     aliases: tuple[str, ...] = ()
     source: str = ""
+    provenance: str = "king_arthur"         # king_arthur | curated_reference | llm_derived | measured
 
+
+# Provenance values that are NOT authoritative King Arthur chart data — used to
+# flag the metric display with an asterisk so estimated conversions read honestly.
+NON_KA_PROVENANCE = {"curated_reference", "llm_derived"}
 
 _REGISTRY: dict[str, Ingredient] = {}
 DATA_SOURCE = ""
 
 
-def load_dataset(path: Optional[str] = None) -> int:
-    """(Re)load the ingredient density dataset. Returns entry count."""
+def load_dataset_from_obj(data: dict) -> int:
+    """(Re)build the registry from an in-memory dataset dict (same shape as the
+    JSON seed). This is the pure path the DB-backed store feeds into, keeping the
+    engine itself stateless and DB-free. Returns entry count.
+
+    Recognized shape: {source?, provenance?, ingredients:[{name, g_per_ml,
+    grams_per_cup?, aliases?, provenance?}], count_items:[{name, grams_per_item,
+    aliases?, source?, provenance?}]}. A top-level `provenance` applies to every
+    row that doesn't carry its own."""
     global DATA_SOURCE
+    DATA_SOURCE = data.get("source", "")
+    default_prov = data.get("provenance", "king_arthur")
+    _REGISTRY.clear()
+
+    items: list[Ingredient] = []
+    for row in data.get("ingredients", []):
+        items.append(Ingredient(
+            name=row["name"],
+            g_per_ml=row.get("g_per_ml"),
+            grams_per_cup=row.get("grams_per_cup"),
+            aliases=tuple(row.get("aliases", [])),
+            source=row.get("source", DATA_SOURCE),
+            provenance=row.get("provenance", default_prov),
+        ))
+    for row in data.get("count_items", []):
+        items.append(Ingredient(
+            name=row["name"],
+            grams_per_item=row["grams_per_item"],
+            aliases=tuple(row.get("aliases", [])),
+            source=row.get("source", DATA_SOURCE),
+            provenance=row.get("provenance", default_prov),
+        ))
+
+    # Phase 1: explicit names + curated aliases are authoritative.
+    for ing in items:
+        _REGISTRY[ing.name.lower()] = ing
+        for a in ing.aliases:
+            _REGISTRY[a.lower()] = ing
+    # Phase 2: index a de-parenthesized base name as an implicit alias, so
+    # "strawberries" finds "Strawberries (fresh, sliced)" and "cream" finds
+    # "Cream (heavy, light, or half & half)". setdefault -> never shadow an
+    # explicit name/alias; first row wins on a base-name tie.
+    for ing in items:
+        base = _depar(ing.name)
+        if base:
+            _REGISTRY.setdefault(base, ing)
+    return len(_REGISTRY)
+
+
+def _depar(name: str) -> str:
+    """A KA row's base name with any '(qualifier)' clause and trailing comma
+    stripped: 'Strawberries (fresh, sliced)' -> 'strawberries'."""
+    return name.split("(")[0].strip().rstrip(",").lower()
+
+
+def load_dataset(path: Optional[str] = None) -> int:
+    """(Re)load the ingredient density dataset from a JSON file. Returns count."""
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "kingarthur_ingredient_weights.json")
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    DATA_SOURCE = data.get("source", "")
-    _REGISTRY.clear()
+    return load_dataset_from_obj(data)
 
-    def register(ing: Ingredient):
-        _REGISTRY[ing.name.lower()] = ing
-        for a in ing.aliases:
-            _REGISTRY[a.lower()] = ing
 
-    for row in data["ingredients"]:
-        register(Ingredient(
-            name=row["name"],
-            g_per_ml=row["g_per_ml"],
-            grams_per_cup=row["grams_per_cup"],
-            aliases=tuple(row.get("aliases", [])),
-            source=DATA_SOURCE,
-        ))
-    for row in data.get("count_items", []):
-        register(Ingredient(
-            name=row["name"],
-            grams_per_item=row["grams_per_item"],
-            aliases=tuple(row.get("aliases", [])),
-            source=row.get("source", DATA_SOURCE),
-        ))
-    return len(_REGISTRY)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+KA_SEED_PATH = os.path.join(_HERE, "kingarthur_ingredient_weights.json")
+CURATED_SEED_PATH = os.path.join(_HERE, "curated_liquids.json")
+
+
+def assemble_default_dataset() -> dict:
+    """The shipped default dataset: the authoritative King Arthur chart PLUS our
+    curated liquid additions, with `alias_additions` merged onto the matching KA
+    rows. This is the SINGLE place the seed files are combined — both the engine's
+    import-time load and the DB store's first-boot seed consume it, so there's one
+    canonical assembly, not two. Pure (file reads only; no DB)."""
+    with open(KA_SEED_PATH, encoding="utf-8") as f:
+        ka = json.load(f)
+    ingredients = [dict(r, provenance="king_arthur") for r in ka.get("ingredients", [])]
+    count_items = [dict(r, provenance="king_arthur") for r in ka.get("count_items", [])]
+
+    curated = {}
+    if os.path.exists(CURATED_SEED_PATH):
+        with open(CURATED_SEED_PATH, encoding="utf-8") as f:
+            curated = json.load(f)
+        cprov = curated.get("provenance", "curated_reference")
+        for r in curated.get("ingredients", []):
+            ingredients.append(dict(r, provenance=r.get("provenance", cprov)))
+        # Attach new aliases to EXISTING KA rows (those stay king_arthur).
+        additions = curated.get("alias_additions", {})
+        by_name = {r["name"]: r for r in ingredients}
+        for target, extra in additions.items():
+            row = by_name.get(target)
+            if row is not None:
+                row["aliases"] = list(row.get("aliases", [])) + list(extra)
+    return {
+        "source": ka.get("source", ""),
+        "ingredients": ingredients,
+        "count_items": count_items,
+    }
 
 
 def registry() -> dict[str, Ingredient]:
@@ -198,6 +271,18 @@ class ConversionResult:
     path: list[str] = field(default_factory=list)
 
 
+# The canonical base unit each domain reduces to (for readable step traces).
+BASE_UNIT = {Domain.VOLUME: "mL", Domain.MASS: "g", Domain.COUNT: "items"}
+
+
+def _g(x: float) -> str:
+    """Human-readable number for a step trace: whole when integral, else 5 sig
+    figs ('236.59', '0.70587', '167')."""
+    if abs(x - round(x)) < 1e-9:
+        return str(int(round(x)))
+    return f"{x:.5g}"
+
+
 def convert(
     amount: float,
     from_unit: str,
@@ -212,7 +297,12 @@ def convert(
     path: list[str] = []
 
     src_canon = amount * from_factor
-    path.append(f"{amount} {from_unit} = {src_canon:.4g} {from_dom.value}-base")
+    base = BASE_UNIT[from_dom]
+    if from_factor != 1.0:
+        path.append(f"{_g(amount)} {from_unit} = {_g(amount)} × {_g(from_factor)} "
+                    f"{base}/{from_unit} = {_g(src_canon)} {base}")
+    else:
+        path.append(f"{_g(amount)} {from_unit} = {_g(src_canon)} {base}")
 
     ing = resolve_ingredient(ingredient) if ingredient else None
     if density_g_per_ml is None and ing is not None:
@@ -222,14 +312,22 @@ def convert(
 
     if from_dom == to_dom:
         out = src_canon / to_factor
-        path.append(f"same domain -> {out:.4g} {to_unit}")
+        if to_factor != 1.0:
+            path.append(f"{_g(src_canon)} {base} ÷ {_g(to_factor)} {base}/{to_unit} "
+                        f"= {_g(out)} {to_unit}")
+        else:
+            path.append(f"= {_g(out)} {to_unit}")
         grams = src_canon if from_dom == Domain.MASS else None
         return ConversionResult(out, to_unit, grams, path)
 
     grams = _to_grams(src_canon, from_dom, density_g_per_ml, grams_per_item, path)
     out_canon = _from_grams(grams, to_dom, density_g_per_ml, grams_per_item, path)
     out = out_canon / to_factor
-    path.append(f"-> {out:.4g} {to_unit}")
+    if to_factor != 1.0:
+        path.append(f"{_g(out_canon)} {BASE_UNIT[to_dom]} ÷ {_g(to_factor)} "
+                    f"{BASE_UNIT[to_dom]}/{to_unit} = {_g(out)} {to_unit}")
+    else:
+        path.append(f"= {_g(out)} {to_unit}")
     return ConversionResult(out, to_unit, grams, path)
 
 
@@ -241,14 +339,14 @@ def _to_grams(canon, dom, density, per_item, path) -> float:
             raise ValueError("Volume->mass needs a density (g/mL). "
                              "Pass ingredient= or density_g_per_ml=.")
         g = canon * density
-        path.append(f"x density {density:.4g} g/mL -> {g:.4g} g")
+        path.append(f"{_g(canon)} mL × {_g(density)} g/mL (density) = {_g(g)} g")
         return g
     if dom == Domain.COUNT:
         if per_item is None:
             raise ValueError("Count->mass needs grams_per_item. "
                              "Pass ingredient= or grams_per_item=.")
         g = canon * per_item
-        path.append(f"x {per_item:.4g} g/item -> {g:.4g} g")
+        path.append(f"{_g(canon)} items × {_g(per_item)} g/item = {_g(g)} g")
         return g
     raise ValueError(f"Unhandled domain {dom}")
 
@@ -261,20 +359,21 @@ def _from_grams(g, dom, density, per_item, path) -> float:
             raise ValueError("Mass->volume needs a density (g/mL). "
                              "Pass ingredient= or density_g_per_ml=.")
         ml = g / density
-        path.append(f"/ density {density:.4g} g/mL -> {ml:.4g} mL")
+        path.append(f"{_g(g)} g ÷ {_g(density)} g/mL (density) = {_g(ml)} mL")
         return ml
     if dom == Domain.COUNT:
         if per_item is None:
             raise ValueError("Mass->count needs grams_per_item. "
                              "Pass ingredient= or grams_per_item=.")
         n = g / per_item
-        path.append(f"/ {per_item:.4g} g/item -> {n:.4g} items")
+        path.append(f"{_g(g)} g ÷ {_g(per_item)} g/item = {_g(n)} items")
         return n
     raise ValueError(f"Unhandled domain {dom}")
 
 
-# load on import
-load_dataset()
+# load on import: KA chart + curated liquids (so conversions work with no DB).
+# The DB store (store.py) can later re-load the engine from the editable table.
+load_dataset_from_obj(assemble_default_dataset())
 
 
 # --------------------------------------------------------------------------- #

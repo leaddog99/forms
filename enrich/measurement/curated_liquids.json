@@ -1,0 +1,25 @@
+{
+  "provenance": "curated_reference",
+  "note": "Common cooking liquids absent from the King Arthur Ingredient Weight Chart, added so they convert on the free deterministic path. Densities are reference values (mostly water-adjacent), NOT King Arthur data — every conversion using them is flagged with an asterisk in the metric display. Frequencies in the comment are recipe counts from the 2026-06-07 corpus survey (625 recipes). `alias_additions` attach new names to EXISTING King Arthur rows (those keep king_arthur provenance).",
+  "ingredients": [
+    {"name": "broth", "g_per_ml": 1.0, "grams_per_cup": 237.0, "aliases": ["stock", "chicken broth", "chicken stock", "beef broth", "beef stock", "vegetable broth", "vegetable stock", "bone broth", "low-sodium chicken broth", "low sodium chicken broth", "low-sodium broth", "low-sodium beef broth"], "_freq": 97},
+    {"name": "wine", "g_per_ml": 0.99, "grams_per_cup": 234.0, "aliases": ["red wine", "white wine", "dry white wine", "dry red wine", "cooking wine", "rice wine", "marsala wine", "shaoxing wine"], "_freq": 96},
+    {"name": "tomato sauce", "g_per_ml": 1.05, "grams_per_cup": 248.0, "aliases": ["passata", "marinara", "marinara sauce", "pasta sauce", "tomato puree", "crushed tomatoes", "tomato passata"], "_freq": 50},
+    {"name": "worcestershire sauce", "g_per_ml": 1.1, "grams_per_cup": 260.0, "aliases": ["worcestershire"], "_freq": 46},
+    {"name": "vinegar", "g_per_ml": 1.01, "grams_per_cup": 239.0, "aliases": ["white vinegar", "distilled white vinegar", "apple cider vinegar", "cider vinegar", "rice vinegar", "rice wine vinegar", "red wine vinegar", "white wine vinegar"], "_freq": 38},
+    {"name": "balsamic vinegar", "g_per_ml": 1.1, "grams_per_cup": 260.0, "aliases": ["balsamic", "balsamic glaze"], "_freq": 5},
+    {"name": "mustard (prepared)", "g_per_ml": 1.05, "grams_per_cup": 248.0, "aliases": ["mustard", "dijon mustard", "dijon", "yellow mustard", "whole grain mustard", "whole-grain mustard", "prepared mustard", "spicy brown mustard"], "_freq": 27},
+    {"name": "soy sauce", "g_per_ml": 1.2, "grams_per_cup": 284.0, "aliases": ["tamari", "light soy sauce", "dark soy sauce", "low-sodium soy sauce", "shoyu"], "_freq": 19},
+    {"name": "hot sauce", "g_per_ml": 1.02, "grams_per_cup": 241.0, "aliases": ["tabasco", "tabasco sauce", "louisiana hot sauce", "louisiana-style hot sauce", "sriracha", "chili sauce", "chili-garlic sauce"], "_freq": 19},
+    {"name": "ketchup", "g_per_ml": 1.14, "grams_per_cup": 270.0, "aliases": ["tomato ketchup", "catsup"], "_freq": 17},
+    {"name": "fish sauce", "g_per_ml": 1.22, "grams_per_cup": 289.0, "aliases": ["nam pla", "nuoc mam"], "_freq": 15},
+    {"name": "sesame oil", "g_per_ml": 0.92, "grams_per_cup": 218.0, "aliases": ["toasted sesame oil"], "_freq": 9},
+    {"name": "orange juice", "g_per_ml": 1.04, "grams_per_cup": 246.0, "aliases": ["oj", "fresh orange juice"], "_freq": 6},
+    {"name": "lime juice", "g_per_ml": 1.02, "grams_per_cup": 241.0, "aliases": ["fresh lime juice", "key lime juice"], "_freq": 5},
+    {"name": "neutral oil", "g_per_ml": 0.92, "grams_per_cup": 218.0, "aliases": ["neutral cooking oil", "frying oil", "high-heat oil"], "_freq": 13}
+  ],
+  "alias_additions": {
+    "Olive oil": ["extra-virgin olive oil", "extra virgin olive oil", "virgin olive oil", "evoo", "greek virgin olive oil", "spanish virgin olive oil", "mild olive oil", "light olive oil"],
+    "Cream (heavy, light, or half & half)": ["heavy cream", "heavy whipping cream", "whipping cream", "light cream", "half-and-half", "half and half", "half & half"]
+  }
+}

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 
@@ -393,6 +393,7 @@ def row_to_dict(row: tuple) -> dict:
         "created_at": created_at,
         "updated_at": updated_at,
         "is_due": is_due(ttl_days, last_refreshed),
+        "next_run_at": next_run_at(ttl_days, last_refreshed),
         "last_run_log_filename": last_run_log_filename,
         "last_run_log_url": f"/logs/{last_run_log_filename}" if last_run_log_filename else None,
         "auto_enrich": bool(auto_enrich),
@@ -658,6 +659,33 @@ def is_due(refresh_ttl_days: Optional[int], last_refreshed: Optional[str]) -> bo
         return True  # malformed timestamp → safer to refresh
     age_days = (datetime.now(timezone.utc) - last).total_seconds() / 86400.0
     return age_days >= refresh_ttl_days
+
+
+def next_run_at(refresh_ttl_days: Optional[int],
+                last_refreshed: Optional[str]) -> Optional[str]:
+    """The ISO-8601 UTC timestamp this dish is next DUE for an auto-refresh,
+    or None when it has no automatic schedule. Derived (not stored) so it can
+    never drift from the cadence — the same single-source-of-truth treatment
+    as `is_due`, which it mirrors:
+
+      - refresh_ttl_days is None  → manual-only; no scheduled run → None.
+      - last_refreshed is None    → never run; due now → returns 'now'.
+      - else                      → last_refreshed + refresh_ttl_days.
+
+    The scheduler (`find_due_dishes`) decides due-ness off `is_due`; this is the
+    human-facing "next run: …" date surfaced at the dish level. A malformed
+    last_refreshed reads as due-now (mirrors is_due's safer-to-refresh fallback).
+    """
+    if refresh_ttl_days is None:
+        return None
+    now = datetime.now(timezone.utc)
+    if not last_refreshed:
+        return now.isoformat()
+    try:
+        last = datetime.fromisoformat(last_refreshed.replace("Z", "+00:00"))
+    except Exception:
+        return now.isoformat()
+    return (last + timedelta(days=refresh_ttl_days)).isoformat()
 
 
 def find_due_dishes(conn: sqlite3.Connection) -> list[dict]:

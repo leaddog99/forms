@@ -81,6 +81,26 @@ def _frac(tok: str) -> float:
     return float(n) / float(d)
 
 
+# A "NUMBER UNIT" weight/volume inside a parenthetical: "15-ounce", "14.5 oz",
+# "28 ounce", "400 g". The number and unit may be hyphen- or space-joined.
+_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[-\s]?\s*([a-zA-Z.]+)")
+
+
+def _parse_size(note: str) -> Optional[tuple[float, str]]:
+    """Pull a real measure out of a parenthetical size, e.g. the '15-ounce' in
+    '1 (15-ounce) can'. Returns (qty, canonical_unit) only when the unit is a
+    known mass or volume unit (so we can actually weigh it); else None."""
+    if not note:
+        return None
+    for m in _SIZE_RE.finditer(note):
+        tok = m.group(2).strip().rstrip(".").lower()
+        if is_known_unit(tok):
+            dom, _f = resolve_unit(tok)
+            if dom in (Domain.MASS, Domain.VOLUME):
+                return float(m.group(1)), canonical_unit(tok)
+    return None
+
+
 def _read_quantity(text: str) -> tuple[Optional[float], str]:
     """Read a leading quantity (with optional range) and return (value, rest)."""
     m = _QTY_TOKEN.match(text)
@@ -162,6 +182,18 @@ def parse_ingredient(raw: str) -> ParsedIngredient:
             # "of" filler after a unit: "1 cup of flour"
             if rest.lower().startswith("of "):
                 rest = rest[3:].strip()
+
+    # Parenthetical size wins for containers: in "1 (15-ounce) can tomato sauce"
+    # the 15 oz IS the real measure (a mass — converts with no density at all).
+    # Apply when the line counts containers/items (domain COUNT) or has no usable
+    # unit; leave real volume/mass units ("1 cup (240 ml) milk") untouched.
+    size = _parse_size(note)
+    if size and (unit is None or domain == Domain.COUNT.value):
+        sz_qty, sz_unit = size
+        qty = (qty if qty is not None else 1.0) * sz_qty
+        unit = sz_unit
+        dom, _f = resolve_unit(sz_unit)
+        domain = dom.value
 
     name_raw = rest.strip().strip(",").strip()
     name = clean_name(rest)

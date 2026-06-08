@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · System</title>
+  <!-- System config editor — the DB-resident "config file" (system_config
+       table) surfaced for editing. Single-record settings page (NOT a
+       master/detail list): one form, settings grouped by category. First
+       consumer is the dish scheduler. See memory/project_system_config.md. -->
+  <!-- library-shell.css supplies the nav-toggle/nav-menu styling (incl. the
+       .open show/hide) so the two hamburgers render + respond. Without it the
+       burgers are unstyled and the menu never opens. -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260608a">
+  <style>
+    :root{
+      --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
+      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased; }
+    .wrap{ max-width:760px; margin:0 auto; padding:28px 18px 120px; }
+    h1{ font-size:1.6rem; margin:0 0 4px; letter-spacing:-.01em; }
+    .sub{ color:var(--muted); margin:0 0 28px; font-size:.95rem; }
+    .cat{ background:var(--card); border:1px solid var(--border); border-radius:14px;
+      padding:18px 18px 8px; margin-bottom:18px; }
+    .cat h2{ font-size:.78rem; text-transform:uppercase; letter-spacing:.08em;
+      color:var(--muted); margin:0 0 14px; }
+    .field{ padding:12px 0; border-top:1px solid var(--border); }
+    .cat .field:first-of-type{ border-top:none; }
+    .field label.lbl{ display:block; font-weight:600; font-size:.98rem; margin-bottom:3px; }
+    .field .desc{ color:var(--muted); font-size:.84rem; margin:0 0 10px; line-height:1.45; }
+    .field input[type=text],.field input[type=number]{
+      width:100%; padding:11px 13px; font-size:1rem; border:1px solid var(--border);
+      border-radius:10px; background:#fff; color:var(--ink); }
+    .field input:disabled{ background:#f3eee7; color:var(--muted); }
+    .toggle{ display:flex; align-items:center; gap:10px; }
+    .toggle input{ width:20px; height:20px; accent-color:var(--accent); }
+    .toggle .state{ font-size:.9rem; color:var(--muted); }
+    .meta{ font-size:.74rem; color:var(--muted); margin-top:8px; }
+    .savebar{ position:fixed; left:0; right:0; bottom:0; background:rgba(250,246,241,.96);
+      border-top:1px solid var(--border); padding:14px 18px;
+      padding-bottom:max(14px,env(safe-area-inset-bottom)); backdrop-filter:blur(6px); }
+    .savebar .inner{ max-width:760px; margin:0 auto; display:flex; align-items:center; gap:14px; }
+    button.save{ padding:12px 26px; font-size:1rem; font-weight:600; background:var(--accent);
+      color:#fff; border:none; border-radius:11px; cursor:pointer; }
+    button.save:hover{ background:var(--accent-dark); }
+    button.save:disabled{ opacity:.5; cursor:default; }
+    .flash{ font-size:.9rem; }
+    .flash.ok{ color:#2f7a3a; } .flash.err{ color:var(--warn); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>System</h1>
+    <p class="sub">The instance's configuration, stored in the database. Edits take effect on the next read — no restart, no code change.</p>
+    <div id="cats"><p class="sub">Loading…</p></div>
+  </div>
+
+  <div class="savebar">
+    <div class="inner">
+      <button type="button" class="save" id="saveBtn" disabled>Save changes</button>
+      <span class="flash" id="flash"></span>
+    </div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260608b"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    if (window.LibraryShell && LibraryShell.initNav) {
+      LibraryShell.initNav({ currentPage: 'system' });
+    }
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    let settings = [];          // [{key,value,type,category,label,description,updated_at}]
+    const dirty = {};           // key -> new value (only changed ones)
+    const READONLY = new Set(['scheduler_last_tick_at']);
+
+    function inputFor(s){
+      const ro = READONLY.has(s.key) ? 'disabled' : '';
+      if (s.type === 'bool'){
+        const on = s.value === true || s.value === 'true';
+        return `<div class="toggle">
+          <input type="checkbox" id="f_${esc(s.key)}" ${on?'checked':''} ${ro}>
+          <span class="state" id="st_${esc(s.key)}">${on?'On':'Off'}</span>
+        </div>`;
+      }
+      if (s.type === 'int' || s.type === 'float'){
+        const step = s.type === 'float' ? 'any' : '1';
+        return `<input type="number" step="${step}" id="f_${esc(s.key)}" value="${esc(s.value)}" ${ro}>`;
+      }
+      // string / fallback
+      return `<input type="text" id="f_${esc(s.key)}" value="${esc(s.value ?? '')}" ${ro}>`;
+    }
+
+    function render(){
+      const byCat = {};
+      for (const s of settings){ (byCat[s.category] = byCat[s.category] || []).push(s); }
+      $('#cats').innerHTML = Object.keys(byCat).map(cat => `
+        <section class="cat">
+          <h2>${esc(cat)}</h2>
+          ${byCat[cat].map(s => `
+            <div class="field">
+              <label class="lbl" for="f_${esc(s.key)}">${esc(s.label || s.key)}</label>
+              ${s.description ? `<p class="desc">${esc(s.description)}</p>` : ''}
+              ${inputFor(s)}
+              ${READONLY.has(s.key) ? `<div class="meta">read-only · system-maintained</div>` : ''}
+            </div>`).join('')}
+        </section>`).join('');
+
+      // Wire change tracking.
+      for (const s of settings){
+        if (READONLY.has(s.key)) continue;
+        const el = document.getElementById('f_' + s.key);
+        if (!el) continue;
+        el.addEventListener('input', () => onEdit(s, el));
+        el.addEventListener('change', () => onEdit(s, el));
+      }
+    }
+
+    function readVal(s, el){
+      if (s.type === 'bool') return el.checked;
+      if (s.type === 'int') return el.value === '' ? null : parseInt(el.value, 10);
+      if (s.type === 'float') return el.value === '' ? null : parseFloat(el.value);
+      return el.value;
+    }
+
+    function onEdit(s, el){
+      if (s.type === 'bool'){ const st = document.getElementById('st_'+s.key); if (st) st.textContent = el.checked ? 'On' : 'Off'; }
+      const v = readVal(s, el);
+      if (v === s.value) delete dirty[s.key]; else dirty[s.key] = v;
+      $('#saveBtn').disabled = Object.keys(dirty).length === 0;
+    }
+
+    async function load(){
+      const r = await fetch('/system-config');
+      settings = await r.json();
+      for (const k in dirty) delete dirty[k];
+      render();
+      $('#saveBtn').disabled = true;
+    }
+
+    async function save(){
+      const updates = { ...dirty };
+      if (Object.keys(updates).length === 0) return;
+      $('#saveBtn').disabled = true;
+      flash('Saving…', '');
+      try {
+        const r = await fetch('/system-config', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ updates }),
+        });
+        if (!r.ok){ const e = await r.json().catch(()=>({})); throw new Error(e.detail || r.status); }
+        settings = await r.json();
+        for (const k in dirty) delete dirty[k];
+        render();
+        flash('Saved.', 'ok');
+      } catch(e){
+        flash('Error: ' + e.message, 'err');
+        $('#saveBtn').disabled = false;
+      }
+    }
+
+    function flash(msg, cls){ const f = $('#flash'); f.textContent = msg; f.className = 'flash ' + (cls||''); }
+
+    $('#saveBtn').addEventListener('click', save);
+    load();
+  </script>
+</body>
+</html>

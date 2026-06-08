@@ -1607,7 +1607,7 @@
        inline block runs first; library-shell.css uses lower-specificity
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
-  <script src="/forms/library-shell.js?v=20260603b"></script>
+  <script src="/forms/library-shell.js?v=20260608b"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -3845,12 +3845,14 @@
       const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
       const res = await fetch(`${API}/recipes/${encodeURIComponent(id)}?user_id=${encodeURIComponent(uid)}`, { method: "DELETE" });
       if (res.ok) {
-        showFeedback("Recipe deleted.", "success");
-        document.getElementById("recipeForm").reset();
-        document.getElementById("recipe_id").value = "";
-        document.getElementById("recipe_seq_id").value = "";
+        // Full clear via the canonical Clear path so the screen actually
+        // empties — form.reset() alone leaves the dynamic lists, hero image,
+        // scoring strip, badges, and /r/<id> URL bar from the deleted row on
+        // screen. clearBtn does the complete teardown (and wipes feedback),
+        // so show the success message AFTER it runs.
+        document.getElementById("clearBtn").click();
         loadRecipes();
-        updateButtonStates();
+        showFeedback("Recipe deleted.", "success");
       } else {
         const result = await res.json();
         showFeedback(`Error: ${result.detail}`, "error");
