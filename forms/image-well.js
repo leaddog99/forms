@@ -36,6 +36,7 @@
 .iw-frame.iw-drag{ border-color:var(--iw-accent,#b8602a); background:var(--iw-accent-soft,rgba(184,96,42,.08)); }
 .iw-frame.iw-has-image{ border-style:solid; }
 .iw-frame:focus-visible{ outline:2px solid var(--iw-accent,#b8602a); outline-offset:2px; }
+.iw-frame, .iw-dz{ caret-color:transparent; } /* contenteditable for image paste only — no visible caret */
 .iw-img{ width:100%; height:100%; object-fit:cover; display:none; }
 .iw-frame.iw-has-image .iw-img{ display:block; }
 .iw-ph{ display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--iw-muted,#6b5b4f);
@@ -117,18 +118,22 @@
     };
 
     // ---- DOM ------------------------------------------------------------
+    // The frame is contenteditable — the ONE trick that makes right-click
+    // "Paste" deliver image BYTES (a paste event with the image in
+    // clipboardData) AND shows the Paste context-menu item; a plain div gets
+    // neither. Children are contenteditable=false so they stay interactive,
+    // not editable, and the beforeinput/keydown guards below stop any actual
+    // text editing or caret mess. (Same pattern as the recipe drop zone.)
     root.innerHTML =
-      `<div class="iw-frame" tabindex="0" role="button" aria-label="Set image">
-         <img class="iw-img" alt="">
-         <div class="iw-ph">${ICON}<b>Add image</b><small>Drop, paste, or click — image or URL</small></div>
-         <div class="iw-overlay">
-           ${opts.generate ? '<button type="button" class="iw-btn iw-gen">✨ Generate</button>' : ''}
+      `<div class="iw-frame" tabindex="0" role="button" contenteditable="true" aria-label="Set image — paste, drop, or click">
+         <img class="iw-img" contenteditable="false" alt="">
+         <div class="iw-ph" contenteditable="false">${ICON}<b>Add image</b><small>Right-click → Paste, Ctrl+V, drop, or click</small></div>
+         <div class="iw-overlay" contenteditable="false">
            <button type="button" class="iw-btn iw-change">Change</button>
          </div>
        </div>`;
     const frame = root.querySelector('.iw-frame');
     const img = root.querySelector('.iw-img');
-    const genBtn = root.querySelector('.iw-gen');
     const fileInput = document.createElement('input');
     fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
     root.appendChild(fileInput);
@@ -221,18 +226,16 @@
       openDialog();
     });
     frame.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDialog(); } });
+    // The frame is contenteditable only to enable image paste (right-click +
+    // Ctrl+V). Block every actual content mutation so nothing can be typed,
+    // pasted-as-text, or dropped-as-text into it — our paste/drop handlers above
+    // do the real work and preventDefault on the cases they handle.
+    frame.addEventListener('beforeinput', (e) => e.preventDefault());
     const changeBtn = root.querySelector('.iw-change');
     if (changeBtn) changeBtn.addEventListener('click', (e) => { e.stopPropagation(); openDialog(); });
     fileInput.addEventListener('change', (e) => { const f = e.target.files[0]; if (f) handleFile(f); fileInput.value = ''; });
-    if (genBtn && opts.generate) {
-      genBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        genBtn.disabled = true; const lbl = genBtn.textContent; genBtn.textContent = 'Generating…';
-        try { const u = await opts.generate(); if (u) setUrl(u); }
-        catch (err) { feedback(`Generate failed: ${err.message || err}`, 'error'); }
-        finally { genBtn.disabled = false; genBtn.textContent = lbl; }
-      });
-    }
+    // Generate lives ONLY in the Set-image dialog (one button, no overlay/dialog
+    // duplication). The overlay is just "Change" → opens the dialog.
 
     // ---- Set-image dialog ----------------------------------------------
     let dialog = null;
@@ -242,9 +245,9 @@
       dialog.innerHTML =
         `<form method="dialog" class="iw-dialog-in">
            <h3>Set image</h3>
-           <p class="iw-sub">Drop or click to choose a file, or paste an image URL. We’ll save a local copy when we can.</p>
-           <div class="iw-dz" tabindex="0">Drop an image here, or <u>choose a file</u></div>
-           <div class="iw-or">or paste a URL</div>
+           <p class="iw-sub">Right-click → Paste, Ctrl+V, drop a file, or click to choose — image or URL. We’ll save a local copy when we can.</p>
+           <div class="iw-dz" tabindex="0" contenteditable="true">Right-click → Paste, Ctrl+V, or drop an image here, or <u>choose a file</u></div>
+           <div class="iw-or">or paste / type a URL</div>
            <div class="iw-urlrow">
              <input type="url" placeholder="https://…/photo.jpg" class="iw-urlin">
              <button type="button" class="iw-btn iw-pri iw-seturl">Set</button>
@@ -260,11 +263,27 @@
       document.body.appendChild(dialog);
       const dz = dialog.querySelector('.iw-dz');
       const urlin = dialog.querySelector('.iw-urlin');
+      // dz is contenteditable ONLY so right-click "Paste" delivers image bytes;
+      // block real editing so it stays a button, not a text box.
+      dz.addEventListener('beforeinput', (e) => e.preventDefault());
+      dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
       dz.addEventListener('click', () => fileInput.click());
       dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('iw-drag'); });
       dz.addEventListener('dragleave', () => dz.classList.remove('iw-drag'));
       dz.addEventListener('drop', (e) => { e.preventDefault(); dz.classList.remove('iw-drag'); if (handleDataTransfer(e.dataTransfer)) dialog.close(); });
       dz.addEventListener('paste', (e) => { if (handleDataTransfer(e.clipboardData)) dialog.close(); });
+      // Catch a Ctrl+V image ANYWHERE in the open dialog (focus is usually on
+      // the url input). Image bytes → upload + close. stopPropagation keeps the
+      // form's document-level paste handler (recipe extraction) from also
+      // grabbing it. Non-image (a URL string) falls through to the url input.
+      dialog.addEventListener('paste', (e) => {
+        for (const it of ((e.clipboardData && e.clipboardData.items) || [])) {
+          if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+            const f = it.getAsFile();
+            if (f) { e.preventDefault(); e.stopPropagation(); e._handled = true; handleFile(f); dialog.close(); return; }
+          }
+        }
+      });
       const doSet = () => { const v = urlin.value.trim(); if (v) { handleUrlString(v); dialog.close(); } };
       dialog.querySelector('.iw-seturl').addEventListener('click', doSet);
       urlin.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSet(); } });
@@ -283,8 +302,13 @@
       // Rebuild each open so the Remove button + url field reflect current state.
       if (dialog) { dialog.remove(); dialog = null; }
       buildDialog();
-      dialog.querySelector('.iw-urlin').value = '';
+      const urlin = dialog.querySelector('.iw-urlin');
+      urlin.value = '';
       if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
+      // Focus a paste-capable element so Ctrl+V / Shift+Insert work immediately
+      // (an image paste fires here and is caught by the dialog paste handler;
+      // a URL paste lands in the field).
+      try { urlin.focus(); } catch (e) {}
     }
 
     render();
