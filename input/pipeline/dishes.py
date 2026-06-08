@@ -440,6 +440,22 @@ def get_dish(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     return row_to_dict(row) if row else None
 
 
+def dish_limits():
+    """(max_serpapi_per_query, max_final) hard caps from the DB system config
+    (default 200 each). Guards against an accidental fat-finger — e.g. tabbing
+    past the 25 default and typing 50 yields 2550, which would ask SerpAPI for
+    2550 rows PER QUERY and blow up cost + rate limits. Editable in System →
+    Limits."""
+    max_serp = max_final = 200
+    try:
+        from input.pipeline import system_config as cfg
+        max_serp = int(cfg.get_setting("dish_max_serpapi", 200))
+        max_final = int(cfg.get_setting("dish_max_final", 200))
+    except Exception:
+        pass
+    return max_serp, max_final
+
+
 def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Optional[int], Optional[str], bool, Optional[str]]:
     """Validate a POST /dishes body. Returns (name, queries, top_n_serpapi,
     top_n_final, refresh_ttl_days, notes, auto_enrich, description).
@@ -454,12 +470,19 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
     if not queries:
         raise ValueError("queries must contain at least one non-empty string")
 
+    _max_serp, _max_final = dish_limits()
     top_n_serpapi = int(payload.get("top_n_serpapi", 25))
     if top_n_serpapi <= 0:
         raise ValueError("top_n_serpapi must be positive")
+    if top_n_serpapi > _max_serp:
+        raise ValueError(f"top_n_serpapi {top_n_serpapi} exceeds the max of {_max_serp} "
+                         f"(raise it in System → Limits)")
     top_n_final = int(payload.get("top_n_final", 10))
     if top_n_final <= 0:
         raise ValueError("top_n_final must be positive")
+    if top_n_final > _max_final:
+        raise ValueError(f"top_n_final {top_n_final} exceeds the max of {_max_final} "
+                         f"(raise it in System → Limits)")
 
     ttl_raw = payload.get("refresh_ttl_days", 30)
     if ttl_raw is None or ttl_raw == "":
@@ -541,10 +564,14 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
         sets.append("queries = ?")
         params.append(json.dumps(q_clean))
 
+    _max_serp, _max_final = dish_limits()
     if "top_n_serpapi" in patch:
         v = int(patch["top_n_serpapi"])
         if v <= 0:
             raise ValueError("top_n_serpapi must be positive")
+        if v > _max_serp:
+            raise ValueError(f"top_n_serpapi {v} exceeds the max of {_max_serp} "
+                             f"(raise it in System → Limits)")
         sets.append("top_n_serpapi = ?")
         params.append(v)
 
@@ -552,6 +579,9 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
         v = int(patch["top_n_final"])
         if v <= 0:
             raise ValueError("top_n_final must be positive")
+        if v > _max_final:
+            raise ValueError(f"top_n_final {v} exceeds the max of {_max_final} "
+                             f"(raise it in System → Limits)")
         sets.append("top_n_final = ?")
         params.append(v)
 

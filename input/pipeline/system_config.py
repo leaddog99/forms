@@ -99,6 +99,26 @@ SYSTEM_DEFAULTS: list[dict] = [
         "label": "Portrait target (WxH)",
         "description": "Exact pixel size portrait images are center-cropped + scaled to.",
     },
+    # --- Limits: hard caps that protect against fat-finger / runaway cost ---
+    {
+        "key": "dish_max_serpapi",
+        "value": 200,
+        "type": "int",
+        "category": "Limits",
+        "label": "Max SerpAPI candidates per query",
+        "description": "Hard cap on a dish's top_n_serpapi. Creating/editing a dish "
+                       "above this is rejected, and a refresh clamps to it — guards "
+                       "against e.g. an accidental 2550 asking SerpAPI for 2550 rows.",
+    },
+    {
+        "key": "dish_max_final",
+        "value": 200,
+        "type": "int",
+        "category": "Limits",
+        "label": "Max kept winners per dish",
+        "description": "Hard cap on a dish's top_n_final (selected rows). Same "
+                       "enforcement as the SerpAPI cap.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

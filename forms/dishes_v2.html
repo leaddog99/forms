@@ -80,6 +80,7 @@
     let selected = null;        // dish name | '__new__'
     let term = '';
     let sortKey = 'attention';
+    let _limits = { serpapi: 200, final: 200 };   // dish caps from System → Limits
 
     /* ----------------------------- derivations ----------------------------- */
     const fitOf = (d) => d.last_ou_fit || {};
@@ -236,8 +237,8 @@
             <textarea id="f_queries" class="ed-notes" style="min-height:90px" placeholder='"banana bread" | "banana nut bread"'>${escapeHtml(queriesText)}</textarea>
           </div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="f_serp">SerpAPI candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" value="${d.top_n_serpapi ?? ''}"></div>
-            <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" value="${d.top_n_final ?? ''}"></div>
+            <div class="ed-field"><label for="f_serp">SerpAPI candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
+            <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" max="${_limits.final}" value="${d.top_n_final ?? ''}"></div>
             <div class="ed-field"><label for="f_ttl">Refresh TTL (days)</label><input id="f_ttl" type="number" min="1" value="${d.refresh_ttl_days == null ? '' : d.refresh_ttl_days}" placeholder="blank = manual only"></div>
             <div class="ed-field"><label>Auto-enrich on save</label>
               <div class="d-check"><input id="f_enrich" type="checkbox" ${d.auto_enrich ? 'checked' : ''}><label for="f_enrich">run enrich_recipe on each kept row (~$0.05/row)</label></div>
@@ -429,9 +430,20 @@
         const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/refresh`, { method: 'POST' });
         const data = await r.json().catch(() => ({}));
         if (!r.ok && r.status !== 202) throw new Error(data.detail || `HTTP ${r.status}`);
-        flash(`Queued refresh for “${d.name}” (job #${data.job_id}) — running…`);
-        // Drain the queue + stream the live log via the shared jobs runner.
-        if (LibraryShell.runQueuedJobs) LibraryShell.runQueuedJobs();
+        // Phase 4: run the job OUT-OF-PROCESS — the server spawns
+        // `python -m jobs exec --job-id N`, so the UI stays responsive, jobs for
+        // different dishes run in parallel without interfering, and a server
+        // restart can't kill the run. We just tail its log via the SSE stream.
+        const sp = await fetch(`/jobs/${data.job_id}/spawn`, { method: 'POST' });
+        if (!sp.ok) {
+          const se = await sp.json().catch(() => ({}));
+          // Fall back to the in-server drain if the spawn endpoint is unavailable.
+          flash(`Spawn failed (${se.detail || sp.status}); running in-server…`, true);
+          if (LibraryShell.runQueuedJobs) LibraryShell.runQueuedJobs();
+        } else {
+          flash(`Refreshing “${d.name}” out-of-process (job #${data.job_id})…`);
+          if (LibraryShell.streamJob) LibraryShell.streamJob(data.job_id);
+        }
       } catch (e) {
         flash(String(e.message || e), true);
       } finally {
@@ -460,8 +472,8 @@
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off"></div>
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim, one per line)</span></label><textarea id="n_queries" class="ed-notes" style="min-height:90px" placeholder='&quot;spaghetti and meat sauce&quot; | &quot;spaghetti with meat sauce&quot;'></textarea></div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="n_serp">SerpAPI candidates</label><input id="n_serp" type="number" min="1" value="25"></div>
-            <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" value="10"></div>
+            <div class="ed-field"><label for="n_serp">SerpAPI candidates</label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="25"></div>
+            <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="10"></div>
             <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only"></div>
           </div>
         </section>
@@ -526,6 +538,15 @@
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
+
+    // Pull the dish caps (System → Limits) so the number inputs show a max
+    // hint. The server is the real guard; this just stops the spinner early.
+    fetch('/system-config').then(r => r.ok ? r.json() : []).then(rows => {
+      const m = {}; for (const s of rows) m[s.key] = s.value;
+      if (m.dish_max_serpapi != null) _limits.serpapi = m.dish_max_serpapi;
+      if (m.dish_max_final != null) _limits.final = m.dish_max_final;
+      renderMain();  // re-render so the inputs pick up the max
+    }).catch(() => {});
 
     loadDishes();
   </script>

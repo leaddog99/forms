@@ -234,6 +234,13 @@ def cmd_schedule(args: argparse.Namespace) -> int:
     return worst
 
 
+def cmd_exec(args: argparse.Namespace) -> int:
+    """Run an ALREADY-enqueued job by id, out-of-process. This is what the
+    server's POST /jobs/{id}/spawn launches so a UI Refresh runs off the uvicorn
+    event loop — the enqueue already happened in-request; we just execute it."""
+    return _run_job_id(args.job_id)
+
+
 def cmd_next(args: argparse.Namespace) -> int:
     """Run the single oldest ready queued job (does not enqueue)."""
     with sqlite3.connect(api.DB_PATH) as conn:
@@ -300,6 +307,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_sched.add_argument("--force", action="store_true",
                          help="bypass scheduler_enabled + the interval gate")
     p_sched.set_defaults(func=cmd_schedule)
+
+    p_exec = sub.add_parser("exec", help="run an already-enqueued job by id (used by the server)")
+    p_exec.add_argument("--job-id", type=int, required=True)
+    p_exec.set_defaults(func=cmd_exec)
 
     p_next = sub.add_parser("next", help="run the oldest queued job")
     p_next.set_defaults(func=cmd_next)

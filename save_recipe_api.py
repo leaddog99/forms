@@ -2932,10 +2932,20 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         raise RuntimeError(f"Dish {name!r} not found at run time (deleted?)")
     canonical_name = dish["name"]
 
+    # Safety net: clamp to the configured hard caps even if a dish row somehow
+    # holds an oversized value (the create/edit form rejects above the cap, but
+    # this protects pre-existing rows + any direct DB edit from a runaway
+    # SerpAPI request). System → Limits.
+    _max_serp, _max_final = dishes_lib.dish_limits()
+    top_serp = min(int(dish["top_n_serpapi"]), _max_serp)
+    top_final = min(int(dish["top_n_final"]), _max_final)
+    if top_serp != dish["top_n_serpapi"] or top_final != dish["top_n_final"]:
+        print(f"[REFRESH-DISH] CLAMPED to limits: serpapi {dish['top_n_serpapi']}->{top_serp}, "
+              f"final {dish['top_n_final']}->{top_final}")
+
     print(f"=== Dish refresh: {canonical_name!r} ===")
     print(f"queries: {dish['queries']}")
-    print(f"top_n_serpapi: {dish['top_n_serpapi']} per query, "
-          f"top_n_final: {dish['top_n_final']}")
+    print(f"top_n_serpapi: {top_serp} per query, top_n_final: {top_final}")
     print(f"[REFRESH-DISH] {canonical_name!r} starting")
 
     try:
@@ -2943,8 +2953,8 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             build_batch,
             queries=dish["queries"],
             dish=canonical_name,
-            top_n_serpapi=dish["top_n_serpapi"],
-            top_n_final=dish["top_n_final"],
+            top_n_serpapi=top_serp,
+            top_n_final=top_final,
         )
     except Exception as e:
         print(f"[REFRESH-DISH] build_batch failed: {e}")
@@ -3230,6 +3240,42 @@ def get_job_endpoint(job_id: int):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@app.post("/jobs/{job_id}/spawn")
+def spawn_job_endpoint(job_id: int, request: Request):
+    """Run an already-enqueued job OUT-OF-PROCESS: Popen `python -m jobs exec
+    --job-id N` and return immediately. The child owns its own stdout (the
+    per-job log file) and never touches uvicorn's event loop, so the UI stays
+    responsive and a server restart can't kill the job (recipes.db is WAL, so
+    the child + server write concurrently). The browser tails the same log via
+    GET /jobs/{id}/stream — the SSE reads the DB + the log file, which is fully
+    cross-process. This is the phase-4 UI path (docs/jobs-as-executables.md)."""
+    _require_perm(request, "refresh_dishes")
+    with sqlite3.connect(DB_PATH) as conn:
+        job = jobs_lib.get_job(conn, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] not in ("queued", "running"):
+        raise HTTPException(status_code=409,
+                            detail=f"Job #{job_id} is {job['status']}, not runnable")
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),  # no console window (Windows)
+        )
+        print(f"[JOBSPAWN] out-of-process: python -m jobs exec --job-id {job_id}")
+    except Exception as e:
+        print(f"[JOBSPAWN] failed to spawn runner for #{job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
+    return {"job_id": job_id, "spawned": True, "stream_url": f"/jobs/{job_id}/stream"}
 
 
 @app.get("/jobs/{job_id}/stream")

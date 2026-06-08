@@ -579,6 +579,18 @@
     });
   }
 
+  // Stream ONE already-spawned job into the jobs overlay (used by the dishes
+  // Refresh button, which now spawns the job out-of-process and just watches it).
+  function streamJob(jobId) {
+    _ensureJobsOverlay();
+    _setJobsStatus('Running job #' + jobId + '…');
+    return _watchJob(jobId, 1, 1).then((status) => {
+      _setJobsStatus('Job #' + jobId + ' ' + status + '.');
+      _refreshJobBadges();
+      return status;
+    });
+  }
+
   let _draining = false;
   function runQueuedJobs() {
     if (_draining) { _ensureJobsOverlay(); return; }
@@ -852,6 +864,7 @@
     renderExcBadge,
     gradeToTier,
     runQueuedJobs,
+    streamJob,
     queuedJobCount,
     NAV_ITEMS,
     BRAND,
