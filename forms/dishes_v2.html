@@ -174,22 +174,22 @@
       const sEff = f.sigma_effective, floored = (f.exc_sigma_floor != null && Number(sEff) > Number(f.sigma_observed));
       return `
         <section class="ed-block">
-          <h3 class="ed-block-label">OU fit</h3>
-          <div class="ed-kv">
-            <div class="k">Model type</div><div class="v">${cap(f.model)} regression</div>
-            <div class="k">Regression</div><div class="v">page authority (PA) ~ domain authority (DA)</div>
-            <div class="k">Fitted coefficients</div><div class="v">${coeffVars(f)}</div>
-            <div class="k">Source-site records</div><div class="v">${f.n ?? '—'}</div>
-            <div class="k">Coefficient of determination</div><div class="v">R² = ${num(f.r2_chosen,2)} <span class="sub">· ${q}</span></div>
-            <div class="k">Residual scatter (σ)</div><div class="v">${num(f.sigma_observed,2)}</div>
-            <div class="k">Effective σ</div><div class="v">${num(sEff,2)} <span class="sub">· floor ${num(f.exc_sigma_floor,1)}${floored ? ' (applied)' : ''}</span></div>
-            <div class="k">Candidate fits</div><div class="v">${candStr}</div>
-            <div class="k">Grade scale</div><div class="v">base ${f.exc_base ?? '—'} <span class="sub">· σ×${f.exc_sigma_mult ?? '—'}</span></div>
-          </div>
-        </section>
-        <section class="ed-block">
-          <h3 class="ed-block-label">Predicted authority model</h3>
-          <pre class="ed-formula">${fmtCoeffs(f)}</pre>
+          <details class="ed-accordion">
+            <summary>OU fit <span class="sub">· R² ${num(f.r2_chosen,2)} · ${q}</span></summary>
+            <div class="ed-kv" style="margin-top:12px">
+              <div class="k">Model type</div><div class="v">${cap(f.model)} regression</div>
+              <div class="k">Regression</div><div class="v">page authority (PA) ~ domain authority (DA)</div>
+              <div class="k">Fitted coefficients</div><div class="v">${coeffVars(f)}</div>
+              <div class="k">Source-site records</div><div class="v">${f.n ?? '—'}</div>
+              <div class="k">Coefficient of determination</div><div class="v">R² = ${num(f.r2_chosen,2)} <span class="sub">· ${q}</span></div>
+              <div class="k">Residual scatter (σ)</div><div class="v">${num(f.sigma_observed,2)}</div>
+              <div class="k">Effective σ</div><div class="v">${num(sEff,2)} <span class="sub">· floor ${num(f.exc_sigma_floor,1)}${floored ? ' (applied)' : ''}</span></div>
+              <div class="k">Candidate fits</div><div class="v">${candStr}</div>
+              <div class="k">Grade scale</div><div class="v">base ${f.exc_base ?? '—'} <span class="sub">· σ×${f.exc_sigma_mult ?? '—'}</span></div>
+            </div>
+            <h3 class="ed-block-label" style="margin-top:18px">Predicted authority model</h3>
+            <pre class="ed-formula">${fmtCoeffs(f)}</pre>
+          </details>
         </section>`;
     }
 
@@ -197,12 +197,17 @@
       // Next scheduled auto-refresh (derived server-side as
       // last_refreshed + refresh_ttl_days). Manual-only dishes (no TTL) have
       // next_run_at = null and never auto-fire; the scheduler runs the due ones.
+      // fmtDate is a relative "X ago" formatter — wrong for a FUTURE date (it
+      // renders "-77964 min ago"); use an absolute short date instead.
+      const fmtDay = (iso) => { try {
+        return new Date(iso).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+      } catch(e){ return iso || '—'; } };
       const nextRunLabel = d.refresh_ttl_days == null
         ? 'manual — no auto-refresh'
-        : (d.is_due ? 'due now' : `next run ${fmtDate(d.next_run_at)}`);
+        : (d.is_due ? 'due now' : `next run ${fmtDay(d.next_run_at)}`);
       const nextRunValue = d.refresh_ttl_days == null
         ? 'manual (no schedule)'
-        : (d.is_due ? 'due now' : fmtDate(d.next_run_at));
+        : (d.is_due ? 'due now' : fmtDay(d.next_run_at));
       const ttlLabel = d.refresh_ttl_days == null ? 'manual' : (d.refresh_ttl_days + 'd');
       const statusCls = isError(d) ? 'warn' : (neverRun(d) ? '' : 'good');
       const queriesText = (d.queries || []).join('\n');

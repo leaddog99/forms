@@ -887,9 +887,29 @@ print("[FILE] Setting up static files...")
 # scopes the mount to web assets only. URL paths (`/forms/...`) are
 # unchanged; the bat file, bookmarklet, and every <link>/<script>
 # reference continue to work as-is.
+class _NoCacheHTMLStatic(StaticFiles):
+    """StaticFiles that makes browsers REVALIDATE .html on every load.
+
+    HTML pages carry no `?v=` cache-buster (unlike our JS/CSS, which do), so
+    without this a soft reload serves a stale page — the recurring "I don't see
+    my change" trap (flagged repeatedly in bcc-state-code.md). `no-cache` does
+    NOT mean "don't cache"; it means "always revalidate", so ETag/Last-Modified
+    still yield cheap 304s when the page is unchanged — only genuinely-changed
+    pages re-download. Versioned assets keep StaticFiles' default long cache.
+    Also signals Cloudflare not to edge-cache the HTML."""
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        try:
+            if isinstance(path, str) and path.endswith(".html"):
+                resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        except Exception:
+            pass
+        return resp
+
+
 try:
     forms_path = os.path.join(os.path.dirname(__file__), "forms")
-    app.mount("/forms", StaticFiles(directory=forms_path), name="forms")
+    app.mount("/forms", _NoCacheHTMLStatic(directory=forms_path), name="forms")
     print(f"[OK] Static files mounted: {forms_path}")
 except Exception as e:
     print(f"[WARN] Static files mount failed: {e}")

@@ -1608,6 +1608,7 @@
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
   <script src="/forms/library-shell.js?v=20260608b"></script>
+  <script src="/forms/image-well.js?v=20260608b"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -1790,26 +1791,15 @@
             </div>
           </div>
           <div class="header-right">
-            <div class="hero-section" id="heroSection">
-              <div class="placeholder" id="heroPlaceholder">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/>
-                  <circle cx="8.5" cy="8.5" r="1.5"/>
-                  <path d="M21 15l-5-5L5 21"/>
-                </svg>
-                <span>Add image</span>
-              </div>
-              <img id="heroImage" style="display:none" />
-              <input type="file" id="imageUpload" accept="image/*" />
-            </div>
-            <div class="form-group" style="margin-top:10px;margin-bottom:0; display:flex; gap:8px; align-items:center;">
-              <input type="url" id="heroImageUrl" placeholder="Image URL…" style="flex:1;" />
-              <button type="button" id="generateImageBtn" class="secondary"
-                      title="Generate a dish image with gpt-image-1. Saved recipes only."
-                      style="white-space:nowrap; padding:8px 14px;">
-                Generate
-              </button>
-            </div>
+            <!-- Unified hero image control (forms/image-well.js): one well that
+                 takes drop / paste / click→dialog / URL / Generate and "figures
+                 it out" (bytes→/images, URL→/images/fetch coopt w/ hotlink
+                 fallback). Replaces the old hero box + separate URL field +
+                 Generate button. #heroImageUrl is kept as a HIDDEN value bridge
+                 so the existing save/load/extract logic (which reads/writes
+                 heroImageUrl.value) is unchanged; the well drives it. -->
+            <div id="heroWell"></div>
+            <input type="url" id="heroImageUrl" style="display:none" aria-hidden="true" tabindex="-1" />
             <!-- Optional user override appended to the auto-built prompt
                  before generation. Use to correct details the auto-prompt
                  misses (visual specifics, ingredient form, styling tweaks).
@@ -3707,6 +3697,13 @@
           siteName: document.getElementById("siteName").value,
           originalUrl: document.getElementById("originalUrl").value,
           affiliateUrl: document.getElementById("affiliateUrl").value,
+          // Keep previewImage in sync with the hero the user sees. The load
+          // path prefers _source.previewImage over image[0]; spreading the old
+          // _loadedSource carried a STALE previewImage that masked a newly
+          // pasted/changed image URL on reload (it saved into image[0] but the
+          // old previewImage won on load → "the image didn't save"). Mirror the
+          // current hero URL so what-you-see-is-what's-saved. Empty hero clears it.
+          previewImage: (heroImageUrl.value || '').trim(),
           type: _loadedSource.type || "cookbook"
         },
         author: { "@type": "Person", name: document.getElementById("author").value },
@@ -4190,12 +4187,9 @@
       try { window.history.replaceState(null, '', window.location.pathname.startsWith('/r/')
             ? '/forms/recipe_form_styled.html' : window.location.pathname); }
       catch (e) { /* ignore */ }
-      heroImage.style.display = 'none';
-      heroPlaceholder.style.display = 'flex';
+      if (window.heroWell) heroWell.clear();   // empties the unified image well
       const _videoBlock = document.getElementById('videoBlock');
       if (_videoBlock) _videoBlock.style.display = 'none';
-      heroSectionEl.classList.remove('has-image');
-      heroSectionEl.style.removeProperty('--hero-aspect');
       // Image-gen tweak textarea — no `name` attribute so form.reset()
       // skips it in some browsers; clear explicitly.
       const _extraPrompt = document.getElementById('imageGenExtraPrompt');
@@ -4657,216 +4651,50 @@
       }
     });
 
-    // Hero image upload
-    const imageUpload = document.getElementById('imageUpload');
-    const heroImage = document.getElementById('heroImage');
-    const heroPlaceholder = document.getElementById('heroPlaceholder');
+    // Hero image control — the reusable ImageWell (forms/image-well.js). One
+    // well handles drop / paste / click→dialog / URL / Generate and "figures it
+    // out" (bytes→/images, URL→/images/fetch coopt w/ hotlink fallback).
+    // #heroImageUrl is a HIDDEN value bridge: the well drives it via onChange,
+    // and the existing save/load/extract code reads/writes heroImageUrl.value
+    // unchanged. applyHeroImageFromUrl() stays as a thin shim those callers use.
     const heroImageUrl = document.getElementById('heroImageUrl');
-
-    // Single source of truth for displaying the hero. Show the image when the
-    // url field is non-empty; placeholder otherwise.
-    const heroSectionEl = document.getElementById('heroSection');
-    function applyHeroImageFromUrl() {
-      const url = (heroImageUrl.value || '').trim();
-      // blob: URLs are origin-scoped (a blob: from gemini.google.com
-      // can only be loaded by gemini.google.com), and data: URLs would
-      // be megabytes in the saved recipe if persisted. Refuse both with
-      // a useful message — user needs to download the image first and
-      // drop the file, or paste the public https:// URL of the image.
-      if (url.startsWith('blob:') || url.startsWith('data:')) {
-        heroImageUrl.value = '';
-        heroImage.removeAttribute('src');
-        heroImage.style.display = 'none';
-        heroPlaceholder.style.display = 'flex';
-        heroSectionEl.classList.remove('has-image');
-        heroSectionEl.style.removeProperty('--hero-aspect');
-        const kind = url.startsWith('blob:') ? "browser-internal (blob:)" : "embedded (data:)";
-        showFeedback(
-          `That's a ${kind} URL — it won't work outside the page that created it. ` +
-          `Right-click the image → "Save image as…", then drag the file here (or use the Add image button).`,
-          'error'
-        );
-        return;
-      }
-      if (url) {
-        heroImage.src = url;
-        heroImage.style.display = 'block';
-        heroPlaceholder.style.display = 'none';
-      } else {
-        heroImage.removeAttribute('src');
-        heroImage.style.display = 'none';
-        heroPlaceholder.style.display = 'flex';
-        heroSectionEl.classList.remove('has-image');
-        heroSectionEl.style.removeProperty('--hero-aspect');
-      }
-    }
-    heroImageUrl.addEventListener('input', applyHeroImageFromUrl);
-
-    // Generate dish image (DALL-E 3 via /recipes/<id>/generate-image).
-    // Requires a saved recipe — the endpoint looks the recipe up by
-    // recipe_id and uses its name for the prompt. Result URL goes into
-    // the heroImageUrl input, which auto-paints the hero via the
-    // existing applyHeroImageFromUrl path. Doesn't auto-save; user
-    // hits Save when they're happy with the result.
-    const generateImageBtn = document.getElementById('generateImageBtn');
-    if (generateImageBtn) {
-      generateImageBtn.addEventListener('click', async () => {
+    const heroWell = ImageWell.mount(document.getElementById('heroWell'), {
+      feedback: (msg, kind) => showFeedback(msg, kind),
+      onChange: (url) => { heroImageUrl.value = url || ''; },
+      // Generate dish image — needs a saved recipe (the endpoint looks it up by
+      // recipe_id + name) and reads the optional tweak-prompt textarea. Returns
+      // the new absolute, cache-busted URL for the well to display, or null.
+      generate: async () => {
         const recipeId = (document.getElementById('recipe_id').value || '').trim();
         const name = (document.getElementById('name').value || '').trim();
-        if (!recipeId) {
-          showFeedback('Save the recipe first — the generator needs a recipe_id to write back to.', 'error');
-          return;
-        }
-        if (!name) {
-          showFeedback('Add a recipe name first (the name is the prompt).', 'error');
-          return;
-        }
-        // Optional user-tweak text appended to the auto-built prompt
-        // on the server side. Empty string when the textarea is blank.
+        if (!recipeId) { showFeedback('Save the recipe first — the generator needs a recipe_id to write back to.', 'error'); return null; }
+        if (!name) { showFeedback('Add a recipe name first (the name is the prompt).', 'error'); return null; }
         const extraEl = document.getElementById('imageGenExtraPrompt');
         const extraPrompt = ((extraEl && extraEl.value) || '').trim();
-
-        generateImageBtn.disabled = true;
-        const originalLabel = generateImageBtn.textContent;
-        generateImageBtn.textContent = 'Generating…';
         showFeedback('Generating dish image (gpt-image-1, ~30-50s for hd)…', 'info');
-        try {
-          const res = await fetch(`${API}/recipes/${encodeURIComponent(recipeId)}/generate-image`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ extra_prompt: extraPrompt }),
-          });
-          const result = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            showFeedback(`Generate failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result))}`, 'error');
-            return;
-          }
-          // Absolute URL + cache-bust query so (a) the field passes its
-          // type="url" validation when the user clicks Save, (b) the
-          // browser fetches the freshly-written file even if a prior
-          // generation cached the same path, and (c) the saved
-          // recipe.image[0] is a portable URL not a relative path.
-          const url = `${window.location.origin}${result.url}?t=${Date.now()}`;
-          heroImageUrl.value = url;
-          applyHeroImageFromUrl();
-          showFeedback(`Image generated (${Math.round((result.elapsed_ms || 0) / 1000)}s). Save to persist on this recipe.`, 'success');
-        } catch (err) {
-          showFeedback(`Generate failed: ${err.message || err}`, 'error');
-        } finally {
-          generateImageBtn.disabled = false;
-          generateImageBtn.textContent = originalLabel;
-        }
-      });
-    }
-    // Once the natural size is known (URL load or file upload), let the box
-    // adopt the image's aspect ratio so landscape/portrait/square all fit.
-    heroImage.addEventListener('load', () => {
-      const w = heroImage.naturalWidth;
-      const h = heroImage.naturalHeight;
-      if (w && h) {
-        heroSectionEl.style.setProperty('--hero-aspect', `${w} / ${h}`);
-        heroSectionEl.classList.add('has-image');
-      }
-    });
-    heroImage.addEventListener('error', () => {
-      heroSectionEl.classList.remove('has-image');
-      heroSectionEl.style.removeProperty('--hero-aspect');
-    });
-
-    // Upload a hero image (drag/drop/paste/picker). Two-phase UX:
-    // immediate optimistic display via FileReader's data URL, then
-    // background POST /images to persist; on success we swap the
-    // heroImageUrl input to the absolute URL so save() picks it up.
-    // On failure the optimistic preview stays visible but the input
-    // is left blank — user knows save won't persist this image.
-    async function uploadHeroImage(file) {
-      if (!file) return;
-      if (!file.type || !file.type.startsWith('image/')) {
-        showFeedback(`Not an image (${file.type || 'unknown type'})`, 'error');
-        return;
-      }
-      // Optimistic preview while the upload is in flight.
-      try {
-        const dataUrl = await new Promise((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result);
-          r.onerror = () => rej(r.error);
-          r.readAsDataURL(file);
+        const res = await fetch(`${API}/recipes/${encodeURIComponent(recipeId)}/generate-image`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ extra_prompt: extraPrompt }),
         });
-        heroImage.src = dataUrl;
-        heroImage.style.display = 'block';
-        heroPlaceholder.style.display = 'none';
-      } catch (e) { /* preview failed — keep going, the upload may still succeed */ }
-
-      showFeedback('Uploading image…', 'info');
-      try {
-        const fd = new FormData();
-        fd.append('image', file, file.name || 'upload');
-        const res = await fetch(`${API}/images`, { method: 'POST', body: fd });
         const result = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          showFeedback(`Upload failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result))}`, 'error');
-          return;
-        }
-        // Absolute URL + cache-bust so the field's type="url" validation
-        // passes and the saved recipe.image[0] is portable across hosts.
-        const absUrl = `${window.location.origin}${result.url}?t=${Date.now()}`;
-        heroImageUrl.value = absUrl;
-        applyHeroImageFromUrl();
-        showFeedback('Image uploaded. Save to persist on this recipe.', 'success');
-      } catch (err) {
-        showFeedback(`Upload failed: ${err.message || err}`, 'error');
-      }
+        if (!res.ok) { showFeedback(`Generate failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result))}`, 'error'); return null; }
+        showFeedback(`Image generated (${Math.round((result.elapsed_ms || 0) / 1000)}s). Save to persist on this recipe.`, 'success');
+        return `${window.location.origin}${result.url}?t=${Date.now()}`;
+      },
+    });
+    window.heroWell = heroWell;
+
+    // Compatibility shim for the legacy call sites (load, extract result,
+    // staged hero, clear) that do `heroImageUrl.value = X; applyHeroImageFromUrl()`.
+    // Repaint the well from the bridge input; silent so it doesn't echo back.
+    function applyHeroImageFromUrl() {
+      heroWell.setUrl(heroImageUrl.value || '', { silent: true });
     }
 
-    imageUpload.onchange = (e) => {
-      const file = e.target.files[0];
-      if (file) uploadHeroImage(file);
-    };
-
-    // Drag-and-drop on the hero image well. Same pattern as the recipe
-    // drop zone — dragover toggles a visual state, drop posts the file
-    // to /images. Scoped to the hero box so dropping elsewhere still
-    // routes to the recipe-extraction drop zone.
-    if (heroSectionEl) {
-      heroSectionEl.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        heroSectionEl.classList.add('drag-over');
-      });
-      heroSectionEl.addEventListener('dragleave', (e) => {
-        // Only un-highlight when leaving the section itself, not when
-        // moving over a child element (relatedTarget inside section).
-        if (e.relatedTarget && heroSectionEl.contains(e.relatedTarget)) return;
-        heroSectionEl.classList.remove('drag-over');
-      });
-      heroSectionEl.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();   // keep the recipe drop zone from also handling
-        heroSectionEl.classList.remove('drag-over');
-        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (file) uploadHeroImage(file);
-      });
-
-      // Paste a clipboard image directly into the hero area. The
-      // document-level paste handler (which routes to recipe
-      // extraction) is gated by e._handled — flagging it here means
-      // the global handler skips this event.
-      heroSectionEl.addEventListener('paste', (e) => {
-        const items = (e.clipboardData && e.clipboardData.items) || [];
-        for (const item of items) {
-          if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
-            const file = item.getAsFile();
-            if (file) {
-              e.preventDefault();
-              e.stopPropagation();
-              e._handled = true;
-              uploadHeroImage(file);
-              return;
-            }
-          }
-        }
-      });
-    }
+    // (Hero upload/drop/paste/URL/generate now all live inside the ImageWell
+    // control above — forms/image-well.js. The well posts files to /images,
+    // resolves URLs via /images/fetch, owns the aspect-ratio adoption + the
+    // blob:/data: guard, and runs Generate via the `generate` hook.)
 
     // Auto-grow textareas, capped at the element's CSS max-height. When
     // content exceeds the cap, height stays pinned and we switch to a

@@ -241,3 +241,38 @@ First reference dataset to land in `enrich.db`, establishing the pattern:
   KA name resolution ("strawberries" → "Strawberries (fresh, sliced)"),
   calc-by-calc conversion trace, parenthetical-size parsing ("1 (15-ounce) can"),
   and a one-time curator-assisted AI grams-per-cup estimate. 40 tests pass.
+
+### DL-16 (2026-06-08) — Per-entity hero-image policy (the image strategy falls out of the split).
+How a third-party recipe's hero image is used is **decided by which entity is using
+it** — this is a direct consequence of [[discover-vs-possess]], not a separate call.
+
+- **TBOTB (public Corpus / search-review site): the source's REAL hero, reduced +
+  attributed + linked.** This is the classic search/review **thumbnail** posture —
+  reduced-size thumbnails used to *index and point back* have precedent as
+  transformative/fair use (Kelly v. Arriba Soft; Perfect 10 v. Google). The
+  load-bearing elements are exactly what the spec already mandates: reduced form
+  (the og:image coopt → ~800px local thumbnail), **attribution**, **mandatory
+  source link** (`corpus_public_view()` refuses to emit without one), and our own
+  **transformative work-product** (scores/critique/envelope, never a substitute
+  recipe). So the link + critique aren't just UX — they're what *earns* the
+  fair-use posture. Show the real dish, smaller, pointing at them.
+- **BCC (private Local tool): the source hero, full use — it's the user's own
+  on-device copy.** Lowest concern of the three: personal possession, no public
+  display/distribution. Consistent with the one-directional split (content never
+  flows user→corpus).
+- **Generated imagery is for OUR OWN voice only** — generic backdrops, or a BCC
+  user generating one for *their* recipe. NEVER fabricate a photo to stand in for
+  a specific third-party recipe on TBOTB: it misrepresents (not their dish, may not
+  match) and actively misleads on a review surface.
+- **Rejected: the "wreck it to dodge IP" path** — saving a deliberately
+  blurred/low-opacity/quality-crushed screenshot as a decorative background. The
+  intuition "make it useless → therefore OK" is **not a reliable shield**:
+  copyright covers derivative works + public display, and a *recognizable* degraded
+  copy is still a copy; fair use is a holistic four-factor test where commercial use
+  cuts against you, and "not saleable quality" isn't the test — **recognizability**
+  is. The attributed-thumbnail theory is both stronger and more honest, and the
+  coopt pipeline already produces the right artifact. (Not legal advice; a short IP
+  review is still warranted before this is load-bearing at public scale.)
+- The `degrade` transform preset (blur/downscale/quality-crush/flatten-opacity) may
+  still exist as a general capability, but is NOT the strategy for third-party hero
+  images. See [[image-pipeline]] for the transform-spec design.
