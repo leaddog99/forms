@@ -408,8 +408,14 @@
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
         dishes[d.name] = data;
         renderList();
-        btn.textContent = 'Saved ✓'; btn.classList.add('done'); hint.textContent = 'Saved';
-        setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('done'); }, 1900);  // stays disabled until next edit
+        // Re-render the detail too, so the derived pills (TTL, next-run, status)
+        // reflect the saved values — renderList alone left them stale. renderDetail
+        // re-wires the buttons and disables Save (clean post-save state).
+        renderDetail(data);
+        const sb = $('#saveBtn'), sh = $('#hint');
+        if (sb){ sb.textContent = 'Saved ✓'; sb.classList.add('done'); }
+        if (sh) sh.textContent = 'Saved';
+        setTimeout(() => { const b = $('#saveBtn'); if (b){ b.textContent = 'Save'; b.classList.remove('done'); } }, 1900);  // stays disabled until next edit
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Save';
         hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
