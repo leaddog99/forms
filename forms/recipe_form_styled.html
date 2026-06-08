@@ -1608,7 +1608,7 @@
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
   <script src="/forms/library-shell.js?v=20260608b"></script>
-  <script src="/forms/image-well.js?v=20260608h"></script>
+  <script src="/forms/image-well.js?v=20260608m"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -1800,18 +1800,16 @@
                  heroImageUrl.value) is unchanged; the well drives it. -->
             <div id="heroWell"></div>
             <input type="url" id="heroImageUrl" style="display:none" aria-hidden="true" tabindex="-1" />
-            <!-- Optional user override appended to the auto-built prompt
-                 before generation. Use to correct details the auto-prompt
-                 misses (visual specifics, ingredient form, styling tweaks).
-                 Collapsed by default so it doesn't crowd the form. -->
-            <details class="form-group" id="imageGenExtraDetails" style="margin-top:8px; margin-bottom:0;">
-              <summary style="font-size: 0.82em; color: var(--muted); cursor: pointer; user-select: none;">
-                Tweak generation prompt (optional)
-              </summary>
-              <textarea id="imageGenExtraPrompt"
-                        placeholder="e.g., carrots should be shredded not chunked; thin glaze brushed on, not poured; served on a blue ceramic plate."
-                        style="margin-top: 6px; min-height: 70px; font-size: 0.9em; font-family: inherit;"></textarea>
-            </details>
+            <!-- The "Tweak generation prompt" control now lives INSIDE the
+                 ImageWell's Set-image dialog, next to Generate (passed via the
+                 generatePanel opt below) — off the main form, where it belongs. -->
+            <template id="imageGenPanelTemplate">
+              <details style="margin-bottom:0;">
+                <summary>Tweak generation prompt (optional)</summary>
+                <textarea id="imageGenExtraPrompt" maxlength="600" style="margin-top:6px; min-height:64px;"
+                          placeholder="e.g., carrots shredded not chunked; thin glaze brushed on, not poured; served on a blue ceramic plate."></textarea>
+              </details>
+            </template>
             <!-- Page screenshot of the source URL (above-fold view).
                  Captured at extract via Playwright + stored locally /
                  S3 via image_store. Read-only display — clicking opens
@@ -2513,8 +2511,9 @@
       const description = (document.getElementById('description').value || '').trim();
       const recipeUuid = (document.getElementById('recipe_id').value || '').trim();
       const recipeSeqId = (document.getElementById('recipe_seq_id').value || '').trim();
+      const heroUrl = (document.getElementById('heroImageUrl').value || '').trim();
 
-      const hasContent = !!(name || description || recipeUuid);
+      const hasContent = !!(name || description || recipeUuid || heroUrl);
       const isSavedToDb = !!recipeSeqId;  // seq_id only exists after a successful save
 
       const saveBtn = document.getElementById('saveBtn');
@@ -4666,7 +4665,18 @@
     let _heroImageMeta = null;   // imageMeta from the last coopt/upload (Phase 1)
     const heroWell = ImageWell.mount(document.getElementById('heroWell'), {
       feedback: (msg, kind) => showFeedback(msg, kind),
-      onChange: (url, meta) => { heroImageUrl.value = url || ''; if (meta !== undefined) _heroImageMeta = url ? meta : null; },
+      onChange: (url, meta) => {
+        heroImageUrl.value = url || '';
+        if (meta !== undefined) _heroImageMeta = url ? meta : null;
+        // A programmatic .value set doesn't fire 'input', so the Save/Clear
+        // enable logic wouldn't see the image — re-evaluate it explicitly so
+        // adding an image alone enables Save.
+        try { updateButtonStates(); } catch (e) {}
+      },
+      // The "Tweak generation prompt" textarea is rendered inside the Set-image
+      // dialog (next to Generate), not on the main form. The generate hook below
+      // reads #imageGenExtraPrompt from the open dialog.
+      generatePanel: document.getElementById('imageGenPanelTemplate').innerHTML,
       // Generate dish image — needs a saved recipe (the endpoint looks it up by
       // recipe_id + name) and reads the optional tweak-prompt textarea. Returns
       // the new absolute, cache-busted URL for the well to display, or null.

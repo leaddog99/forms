@@ -72,6 +72,17 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Higher = sharper + bigger. 85 ≈ cookbook-grade.",
     },
     {
+        "key": "image_hero_max_px",
+        "value": 1600,
+        "type": "int",
+        "category": "Images",
+        "label": "Hero image max edge (px)",
+        "description": "A user's hero image is resized PRESERVING its whole "
+                       "frame + orientation (no crop), scaled down so the longest "
+                       "edge is at most this many pixels. Small images are never "
+                       "upscaled. (The corpish-thumbnail crop below is separate.)",
+    },
+    {
         "key": "image_landscape_target",
         "value": "1500x1000",
         "type": "string",

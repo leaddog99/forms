@@ -40,13 +40,19 @@
 .iw-img{ width:100%; height:100%; object-fit:cover; display:none; pointer-events:none; } /* let right-click reach the editable frame for Paste */
 .iw-frame.iw-has-image .iw-img{ display:block; }
 .iw-ph{ display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--iw-muted,#6b5b4f);
-  padding:18px; text-align:center; pointer-events:none; }
+  padding:18px; text-align:center; }
 .iw-frame.iw-has-image .iw-ph{ display:none; }
-.iw-ph svg{ width:34px; height:34px; opacity:.55; }
+/* The placeholder TEXT is a real editable caret target (no contenteditable=false,
+   not pointer-events:none) so right-clicking the empty well lands the caret in
+   text and Chrome ENABLES "Paste" — same as the dialog drop-zone. Only the SVG
+   icon ignores pointer events. */
+.iw-ph svg{ width:34px; height:34px; opacity:.55; pointer-events:none; }
 .iw-ph b{ font-size:.95rem; font-weight:600; color:var(--iw-ink,#1f1611); }
 .iw-ph small{ font-size:.78rem; }
 .iw-overlay{ position:absolute; inset:0; display:flex; gap:8px; align-items:flex-end; justify-content:flex-end;
-  padding:10px; opacity:0; transition:opacity .15s; background:linear-gradient(transparent 55%, rgba(0,0,0,.35)); }
+  padding:10px; opacity:0; transition:opacity .15s; background:linear-gradient(transparent 55%, rgba(0,0,0,.35));
+  pointer-events:none; } /* the overlay covers the frame at inset:0 — must NOT intercept right-click/paste; only the buttons do */
+.iw-overlay .iw-btn{ pointer-events:auto; }
 .iw-frame:hover .iw-overlay, .iw-frame:focus-within .iw-overlay{ opacity:1; }
 .iw-frame:not(.iw-has-image) .iw-overlay{ background:none; }
 .iw-btn{ font:inherit; font-size:.82rem; font-weight:600; padding:7px 13px; border-radius:9px; cursor:pointer;
@@ -71,6 +77,9 @@
 .iw-urlrow{ display:flex; gap:8px; }
 .iw-urlrow input{ flex:1; padding:10px 12px; border:1px solid var(--iw-border,#d8cfc0); border-radius:9px;
   font:inherit; font-size:.9rem; }
+.iw-genpanel{ margin-top:14px; padding-top:14px; border-top:1px solid var(--iw-border,#e6dccf); }
+.iw-genpanel textarea{ width:100%; font:inherit; font-size:.88rem; padding:9px 11px; border:1px solid var(--iw-border,#d8cfc0); border-radius:9px; }
+.iw-genpanel summary{ cursor:pointer; font-size:.82rem; color:var(--iw-muted,#6b5b4f); user-select:none; }
 .iw-actions{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:18px; }
 .iw-actions .iw-right{ display:flex; gap:8px; }
 .iw-dialog .iw-pri{ background:var(--iw-accent,#b8602a); color:#fff; border-color:var(--iw-accent,#b8602a); }
@@ -123,22 +132,27 @@
     const _norm = (r) => (typeof r === 'string' ? { url: r, meta: null } : (r || { url: '', meta: null }));
 
     // ---- DOM ------------------------------------------------------------
-    // The frame is contenteditable — the ONE trick that makes right-click
-    // "Paste" deliver image BYTES (a paste event with the image in
-    // clipboardData) AND shows the Paste context-menu item; a plain div gets
-    // neither. Children are contenteditable=false so they stay interactive,
-    // not editable, and the beforeinput/keydown guards below stop any actual
-    // text editing or caret mess. (Same pattern as the recipe drop zone.)
+    // The frame is contenteditable — the trick that makes right-click "Paste"
+    // deliver image BYTES + surface the Paste menu item. CRITICAL: NO child may
+    // be contenteditable=false — a non-editable island (especially the overlay,
+    // which covers the whole frame at inset:0) makes Chrome/Edge see a
+    // non-editable region at the click point and GREYS OUT Paste. The recipe
+    // drop-zone works precisely because all its children are plain editable
+    // content. The beforeinput/keydown guards below block actual text edits.
     root.innerHTML =
-      `<div class="iw-frame" tabindex="0" role="button" contenteditable="true" aria-label="Set image — paste, drop, or click">
-         <img class="iw-img" contenteditable="false" alt="">
-         <div class="iw-ph" contenteditable="false">${ICON}<b>Add image</b><small>Right-click → Paste, Ctrl+V, drop, or click</small></div>
-         <div class="iw-overlay" contenteditable="false">
+      `<div class="iw-frame" tabindex="0" contenteditable="true" aria-label="Set image — paste, drop, or click">
+         <img class="iw-img" alt="">
+         <div class="iw-ph">${ICON}<b>Add image</b><small>Right-click → Paste, Ctrl+V, drop, or click</small></div>
+         <div class="iw-overlay">
            <button type="button" class="iw-btn iw-change">Change</button>
          </div>
        </div>`;
     const frame = root.querySelector('.iw-frame');
     const img = root.querySelector('.iw-img');
+    // A zero-width editable text node gives the contenteditable frame a caret
+    // position — without it Chrome won't offer "Paste" in the right-click menu
+    // on an otherwise-empty editable div.
+    frame.insertBefore(document.createTextNode('​'), frame.firstChild);
     const fileInput = document.createElement('input');
     fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.style.display = 'none';
     root.appendChild(fileInput);
@@ -209,6 +223,44 @@
       return false;
     }
 
+    // Ctrl+V doesn't require focusing the well: a capture-phase document paste
+    // handler scoped to "mouse is over the well" pastes the image and stops the
+    // event before the form's recipe-extraction paste handler sees it. So the
+    // user can copy an image, hover the well, and Ctrl+V — no click, no dialog.
+    let _hovering = false;
+    frame.addEventListener('mouseenter', () => { _hovering = true; });
+    frame.addEventListener('mouseleave', () => { _hovering = false; });
+    document.addEventListener('paste', (e) => {
+      if (!_hovering) return;
+      const cd = e.clipboardData; if (!cd) return;
+      for (const it of (cd.items || [])) {
+        if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+          const f = it.getAsFile();
+          if (f) { e.preventDefault(); e.stopImmediatePropagation(); e._handled = true; handleFile(f); return; }
+        }
+      }
+      const text = cd.getData && cd.getData('text');
+      if (text && /^https?:\/\//i.test(text.trim())) {
+        e.preventDefault(); e.stopImmediatePropagation(); e._handled = true; handleUrlString(text);
+      }
+    }, true);  // capture phase = fire before the bubble-phase recipe paste handler
+
+    // Right-click: focus the frame + drop a caret into the editable anchor
+    // BEFORE the context menu opens, so Chrome ENABLES the "Paste" item (it
+    // greys Paste out when there's no editable caret in the target). mousedown
+    // (button 2) fires before contextmenu.
+    frame.addEventListener('mousedown', (e) => {
+      if (e.button !== 2) return;
+      frame.focus();
+      try {
+        const sel = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(frame);
+        range.collapse(true);          // caret at the start (the ZWSP anchor)
+        sel.removeAllRanges(); sel.addRange(range);
+      } catch (_) {}
+    });
+
     // frame: drag/drop/paste/click
     frame.addEventListener('dragover', (e) => { e.preventDefault(); frame.classList.add('iw-drag'); });
     frame.addEventListener('dragleave', (e) => {
@@ -260,6 +312,7 @@
              <input type="url" placeholder="https://…/photo.jpg" class="iw-urlin">
              <button type="button" class="iw-btn iw-pri iw-seturl">Set</button>
            </div>
+           ${opts.generate && opts.generatePanel ? `<div class="iw-genpanel">${opts.generatePanel}</div>` : ''}
            <div class="iw-actions">
              <span>${opts.generate ? '<button type="button" class="iw-btn iw-dgen">✨ Generate</button>' : ''}</span>
              <div class="iw-right">

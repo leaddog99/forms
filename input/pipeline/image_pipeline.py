@@ -164,10 +164,35 @@ def _to_rgb(img: "Image.Image") -> "Image.Image":
 
 def _fit_and_encode(img, quality, land, port):
     """Center-crop+scale to the landscape/portrait bucket, encode progressive
-    JPEG (EXIF stripped). Returns (bytes, out_w, out_h)."""
+    JPEG (EXIF stripped). Returns (bytes, out_w, out_h). Used for the CORPUS
+    og:image coopt, where a uniform two-bucket crop gives the dish/recipe pages
+    a deliberate visual rhythm. NOT for a user's hero image — see _contain_and_encode."""
     aspect = img.width / img.height if img.height else 1.0
     target = land if aspect >= LANDSCAPE_ASPECT_THRESHOLD else port
     img = ImageOps.fit(img, target, method=Image.LANCZOS, centering=(0.5, 0.5))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
+    return out.getvalue(), img.width, img.height
+
+
+def _hero_max_px():
+    """Longest-edge cap for a user's hero image (config-driven, default 1600)."""
+    try:
+        from input.pipeline import system_config as cfg
+        return int(cfg.get_setting("image_hero_max_px", 1600))
+    except Exception:
+        return 1600
+
+
+def _contain_and_encode(img, quality, max_px):
+    """Resize PRESERVING the whole image (no crop) and PRESERVING orientation —
+    a portrait stays portrait, a landscape stays landscape. Scales down so the
+    longest edge is <= max_px; NEVER upscales a smaller source (Image.thumbnail
+    only shrinks), so a small paste stays sharp at its own size instead of being
+    blown up + cropped. This is the right treatment for a hero image the user
+    chose. Returns (bytes, out_w, out_h)."""
+    img = img.copy()
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
     return out.getvalue(), img.width, img.height
@@ -205,11 +230,13 @@ def standardize_and_meta(raw: bytes, *, source_url: Optional[str] = None,
         meta["orig_format"] = ((opened.format or "").lower() or None)  # .format is lost after transpose
         src = ImageOps.exif_transpose(opened)
         meta["orig_width"], meta["orig_height"] = src.width, src.height
-        q, land, port = _img_config()
-        data, ow, oh = _fit_and_encode(_to_rgb(src), q, land, port)
+        q, _land, _port = _img_config()
+        # Hero image: CONTAIN (preserve whole image + orientation, no crop, no
+        # upscale) — not the corpus crop bucket. A small paste stays its own size.
+        data, ow, oh = _contain_and_encode(_to_rgb(src), q, _hero_max_px())
         meta.update(width=ow, height=oh, format="jpeg", bytes=len(data),
                     orientation=("portrait" if oh > ow else "square" if oh == ow else "landscape"),
-                    standardized=True)
+                    upscaled=False, standardized=True)
         return data, meta
     except Exception as e:
         print(f"[image_pipeline] standardize failed: {e}")
