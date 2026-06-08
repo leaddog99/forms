@@ -119,6 +119,19 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "Hard cap on a dish's top_n_final (selected rows). Same "
                        "enforcement as the SerpAPI cap.",
     },
+    # --- Matching: recipe -> canonical-dish vector NN at save time ---
+    {
+        "key": "dish_match_max_distance",
+        "value": 0.85,
+        "type": "float",
+        "category": "Matching",
+        "label": "Dish match cutoff (L2 distance)",
+        "description": "A user recipe is a CONFIDENT match to its nearest dish "
+                       "when their embeddings are within this L2 distance. Lower = "
+                       "stricter. 0.85 (≈ cosine 0.64) catches compound names like "
+                       "'Shrimp Risotto' (0.82) while excluding true non-matches "
+                       "(≥0.98). Validated: real matches ≤0.25 or ~0.82, non-matches ≥0.98.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

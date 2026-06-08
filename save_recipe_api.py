@@ -3997,7 +3997,8 @@ def _save_recipe_core(payload: dict) -> dict:
                             # confident; Mac&Cheese 1.02 / Salmon 0.98 = no real dish
                             # in the set → not confident). Persisted as `_match` so
                             # the form + future user-recipe scoring can read it.
-                            MATCH_MAX_DIST = 0.8
+                            from input.pipeline import system_config as _cfg
+                            MATCH_MAX_DIST = float(_cfg.get_setting("dish_match_max_distance", 0.85))
                             vector_store.enable_vec(conn)
                             cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
                             if cands:

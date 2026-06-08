@@ -22,6 +22,7 @@ Changing the buckets in one place changes it everywhere.
 """
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 # Grade buckets duplicated here to keep this module import-cheap (no
@@ -138,7 +139,11 @@ def compute_exceptionalism(da: float, pa: float, ou_fit: dict,
     if matched_dish:
         basis["matched_dish"] = matched_dish
     if match_confidence is not None:
+        # Keep the cosine confidence (back-compat) AND stamp the canonical L2
+        # distance the rest of the system uses (_match.distance, the KNN, the UI):
+        # one metric end to end. L2 = sqrt(2*(1 - cos)) for unit-length embeddings.
         basis["match_confidence"] = round(float(match_confidence), 4)
+        basis["match_distance"] = round(math.sqrt(max(0.0, 2.0 * (1.0 - float(match_confidence)))), 4)
     if match_method:
         basis["match_method"] = match_method
 

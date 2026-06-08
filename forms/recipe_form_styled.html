@@ -2197,7 +2197,7 @@
                          style="font-size:0.85em" />
                 </div>
                 <div class="form-group">
-                  <label for="meta_match_confidence" style="font-size:0.82em;color:var(--muted)">Confidence (cosine)</label>
+                  <label for="meta_match_confidence" style="font-size:0.82em;color:var(--muted)">Match distance (L2)</label>
                   <input type="text" id="meta_match_confidence" readonly
                          style="font-size:0.85em;font-family:ui-monospace,'SF Mono',Consolas,monospace" />
                 </div>
@@ -2686,9 +2686,14 @@
 
       const confEl = document.getElementById('meta_match_confidence');
       if (confEl) {
-        confEl.value = (typeof basis.match_confidence === 'number')
-                        ? basis.match_confidence.toFixed(3)
-                        : '';
+        // Show L2 distance (the canonical metric stored on _match + in the DB),
+        // not cosine. Prefer the stored distance; fall back to converting a
+        // legacy cosine confidence (L2 = sqrt(2*(1 - cos))) for old records.
+        let dist = (typeof basis.match_distance === 'number') ? basis.match_distance : null;
+        if (dist === null && typeof basis.match_confidence === 'number') {
+          dist = Math.sqrt(Math.max(0, 2 * (1 - basis.match_confidence)));
+        }
+        confEl.value = (dist === null) ? '' : dist.toFixed(3);
       }
 
       const methodEl = document.getElementById('meta_match_method');
