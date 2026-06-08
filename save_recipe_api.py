@@ -1404,12 +1404,22 @@ async def fetch_image_from_url(request: Request):
     if not buf:
         raise HTTPException(status_code=502, detail="Source returned 0 bytes")
 
-    filename = f"upload_{uuid.uuid4()}{ext}"
-    out_path = GENERATED_DIR / filename
-    out_path.write_bytes(bytes(buf))
+    # Phase 1: standardize the fetched bytes (config-driven resize/format/EXIF
+    # strip) + capture imageMeta + log. Localizing here is the coopt-to-local
+    # step — a pasted/typed URL becomes a permanent, right-sized local JPEG we
+    # own (no hotlink). Pillow failure → fall back to storing the raw bytes.
+    from input.pipeline.image_pipeline import standardize_and_meta
+    processed, meta = standardize_and_meta(bytes(buf), source_url=source_url, localized=True)
+    if processed:
+        filename = f"upload_{uuid.uuid4()}.jpg"
+        (GENERATED_DIR / filename).write_bytes(processed)
+    else:
+        filename = f"upload_{uuid.uuid4()}{ext}"
+        (GENERATED_DIR / filename).write_bytes(bytes(buf))
     url = f"/generated/{filename}"
-    print(f"[IMGFETCH] {source_url} -> {filename} ({len(buf)} bytes, mime={content_type})")
-    return {"url": url, "bytes": len(buf), "source_url": source_url}
+    print(f"[IMGFETCH] {source_url} -> {filename} | imageMeta={meta}")
+    return {"url": url, "bytes": meta.get("bytes", len(buf)),
+            "source_url": source_url, "imageMeta": meta}
 
 
 # Upload a user-supplied image (drag/drop/paste/picker from the form's
@@ -1447,12 +1457,19 @@ async def upload_image(image: UploadFile = File(...)):
     content = await image.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty image upload")
-    filename = f"upload_{uuid.uuid4()}{ext}"
-    out_path = GENERATED_DIR / filename
-    out_path.write_bytes(content)
+    # Phase 1: standardize (config-driven resize/format/EXIF strip) + imageMeta
+    # + log. Pillow failure → fall back to storing the raw upload unchanged.
+    from input.pipeline.image_pipeline import standardize_and_meta
+    processed, meta = standardize_and_meta(content, source_url=None, localized=True)
+    if processed:
+        filename = f"upload_{uuid.uuid4()}.jpg"
+        (GENERATED_DIR / filename).write_bytes(processed)
+    else:
+        filename = f"upload_{uuid.uuid4()}{ext}"
+        (GENERATED_DIR / filename).write_bytes(content)
     url = f"/generated/{filename}"
-    print(f"[IMGUP] {filename} ({len(content)} bytes, mime={image.content_type})")
-    return {"url": url, "bytes": len(content)}
+    print(f"[IMGUP] {filename} | imageMeta={meta}")
+    return {"url": url, "bytes": meta.get("bytes", len(content)), "imageMeta": meta}
 
 
 @app.post("/recipes/{recipe_id}/generate-image")

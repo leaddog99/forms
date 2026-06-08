@@ -119,59 +119,102 @@ def _fetch_image_bytes(url: str) -> Optional[bytes]:
         return None
 
 
-def process_thumbnail(raw: bytes) -> Optional[bytes]:
-    """Process raw image bytes into a consistently-sized cookbook-grade
-    JPEG. Output is ALWAYS either LANDSCAPE_TARGET or PORTRAIT_TARGET —
-    every cooped image across the corpus uses one of two sizes.
-
-    Pipeline:
-      1. Open + EXIF-transpose (rotated phone photos straighten)
-      2. Convert to RGB (drop alpha / paletted modes; JPEG requirement)
-      3. Pick target bucket: landscape if source aspect >= threshold,
-         else portrait
-      4. ImageOps.fit center-crops + scales to target size (upscales
-         if source is smaller — LANCZOS keeps it reasonable up to ~2x)
-      5. Save as progressive JPEG at q=85, EXIF stripped
-
-    None when Pillow can't open the input (HTML/SVG/junk response).
-    """
+def _parse_dims(s, default):
+    """'1500x1000' -> (1500, 1000); falls back to default on anything odd."""
     try:
-        img = Image.open(io.BytesIO(raw))
-        # ImageOps.exif_transpose handles rotated phone photos
-        img = ImageOps.exif_transpose(img)
-        # Convert to RGB to drop alpha / paletted modes; JPEG requires it
-        if img.mode not in ("RGB", "L"):
-            if img.mode in ("RGBA", "LA", "P"):
-                bg = Image.new("RGB", img.size, (255, 255, 255))
-                if img.mode == "P":
-                    img = img.convert("RGBA")
-                bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
-                img = bg
-            else:
-                img = img.convert("RGB")
+        w, h = str(s).lower().split("x")
+        return (int(w), int(h))
+    except Exception:
+        return default
 
-        # Pick target bucket by source aspect ratio. Square-ish
-        # inputs lean landscape — cookbook hero conventions.
-        aspect = img.width / img.height if img.height else 1.0
-        target = (LANDSCAPE_TARGET if aspect >= LANDSCAPE_ASPECT_THRESHOLD
-                  else PORTRAIT_TARGET)
 
-        # Center-crop + scale to fill target dimensions. ImageOps.fit
-        # chooses the largest centered crop that matches the target
-        # aspect, then resizes to exact target size. Upscales when
-        # source is smaller; LANCZOS produces soft-but-acceptable
-        # results up to ~2x.
-        img = ImageOps.fit(img, target, method=Image.LANCZOS,
-                           centering=(0.5, 0.5))
+def _img_config():
+    """Standardization knobs (quality + target buckets) from the DB system
+    config (cached), falling back to the module defaults when config/DB isn't
+    available (early boot, tests). Keeps the bake parameters out of code so a
+    portable instance can tune them in the System admin (memory/project_system_config)."""
+    q, land, port = THUMB_JPEG_QUALITY, LANDSCAPE_TARGET, PORTRAIT_TARGET
+    try:
+        from input.pipeline import system_config as cfg
+        q = int(cfg.get_setting("image_jpeg_quality", q))
+        land = _parse_dims(cfg.get_setting("image_landscape_target", None), land)
+        port = _parse_dims(cfg.get_setting("image_portrait_target", None), port)
+    except Exception:
+        pass
+    return q, land, port
 
-        out = io.BytesIO()
-        img.save(out, format="JPEG",
-                 quality=THUMB_JPEG_QUALITY,
-                 optimize=True, progressive=True)
-        return out.getvalue()
+
+def _open_oriented(raw: bytes) -> "Image.Image":
+    """Open + apply EXIF orientation (straighten rotated phone photos)."""
+    return ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+
+
+def _to_rgb(img: "Image.Image") -> "Image.Image":
+    """Flatten alpha / paletted modes onto white → RGB (JPEG requirement)."""
+    if img.mode in ("RGB", "L"):
+        return img
+    if img.mode in ("RGBA", "LA", "P"):
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+        return bg
+    return img.convert("RGB")
+
+
+def _fit_and_encode(img, quality, land, port):
+    """Center-crop+scale to the landscape/portrait bucket, encode progressive
+    JPEG (EXIF stripped). Returns (bytes, out_w, out_h)."""
+    aspect = img.width / img.height if img.height else 1.0
+    target = land if aspect >= LANDSCAPE_ASPECT_THRESHOLD else port
+    img = ImageOps.fit(img, target, method=Image.LANCZOS, centering=(0.5, 0.5))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
+    return out.getvalue(), img.width, img.height
+
+
+def process_thumbnail(raw: bytes, *, quality=None, landscape=None, portrait=None) -> Optional[bytes]:
+    """Process raw image bytes into a consistently-sized cookbook-grade JPEG
+    (one of two buckets), EXIF stripped. Config-driven (quality/targets) unless
+    explicitly overridden. None when Pillow can't open the input."""
+    try:
+        q, land, port = _img_config()
+        data, _w, _h = _fit_and_encode(
+            _to_rgb(_open_oriented(raw)),
+            quality if quality is not None else q,
+            landscape if landscape is not None else land,
+            portrait if portrait is not None else port,
+        )
+        return data
     except Exception as e:
         print(f"[image_pipeline] Pillow process failed: {e}")
         return None
+
+
+def standardize_and_meta(raw: bytes, *, source_url: Optional[str] = None,
+                         localized: bool = True) -> tuple[Optional[bytes], dict]:
+    """Phase-1 capture step: standardize raw image bytes (config-driven) AND
+    return an `imageMeta` block describing the result. The meta earns its keep —
+    it drives quality warnings (too-small hero), variant-readiness, dedup, and
+    the capture log. `bytes` is None if Pillow can't open the input (caller may
+    fall back to storing raw)."""
+    meta: dict = {"source_url": source_url, "localized": bool(localized),
+                  "bytes_in": len(raw) if raw else 0}
+    try:
+        opened = Image.open(io.BytesIO(raw))
+        meta["orig_format"] = ((opened.format or "").lower() or None)  # .format is lost after transpose
+        src = ImageOps.exif_transpose(opened)
+        meta["orig_width"], meta["orig_height"] = src.width, src.height
+        q, land, port = _img_config()
+        data, ow, oh = _fit_and_encode(_to_rgb(src), q, land, port)
+        meta.update(width=ow, height=oh, format="jpeg", bytes=len(data),
+                    orientation=("portrait" if oh > ow else "square" if oh == ow else "landscape"),
+                    standardized=True)
+        return data, meta
+    except Exception as e:
+        print(f"[image_pipeline] standardize failed: {e}")
+        meta["standardized"] = False
+        return None, meta
 
 
 def _content_hash(data: bytes) -> str:

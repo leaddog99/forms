@@ -61,6 +61,33 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "Stamped by the scheduler after each real pass. Read-only; "
                        "drives the interval gate.",
     },
+    # --- Images: standardization knobs for the coopt/upload pipeline ---
+    {
+        "key": "image_jpeg_quality",
+        "value": 85,
+        "type": "int",
+        "category": "Images",
+        "label": "JPEG quality",
+        "description": "Quality (1–95) for standardized hero/cooped images. "
+                       "Higher = sharper + bigger. 85 ≈ cookbook-grade.",
+    },
+    {
+        "key": "image_landscape_target",
+        "value": "1500x1000",
+        "type": "string",
+        "category": "Images",
+        "label": "Landscape target (WxH)",
+        "description": "Exact pixel size landscape-ish images are center-cropped + "
+                       "scaled to. 3:2 is the cookbook standard.",
+    },
+    {
+        "key": "image_portrait_target",
+        "value": "1000x1500",
+        "type": "string",
+        "category": "Images",
+        "label": "Portrait target (WxH)",
+        "description": "Exact pixel size portrait images are center-cropped + scaled to.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

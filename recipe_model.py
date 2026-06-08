@@ -69,6 +69,11 @@ STATIC_TOP_LEVEL_FIELDS = frozenset({
     # the recipe content (King Arthur densities), so URL-static: same for
     # every owner. Powers the metric/imperial toggle in the editor.
     "_measurements",
+    # Hero-image metadata captured at coopt/upload (image_pipeline
+    # standardize_and_meta): width/height/format/bytes/orientation/
+    # orig dims/localized/source_url. URL-static (a property of the image
+    # we own), so it travels through claim/cache/promote.
+    "_imageMeta",
 })
 
 # Fields tied to a specific row / owner — must be re-minted, dropped, or
@@ -376,6 +381,10 @@ class RecipeModel(BaseModel):
     # explicitly (like _source/_scoring) so it survives model_dump(by_alias);
     # left as List[dict] to stay flexible as the entry shape evolves.
     measurements: Optional[List[dict]] = Field(default=None, alias="_measurements")
+    # Hero-image metadata from coopt/upload (dims/format/bytes/orientation/
+    # localized/source). Declared explicitly so it survives model_dump
+    # (extra='allow' accepts but DROPS unknown fields on dump).
+    image_meta: Optional[dict] = Field(default=None, alias="_imageMeta")
     current_status: Optional[StatusField] = None
     # Owner discriminator. 0 = sys-admin / batch-curated master collection
     # (lives in master_recipes table); any other value = personal collection

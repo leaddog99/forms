@@ -37,7 +37,7 @@
 .iw-frame.iw-has-image{ border-style:solid; }
 .iw-frame:focus-visible{ outline:2px solid var(--iw-accent,#b8602a); outline-offset:2px; }
 .iw-frame, .iw-dz{ caret-color:transparent; } /* contenteditable for image paste only — no visible caret */
-.iw-img{ width:100%; height:100%; object-fit:cover; display:none; }
+.iw-img{ width:100%; height:100%; object-fit:cover; display:none; pointer-events:none; } /* let right-click reach the editable frame for Paste */
 .iw-frame.iw-has-image .iw-img{ display:block; }
 .iw-ph{ display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--iw-muted,#6b5b4f);
   padding:18px; text-align:center; pointer-events:none; }
@@ -95,13 +95,15 @@
     let url = (opts.initialUrl || '').trim();
 
     // ---- default backend handlers (overridable) -------------------------
+    // Both return { url, meta } — meta is the server's imageMeta block
+    // (width/height/format/bytes/orientation/localized…) or null.
     const uploadBytes = opts.uploadBytes || async function (file) {
       const fd = new FormData();
       fd.append('image', file, file.name || 'upload');
       const res = await fetch(`${api}/images`, { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'upload failed');
-      return `${window.location.origin}${j.url}?t=${Date.now()}`;
+      return { url: `${window.location.origin}${j.url}?t=${Date.now()}`, meta: j.imageMeta || null };
     };
     // Resolve a URL string to a (preferably localized) image URL. Coopt via
     // /images/fetch; on any failure fall back to the original (hotlink).
@@ -112,10 +114,13 @@
           body: JSON.stringify({ url: s }),
         });
         const j = await res.json().catch(() => ({}));
-        if (res.ok && j.url) return `${window.location.origin}${j.url}?t=${Date.now()}`;
+        if (res.ok && j.url) return { url: `${window.location.origin}${j.url}?t=${Date.now()}`, meta: j.imageMeta || null };
       } catch (e) { /* fall through to hotlink */ }
-      return s;
+      return { url: s, meta: null };  // hotlink fallback, no local meta
     };
+    // Normalize a handler result that may be a bare string (custom host
+    // handlers) or { url, meta }.
+    const _norm = (r) => (typeof r === 'string' ? { url: r, meta: null } : (r || { url: '', meta: null }));
 
     // ---- DOM ------------------------------------------------------------
     // The frame is contenteditable — the ONE trick that makes right-click
@@ -142,10 +147,12 @@
       if (url) { img.src = url; frame.classList.add('iw-has-image'); }
       else { img.removeAttribute('src'); frame.classList.remove('iw-has-image'); }
     }
+    let meta = opts.initialMeta || null;   // server imageMeta for the current url
     function setUrl(u, o) {
       url = (u || '').trim();
+      meta = (o && 'meta' in o) ? o.meta : (url ? meta : null);
       render();
-      if (!(o && o.silent) && opts.onChange) opts.onChange(url);
+      if (!(o && o.silent) && opts.onChange) opts.onChange(url, meta);
     }
     img.addEventListener('load', () => {
       const w = img.naturalWidth, h = img.naturalHeight;
@@ -167,7 +174,7 @@
         img.src = dataUrl; frame.classList.add('iw-has-image');
       } catch (e) {}
       feedback('Uploading image…', 'info');
-      try { setUrl(await uploadBytes(file)); feedback('Image added. Save to persist.', 'success'); }
+      try { const r = _norm(await uploadBytes(file)); setUrl(r.url, { meta: r.meta }); feedback('Image added. Save to persist.', 'success'); }
       catch (e) { feedback(`Upload failed: ${e.message || e}`, 'error'); }
     }
     async function handleUrlString(s) {
@@ -180,10 +187,11 @@
       }
       if (!/^https?:\/\//i.test(s)) { feedback('Enter an http(s) image URL.', 'error'); return; }
       feedback('Fetching image…', 'info');
-      const resolved = await resolveUrl(s);
-      setUrl(resolved);
-      feedback(resolved === s ? 'Using the source link (couldn’t localize). Save to persist.'
-                              : 'Image saved locally. Save to persist.', 'success');
+      const r = _norm(await resolveUrl(s));
+      const hotlinked = (r.url === s);
+      setUrl(r.url, { meta: r.meta });
+      feedback(hotlinked ? 'Using the source link (couldn’t localize). Save to persist.'
+                         : 'Image saved locally. Save to persist.', 'success');
     }
     // bytes-or-url from a clipboard/drag event
     function handleDataTransfer(dt) {
@@ -312,7 +320,7 @@
     }
 
     render();
-    return { getUrl: () => url, setUrl, clear: () => setUrl(''), root, frame };
+    return { getUrl: () => url, getMeta: () => meta, setUrl, clear: () => setUrl(''), root, frame };
   }
 
   window.ImageWell = { mount };

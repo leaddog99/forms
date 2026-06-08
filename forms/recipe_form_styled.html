@@ -1608,7 +1608,7 @@
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
   <script src="/forms/library-shell.js?v=20260608b"></script>
-  <script src="/forms/image-well.js?v=20260608g"></script>
+  <script src="/forms/image-well.js?v=20260608h"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -3438,6 +3438,7 @@
       const previewLoad = (r._source && r._source.previewImage || '').trim();
       const firstImageLoad = Array.isArray(r.image) ? r.image.find(s => typeof s === 'string' && s.trim()) : '';
       heroImageUrl.value = previewLoad || firstImageLoad || '';
+      _heroImageMeta = r._imageMeta || null;   // restore stored image metadata
       applyHeroImageFromUrl();
 
       // Page screenshot — display when present + source URL exists.
@@ -3708,6 +3709,10 @@
         },
         author: { "@type": "Person", name: document.getElementById("author").value },
         image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : [],
+        // Hero-image metadata (dims/format/bytes/orientation/localized) from the
+        // last coopt/upload; cleared when the hero is cleared. Persists per
+        // recipe_model._imageMeta (STATIC field).
+        _imageMeta: (heroImageUrl.value || '').trim() ? _heroImageMeta : null,
         provenance: userProvenance,
         classification: userClassification,
         editorial: userEditorial
@@ -4658,9 +4663,10 @@
     // and the existing save/load/extract code reads/writes heroImageUrl.value
     // unchanged. applyHeroImageFromUrl() stays as a thin shim those callers use.
     const heroImageUrl = document.getElementById('heroImageUrl');
+    let _heroImageMeta = null;   // imageMeta from the last coopt/upload (Phase 1)
     const heroWell = ImageWell.mount(document.getElementById('heroWell'), {
       feedback: (msg, kind) => showFeedback(msg, kind),
-      onChange: (url) => { heroImageUrl.value = url || ''; },
+      onChange: (url, meta) => { heroImageUrl.value = url || ''; if (meta !== undefined) _heroImageMeta = url ? meta : null; },
       // Generate dish image — needs a saved recipe (the endpoint looks it up by
       // recipe_id + name) and reads the optional tweak-prompt textarea. Returns
       // the new absolute, cache-busted URL for the well to display, or null.

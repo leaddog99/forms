@@ -239,6 +239,30 @@ Took the measurement-conversion starter kit (Desktop Claude, 2026-05-31; King Ar
 
 ---
 
+## Session log — 2026-06-08 (cont.) — reusable ImageWell control + HTML no-cache + image Phase 1 (coopt/standardize/imageMeta)
+
+Continued the same session. Built a reusable image control and the start of the image-processing pipeline. All on `split/enrichment-api`.
+
+### Reusable ImageWell control (`forms/image-well.js`) — commits 6c3c530, 917cefe
+One drop-in control (`ImageWell.mount(el, opts) → {getUrl,getMeta,setUrl,clear}`) that owns the image-capture UX; the host passes backend handlers + `onChange`. Replaced the recipe form's hero box + URL field + Generate button. `#heroImageUrl` kept as a HIDDEN value bridge so save/load/extract are unchanged.
+- **Inputs:** drop, paste, click→"Set image" dialog, URL, Generate. "Figures it out": bytes→`/images`, URL→`/images/fetch` coopt with **hotlink fallback**.
+- **Paste UX (the fiddly part):** right-click "Paste" only delivers image BYTES on **contenteditable** surfaces — so the frame + dialog drop-zone are contenteditable (children `contenteditable=false` + `pointer-events:none` so right-click reaches the editable frame even over the image; `beforeinput`/keydown guards block real editing; caret hidden). Dialog auto-focuses the URL field; a dialog-level paste handler catches a Ctrl+V image anywhere and stops it leaking to the recipe extractor. Generate lives ONLY in the dialog.
+- **Bug fixed:** image-not-saving — the save spread a stale `_source.previewImage` that masked a new `image[0]` on reload; now `previewImage` mirrors the hero. Self-contained CSS (injects its own `<style>`) so it has no external-stylesheet dependency.
+- Reuse target: the master/dish editors + the multi-page capture tray (#3) lean on this.
+
+### Serve HTML `no-cache` — kills the stale-HTML trap (in 6c3c530)
+`/forms` now uses a `_NoCacheHTMLStatic` subclass → `.html` responses get `Cache-Control: no-cache, must-revalidate` (ETag still yields cheap 304s). Versioned JS/CSS keep their long cache via `?v=`. No more "I don't see my change" / hard-refresh dance (also signals Cloudflare not to edge-cache HTML).
+
+### Image pipeline Phase 1 — coopt-to-local + standardize + imageMeta + logging (config-driven) — NOT yet committed
+First slice of the agreed image roadmap (#1 of 4: Phase 1 → multi-page tray → transform spec). `/images` (upload) and `/images/fetch` (coopt) both previously stored RAW bytes; now they route through `image_pipeline.standardize_and_meta()`:
+- **Standardize** (Pillow, config-driven): EXIF-transpose, flatten→RGB, center-crop+scale to the landscape/portrait bucket, progressive JPEG, EXIF stripped. Targets + quality read from `system_config` (`image_jpeg_quality`, `image_landscape_target`, `image_portrait_target` — new "Images" settings category). `process_thumbnail` refactored into reusable helpers (`_open_oriented`/`_to_rgb`/`_fit_and_encode`/`_img_config`).
+- **imageMeta** captured + returned + **logged**: `{width,height,format,bytes,orientation,orig_width,orig_height,orig_format,bytes_in,localized,source_url,standardized}`. Pillow failure → fall back to storing raw (meta `standardized:false`).
+- **Persisted:** `_imageMeta` declared on `RecipeModel` (alias) + added to `STATIC_TOP_LEVEL_FIELDS` (extra='allow' DROPS undeclared fields on `model_dump` — the [[feedback_db_form_sync]] trap). ImageWell captures meta from the endpoint responses (`getMeta()`/`onChange(url,meta)`); the recipe form stashes `_heroImageMeta`, saves it, restores it on load.
+- Verified: TestClient upload of a 1200×400 PNG → standardized 1500×1000 JPEG + full imageMeta; `/system-config` shows the Images settings. Coopt-to-local now means a pasted/typed URL becomes a permanent right-sized local JPEG we own (no hotlink) — also reinforces the DL-16 per-entity image policy.
+- **Deferred to later phases:** the transform property-sheet + DSL (#2, incl. the `degrade` preset), the multi-page capture tray (#3, semantic multi-image stitch). [[project_image_policy]] (DL-16) governs third-party hero use.
+
+---
+
 ## Session log — 2026-06-08 — batch off FastAPI (jobs CLI + WAL), dish scheduler, DB system config, two-hamburger nav
 
 A long session that took the jobs-as-executables design (docs/jobs-as-executables.md) from spec to a working standalone batch runner, then opened the DB-resident system-config subsystem and split the nav into admin/user hamburgers. Still on branch `split/enrichment-api` (not merged).
