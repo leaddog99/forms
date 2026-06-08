@@ -278,6 +278,9 @@
             <div class="k">Next run</div><div class="v">${nextRunValue}</div>
             <div class="k">Log</div><div class="v">${d.last_run_log_url ? `<a class="d-loglink" href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener">view log</a>` : '—'}</div>
           </div>
+          <!-- Inline live run-log: Refresh streams the out-of-process job's log
+               here (not just the nav popup), and the detail re-renders on done. -->
+          <pre id="dishLog" style="display:none;max-height:340px;overflow:auto;margin:14px 0 0;padding:12px 14px;background:#1c1813;color:#e9e1d4;border-radius:10px;font-size:.76rem;line-height:1.45;white-space:pre-wrap;word-break:break-word"></pre>
         </section>
 
         <section class="ed-block">
@@ -442,13 +445,47 @@
           if (LibraryShell.runQueuedJobs) LibraryShell.runQueuedJobs();
         } else {
           flash(`Refreshing “${d.name}” out-of-process (job #${data.job_id})…`);
-          if (LibraryShell.streamJob) LibraryShell.streamJob(data.job_id);
+          streamDishLog(data.job_id, d.name);   // live log INLINE in the dish page
         }
       } catch (e) {
         flash(String(e.message || e), true);
       } finally {
         btn.disabled = false; btn.textContent = 'Refresh';
       }
+    }
+
+    // Stream an out-of-process job's log INLINE in the dish detail (#dishLog),
+    // tailing GET /jobs/<id>/stream (the SSE reads the DB + log file the
+    // subprocess writes — fully cross-process). On done, re-fetch the dish and
+    // re-render the detail so Last run / pills / the view-log link update; the
+    // accumulated log is re-painted into the freshly-rendered panel.
+    function streamDishLog(jobId, dishName){
+      let buf = '';
+      const paint = () => {
+        const pre = $('#dishLog'); if (!pre) return;
+        pre.style.display = ''; pre.textContent = buf; pre.scrollTop = pre.scrollHeight;
+      };
+      const add = (line) => { buf += (buf ? '\n' : '') + line; paint(); };
+      add(`▶ Running job #${jobId} for “${dishName}” (out-of-process)…`);
+      const es = new EventSource('/jobs/' + jobId + '/stream');
+      es.addEventListener('log', (e) => { try { add(JSON.parse(e.data).line); } catch (_) {} });
+      es.addEventListener('status', (e) => { try { add('· ' + JSON.parse(e.data).status); } catch (_) {} });
+      es.addEventListener('done', async (e) => {
+        let st = 'done'; try { st = JSON.parse(e.data).status; } catch (_) {}
+        add(`■ ${st}.`);
+        es.close();
+        try {
+          const r = await fetch(`/dishes/${encodeURIComponent(dishName)}`);
+          if (r.ok) {
+            const data = await r.json();
+            dishes[dishName] = data;
+            if (selected === dishName) { renderList(); renderDetail(data); paint(); }
+            else renderList();
+          }
+        } catch (_) {}
+        flash(`“${dishName}” refresh ${st}.`);
+      });
+      es.addEventListener('error', () => { /* transient — EventSource auto-reconnects */ });
     }
 
     async function doDelete(d){
