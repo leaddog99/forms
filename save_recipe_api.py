@@ -1481,7 +1481,9 @@ async def generate_recipe_image_endpoint(
     orientation: Optional[str] = None,
 ):
     # Lazy import — pulls openai client construction only when used.
-    from image_gen_openai import generate_dish_image, _build_dish_prompt
+    from image_gen_openai import (
+        generate_dish_image, _build_dish_prompt, moderate_text, TWEAK_MAX_CHARS,
+    )
 
     # Optional JSON body: {extra_prompt?: str}. User-supplied override
     # text appended to the auto-built prompt before generation.
@@ -1492,6 +1494,26 @@ async def generate_recipe_image_endpoint(
             extra_prompt = (body.get("extra_prompt") or "").strip()
     except Exception:
         pass  # no body, or malformed — treat as empty
+
+    # Guard the ONLY user-controlled text in the prompt (the auto-built body is
+    # derived from the recipe, which is trusted). (1) length cap, (2) OpenAI
+    # moderation pre-check — reject before we pay for generation. gpt-image-1
+    # also moderates the final prompt as a backstop.
+    if extra_prompt:
+        if len(extra_prompt) > TWEAK_MAX_CHARS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tweak is too long ({len(extra_prompt)} chars; max {TWEAK_MAX_CHARS}). "
+                       f"Keep it to a short styling note.",
+            )
+        flagged, cats = moderate_text(extra_prompt)
+        if flagged:
+            print(f"[IMGGEN] tweak rejected by moderation ({cats}): {extra_prompt!r}")
+            raise HTTPException(
+                status_code=400,
+                detail="That tweak was flagged by the content filter. "
+                       "Keep it to dish-styling notes (ingredients, plating, lighting).",
+            )
 
     owner = _find_recipe_owner(recipe_id)
     if owner is None:
@@ -1532,8 +1554,21 @@ async def generate_recipe_image_endpoint(
         )
         dt_ms = int((time.perf_counter() - t0) * 1000)
     except Exception as e:
+        msg = str(e)
         print(f"[IMGGEN] FAILED {recipe_id}: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=502,
+        # gpt-image-1's OWN safety system can reject a prompt — including at the
+        # OUTPUT stage, after our text pre-check passes. Surface that as a clean
+        # 400 with a friendly message, NOT a 5xx: Cloudflare replaces an origin
+        # 5xx with its own HTML error page, which the form can't parse → the
+        # "Generate failed: {}" the user saw.
+        if any(s in msg for s in ("moderation_blocked", "safety system",
+                                  "safety_violations", "content_policy")):
+            raise HTTPException(
+                status_code=400,
+                detail="That image request was blocked by the content filter. "
+                       "Keep the tweak to dish-styling notes (ingredients, plating, lighting).",
+            )
+        raise HTTPException(status_code=500,
                             detail=f"Image generation failed: {type(e).__name__}: {e}")
 
     out_path = GENERATED_DIR / f"{recipe_id}.jpg"

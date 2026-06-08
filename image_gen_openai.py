@@ -47,6 +47,39 @@ from input.pipeline.config import IMAGE_GEN_QUALITY, IMAGE_GEN_SIZE
 
 client = openai.OpenAI()
 
+
+# Max characters for a user-supplied image-gen tweak. A real tweak is a short
+# styling note ("shredded not chunked; blue plate"); anything longer is either
+# abuse or a paste accident. Enforced server-side (the form also caps the field).
+TWEAK_MAX_CHARS = 600
+
+
+def moderate_text(text: str):
+    """Screen user-supplied text against OpenAI's free Moderation API
+    (omni-moderation-latest) BEFORE it reaches the image generator — which is
+    already on OpenAI, so this is one cheap extra call to the same vendor.
+    Returns (flagged: bool, categories: list[str]). On any API error returns
+    (False, []) — moderation is a gate we add, not a hard dependency; a moderation
+    outage shouldn't block legitimate generation (gpt-image-1 still moderates the
+    final prompt itself as a backstop)."""
+    text = (text or "").strip()
+    if not text:
+        return False, []
+    try:
+        resp = client.moderations.create(model="omni-moderation-latest", input=text)
+        result = resp.results[0]
+        if not result.flagged:
+            return False, []
+        cats = result.categories
+        # categories is a pydantic model; collect the True flags.
+        flagged = [k for k, v in (cats.model_dump() if hasattr(cats, "model_dump")
+                                  else dict(cats)).items() if v]
+        return True, flagged
+    except Exception as e:
+        print(f"[MODERATION] check failed (allowing through): {type(e).__name__}: {e}")
+        return False, []
+
+
 # Map our config's quality vocabulary (kept for caller stability across
 # OpenAI's model renamings) to gpt-image-1's quality vocabulary.
 _QUALITY_MAP = {
