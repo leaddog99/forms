@@ -799,6 +799,28 @@ def _rank_blended(entries: list[dict], top_n_final: int) -> list[dict]:
     return kept
 
 
+def _predict_pa_from_fit(ou_fit: dict, da: float) -> Optional[float]:
+    """Predict PA for a given DA from the dish's stored OU fit (model +
+    coefficients) — so a fetch-fail we couldn't crawl can still get an OU
+    (= actual PA − predicted PA) from its Moz DA/PA. Returns None if the fit
+    is unusable."""
+    coeffs = ou_fit.get("coefficients") or []
+    model = ou_fit.get("model")
+    if da is None or not coeffs:
+        return None
+    da = float(da)
+    try:
+        if model == "linear" and len(coeffs) == 2:
+            return coeffs[0] * da + coeffs[1]
+        if model == "quadratic" and len(coeffs) == 3:
+            return coeffs[0] * da * da + coeffs[1] * da + coeffs[2]
+        if model == "power" and len(coeffs) == 2:
+            return coeffs[0] * (da ** coeffs[1]) if da > 0 else 0.0
+    except Exception:
+        return None
+    return None
+
+
 def build_batch(
     queries: list[str] | str,
     *,
@@ -892,6 +914,37 @@ def build_batch(
     final = _rank_blended(entries, top_n_final)
     print(f"      -> final batch: {len(final)} URLs")
 
+    # Phase A — salvage FETCH-FAILS (likely anti-bot blocks). They were dropped
+    # before Moz, but Moz scores by URL (no page crawl needed), so we can still
+    # authority-rank them: Moz DA/PA -> OU via this dish's fit -> compare to the
+    # cut bar (the #N winner's OU). Recorded as rejects so the dish UI flags the
+    # ones that "would have qualified" for a Playwright/bookmarklet recovery.
+    fetch_fails = [e for e in dropped_not_recipe
+                   if e.get("_dropped_reason") == "fetch-failed"]
+    fetch_fail_candidates: list[dict] = []
+    if fetch_fails:
+        bar = float(final[-1]["ou"]) if final and isinstance(final[-1].get("ou"), (int, float)) else None
+        scored_ff, _ff_moz_fail = _moz_score(fetch_fails)
+        for e in scored_ff:
+            da, pa = e.get("da"), e.get("pa")
+            if not (isinstance(da, (int, float)) and isinstance(pa, (int, float))):
+                continue
+            ou = e.get("ou")
+            if ou_fit.get("used"):
+                pred = _predict_pa_from_fit(ou_fit, da)
+                if pred is not None:
+                    ou = float(pa) - pred
+            would_qualify = (bar is not None and isinstance(ou, (int, float)) and float(ou) >= bar)
+            fetch_fail_candidates.append({
+                "url": e["url"], "da": float(da), "pa": float(pa),
+                "ou": round(float(ou), 3) if isinstance(ou, (int, float)) else None,
+                "would_qualify": bool(would_qualify),
+            })
+        n_qual = sum(1 for c in fetch_fail_candidates if c["would_qualify"])
+        print(f"\n[Phase A] {len(fetch_fail_candidates)} fetch-fail(s) authority-scored "
+              f"(of {len(fetch_fails)}); {n_qual} would have made the top {top_n_final} "
+              f"(cut bar OU={bar}) — recoverable via Playwright/bookmarklet")
+
     elapsed = time.perf_counter() - t0
     print(f"\n[BATCH] Done in {elapsed:.1f}s")
 
@@ -953,6 +1006,9 @@ def build_batch(
         # chapter-level fit aggregates the same URL universe the
         # per-dish fit saw, not just the saved-winners subset.
         "fit_data_points": fit_data_points,
+        # Fetch-fails authority-scored (Phase A) — recorded as rejects so the
+        # dish UI can flag the would-have-qualified ones for recovery.
+        "fetch_fail_candidates": fetch_fail_candidates,
     }
 
 

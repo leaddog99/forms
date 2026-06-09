@@ -3246,6 +3246,23 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             print(f"[REFRESH-DISH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
             _record_reject(entry, f"save-fail: {type(e).__name__}")
 
+    # Phase A: record authority-scored FETCH-FAILS (likely anti-bot) as rejects
+    # so the dish UI flags which would have qualified (ou vs bottom_ou) for a
+    # Playwright/bookmarklet recovery. They carry Moz DA/PA + a fit-derived OU
+    # but no recipe candidate (we couldn't crawl the page).
+    for c in batch_result.get("fetch_fail_candidates", []):
+        rejects.append({
+            "url": c.get("url"),
+            "reason": "fetch-failed (likely anti-bot — recover via Playwright/bookmarklet)",
+            "title": "",
+            "da": c.get("da"), "pa": c.get("pa"), "ou": c.get("ou"),
+            "rank": None, "exc_score": None, "exc_grade": None,
+        })
+    _n_ff_qual = sum(1 for c in batch_result.get("fetch_fail_candidates", []) if c.get("would_qualify"))
+    if batch_result.get("fetch_fail_candidates"):
+        print(f"[REFRESH-DISH] {len(batch_result['fetch_fail_candidates'])} fetch-fail(s) "
+              f"recorded as rejects; {_n_ff_qual} would have qualified")
+
     # Compute the bar-to-beat: the OU of the lowest-ranked URL that
     # made it into the final top-N (the LAST surviving entry — they're
     # rank-ordered by OU descending). Used by the dish form to flag
