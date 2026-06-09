@@ -122,6 +122,12 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # gives the cosine a clean apples-to-apples comparison.
     if "identity_card" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN identity_card TEXT")  # JSON
+    # Dish competitiveness within its chapter (0-100): how this dish's field
+    # clout ranks among its chapter siblings — popular/contested vs niche. A
+    # CROSS-dish rollup, so it would go stale if frozen per-refresh; recomputed
+    # by the nightly chapter_rollups job, off the hot path.
+    if "competitiveness_pct" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN competitiveness_pct REAL")
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -367,7 +373,7 @@ def row_to_dict(row: tuple) -> dict:
      created_at, updated_at, last_run_log_filename, auto_enrich,
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
-     identity_card_json) = row
+     identity_card_json, competitiveness_pct) = row
     try:
         queries = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -410,6 +416,7 @@ def row_to_dict(row: tuple) -> dict:
         "embedding_model": embedding_model,
         "embedding_updated_at": embedding_updated_at,
         "identity_card": identity_card,
+        "competitiveness_pct": competitiveness_pct,
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -419,8 +426,51 @@ _SELECT_ALL_COLS = (
     "last_refreshed, last_run_status, last_run_count, notes, "
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
-    "embedding_text, embedding_model, embedding_updated_at, identity_card"
+    "embedding_text, embedding_model, embedding_updated_at, identity_card, "
+    "competitiveness_pct"
 )
+
+
+def recompute_competitiveness(conn: sqlite3.Connection) -> dict:
+    """Nightly chapter rollup: for every chapter, rank its dishes by field clout
+    (avg DA+PA of their kind=top winners) and store each dish's in-chapter
+    percentile (0-100) on dishes.competitiveness_pct. high = a popular/contested
+    dish, low = niche. This is a CROSS-dish aggregate — it drifts whenever any
+    sibling refreshes — so it lives OFF the hot refresh path, recomputed whole
+    here. Singleton chapters get NULL (a percentile of one is meaningless).
+    Returns {chapters, dishes_updated}."""
+    rows = conn.execute(
+        "SELECT json_extract(data,'$.classification.chapter') AS chapter, "
+        "json_extract(data,'$._master.dish') AS dish, "
+        "AVG(COALESCE(json_extract(data,'$._scoring.domainAuthority'),0) "
+        "  + COALESCE(json_extract(data,'$._scoring.pageAuthority'),0)) AS avg_power "
+        "FROM master_recipes "
+        "WHERE json_extract(data,'$._master.kind') = 'top' "
+        "  AND json_extract(data,'$._master.dish') IS NOT NULL "
+        "  AND json_extract(data,'$.classification.chapter') IS NOT NULL "
+        "GROUP BY chapter, dish"
+    ).fetchall()
+    by_chapter: dict[str, list] = {}
+    for chapter, dish, ap in rows:
+        if dish is None or ap is None:
+            continue
+        by_chapter.setdefault(chapter, []).append((dish, float(ap)))
+
+    chapters_done = dishes_updated = 0
+    for chapter, members in by_chapter.items():
+        powers = [ap for _d, ap in members]
+        if len(members) < 2:
+            for dish, _ap in members:
+                conn.execute("UPDATE dishes SET competitiveness_pct = NULL WHERE name = ?", (dish,))
+            continue
+        for dish, ap in members:
+            below = sum(1 for p in powers if p < ap)
+            pct = round(below / (len(powers) - 1) * 100, 1)
+            conn.execute("UPDATE dishes SET competitiveness_pct = ? WHERE name = ?", (pct, dish))
+            dishes_updated += 1
+        chapters_done += 1
+    conn.commit()
+    return {"chapters": chapters_done, "dishes_updated": dishes_updated}
 
 
 def list_dishes(conn: sqlite3.Connection) -> list[dict]:

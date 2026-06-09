@@ -61,6 +61,16 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "Stamped by the scheduler after each real pass. Read-only; "
                        "drives the interval gate.",
     },
+    {
+        "key": "rollups_last_run_at",
+        "value": None,
+        "type": "string",
+        "category": "Scheduler",
+        "label": "Last chapter-rollups pass (UTC)",
+        "description": "Stamped after the nightly cross-dish rollup (dish "
+                       "competitiveness). Read-only; gates the ~daily rollup that "
+                       "rides the hourly scheduler heartbeat.",
+    },
     # --- Images: standardization knobs for the coopt/upload pipeline ---
     {
         "key": "image_jpeg_quality",

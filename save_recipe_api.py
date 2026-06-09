@@ -3018,34 +3018,10 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         except Exception as e:
             print(f"[REFRESH-DISH] chapter-fit recompute failed (non-fatal): {e}")
 
-    # Dish competitiveness: how this dish's field clout ranks among its CHAPTER
-    # siblings (a popular/contested dish vs a niche one). Compare this run's
-    # cohort avg power to the other dishes' avg power in the same chapter
-    # (master_recipes, kind=top). Stamped on each saved recipe's _scoring below.
-    dish_comp_pct: Optional[float] = None
-    try:
-        _powers = [float(e["power"]) for e in entries if e.get("power") is not None]
-        if _powers and dish_chapter and dish_chapter != "Uncertain":
-            _this_avg = sum(_powers) / len(_powers)
-            with sqlite3.connect(DB_PATH) as conn:
-                _rows = conn.execute(
-                    "SELECT json_extract(data,'$._master.dish') AS d, "
-                    "AVG(COALESCE(json_extract(data,'$._scoring.domainAuthority'),0) "
-                    "  + COALESCE(json_extract(data,'$._scoring.pageAuthority'),0)) AS ap "
-                    "FROM master_recipes "
-                    "WHERE json_extract(data,'$.classification.chapter') = ? "
-                    "  AND json_extract(data,'$._master.kind') = 'top' "
-                    "GROUP BY d HAVING d IS NOT NULL AND d != ?",
-                    (dish_chapter, canonical_name),
-                ).fetchall()
-            _peers = [float(r[1]) for r in _rows if r[1] is not None]
-            if _peers:
-                _below = sum(1 for p in _peers if p < _this_avg)
-                dish_comp_pct = round(_below / len(_peers) * 100, 1)
-                print(f"[REFRESH-DISH] dish competitiveness in {dish_chapter!r}: "
-                      f"{dish_comp_pct:.0f}th pct (avg clout {_this_avg:.0f} vs {len(_peers)} peers)")
-    except Exception as e:
-        print(f"[REFRESH-DISH] dish-competitiveness calc failed (non-fatal): {e}")
+    # (Dish competitiveness vs chapter is a CROSS-dish rollup that drifts when
+    # any sibling refreshes — it is NOT computed here. The nightly
+    # chapter_rollups job recomputes it for the whole chapter and stores it on
+    # dishes.competitiveness_pct; the editorial enrich reads it live by dish.)
 
     # Delete prior top-kind rows for this dish — editors_choice and
     # legacy survive. Done BEFORE saves so the (url_normalized,
@@ -3156,8 +3132,6 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             _cs["fieldN"] = int(_f.get("n", 0))
         if _f.get("site_restriction"):
             _cs["fieldScope"] = ", ".join(_f["site_restriction"])
-        if dish_comp_pct is not None:
-            _cs["dishCompetitivenessPct"] = dish_comp_pct
         payload["_scoring"] = _cs
         # Auto-enrich is opt-in per dish (defaults off). The save core
         # reads this flag to decide whether to fan out the 3 enrich
@@ -3213,6 +3187,41 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 # Register the handler so the runner knows about it. Done at module
 # import time — the runner loop reads JOB_HANDLERS each tick.
 jobs_lib.register_handler("dish_refresh", _handle_dish_refresh_job)
+
+
+async def _handle_chapter_rollups_job(job: dict) -> dict:
+    """Nightly CROSS-dish rollup: recompute every dish's in-chapter
+    competitiveness percentile and store it on dishes.competitiveness_pct.
+    Off the hot refresh path (it drifts whenever any sibling refreshes), so it
+    runs on a schedule instead. See dishes_lib.recompute_competitiveness."""
+    def _run():
+        with sqlite3.connect(DB_PATH) as conn:
+            return dishes_lib.recompute_competitiveness(conn)
+    summary = await asyncio.to_thread(_run)
+    print(f"[ROLLUPS] chapter competitiveness: {summary}")
+    return summary
+
+
+jobs_lib.register_handler("chapter_rollups", _handle_chapter_rollups_job)
+
+
+def _inject_dish_competitiveness(recipe: dict) -> None:
+    """Stamp the dish's LIVE (nightly-rolled-up) in-chapter competitiveness onto
+    _scoring transiently, just before enrich, so the editorial commentary
+    reflects the CURRENT chapter standing rather than a frozen snapshot.
+    Best-effort — a miss just means the commentary skips that angle."""
+    try:
+        dish = ((recipe.get("_master") or {}).get("dish") or "").strip()
+        if not dish:
+            return
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT competitiveness_pct FROM dishes WHERE name = ?", (dish,)
+            ).fetchone()
+        if row and row[0] is not None:
+            recipe.setdefault("_scoring", {})["dishCompetitivenessPct"] = float(row[0])
+    except Exception as e:
+        print(f"[ENRICH] competitiveness lookup failed (non-fatal): {e}")
 
 
 @app.post("/dishes/{name}/refresh")
@@ -3883,6 +3892,7 @@ def _save_recipe_core(payload: dict) -> dict:
             try:
                 print(f"[SAVE-ENRICH] master row missing story; calling enrich_recipe")
                 t_enrich = time.perf_counter()
+                _inject_dish_competitiveness(recipe_dict)
                 enrich_recipe(recipe_dict, usage_log=save_usage_log)
                 dt = int((time.perf_counter() - t_enrich) * 1000)
                 new_story = ((recipe_dict.get("classification") or {})

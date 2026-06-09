@@ -207,31 +207,55 @@ def cmd_schedule(args: argparse.Namespace) -> int:
 
     with sqlite3.connect(api.DB_PATH) as conn:
         due = dishes_lib.find_due_dishes(conn)
-    if not due:
-        print("No dishes due. Nothing to do.")
-        return 0
-
-    print(f"{len(due)} dish(es) due:")
-    for d in due:
-        print(f"  - {d['name']}  (last_refreshed={d.get('last_refreshed')}, "
-              f"ttl={d.get('refresh_ttl_days')}d, next_run_at={d.get('next_run_at')})")
-    print("-" * 60)
 
     worst = 0
-    for d in due:
-        name = d["name"]
-        if args.dry_run:
-            print(f"[dry-run] would refresh {name!r}")
-            continue
-        job_id, reason = _enqueue_dish_refresh(name)
-        if job_id is None:
-            # Already in flight (manual run) or vanished — skip, not a failure.
-            print(f"Skipping {name!r}: {reason}")
-            continue
-        print(f"Enqueued job #{job_id} for {name!r}; running...")
-        rc = _run_job_id(job_id)
-        worst = max(worst, rc)
+    if due:
+        print(f"{len(due)} dish(es) due:")
+        for d in due:
+            print(f"  - {d['name']}  (last_refreshed={d.get('last_refreshed')}, "
+                  f"ttl={d.get('refresh_ttl_days')}d, next_run_at={d.get('next_run_at')})")
+        print("-" * 60)
+        for d in due:
+            name = d["name"]
+            if args.dry_run:
+                print(f"[dry-run] would refresh {name!r}")
+                continue
+            job_id, reason = _enqueue_dish_refresh(name)
+            if job_id is None:
+                # Already in flight (manual run) or vanished — skip, not a failure.
+                print(f"Skipping {name!r}: {reason}")
+                continue
+            print(f"Enqueued job #{job_id} for {name!r}; running...")
+            worst = max(worst, _run_job_id(job_id))
+    else:
+        print("No dishes due.")
+
+    # Nightly CROSS-dish rollup (daily-gated), AFTER any refreshes so it sees
+    # today's fresh data. Recomputes each dish's in-chapter competitiveness.
+    if not args.dry_run:
+        worst = max(worst, _run_rollups_if_due())
     return worst
+
+
+def _run_rollups_if_due(min_hours: float = 20.0) -> int:
+    """Run the chapter_rollups job at most ~once a day (gated on system_config
+    rollups_last_run_at), so it rides the hourly scheduler heartbeat as a nightly
+    pass. Returns the job exit code (0 when skipped)."""
+    from datetime import datetime, timezone
+    last = cfg.get_setting("rollups_last_run_at", None)
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+            if (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600.0 < min_hours:
+                return 0
+        except Exception:
+            pass
+    with sqlite3.connect(api.DB_PATH) as conn:
+        cfg.set_setting(conn, "rollups_last_run_at", datetime.now(timezone.utc).isoformat())
+        job_id = jobs_lib.enqueue_job(
+            conn, type="chapter_rollups", params={}, entity_ref="rollups:chapter")
+    print(f"Running chapter_rollups job #{job_id} (nightly cross-dish rollup)...")
+    return _run_job_id(job_id)
 
 
 def cmd_exec(args: argparse.Namespace) -> int:
