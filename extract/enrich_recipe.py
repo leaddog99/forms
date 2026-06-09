@@ -131,49 +131,44 @@ words. Editorial take on THIS specific recipe — technique choices,
 ingredient ratios, what makes it work or wobble, who would love it.
 Concrete and opinionated. Not 'this is a classic dish' filler —
 comment on what the cook in front of this recipe is actually being
-asked to do.
+asked to do. Stay on the COOKING; the recipe's standing vs other
+recipes (how it ranked, why we surfaced it) is scoreCommentary's job —
+don't go there.
 
-scoreCommentary: 1-2 short paragraphs that VOUCH FOR THIS RECIPE to a home cook —
-why it's worth their trust and how it earned its place. THE POINT, front of mind:
-this whole system exists to surface the best RECIPES, not the best publishers.
-So the SUBJECT is the recipe's credibility. The authority signals below are only
-our private EVIDENCE for how strongly to vouch and from what angle — turn them
-into the recipe's merit. NEVER make the paragraph about the publisher's size or
-clout, the page's "standing among candidates", or SEO mechanics.
+scoreCommentary: a SINGLE tight sentence (two at most) — a STANDING note: where
+this recipe landed among everything cooking this dish, and why it earned that
+spot. This is NOT a second review — `opinion` already covers the cooking. Do NOT
+discuss technique, ingredients, ratios, or what makes the recipe work/wobble
+here; comment ONLY on its standing/credibility within the field. The system
+exists to surface the best RECIPES, not the best publishers, so frame it as the
+RECIPE winning, never as the publisher's page placing — and NEVER write about the
+publisher's size/clout or SEO mechanics.
 
 DISCLOSURE — the raw authority SCORES and how they're computed are PROPRIETARY.
-You MAY cite RELATIVE standing as evidence of RECIPE strength ("among the very
-best we found for this dish", "rose to the top of the field") — a percentile/rank
+You MAY cite RELATIVE standing ("among the very top we found for this dish", "#N
+of NN", "rose above bigger names", "best among Greek sites") — a percentile/rank
 reveals nothing about derivation. You may NOT print a raw score, name the metrics
-or their source ("page authority", "domain authority", "PA", "DA", "OU", "power",
-"Moz", "SEO"), or describe the formula/regression/blend.
+or their source ("page/domain authority", "PA", "DA", "OU", "power", "Moz",
+"SEO"), or describe the formula/regression/blend.
 
-WHAT THE EVIDENCE MEANS FOR THE RECIPE (internal — translate, never print terms):
- - A page that beats what a publisher of its size is predicted to do for this
-   dish EARNED its place on the RECIPE's own merits — that is a strong vote of
-   confidence in the recipe itself, not a comment on the brand. Weigh the
-   MAGNITUDE. (A page on a big domain normally scores well below the domain;
-   that's expected — never frame it as the page "should" beat its publisher.)
- - The exceptionality × clout 2x2, stated in RECIPE terms:
-     · high exceptionality + low clout = a genuine FIND — a great recipe that
-       rose above bigger names on its own strength; champion it as "the real deal".
-     · high exceptionality + high clout = a top recipe from a trusted kitchen.
-     · low exceptionality + high clout = a competent, conventional take that's
-       here mostly on reach — say so honestly, don't oversell its specialness.
- - FIELD/geo is light color, not the subject: "one of the best among Greek sites"
-   is fine; a sentence about how modest/established the publisher is, is not.
- - Cite where it lands as the RECIPE winning ("among the very top we surfaced for
-   gemista"), never as the publisher's page placing.
+REASON from the evidence (internal — translate, never print terms): a page that
+beats what a publisher of its size is predicted to do for this dish earned its
+spot on the RECIPE's own merits. Use the exceptionality × clout 2x2 + field/geo
+only to set the standing: high exceptionality + low clout = a genuine FIND (rose
+above bigger names on its own strength); high + high = a top pick from a trusted
+kitchen; low exceptionality + high clout = a competent, conventional take here
+mostly on reach (say so honestly, don't oversell). (A page on a big domain
+normally scores below the domain — expected; never frame it as the page "should"
+beat its publisher.)
 
-VOICE — recommend a RECIPE like a trusted food editor, not rate a website.
-Good: "One of the standout gemista recipes we surfaced — it rose above bigger-name
-sites on the strength of the method itself, a sign it's the real deal for this
-dish." / "A dependable, top-tier take from a kitchen that clearly knows it."
-Bad (this is the exact failure to avoid — NEVER write like this): "ranks #10,
-a solid middle-of-the-pack standing", "the publisher itself is modest in clout",
-"earned through clarity rather than domain authority", "not the loudest voice in
-the room." If scores are missing/zero, vouch briefly from the recipe itself and
-don't fabricate.
+VOICE — one credibility line, like a curator's badge.
+Good: "One of the strongest gemista recipes we surfaced — it rose above
+bigger-name sites on the recipe's own merits." / "A top, trusted-kitchen pick for
+this dish." / "A standout among Greek sites for gemista." Bad: any recipe review
+("the method is clear", "nice ratios" — that's `opinion`'s job) or any publisher
+writeup ("the publisher is modest in clout", "middle of the pack", "not the
+loudest voice"). If scores are missing/zero, a brief honest standing note or skip
+— don't fabricate.
 
 sourcingNotes: Markdown bullet list. Pick 2-5 ingredients where
 quality dominates outcome (raw oils, fresh herbs, aged cheeses,
