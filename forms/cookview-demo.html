@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Cook-view — throwaway #2</title>
+<!--
+  THROWAWAY #2 — the cook EXPERIENCE (not the flip-book).
+  A single recipe as one continuous, image-forward, AUTOSCROLLING page.
+  Principles borrowed from the recipe-anchor revolution:
+   - the page itself scrolls (no fixed-bottom flip pages, no inner scrollbars)
+   - mise-complete: every step carries its OWN "you'll need" — never look back
+   - active-scene focus: the step at center brightens, others dim
+   - hands-free: teleprompter autoscroll, manual touch takes over instantly
+  Images here are reliable placeholders (picsum) to prove the layout — the real
+  version wires the recipe's own hero + generated/coopt step photos.
+-->
+<style>
+  :root{
+    --bg:#f4eee4; --ink:#241a12; --soft:#6f5d4c; --line:#e4d8c6;
+    --accent:#9c5b34; --gold:#b08a4f; --card:#fffaf1;
+    --serif:"Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:auto}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--serif); font-size:18px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* progress bar (scroll position) */
+  #prog{ position:fixed; top:0; left:0; height:3px; width:0; z-index:60;
+    background:linear-gradient(90deg,var(--gold),var(--accent)); transition:width .1s linear; }
+
+  /* top chrome */
+  .chrome{ position:fixed; top:0; left:0; right:0; z-index:50;
+    display:flex; align-items:center; gap:12px; padding:10px 16px;
+    background:linear-gradient(180deg,rgba(20,12,6,.55),rgba(20,12,6,0));
+    color:#f6ece0; }
+  .chrome.solid{ background:rgba(36,26,18,.92); box-shadow:0 2px 12px rgba(0,0,0,.2); }
+  .chrome a,.chrome .c-title{ color:#f6ece0; text-decoration:none; }
+  .chrome .back{ font-size:.9rem; letter-spacing:.02em; opacity:.92; }
+  .chrome .c-title{ flex:1; text-align:center; font-size:.86rem; letter-spacing:.16em;
+    text-transform:uppercase; opacity:.0; transition:opacity .25s; }
+  .chrome.solid .c-title{ opacity:.8; }
+
+  /* ---- HERO ---- */
+  .hero{ position:relative; height:86vh; min-height:520px; display:flex; align-items:flex-end;
+    color:#fff; overflow:hidden; }
+  .hero .img{ position:absolute; inset:0; background:#6f3d22 center/cover no-repeat; }
+  .hero .scrim{ position:absolute; inset:0;
+    background:linear-gradient(180deg,rgba(20,10,4,.25) 0%,rgba(20,10,4,0) 30%,rgba(20,10,4,.72) 100%); }
+  .hero .wrap{ position:relative; padding:0 24px 40px; max-width:760px; }
+  .hero .eyebrow{ font-size:.72rem; letter-spacing:.26em; text-transform:uppercase;
+    color:#f1d6b6; margin:0 0 12px; }
+  .hero h1{ font-size:clamp(2.2rem,7vw,3.6rem); line-height:1.05; margin:0 0 14px; font-weight:600;
+    text-shadow:0 2px 18px rgba(0,0,0,.4); }
+  .hero .meta{ display:flex; flex-wrap:wrap; gap:8px 18px; font-size:.92rem; color:#f3e6d6; opacity:.95 }
+  .hero .meta b{ color:#fff; font-weight:600 }
+  .hero .scrolltip{ position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+    color:#f6ece0; font-size:.72rem; letter-spacing:.18em; text-transform:uppercase; opacity:.8;
+    animation:bob 1.8s ease-in-out infinite; }
+  @keyframes bob{ 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(5px)} }
+
+  /* ---- body flow ---- */
+  .flow{ max-width:680px; margin:0 auto; padding:40px 22px 0; }
+  .lede{ font-size:1.28rem; line-height:1.62; color:#3c2c1d; font-style:italic; margin:0 0 8px; }
+  .lede::first-letter{ font-size:3.2rem; line-height:.8; float:left; padding:6px 10px 0 0; color:var(--accent); font-style:normal; }
+  .startcue{ text-align:center; color:var(--soft); font-size:.74rem; letter-spacing:.22em;
+    text-transform:uppercase; margin:34px 0 8px; }
+  .startcue::before,.startcue::after{ content:"—"; margin:0 10px; color:var(--line) }
+
+  /* ---- a STEP scene ---- */
+  .step{ padding:30px 0; border-top:1px solid var(--line);
+    opacity:.42; transform:scale(.99); transition:opacity .45s ease, transform .45s ease; }
+  .step.active{ opacity:1; transform:scale(1); }
+  .step:first-of-type{ border-top:none }
+  .step .head{ display:flex; align-items:baseline; gap:14px; margin-bottom:6px; }
+  .step .num{ font-size:.78rem; letter-spacing:.16em; text-transform:uppercase; color:var(--accent);
+    font-weight:600; flex:none; }
+  .step .name{ font-size:1.5rem; font-weight:600; line-height:1.15; margin:0; }
+  .step .do{ font-size:1.22rem; line-height:1.62; margin:6px 0 0; color:#2c2114; }
+
+  /* per-step image */
+  .step .shot{ width:100%; aspect-ratio:16/10; object-fit:cover; border-radius:14px;
+    margin:16px 0 4px; background:#e7dccb center/cover no-repeat; box-shadow:0 8px 22px rgba(80,50,20,.12); }
+
+  /* anchored mise — the "never look back" card */
+  .need{ margin-top:16px; background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:14px 16px; box-shadow:0 4px 14px rgba(120,80,40,.05); }
+  .need .lbl{ font-size:.66rem; letter-spacing:.2em; text-transform:uppercase; color:var(--gold); }
+  .need ul{ list-style:none; margin:8px 0 0; padding:0; display:grid;
+    grid-template-columns:1fr 1fr; gap:4px 18px; font-size:1.02rem; }
+  .need ul li{ padding:3px 0 3px 14px; position:relative; }
+  .need ul li::before{ content:"•"; color:var(--accent); position:absolute; left:0 }
+  .need ul li b{ font-weight:600 }
+  .need .gear{ margin-top:10px; font-size:.92rem; color:var(--soft); display:flex; gap:8px; align-items:center; }
+  @media (max-width:520px){ .need ul{ grid-template-columns:1fr } }
+
+  /* ---- finish ---- */
+  .finish{ max-width:680px; margin:24px auto 0; padding:0 22px; }
+  .finish .done{ text-align:center; padding:30px 0 8px; }
+  .finish .done .check{ width:54px; height:54px; border-radius:50%; background:var(--accent); color:#fff;
+    display:inline-flex; align-items:center; justify-content:center; font-size:1.6rem; }
+  .finish .done h3{ font-size:1.5rem; margin:14px 0 4px; }
+  .finish .done p{ color:var(--soft); margin:0 }
+  .booknav{ display:flex; justify-content:space-between; gap:12px; margin:30px 0 80px; }
+  .booknav a{ flex:1; text-decoration:none; color:var(--ink); background:var(--card);
+    border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .booknav a.next{ text-align:right }
+  .booknav .k{ font-size:.66rem; letter-spacing:.16em; text-transform:uppercase; color:var(--soft) }
+  .booknav .v{ font-size:1.05rem; font-weight:600; color:var(--accent) }
+
+  /* ---- floating autoscroll control ---- */
+  .pilot{ position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:55;
+    display:flex; align-items:center; gap:4px; padding:6px; border-radius:999px;
+    background:rgba(36,26,18,.94); color:#f6ece0; box-shadow:0 8px 24px rgba(0,0,0,.3);
+    backdrop-filter:blur(6px); }
+  .pilot button{ font:inherit; border:0; cursor:pointer; background:transparent; color:#f6ece0;
+    width:40px; height:40px; border-radius:50%; font-size:1.05rem; display:grid; place-items:center; }
+  .pilot button:hover{ background:rgba(255,255,255,.12) }
+  .pilot .play{ background:var(--accent); width:46px; height:46px; font-size:1.2rem; }
+  .pilot .spd{ font-size:.78rem; min-width:42px; text-align:center; color:#e8d6bf; font-variant-numeric:tabular-nums }
+  .pilot .lab{ font-size:.62rem; letter-spacing:.12em; text-transform:uppercase; opacity:.6; padding:0 6px }
+</style>
+</head>
+<body>
+
+<div id="prog"></div>
+
+<div class="chrome" id="chrome">
+  <a class="back" href="#" onclick="return false">‹ Contents</a>
+  <span class="c-title">Coquilles Saint-Jacques</span>
+  <span style="width:60px"></span>
+</div>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="img" id="heroImg" style="background-image:url('https://picsum.photos/seed/scallopdish/1400/1200')"></div>
+  <div class="scrim"></div>
+  <div class="wrap">
+    <p class="eyebrow">Anna Landry Cooks · From the Sea</p>
+    <h1>Coquilles<br>Saint-Jacques</h1>
+    <div class="meta"><span>Serves <b>6</b></span><span><b>50</b> min</span><span>Julia Child</span><span>French · gratin</span></div>
+  </div>
+  <div class="scrolltip">scroll to cook</div>
+</header>
+
+<div class="flow">
+  <p class="lede">Scallops gratinéed with wine, garlic and herbs, finished under the broiler
+     in their own shells — luscious, golden, and far easier than it looks.</p>
+  <div class="startcue">Let's cook</div>
+
+  <!-- STEP 1 -->
+  <section class="step">
+    <div class="head"><span class="num">Step 1</span><h2 class="name">Sweat the aromatics</h2></div>
+    <p class="do">Cook the onions slowly in butter for about 5 minutes, until tender and translucent
+       but not browned. Stir in the shallots and garlic and cook one minute more. Set aside.</p>
+    <div class="need">
+      <span class="lbl">you'll need · right here</span>
+      <ul>
+        <li><b>1 Tbsp</b> butter</li>
+        <li><b>⅓ cup</b> minced onions</li>
+        <li><b>1½ Tbsp</b> minced shallot</li>
+        <li><b>1 clove</b> garlic, minced</li>
+      </ul>
+      <div class="gear">🍳 small saucepan</div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="step">
+    <div class="head"><span class="num">Step 2</span><h2 class="name">Dredge the scallops</h2></div>
+    <p class="do">Pat the scallops dry. Just before cooking, sprinkle with salt and pepper,
+       roll in flour, and shake off the excess.</p>
+    <div class="need">
+      <span class="lbl">you'll need · right here</span>
+      <ul>
+        <li><b>1½ lbs</b> scallops, sliced</li>
+        <li><b>1 cup</b> flour, in a dish</li>
+        <li>salt &amp; pepper</li>
+      </ul>
+      <div class="gear">🥣 shallow dish</div>
+    </div>
+  </section>
+
+  <!-- STEP 3 (with photo) -->
+  <section class="step">
+    <div class="head"><span class="num">Step 3</span><h2 class="name">Sear — don't crowd</h2></div>
+    <p class="do">Sauté the scallops quickly in very hot butter and oil for about 2 minutes,
+       just to brown them lightly. Work in batches so the pan stays hot.</p>
+    <img class="shot" loading="lazy" src="https://picsum.photos/seed/searpan/1200/760" alt="searing">
+    <div class="need">
+      <span class="lbl">you'll need · right here</span>
+      <ul>
+        <li><b>2 Tbsp</b> butter</li>
+        <li><b>1 Tbsp</b> olive oil</li>
+      </ul>
+      <div class="gear">🍳 10-inch enamel skillet, very hot</div>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="step">
+    <div class="head"><span class="num">Step 4</span><h2 class="name">Build the sauce</h2></div>
+    <p class="do">Pour the wine into the skillet with the scallops. Add the herbs and the cooked
+       onion mixture. Cover and simmer 5 minutes, then uncover and boil the sauce down for a
+       minute until lightly thickened. Correct the seasoning and discard the bay leaf.</p>
+    <div class="need">
+      <span class="lbl">you'll need · right here</span>
+      <ul>
+        <li><b>⅔ cup</b> dry white wine</li>
+        <li><b>½</b> bay leaf</li>
+        <li><b>⅛ tsp</b> thyme</li>
+        <li>the onion mixture</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- STEP 5 (with photo) -->
+  <section class="step">
+    <div class="head"><span class="num">Step 5</span><h2 class="name">Gratinée &amp; serve</h2></div>
+    <p class="do">Spoon the scallops and sauce into the shells. Sprinkle with cheese and dot with
+       butter. Broil 2–3 minutes until bubbling and golden brown. Serve at once.</p>
+    <img class="shot" loading="lazy" src="https://picsum.photos/seed/gratin/1200/760" alt="finished gratin">
+    <div class="need">
+      <span class="lbl">you'll need · right here</span>
+      <ul>
+        <li><b>6</b> buttered scallop shells</li>
+        <li><b>¼ cup</b> grated Swiss cheese</li>
+        <li><b>2 Tbsp</b> butter, in pieces</li>
+      </ul>
+      <div class="gear">🔥 broiler</div>
+    </div>
+  </section>
+</div>
+
+<div class="finish">
+  <div class="done">
+    <span class="check">✓</span>
+    <h3>That's dinner.</h3>
+    <p>Golden, bubbling, and in the shells — bon appétit.</p>
+  </div>
+  <div class="booknav">
+    <a class="prev" href="#" onclick="return false"><div class="k">‹ Contents</div><div class="v">Anna Landry Cooks</div></a>
+    <a class="next" href="#" onclick="return false"><div class="k">Next recipe ›</div><div class="v">Shrimp Saganaki</div></a>
+  </div>
+</div>
+
+<!-- floating teleprompter pilot -->
+<div class="pilot">
+  <span class="lab">auto-cook</span>
+  <button onclick="bumpSpeed(-1)" title="slower">−</button>
+  <button class="play" id="playBtn" onclick="toggleAuto()" title="play / pause">▶</button>
+  <button onclick="bumpSpeed(1)" title="faster">+</button>
+  <span class="spd" id="spd">1.0×</span>
+</div>
+
+<script>
+  // ---- scroll progress + chrome solidify ----
+  const prog = document.getElementById('prog');
+  const chrome = document.getElementById('chrome');
+  function onScroll(){
+    const h = document.documentElement.scrollHeight - innerHeight;
+    prog.style.width = (h>0 ? (scrollY/h*100) : 0) + '%';
+    chrome.classList.toggle('solid', scrollY > innerHeight*0.7);
+  }
+  addEventListener('scroll', onScroll, {passive:true}); onScroll();
+
+  // ---- active-scene focus ----
+  const steps = [...document.querySelectorAll('.step')];
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting) {
+      steps.forEach(s=>s.classList.remove('active')); e.target.classList.add('active');
+    }});
+  }, { rootMargin:'-45% 0px -45% 0px', threshold:0 });
+  steps.forEach(s=>io.observe(s));
+
+  // ---- teleprompter autoscroll (the PAGE scrolls itself) ----
+  let auto=false, speed=1.0, raf=null, last=0;
+  const BASE = 46;                       // px/sec at 1.0×
+  const playBtn=document.getElementById('playBtn'), spdEl=document.getElementById('spd');
+  function frame(t){
+    if(!auto) return;
+    if(!last) last=t;
+    const dt=(t-last)/1000; last=t;
+    scrollBy(0, BASE*speed*dt);
+    const atEnd = (innerHeight+scrollY) >= (document.documentElement.scrollHeight - 2);
+    if(atEnd){ stopAuto(); return; }
+    raf=requestAnimationFrame(frame);
+  }
+  function startAuto(){ auto=true; last=0; playBtn.textContent='❚❚'; raf=requestAnimationFrame(frame); }
+  function stopAuto(){ auto=false; playBtn.textContent='▶'; if(raf) cancelAnimationFrame(raf); }
+  function toggleAuto(){ auto?stopAuto():startAuto(); }
+  function bumpSpeed(d){ speed=Math.min(3,Math.max(.5, +(speed+d*0.5).toFixed(1))); spdEl.textContent=speed.toFixed(1)+'×'; }
+  // manual interaction takes over instantly
+  ['wheel','touchstart','keydown'].forEach(ev=>addEventListener(ev, ()=>{ if(auto) stopAuto(); }, {passive:true}));
+  window.toggleAuto=toggleAuto; window.bumpSpeed=bumpSpeed;
+</script>
+</body>
+</html>

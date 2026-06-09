@@ -230,32 +230,38 @@ def cmd_schedule(args: argparse.Namespace) -> int:
     else:
         print("No dishes due.")
 
-    # Nightly CROSS-dish rollup (daily-gated), AFTER any refreshes so it sees
-    # today's fresh data. Recomputes each dish's in-chapter competitiveness.
+    # Recurring scheduled jobs (DB-resident registry, editable in the a/c/d Jobs
+    # editor), AFTER the dish pass so data-dependent rollups see fresh data.
     if not args.dry_run:
-        worst = max(worst, _run_rollups_if_due())
+        worst = max(worst, _run_due_scheduled_jobs())
     return worst
 
 
-def _run_rollups_if_due(min_hours: float = 20.0) -> int:
-    """Run the chapter_rollups job at most ~once a day (gated on system_config
-    rollups_last_run_at), so it rides the hourly scheduler heartbeat as a nightly
-    pass. Returns the job exit code (0 when skipped)."""
-    from datetime import datetime, timezone
-    last = cfg.get_setting("rollups_last_run_at", None)
-    if last:
-        try:
-            last_dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
-            if (datetime.now(timezone.utc) - last_dt).total_seconds() / 3600.0 < min_hours:
-                return 0
-        except Exception:
-            pass
+def _run_due_scheduled_jobs() -> int:
+    """Run every enabled scheduled_jobs row whose interval has elapsed. Each goes
+    through the canonical job path; last_run_at is stamped UP FRONT (so an
+    overlapping heartbeat honors the interval) then the status is recorded after.
+    Returns the worst exit code."""
+    from input.pipeline import scheduled_jobs as sched
     with sqlite3.connect(api.DB_PATH) as conn:
-        cfg.set_setting(conn, "rollups_last_run_at", datetime.now(timezone.utc).isoformat())
-        job_id = jobs_lib.enqueue_job(
-            conn, type="chapter_rollups", params={}, entity_ref="rollups:chapter")
-    print(f"Running chapter_rollups job #{job_id} (nightly cross-dish rollup)...")
-    return _run_job_id(job_id)
+        due = sched.find_due_scheduled_jobs(conn)
+    worst = 0
+    for j in due:
+        name = j["name"]
+        with sqlite3.connect(api.DB_PATH) as conn:
+            job_id = jobs_lib.enqueue_job(
+                conn, type=j["job_type"], params=j.get("params") or {},
+                entity_ref=f"scheduled:{name}")
+            sched.record_run(conn, name, status="running", job_id=job_id)
+        print(f"Running scheduled job {name!r} (#{job_id}, type={j['job_type']})...")
+        rc = _run_job_id(job_id)
+        worst = max(worst, rc)
+        with sqlite3.connect(api.DB_PATH) as conn:
+            run = jobs_lib.get_job(conn, job_id) or {}
+            sched.record_run(conn, name,
+                             status=run.get("status") or ("error" if rc else "success"),
+                             job_id=job_id)
+    return worst
 
 
 def cmd_exec(args: argparse.Namespace) -> int:

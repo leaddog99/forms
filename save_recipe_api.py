@@ -833,6 +833,8 @@ def init_db():
             jobs_lib.ensure_jobs_table(conn)
             from input.pipeline.system_config import ensure_system_config_table
             ensure_system_config_table(conn)
+            from input.pipeline.scheduled_jobs import ensure_scheduled_jobs_table
+            ensure_scheduled_jobs_table(conn)
             # Generic admin-managed tables (status_messages, etc.) — each
             # registered AdminModel's table is created + seeded here.
             from admin_models import ensure_admin_tables
@@ -2618,6 +2620,102 @@ def update_system_config_endpoint(payload: dict = Body(...)):
     except Exception as e:
         print(f"[ERROR] update_system_config failed: {e}")
         raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+# =========================================================================
+# Scheduled jobs — the DB-resident registry of recurring jobs (purpose,
+# cadence, on/off), editable via the a/c/d Jobs editor and obeyed by the
+# scheduler. Distinct from /jobs (the run queue). See scheduled_jobs.py.
+# =========================================================================
+
+@app.get("/scheduled-jobs")
+def list_scheduled_jobs_endpoint():
+    """All scheduled-job definitions + their last run, plus the registered
+    handler types so the editor can offer a job_type picker."""
+    from input.pipeline import scheduled_jobs as sched
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            sched.ensure_scheduled_jobs_table(conn)
+            jobs = sched.list_scheduled_jobs(conn)
+            # attach the last run's log url for each row
+            for j in jobs:
+                j["last_log_url"] = None
+                if j.get("last_job_id"):
+                    run = jobs_lib.get_job(conn, j["last_job_id"])
+                    if run and run.get("log_filename"):
+                        j["last_log_url"] = f"/logs/{run['log_filename']}"
+        return {"jobs": jobs, "handler_types": sorted(jobs_lib.list_handler_types())}
+    except Exception as e:
+        print(f"[ERROR] list_scheduled_jobs failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/scheduled-jobs/{name}")
+def upsert_scheduled_job_endpoint(name: str, payload: dict = Body(...)):
+    """Create or update a scheduled job (job_type/purpose/interval_hours/params/
+    enabled). Rejects an unknown job_type so the schedule can't reference a
+    handler that doesn't exist."""
+    from input.pipeline import scheduled_jobs as sched
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            sched.ensure_scheduled_jobs_table(conn)
+            jt = payload.get("job_type")
+            if jt and jt not in jobs_lib.list_handler_types():
+                raise HTTPException(status_code=400,
+                                    detail=f"Unknown job_type {jt!r}")
+            return sched.upsert_scheduled_job(conn, name, payload)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] upsert_scheduled_job failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+@app.delete("/scheduled-jobs/{name}")
+def delete_scheduled_job_endpoint(name: str):
+    from input.pipeline import scheduled_jobs as sched
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            sched.ensure_scheduled_jobs_table(conn)
+            if not sched.delete_scheduled_job(conn, name):
+                raise HTTPException(status_code=404, detail="Scheduled job not found")
+        return {"ok": True, "deleted": name}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] delete_scheduled_job failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
+
+
+@app.post("/scheduled-jobs/{name}/run")
+def run_scheduled_job_now_endpoint(name: str, request: Request):
+    """Run a scheduled job NOW, out-of-process (Popen `python -m jobs run`), so
+    the admin can trigger it on demand from the editor. Returns the spawned job."""
+    _require_perm(request, "refresh_dishes")
+    from input.pipeline import scheduled_jobs as sched
+    with sqlite3.connect(DB_PATH) as conn:
+        sched.ensure_scheduled_jobs_table(conn)
+        row = sched.get_scheduled_job(conn, name)
+        if not row:
+            raise HTTPException(status_code=404, detail="Scheduled job not found")
+        job_id = jobs_lib.enqueue_job(
+            conn, type=row["job_type"], params=row.get("params") or {},
+            entity_ref=f"scheduled:{name}")
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
+    return {"name": name, "job_id": job_id, "spawned": True,
+            "stream_url": f"/jobs/{job_id}/stream"}
 
 
 # =========================================================================

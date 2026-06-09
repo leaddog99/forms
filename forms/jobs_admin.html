@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Jobs</title>
+  <!-- Scheduled-jobs editor (a/c/d): the DB-resident registry of recurring jobs
+       (scheduled_jobs table) — purpose, cadence, on/off — obeyed by the
+       scheduler. Distinct from the /jobs run queue. See scheduled_jobs.py. -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260608a">
+  <style>
+    :root{ --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
+      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b; --ok:#2f7a3a; }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased; }
+    .wrap{ max-width:780px; margin:0 auto; padding:28px 18px 80px; }
+    h1{ font-size:1.6rem; margin:0 0 4px; }
+    .sub{ color:var(--muted); margin:0 0 24px; font-size:.95rem; }
+    .job{ background:var(--card); border:1px solid var(--border); border-radius:14px;
+      padding:18px; margin-bottom:16px; }
+    .job.off{ opacity:.72; }
+    .job-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:4px; flex-wrap:wrap; }
+    .job-head .name{ font-size:1.15rem; font-weight:700; }
+    .job-head .type{ font-size:.74rem; color:var(--muted); background:#f3eee7;
+      padding:2px 8px; border-radius:999px; }
+    .lastrun{ font-size:.8rem; color:var(--muted); margin:2px 0 14px; }
+    .lastrun a{ color:var(--accent); }
+    .lastrun .s-success{ color:var(--ok); } .lastrun .s-error{ color:var(--warn); }
+    .grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+    @media (max-width:560px){ .grid{ grid-template-columns:1fr; } }
+    .f{ display:flex; flex-direction:column; gap:5px; }
+    .f.full{ grid-column:1 / -1; }
+    .f label{ font-size:.74rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    .f input,.f select,.f textarea{ width:100%; padding:10px 12px; font-size:.96rem;
+      border:1px solid var(--border); border-radius:9px; background:#fff; color:var(--ink);
+      font-family:inherit; }
+    .f textarea{ min-height:56px; resize:vertical; }
+    .toggle{ display:flex; align-items:center; gap:9px; }
+    .toggle input{ width:20px; height:20px; accent-color:var(--accent); }
+    .actions{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+    button{ font:inherit; font-size:.9rem; padding:9px 16px; border-radius:9px; cursor:pointer;
+      border:1px solid var(--border); background:#fff; color:var(--ink); }
+    button.pri{ background:var(--accent); color:#fff; border-color:var(--accent); }
+    button.pri:hover{ background:var(--accent-dark); }
+    button.pri:disabled{ opacity:.45; cursor:default; }
+    button.danger{ color:var(--warn); border-color:#e7c9c9; margin-left:auto; }
+    .flash{ font-size:.85rem; margin-left:6px; align-self:center; }
+    .flash.ok{ color:var(--ok); } .flash.err{ color:var(--warn); }
+    .addbar{ background:var(--card); border:1px dashed var(--border); border-radius:14px;
+      padding:16px 18px; display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+    .addbar .f{ flex:1; min-width:140px; }
+    h2.section{ font-size:.78rem; text-transform:uppercase; letter-spacing:.08em;
+      color:var(--muted); margin:26px 0 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Scheduled Jobs</h1>
+    <p class="sub">Recurring jobs the scheduler runs, stored in the database. Edit a job's purpose, cadence, and on/off here — the scheduler obeys it on its next pass. Distinct from the live job queue.</p>
+    <div id="list"><p class="sub">Loading…</p></div>
+
+    <h2 class="section">Add a scheduled job</h2>
+    <div class="addbar">
+      <div class="f"><label for="n_name">Name (unique)</label><input id="n_name" placeholder="e.g. nightly_reindex"></div>
+      <div class="f"><label for="n_type">Job type</label><select id="n_type"></select></div>
+      <div class="f" style="flex:0 0 auto"><label>&nbsp;</label><button class="pri" id="addBtn">Create</button></div>
+    </div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260608c"></script>
+  <script>
+    const $ = (s,el=document) => el.querySelector(s);
+    if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'jobs' });
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmt = (iso) => { if(!iso) return 'never'; try { return new Date(iso).toLocaleString(); } catch(_){ return iso; } };
+
+    let HANDLER_TYPES = [];
+
+    function jobCard(j){
+      const opts = HANDLER_TYPES.map(t => `<option value="${esc(t)}" ${t===j.job_type?'selected':''}>${esc(t)}</option>`).join('');
+      const statusCls = j.last_status === 'success' ? 's-success' : (String(j.last_status||'').startsWith('error') ? 's-error' : '');
+      const log = j.last_log_url ? ` · <a href="${esc(j.last_log_url)}" target="_blank" rel="noopener">log</a>` : '';
+      const params = (j.params && Object.keys(j.params).length) ? JSON.stringify(j.params, null, 0) : '';
+      return `<section class="job ${j.enabled?'':'off'}" data-name="${esc(j.name)}">
+        <div class="job-head"><span class="name">${esc(j.name)}</span><span class="type">${esc(j.job_type)}</span></div>
+        <div class="lastrun">last run: ${fmt(j.last_run_at)}${j.last_status?` · <span class="${statusCls}">${esc(j.last_status)}</span>`:''}${log}</div>
+        <div class="grid">
+          <div class="f"><label>Job type</label><select data-k="job_type">${opts}</select></div>
+          <div class="f"><label>Run every (hours)</label><input type="number" step="0.5" min="0.5" data-k="interval_hours" value="${esc(j.interval_hours)}"></div>
+          <div class="f full"><label>Purpose</label><textarea data-k="purpose">${esc(j.purpose||'')}</textarea></div>
+          <div class="f"><label>Enabled</label><div class="toggle"><input type="checkbox" data-k="enabled" ${j.enabled?'checked':''}><span class="st">${j.enabled?'On':'Off'}</span></div></div>
+          <div class="f"><label>Params (JSON)</label><input data-k="params" value='${esc(params)}' placeholder="{}"></div>
+        </div>
+        <div class="actions">
+          <button class="pri" data-act="save">Save</button>
+          <button data-act="run">▶ Run now</button>
+          <button class="danger" data-act="delete">Delete</button>
+          <span class="flash" data-flash></span>
+        </div>
+      </section>`;
+    }
+
+    function wireCard(card){
+      const name = card.dataset.name;
+      const flash = (m,cls) => { const f=$('[data-flash]',card); f.textContent=m; f.className='flash '+(cls||''); };
+      const read = () => {
+        const get = (k) => $(`[data-k="${k}"]`, card);
+        let params = {};
+        const praw = get('params').value.trim();
+        if (praw){ try { params = JSON.parse(praw); } catch(_){ throw new Error('Params must be valid JSON'); } }
+        return {
+          job_type: get('job_type').value,
+          interval_hours: parseFloat(get('interval_hours').value),
+          purpose: get('purpose').value,
+          enabled: get('enabled').checked,
+          params,
+        };
+      };
+      $('[data-k="enabled"]',card).addEventListener('change', e => {
+        $('.st',card).textContent = e.target.checked ? 'On' : 'Off';
+        card.classList.toggle('off', !e.target.checked);
+      });
+      $('[data-act="save"]',card).addEventListener('click', async () => {
+        let body; try { body = read(); } catch(e){ return flash(e.message,'err'); }
+        flash('Saving…','');
+        try {
+          const r = await fetch(`/scheduled-jobs/${encodeURIComponent(name)}`, {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+          flash('Saved ✓','ok'); load();
+        } catch(e){ flash('Error: '+e.message,'err'); }
+      });
+      $('[data-act="run"]',card).addEventListener('click', async () => {
+        flash('Starting…','');
+        try {
+          const r = await fetch(`/scheduled-jobs/${encodeURIComponent(name)}/run`, { method:'POST' });
+          const d = await r.json().catch(()=>({}));
+          if(!r.ok) throw new Error(d.detail||r.status);
+          flash(`Running (job #${d.job_id})…`,'ok');
+          if (LibraryShell.streamJob) LibraryShell.streamJob(d.job_id);
+          setTimeout(load, 1500);
+        } catch(e){ flash('Error: '+e.message,'err'); }
+      });
+      $('[data-act="delete"]',card).addEventListener('click', async () => {
+        if(!confirm(`Delete scheduled job "${name}"?`)) return;
+        try {
+          const r = await fetch(`/scheduled-jobs/${encodeURIComponent(name)}`, { method:'DELETE' });
+          if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+          load();
+        } catch(e){ flash('Error: '+e.message,'err'); }
+      });
+    }
+
+    async function load(){
+      const r = await fetch('/scheduled-jobs');
+      const d = await r.json();
+      HANDLER_TYPES = d.handler_types || [];
+      const jobs = d.jobs || [];
+      $('#list').innerHTML = jobs.length ? jobs.map(jobCard).join('') : '<p class="sub">No scheduled jobs yet.</p>';
+      document.querySelectorAll('.job').forEach(wireCard);
+      $('#n_type').innerHTML = HANDLER_TYPES.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    }
+
+    $('#addBtn').addEventListener('click', async () => {
+      const name = $('#n_name').value.trim();
+      const job_type = $('#n_type').value;
+      if(!name){ alert('Name is required'); return; }
+      try {
+        const r = await fetch(`/scheduled-jobs/${encodeURIComponent(name)}`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ job_type, interval_hours: 24, enabled: true, purpose: '', params: {} }) });
+        if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+        $('#n_name').value = '';
+        load();
+      } catch(e){ alert('Error: '+e.message); }
+    });
+
+    load();
+  </script>
+</body>
+</html>

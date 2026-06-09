@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Classic Lasagna &mdash; step-anchored</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400;1,9..144,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f1e6;
+    --card:#fffdf7;
+    --ink:#2a2420;
+    --ink-soft:#6f6456;
+    --clay:#bd4c2a;
+    --clay-deep:#9c3c1f;
+    --clay-bg:#f1e3d4;
+    --sea:#3c6a5d;
+    --sea-deep:#2f5448;
+    --sea-bg:#e8efe3;
+    --line:rgba(42,36,32,0.12);
+    --shadow:0 1px 2px rgba(42,36,32,.06), 0 8px 24px rgba(42,36,32,.07);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--paper);
+    background-image:radial-gradient(rgba(42,36,32,.025) 1px, transparent 1px);
+    background-size:18px 18px;
+    color:var(--ink);
+    font-family:"Source Serif 4", Georgia, serif;
+    font-size:18px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    padding:0 0 96px;
+  }
+  .wrap{max-width:640px;margin:0 auto;padding:0 20px;}
+
+  /* ---------- Header ---------- */
+  header{padding:38px 0 18px;}
+  .kicker{font-family:"Source Serif 4",serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--clay);font-weight:600;margin:0 0 14px;}
+  h1{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(40px,11vw,62px);line-height:.96;margin:0 0 6px;letter-spacing:-.01em;}
+  h1 .it{font-style:italic;font-weight:500;display:block;color:var(--clay-deep);}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:18px 0 0;font-size:14.5px;color:var(--ink-soft);letter-spacing:.02em;}
+  .meta span{display:inline-flex;align-items:center;gap:7px;}
+  .meta b{color:var(--ink);font-weight:600;}
+  .blurb{margin:20px 0 0;font-size:16.5px;color:var(--ink-soft);line-height:1.62;border-left:3px solid var(--sea-bg);padding-left:16px;}
+
+  /* ---------- Preferences ---------- */
+  .prefs{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    margin:22px 0 0;padding:13px 16px 13px 18px;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+  }
+  .prefs-label{font-family:"Source Serif 4",serif;font-size:11.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-soft);}
+  .seg{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px;}
+  .seg-btn{
+    border:0;background:none;cursor:pointer;
+    font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;letter-spacing:.02em;
+    color:var(--ink-soft);padding:7px 18px;border-radius:999px;transition:color .2s ease, background .25s ease;
+  }
+  .seg-btn.active{background:var(--clay);color:#fff;box-shadow:0 1px 3px rgba(42,36,32,.18);}
+
+  /* ---------- Shopping list ---------- */
+  details.shop{margin:16px 0 8px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;}
+  details.shop summary{list-style:none;cursor:pointer;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;font-family:"Fraunces",serif;font-weight:600;font-size:17px;}
+  details.shop summary::-webkit-details-marker{display:none;}
+  .chev{transition:transform .25s ease;color:var(--clay);font-size:14px;}
+  details.shop[open] .chev{transform:rotate(180deg);}
+  .shoplist{padding:2px 20px 18px;margin:0;list-style:none;}
+  .shoplist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;}
+  .shoplist li:first-child{border-top:none;}
+  .shoplist .q{color:var(--clay-deep);font-weight:600;white-space:nowrap;}
+  .shoplist .n{text-align:right;color:var(--ink);}
+  .eqlist{padding:2px 20px 18px;margin:0;list-style:none;}
+  .eqlist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;align-items:baseline;}
+  .eqlist li:first-child{border-top:none;}
+  .eqlist .e-name{color:var(--ink);}
+  .eqlist .e-name b{font-weight:600;}
+  .eqlist .e-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14.5px;text-align:right;}
+  .eqlist .e-size.none{color:var(--ink-soft);opacity:.55;font-weight:400;font-style:normal;}
+
+  /* Equipment items that expand to product picks */
+  .eqwrap{padding:4px 14px 14px;}
+  details.eq-item{border-top:1px dashed var(--line);}
+  details.eq-item:first-child{border-top:none;}
+  details.eq-item>summary{list-style:none;cursor:pointer;padding:12px 6px;display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:16px;}
+  details.eq-item>summary::-webkit-details-marker{display:none;}
+  .eq-item .e-name{color:var(--ink);}
+  .eq-item .e-name b{font-weight:600;}
+  .eq-right{display:inline-flex;align-items:baseline;gap:10px;flex:0 0 auto;}
+  .eq-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14px;}
+  .eq-size.none{color:var(--ink-soft);opacity:.5;font-style:normal;font-weight:400;}
+  .eq-caret{color:var(--clay);font-size:12px;transition:transform .25s ease;}
+  details.eq-item[open] .eq-caret{transform:rotate(180deg);}
+  .eq-panel{padding:0 6px 16px;}
+  .eq-sum{margin:0 0 12px;font-size:14.5px;line-height:1.5;color:var(--ink-soft);font-style:italic;}
+  .prod-grid{display:flex;flex-direction:column;gap:9px;}
+  .prod{display:flex;gap:12px;align-items:center;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--paper);}
+  .prod-thumb{width:52px;height:52px;border-radius:10px;display:grid;place-items:center;font-size:27px;background:var(--card);border:1px solid var(--line);flex:0 0 auto;}
+  .prod-info{flex:1;min-width:0;}
+  .prod-name{font-family:"Fraunces",serif;font-weight:600;font-size:15px;color:var(--ink);line-height:1.2;}
+  .prod-desc{font-size:13px;color:var(--ink-soft);line-height:1.4;margin-top:2px;}
+  .prod-meta{display:flex;align-items:center;gap:10px;margin-top:4px;}
+  .prod-price{color:var(--clay-deep);font-weight:600;font-size:14px;}
+  .prod-stars{font-size:11px;color:var(--clay);letter-spacing:1.5px;}
+  .eq-note{margin:11px 6px 0;font-size:11.5px;color:var(--ink-soft);opacity:.7;font-style:italic;text-align:center;}
+
+  /* ---------- Section rule ---------- */
+  .rule{display:flex;align-items:center;gap:14px;margin:34px 0 22px;font-family:"Source Serif 4",serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);}
+  .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ---------- Steps ---------- */
+  .step{
+    background:var(--card);border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);
+    padding:18px 20px 14px;margin:0 0 16px;
+    scroll-margin-top:14px;
+    transition:opacity .35s ease, border-color .35s ease;
+  }
+  .step.done{opacity:.55;border-color:var(--sea);}
+  .num-row{display:flex;align-items:center;gap:11px;margin:0 0 14px;}
+  .num{
+    flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+    font-family:"Fraunces",serif;font-weight:600;font-size:16px;
+    background:var(--clay);color:#fff;transition:background .3s ease;
+  }
+  .step.done .num{background:var(--sea);}
+  .step-name{font-family:"Fraunces",serif;font-weight:600;font-size:18px;color:var(--ink);}
+
+  /* Gather bands — label on its own line above content */
+  .need{display:block;margin:0 0 9px;padding:10px 13px;border-radius:10px;font-size:15.5px;line-height:1.5;}
+  .need .tag{display:block;font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin:0 0 5px;white-space:nowrap;}
+  .need .body{display:block;}
+  .equip{background:var(--clay-bg);}
+  .equip .tag{color:var(--clay);}
+  .equip .body{color:#7a4a31;}
+  .equip .body b{color:var(--clay-deep);font-weight:600;}
+  .equip .spec{font-style:italic;opacity:.9;}
+  .uses{background:var(--sea-bg);}
+  .uses .tag{color:var(--sea);}
+  .uses .body{font-family:"Fraunces",serif;font-style:italic;color:var(--sea-deep);}
+  .uses .q{font-weight:500;color:var(--clay-deep);}
+  .uses.none .body{color:var(--ink-soft);}
+  .uses.none{background:transparent;border:1px dashed var(--line);}
+  .dot{opacity:.5;padding:0 3px;}
+
+  .instr{margin:14px 0 0;font-size:18.5px;line-height:1.56;}
+  .instr .ing{font-weight:600;}
+  .instr .ing .amt{color:var(--ink);}
+
+  /* Check control — foot of the step */
+  .check-row{
+    display:flex;align-items:center;gap:12px;width:100%;
+    margin:16px 0 0;padding:13px 0 3px;border-top:1px solid var(--line);
+    background:none;border-left:0;border-right:0;border-bottom:0;
+    font-family:"Source Serif 4",serif;font-size:15px;font-weight:600;
+    letter-spacing:.03em;color:var(--clay-deep);cursor:pointer;text-align:left;
+    transition:color .3s ease;
+  }
+  .box{
+    flex:0 0 auto;width:26px;height:26px;border:2px solid var(--clay);border-radius:8px;
+    background:var(--card);position:relative;transition:background .25s ease,border-color .25s ease,transform .12s ease;
+  }
+  .check-row:active .box{transform:scale(.9);}
+  .box::after{
+    content:"✓";position:absolute;inset:0;display:grid;place-items:center;
+    color:#fff;font-size:16px;font-weight:700;opacity:0;transform:scale(.5);
+    transition:opacity .2s ease, transform .2s ease;
+  }
+  .step.done .box{background:var(--sea);border-color:var(--sea);}
+  .step.done .box::after{opacity:1;transform:scale(1);}
+  .step.done .check-row{color:var(--sea-deep);}
+  .lbl-done{display:none;}
+  .step.done .lbl-todo{display:none;}
+  .step.done .lbl-done{display:inline;}
+
+  /* ---------- Controls ---------- */
+  .barwrap{position:fixed;left:0;right:0;bottom:0;padding:14px 20px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top, var(--paper) 70%, rgba(246,241,230,0));display:flex;gap:12px;justify-content:center;}
+  .btn{font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;letter-spacing:.04em;padding:11px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  .btn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
+  .credit{text-align:center;font-size:13.5px;color:var(--ink-soft);margin:30px 0 0;line-height:1.6;font-style:italic;}
+
+  .prefs.stack{flex-direction:column;align-items:stretch;gap:12px;}
+  .prefs-row{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+  .picker-select{font-family:"Source Serif 4",serif;font-size:14px;font-weight:600;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:8px 30px 8px 14px;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23bd4c2a' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;}
+  .grouphdr{padding:14px 0 4px;font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);}
+  .chefnote{margin:26px 0 0;padding:16px 18px;background:var(--sea-bg);border:1px solid var(--line);border-radius:14px;}
+  .chefnote .cn-label{font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--sea);margin:0 0 6px;}
+  .chefnote p{margin:0;font-size:16px;line-height:1.6;color:var(--sea-deep);font-style:italic;}
+
+  /* view switcher (segmented, like units) */
+  .viewseg{display:flex;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px;margin:0 0 4px;gap:2px;}
+  .viewseg button{flex:1;border:0;background:none;cursor:pointer;font-family:"Source Serif 4",serif;font-size:13px;font-weight:600;letter-spacing:.01em;color:var(--ink-soft);padding:8px 8px;border-radius:999px;transition:color .2s,background .25s;}
+  .viewseg button.active{background:var(--clay);color:#fff;box-shadow:0 1px 3px rgba(42,36,32,.18);}
+  .viewhint{margin:2px 2px 12px;font-size:12.5px;color:var(--ink-soft);font-style:italic;}
+
+  /* one ingredient row, checkbox on the LEFT */
+  .ilist{margin:0;padding:0;list-style:none;}
+  .ilist .ghead{padding:14px 2px 6px;font-family:"Source Serif 4",serif;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);}
+  .irow{display:flex;align-items:flex-start;gap:12px;padding:9px 2px;border-top:1px dashed var(--line);cursor:pointer;transition:opacity .25s;}
+  .ghead + .irow{border-top:none;}
+  .ibox{flex:0 0 auto;width:20px;height:20px;margin-top:2px;border:2px solid var(--clay);border-radius:6px;position:relative;background:var(--card);transition:background .2s,border-color .2s,transform .12s;}
+  .irow:active .ibox{transform:scale(.9);}
+  .ibox::after{content:'\2713';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;opacity:0;transform:scale(.5);transition:opacity .2s,transform .2s;}
+  .irow.done{opacity:.5;}
+  .irow.done .ibox{background:var(--sea);border-color:var(--sea);}
+  .irow.done .ibox::after{opacity:1;transform:scale(1);}
+  .iqty{flex:0 0 auto;min-width:74px;color:var(--clay-deep);font-weight:600;font-variant-numeric:tabular-nums;}
+  .iname{flex:1;color:var(--ink);}
+  .inote{display:block;font-size:13px;color:var(--ink-soft);font-style:italic;margin-top:1px;}
+  .bundle-tag{font-size:.85em;font-weight:600;color:var(--clay-deep);}
+
+  .step{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 18px 16px;margin:0 0 16px;scroll-margin-top:14px;transition:opacity .3s,border-color .3s;}
+  .step.done{opacity:.55;border-color:var(--sea);}
+  .sbox{flex:0 0 auto;width:28px;height:28px;margin-top:2px;border:2px solid var(--clay);border-radius:8px;position:relative;background:var(--card);cursor:pointer;transition:background .25s,border-color .25s,transform .12s;}
+  .sbox:active{transform:scale(.9);}
+  .sbox::after{content:'\2713';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:16px;font-weight:700;opacity:0;transform:scale(.5);transition:opacity .2s,transform .2s;}
+  .step.done .sbox{background:var(--sea);border-color:var(--sea);}
+  .step.done .sbox::after{opacity:1;transform:scale(1);}
+  .sbody{flex:1;min-width:0;}
+</style>
+
+</head><body>
+
+<!-- ===== COOKBOOK LAYER (wraps the step-anchored mise sample as a cookbook page) ===== -->
+<style>
+  #cb-prog{position:fixed;top:0;left:0;height:3px;width:0;z-index:120;background:linear-gradient(90deg,#bd4c2a,#9c3c1f);transition:width .1s linear}
+  .cb-chrome{position:fixed;top:0;left:0;right:0;z-index:110;display:flex;align-items:center;gap:10px;padding:10px 16px;color:#f7efe2;background:linear-gradient(180deg,rgba(25,15,8,.55),rgba(25,15,8,0));transition:background .25s}
+  .cb-chrome.solid{background:rgba(36,24,16,.94);box-shadow:0 2px 12px rgba(0,0,0,.25)}
+  .cb-chrome a,.cb-chrome span{color:#f7efe2;text-decoration:none}
+  .cb-chrome .cb-back{font-size:.9rem}
+  .cb-chrome .cb-t{flex:1;text-align:center;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;opacity:0;transition:opacity .25s}
+  .cb-chrome.solid .cb-t{opacity:.85}
+  .cb-hero{position:relative;height:82vh;min-height:460px;display:flex;align-items:flex-end;overflow:hidden;color:#fff}
+  .cb-hero .cb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#6f3d22}
+  /* per-step beauty shot */
+  .cb-shot{width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:12px;margin:14px 0 2px;
+    background:linear-gradient(135deg,#e9dcc7,#d8c4a6);box-shadow:0 8px 22px rgba(80,50,20,.14)}
+  /* check-jump must clear the fixed cookbook chrome (was clipping at the top) */
+  [data-step]{scroll-margin-top:66px}
+  .cb-hero .cb-scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,10,4,.2),rgba(20,10,4,0) 32%,rgba(20,10,4,.72))}
+  .cb-hero .cb-w{position:relative;padding:0 22px 34px;max-width:760px;margin:0 auto;width:100%}
+  .cb-hero .cb-eye{font-size:.72rem;letter-spacing:.26em;text-transform:uppercase;color:#f1d6b6;margin:0 0 8px}
+  .cb-hero h1{font-family:"Fraunces",Georgia,serif;font-size:clamp(2.2rem,7vw,3.4rem);line-height:1.05;margin:0;font-weight:900;text-shadow:0 2px 18px rgba(0,0,0,.4)}
+  .cb-hero .cb-cue{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;opacity:.8;animation:cbbob 1.8s ease-in-out infinite}
+  @keyframes cbbob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(5px)}}
+  .cb-pilot{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:115;display:flex;align-items:center;gap:4px;padding:6px;border-radius:999px;background:rgba(36,24,16,.95);color:#f7efe2;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+  .cb-pilot button{font:inherit;border:0;cursor:pointer;background:transparent;color:#f7efe2;width:40px;height:40px;border-radius:50%;font-size:1.05rem;display:grid;place-items:center}
+  .cb-pilot button:hover{background:rgba(255,255,255,.12)}
+  .cb-pilot .cb-play{background:#bd4c2a;width:46px;height:46px;font-size:1.15rem}
+  .cb-pilot .cb-spd{font-size:.76rem;min-width:40px;text-align:center}
+  .cb-pilot .cb-lab{font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;opacity:.6;padding:0 6px}
+</style>
+<div id="cb-prog"></div>
+<div class="cb-chrome" id="cb-chrome">
+  <a class="cb-back" href="#" onclick="return false">‹ Contents</a>
+  <span class="cb-t">Classic Lasagna</span>
+  <span style="width:58px"></span>
+</div>
+<div class="cb-hero">
+  <img class="cb-img" alt="" src="/generated/cookbook/lasagna-hero.jpg"
+       onerror="this.onerror=null;this.src='https://picsum.photos/seed/lasagna-plate/1600/1200'">
+  <div class="cb-scrim"></div>
+  <div class="cb-w">
+    <p class="cb-eye">Anna Landry Cooks · Pasta &amp; Bakes</p>
+    <h1>Classic Lasagna</h1>
+  </div>
+  <div class="cb-cue">scroll to cook ↓</div>
+</div>
+
+<div class="wrap">
+  <header>
+    <p class="kicker">A Family Feast &mdash; reworked</p>
+    <h1>Classic<span class="it">Lasagna</span></h1>
+    <div class="meta"><span>👥 Serves <b>12</b></span><span>⏱ <b>~2 hr</b> + rest</span><span>🇮🇹 Baked, 4 layers</span></div>
+    <p class="blurb">A proper four-layer lasagna, reworked. The ingredients can be read three ways &mdash; tap the view switcher: a <b>Shopping</b> list by aisle, the order they’re <b>used</b>, or grouped into <b>Bundles</b> you combine before you cook. Whichever you tick, the checks follow the ingredient. Start the ricotta pressing first; it needs the time.</p>
+  </header>
+  <div class="prefs stack">
+    <div class="prefs-row"><span class="prefs-label">Measurements</span>
+      <div class="seg" role="group" aria-label="Measurement units">
+        <button class="seg-btn active" data-units="imp">Imperial</button><button class="seg-btn" data-units="met">Metric</button>
+      </div></div>
+    <div class="prefs-row"><span class="prefs-label">Basil</span>
+      <select class="picker-select" id="basilForm" aria-label="Basil form"><option value="dry">Dry</option><option value="fresh">Fresh</option></select></div>
+    <div class="prefs-row"><span class="prefs-label">Sausage</span>
+      <select class="picker-select" id="sausForm" aria-label="Sausage"><option value="hot">Hot</option><option value="sweet">Sweet</option></select></div>
+  </div>
+
+  <details class="shop" open><summary>Ingredients <span class="chev">&#9662;</span></summary>
+    <div style="padding:6px 18px 16px;">
+      <div class="viewseg" role="group" aria-label="Ingredient view">
+        <button data-view="shop" class="active">Shopping</button>
+        <button data-view="order">In order</button>
+        <button data-view="bundles">Bundles</button>
+      </div>
+      <p class="viewhint" id="view-hint"></p>
+      <div class="ilist" id="ingredient-rows"></div>
+    </div>
+  </details>
+
+  <details class="shop"><summary>Equipment <span class="chev">&#9662;</span></summary>
+    <div class="eqwrap">
+      <details class="eq-item"><summary><span class="e-name"><b>Fine strainer + cheesecloth</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="3 qt+" data-met="3 L+">3 qt+</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To press the liquid out of the ricotta so the filling isn’t watery.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Fine-Mesh Strainer</div><div class="prod-desc">Deep basket.</div><div class="prod-meta"><span class="prod-price">$20</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Cheesecloth</div><div class="prod-desc">Reusable.</div><div class="prod-meta"><span class="prod-price">$9</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Nut-Milk Bag</div><div class="prod-desc">Doubles for ricotta.</div><div class="prod-meta"><span class="prod-price">$11</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>A bowl + a weight</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">The bowl catches the whey; a heavy can presses the ricotta.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Glass Bowl, 4 qt</div><div class="prod-desc">Stable.</div><div class="prod-meta"><span class="prod-price">$19</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Prep Bowls</div><div class="prod-desc">Nest.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Press Weights</div><div class="prod-desc">Or a can.</div><div class="prod-meta"><span class="prod-price">$14</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Large pot</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="6&ndash;8 qt" data-met="6&ndash;8 L">6&ndash;8 qt</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the noodles in plenty of salted water.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍝</div><div class="prod-info"><div class="prod-name">Bestcooks Club 8-qt Stockpot</div><div class="prod-desc">Fast boil.</div><div class="prod-meta"><span class="prod-price">$49</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍝</div><div class="prod-info"><div class="prod-name">Bestcooks Club Pasta Pot</div><div class="prod-desc">Lift to drain.</div><div class="prod-meta"><span class="prod-price">$58</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍝</div><div class="prod-info"><div class="prod-name">Bestcooks Club 6-qt Pot</div><div class="prod-desc">Compact.</div><div class="prod-meta"><span class="prod-price">$39</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Colander</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="5 qt+" data-met="5 L+">5 qt+</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To drain and rinse the noodles.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club 5-qt Colander</div><div class="prod-desc">Footed.</div><div class="prod-meta"><span class="prod-price">$22</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Mesh Strainer</div><div class="prod-desc">Fine.</div><div class="prod-meta"><span class="prod-price">$16</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧺</div><div class="prod-info"><div class="prod-name">Bestcooks Club Collapsible</div><div class="prod-desc">Folds.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Large deep skillet</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="12 in" data-met="30 cm">12 in</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">Wide enough to brown 2 lb of meat and hold the sauce.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍳</div><div class="prod-info"><div class="prod-name">Bestcooks Club 12-in Sauté</div><div class="prod-desc">Tri-ply.</div><div class="prod-meta"><span class="prod-price">$89</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍳</div><div class="prod-info"><div class="prod-name">Bestcooks Club Deep Skillet</div><div class="prod-desc">Tall.</div><div class="prod-meta"><span class="prod-price">$69</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍳</div><div class="prod-info"><div class="prod-name">Bestcooks Club Everyday Pan</div><div class="prod-desc">Nonstick.</div><div class="prod-meta"><span class="prod-price">$59</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Wooden spoon</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To break up the meat and stir the sauce.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥄</div><div class="prod-info"><div class="prod-name">Bestcooks Club Olivewood Spoon</div><div class="prod-desc">Won’t scratch.</div><div class="prod-meta"><span class="prod-price">$12</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥄</div><div class="prod-info"><div class="prod-name">Bestcooks Club Beechwood Set</div><div class="prod-desc">Flat edge.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥄</div><div class="prod-info"><div class="prod-name">Bestcooks Club Spoonula</div><div class="prod-desc">2-in-1.</div><div class="prod-meta"><span class="prod-price">$11</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Medium mixing bowl</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="3&ndash;4 qt" data-met="3&ndash;4 L">3&ndash;4 qt</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the cheese filling.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club 4-qt Bowl</div><div class="prod-desc">Steel.</div><div class="prod-meta"><span class="prod-price">$20</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Glass Bowl</div><div class="prod-desc">Clear.</div><div class="prod-meta"><span class="prod-price">$17</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥣</div><div class="prod-info"><div class="prod-name">Bestcooks Club Nested Set</div><div class="prod-desc">3 sizes.</div><div class="prod-meta"><span class="prod-price">$28</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Box grater</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the Parmesan and mozzarella, if grating your own.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🧀</div><div class="prod-info"><div class="prod-name">Bestcooks Club Box Grater</div><div class="prod-desc">Four cuts.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧀</div><div class="prod-info"><div class="prod-name">Bestcooks Club Rotary</div><div class="prod-desc">Fast.</div><div class="prod-meta"><span class="prod-price">$24</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧀</div><div class="prod-info"><div class="prod-name">Bestcooks Club Fine Rasp</div><div class="prod-desc">Hard cheese.</div><div class="prod-meta"><span class="prod-price">$14</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>A few portioning bowls</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">To hold the thirds and halves for a no-math assembly.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🥚</div><div class="prod-info"><div class="prod-name">Bestcooks Club Prep Bowls (7)</div><div class="prod-desc">Nest.</div><div class="prod-meta"><span class="prod-price">$18</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥚</div><div class="prod-info"><div class="prod-name">Bestcooks Club Pinch Bowls</div><div class="prod-desc">Small.</div><div class="prod-meta"><span class="prod-price">$12</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🥚</div><div class="prod-info"><div class="prod-name">Bestcooks Club Steel Set</div><div class="prod-desc">Lids.</div><div class="prod-meta"><span class="prod-price">$22</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>9×13×3 in baking dish</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="9×13×3 in" data-met="23×33×7.5 cm">9×13×3 in</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">The recipe is sized to this exact dish; 3 in deep holds four layers.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍽️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Deep Glass Baker</div><div class="prod-desc">9×13×3.</div><div class="prod-meta"><span class="prod-price">$32</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍽️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Ceramic Baker</div><div class="prod-desc">Serve-ready.</div><div class="prod-meta"><span class="prod-price">$42</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍽️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Lasagna Pan</div><div class="prod-desc">Steel.</div><div class="prod-meta"><span class="prod-price">$36</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Parchment + foil</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">Parchment first (acidic sauce off the foil), then foil to seal.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🧻</div><div class="prod-info"><div class="prod-name">Bestcooks Club Parchment</div><div class="prod-desc">Pre-cut.</div><div class="prod-meta"><span class="prod-price">$10</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧻</div><div class="prod-info"><div class="prod-name">Bestcooks Club Heavy Foil</div><div class="prod-desc">Wide.</div><div class="prod-meta"><span class="prod-price">$8</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🧻</div><div class="prod-info"><div class="prod-name">Bestcooks Club Bundle</div><div class="prod-desc">Both.</div><div class="prod-meta"><span class="prod-price">$15</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Half-sheet pan + rack</b></span><span class="eq-right"><span class="eq-size"><span class="amt u" data-imp="13×18 in" data-met="33×46 cm">13×18 in</span></span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">Catches drips and circulates heat under the dish.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">🍳</div><div class="prod-info"><div class="prod-name">Bestcooks Club Half-Sheet</div><div class="prod-desc">Heavy.</div><div class="prod-meta"><span class="prod-price">$22</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍳</div><div class="prod-info"><div class="prod-name">Bestcooks Club Rack</div><div class="prod-desc">Fits.</div><div class="prod-meta"><span class="prod-price">$14</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">🍳</div><div class="prod-info"><div class="prod-name">Bestcooks Club Set</div><div class="prod-desc">Both.</div><div class="prod-meta"><span class="prod-price">$32</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+      <details class="eq-item"><summary><span class="e-name"><b>Timer</b></span><span class="eq-right"><span class="eq-size none">any</span><span class="eq-caret">&#9662;</span></span></summary><div class="eq-panel"><p class="eq-sum">For the press, the simmer, the long bake, and the rest.</p><div class="prod-grid">
+            <div class="prod"><div class="prod-thumb">⏲️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Digital Timer</div><div class="prod-desc">Magnetic.</div><div class="prod-meta"><span class="prod-price">$13</span><span class="prod-stars">★★★★★</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">⏲️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Triple Timer</div><div class="prod-desc">3 at once.</div><div class="prod-meta"><span class="prod-price">$19</span><span class="prod-stars">★★★★☆</span></div></div></div>
+            <div class="prod"><div class="prod-thumb">⏲️</div><div class="prod-info"><div class="prod-name">Bestcooks Club Ring Timer</div><div class="prod-desc">No batteries.</div><div class="prod-meta"><span class="prod-price">$11</span><span class="prod-stars">★★★★☆</span></div></div></div>
+</div></div></details>
+    </div>
+    <p class="eq-note">Sample product picks &mdash; placeholder data for the prototype.</p>
+  </details>
+
+  <div class="rule">Instructions</div>
+  <div id="steps">
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 1 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">1</div><div class="step-name">Heat the oven</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">the <b>oven</b></span></div>
+        <p class="instr">Heat the oven to <span class="ing"><span class="amt u" data-imp="375&deg;F" data-met="190&deg;C">375&deg;F</span></span>, rack centered — start it first so it&rsquo;s up to temperature by the time the lasagna is built. (Bundles done first, of course.)</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 2 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">2</div><div class="step-name">Press the ricotta</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>fine strainer + cheesecloth</b> <span class="spec">(<span class="amt u" data-imp="3 qt+" data-met="3 L+">3 qt+</span>)</span> &middot; a <b>bowl</b> &amp; a <b>weight</b></span></div>
+        <p class="instr">Line the strainer with cheesecloth over the bowl, add the <span class="ing"><span class="amt u" data-imp="2 lb" data-met="900 g">2 lb</span> ricotta</span>, fold the cloth over, and set a weight on top. Leave it to drain at least <span class="ing"><span class="amt">30 minutes</span></span> (longer is better) — pressing out the whey keeps the filling from going watery. While it drains, do everything below.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 3 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">3</div><div class="step-name">Boil the noodles, undercooked</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>large pot</b> <span class="spec">(<span class="amt u" data-imp="6&ndash;8 qt" data-met="6&ndash;8 L">6&ndash;8 qt</span>)</span> &middot; a <b>colander</b></span></div>
+        <p class="instr">Boil the <span class="ing"><span class="amt">16</span> lasagna noodles</span> in well-salted water to <span class="ing"><span class="amt">7&ndash;8 minutes</span></span> — deliberately underdone, since they finish in the oven. Drain, rinse cool, keep moist; stack in 4 sets of 4.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 4 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">4</div><div class="step-name">Make the meat sauce</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>large deep skillet</b> <span class="spec">(<span class="amt u" data-imp="12 in" data-met="30 cm">12 in</span>)</span> &middot; a <b>wooden spoon</b></span></div>
+        <p class="instr">Heat the <span class="ing"><span class="amt u" data-imp="2 Tbsp" data-met="30 ml">2 Tbsp</span> olive oil</span> over medium-high. Add the <span class="bref">Aromatics</span> (<span class="u" data-imp="1 cup" data-met="130 g">1 cup</span> onion + <span class="u" data-imp="1 Tbsp" data-met="9 g">1 Tbsp</span> garlic) and cook 2&ndash;3 minutes. Add the <span class="bref">Meats</span> (<span class="u" data-imp="1 lb" data-met="450 g">1 lb</span> beef + <span class="u" data-imp="1 lb" data-met="450 g">1 lb</span> <span class="sausage-type"></span> sausage); break up and brown until no pink, then drain all but a few tablespoons of fat. Stir in the <span class="bref">Tomato</span> and the <span class="bref">Sauce&nbsp;seasoning</span>. Reduce to medium and simmer <span class="ing"><span class="amt">10 minutes</span></span>; set aside.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 5 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">5</div><div class="step-name">Mix the cheese filling</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>medium mixing bowl</b> <span class="spec">(<span class="amt u" data-imp="3&ndash;4 qt" data-met="3&ndash;4 L">3&ndash;4 qt</span>)</span> &middot; a <b>box grater</b></span></div>
+        <p class="instr">In the bowl, mix the <span class="bref">Cheese&nbsp;filling</span> — the drained ricotta, <span class="u" data-imp="1 cup" data-met="110 g">1 cup</span> shredded mozzarella, 2 beaten eggs, <span class="u" data-imp="1 cup" data-met="90 g">1 cup</span> grated Parmesan, <span class="u" data-imp="&frac12; cup" data-met="30 g">&frac12; cup</span> chopped parsley, 1 tsp salt, and &frac14; tsp pepper — until combined.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 6 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">6</div><div class="step-name">Portion for assembly</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">Several <b>portioning bowls</b></span></div>
+        <p class="instr">Divide the made components so the layering needs no thought: split the <span class="bref">Cheese&nbsp;filling</span> into 3 and the meat sauce into 3; split the <span class="u" data-imp="8 oz" data-met="225 g">8 oz</span> fresh mozzarella (12 slices) into two piles of 6; split the <span class="u" data-imp="3 cups" data-met="340 g">3 cups</span> shredded mozzarella into two <span class="u" data-imp="1&frac12;-cup" data-met="170 g">1&frac12;-cup</span> piles; and set out the tomato sauce as a <span class="u" data-imp="1 cup" data-met="240 ml">1 cup</span> and a <span class="u" data-imp="1&frac12; cup" data-met="360 ml">1&frac12; cup</span> pour, plus the <span class="u" data-imp="&frac12; cup" data-met="45 g">&frac12; cup</span> Parmesan for the top.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 7 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">7</div><div class="step-name">Layer it</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>9×13×3 in baking dish</b> <span class="spec">(<span class="amt u" data-imp="9×13×3 in" data-met="23×33×7.5 cm">9×13×3 in</span>)</span></span></div>
+        <p class="instr">Build four layers from the portions. <b>Bottom:</b> the 1-cup sauce, 4 noodles, a cheese third, a meat third, one mozzarella pile (6 slices). <b>Second:</b> 4 noodles, a cheese third, a meat third, the other mozzarella pile. <b>Third:</b> 4 noodles, the last cheese third, the last meat third, one 1½-cup shredded pile. <b>Top:</b> the last 4 noodles, the 1½-cup sauce, the other 1½-cup shredded pile, the ½ cup Parmesan.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 8 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">8</div><div class="step-name">Cover &amp; bake</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body"><b>Parchment + foil</b> &middot; a <b>half-sheet pan + rack</b> <span class="spec">(<span class="amt u" data-imp="13×18 in" data-met="33×46 cm">13×18 in</span>)</span> &middot; the <b>oven</b></span></div>
+        <p class="instr">Lay parchment over the top, then seal tightly with foil. Set the dish on a rack in a foil-lined sheet pan. Bake at <span class="ing"><span class="amt u" data-imp="375&deg;F" data-met="190&deg;C">375&deg;F</span></span> for <span class="ing"><span class="amt">1 hour</span></span> covered, then uncover and bake <span class="ing"><span class="amt">30 minutes</span></span> more, until bubbling and browned.</p>
+      </div></div>
+
+    <div class="step" data-step><span class="sbox" role="button" aria-label="Mark step 9 done"></span>
+      <div class="sbody">
+        <div class="num-row"><div class="num">9</div><div class="step-name">Rest, then cut</div></div>
+        <div class="need equip"><span class="tag">Equipment</span><span class="body">A <b>timer</b></span></div>
+        <p class="instr">Rest <span class="ing"><span class="amt">15&ndash;30 minutes</span></span> before cutting — it lets the layers set so they lift in clean squares. Cut 3&times;4 into 12 and serve.</p>
+      </div></div>
+
+  </div>
+  <div class="chefnote">
+    <p class="cn-label">A cook&rsquo;s note</p>
+    <p>The tomato sauce is its own short recipe (or a good jarred marinara). Two pounds of any meat blend works. And don&rsquo;t rush the rest &mdash; cutting too soon turns four careful layers into one delicious puddle.</p>
+  </div>
+  <p class="credit">Reworked from <em>Classic Lasagna</em> by Martha at A Family Feast. Verify against the original at afamilyfeast.com.</p>
+</div>
+<div class="barwrap">
+  <button class="btn" id="reset">↺ Reset</button>
+  <button class="btn" id="awake">☀ Keep screen awake</button>
+</div>
+
+<script>
+  var ROWS=[
+{id:'ricotta',qty:{imp:"2 lb",met:"900 g"},name:'whole-milk ricotta',aisle:'Dairy',bundle:'Cheese filling',order:1,note:'strain/press first'},
+{id:'noodles',qty:{imp:"1 lb box",met:"450 g"},name:'lasagna noodles (need 16)',aisle:'Pasta & grains',bundle:'Measured & ready',order:2,note:''},
+{id:'oil',qty:{imp:"2 Tbsp",met:"30 ml"},name:'extra-virgin olive oil',aisle:'Pantry',bundle:'Measured & ready',order:3,note:''},
+{id:'onion',qty:{imp:"1 cup",met:"130 g"},name:'onion, chopped',aisle:'Produce',bundle:'Aromatics',order:3,note:''},
+{id:'garlic',qty:{imp:"1 Tbsp",met:"9 g"},name:'garlic, chopped',aisle:'Produce',bundle:'Aromatics',order:3,note:''},
+{id:'beef',qty:{imp:"1 lb",met:"450 g"},name:'lean ground beef (90/10)',aisle:'Meat',bundle:'Meats',order:3,note:''},
+{id:'sausage',qty:{imp:"1 lb",met:"450 g"},name:'Italian sausage (<span class="sausage-type"></span>)',aisle:'Meat',bundle:'Meats',order:3,note:''},
+{id:'crushed',qty:{imp:"28 oz",met:"794 g"},name:'crushed tomatoes (1 can)',aisle:'Pantry',bundle:'Tomato',order:3,note:''},
+{id:'paste',qty:{imp:"2 Tbsp",met:"30 g"},name:'tomato paste',aisle:'Pantry',bundle:'Tomato',order:3,note:''},
+{id:'salt1',qty:{imp:"1 tsp",met:null},name:'kosher salt (sauce)',aisle:'Pantry',bundle:'Sauce seasoning',order:3,note:''},
+{id:'pepper1',qty:{imp:"&frac14; tsp",met:null},name:'black pepper (sauce)',aisle:'Pantry',bundle:'Sauce seasoning',order:3,note:''},
+{id:'oregano',qty:{imp:"1 tsp",met:null},name:'dry oregano',aisle:'Pantry',bundle:'Sauce seasoning',order:3,note:''},
+{id:'basil',qty:{imp:"2 Tbsp",met:null},name:'<span class="basil-name">dry basil</span>',aisle:'Pantry',bundle:'Sauce seasoning',order:3,note:''},
+{id:'pepflake',qty:{imp:"pinch",met:null},name:'red pepper flakes',aisle:'Pantry',bundle:'Sauce seasoning',order:3,note:''},
+{id:'mint',qty:{imp:"2 tsp",met:null},name:'fresh mint, chopped',aisle:'Produce',bundle:'Sauce seasoning',order:3,note:''},
+{id:'mozz_f',qty:{imp:"1 cup",met:"110 g"},name:'shredded mozzarella',aisle:'Dairy',bundle:'Cheese filling',order:4,note:''},
+{id:'eggs',qty:{imp:"2",met:null},name:'eggs, beaten',aisle:'Dairy',bundle:'Cheese filling',order:4,note:''},
+{id:'parm_f',qty:{imp:"1 cup",met:"90 g"},name:'grated Parmesan',aisle:'Dairy',bundle:'Cheese filling',order:4,note:''},
+{id:'parsley',qty:{imp:"&frac12; cup",met:"30 g"},name:'flat-leaf parsley, chopped',aisle:'Produce',bundle:'Cheese filling',order:4,note:''},
+{id:'salt2',qty:{imp:"1 tsp",met:null},name:'kosher salt (filling)',aisle:'Pantry',bundle:'Cheese filling',order:4,note:''},
+{id:'pepper2',qty:{imp:"&frac14; tsp",met:null},name:'black pepper (filling)',aisle:'Pantry',bundle:'Cheese filling',order:4,note:''},
+{id:'sauce',qty:{imp:"2&frac12; cups",met:"600 ml"},name:'tomato sauce (homemade or marinara)',aisle:'Pantry',bundle:'Measured & ready',order:6,note:'its own short recipe'},
+{id:'freshmozz',qty:{imp:"8 oz",met:"225 g"},name:'fresh mozzarella, 12 slices',aisle:'Dairy',bundle:'Measured & ready',order:6,note:''},
+{id:'mozz_s',qty:{imp:"3 cups",met:"340 g"},name:'shredded mozzarella (layers)',aisle:'Dairy',bundle:'Measured & ready',order:6,note:''},
+{id:'parm_top',qty:{imp:"&frac12; cup",met:"45 g"},name:'grated Parmesan (top)',aisle:'Dairy',bundle:'Measured & ready',order:6,note:''}
+  ];
+  var AISLE=["Produce", "Meat", "Dairy", "Pasta & grains", "Pantry"];
+  var BUNDLE=["Aromatics", "Meats", "Tomato", "Sauce seasoning", "Cheese filling", "Measured & ready"];
+  var BNOTE={"Tomato": "stirred together", "Cheese filling": "mix in step 4 \u2014 can be made ahead and chilled", "Sauce seasoning": "combine in one bowl", "Measured & ready": "portioned in step 5 for the layering"};
+  var units='imp', basil='dry', saus='hot', view='shop';
+  var checked={};
+
+  function basilQty(){ return basil==='dry' ? '2 Tbsp' : '4 Tbsp'; }
+  function rowAisle(r){
+    if(r.id==='basil') return basil==='fresh' ? 'Produce' : 'Pantry';
+    return r.aisle;
+  }
+  function rowName(r){
+    if(r.id==='basil') return basil==='dry' ? 'dry basil' : 'fresh basil, chopped';
+    if(r.id==='sausage') return (saus==='hot'?'hot':'sweet')+' Italian sausage';
+    return r.name;
+  }
+  function rowQty(r){
+    if(r.id==='basil') return basilQty();
+    var q=r.qty; if(units==='met' && q.met) return q.met; return q.imp;
+  }
+  function rowEl(r, showBundle){
+    var div=document.createElement('div');
+    div.className='irow'+(checked[r.id]?' done':'');
+    div.setAttribute('data-id', r.id);
+    var tag = showBundle ? ' <span class="bundle-tag">('+r.bundle+')</span>' : '';
+    var note = r.note ? '<span class="inote">'+r.note+'</span>' : '';
+    div.innerHTML='<span class="ibox"></span><span class="iqty">'+rowQty(r)+'</span>'
+      +'<span class="iname">'+rowName(r)+tag+note+'</span>';
+    div.addEventListener('click', function(){ checked[r.id]=!checked[r.id]; div.classList.toggle('done', checked[r.id]); });
+    return div;
+  }
+  function ghead(t){ var h=document.createElement('div'); h.className='ghead'; h.textContent=t; return h; }
+
+  function render(){
+    var c=document.getElementById('ingredient-rows'); c.innerHTML='';
+    var hint=document.getElementById('view-hint');
+    if(view==='order'){
+      hint.textContent='In the order the recipe uses them.';
+      ROWS.slice().sort(function(a,b){return a.order-b.order;}).forEach(function(r){ c.appendChild(rowEl(r,true)); });
+    } else if(view==='bundles'){
+      hint.textContent='Grouped by what you combine, and when \u2014 your mise en place.';
+      BUNDLE.forEach(function(b){
+        var mem=ROWS.filter(function(r){return r.bundle===b;});
+        if(!mem.length) return;
+        c.appendChild(ghead(b));
+        if(BNOTE[b]){ var n=document.createElement('div'); n.className='inote'; n.style.padding='0 2px 4px'; n.textContent='\u2014 '+BNOTE[b]; c.appendChild(n); }
+        mem.forEach(function(r){ c.appendChild(rowEl(r,false)); });
+      });
+    } else {
+      hint.textContent='By store aisle \u2014 one pass through the market.';
+      AISLE.forEach(function(a){
+        var mem=ROWS.filter(function(r){return rowAisle(r)===a;});
+        if(!mem.length) return;
+        c.appendChild(ghead(a));
+        mem.forEach(function(r){ c.appendChild(rowEl(r,false)); });
+      });
+    }
+  }
+  document.querySelectorAll('.viewseg button').forEach(function(b){
+    b.addEventListener('click', function(){
+      view=b.getAttribute('data-view');
+      document.querySelectorAll('.viewseg button').forEach(function(x){x.classList.toggle('active', x===b);});
+      render();
+    });
+  });
+
+  // pickers also drive the dynamic list
+  function refreshSpiceText(){
+    var t='1 tsp salt, \u00BC tsp pepper, 1 tsp oregano, '+(basil==='dry'?'2 Tbsp dry basil':'4 Tbsp chopped fresh basil')+', a pinch of red pepper flakes, 2 tsp chopped mint';
+    document.querySelectorAll('.sauce-seas').forEach(function(el){ el.textContent=t; });
+    document.querySelectorAll('.sausage-type').forEach(function(el){ el.textContent=saus; });
+  }
+  var unitButtons=Array.prototype.slice.call(document.querySelectorAll('.seg-btn'));
+  function setUnits(u){
+    units=u;
+    document.querySelectorAll('.u').forEach(function(el){ el.textContent=(u==='met')?el.getAttribute('data-met'):el.getAttribute('data-imp'); });
+    unitButtons.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-units')===u); });
+    render();
+  }
+  unitButtons.forEach(function(b){ b.addEventListener('click', function(){ setUnits(b.getAttribute('data-units')); }); });
+  document.getElementById('basilForm').addEventListener('change', function(e){ basil=e.target.value; refreshSpiceText(); render(); });
+  document.getElementById('sausForm').addEventListener('change', function(e){ saus=e.target.value; refreshSpiceText(); render(); });
+
+  // instruction steps: left checkbox, autoscroll to next step on check
+  var stepEls=Array.prototype.slice.call(document.querySelectorAll('[data-step]'));
+  stepEls.forEach(function(step,i){
+    step.querySelector('.sbox').addEventListener('click', function(){
+      var was=step.classList.contains('done'); step.classList.toggle('done');
+      if(!was){ var n=stepEls[i+1]; if(n){ setTimeout(function(){ n.scrollIntoView({behavior:'smooth',block:'start'}); },180); } }
+    });
+  });
+  document.getElementById('reset').addEventListener('click', function(){
+    checked={}; render();
+    document.querySelectorAll('[data-step].done').forEach(function(s){ s.classList.remove('done'); });
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+
+  refreshSpiceText(); render();
+
+  var wakeLock=null, awakeBtn=document.getElementById('awake');
+  awakeBtn.addEventListener('click', async function(){
+    if(!('wakeLock' in navigator)){ awakeBtn.textContent='✕ Not supported'; return; }
+    try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; awakeBtn.classList.remove('on'); awakeBtn.textContent='☀ Keep screen awake'; }
+      else { wakeLock=await navigator.wakeLock.request('screen'); awakeBtn.classList.add('on'); awakeBtn.textContent='☀ Screen staying on';
+        wakeLock.addEventListener('release', function(){ awakeBtn.classList.remove('on'); awakeBtn.textContent='☀ Keep screen awake'; }); } }
+    catch(err){ awakeBtn.textContent='✕ Unavailable'; }
+  });
+  document.addEventListener('visibilitychange', async function(){ if(wakeLock&&document.visibilityState==='visible'){ try{ wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} } });
+</script>
+
+<!-- ===== COOKBOOK LAYER · hands-free page autoscroll (teleprompter) ===== -->
+<div class="cb-pilot">
+  <span class="cb-lab">auto-cook</span>
+  <button onclick="cbSpeed(-1)" title="slower">−</button>
+  <button class="cb-play" id="cb-play" onclick="cbToggle()" title="play / pause">▶</button>
+  <button onclick="cbSpeed(1)" title="faster">+</button>
+  <span class="cb-spd" id="cb-spd">1.0×</span>
+</div>
+<script>
+(function(){
+  var prog=document.getElementById('cb-prog'), chrome=document.getElementById('cb-chrome');
+  function onScroll(){ var h=document.documentElement.scrollHeight-innerHeight; prog.style.width=(h>0?scrollY/h*100:0)+'%'; chrome.classList.toggle('solid', scrollY>innerHeight*0.55); }
+  addEventListener('scroll', onScroll, {passive:true}); onScroll();
+  // Page-level teleprompter. scrollTo(behavior:'auto') overrides the page's
+  // smooth scroll-behavior so each frame is an instant tiny nudge.
+  var auto=false, speed=1.0, raf=null, last=0, BASE=46;
+  var play=document.getElementById('cb-play'), spd=document.getElementById('cb-spd');
+  function frame(t){ if(!auto) return; if(!last) last=t; var dt=(t-last)/1000; last=t;
+    window.scrollTo({top:scrollY+BASE*speed*dt, behavior:'auto'});
+    if((innerHeight+scrollY) >= document.documentElement.scrollHeight-2){ stop(); return; }
+    raf=requestAnimationFrame(frame); }
+  function start(){ auto=true; last=0; play.textContent='❚❚'; raf=requestAnimationFrame(frame); }
+  function stop(){ auto=false; play.textContent='▶'; if(raf) cancelAnimationFrame(raf); }
+  window.cbToggle=function(){ auto?stop():start(); };
+  window.cbSpeed=function(d){ speed=Math.min(3,Math.max(.5,+(speed+d*0.5).toFixed(1))); spd.textContent=speed.toFixed(1)+'×'; };
+  // manual interaction hands control back — but NOT a tap on the pilot itself
+  // (that bug is why changing speed seemed to do nothing: the touch stopped autoscroll).
+  ['wheel','touchstart','keydown'].forEach(function(ev){ addEventListener(ev, function(e){
+    if(e && e.target && e.target.closest && e.target.closest('.cb-pilot')) return;
+    if(auto) stop();
+  }, {passive:true}); });
+
+  // per-step beauty shots — real photos land at /generated/cookbook/*.jpg once
+  // the OpenAI billing limit is lifted + gen_cookbook_imgs.py runs; picsum is the
+  // graceful stand-in until then. Keyed by 0-based step index.
+  var SHOT = { 3:'lasagna-brown', 4:'lasagna-filling', 6:'lasagna-assemble' };
+  document.querySelectorAll('[data-step]').forEach(function(s,i){
+    if(!SHOT[i]) return;
+    var im=document.createElement('img'); im.className='cb-shot'; im.loading='lazy'; im.alt='';
+    im.src='/generated/cookbook/'+SHOT[i]+'.jpg';
+    im.onerror=function(){ this.onerror=null; this.src='https://picsum.photos/seed/'+SHOT[i]+'/1200/760'; };
+    var body=s.querySelector('.sbody'); if(body) body.appendChild(im);
+  });
+})();
+</script>
+</body></html>

@@ -241,6 +241,12 @@ def register_handler(type: str, fn: JobHandler) -> None:
     JOB_HANDLERS[type] = fn
 
 
+def list_handler_types() -> list[str]:
+    """Registered job-type keys — for the scheduled-jobs editor's type picker
+    and to validate that a schedule references a real handler."""
+    return list(JOB_HANDLERS.keys())
+
+
 # ============================================================
 #  Stdout tee for per-job log capture
 # ============================================================

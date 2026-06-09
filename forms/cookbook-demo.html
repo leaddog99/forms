@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Cookbook — throwaway #1</title>
+
+  <!-- StPageFlip (vanilla, no jQuery) from CDN. Exposes window.St.PageFlip.
+       This is THROWAWAY #1: prove the flip feel + our styling + a real recipe
+       (incl. one long enough to expose the pagination problem). Hardcoded pages;
+       the real version is forms/cookbook.html + GET /cookbooks/{id} JSON. -->
+  <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#e9e2d6; --paper:#fffaf1; --paper2:#fdf4e6;
+      --ink:#2c211a; --muted:#7a6a5b; --line:#e2d6c3;
+      --accent:#9c5b34;            /* terracotta */
+      --gold:#b08a4f;
+      --serif:"Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;overflow:hidden}
+    body{
+      background:
+        radial-gradient(120% 80% at 50% -10%, #f1ebe0, var(--bg));
+      font-family:var(--serif); color:var(--ink);
+      display:flex; flex-direction:column;
+    }
+
+    /* ---- toolbar ---- */
+    .bar{
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      padding:10px 14px; background:#241a13; color:#f3e8d8;
+      box-shadow:0 2px 10px rgba(0,0,0,.25); z-index:20; flex:none;
+    }
+    .bar button{
+      font:inherit; font-size:.82rem; padding:7px 13px; border:0; cursor:pointer;
+      border-radius:999px; background:#3a2c20; color:#f3e8d8; transition:background .15s;
+    }
+    .bar button:hover{ background:var(--accent); }
+    .bar .ind{ font-size:.8rem; color:#cbb89f; min-width:84px; text-align:center; }
+    .bar .sp{ flex:1 }
+    .bar .title{ font-size:.85rem; letter-spacing:.06em; color:#cbb89f; text-transform:uppercase; }
+
+    /* ---- book stage ---- */
+    .stage{ flex:1; display:flex; align-items:center; justify-content:center; padding:22px; min-height:0; }
+    #book{ touch-action:pan-y; }
+
+    /* ---- a page ---- */
+    .page{
+      background:linear-gradient(180deg,var(--paper),var(--paper2));
+      color:var(--ink); position:relative; overflow:hidden;
+      padding:44px 42px 52px;
+      box-shadow:inset 0 0 60px rgba(150,110,70,.06);
+    }
+    .page.--right{ box-shadow:inset 26px 0 36px -28px rgba(80,50,20,.30), inset 0 0 60px rgba(150,110,70,.06); }
+    .page.--left{  box-shadow:inset -26px 0 36px -28px rgba(80,50,20,.30), inset 0 0 60px rgba(150,110,70,.06); }
+    .eyebrow{ font-size:.7rem; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:0 0 14px; }
+    .folio{ position:absolute; bottom:18px; left:0; right:0; text-align:center; font-size:.72rem; color:var(--muted); }
+    .page.--left .folio{ text-align:left; padding-left:42px }
+    .page.--right .folio{ text-align:right; padding-right:42px }
+
+    /* ---- cover ---- */
+    .cover{ background:
+        radial-gradient(130% 90% at 50% 0%, #b3703f 0%, #8a4e2b 55%, #6f3d22 100%);
+      color:#fdf3e4; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; text-align:center; padding:50px 38px; }
+    .cover .frame{ border:1px solid rgba(253,243,228,.45); border-radius:4px;
+      padding:38px 26px; width:100%; height:100%; display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:18px; }
+    .cover .kicker{ font-size:.72rem; letter-spacing:.34em; text-transform:uppercase; opacity:.8 }
+    .cover h1{ font-size:2.35rem; line-height:1.12; margin:0; font-weight:600; }
+    .cover .rule{ width:46px; height:2px; background:rgba(253,243,228,.6); }
+    .cover .sub{ font-style:italic; font-size:1.05rem; opacity:.92 }
+    .cover .by{ margin-top:auto; font-size:.8rem; letter-spacing:.1em; opacity:.85 }
+
+    /* ---- dedication ---- */
+    .ded{ display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; height:100%; }
+    .ded p{ font-style:italic; font-size:1.18rem; line-height:1.8; max-width:34ch; color:#4a3b2e; }
+    .ded .sig{ margin-top:22px; font-size:.9rem; color:var(--muted); letter-spacing:.04em; }
+
+    /* ---- TOC ---- */
+    .toc h2{ font-size:1.5rem; margin:0 0 20px; font-weight:600 }
+    .toc ol{ list-style:none; margin:0; padding:0 }
+    .toc li{ display:flex; align-items:baseline; gap:8px; padding:9px 0; font-size:1.02rem; }
+    .toc .dots{ flex:1; border-bottom:1px dotted #c9b89c; transform:translateY(-4px); }
+    .toc .pg{ color:var(--muted); font-variant-numeric:tabular-nums; }
+    .toc .ch{ font-size:.7rem; letter-spacing:.18em; text-transform:uppercase; color:var(--gold); margin:18px 0 4px; }
+
+    /* ---- recipe page ---- */
+    .recipe h2{ font-size:1.7rem; line-height:1.12; margin:0 0 6px; font-weight:600 }
+    .recipe .meta{ font-size:.78rem; color:var(--muted); margin:0 0 14px }
+    .recipe .lede{ font-style:italic; color:#4a3b2e; line-height:1.6; margin:0 0 16px }
+    .recipe .cols{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr); gap:22px; }
+    .recipe h3{ font-size:.72rem; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); margin:0 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+    .recipe ul{ list-style:none; margin:0; padding:0; font-size:.86rem; line-height:1.5 }
+    .recipe ul li{ padding:3px 0 3px 14px; position:relative; }
+    .recipe ul li::before{ content:"•"; color:var(--gold); position:absolute; left:0 }
+    .recipe ol{ margin:0; padding-left:1.1em; font-size:.9rem; line-height:1.62 }
+    .recipe ol li{ padding:3px 0 8px; }
+
+    @media (max-width:760px){
+      .page{ padding:30px 24px 44px }
+      .recipe .cols{ grid-template-columns:1fr; gap:14px }
+      .cover h1{ font-size:1.9rem }
+      .stage{ padding:10px }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bar">
+    <span class="title">Cookbook · demo</span>
+    <span class="sp"></span>
+    <button onclick="pf.flip(0)">⏮ First</button>
+    <button onclick="pf.flipPrev()">‹ Prev</button>
+    <span class="ind" id="ind">—</span>
+    <button onclick="pf.flipNext()">Next ›</button>
+    <button onclick="pf.flip(pf.getPageCount()-1)">Last ⏭</button>
+    <span class="sp"></span>
+    <span class="title" style="opacity:.5">swipe / arrows</span>
+  </div>
+
+  <div class="stage">
+    <div id="book">
+
+      <!-- COVER -->
+      <div class="page cover" data-density="hard">
+        <div class="frame">
+          <div class="kicker">The Best Cooks Club</div>
+          <h1>Anna Landry<br>Cooks Greek</h1>
+          <div class="rule"></div>
+          <div class="sub">a family cookbook</div>
+          <div class="by">collected &amp; tested · 2026</div>
+        </div>
+      </div>
+
+      <!-- DEDICATION -->
+      <div class="page">
+        <p class="eyebrow">Dedication</p>
+        <div class="ded">
+          <p>For the cooks who never wrote anything down — who taught with their
+             hands, and a pinch of this, and “you’ll know when it’s ready.”</p>
+          <div class="sig">— with love, the family table</div>
+        </div>
+        <div class="folio">i</div>
+      </div>
+
+      <!-- TOC -->
+      <div class="page toc">
+        <p class="eyebrow">Contents</p>
+        <h2>Table of Contents</h2>
+        <div class="ch">Small Plates &amp; Pies</div>
+        <ol>
+          <li><span>Spanakopita</span><span class="dots"></span><span class="pg">1</span></li>
+          <li><span>Tyropita</span><span class="dots"></span><span class="pg">4</span></li>
+        </ol>
+        <div class="ch">From the Sea</div>
+        <ol>
+          <li><span>Coquilles Saint-Jacques</span><span class="dots"></span><span class="pg">6</span></li>
+          <li><span>Shrimp Saganaki</span><span class="dots"></span><span class="pg">9</span></li>
+        </ol>
+        <div class="folio">ii</div>
+      </div>
+
+      <!-- RECIPE 1 — moderate length -->
+      <div class="page recipe">
+        <p class="eyebrow">Small Plates &amp; Pies</p>
+        <h2>Spanakopita</h2>
+        <p class="meta">Serves 8 · 1 hr 10 min · vegetarian</p>
+        <p class="lede">Crackling phyllo over a green, herb-flecked spinach and feta
+           filling — the pie that turns up at every celebration.</p>
+        <div class="cols">
+          <div>
+            <h3>Ingredients</h3>
+            <ul>
+              <li>1 lb spinach, wilted &amp; squeezed</li>
+              <li>8 oz feta, crumbled</li>
+              <li>1 bunch scallions, sliced</li>
+              <li>½ cup dill, chopped</li>
+              <li>2 eggs, beaten</li>
+              <li>½ lb phyllo</li>
+              <li>½ cup olive oil, for brushing</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Method</h3>
+            <ol>
+              <li>Heat oven to 375°F. Combine spinach, feta, scallions, dill and eggs.</li>
+              <li>Brush a pan with oil; layer half the phyllo, brushing each sheet.</li>
+              <li>Spread the filling; top with remaining phyllo, brushing as you go.</li>
+              <li>Score the top into squares. Bake 40–45 min until deep golden.</li>
+            </ol>
+          </div>
+        </div>
+        <div class="folio">1</div>
+      </div>
+
+      <!-- RECIPE 2 — LONG, to expose the pagination problem -->
+      <div class="page recipe">
+        <p class="eyebrow">From the Sea</p>
+        <h2>Coquilles Saint-Jacques</h2>
+        <p class="meta">Serves 6 · 50 min · Julia Child</p>
+        <p class="lede">Scallops gratinéed with wine, garlic and herbs, finished under
+           the broiler in their shells — a luscious French classic.</p>
+        <div class="cols">
+          <div>
+            <h3>Ingredients</h3>
+            <ul>
+              <li>⅓ cup minced yellow onions</li>
+              <li>1 Tbsp butter</li>
+              <li>1½ Tbsp minced shallot</li>
+              <li>1 clove garlic, minced</li>
+              <li>1½ lbs scallops, sliced</li>
+              <li>Salt &amp; pepper</li>
+              <li>1 cup sifted flour, in a dish</li>
+              <li>2 Tbsp butter</li>
+              <li>1 Tbsp olive oil</li>
+              <li>⅔ cup dry white wine</li>
+              <li>½ bay leaf</li>
+              <li>⅛ tsp thyme</li>
+              <li>6 buttered scallop shells</li>
+              <li>¼ cup grated Swiss cheese</li>
+              <li>2 Tbsp butter, in pieces</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Method</h3>
+            <ol>
+              <li>Cook the onions slowly in butter 5 min until tender. Stir in shallots and garlic; cook 1 min. Set aside.</li>
+              <li>Dry the scallops; sprinkle with salt and pepper, roll in flour, shake off excess.</li>
+              <li>Sauté the scallops quickly in very hot butter and oil for 2 minutes to brown lightly.</li>
+              <li>Pour in the wine; add herbs and the onion mixture. Cover and simmer 5 min, then boil down the sauce until lightly thickened. Discard the bay leaf.</li>
+              <li>Spoon into shells, sprinkle with cheese, dot with butter, and broil until bubbling and brown.</li>
+            </ol>
+          </div>
+        </div>
+        <div class="folio">6</div>
+      </div>
+
+      <!-- BACK COVER -->
+      <div class="page cover" data-density="hard">
+        <div class="frame">
+          <div class="kicker">The Best Cooks Club</div>
+          <div class="rule"></div>
+          <div class="sub">bestcooksclub.com</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const el = document.getElementById('book');
+    const pf = new St.PageFlip(el, {
+      width: 460, height: 640,          // base aspect; "stretch" scales to fit
+      size: 'stretch',
+      minWidth: 300, maxWidth: 1000,
+      minHeight: 420, maxHeight: 1350,
+      maxShadowOpacity: 0.5,
+      showCover: true,
+      usePortrait: true,                // single page on phones
+      mobileScrollSupport: false,
+      flippingTime: 700,
+    });
+    pf.loadFromHTML(document.querySelectorAll('#book .page'));
+    window.pf = pf;
+
+    // page indicator + left/right inner-shadow class for spine depth
+    const ind = document.getElementById('ind');
+    function paint(){
+      const i = pf.getCurrentPageIndex(), n = pf.getPageCount();
+      ind.textContent = (i+1) + ' / ' + n;
+      document.querySelectorAll('#book .page').forEach((p, k) => {
+        p.classList.toggle('--left',  k % 2 === 1);
+        p.classList.toggle('--right', k % 2 === 0);
+      });
+    }
+    pf.on('flip', paint);
+    pf.on('init', paint);
+    paint();
+
+    addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight') pf.flipNext();
+      if (e.key === 'ArrowLeft')  pf.flipPrev();
+    });
+  </script>
+</body>
+</html>
