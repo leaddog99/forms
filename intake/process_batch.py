@@ -154,6 +154,16 @@ def pre_scored_from_entry(entry: dict) -> dict:
     power_pct = entry.get("power_pct")
     if power_pct is not None:
         out["powerPercentile"] = round(float(power_pct) * 100, 1)
+    # Field context (dish-level) — the absolute clout of the field + any
+    # geo/site restriction in the query, for the editorial commentary.
+    field = entry.get("_field") or {}
+    if field.get("avg_power") is not None:
+        out["fieldAvgPower"] = float(field["avg_power"])
+        out["fieldMaxPower"] = float(field.get("max_power", field["avg_power"]))
+        out["fieldMinPower"] = float(field.get("min_power", field["avg_power"]))
+        out["fieldN"] = int(field.get("n", 0))
+    if field.get("site_restriction"):
+        out["fieldScope"] = ", ".join(field["site_restriction"])
     if domain:
         out["rootDomain"] = domain
     if title:

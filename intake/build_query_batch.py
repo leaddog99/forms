@@ -902,6 +902,28 @@ def build_batch(
     for e in final:
         e["dish"] = dish
 
+    # Field context (dish-level, identical across the cohort): the field's
+    # absolute clout + any geo/site restriction in the query. Lets the editorial
+    # commentary read "a field contested by established publishers" vs "a niche
+    # field of specialist sites", and "among Greek (.gr) sites" when the search
+    # is site-restricted. Stays relative/qualitative downstream — no raw score leaks.
+    powers = [float(e["power"]) for e in final if e.get("power") is not None]
+    field_ctx: dict = {}
+    if powers:
+        field_ctx["avg_power"] = round(sum(powers) / len(powers), 1)
+        field_ctx["max_power"] = round(max(powers), 1)
+        field_ctx["min_power"] = round(min(powers), 1)
+        field_ctx["n"] = len(powers)
+    sites = sorted({
+        m.strip().lstrip(".").lower()
+        for q in queries
+        for m in re.findall(r"site:([^\s]+)", q, flags=re.IGNORECASE)
+    })
+    if sites:
+        field_ctx["site_restriction"] = sites
+    for e in final:
+        e["_field"] = field_ctx
+
     after_min_ou = len(entries)
     after_moz_post_fit = after_min_ou + len(dropped_low_ou)
     after_is_recipe = after_moz_post_fit + len(dropped_moz)

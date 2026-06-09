@@ -133,41 +133,49 @@ Concrete and opinionated. Not 'this is a classic dish' filler —
 comment on what the cook in front of this recipe is actually being
 asked to do.
 
-scoreCommentary: 1-2 short paragraphs reading the authority numbers for a
-reader. Get the MODEL right — avoid the two common mistakes: do NOT imply
-PA should beat DA (PA above DA is rare and beside the point), and do NOT
-describe OU as "better than the domain average."
- - PA = THIS page's Moz authority (0-100). DA = the publisher DOMAIN's
-   authority (0-100). A page on a strong domain normally has PA well below DA;
-   that is expected, not a weakness.
- - OU is the headline. It is the RESIDUAL from a regression fitted across
-   EVERY candidate page for THIS dish: the page's actual PA minus the PA that
-   curve PREDICTS for a page on a domain of that DA. It is measured in PA
-   points. Large positive OU = the page punches far above what its domain rank
-   predicts (genuinely exceptional FOR THIS DISH, not just coasting on a big
-   domain); near zero = performs as predicted; negative = under-performs its
-   own domain (riding domain clout). READ THE MAGNITUDE — +12 is a strong beat,
-   +1 is noise. You are given the predicted PA, so state the gap concretely
-   ("predicted ~33, actual 45 — beats its own domain's expectation by ~12").
- - power = raw clout (DA+PA): the big-established-publisher signal.
- - The dish ranking blends the two by in-cohort percentile, roughly OU 70% /
-   power 30% — mostly rewarding beating the prediction, with a minority weight
-   on raw authority.
-Read the page as a 2x2 of OU (exceptionality) x power (clout), and name the
-quadrant it lands in:
- - High OU + High power = a genuine winner: a strong publisher that ALSO beats
-   the prediction for this dish.
- - High OU + Low power = a FIND / hidden gem: a not-especially-strong site whose
-   page punches well above its weight for this dish — champion these.
- - Low OU + High power = "meh": coasting on raw domain clout, nothing special
-   about THIS page for the dish.
- - Low OU + Low power = wouldn't have made the cut.
-Judge high/low from the in-cohort PERCENTILES (the "2x2" line, 0-100): the OU/
-exceptionality percentile is the vertical axis, the power/clout percentile the
-horizontal — e.g. OU 95 / power 40 = a clear FIND; OU 30 / power 90 = "meh".
-Use the rank and grade as the bottom line. Then turn the SPECIFIC numbers into a
-reader-facing read of how trustworthy and how genuinely strong-for-this-dish the
-page is. If scores are missing/zero, say so briefly and don't fabricate.
+scoreCommentary: 1-2 short paragraphs placing THIS page for a reader/diner.
+DISCLOSURE — the raw authority SCORES and how they're computed are PROPRIETARY.
+You MAY cite RELATIVE standing — a percentile or a rank within this dish's field
+("in the top few percent for this dish", "outperforms ~9 in 10 of the field",
+"the #1 of NN we found") — because a percentile/rank reveals nothing about how
+it's derived. You may NOT print a raw score, name the underlying metrics or their
+source ("page authority", "domain authority", "PA", "DA", "OU", "power", "Moz",
+"SEO"), or describe the formula, the regression, or the blend. Reason with the
+numbers; speak in relative + qualitative terms.
+HOW TO REASON (internal — do NOT print these terms or values):
+ - One signal is the page's own strength; another is its publisher's overall
+   strength. A page on a strong publisher normally scores well below the
+   publisher itself — that's expected, not a weakness (so never frame it as the
+   page "should" beat its publisher).
+ - The KEY signal is over/under-performance: how the page compares to what a
+   page on a publisher of that strength is PREDICTED to do for THIS dish (a
+   curve fitted across every candidate for the dish). Far above prediction =
+   genuinely exceptional for this dish, not just coasting on a big name; about
+   as predicted = solid; below = leaning on its publisher's name. Weigh the
+   MAGNITUDE of the beat, not just its direction.
+ - A second signal is raw clout — how big/established the publisher is.
+ - Picture a 2x2 of exceptionality × clout, judged from the in-cohort
+   percentiles, and let the quadrant drive the read:
+     · high exceptionality + high clout = a genuine winner.
+     · high exceptionality + low clout = a FIND / hidden gem — a smaller site
+       whose page punches well above its weight here; champion these.
+     · low exceptionality + high clout = unremarkable; coasting on the name.
+     · (low + low wouldn't have made the cut.)
+   Use the rank as the bottom line ("the page to beat" vs "a respectable middle
+   of the pack").
+ - FIELD context: the field's overall clout says whether this dish is contested
+   by big established publishers or led by smaller/specialist sites, and the
+   range says whether a few giants tower over a long tail or it's an even pack —
+   set the page's standing against that backdrop (a standout in a tough,
+   big-name field reads stronger than the same standing in a quiet one). If the
+   search was restricted to a country's sites (e.g. .gr = Greek), frame standing
+   honestly as "among Greek sites".
+VOICE — write like an editor, not an analyst. Good: "a standout for this dish —
+it punches well above the small site it calls home"; "holds its own atop a field
+crowded with big-name publishers"; "a quieter, specialist corner of cooking, and
+this is the one to beat." Bad: any number, metric name, percentile, or any hint
+of how it's measured. If the scores are missing/zero, keep it to a brief
+qualitative note and don't fabricate.
 
 sourcingNotes: Markdown bullet list. Pick 2-5 ingredients where
 quality dominates outcome (raw oils, fresh herbs, aged cheeses,
@@ -369,6 +377,22 @@ def _build_user_prompt(recipe: dict) -> str:
         )
     elif ou is not None:
         score_lines.append(f"  OU (residual vs cohort fit, +/-): {float(ou):+.1f}")
+    f_avg = scoring.get("fieldAvgPower")
+    if f_avg:
+        f_max = scoring.get("fieldMaxPower") or f_avg
+        f_min = scoring.get("fieldMinPower") or f_avg
+        score_lines.append(
+            f"  FIELD clout (DA+PA on a 0-200 scale): avg {float(f_avg):.0f}, "
+            f"range {float(f_min):.0f}-{float(f_max):.0f} across the field "
+            f"(high avg = established publishers; low = smaller/specialist sites; "
+            f"a wide range = a few giants over a long tail)"
+        )
+    f_scope = scoring.get("fieldScope")
+    if f_scope:
+        score_lines.append(
+            f"  FIELD restricted to sites: {f_scope}  (e.g. 'gr' = Greek sites — "
+            f"so standing is 'among Greek sites', not the whole web)"
+        )
     if rank is not None and n:
         score_lines.append(f"  Rank: #{rank} of {n} candidates for this dish "
                            f"(blend: OU ~70% / power ~30%, in-cohort percentile)")

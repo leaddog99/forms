@@ -408,6 +408,15 @@ class ScoringMetadata(BaseModel):
     power: float = 0.0
     ouPercentile: float = 0.0
     powerPercentile: float = 0.0
+    # Field context (dish-level): the cohort's absolute clout (DA+PA, 0-200) +
+    # spread, and any geo/site restriction in the query (e.g. "gr" = Greek-only
+    # search). Lets the commentary say "established-publisher field" vs
+    # "specialist-site field" and "among Greek sites".
+    fieldAvgPower: float = 0.0
+    fieldMaxPower: float = 0.0
+    fieldMinPower: float = 0.0
+    fieldN: int = 0
+    fieldScope: str = ""
     rootDomain: str = ""
     rawTitle: str = ""
     iconUrl: str = ""
