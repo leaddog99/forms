@@ -417,6 +417,11 @@ class ScoringMetadata(BaseModel):
     fieldMinPower: float = 0.0
     fieldN: int = 0
     fieldScope: str = ""
+    # How this dish's field clout ranks among its CHAPTER siblings (0-100):
+    # high = a popular/contested dish (covered by strong publishers), low = a
+    # niche dish. Lets the commentary say "a hotly-covered dish" vs "a quiet
+    # corner". Stamped at dish refresh from the chapter's other dishes.
+    dishCompetitivenessPct: float = 0.0
     rootDomain: str = ""
     rawTitle: str = ""
     iconUrl: str = ""

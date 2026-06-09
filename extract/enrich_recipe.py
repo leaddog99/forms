@@ -159,7 +159,9 @@ above bigger names on its own strength); high + high = a top pick from a trusted
 kitchen; low exceptionality + high clout = a competent, conventional take here
 mostly on reach (say so honestly, don't oversell). (A page on a big domain
 normally scores below the domain — expected; never frame it as the page "should"
-beat its publisher.)
+beat its publisher.) Dish popularity weights it: leading a popular, hotly-covered
+dish is a bigger deal than leading a quiet niche one — let that color how strong
+the standing reads.
 
 VOICE — one credibility line, like a curator's badge.
 Good: "One of the strongest gemista recipes we surfaced — it rose above
@@ -385,6 +387,12 @@ def _build_user_prompt(recipe: dict) -> str:
         score_lines.append(
             f"  FIELD restricted to sites: {f_scope}  (e.g. 'gr' = Greek sites — "
             f"so standing is 'among Greek sites', not the whole web)"
+        )
+    d_comp = scoring.get("dishCompetitivenessPct")
+    if d_comp:
+        score_lines.append(
+            f"  DISH popularity within its chapter: {float(d_comp):.0f}/100 "
+            f"(high = a hotly-covered, contested dish; low = a quieter, niche dish)"
         )
     if rank is not None and n:
         score_lines.append(f"  Rank: #{rank} of {n} candidates for this dish "

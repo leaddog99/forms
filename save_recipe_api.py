@@ -3018,6 +3018,35 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         except Exception as e:
             print(f"[REFRESH-DISH] chapter-fit recompute failed (non-fatal): {e}")
 
+    # Dish competitiveness: how this dish's field clout ranks among its CHAPTER
+    # siblings (a popular/contested dish vs a niche one). Compare this run's
+    # cohort avg power to the other dishes' avg power in the same chapter
+    # (master_recipes, kind=top). Stamped on each saved recipe's _scoring below.
+    dish_comp_pct: Optional[float] = None
+    try:
+        _powers = [float(e["power"]) for e in entries if e.get("power") is not None]
+        if _powers and dish_chapter and dish_chapter != "Uncertain":
+            _this_avg = sum(_powers) / len(_powers)
+            with sqlite3.connect(DB_PATH) as conn:
+                _rows = conn.execute(
+                    "SELECT json_extract(data,'$._master.dish') AS d, "
+                    "AVG(COALESCE(json_extract(data,'$._scoring.domainAuthority'),0) "
+                    "  + COALESCE(json_extract(data,'$._scoring.pageAuthority'),0)) AS ap "
+                    "FROM master_recipes "
+                    "WHERE json_extract(data,'$.classification.chapter') = ? "
+                    "  AND json_extract(data,'$._master.kind') = 'top' "
+                    "GROUP BY d HAVING d IS NOT NULL AND d != ?",
+                    (dish_chapter, canonical_name),
+                ).fetchall()
+            _peers = [float(r[1]) for r in _rows if r[1] is not None]
+            if _peers:
+                _below = sum(1 for p in _peers if p < _this_avg)
+                dish_comp_pct = round(_below / len(_peers) * 100, 1)
+                print(f"[REFRESH-DISH] dish competitiveness in {dish_chapter!r}: "
+                      f"{dish_comp_pct:.0f}th pct (avg clout {_this_avg:.0f} vs {len(_peers)} peers)")
+    except Exception as e:
+        print(f"[REFRESH-DISH] dish-competitiveness calc failed (non-fatal): {e}")
+
     # Delete prior top-kind rows for this dish — editors_choice and
     # legacy survive. Done BEFORE saves so the (url_normalized,
     # user_id=0) unique index can't collide between old + new.
@@ -3107,6 +3136,29 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         if exc:
             master_block["exceptionalism"] = exc
         payload["_master"] = master_block
+        # Stamp the DISH-COHORT scoring (in-cohort percentiles + field context +
+        # competitiveness) onto _scoring. This is the LIVE refresh path — it does
+        # NOT use pre_scored_from_entry, so the cohort signals must be merged here,
+        # on top of the URL-static Moz _scoring set during extract. Feeds the
+        # editorial authority commentary (relative/qualitative only).
+        _cs = payload.get("_scoring") or {}
+        if entry.get("power") is not None:
+            _cs["power"] = float(entry["power"])
+        if entry.get("ou_pct") is not None:
+            _cs["ouPercentile"] = round(float(entry["ou_pct"]) * 100, 1)
+        if entry.get("power_pct") is not None:
+            _cs["powerPercentile"] = round(float(entry["power_pct"]) * 100, 1)
+        _f = entry.get("_field") or {}
+        if _f.get("avg_power") is not None:
+            _cs["fieldAvgPower"] = float(_f["avg_power"])
+            _cs["fieldMaxPower"] = float(_f.get("max_power", _f["avg_power"]))
+            _cs["fieldMinPower"] = float(_f.get("min_power", _f["avg_power"]))
+            _cs["fieldN"] = int(_f.get("n", 0))
+        if _f.get("site_restriction"):
+            _cs["fieldScope"] = ", ".join(_f["site_restriction"])
+        if dish_comp_pct is not None:
+            _cs["dishCompetitivenessPct"] = dish_comp_pct
+        payload["_scoring"] = _cs
         # Auto-enrich is opt-in per dish (defaults off). The save core
         # reads this flag to decide whether to fan out the 3 enrich
         # blocks (~$0.05 + ~10s per row). Without it, the dish refresh
