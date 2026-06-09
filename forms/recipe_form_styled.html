@@ -2601,12 +2601,21 @@
       // Confident match shows the dish + distance; otherwise the closest
       // candidates so the curator can see what it was near. textContent
       // (not innerHTML) — dish names are data, keep them un-evaluated.
+      // A master/dish-refresh recipe (user_id=0) already KNOWS its dish — it was
+      // curated as a top recipe FOR that dish, stored on _master.dish (ground
+      // truth). _match is the vector-NN *inferred* match, only computed for USER
+      // recipes that don't carry a known dish. So prefer _master.dish; fall back
+      // to the inferred match.
+      const masterDish = (recipe && recipe._master && recipe._master.dish) || null;
       const match = (recipe && recipe._match) || null;
       const matchValEl = document.getElementById('score_match_value');
       const matchBasisEl = document.getElementById('score_match_basis');
-      const hasMatch = !!(match && (match.dish || (match.candidates && match.candidates.length)));
+      const hasMatch = !!(masterDish || (match && (match.dish || (match.candidates && match.candidates.length))));
       if (matchValEl) {
-        if (match && match.dish) {
+        if (masterDish) {
+          matchValEl.textContent = masterDish;
+          matchValEl.classList.remove('empty');
+        } else if (match && match.dish) {
           matchValEl.textContent = match.dish;
           matchValEl.classList.remove('empty');
         } else if (match && match.candidates && match.candidates.length) {
@@ -2619,7 +2628,9 @@
       }
       if (matchBasisEl) {
         let b = '';
-        if (match && match.dish) {
+        if (masterDish) {
+          b = 'curated for this dish';   // known, not inferred
+        } else if (match && match.dish) {
           b = 'distance ' + (typeof match.distance === 'number' ? match.distance.toFixed(2) : '—');
         } else if (match && match.candidates && match.candidates.length) {
           b = 'closest: ' + match.candidates.slice(0, 3)
@@ -2693,7 +2704,10 @@
       // `meta_likely_dish` heading shows the same value more legibly.)
 
       const dishEl = document.getElementById('meta_matched_dish');
-      if (dishEl) dishEl.value = basis.matched_dish || '';
+      // Prefer the curated dish (_master.dish, ground truth for dish-refresh
+      // recipes) over the grading basis's inferred match.
+      const _knownDish = (recipe && recipe._master && recipe._master.dish) || basis.matched_dish || '';
+      if (dishEl) dishEl.value = _knownDish;
 
       const confEl = document.getElementById('meta_match_confidence');
       if (confEl) {
