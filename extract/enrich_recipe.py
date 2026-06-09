@@ -133,49 +133,47 @@ Concrete and opinionated. Not 'this is a classic dish' filler —
 comment on what the cook in front of this recipe is actually being
 asked to do.
 
-scoreCommentary: 1-2 short paragraphs placing THIS page for a reader/diner.
+scoreCommentary: 1-2 short paragraphs that VOUCH FOR THIS RECIPE to a home cook —
+why it's worth their trust and how it earned its place. THE POINT, front of mind:
+this whole system exists to surface the best RECIPES, not the best publishers.
+So the SUBJECT is the recipe's credibility. The authority signals below are only
+our private EVIDENCE for how strongly to vouch and from what angle — turn them
+into the recipe's merit. NEVER make the paragraph about the publisher's size or
+clout, the page's "standing among candidates", or SEO mechanics.
+
 DISCLOSURE — the raw authority SCORES and how they're computed are PROPRIETARY.
-You MAY cite RELATIVE standing — a percentile or a rank within this dish's field
-("in the top few percent for this dish", "outperforms ~9 in 10 of the field",
-"the #1 of NN we found") — because a percentile/rank reveals nothing about how
-it's derived. You may NOT print a raw score, name the underlying metrics or their
-source ("page authority", "domain authority", "PA", "DA", "OU", "power", "Moz",
-"SEO"), or describe the formula, the regression, or the blend. Reason with the
-numbers; speak in relative + qualitative terms.
-HOW TO REASON (internal — do NOT print these terms or values):
- - One signal is the page's own strength; another is its publisher's overall
-   strength. A page on a strong publisher normally scores well below the
-   publisher itself — that's expected, not a weakness (so never frame it as the
-   page "should" beat its publisher).
- - The KEY signal is over/under-performance: how the page compares to what a
-   page on a publisher of that strength is PREDICTED to do for THIS dish (a
-   curve fitted across every candidate for the dish). Far above prediction =
-   genuinely exceptional for this dish, not just coasting on a big name; about
-   as predicted = solid; below = leaning on its publisher's name. Weigh the
-   MAGNITUDE of the beat, not just its direction.
- - A second signal is raw clout — how big/established the publisher is.
- - Picture a 2x2 of exceptionality × clout, judged from the in-cohort
-   percentiles, and let the quadrant drive the read:
-     · high exceptionality + high clout = a genuine winner.
-     · high exceptionality + low clout = a FIND / hidden gem — a smaller site
-       whose page punches well above its weight here; champion these.
-     · low exceptionality + high clout = unremarkable; coasting on the name.
-     · (low + low wouldn't have made the cut.)
-   Use the rank as the bottom line ("the page to beat" vs "a respectable middle
-   of the pack").
- - FIELD context: the field's overall clout says whether this dish is contested
-   by big established publishers or led by smaller/specialist sites, and the
-   range says whether a few giants tower over a long tail or it's an even pack —
-   set the page's standing against that backdrop (a standout in a tough,
-   big-name field reads stronger than the same standing in a quiet one). If the
-   search was restricted to a country's sites (e.g. .gr = Greek), frame standing
-   honestly as "among Greek sites".
-VOICE — write like an editor, not an analyst. Good: "a standout for this dish —
-it punches well above the small site it calls home"; "holds its own atop a field
-crowded with big-name publishers"; "a quieter, specialist corner of cooking, and
-this is the one to beat." Bad: any number, metric name, percentile, or any hint
-of how it's measured. If the scores are missing/zero, keep it to a brief
-qualitative note and don't fabricate.
+You MAY cite RELATIVE standing as evidence of RECIPE strength ("among the very
+best we found for this dish", "rose to the top of the field") — a percentile/rank
+reveals nothing about derivation. You may NOT print a raw score, name the metrics
+or their source ("page authority", "domain authority", "PA", "DA", "OU", "power",
+"Moz", "SEO"), or describe the formula/regression/blend.
+
+WHAT THE EVIDENCE MEANS FOR THE RECIPE (internal — translate, never print terms):
+ - A page that beats what a publisher of its size is predicted to do for this
+   dish EARNED its place on the RECIPE's own merits — that is a strong vote of
+   confidence in the recipe itself, not a comment on the brand. Weigh the
+   MAGNITUDE. (A page on a big domain normally scores well below the domain;
+   that's expected — never frame it as the page "should" beat its publisher.)
+ - The exceptionality × clout 2x2, stated in RECIPE terms:
+     · high exceptionality + low clout = a genuine FIND — a great recipe that
+       rose above bigger names on its own strength; champion it as "the real deal".
+     · high exceptionality + high clout = a top recipe from a trusted kitchen.
+     · low exceptionality + high clout = a competent, conventional take that's
+       here mostly on reach — say so honestly, don't oversell its specialness.
+ - FIELD/geo is light color, not the subject: "one of the best among Greek sites"
+   is fine; a sentence about how modest/established the publisher is, is not.
+ - Cite where it lands as the RECIPE winning ("among the very top we surfaced for
+   gemista"), never as the publisher's page placing.
+
+VOICE — recommend a RECIPE like a trusted food editor, not rate a website.
+Good: "One of the standout gemista recipes we surfaced — it rose above bigger-name
+sites on the strength of the method itself, a sign it's the real deal for this
+dish." / "A dependable, top-tier take from a kitchen that clearly knows it."
+Bad (this is the exact failure to avoid — NEVER write like this): "ranks #10,
+a solid middle-of-the-pack standing", "the publisher itself is modest in clout",
+"earned through clarity rather than domain authority", "not the loudest voice in
+the room." If scores are missing/zero, vouch briefly from the recipe itself and
+don't fabricate.
 
 sourcingNotes: Markdown bullet list. Pick 2-5 ingredients where
 quality dominates outcome (raw oils, fresh herbs, aged cheeses,
