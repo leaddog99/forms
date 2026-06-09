@@ -40,6 +40,7 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html { overflow-x: hidden; }   /* lock to viewport: no sideways pan on phone */
     body {
       font-family: Georgia, "Times New Roman", serif;
       font-size: 1.05em;
@@ -51,6 +52,8 @@
          heights set below. */
       padding-top: 56px;
       padding-bottom: 84px;
+      overflow-x: hidden;          /* belt-and-suspenders against horizontal drift */
+      max-width: 100%;
     }
 
     /* Fixed branding header. Background spans the full viewport width;
@@ -698,7 +701,11 @@
     /* Two Column Recipe Layout */
     .recipe-columns {
       display: grid;
-      grid-template-columns: 1fr 1.5fr;
+      /* minmax(0, …) is essential: a bare `1fr` is `minmax(auto, 1fr)`, so the
+         ingredients column couldn't shrink below its head row's min-content
+         (label + Measurements button + unit toggle ≈ 357px) — it ballooned and
+         starved Method. minmax(0,…) lets both tracks honor the 1 : 1.5 ratio. */
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
       gap: 24px;
       margin-bottom: 20px;
     }
@@ -709,6 +716,7 @@
       border-radius: 16px;
       padding: 20px;
       box-shadow: 0 4px 12px rgba(60,40,20,.04);
+      min-width: 0;            /* allow the grid track to shrink past content */
     }
 
     .recipe-content-area label {
@@ -881,6 +889,7 @@
       display: flex;
       gap: 8px;
       align-items: flex-start;
+      min-width: 0;            /* let long step text wrap instead of overflowing */
     }
 
     .step-item textarea {
@@ -1555,9 +1564,11 @@
     /* Ingredients header row: label on the left, metric toggle on the right. */
     .ingredients-head {
       display: flex; align-items: center; justify-content: space-between;
-      gap: 12px;
+      gap: 8px 12px; flex-wrap: wrap;   /* wrap the Measurements/toggle below the
+                                           label on narrow widths instead of
+                                           forcing the whole column wider */
     }
-    .ingredients-head > label { margin: 0; }
+    .ingredients-head > label { margin: 0; min-width: 0; }
     /* Apple-style on/off switch (off = imperial, default). */
     .unit-toggle {
       display: inline-flex; align-items: center; gap: 8px;
