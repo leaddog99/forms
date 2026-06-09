@@ -401,6 +401,13 @@ class ScoringMetadata(BaseModel):
     pageAuthority: float = 0.0
     domainAuthority: float = 0.0
     ouScore: float = 0.0
+    # Raw clout (DA+PA) and the two in-cohort PERCENTILE ranks (0-100) the
+    # OU/power blend ranks on — the axes of the exceptionality×clout 2x2.
+    # Stamped from the batch entry (rank_by_blend) so the editorial authority
+    # commentary can read where the page sits, not just its raw OU.
+    power: float = 0.0
+    ouPercentile: float = 0.0
+    powerPercentile: float = 0.0
     rootDomain: str = ""
     rawTitle: str = ""
     iconUrl: str = ""

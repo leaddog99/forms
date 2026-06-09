@@ -142,6 +142,18 @@ def pre_scored_from_entry(entry: dict) -> dict:
         out["domainAuthority"] = float(da)
     if ou is not None:
         out["ouScore"] = float(ou)
+    # power (DA+PA) + the two in-cohort percentile ranks rank_by_blend stamped
+    # on the entry (0..1) — carried as 0-100 so the authority commentary can
+    # place the page on the exceptionality×clout 2x2, not just read raw OU.
+    power = entry.get("power")
+    if power is not None:
+        out["power"] = float(power)
+    ou_pct = entry.get("ou_pct")
+    if ou_pct is not None:
+        out["ouPercentile"] = round(float(ou_pct) * 100, 1)
+    power_pct = entry.get("power_pct")
+    if power_pct is not None:
+        out["powerPercentile"] = round(float(power_pct) * 100, 1)
     if domain:
         out["rootDomain"] = domain
     if title:

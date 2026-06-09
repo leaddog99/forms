@@ -133,13 +133,41 @@ Concrete and opinionated. Not 'this is a classic dish' filler —
 comment on what the cook in front of this recipe is actually being
 asked to do.
 
-scoreCommentary: 1-2 short paragraphs interpreting the PA/DA/OU scores
-in plain language. PA is the page's Moz authority (0-100); DA is the
-domain's; OU = -3.0273 * DA^0.6034 + PA, positive when the page
-outperforms its domain baseline, negative when it underperforms.
-Translate the numbers into a reader-facing observation. If scores are
-missing/zero (the recipe wasn't scored), say so and keep it short —
-don't fabricate authority claims.
+scoreCommentary: 1-2 short paragraphs reading the authority numbers for a
+reader. Get the MODEL right — avoid the two common mistakes: do NOT imply
+PA should beat DA (PA above DA is rare and beside the point), and do NOT
+describe OU as "better than the domain average."
+ - PA = THIS page's Moz authority (0-100). DA = the publisher DOMAIN's
+   authority (0-100). A page on a strong domain normally has PA well below DA;
+   that is expected, not a weakness.
+ - OU is the headline. It is the RESIDUAL from a regression fitted across
+   EVERY candidate page for THIS dish: the page's actual PA minus the PA that
+   curve PREDICTS for a page on a domain of that DA. It is measured in PA
+   points. Large positive OU = the page punches far above what its domain rank
+   predicts (genuinely exceptional FOR THIS DISH, not just coasting on a big
+   domain); near zero = performs as predicted; negative = under-performs its
+   own domain (riding domain clout). READ THE MAGNITUDE — +12 is a strong beat,
+   +1 is noise. You are given the predicted PA, so state the gap concretely
+   ("predicted ~33, actual 45 — beats its own domain's expectation by ~12").
+ - power = raw clout (DA+PA): the big-established-publisher signal.
+ - The dish ranking blends the two by in-cohort percentile, roughly OU 70% /
+   power 30% — mostly rewarding beating the prediction, with a minority weight
+   on raw authority.
+Read the page as a 2x2 of OU (exceptionality) x power (clout), and name the
+quadrant it lands in:
+ - High OU + High power = a genuine winner: a strong publisher that ALSO beats
+   the prediction for this dish.
+ - High OU + Low power = a FIND / hidden gem: a not-especially-strong site whose
+   page punches well above its weight for this dish — champion these.
+ - Low OU + High power = "meh": coasting on raw domain clout, nothing special
+   about THIS page for the dish.
+ - Low OU + Low power = wouldn't have made the cut.
+Judge high/low from the in-cohort PERCENTILES (the "2x2" line, 0-100): the OU/
+exceptionality percentile is the vertical axis, the power/clout percentile the
+horizontal — e.g. OU 95 / power 40 = a clear FIND; OU 30 / power 90 = "meh".
+Use the rank and grade as the bottom line. Then turn the SPECIFIC numbers into a
+reader-facing read of how trustworthy and how genuinely strong-for-this-dish the
+page is. If scores are missing/zero, say so briefly and don't fabricate.
 
 sourcingNotes: Markdown bullet list. Pick 2-5 ingredients where
 quality dominates outcome (raw oils, fresh herbs, aged cheeses,
@@ -301,17 +329,54 @@ def _build_user_prompt(recipe: dict) -> str:
     # though only the editorial block uses them — keeps user_prompt
     # identical across blocks (one less thing to vary).
     scoring = recipe.get("_scoring") or recipe.get("scoring") or {}
+    master = recipe.get("_master") or recipe.get("master") or {}
     pa = scoring.get("pageAuthority")
     da = scoring.get("domainAuthority")
     ou = scoring.get("ouScore")
     root_domain = scoring.get("rootDomain") or ""
+    exc = master.get("exceptionalism") or {}
+    basis = exc.get("basis") or {}
+    rank = master.get("rank")
+    n = basis.get("n")
+    grade = exc.get("grade")
+    exc_score = exc.get("score")
+    fit_model = basis.get("model")
+    has_pa = pa is not None and float(pa) > 0
+    has_da = da is not None and float(da) > 0
     score_lines = []
-    if pa is not None and float(pa) > 0:
-        score_lines.append(f"  PA (page authority, 0-100): {float(pa):.1f}")
-    if da is not None and float(da) > 0:
-        score_lines.append(f"  DA (domain authority, 0-100): {float(da):.1f}")
-    if ou is not None:
-        score_lines.append(f"  OU (page-vs-domain over/under-performance, +/-): {float(ou):.1f}")
+    if has_pa:
+        score_lines.append(f"  PA (this page's authority, 0-100): {float(pa):.1f}")
+    if has_da:
+        score_lines.append(f"  DA (publisher domain's authority, 0-100): {float(da):.1f}")
+    power_val = scoring.get("power")
+    if power_val:
+        score_lines.append(f"  power (raw clout = DA+PA): {float(power_val):.1f}")
+    elif has_pa and has_da:
+        score_lines.append(f"  power (raw clout = DA+PA): {float(da) + float(pa):.1f}")
+    ou_pctile = scoring.get("ouPercentile")
+    pwr_pctile = scoring.get("powerPercentile")
+    if ou_pctile or pwr_pctile:
+        score_lines.append(
+            f"  >> THE 2x2 (in-cohort percentiles, 0-100, higher=better): "
+            f"OU/exceptionality = {float(ou_pctile or 0):.0f}  |  "
+            f"power/clout = {float(pwr_pctile or 0):.0f}"
+        )
+    if ou is not None and has_pa:
+        # OU is the residual: actual PA - predicted PA. So predicted = PA - OU.
+        score_lines.append(
+            f"  OU (residual vs THIS dish's cohort fit): {float(ou):+.1f}  "
+            f"-> predicted PA for this DA was ~{float(pa) - float(ou):.1f}, actual PA {float(pa):.1f}"
+        )
+    elif ou is not None:
+        score_lines.append(f"  OU (residual vs cohort fit, +/-): {float(ou):+.1f}")
+    if rank is not None and n:
+        score_lines.append(f"  Rank: #{rank} of {n} candidates for this dish "
+                           f"(blend: OU ~70% / power ~30%, in-cohort percentile)")
+    if exc_score is not None:
+        g = f", grade {grade}" if grade else ""
+        score_lines.append(f"  Exceptionalism: {float(exc_score):.0f}{g}")
+    if fit_model:
+        score_lines.append(f"  Cohort fit model: {fit_model}")
     if root_domain:
         score_lines.append(f"  Root domain: {root_domain}")
     if score_lines:
