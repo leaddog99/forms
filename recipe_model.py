@@ -168,10 +168,89 @@ def static_subset(recipe_data: dict) -> dict:
             out["_source"] = filtered
     return out
 
+# --- schema.org shape coercion -------------------------------------------------
+# Real-world JSON-LD is loose: a field that schema.org types as Text often
+# arrives as a number, a list, or an object ({"@value":…}/{"url":…}). Pydantic's
+# `str` rejects those, and because a recipe validates as a WHOLE, one off-type
+# field silently drops the entire recipe from a batch — e.g. recipeYield=8 (int)
+# and video.thumbnailUrl=[…] (list), both seen 2026-06-09. These helpers
+# normalize at the MODEL boundary so every ingest path (extract / save /
+# bookmarklet / API) is covered once. (feedback_single_path + recipe_model_first.)
+
+def _as_str(v):
+    """A schema.org Text-ish value → string. number/bool→str, list→joined, dict→best key."""
+    if v is None or isinstance(v, str):
+        return v
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, (int, float)):
+        return str(int(v)) if float(v).is_integer() else str(v)
+    if isinstance(v, dict):
+        for k in ("@value", "value", "name", "text", "url", "@id"):
+            if v.get(k):
+                return str(v[k])
+        return ""
+    if isinstance(v, (list, tuple)):
+        return ", ".join(s for s in (_as_str(x) for x in v) if s)
+    return str(v)
+
+def _as_one(v):
+    """Like _as_str, but a list means 'first usable one' — for URLs / single values."""
+    if isinstance(v, (list, tuple)):
+        for x in v:
+            s = _as_str(x)
+            if s:
+                return s
+        return ""
+    return _as_str(v)
+
+def _as_yield(v):
+    """recipeYield: a list means 'most descriptive' (['8','8 servings'] → '8 servings')."""
+    if isinstance(v, (list, tuple)):
+        items = [s for s in (_as_str(x) for x in v) if s]
+        return max(items, key=len) if items else ""
+    return _as_str(v)
+
+def _as_str_list(v, *, split=False):
+    """→ list[str]: bare string → [string] (or comma-split if split=True);
+    dict → [best-key]; list → each item coerced, empties dropped."""
+    if v is None:
+        return v
+    if isinstance(v, str):
+        if split:
+            return [p.strip() for p in v.split(",") if p.strip()]
+        return [v] if v.strip() else []
+    if isinstance(v, dict):
+        s = _as_str(v)
+        return [s] if s else []
+    if isinstance(v, (list, tuple)):
+        return [s for s in (_as_str(x) for x in v) if s]
+    s = _as_str(v)
+    return [s] if s else []
+
+def _as_num(v, kind):
+    """Rating/count → float|int, tolerating '', None, '4.8 stars', '1,234'."""
+    if v in (None, ""):
+        return None
+    try:
+        token = str(v).replace(",", "").split()[0]
+        return float(token) if kind is float else int(float(token))
+    except (ValueError, IndexError):
+        return None
+
+
 class AggregateRating(BaseModel):
     type: str = Field(default="AggregateRating", alias="@type")
-    ratingValue: float
-    reviewCount: int
+    ratingValue: Optional[float] = None
+    reviewCount: Optional[int] = None
+
+    @field_validator('ratingValue', mode='before')
+    @classmethod
+    def _v_rating(cls, v): return _as_num(v, float)
+
+    @field_validator('reviewCount', mode='before')
+    @classmethod
+    def _v_count(cls, v): return _as_num(v, int)
 
 class NutritionInfo(BaseModel):
     calories: Optional[str] = ""
@@ -179,30 +258,62 @@ class NutritionInfo(BaseModel):
     carbohydrateContent: Optional[str] = ""
     proteinContent: Optional[str] = ""
 
+    @field_validator('calories', 'fatContent', 'carbohydrateContent', 'proteinContent', mode='before')
+    @classmethod
+    def _v_text(cls, v): return _as_str(v)
+
 class HowToStep(BaseModel):
     type: str = Field(default="HowToStep", alias="@type")
     position: Optional[int] = None
     name: Optional[str] = None
-    text: str
+    text: Optional[str] = ""
     image: Optional[str] = None
     imageCredit: Optional[str] = None
 
+    @field_validator('name', 'text', mode='before')
+    @classmethod
+    def _v_text(cls, v): return _as_str(v)
+
+    @field_validator('image', 'imageCredit', mode='before')
+    @classmethod
+    def _v_url(cls, v): return _as_one(v)
+
 class Tool(BaseModel):
     type: str = Field(default="HowToTool", alias="@type")
-    name: str
+    name: Optional[str] = ""
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def _v_text(cls, v): return _as_str(v)
 
 class VideoObject(BaseModel):
     type: str = Field(default="VideoObject", alias="@type")
-    name: str
-    contentUrl: str
+    name: Optional[str] = ""
+    contentUrl: Optional[str] = ""
     thumbnailUrl: Optional[str] = ""
     uploadDate: Optional[str] = ""
     description: Optional[str] = ""
+
+    @field_validator('name', 'uploadDate', 'description', mode='before')
+    @classmethod
+    def _v_text(cls, v): return _as_str(v)
+
+    @field_validator('contentUrl', 'thumbnailUrl', mode='before')
+    @classmethod
+    def _v_url(cls, v): return _as_one(v)
 
 class Author(BaseModel):
     type: str = Field(default="Person", alias="@type")
     name: Optional[str] = ""
     image: Optional[str] = None
+
+    @field_validator('name', mode='before')
+    @classmethod
+    def _v_name(cls, v): return _as_str(v)
+
+    @field_validator('image', mode='before')
+    @classmethod
+    def _v_img(cls, v): return _as_one(v)
 
 class Provenance(BaseModel):
     ethnicity: Optional[str] = ""
@@ -394,12 +505,33 @@ class RecipeModel(BaseModel):
     # construction but drops them on dump.
     user_id: Optional[int] = None
 
-    @field_validator('servingSuggestions', mode='before')
+    # Text fields a source may deliver as a number / list / object — coerce so
+    # an off-type value never drops the whole recipe (see _as_str above).
+    @field_validator('name', 'description', 'datePublished', 'dateModified',
+                     'recipeCategory', 'recipeCuisine', 'cookingMethod',
+                     'servingSuggestions', 'imageSource', 'notes',
+                     'prepTime', 'cookTime', 'totalTime', mode='before')
     @classmethod
-    def convert_serving_suggestions(cls, v):
-        if isinstance(v, list):
-            return ", ".join(str(item) for item in v if item)
-        return v
+    def _coerce_text(cls, v):
+        return _as_str(v)
+
+    @field_validator('recipeYield', mode='before')
+    @classmethod
+    def _coerce_yield(cls, v):
+        return _as_yield(v)
+
+    # List-of-Text fields a source may deliver as a bare string / object / list
+    # of objects (image as a URL string or ImageObject; a single diet; etc.).
+    @field_validator('image', 'recipeIngredient', 'suitableForDiet', 'tags', mode='before')
+    @classmethod
+    def _coerce_str_lists(cls, v):
+        return _as_str_list(v)
+
+    # keywords: schema.org allows a comma-separated STRING or a list — split it.
+    @field_validator('keywords', mode='before')
+    @classmethod
+    def _coerce_keywords(cls, v):
+        return _as_str_list(v, split=True)
 
     # Dead code removed 2026-05-27: an older RecipeModel-based image
     # prompt builder (file_exists / needs_image_generation /
