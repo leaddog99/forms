@@ -1734,6 +1734,17 @@
           Review the recipe and re-save to acknowledge.
         </div>
 
+        <!-- Cook rework (_cook) — READ-ONLY inspection of the step-anchored
+             rework: headnote, technique changes, the mise (bundles), put-asides,
+             ordered equipment, and anchored steps with tips/checks. Populated by
+             populateCookPanel() when recipe._cook exists; hidden otherwise. The
+             full INTERACTIVE cook view (views toggle, checkboxes, timeline) is
+             Phase 4, rendered via the cookbook. -->
+        <details class="cook-panel hidden" id="cookPanel" style="margin:14px 0;border:1px solid var(--line,#e2d6c3);border-radius:12px;background:#fffaf1;overflow:hidden">
+          <summary style="cursor:pointer;padding:12px 16px;font-weight:700;font-size:1rem;list-style:none">🍳 <span id="cookPanelTitle">Cook view (reworked)</span> <span id="cookPanelStatus" style="font-weight:400;font-size:.82rem;color:var(--muted,#6b5b4f)"></span></summary>
+          <div id="cookPanelBody" style="padding:4px 16px 16px;font-size:.92rem;line-height:1.5"></div>
+        </details>
+
         <!-- Quality-signal scoring strip. Populated at extract time so the
              user can decide whether to save the recipe (and whether to
              pay for the Enrich step) before clicking Save. Hidden when
@@ -2273,6 +2284,10 @@
     <div class="button-row">
       <button type="submit" form="recipeForm" class="primary" id="saveBtn">Save</button>
       <button type="button" id="enrichBtn" class="secondary">Enrich</button>
+      <!-- Cook-rework: turns the recipe into the validated step-anchored _cook
+           (POST /recipes/<id>/cook-rework, out-of-process). Visible only on a
+           saved recipe. Result shows in the Cook view panel above. -->
+      <button type="button" id="reworkBtn" class="secondary" style="display:none">Rework for cooking</button>
       <!-- Visible only when the loaded recipe's owner (recipe.user_id) does
            NOT match the user's persisted self user_id (localStorage
            'sidebar:user_id'). Click does a fast in-DB row copy via
@@ -2568,6 +2583,87 @@
         el.classList.remove('empty');
       }
     }
+    // Read-only inspection of recipe._cook (the step-anchored rework). Expands the
+    // {ingN}/{amt}/{bundle} tokens so the anchored steps read naturally. Hidden
+    // when the recipe hasn't been reworked. Phase 4 turns this into the full
+    // interactive cook view (views toggle / checkboxes / timeline) via the cookbook.
+    function populateCookPanel(recipe) {
+      const panel = document.getElementById('cookPanel');
+      const body = document.getElementById('cookPanelBody');
+      const status = document.getElementById('cookPanelStatus');
+      if (!panel || !body) return;
+      const ck = recipe && recipe._cook;
+      if (!ck) { panel.classList.add('hidden'); panel.open = false; return; }
+      panel.classList.remove('hidden');
+
+      const E = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const fmtAmt = (a) => a ? (a.imperial || a.metric || '') : '';
+      const v = ck.validators || {};
+      status.innerHTML = (v.passed
+          ? '<span style="color:#2f7a3a">✓ gauntlet passed</span>'
+          : '<span style="color:#b23b3b">✗ ' + ((v.failures || []).length) + ' gate failures</span>')
+        + (ck.reworked_at ? ' · ' + (new Date(ck.reworked_at)).toLocaleDateString() : '');
+
+      const renderInstr = (step) => {
+        let html = E(step.instruction || '');
+        html = html.replace(/\{ing(\d+)\}/g, (m, n) => {
+          const si = (step.ingredients || [])[parseInt(n, 10) - 1];
+          if (!si) return m;
+          const amt = fmtAmt(si.amount);
+          return `<b>${E(amt ? amt + ' ' : '')}${E(si.label || '')}</b>`;
+        });
+        html = html.replace(/\{amt:([^}]*)\}/g, (m, x) => '<b>' + E(x.split('|')[0].trim()) + '</b>');
+        html = html.replace(/\{bundle:([^}]*)\}/g, (m, id) => {
+          const b = (ck.bundles || []).find(b => b.id === id.trim());
+          return '<b>' + E(b ? b.label : id) + '</b>';
+        });
+        return html;
+      };
+      const sec = (t) => `<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#6b5b4f);margin:14px 0 6px">${t}</div>`;
+
+      let h = '';
+      if (ck.headnote) h += `<p style="margin:8px 0;font-style:italic">${E(ck.headnote)}</p>`;
+      if ((ck.technique_changes || []).length) {
+        h += sec('What we changed & why') + '<ul style="margin:4px 0;padding-left:20px">'
+          + ck.technique_changes.map(t => `<li>${E(t)}</li>`).join('') + '</ul>';
+      }
+      if ((ck.bundles || []).length) {
+        h += sec('The mise — bundles');
+        h += ck.bundles.map(b => `<div style="margin:6px 0"><b>${E(b.label)}</b>`
+          + (b.make_ahead ? ' <span style="font-size:.75rem;color:var(--muted)">(make ahead)</span>' : '')
+          + '<br><span style="color:#555">'
+          + (b.members || []).map(m => `${E(fmtAmt(m.amount))} ${E(m.label)}${m.prep_verb ? ', ' + E(m.prep_verb) : ''}`).join(' · ')
+          + '</span>'
+          + (b.combine_note ? `<div style="font-size:.82rem;color:var(--muted)">↳ ${E(b.combine_note)}</div>` : '')
+          + (b.excluded_reason ? `<div style="font-size:.82rem;color:var(--muted)">↳ kept separate: ${E(b.excluded_reason)}</div>` : '')
+          + '</div>').join('');
+      }
+      if ((ck.reserved || []).length) {
+        h += sec('Put-asides');
+        h += ck.reserved.map(r => `<div>• <b>${E(r.label)}</b> — set aside step ${r.created_step}${r.consumed_step ? ` → used step ${r.consumed_step}` : ''}</div>`).join('');
+      }
+      if ((ck.equipment || []).length) {
+        h += sec('Equipment (in order of need)');
+        h += '<div>' + ck.equipment.map(e => `${E(e.name)}${e.size ? ` <span style="color:var(--muted)">(${E(fmtAmt(e.size))})</span>` : ''}`).join(' · ') + '</div>';
+      }
+      if ((ck.steps || []).length) {
+        h += sec('Steps');
+        h += ck.steps.map(s => {
+          const sched = [s.duration_minutes ? `${s.duration_minutes} min` : '', s.attention].filter(Boolean).join(' · ');
+          return `<div style="margin:10px 0;padding:8px 10px;border-left:3px solid var(--accent,#b8602a);background:#fff;border-radius:0 6px 6px 0">`
+            + `<div style="font-weight:700">${s.number}. ${E(s.name)}${sched ? ` <span style="font-weight:400;font-size:.75rem;color:var(--muted)">${sched}</span>` : ''}</div>`
+            + `<div style="margin:3px 0">${renderInstr(s)}</div>`
+            + (s.tip ? `<div style="font-size:.84rem;color:#2f7a3a">💡 ${E(s.tip)}</div>` : '')
+            + (s.check ? `<div style="font-size:.84rem;color:#b8602a">✓ ${E(s.check)}</div>` : '')
+            + '</div>';
+        }).join('');
+      }
+      if (ck.finish) h += sec('Finish') + `<p style="margin:4px 0">${E(ck.finish)}</p>`;
+      if (ck.cooks_note) h += `<p style="margin:8px 0;font-size:.86rem;color:var(--muted)"><b>Cook's note:</b> ${E(ck.cooks_note)}</p>`;
+      body.innerHTML = h;
+    }
+
     function populateScoringStrip(recipe) {
       const sc = (recipe && recipe._scoring) || {};
       setScoreChip('score_pa', sc.pageAuthority);
@@ -3435,6 +3531,14 @@
         const alreadyMaster = (loadedUid === 0);
         promoteBtn.style.display = (isSaved && !alreadyMaster) ? '' : 'none';
       }
+      // Rework-for-cooking visibility: any SAVED recipe (master or personal) can
+      // be reworked into _cook. The label flips to "Re-rework" once one exists.
+      const reworkBtn = document.getElementById("reworkBtn");
+      if (reworkBtn) {
+        const isSaved = !!recipe.id;
+        reworkBtn.style.display = isSaved ? '' : 'none';
+        reworkBtn.textContent = (r && r._cook) ? 'Re-rework' : 'Rework for cooking';
+      }
       // BCC Permalink: server returns the canonical bestcooksclub.com/r/<id>
       // URL on every recipe GET. Populate the read-only field; the Copy
       // button writes it to the clipboard.
@@ -3593,6 +3697,7 @@
       invalidateMetadataCache && invalidateMetadataCache();
       populateScoringStrip(r);
       populateCohortMeta && populateCohortMeta(r);
+      populateCookPanel && populateCookPanel(r);
 
       // Stash the full loaded record so save-after-load preserves the rich
       // fields the form has no UI for (provenance, classification, nutrition,
@@ -4259,6 +4364,51 @@
         delete enrichBtn.dataset.busy;
         enrichBtn.textContent = originalLabel;
         updateButtonStates();
+      }
+    };
+
+    // Cook-rework: POST /recipes/<id>/cook-rework (out-of-process job), poll it,
+    // then refresh the Cook view panel from the persisted _cook. ~1-2 min.
+    document.getElementById("reworkBtn").onclick = async () => {
+      const rid = (document.getElementById('recipe_id').value || '').trim();
+      if (!rid) { showFeedback('Save the recipe first.', 'error'); return; }
+      const uid = parseInt(document.getElementById('user_id').value, 10) || 0;
+      const btn = document.getElementById('reworkBtn');
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = 'Reworking…';
+      try {
+        const resp = await fetch(`${API}/recipes/${encodeURIComponent(rid)}/cook-rework?user_id=${uid}`,
+          { method: 'POST', headers: { 'X-Self-User-Id': String(getSelfUserId()) } });
+        const d = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+        showFeedback(`Reworking — job #${d.job_id} (~1–2 min: technique audit → mise → anchor → gauntlet)…`, '');
+        let finished = false;
+        for (let i = 0; i < 75 && !finished; i++) {
+          await new Promise(r => setTimeout(r, 4000));
+          let jd = {}; try { jd = await (await fetch(`${API}/jobs/${d.job_id}`)).json(); } catch (_) {}
+          if (jd.status === 'error') { finished = true; showFeedback('Rework failed: ' + (jd.error_detail || 'see job log'), 'error'); break; }
+          if (jd.status === 'success') {
+            finished = true;
+            let data = null;
+            try { data = (await (await fetch(`${API}/recipes/${encodeURIComponent(rid)}?user_id=${uid}`)).json()).data; } catch (_) {}
+            if (data) {
+              populateCookPanel(data);
+              if (lastExtractedRecipe) lastExtractedRecipe._cook = data._cook;  // so a later Save keeps it
+              const p = document.getElementById('cookPanel');
+              if (p) { p.classList.remove('hidden'); p.open = true; p.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            }
+            const passed = data && data._cook && (data._cook.validators || {}).passed;
+            showFeedback(passed ? 'Cook-rework done ✓ — see the Cook view panel.'
+                                : 'Rework ran but did not pass the gauntlet (nothing saved). See the job log.',
+                         passed ? 'success' : 'error');
+          }
+        }
+        if (!finished) showFeedback('Rework is taking longer than expected — check the job log.', 'error');
+      } catch (e) {
+        showFeedback('Rework error: ' + e.message, 'error');
+      } finally {
+        delete btn.dataset.busy; btn.disabled = false;
+        btn.textContent = (lastExtractedRecipe && lastExtractedRecipe._cook) ? 'Re-rework' : 'Rework for cooking';
       }
     };
 
@@ -5721,6 +5871,7 @@
       invalidateMetadataCache && invalidateMetadataCache();
       populateScoringStrip(r);
       populateCohortMeta && populateCohortMeta(r);
+      populateCookPanel && populateCookPanel(r);
 
       // Auto-grow textareas
       document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
