@@ -3408,6 +3408,96 @@ async def _handle_chapter_rollups_job(job: dict) -> dict:
 jobs_lib.register_handler("chapter_rollups", _handle_chapter_rollups_job)
 
 
+async def _handle_cook_rework_job(job: dict) -> dict:
+    """Cook-rework: turn a captured recipe into a validated `_cook` block
+    (cook_rework.rework_recipe) and persist it ONLY when the §5 gauntlet passes.
+    SHARED engine — works on a master row (user_id=0) or a personal row. Logs
+    each pass + the gate result via print() (captured to the job log)."""
+    params = job.get("params") or {}
+    recipe_id = params.get("recipe_id")
+    user_id = int(params.get("user_id", 0) or 0)
+    if not recipe_id:
+        raise ValueError("cook_rework requires params.recipe_id")
+    table = _recipes_table_for(user_id)
+
+    def _load():
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
+                (recipe_id, user_id)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    recipe = await asyncio.to_thread(_load)
+    if recipe is None:
+        raise ValueError(f"recipe {recipe_id} not found in {table} (user_id={user_id})")
+    print(f"[COOK-REWORK] {recipe.get('name')!r} (user_id={user_id}, table={table})")
+
+    from cook_rework import rework_recipe, REWORK_PROMPT_VERSION
+    cook, report = await asyncio.to_thread(rework_recipe, recipe, print)
+
+    if not report.passed:
+        print(f"[COOK-REWORK] gauntlet FAILED ({len(report.failures)}) — NOT persisting. "
+              f"First failures: {report.failures[:5]}")
+        return {"persisted": False, "passed": False, "failures": report.failures}
+
+    cook.rework_prompt_version = REWORK_PROMPT_VERSION
+    cook.reworked_at = datetime.now(timezone.utc).isoformat()
+
+    def _save():
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = json.loads(conn.execute(
+                f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
+                (recipe_id, user_id)).fetchone()[0])
+            cur["_cook"] = cook.model_dump()
+            conn.execute(
+                f"UPDATE {table} SET data = ?, updated_at = ? WHERE recipe_id = ? AND user_id = ?",
+                (json.dumps(cur, ensure_ascii=False), cook.reworked_at, recipe_id, user_id))
+            conn.commit()
+
+    await asyncio.to_thread(_save)
+    print(f"[COOK-REWORK] persisted _cook — {len(cook.steps)} steps, "
+          f"{len(cook.bundles)} bundles, {len(cook.reserved)} put-asides; gauntlet PASSED")
+    return {"persisted": True, "passed": True, "steps": len(cook.steps),
+            "bundles": len(cook.bundles)}
+
+
+jobs_lib.register_handler("cook_rework", _handle_cook_rework_job)
+
+
+@app.post("/recipes/{recipe_id}/cook-rework")
+def cook_rework_endpoint(recipe_id: str, request: Request, user_id: int = PLACEHOLDER_USER_ID):
+    """Kick off a cook-rework, OUT-OF-PROCESS. It's a 30s-2min multi-pass frontier
+    job that must survive a server restart (the dal-makhani scar), dodge tunnel
+    request timeouts, stream a live log, and batch — exactly the dish_refresh
+    class of work, so it reuses that enqueue + Popen-spawn + SSE-stream infra.
+    SHARED: master rows (user_id=0) need edit_master; a personal row is the user's
+    own. Returns the spawned job + its stream url."""
+    if user_id == 0:
+        _require_perm(request, "edit_master")
+    table = _recipes_table_for(user_id)
+    with sqlite3.connect(DB_PATH) as conn:
+        if not conn.execute(f"SELECT 1 FROM {table} WHERE recipe_id = ? AND user_id = ?",
+                            (recipe_id, user_id)).fetchone():
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        job_id = jobs_lib.enqueue_job(
+            conn, type="cook_rework",
+            params={"recipe_id": recipe_id, "user_id": user_id},
+            entity_ref=f"cook:{recipe_id}")
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
+    return {"recipe_id": recipe_id, "job_id": job_id, "spawned": True,
+            "stream_url": f"/jobs/{job_id}/stream"}
+
+
 def _inject_dish_competitiveness(recipe: dict) -> None:
     """Stamp the dish's LIVE (nightly-rolled-up) in-chapter competitiveness onto
     _scoring transiently, just before enrich, so the editorial commentary

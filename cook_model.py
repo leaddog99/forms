@@ -253,6 +253,10 @@ class CookMetadata(BaseModel):
     technique_changes: List[str] = Field(default_factory=list)
 
     validators: Optional[CookValidatorReport] = None
+    # Stamped by the rework job on persist — lets a stale rework (prompt changed,
+    # or the recipe edited since) be detected + re-run.
+    rework_prompt_version: Optional[str] = None
+    reworked_at: Optional[str] = None
 
     def ingredient_by_id(self, iid: str) -> Optional[CookIngredient]:
         return next((i for i in self.ingredients if i.id == iid), None)
