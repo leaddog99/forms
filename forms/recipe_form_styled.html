@@ -2649,20 +2649,64 @@
       }
       if ((ck.steps || []).length) {
         h += sec('Steps');
-        h += ck.steps.map(s => {
+        // Each step is a discrete, checkable, addressable unit — left checkbox,
+        // autoscroll-to-next on check. This IS the unit the voice loop will drive
+        // (next = check current + scroll on). See window.cookView below.
+        h += '<div id="cookSteps">' + ck.steps.map(s => {
           const sched = [s.duration_minutes ? `${s.duration_minutes} min` : '', s.attention].filter(Boolean).join(' · ');
-          return `<div style="margin:10px 0;padding:8px 10px;border-left:3px solid var(--accent,#b8602a);background:#fff;border-radius:0 6px 6px 0">`
+          return `<div class="cook-step" data-step="${s.number}" style="display:flex;gap:10px;align-items:flex-start;margin:10px 0;padding:8px 10px;border-left:3px solid var(--accent,#b8602a);background:#fff;border-radius:0 6px 6px 0;transition:opacity .2s">`
+            + `<input type="checkbox" class="cook-step-check" data-step="${s.number}" title="Mark done — jumps to the next step" style="width:19px;height:19px;margin-top:2px;flex:0 0 auto;accent-color:var(--accent,#b8602a);cursor:pointer">`
+            + `<div class="cook-step-body" style="flex:1;min-width:0">`
             + `<div style="font-weight:700">${s.number}. ${E(s.name)}${sched ? ` <span style="font-weight:400;font-size:.75rem;color:var(--muted)">${sched}</span>` : ''}</div>`
             + `<div style="margin:3px 0">${renderInstr(s)}</div>`
             + (s.tip ? `<div style="font-size:.84rem;color:#2f7a3a">💡 ${E(s.tip)}</div>` : '')
             + (s.check ? `<div style="font-size:.84rem;color:#b8602a">✓ ${E(s.check)}</div>` : '')
-            + '</div>';
-        }).join('');
+            + `</div></div>`;
+        }).join('') + '</div>';
       }
       if (ck.finish) h += sec('Finish') + `<p style="margin:4px 0">${E(ck.finish)}</p>`;
       if (ck.cooks_note) h += `<p style="margin:8px 0;font-size:.86rem;color:var(--muted)"><b>Cook's note:</b> ${E(ck.cooks_note)}</p>`;
       body.innerHTML = h;
+      wireCookSteps();
     }
+
+    // Interactive steps: check a step -> dim it done + autoscroll to the next
+    // unchecked step. The discrete .cook-step units + this controller are the
+    // BASE for the voice loop (next/back/repeat just drive the same checkboxes).
+    function wireCookSteps() {
+      document.querySelectorAll('.cook-step-check').forEach(cb => {
+        cb.onchange = () => {
+          const el = cb.closest('.cook-step');
+          if (el) el.style.opacity = cb.checked ? '0.5' : '';
+          if (cb.checked) cookScrollToNext(parseInt(cb.dataset.step, 10));
+        };
+      });
+    }
+    function cookScrollToNext(afterStep) {
+      const next = [...document.querySelectorAll('.cook-step')].find(el =>
+        parseInt(el.dataset.step, 10) > afterStep && !el.querySelector('.cook-step-check').checked);
+      if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Voice-ready cook controller (recipe_anchor/voice-cook-spec.md). The voice
+    // loop will call these on a recognized command; today the buttons/checkboxes
+    // do. next = mark current done + advance; back = undo last; repeat = re-center
+    // current (and later, re-speak it).
+    window.cookView = {
+      _checks() { return [...document.querySelectorAll('.cook-step-check')]; },
+      currentStep() { return this._checks().find(cb => !cb.checked) || null; },
+      next() { const cb = this.currentStep(); if (cb) { cb.checked = true; cb.onchange(); } return cb; },
+      back() {
+        const done = this._checks().filter(cb => cb.checked);
+        const last = done[done.length - 1];
+        if (last) { last.checked = false; last.onchange();
+          last.closest('.cook-step').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        return last;
+      },
+      repeat() { const cb = this.currentStep();
+        if (cb) cb.closest('.cook-step').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return cb; },
+    };
 
     // When a rework doesn't pass the gauntlet (nothing saved), show WHAT failed
     // right in the Cook view panel — the validator messages are written to be
