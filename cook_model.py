@@ -163,6 +163,16 @@ class StepEquipment(BaseModel):
     reused_from_step: Optional[int] = None
 
 
+class Attachment(BaseModel):
+    """A KB-sourced tip or check attached by the AUGMENT pass (3c-b). `kb_id` is
+    the PROVENANCE — it must trace to a PUBLISHED cook_tips_kb entry, validated
+    mechanically so the model can't invent advice (the moat). `text` is the
+    entry's claim/action reworded for THIS recipe; `kind` is fixed by the entry."""
+    kb_id: str
+    kind: str = Field(..., description="tip | check — inherited from the KB entry, not chosen.")
+    text: str = Field(..., description="The entry's guidance contextualized to this recipe.")
+
+
 class CookStep(BaseModel):
     number: int
     name: str = Field(..., description="Short imperative title, e.g. 'Boil the spaghetti'.")
@@ -184,11 +194,13 @@ class CookStep(BaseModel):
                                   description="Step numbers that must finish first.")
     resource: Optional[str] = Field(None, description="Contended resource (oven, stovetop, "
                                                       "cook's hands) for honest concurrency.")
-    # Research annotations (KB stubbed for now) — interspersed tips + checks.
-    tip: Optional[str] = Field(None, description="A success tip gleaned from research "
-                                                 "(seasoning staging, technique). KB-sourced later.")
-    check: Optional[str] = Field(None, description="A doneness/failure-avoidance CHECK "
-                                                   "('curds set when it coats the spoon').")
+    # KB-sourced tips/checks attached by the AUGMENT pass (3c-b), each carrying a
+    # kb_id (provenance, validated). ≤2 per step. The bare tip/check below are
+    # DEPRECATED — the rework no longer emits them; kept so a _cook produced
+    # before 3c-b still renders.
+    attachments: List[Attachment] = Field(default_factory=list)
+    tip: Optional[str] = Field(None, description="DEPRECATED — superseded by attachments.")
+    check: Optional[str] = Field(None, description="DEPRECATED — superseded by attachments.")
 
 
 # --------------------------------------------------------------------------- #
@@ -252,6 +264,9 @@ class CookMetadata(BaseModel):
     finish: Optional[str] = Field(None, description="The real finish: plate, vessel, temp, "
                                                     "'serve at once', what NOT to add.")
     cooks_note: Optional[str] = Field(None, description="One short earned note.")
+    # Recipe-level (scope=recipe) KB tips attached by the augment pass — guidance
+    # that isn't tied to one step (season in layers, hold a finisher). ≤3.
+    tips: List[Attachment] = Field(default_factory=list)
     # Phase-1 technique audit: name every change to the COOKING and why (source
     # fidelity is not required — we fix the dish, not just the copy).
     technique_changes: List[str] = Field(default_factory=list)

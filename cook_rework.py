@@ -26,7 +26,7 @@ import anthropic
 
 from cook_model import CookMetadata
 from cook_validators import run_all
-from cook_tips_kb import format_kb_for_prompt
+from cook_augment import augment_cook
 
 _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
@@ -34,7 +34,9 @@ OPUS = "claude-opus-4-8"
 _MAX_TOKENS = 8192
 
 # Bump when the prompt/schema changes so stale reworks are detectable + re-runnable.
-REWORK_PROMPT_VERSION = "cook-rework-v1-2026-06-10"
+# v2: rework no longer invents tips/checks — the augment pass (cook_augment) attaches
+# them from the PUBLISHED KB with provenance (kb_id).
+REWORK_PROMPT_VERSION = "cook-rework-v2-2026-06-10"
 
 
 # --------------------------------------------------------------------------- #
@@ -223,8 +225,6 @@ _EMIT_COOK_TOOL = {
                         "attention": {"type": "string", "enum": ["active", "passive"]},
                         "depends_on": {"type": "array", "items": {"type": "integer"}},
                         "resource": {"type": ["string", "null"]},
-                        "tip": {"type": ["string", "null"]},
-                        "check": {"type": ["string", "null"]},
                     },
                     "required": ["number", "name", "instruction", "ingredients", "equipment", "attention"],
                 },
@@ -279,9 +279,8 @@ metric conversion. Use the provided metric value for the metric face; put the im
 imperial face. If a measure doesn't convert (counts, "to taste", a pinch), set convertible=false \
 and put the same text in both faces. Never mix systems within one face.
 
-TIPS / CHECKS — attach a relevant tip and/or doneness `check` to the steps where it applies, \
-drawn from this reference (use only what genuinely fits; leave null otherwise):
-{format_kb_for_prompt()}
+Do NOT add cooking tips or doneness checks — a later pass attaches those from our curated \
+knowledge base. Focus on the COOKING (technique_changes) and the anchored prose.
 
 You do NOT assign first-appearance order or product names — code handles ordering, and product \
 recommendations are resolved from the equipment `category` downstream. Emit only the category.
@@ -402,6 +401,15 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
         report = run_all(cook)
         log(f"[cook-rework] after repair: passed={report.passed}"
             + (f" ({len(report.failures)} failures)" if not report.passed else ""))
+
+    # Augment ONLY a structurally-sound cook (no point annotating a failed rework).
+    # Additive + best-effort: a failure here never sinks the rework. Provenance —
+    # every attached tip/check traces to a published KB entry by kb_id (validated).
+    if report.passed:
+        try:
+            augment_cook(cook, log, recipe_name=name)
+        except Exception as e:  # noqa: BLE001 — augment is non-fatal
+            log(f"[cook-rework] augment pass failed (non-fatal): {e}")
 
     cook.validators = report
     cook.schema_version = 1

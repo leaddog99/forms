@@ -2659,10 +2659,18 @@
             + `<div class="cook-step-body" style="flex:1;min-width:0">`
             + `<div style="font-weight:700">${s.number}. ${E(s.name)}${sched ? ` <span style="font-weight:400;font-size:.75rem;color:var(--muted)">${sched}</span>` : ''}</div>`
             + `<div style="margin:3px 0">${renderInstr(s)}</div>`
-            + (s.tip ? `<div style="font-size:.84rem;color:#2f7a3a">💡 ${E(s.tip)}</div>` : '')
-            + (s.check ? `<div style="font-size:.84rem;color:#b8602a">✓ ${E(s.check)}</div>` : '')
+            // KB-sourced attachments (3c-b) carry kb_id provenance (shown on hover);
+            // fall back to the deprecated bare tip/check for a pre-3c-b _cook.
+            + ((s.attachments || []).length
+                ? s.attachments.map(a => `<div style="font-size:.84rem;color:${a.kind === 'check' ? '#b8602a' : '#2f7a3a'}" title="from knowledge base: ${E(a.kb_id)}">${a.kind === 'check' ? '✓' : '💡'} ${E(a.text)}</div>`).join('')
+                : (s.tip ? `<div style="font-size:.84rem;color:#2f7a3a">💡 ${E(s.tip)}</div>` : '')
+                  + (s.check ? `<div style="font-size:.84rem;color:#b8602a">✓ ${E(s.check)}</div>` : ''))
             + `</div></div>`;
         }).join('') + '</div>';
+      }
+      if ((ck.tips || []).length) {
+        h += sec('Good to know');
+        h += ck.tips.map(a => `<div style="font-size:.86rem;color:${a.kind === 'check' ? '#b8602a' : '#2f7a3a'};margin:3px 0" title="from knowledge base: ${E(a.kb_id)}">${a.kind === 'check' ? '✓' : '💡'} ${E(a.text)}</div>`).join('');
       }
       if (ck.finish) h += sec('Finish') + `<p style="margin:4px 0">${E(ck.finish)}</p>`;
       if (ck.cooks_note) h += `<p style="margin:8px 0;font-size:.86rem;color:var(--muted)"><b>Cook's note:</b> ${E(ck.cooks_note)}</p>`;
