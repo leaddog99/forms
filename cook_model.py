@@ -40,6 +40,12 @@ class CookAmount(BaseModel):
     metric: str
     convertible: bool = True
 
+    @classmethod
+    def same(cls, text: str) -> "CookAmount":
+        """A unit-neutral amount (count, pinch, vessel-as-measure, a back-reference
+        like 'the reserved water') — same text in both systems, non-convertible."""
+        return cls(imperial=text, metric=text, convertible=False)
+
 
 # --------------------------------------------------------------------------- #
 # Ingredients (the PURCHASABLE thing) vs USES (its deployments)
@@ -72,6 +78,12 @@ class CookIngredient(BaseModel):
                                               "adjust beat after first taste.")
     form_variants: List[FormVariant] = Field(default_factory=list)
     note: Optional[str] = None
+    # First-appearance index: the step number where this ingredient first enters
+    # the cook sequence (directly, or via the bundle it's in). The ingredients
+    # list is kept SORTED by this so the mise lines up in the exact order it'll be
+    # reached for — a living progress indicator. Enforced by the appearance-order
+    # validator. (Order of APPEARANCE/use, not alphabetical or shopping order.)
+    first_step: Optional[int] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -100,6 +112,10 @@ class Bundle(BaseModel):
         None, description="If an item is kept SEPARATE: why (blooms first, curdles, "
                           "lost aeration, to-taste). Mutually informative with combine_note.")
     make_ahead: bool = False
+    # The step where this bundle is DEPLOYED (the moment it goes into the pan).
+    # Bundles list is kept SORTED by this — bundles line up in deploy order so the
+    # cook reaches for them in sequence. Appearance-order validator enforces it.
+    first_step: Optional[int] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -116,6 +132,10 @@ class CookEquipment(BaseModel):
                                            "knife|board|tongs|timer|serving|other.")
     why: Optional[str] = Field(None, description="One line: why this size, tied to quantities.")
     reused_from_step: Optional[int] = None
+    # First-need index: the step that first calls for this tool. Equipment list is
+    # kept SORTED by this (order of need, deduped) — gear lines up in the order
+    # it's grabbed. Appearance-order validator enforces it.
+    first_step: Optional[int] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -168,6 +188,28 @@ class CookStep(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# Put-asides (reserved items) — set aside during cooking, used later
+# --------------------------------------------------------------------------- #
+class ReservedItem(BaseModel):
+    """A PUT-ASIDE: something set aside mid-cook and used later — reserved pasta
+    water, browned meat resting off-heat, a handful of cheese held for the top.
+    Not purchasable (a cooking intermediate, often derived from an ingredient or a
+    step's output), so it lives here, not in `ingredients`. Ordered by
+    `created_step` and shown HELD from created_step → consumed_step, so put-asides
+    line up as living progress indicators too — the cook can see what's waiting on
+    the counter to go back in, and in what order it returns."""
+    id: str = Field(..., description="Stable id; a consuming StepIngredient reuses it.")
+    label: str = Field(..., description="e.g. 'reserved pasta water', 'browned beef'.")
+    amount: Optional[CookAmount] = None
+    from_ingredient_id: Optional[str] = Field(
+        None, description="Source ingredient, if this is a held portion of one.")
+    created_step: int = Field(..., description="Step that sets it aside (where it appears).")
+    consumed_step: Optional[int] = Field(
+        None, description="Step that uses it back. None if it's served as-is / a garnish.")
+    note: Optional[str] = None
+
+
+# --------------------------------------------------------------------------- #
 # The block
 # --------------------------------------------------------------------------- #
 class CookValidatorReport(BaseModel):
@@ -180,16 +222,27 @@ class CookValidatorReport(BaseModel):
 
 class CookMetadata(BaseModel):
     """The reworked, step-anchored form of a recipe — `recipe._cook`. Parallel to
-    (not a replacement for) the faithful schema.org capture."""
+    (not a replacement for) the faithful schema.org capture.
+
+    APPEARANCE-ORDER INVARIANT: `ingredients`, `bundles`, `equipment`, and
+    `reserved` are ALL stored in order of first appearance in the cook sequence
+    (each carries a step index — `first_step` / `created_step`). Nothing is in
+    alphabetical or shopping order here; the lists mirror the order the cook will
+    reach for things, so the mise, gear, bundles, and put-asides can be laid out
+    left-to-right and consumed in sequence — living progress indicators. The
+    appearance-order validator (phase 2) enforces the sort + that nothing is
+    referenced before it appears (reuse points BACK via reused_from_step)."""
     schema_version: int = 1
     headnote: Optional[str] = Field(None, description="Short framing — what this dish is, "
                                                       "what the rework optimized.")
     recipe_yield: Optional[int] = None
     total_time_minutes: Optional[int] = None
 
+    # All four kept SORTED by first-appearance step (see invariant above).
     ingredients: List[CookIngredient] = Field(default_factory=list)
     bundles: List[Bundle] = Field(default_factory=list)
     equipment: List[CookEquipment] = Field(default_factory=list)
+    reserved: List[ReservedItem] = Field(default_factory=list)
     steps: List[CookStep] = Field(default_factory=list)
 
     finish: Optional[str] = Field(None, description="The real finish: plate, vessel, temp, "
