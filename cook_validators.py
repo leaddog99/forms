@@ -97,10 +97,21 @@ def v_definite_article(cook: CookMetadata) -> List[str]:
             if d not in _BACKREF_DEFINITENESS:
                 out.append(f"step {s.number} '{si.label}': non-back-reference "
                            f"definiteness {si.definiteness!r} (introduces, not refers back)")
-        # Belt-and-suspenders: an indefinite article before a measure in prose.
-        if re.search(r"\b(?:a|an)\s+(?:\d|¼|½|¾|⅓|⅔)", s.instruction, re.IGNORECASE):
-            out.append(f"step {s.number}: indefinite measure in prose "
-                       f"('a ¼ cup…') — measure should be back-referenced")
+        # Belt-and-suspenders: an INGREDIENT amount INTRODUCED indefinitely in
+        # prose ("add a ¼ cup of cream"). Precision matters — the rule is about
+        # ingredient amounts, NOT every "a ¼ X" phrase. We require a volume/weight
+        # unit + "of <ingredient>" (the introduction signature), and exclude
+        # per-portion / technique measures that legitimately use "a":
+        #   "a ¼ cup at a time", "a ¼ cup per egg", "a ¼-inch border" -> NOT flagged.
+        if re.search(
+            r"\b(?:a|an)\s+(?:¼|½|¾|⅓|⅔|\d+(?:[./]\d+)?)\s*"
+            r"(?:cups?|tbsps?|tablespoons?|tsps?|teaspoons?|oz|ounces?|lbs?|pounds?|"
+            r"g|grams?|kg|ml|l)\s+of\b"
+            r"(?!.{0,40}\b(?:per|at a time|each|apiece|or so)\b)",
+            s.instruction, re.IGNORECASE,
+        ):
+            out.append(f"step {s.number}: indefinite ingredient measure in prose "
+                       f"('a ¼ cup of …') — should read 'the …' (back-referenced)")
     return out
 
 
