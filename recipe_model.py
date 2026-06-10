@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Union, Literal
 from datetime import datetime
 
+# Step-anchored cook rework block (recipe._cook). cook_model imports only
+# pydantic, so no import cycle.
+from cook_model import CookMetadata
+
 
 # ============================================================================
 # STATIC vs USER field classification.
@@ -513,6 +517,13 @@ class RecipeModel(BaseModel):
     # explicitly (like _source/_scoring) so it survives model_dump(by_alias);
     # left as List[dict] to stay flexible as the entry shape evolves.
     measurements: Optional[List[dict]] = Field(default=None, alias="_measurements")
+    # Step-anchored cook rework (recipe_anchor capability) — the optimized,
+    # mise-complete cook experience: ingredient uses, bundles, scheduled +
+    # anchored steps with tips/checks. PARALLEL to the faithful schema.org
+    # capture (recipeIngredient/recipeInstructions stay intact). The LLM emits
+    # this DATA; the cook view is a deterministic render of it. See cook_model.py.
+    # Declared explicitly so it survives model_dump(by_alias=True).
+    cook: Optional[CookMetadata] = Field(default=None, alias="_cook")
     # Hero-image metadata from coopt/upload (dims/format/bytes/orientation/
     # localized/source). Declared explicitly so it survives model_dump
     # (extra='allow' accepts but DROPS unknown fields on dump).
