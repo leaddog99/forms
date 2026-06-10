@@ -312,31 +312,64 @@ def invalidate_cache() -> None:
     _BLOCKED_CACHE = None
 
 
-def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:
-    """Cached set of root domains marked ``allowed = 0`` in the table. Used by
-    the batch SERP filter, which works at root-domain grain (entries carry
-    ``root_domain(url)``), so a blocked row blocks its whole registrable
-    domain — the intended "block this site" behaviour. Cached; CRUD writers
-    invalidate it. Empty set on any DB error so the filter degrades to its
-    config list rather than failing open or closed unexpectedly."""
-    global _BLOCKED_CACHE
-    if _BLOCKED_CACHE is not None:
-        return _BLOCKED_CACHE
-    blocked: set = set()
+def parse_serp_exclusions(db_path: str = _DEFAULT_DB) -> tuple[set, list]:
+    """Parse the editable `serp_exclusions` system_config list into
+    (domains, terms). A line containing a dot is a DOMAIN (drives the SERP
+    `-site:` exclusion AND the downstream domain filter); any other line is a
+    bare TERM (`-term`, SERP-query only). Lenient: strips a stray leading '-'
+    or 'site:', drops blank/`#` lines, accepts comma or newline separators.
+    Returns (set(), []) on any error."""
     try:
-        with sqlite3.connect(db_path) as conn:
-            ensure_domains_table(conn)
-            for dom, root in conn.execute(
-                "SELECT domain, root_domain FROM domains WHERE allowed = 0"
-            ):
-                if root:
-                    blocked.add(root.lower())
-                if dom:
-                    blocked.add(dom.lower())
+        from input.pipeline import system_config as cfg
+        raw = cfg.get_setting("serp_exclusions", "", db_path=db_path) or ""
     except Exception:
-        pass
-    _BLOCKED_CACHE = blocked
-    return blocked
+        return set(), []
+    domains: set = set()
+    terms: list = []
+    for line in str(raw).replace(",", "\n").splitlines():
+        s = line.strip().lstrip("-").strip()
+        if s.lower().startswith("site:"):
+            s = s[5:].strip()
+        if not s or s.startswith("#"):
+            continue
+        if "." in s:
+            d = s.lower()
+            if d.startswith("www."):
+                d = d[4:]
+            domains.add(d)
+        else:
+            terms.append(s)
+    return domains, terms
+
+
+def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:
+    """Set of blocked root domains: the table's ``allowed = 0`` rows (the hard
+    per-publisher blocklist) UNIONed with the editable `serp_exclusions`
+    textarea's domain lines. Used by the batch SERP filter at root-domain grain.
+    The table part is cached (CRUD writers invalidate it); the textarea part is
+    read fresh via system_config (its own write-invalidated cache) so edits take
+    effect without a restart. Degrades to whatever it can read on error."""
+    global _BLOCKED_CACHE
+    if _BLOCKED_CACHE is None:
+        blocked: set = set()
+        try:
+            with sqlite3.connect(db_path) as conn:
+                ensure_domains_table(conn)
+                for dom, root in conn.execute(
+                    "SELECT domain, root_domain FROM domains WHERE allowed = 0"
+                ):
+                    if root:
+                        blocked.add(root.lower())
+                    if dom:
+                        blocked.add(dom.lower())
+        except Exception:
+            pass
+        _BLOCKED_CACHE = blocked
+    try:
+        extra, _ = parse_serp_exclusions(db_path)
+    except Exception:
+        extra = set()
+    return _BLOCKED_CACHE | extra
 
 
 def seed_disallowed_domains(conn: sqlite3.Connection, hosts) -> int:

@@ -92,6 +92,13 @@
         const step = s.type === 'float' ? 'any' : '1';
         return `<input type="number" step="${step}" id="f_${esc(s.key)}" value="${esc(s.value)}" ${ro}>`;
       }
+      if (s.type === 'text'){
+        // multi-line, monospace (one item per line — e.g. serp_exclusions)
+        return `<textarea id="f_${esc(s.key)}" rows="8" ${ro} style="width:100%;`
+             + `font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92rem;`
+             + `padding:11px 13px;border:1px solid var(--border);border-radius:10px;`
+             + `background:#fff;color:var(--ink);resize:vertical">${esc(s.value ?? '')}</textarea>`;
+      }
       // string / fallback
       return `<input type="text" id="f_${esc(s.key)}" value="${esc(s.value ?? '')}" ${ro}>`;
     }

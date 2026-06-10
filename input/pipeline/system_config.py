@@ -157,13 +157,28 @@ SYSTEM_DEFAULTS: list[dict] = [
     },
     {
         "key": "serp_max_exclusions",
-        "value": 12,
+        "value": 18,
         "type": "int",
         "category": "Search",
-        "label": "Max -site: exclusions per query",
-        "description": "Cap on how many blocklist domains are appended (Google's query "
-                       "length is finite). Blocklist is small today (~9); guards against "
-                       "a large blocklist blowing the query.",
+        "label": "Max query exclusions",
+        "description": "Cap on how many exclusions (domains + terms) are appended "
+                       "to a query — Google's query length is finite.",
+    },
+    {
+        "key": "serp_exclusions",
+        "value": ("facebook.com\ninstagram.com\nlinkedin.com\npinterest.com\n"
+                  "reddit.com\ntiktok.com\ntwitter.com\nwikipedia.org\nyoutube.com\n"
+                  "roundup"),
+        "type": "text",
+        "category": "Search",
+        "label": "SERP query exclusions (one per line)",
+        "description": "The editable exclusion list appended to every dish query. A "
+                       "line with a dot is a DOMAIN (→ Google -site:, and also dropped "
+                       "downstream by filter_disallowed); any other line is a bare TERM "
+                       "(→ -term, removed from the SERP only). Domains kill social/"
+                       "aggregator clutter; terms kill listicles (roundup). NOTE: bare "
+                       "terms like 'best'/'top' also appear in legit single-recipe "
+                       "titles, so they can drop good results — use with care.",
     },
 ]
 

@@ -156,14 +156,18 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     try:
         from input.pipeline import system_config as _cfg
         if _cfg.get_setting("serp_exclude_blocklist", True):
-            from input.pipeline.domains_lib import get_blocked_root_domains
-            cap = int(_cfg.get_setting("serp_max_exclusions", 12))
-            blocked = sorted(get_blocked_root_domains())[:cap]
-            if blocked:
-                full_query = (full_query + " " + " ".join(f"-site:{d}" for d in blocked)).strip()
-                print(f"  [SERPAPI] +{len(blocked)} blocklist exclusions (-site:) appended")
+            from input.pipeline.domains_lib import parse_serp_exclusions
+            cap = int(_cfg.get_setting("serp_max_exclusions", 18))
+            domains, terms = parse_serp_exclusions()
+            term_parts = [(f'-"{t}"' if " " in t else f"-{t}") for t in terms]
+            parts = ([f"-site:{d}" for d in sorted(domains)] + term_parts)[:cap]
+            if parts:
+                full_query = (full_query + " " + " ".join(parts)).strip()
+                nd = sum(1 for p in parts if p.startswith("-site:"))
+                print(f"  [SERPAPI] +{len(parts)} query exclusions appended "
+                      f"({nd} domains, {len(parts) - nd} terms)")
     except Exception as e:
-        print(f"  [SERPAPI] blocklist-exclusion skipped ({type(e).__name__}: {e})")
+        print(f"  [SERPAPI] query-exclusions skipped ({type(e).__name__}: {e})")
 
     out: list[dict] = []
     seen_urls: set[str] = set()
