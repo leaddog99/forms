@@ -145,6 +145,26 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
         "“": '"', "”": '"', "‘": "'", "’": "'",
     }))
 
+    # Append the domain blocklist as Google `-site:` exclusions so the SERP
+    # itself filters known clutter (social/aggregators) — Google fills those
+    # slots with usable recipe sites instead, so fewer rejects + more keeps per
+    # page. This is the SAFE subset of query construction: `-site:DOMAIN` is a
+    # clean, additive, domain-only operator that never touches the verbatim
+    # search TERMS (the precedence trap the note above warns about), and
+    # _filter_disallowed stays as the downstream safety net. Config-gated +
+    # capped (Google's query length is finite). Coexists with a `site:gr` query.
+    try:
+        from input.pipeline import system_config as _cfg
+        if _cfg.get_setting("serp_exclude_blocklist", True):
+            from input.pipeline.domains_lib import get_blocked_root_domains
+            cap = int(_cfg.get_setting("serp_max_exclusions", 12))
+            blocked = sorted(get_blocked_root_domains())[:cap]
+            if blocked:
+                full_query = (full_query + " " + " ".join(f"-site:{d}" for d in blocked)).strip()
+                print(f"  [SERPAPI] +{len(blocked)} blocklist exclusions (-site:) appended")
+    except Exception as e:
+        print(f"  [SERPAPI] blocklist-exclusion skipped ({type(e).__name__}: {e})")
+
     out: list[dict] = []
     seen_urls: set[str] = set()
     for page in range(_SERPAPI_MAX_PAGES):

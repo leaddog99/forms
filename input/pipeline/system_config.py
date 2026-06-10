@@ -142,6 +142,29 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "'Shrimp Risotto' (0.82) while excluding true non-matches "
                        "(≥0.98). Validated: real matches ≤0.25 or ~0.82, non-matches ≥0.98.",
     },
+    # --- Search: how the dish front-end builds the Google/SerpAPI query ---
+    {
+        "key": "serp_exclude_blocklist",
+        "value": True,
+        "type": "bool",
+        "category": "Search",
+        "label": "Exclude blocklist domains in the query",
+        "description": "Append the domain blocklist as Google `-site:` exclusions so "
+                       "the SERP itself filters known clutter (social/aggregators) — "
+                       "Google fills those slots with usable recipe sites, giving fewer "
+                       "rejects and more keeps. Only -site: is spliced; search terms are "
+                       "untouched. filter_disallowed still runs as the safety net.",
+    },
+    {
+        "key": "serp_max_exclusions",
+        "value": 12,
+        "type": "int",
+        "category": "Search",
+        "label": "Max -site: exclusions per query",
+        "description": "Cap on how many blocklist domains are appended (Google's query "
+                       "length is finite). Blocklist is small today (~9); guards against "
+                       "a large blocklist blowing the query.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}
