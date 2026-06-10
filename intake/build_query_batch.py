@@ -806,17 +806,20 @@ def _min_ou_filter(entries: list[dict], *,
     return kept, dropped
 
 
-def _rank_blended(entries: list[dict], top_n_final: int) -> list[dict]:
+def _rank_blended(entries: list[dict], top_n_final: int,
+                  reserve_n: int = 0) -> tuple[list[dict], list[dict]]:
     """Final ranking: the canonical OU/power percentile blend (see
-    input.pipeline.blend.rank_by_blend), sliced to top_n_final and
-    stamped with a 1-indexed `rank`. Entries already carry `ou`, `da`,
-    `pa` from the Moz/OU stages — rank_by_blend stamps `power`, `ou_pct`,
-    `power_pct`, `blend_score` onto each."""
+    input.pipeline.blend.rank_by_blend). Returns (winners, reserve): the top
+    top_n_final winners, plus the next `reserve_n` ranked as a backfill pool
+    for the save loop (when a winner fails extract/save-gate, the next reserve
+    candidate takes its slot so the dish still lands top_n_final). Every entry
+    gets a continuous 1-indexed `rank`, so a promoted reserve keeps a truthful
+    blend rank. Entries already carry `ou`, `da`, `pa`; rank_by_blend stamps
+    `power`, `ou_pct`, `power_pct`, `blend_score`."""
     ranked = rank_by_blend(entries)
-    kept = ranked[:top_n_final]
-    for rank, e in enumerate(kept, start=1):
+    for rank, e in enumerate(ranked, start=1):
         e["rank"] = rank
-    return kept
+    return ranked[:top_n_final], ranked[top_n_final:top_n_final + reserve_n]
 
 
 def _predict_pa_from_fit(ou_fit: dict, da: float) -> Optional[float]:
@@ -931,8 +934,10 @@ def build_batch(
     print(f"\n[7/7] rank by OU/power blend "
           f"(OU {100 - POWER_BLEND_WEIGHT:.0f} / power {POWER_BLEND_WEIGHT:.0f}, "
           f"percentile), keep top {top_n_final}")
-    final = _rank_blended(entries, top_n_final)
-    print(f"      -> final batch: {len(final)} URLs")
+    # Keep a reserve (the next top_n_final ranked) so the save loop can backfill
+    # to top_n_final when a winner fails extract/save — "ensure 10 if available".
+    final, reserve = _rank_blended(entries, top_n_final, reserve_n=top_n_final)
+    print(f"      -> final batch: {len(final)} URLs (+{len(reserve)} reserve for backfill)")
 
     # Phase A — salvage FETCH-FAILS (likely anti-bot blocks). They were dropped
     # before Moz, but Moz scores by URL (no page crawl needed), so we can still
@@ -1029,6 +1034,10 @@ def build_batch(
         # Fetch-fails authority-scored (Phase A) — recorded as rejects so the
         # dish UI can flag the would-have-qualified ones for recovery.
         "fetch_fail_candidates": fetch_fail_candidates,
+        # Backfill pool: the next-ranked survivors beyond the top_n_final
+        # winners. The save loop pulls from here when a winner fails.
+        "reserve": reserve,
+        "top_n_final": top_n_final,
     }
 
 

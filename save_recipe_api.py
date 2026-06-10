@@ -3172,7 +3172,17 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             "exc_grade": exc.get("grade"),
         })
 
-    for entry in entries:
+    # Save until top_n_final winners land, backfilling from the reserve when a
+    # winner fails extract/save-gate ("ensure 10 if available"). The loop stops
+    # at the target, so reserve URLs are only extracted when a backfill is needed.
+    pool = list(entries) + list(batch_result.get("reserve", []))
+    target = top_final
+    saved_urls: list[str] = []
+    backfilled = 0
+    last_saved_ou: Optional[float] = None
+    for entry in pool:
+        if saved_count >= target:
+            break
         url = entry["url"]
         try:
             # Dish refresh always force-refreshes the extract cache:
@@ -3211,7 +3221,9 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             "kind": "top",
             "dish": canonical_name,
             "refreshed_at": now_iso,
-            "rank": entry.get("rank"),
+            # Re-sequence 1..N over the ACTUAL saved set (a backfilled reserve
+            # takes the next slot rather than showing its raw blend rank).
+            "rank": saved_count + 1,
             "queries": entry.get("_queries") or [],
             "batch_source": "/dishes/refresh",
         }
@@ -3254,6 +3266,11 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         try:
             await asyncio.to_thread(_save_recipe_core, payload)
             saved_count += 1
+            saved_urls.append(url)
+            if isinstance(entry.get("ou"), (int, float)):
+                last_saved_ou = float(entry["ou"])   # lowest saved = the real cut bar
+            if (entry.get("rank") or 0) > target:
+                backfilled += 1
         except HTTPException as e:
             print(f"[REFRESH-DISH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
             _record_reject(entry, f"save-fail-{e.status_code}: {e.detail}")
@@ -3278,12 +3295,35 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         print(f"[REFRESH-DISH] {len(batch_result['fetch_fail_candidates'])} fetch-fail(s) "
               f"recorded as rejects; {_n_ff_qual} would have qualified")
 
-    # Compute the bar-to-beat: the OU of the lowest-ranked URL that
-    # made it into the final top-N (the LAST surviving entry — they're
-    # rank-ordered by OU descending). Used by the dish form to flag
-    # rejects whose OU exceeds this — "would have qualified."
-    bottom_ou: Optional[float] = None
-    if entries:
+    # Re-flag the ACTUAL saved winners in the cohort data points — backfill may
+    # have swapped a failed winner for a reserve, so the pre-save flagging
+    # (intended top-N) can be stale. Cheap DB pass, no extracts.
+    if saved_urls:
+        try:
+            from input.pipeline.chapters import score_data_points_for_dish
+            from input.pipeline.config import POWER_BLEND_WEIGHT
+            with sqlite3.connect(DB_PATH) as conn:
+                score_data_points_for_dish(conn, canonical_name,
+                                           batch_result.get("ou_fit") or {},
+                                           POWER_BLEND_WEIGHT, saved_urls)
+        except Exception as e:
+            print(f"[REFRESH-DISH] winner re-flag failed (non-fatal): {e}")
+
+    # Clean, readable end-of-run summary (separate from the per-recipe noise):
+    # how many landed, how many were backfilled, and why any were dropped.
+    _save_drops = [r for r in rejects if not str(r.get("reason", "")).startswith("fetch-failed")]
+    from collections import Counter
+    _by_reason = Counter(str(r.get("reason", "?")).split(":")[0].split(" (")[0] for r in _save_drops)
+    _drop_summary = ", ".join(f"{k}×{v}" for k, v in _by_reason.items()) or "none"
+    print(f"[REFRESH-DISH] SUMMARY {canonical_name!r}: saved {saved_count}/{target}"
+          + (f" ({backfilled} backfilled from reserve)" if backfilled else "")
+          + f"; dropped this run: {_drop_summary}  (see Rejects)")
+
+    # Bar-to-beat for "would have qualified": the OU of the LOWEST WINNER WE
+    # ACTUALLY SAVED (with backfill, that may be a promoted reserve, not the
+    # original #N). Falls back to the original cut if nothing saved.
+    bottom_ou: Optional[float] = last_saved_ou
+    if bottom_ou is None and entries:
         last = entries[-1]
         if isinstance(last.get("ou"), (int, float)):
             bottom_ou = float(last["ou"])
@@ -3829,9 +3869,13 @@ def _save_recipe_core(payload: dict) -> dict:
               f"run={hints.get('run')!r}")
     print("[SAVE] Save recipe endpoint called")
     try:
-        print(f"[DATA] Received payload: {payload}")
+        # One-line summary instead of dumping the whole recipe JSON — the full
+        # payload flooded the run log and buried the save-loop drop reasons.
+        print(f"[DATA] payload: {(payload.get('name') or '?')!r} "
+              f"({len(payload.get('recipeIngredient') or [])} ings, "
+              f"{len(payload.get('recipeInstructions') or [])} steps) "
+              f"user={payload.get('user_id')}")
         cleaned = sanitize_recipe_data(payload)
-        print(f"[CLEAN] Sanitized data: {cleaned}")
         recipe = RecipeModel(**cleaned)
         print("[OK] Recipe model validation passed")
     except ValidationError as e:
