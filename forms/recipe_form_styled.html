@@ -246,6 +246,15 @@
       background: var(--card);
       color: var(--ink);
     }
+    /* Store context: user picker (left) + Master checkbox (right). */
+    .sidebar-controls .uid-row.store-row { display: flex; align-items: center; gap: 10px; }
+    .sidebar-controls .store-user { flex: 1 1 auto; min-width: 0; width: auto; }
+    .sidebar-controls .store-user:disabled { opacity: 0.45; cursor: not-allowed; background: #f1ece4; }
+    .sidebar-controls .store-master {
+      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+      font-size: 0.9em; font-weight: 600; color: var(--ink); cursor: pointer; user-select: none;
+    }
+    .sidebar-controls .store-master input { width: 16px; height: 16px; accent-color: #b8602a; cursor: pointer; margin: 0; }
     .sidebar-controls input[type="search"],
     .sidebar-controls select {
       width: 100%;
@@ -1654,17 +1663,19 @@
   <aside class="sidebar" id="sidebar">
     <h2>Recipes <span class="count" id="sidebarCount"></span></h2>
     <div class="sidebar-controls">
-      <div class="uid-row">
-        <label for="user_id">User ID</label>
-        <input type="number" id="user_id" value="1" min="0" step="1"
-               autocomplete="off" name="bcc_user_view_id"
-               data-lpignore="true"
-               data-form-type="other"
-               data-rf-ignore="true"
-               data-rf-noformfilling="true"
-               data-1p-ignore="true"
-               data-bwignore="true" />
-        <button type="button" id="user_id_toggle" class="uid-toggle" title="Browse The Best of the Best — the master cookbook (user_id 0)">TBOTB</button>
+      <!-- Store context. #user_id is the HIDDEN source of truth every
+           save/extract/fetch/delete reads (getElementById('user_id').value).
+           The visible controls DRIVE it: pick a user (left) to view/save a
+           personal collection, or tick Master (right) to edit the TBOTB master
+           (user_id 0), which greys the user picker. syncStoreControls() keeps
+           these mirrored to #user_id at every change point. -->
+      <div class="uid-row store-row">
+        <input type="hidden" id="user_id" value="1" name="bcc_user_view_id" />
+        <select id="user_select" class="store-user" aria-label="User collection"
+                title="Whose collection to view / save to"></select>
+        <label class="store-master" title="Edit the master cookbook — The Best of the Best (user 0)">
+          <input type="checkbox" id="master_toggle" /> <span>Master</span>
+        </label>
       </div>
       <input type="search" id="sidebar_search" placeholder="Search recipes…" />
       <select id="sidebar_chapter">
@@ -2437,21 +2448,17 @@
     // lock is UI, the server is authority).
     function applyHarvestLock(hints) {
       const uidEl = document.getElementById('user_id');
-      const tbtn = document.getElementById('user_id_toggle');
+      const sel = document.getElementById('user_select');
+      const chk = document.getElementById('master_toggle');
+      // Force + LOCK the store to Master: tick + disable the checkbox, grey the
+      // user picker, and set the lock flag so syncStoreControls yields control.
+      if (chk) { chk.checked = true; chk.disabled = true; chk.dataset.locked = '1';
+                 chk.title = 'Locked to Master while harvesting from dish rejects.'; }
+      if (sel) sel.disabled = true;
       if (uidEl) {
         uidEl.value = '0';
-        uidEl.disabled = true;
-        uidEl.title = 'Locked to Master (harvest from dish rejects). ' +
-                      'Use "clear harvest" in the banner to unlock.';
-        // Fire so listeners (TBOTB toggle visual state, sidebar
-        // persistence) react. Disabled inputs still propagate
-        // programmatic events.
-        try { uidEl.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+        // Fire so the sidebar browse + persistence follow to master.
         try { uidEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
-      }
-      if (tbtn) {
-        tbtn.disabled = true;
-        tbtn.title = 'Locked while harvesting from dish rejects.';
       }
 
       let badge = document.getElementById('harvestBadge');
@@ -2493,16 +2500,13 @@
     // shows (which is still 0 unless the user changes it).
     function clearHarvestLock() {
       stagedBccHints = null;
-      const uidEl = document.getElementById('user_id');
-      const tbtn = document.getElementById('user_id_toggle');
-      if (uidEl) {
-        uidEl.disabled = false;
-        uidEl.title = '';
-      }
-      if (tbtn) {
-        tbtn.disabled = false;
-        tbtn.title = '';
-      }
+      const chk = document.getElementById('master_toggle');
+      const sel = document.getElementById('user_select');
+      if (chk) { chk.disabled = false; delete chk.dataset.locked; chk.title = ''; }
+      // Leave the store on Master (user_id stays 0 until the user changes it),
+      // but the controls are interactive again; re-sync to the current #user_id.
+      if (sel) sel.disabled = (chk && chk.checked);
+      syncStoreControls();
       const badge = document.getElementById('harvestBadge');
       if (badge && badge.parentNode) {
         badge.parentNode.removeChild(badge);
@@ -2907,13 +2911,74 @@
     // to a personal collection, the user types a uid in the input — no
     // toggle-back behavior, because there isn't one "last personal" to
     // remember once we have multiple users.
+    // Called at every #user_id change point (load, restore, toggle, harvest).
+    // The legacy TBOTB button is gone; this now mirrors #user_id into the new
+    // store controls (user picker + Master checkbox).
     function syncUserIdToggleLabel() {
-      const btn = document.getElementById('user_id_toggle');
-      const uidEl = document.getElementById('user_id');
-      if (!btn || !uidEl) return;
-      const current = parseInt(uidEl.value, 10);
-      btn.classList.toggle('active', current === 0);
+      syncStoreControls();
     }
+
+    // Reflect the hidden #user_id (source of truth) into the visible controls:
+    // user_id 0 => Master checked + user picker greyed; else => unchecked + the
+    // picker shows that user (a transient option is added if it's unknown).
+    function syncStoreControls() {
+      const uidEl = document.getElementById('user_id');
+      const sel = document.getElementById('user_select');
+      const chk = document.getElementById('master_toggle');
+      if (!uidEl || !sel || !chk) return;
+      if (chk.dataset.locked === '1') return;   // harvest lock owns the controls
+      const uid = parseInt(uidEl.value, 10);
+      const isMaster = (uid === 0);
+      chk.checked = isMaster;
+      sel.disabled = isMaster;
+      if (!isMaster && !Number.isNaN(uid)) {
+        if (![...sel.options].some(o => Number(o.value) === uid)) {
+          const opt = document.createElement('option');
+          opt.value = String(uid);
+          opt.textContent = 'User ' + uid + ' (#' + uid + ')';
+          sel.appendChild(opt);
+        }
+        sel.value = String(uid);
+      }
+    }
+
+    // Populate the user picker from /users (names; user 0/Master excluded — that's
+    // the checkbox's job). Falls back silently; #user_id still works empty.
+    (async function populateUserSelect() {
+      const sel = document.getElementById('user_select');
+      if (!sel) return;
+      try {
+        const res = await fetch(`${API}/users`);
+        const users = (await res.json()) || [];
+        sel.innerHTML = '';
+        users.filter(u => Number(u.user_id) !== 0).forEach(u => {
+          const opt = document.createElement('option');
+          opt.value = String(u.user_id);
+          opt.textContent = `${u.name || u.email || ('User ' + u.user_id)} (#${u.user_id})`;
+          sel.appendChild(opt);
+        });
+        syncStoreControls();   // re-reflect current #user_id now that options exist
+      } catch (e) { /* leave empty; the hidden #user_id still drives everything */ }
+    })();
+
+    // Wire the new controls -> #user_id. Changing #user_id (with a dispatched
+    // 'change') runs the existing handler: syncUserIdToggleLabel + persist +
+    // loadRecipes, so the sidebar browse follows the store, same as before.
+    (function wireStoreControls() {
+      const uidEl = document.getElementById('user_id');
+      const sel = document.getElementById('user_select');
+      const chk = document.getElementById('master_toggle');
+      if (!uidEl) return;
+      const applyUid = (val) => {
+        uidEl.value = String(val);
+        uidEl.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      if (sel) sel.addEventListener('change', () => { if (!chk || !chk.checked) applyUid(sel.value); });
+      if (chk) chk.addEventListener('change', () => {
+        if (chk.checked) { if (sel) sel.disabled = true; applyUid(0); }
+        else { if (sel) sel.disabled = false; applyUid((sel && sel.value) || '1'); }
+      });
+    })();
 
     // ============================================================
     // Recipe list — fetch + render
