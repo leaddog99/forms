@@ -1711,7 +1711,7 @@
         <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*,.pdf,application/pdf" />
       </div>
 
-      <form id="recipeForm">
+      <form id="recipeForm" novalidate>
 
         <!-- Drift notice: visible when the loaded recipe has
              source_changed_at set (a TTL-expired LLM re-extract produced
@@ -1810,7 +1810,12 @@
                  so the existing save/load/extract logic (which reads/writes
                  heroImageUrl.value) is unchanged; the well drives it. -->
             <div id="heroWell"></div>
-            <input type="url" id="heroImageUrl" style="display:none" aria-hidden="true" tabindex="-1" />
+            <!-- Value-carrier only (set by image-well.js, read by save/updateButtonStates).
+                 MUST be type=hidden, not type=url: it holds local hero paths like
+                 /generated/… which fail HTML5 url validation, and being display:none it
+                 can't be focused to show the bubble — so the browser would SILENTLY block
+                 the whole form submit ("invalid form control is not focusable"). -->
+            <input type="hidden" id="heroImageUrl" />
             <!-- The "Tweak generation prompt" control now lives INSIDE the
                  ImageWell's Set-image dialog, next to Generate (passed via the
                  generatePanel opt below) — off the main form, where it belongs. -->
@@ -3697,7 +3702,10 @@
         // Owner discriminator. Server dispatches the write to the master
         // table when 0, else the personal table. parseInt + fallback covers
         // empty/invalid user input.
-        user_id: parseInt(getValOr("user_id", "1"), 10) || 1,
+        // NOTE: `parseInt(...) || 1` is WRONG here — user_id 0 (Master/TBOTB) is
+        // falsy, so `|| 1` silently rewrote every master save to user 1. Preserve
+        // a valid 0; only fall back to 1 on NaN/empty.
+        user_id: (() => { const v = parseInt(getValOr("user_id", "1"), 10); return Number.isNaN(v) ? 1 : v; })(),
         name: document.getElementById("name").value,
         description: document.getElementById("description").value,
         recipeIngredient: getIngredients(),
