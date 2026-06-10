@@ -2443,7 +2443,22 @@ def get_chapter_endpoint(name: str):
         if not _chapter_known(name):
             raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
         with sqlite3.connect(DB_PATH) as conn:
-            return get_chapter_detail(conn, name)
+            detail = get_chapter_detail(conn, name)
+            # The chapter's dishes ranked by competitiveness (nightly rollup) —
+            # which dishes in this chapter are hotly-covered vs niche.
+            rows = conn.execute(
+                "SELECT name, competitiveness_pct, last_run_count, last_refreshed "
+                "FROM dishes WHERE chapter = ? "
+                "ORDER BY CASE WHEN competitiveness_pct IS NULL THEN 1 ELSE 0 END, "
+                "competitiveness_pct DESC, name",
+                (name,),
+            ).fetchall()
+            detail["dishes"] = [
+                {"name": r[0], "competitiveness_pct": r[1],
+                 "last_run_count": r[2], "last_refreshed": r[3]}
+                for r in rows
+            ]
+            return detail
     except HTTPException:
         raise
     except Exception as e:
