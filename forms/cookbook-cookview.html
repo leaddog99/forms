@@ -616,10 +616,13 @@
     if(auto) stop();
   }, {passive:true}); });
 
-  // per-step beauty shots — real photos land at /generated/cookbook/*.jpg once
-  // the OpenAI billing limit is lifted + gen_cookbook_imgs.py runs; picsum is the
-  // graceful stand-in until then. Keyed by 0-based step index.
-  var SHOT = { 3:'lasagna-brown', 4:'lasagna-filling', 6:'lasagna-assemble' };
+  // per-step beauty shots — real photos at /generated/cookbook/*.jpg (generated
+  // by gen_cookbook_imgs.py); picsum is the graceful stand-in if one is missing.
+  // Keyed by 0-based step index. Steps 1 (oven) + 6 (portion) intentionally have
+  // no photo, to keep the image rhythm varied rather than one-per-step.
+  var SHOT = { 1:'lasagna-ricotta', 2:'lasagna-noodles', 3:'lasagna-brown',
+               4:'lasagna-filling', 6:'lasagna-assemble', 7:'lasagna-bake',
+               8:'lasagna-slice' };
   document.querySelectorAll('[data-step]').forEach(function(s,i){
     if(!SHOT[i]) return;
     var im=document.createElement('img'); im.className='cb-shot'; im.loading='lazy'; im.alt='';

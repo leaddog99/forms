@@ -27,13 +27,29 @@ JOBS = [
     ("lasagna-assemble",
      "Hands layering wide sheets of lasagna pasta over red meat sauce in a deep "
      "baking dish, mid-assembly with ricotta and mozzarella visible, overhead."),
+    ("lasagna-ricotta",
+     "A fine-mesh strainer lined with cheesecloth draining fresh ricotta cheese "
+     "over a glass bowl, a small weight on top, on a marble counter."),
+    ("lasagna-noodles",
+     "Wide flat lasagna pasta sheets cooking in a large pot of salted boiling "
+     "water, a few lifted with tongs, steam rising, overhead."),
+    ("lasagna-bake",
+     "A classic lasagna baking in the oven, golden and bubbling with browned "
+     "cheese on top, in a deep glass baking dish."),
+    ("lasagna-slice",
+     "A single square slice of baked lasagna lifted out on a spatula, showing "
+     "four neat layers of pasta, rich meat sauce and melted cheese, steam rising."),
 ]
 
 for name, prompt in JOBS:
+    out = OUT / f"{name}.jpg"
+    if out.exists():
+        print(f"[gen] {name} already exists — skipping", flush=True)
+        continue
     print(f"[gen] {name} …", flush=True)
     raw = _generate_image(prompt + STYLE, orientation="landscape", quality="medium")
     img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.save(OUT / f"{name}.jpg", "JPEG", quality=85, optimize=True, progressive=True)
+    img.save(out, "JPEG", quality=85, optimize=True, progressive=True)
     print(f"[gen] saved /generated/cookbook/{name}.jpg ({img.width}x{img.height})", flush=True)
 
 print("DONE", flush=True)
