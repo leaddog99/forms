@@ -256,6 +256,7 @@
         <div class="ed-actions">
           <button type="button" class="ed-btn primary" id="refreshBtn">Refresh</button>
           <button type="button" class="ed-btn" id="saveBtn">Save</button>
+          ${c.is_builtin ? '' : '<button type="button" class="ed-btn" id="deleteBtn" style="margin-left:auto;color:var(--ed-warn,#b23b3b);border-color:#e7c9c9">Delete</button>'}
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
 
@@ -265,6 +266,8 @@
       });
       $('#refreshBtn').addEventListener('click', () => doRefresh(c.name));
       $('#saveBtn').addEventListener('click', () => doSaveNotes(c.name));
+      const delBtn = $('#deleteBtn');
+      if (delBtn) delBtn.addEventListener('click', () => doDeleteChapter(c.name));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       loadChapterTop10(c.name);     // top-10 recipes — primary visible section
       loadChapterDishes(c.name);    // dishes ranked by competitiveness (nightly rollup)
@@ -444,6 +447,21 @@
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Save';
         flash(`Save failed: ${e.message || e}`, true);
+      }
+    }
+
+    async function doDeleteChapter(name){
+      if (!confirm(`Delete the chapter "${name}"?\n\nOnly works if no dishes point to it — reassign or delete those first.`)) return;
+      const hint = $('#hint');
+      try {
+        const r = await fetch(`/chapters/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${r.status}`); }
+        delete chapters[name];
+        selectedName = null;
+        await loadChapters();   // refresh the list (drops the row)
+        renderDetail();         // clear the detail panel
+      } catch (e) {
+        if (hint){ hint.style.color = 'var(--ed-warn,#b23b3b)'; hint.textContent = `Delete failed: ${e.message || e}`; }
       }
     }
 

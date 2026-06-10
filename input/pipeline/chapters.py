@@ -630,6 +630,27 @@ def create_chapter(
     conn.commit()
 
 
+def delete_chapter(conn: sqlite3.Connection, name: str) -> None:
+    """Delete a curator-created chapter row. GUARD: refuse if any dish still
+    points to it — that would orphan those dishes and their recipes. The caller
+    separately blocks built-in taxonomy chapters (a code-constant chapter would
+    remain 'known' after the row is gone). Raises ValueError if the chapter is
+    absent or still has dishes."""
+    name = (name or "").strip()
+    ensure_chapters_table(conn)
+    if not chapter_exists(conn, name):
+        raise ValueError(f"Chapter '{name}' not found")
+    n = conn.execute(
+        "SELECT COUNT(*) FROM dishes WHERE chapter = ?", (name,)
+    ).fetchone()[0]
+    if n:
+        raise ValueError(
+            f"{n} dish{'es' if n != 1 else ''} still point to this chapter — "
+            f"reassign or delete them first")
+    conn.execute("DELETE FROM chapters WHERE name = ?", (name,))
+    conn.commit()
+
+
 def backfill_all_chapters(conn: sqlite3.Connection, chapter_names: list[str]) -> dict:
     """One-pass recompute of every chapter's fit. Returns a summary
     dict {chapter: {n, used, reason?}} — caller can log it or stash on

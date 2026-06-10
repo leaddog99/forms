@@ -2391,7 +2391,13 @@ def list_chapters_endpoint():
         from input.pipeline.chapters import list_chapters_with_status
         from extract.chapter_classifier import CHAPTERS
         with sqlite3.connect(DB_PATH) as conn:
-            return list_chapters_with_status(conn, CHAPTERS)
+            rows = list_chapters_with_status(conn, CHAPTERS)
+        # Flag built-in taxonomy chapters so the editor hides Delete on them
+        # (only curator-created chapters can be deleted — see delete endpoint).
+        builtin = set(CHAPTERS)
+        for r in rows:
+            r["is_builtin"] = r.get("name") in builtin
+        return rows
     except Exception as e:
         print(f"[ERROR] list_chapters failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
@@ -2433,6 +2439,31 @@ def create_chapter_endpoint(payload: dict = Body(...)):
     except Exception as e:
         print(f"[ERROR] create_chapter failed: {e}")
         raise HTTPException(status_code=500, detail=f"Create error: {e}")
+
+
+@app.delete("/chapters/{name}")
+def delete_chapter_endpoint(name: str):
+    """Delete a curator-created chapter. Refused if any dish still points to it
+    (reassign/delete those first — which in turn frees their recipes), or if it's
+    a built-in taxonomy chapter (those live in code and would stay 'known' after
+    the row is gone, so they can't be retired here)."""
+    from extract.chapter_classifier import CHAPTERS
+    if name in CHAPTERS:
+        raise HTTPException(status_code=409,
+                            detail="Built-in taxonomy chapter — can't be deleted "
+                                   "here (it's defined in code, not curator-created).")
+    from input.pipeline.chapters import ensure_chapters_table, delete_chapter
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            ensure_chapters_table(conn)
+            delete_chapter(conn, name)
+        return {"ok": True, "deleted": name}
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(status_code=(404 if "not found" in msg else 409), detail=msg)
+    except Exception as e:
+        print(f"[ERROR] delete_chapter({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
 
 
 @app.get("/chapters/{name}")
