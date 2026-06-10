@@ -145,15 +145,20 @@ def v_mise_complete(cook: CookMetadata) -> List[str]:
     that isn't declared."""
     out = []
     ing_ids = {i.id for i in cook.ingredients}
+    bundle_ids = {b.id for b in cook.bundles}
     in_bundle = {m.ingredient_id for b in cook.bundles for m in b.members}
     for iid in ing_ids - in_bundle:
         out.append(f"ingredient {iid}: not in any bundle — escapes the mise "
                    f"(would be measured mid-cook)")
+    # A step may reference an INGREDIENT id or a BUNDLE id — both are in the mise
+    # (deploying a pre-combined bundle as one unit is legitimate). Anything else
+    # is a fresh introduction.
+    valid_refs = ing_ids | bundle_ids
     for s in cook.steps:
         for si in s.ingredients:
-            if si.ingredient_id not in ing_ids:
-                out.append(f"step {s.number}: ingredient {si.ingredient_id} "
-                           f"introduced in a method step (not declared in the mise)")
+            if si.ingredient_id not in valid_refs:
+                out.append(f"step {s.number}: '{si.ingredient_id}' is not a declared "
+                           f"ingredient or bundle — introduced fresh in a method step")
     return out
 
 

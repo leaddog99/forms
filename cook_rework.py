@@ -268,7 +268,9 @@ bare informal measures (handful/ladle/drizzle) — a number is required.
 - Equipment: size the things where size affects outcome (bowls/pots/pans), inferred from \
 quantities; leave size off spoons/tongs/timers; reuse points back via reused_from_step.
 - Anchor each step: short imperative name; instruction with {{ingN}} tokens (ingredients in \
-order), {{amt:...}} for times/temps, {{bundle:ID}} for a bundle. One action per step.
+order), {{amt:...}} for times/temps, {{bundle:ID}} for a bundle. One action per step. A step's \
+ingredient reference may be an ingredient id OR a bundle id (to deploy a pre-combined bundle as \
+one unit, with a label + combined amount) — both are in the mise.
 - Copy: plain, specific, no clichés. Headnote, a real finish (plate/vessel/temp/"serve at \
 once"/what NOT to add), one earned cook's note.
 
@@ -347,10 +349,20 @@ def _stamp_first_step(cook: CookMetadata) -> None:
         ing.first_step = ing_first.get(ing.id)
     for eq in cook.equipment:
         eq.first_step = eq_first.get(eq.id)
-    # bundle appears when its first member is first used
+    # A bundle appears at the earlier of: a step that deploys it as a unit (its
+    # bundle id used in step.ingredients) OR its first member's first use. Members
+    # deployed only via the bundle inherit the bundle's step (so they don't sort
+    # last for never being named directly).
     for b in cook.bundles:
+        direct = ing_first.get(b.id)
         member_steps = [ing_first[m.ingredient_id] for m in b.members if m.ingredient_id in ing_first]
-        b.first_step = min(member_steps) if member_steps else None
+        cands = [x for x in ([direct] + member_steps) if x is not None]
+        b.first_step = min(cands) if cands else None
+        if b.first_step is not None:
+            for m in b.members:
+                mi = cook.ingredient_by_id(m.ingredient_id)
+                if mi is not None and mi.first_step is None:
+                    mi.first_step = b.first_step
 
     _BIG = 10_000  # un-referenced items sort last, deterministically
     cook.ingredients.sort(key=lambda x: (x.first_step if x.first_step is not None else _BIG, x.id))

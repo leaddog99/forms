@@ -2664,6 +2664,28 @@
       body.innerHTML = h;
     }
 
+    // When a rework doesn't pass the gauntlet (nothing saved), show WHAT failed
+    // right in the Cook view panel — the validator messages are written to be
+    // human-readable ("step 2: '...' is not a declared ingredient or bundle…").
+    function showReworkFailures(failures) {
+      const panel = document.getElementById('cookPanel');
+      const body = document.getElementById('cookPanelBody');
+      const status = document.getElementById('cookPanelStatus');
+      if (!panel || !body) return;
+      const E = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      panel.classList.remove('hidden'); panel.open = true;
+      if (status) status.innerHTML = `<span style="color:#b23b3b">✗ last rework failed ${failures.length} gate${failures.length === 1 ? '' : 's'} — nothing saved</span>`;
+      body.innerHTML =
+        '<p style="margin:8px 0">The rework didn’t pass the validators, so it wasn’t saved. <b>What failed:</b></p>'
+        + '<ul style="margin:6px 0;padding-left:20px">'
+        + (failures.length ? failures.map(f => `<li style="color:#b23b3b;margin:4px 0">${E(f)}</li>`).join('')
+                           : '<li>(no detail returned)</li>')
+        + '</ul>'
+        + '<p style="font-size:.84rem;color:var(--muted)">Each line is a gauntlet check. Hit Re-rework to try again, or pass these along to tune the engine.</p>';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
     function populateScoringStrip(recipe) {
       const sc = (recipe && recipe._scoring) || {};
       setScoreChip('score_pa', sc.pageAuthority);
@@ -4389,18 +4411,24 @@
           if (jd.status === 'error') { finished = true; showFeedback('Rework failed: ' + (jd.error_detail || 'see job log'), 'error'); break; }
           if (jd.status === 'success') {
             finished = true;
-            let data = null;
-            try { data = (await (await fetch(`${API}/recipes/${encodeURIComponent(rid)}?user_id=${uid}`)).json()).data; } catch (_) {}
-            if (data) {
-              populateCookPanel(data);
-              if (lastExtractedRecipe) lastExtractedRecipe._cook = data._cook;  // so a later Save keeps it
-              const p = document.getElementById('cookPanel');
-              if (p) { p.classList.remove('hidden'); p.open = true; p.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+            const res = jd.result || {};
+            if (res.persisted) {
+              let data = null;
+              try { data = (await (await fetch(`${API}/recipes/${encodeURIComponent(rid)}?user_id=${uid}`)).json()).data; } catch (_) {}
+              if (data) {
+                populateCookPanel(data);
+                if (lastExtractedRecipe) lastExtractedRecipe._cook = data._cook;  // so a later Save keeps it
+                const p = document.getElementById('cookPanel');
+                if (p) { p.classList.remove('hidden'); p.open = true; p.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+              }
+              showFeedback('Cook-rework done ✓ — see the Cook view panel.', 'success');
+            } else {
+              // Didn't pass the gauntlet → nothing saved. SHOW what failed (from
+              // the job result) right in the panel instead of burying it in the log.
+              showReworkFailures(res.failures || []);
+              const n = (res.failures || []).length;
+              showFeedback(`Rework didn't pass the gauntlet (${n} issue${n === 1 ? '' : 's'}) — see the panel. Nothing saved.`, 'error');
             }
-            const passed = data && data._cook && (data._cook.validators || {}).passed;
-            showFeedback(passed ? 'Cook-rework done ✓ — see the Cook view panel.'
-                                : 'Rework ran but did not pass the gauntlet (nothing saved). See the job log.',
-                         passed ? 'success' : 'error');
           }
         }
         if (!finished) showFeedback('Rework is taking longer than expected — check the job log.', 'error');
