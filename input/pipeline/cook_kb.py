@@ -33,9 +33,9 @@ TECHNIQUE_VOCAB = [
     "knead", "fold", "cream", "whip", "emulsify", "temper_eggs", "temper_chocolate",
     "brine", "salt_ahead", "marinate", "proof", "rest_dough", "mix_gently",
     # finish
-    "rest_meat", "carryover", "thicken", "mount_butter", "season_to_taste",
+    "rest_meat", "carryover", "thicken", "mount_butter", "season_to_taste", "finish",
     # situational
-    "mise_en_place", "doneness", "preheat", "pan_temp", "salting",
+    "mise_en_place", "doneness", "preheat", "pan_temp", "salting", "salt_vegetables",
 ]
 
 KINDS = ("tip", "check")
