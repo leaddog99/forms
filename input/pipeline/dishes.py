@@ -128,6 +128,11 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # by the nightly chapter_rollups job, off the hot path.
     if "competitiveness_pct" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN competitiveness_pct REAL")
+    # Absolute field clout = avg DA+PA of the dish's kind=top winners. The
+    # MEANINGFUL, non-degenerate signal (the percentile collapses to 100/0 in a
+    # 2-dish chapter); stored for every dish, even singletons.
+    if "field_clout" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN field_clout REAL")
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -373,7 +378,7 @@ def row_to_dict(row: tuple) -> dict:
      created_at, updated_at, last_run_log_filename, auto_enrich,
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
-     identity_card_json, competitiveness_pct) = row
+     identity_card_json, competitiveness_pct, field_clout) = row
     try:
         queries = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -417,6 +422,7 @@ def row_to_dict(row: tuple) -> dict:
         "embedding_updated_at": embedding_updated_at,
         "identity_card": identity_card,
         "competitiveness_pct": competitiveness_pct,
+        "field_clout": field_clout,
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -427,7 +433,7 @@ _SELECT_ALL_COLS = (
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
-    "competitiveness_pct"
+    "competitiveness_pct, field_clout"
 )
 
 
@@ -456,19 +462,27 @@ def recompute_competitiveness(conn: sqlite3.Connection) -> dict:
             continue
         by_chapter.setdefault(chapter, []).append((dish, float(ap)))
 
+    # A within-chapter percentile is only meaningful with enough dishes — in a
+    # 2-dish chapter `below/(n-1)*100` collapses to a meaningless 100/0. So always
+    # store the ABSOLUTE field clout (avg winner DA+PA), but only assign the
+    # popular/niche percentile at or above this floor; below it a dish carries its
+    # clout but no rank (the UI shows clout + "too few dishes to rank").
+    MIN_RANK = 4
     chapters_done = dishes_updated = 0
     for chapter, members in by_chapter.items():
         powers = [ap for _d, ap in members]
-        if len(members) < 2:
-            for dish, _ap in members:
-                conn.execute("UPDATE dishes SET competitiveness_pct = NULL WHERE name = ?", (dish,))
-            continue
+        rankable = len(members) >= MIN_RANK
         for dish, ap in members:
-            below = sum(1 for p in powers if p < ap)
-            pct = round(below / (len(powers) - 1) * 100, 1)
-            conn.execute("UPDATE dishes SET competitiveness_pct = ? WHERE name = ?", (pct, dish))
+            pct = None
+            if rankable:
+                below = sum(1 for p in powers if p < ap)
+                pct = round(below / (len(powers) - 1) * 100, 1)
+            conn.execute(
+                "UPDATE dishes SET field_clout = ?, competitiveness_pct = ? WHERE name = ?",
+                (round(ap, 1), pct, dish))
             dishes_updated += 1
-        chapters_done += 1
+        if rankable:
+            chapters_done += 1
     conn.commit()
     return {"chapters": chapters_done, "dishes_updated": dishes_updated}
 

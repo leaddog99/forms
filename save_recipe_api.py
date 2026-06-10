@@ -2478,15 +2478,15 @@ def get_chapter_endpoint(name: str):
             # The chapter's dishes ranked by competitiveness (nightly rollup) —
             # which dishes in this chapter are hotly-covered vs niche.
             rows = conn.execute(
-                "SELECT name, competitiveness_pct, last_run_count, last_refreshed "
+                "SELECT name, competitiveness_pct, field_clout, last_run_count, last_refreshed "
                 "FROM dishes WHERE chapter = ? "
-                "ORDER BY CASE WHEN competitiveness_pct IS NULL THEN 1 ELSE 0 END, "
-                "competitiveness_pct DESC, name",
+                "ORDER BY CASE WHEN field_clout IS NULL THEN 1 ELSE 0 END, "
+                "field_clout DESC, name",
                 (name,),
             ).fetchall()
             detail["dishes"] = [
-                {"name": r[0], "competitiveness_pct": r[1],
-                 "last_run_count": r[2], "last_refreshed": r[3]}
+                {"name": r[0], "competitiveness_pct": r[1], "field_clout": r[2],
+                 "last_run_count": r[3], "last_refreshed": r[4]}
                 for r in rows
             ]
             return detail
