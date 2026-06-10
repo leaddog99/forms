@@ -233,7 +233,19 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Search config</h3>
           <div class="ed-field full" style="margin-bottom:16px">
-            <label for="f_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim — one per line; <code>"…"</code>, <code>|</code> OR, <code>-site:</code> pass through to Google as typed)</span></label>
+            <label for="f_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim — one per line; <code>"…"</code>, <code>|</code> OR, <code>-site:</code> pass through to Google as typed)</span><button type="button" id="qInfoBtn" title="Google search syntax" style="margin-left:7px;border:1px solid var(--ed-line,#e2d6c3);background:#fff;color:var(--ed-accent,#9c5b34);width:19px;height:19px;border-radius:50%;font-size:.72rem;line-height:1;cursor:pointer;font-style:italic;font-weight:800;vertical-align:middle;font-family:Georgia,serif">i</button></label>
+            <div id="qInfoPop" hidden style="margin:4px 0 10px;padding:12px 14px;border:1px solid var(--ed-line,#e2d6c3);border-radius:10px;background:#fffaf1;font-size:.86rem;line-height:1.5">
+              <strong>Google search syntax</strong>
+              <ul style="margin:6px 0 8px;padding-left:18px">
+                <li><code>"exact phrase"</code> — match it exactly</li>
+                <li><code>site:gr</code> — only that country's sites (e.g. Greek)</li>
+                <li><code>-site:domain.com</code> — exclude a site</li>
+                <li><code>-word</code> — exclude pages with that word <span style="color:var(--ed-warn,#b23b3b)">(drops <em>every</em> page containing it — careful)</span></li>
+                <li><code>cake OR pie</code> · <code>(a OR b) recipe</code> — either / grouped</li>
+              </ul>
+              <span style="color:var(--muted,#6b5b4f)">Your blocklist exclusions are auto-appended every run (System → Search).</span><br>
+              <a href="https://support.google.com/websearch/answer/2466433" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;color:var(--ed-accent,#9c5b34)">Full Google search operators reference ↗</a>
+            </div>
             <textarea id="f_queries" class="ed-notes" style="min-height:90px" placeholder='"banana bread" | "banana nut bread"'>${escapeHtml(queriesText)}</textarea>
           </div>
           <div class="ed-form-grid">
@@ -314,6 +326,8 @@
         const p = $('#purposePop'), a = $('#purposeArrow');
         p.hidden = !p.hidden; a.textContent = p.hidden ? '▾' : '▴';
       });
+      const qInfo = $('#qInfoBtn');
+      if (qInfo) qInfo.addEventListener('click', () => { const p = $('#qInfoPop'); if (p) p.hidden = !p.hidden; });
       $('#saveBtn').addEventListener('click', () => doSave(d));
       $('#refreshBtn').addEventListener('click', () => doRefresh(d));
       $('#deleteBtn').addEventListener('click', () => doDelete(d));
