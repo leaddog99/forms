@@ -124,12 +124,16 @@ class Bundle(BaseModel):
 class CookEquipment(BaseModel):
     id: str
     name: str
-    size_matters: bool = Field(..., description="True for bowls/pots/pans/colanders/vessels; "
-                                                "False for spoons/tongs/timers.")
+    # Defaulted (not required) so an occasional LLM omission on a nested array
+    # item can't hard-fail the whole rework — the gauntlet + a repair pass catch
+    # real problems; a missing category just falls back to "other" (product
+    # lookup degrades gracefully) and missing size_matters to False.
+    size_matters: bool = Field(False, description="True for bowls/pots/pans/colanders/vessels; "
+                                                  "False for spoons/tongs/timers.")
     size: Optional[CookAmount] = Field(None, description="Required when size_matters; "
                                                          "inferred from quantities.")
-    category: str = Field(..., description="Product-catalog key: bowl|colander|pot|pan|spoon|"
-                                           "knife|board|tongs|timer|serving|other.")
+    category: str = Field("other", description="Product-catalog key: bowl|colander|pot|pan|spoon|"
+                                               "knife|board|tongs|timer|serving|other.")
     why: Optional[str] = Field(None, description="One line: why this size, tied to quantities.")
     reused_from_step: Optional[int] = None
     # First-need index: the step that first calls for this tool. Equipment list is

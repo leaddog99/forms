@@ -313,6 +313,24 @@ def _assemble(emitted: dict) -> CookMetadata:
     return cook
 
 
+def _assemble_with_repair(emitted: dict, log: Callable) -> CookMetadata:
+    """Assemble, and if the emitted object fails SCHEMA validation (the LLM dropped
+    or mis-typed a field), do one repair pass feeding the exact pydantic errors
+    back. This is distinct from the gauntlet repair (which runs AFTER a successful
+    assembly) — a structural error would otherwise crash before the gauntlet."""
+    from pydantic import ValidationError
+    try:
+        return _assemble(emitted)
+    except ValidationError as e:
+        log(f"[cook-rework] schema validation failed ({e.error_count()} issues) — repair pass…")
+        repair_user = (
+            "Your emit_cook output failed SCHEMA validation. Fix EXACTLY these "
+            "missing/invalid fields and re-emit the FULL corrected object via emit_cook:\n"
+            + str(e) + "\n\nYour output was:\n" + json.dumps(emitted, ensure_ascii=False))
+        emitted2, _ = _emit_cook([{"role": "user", "content": repair_user}], log)
+        return _assemble(emitted2)  # if it still fails, let it raise (caller logs it)
+
+
 def _stamp_first_step(cook: CookMetadata) -> None:
     """Code owns the appearance-order invariant: derive first_step from the steps
     (the linear spine), then sort the four lists. This makes appearance-order pass
@@ -355,7 +373,7 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
             "and steps:\n\n" + json.dumps(inp, ensure_ascii=False, indent=2))
 
     emitted, _ = _emit_cook([{"role": "user", "content": user}], log)
-    cook = _assemble(emitted)
+    cook = _assemble_with_repair(emitted, log)
     report = run_all(cook)
     log(f"[cook-rework] gauntlet: passed={report.passed}"
         + (f" ({len(report.failures)} failures)" if not report.passed else ""))
