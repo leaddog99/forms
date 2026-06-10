@@ -9,13 +9,19 @@ the entry's `id` (provenance), mechanically validated. See
 recipe_anchor/phase3-pipeline-design.md + the augment design.
 
 Curated/runtime split (same as system_config, the ingredient optimizer): editors write
-DRAFTS here; you PUBLISH a byte-stable snapshot; the runtime model only ever sees the
-projected published set. `editor_note` / `confidence` are server-side bookkeeping —
-projected OUT before the prompt, never shown to the model or the cook.
+DRAFTS here; you PUBLISH; the runtime model only ever sees the projected published set.
+`editor_note` / `confidence` / `exemplar_recipes` are server-side bookkeeping — projected
+OUT before the prompt, never shown to the model or the cook.
+
+SEED: the canonical entries live in the git-tracked `cook_kb_seed.json` beside this module
+(NOT a Python constant — no-data-in-code). That file both bootstraps a FRESH install and
+is the KB's version-controlled backup. It seeds only an EMPTY table, so curation
+(publish/edit/delete) is never clobbered or resurrected on restart.
 """
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -51,95 +57,8 @@ _ALL_COLS = ("id, kind, title, technique_tags, trigger_signals, ingredient_class
              "exemplar_recipes, mechanism, render_hint, confidence, editor_note, status, "
              "created_at, updated_at")
 
-
-# A few exemplar entries in the FULL schema — they seed the table + serve as the
-# format reference for the bulk-authored batch. Real volume comes via import +
-# curation, NOT this constant (no-data-in-code: this is bootstrap only).
-SEED_ENTRIES: list[dict] = [
-    {
-        "id": "sear_dont_crowd", "kind": "check",
-        "title": "Crowding the pan steams instead of sears",
-        "technique_tags": ["sear", "saute", "pan_fry"],
-        "trigger_signals": ["add to hot pan", "brown", "in batches", "sear"],
-        "ingredient_classes": ["meat", "poultry", "vegetables"], "equipment": ["skillet", "saute_pan"],
-        "scope": "step",
-        "claim": "A crowded pan drops in temperature and the food releases water faster than it can evaporate, so it steams instead of browning.",
-        "action": "Leave space between pieces; cook in batches and don't move them until they release.",
-        "signal": "Liquid pooling in the pan, no active sizzle, a pale surface.",
-        "failure_mode": "Food turns gray and grainy instead of forming a crust.",
-        "variants": [], "mechanism": "A hot surface evaporates surface moisture fast enough for the Maillard browning reactions to start; too much cold food at once stalls that.",
-        "render_hint": "Name the actual protein and pan from the recipe.",
-        "confidence": "high", "editor_note": "interpreted from general searing technique",
-    },
-    {
-        "id": "bloom_spices_in_fat", "kind": "check",
-        "title": "Bloom spices in fat or they taste raw",
-        "technique_tags": ["bloom_spices", "saute"],
-        "trigger_signals": ["add spices", "curry powder", "spice paste", "cook until fragrant", "stir in spices"],
-        "ingredient_classes": ["spices"], "equipment": ["skillet", "saucepan"], "scope": "step",
-        "claim": "Stirring ground spices or a spice paste into hot fat before any liquid unlocks their full flavor; skip it and the spice character stays shallow and powdery.",
-        "action": "Cook the spices in the fat until fragrant before adding liquid, watching the clock so they don't scorch.",
-        "signal": "No aroma when the spices hit the fat means it's too cool; wisps of smoke or fast-darkening specks mean it's about to burn.",
-        "failure_mode": "Either flat, raw, powdery spice flavor (under-bloomed) or an acrid, scorched note (over-bloomed).",
-        "variants": [
-            {"case": "dry spice blend", "note": "Stir into the fat with the sauteed aromatics; usually fragrant in 1-2 minutes."},
-            {"case": "spice paste", "note": "Add to shimmering fat and cook longer than a dry blend; ready when fragrant and visibly darkened."},
-        ],
-        "mechanism": "Many spice flavor compounds are fat-soluble; warming them in oil or butter shifts those compounds into a state where they disperse through the dish.",
-        "render_hint": "Name the actual spices and fat, and pick the dry-blend or paste variant to match.",
-        "confidence": "high", "editor_note": "interpreted from general spice-blooming technique",
-    },
-    {
-        "id": "salt_pasta_water", "kind": "tip",
-        "title": "Salt the pasta water like the sea",
-        "technique_tags": ["boil", "salting"], "trigger_signals": ["boil the pasta", "salt the water", "bring to a boil"],
-        "ingredient_classes": ["pasta"], "equipment": ["pot"], "scope": "step",
-        "claim": "The pasta's only chance to be seasoned through is the cooking water; under-salted water gives bland pasta no surface sauce can fix.",
-        "action": "Salt the water until it tastes distinctly of the sea before the pasta goes in.",
-        "signal": None, "failure_mode": None, "variants": [],
-        "mechanism": "Pasta absorbs water (and dissolved salt) as it cooks, seasoning it from the inside.",
-        "render_hint": "Name the pasta in the recipe.",
-        "confidence": "high", "editor_note": "settled technique",
-    },
-    {
-        "id": "rest_meat", "kind": "check",
-        "title": "Rest meat or the juices run out",
-        "technique_tags": ["rest_meat", "roast", "grill"], "trigger_signals": ["rest", "let it rest", "before slicing", "before carving"],
-        "ingredient_classes": ["meat", "poultry"], "equipment": ["board"], "scope": "step",
-        "claim": "Cutting straight out of the heat lets the juices spill onto the board instead of redistributing through the meat.",
-        "action": "Let it rest before slicing — a few minutes for steaks/chops, longer for large roasts.",
-        "signal": "A puddle on the board and a dry interior when you cut too soon.",
-        "failure_mode": "Dry meat and a wet cutting board.",
-        "variants": [], "mechanism": "Resting lets the muscle fibers reabsorb moisture forced out by heat.",
-        "render_hint": "Name the cut and a rest time scaled to its size.",
-        "confidence": "high", "editor_note": "settled technique",
-    },
-    {
-        "id": "reserve_pasta_water", "kind": "tip",
-        "title": "Reserve starchy pasta water for the sauce",
-        "technique_tags": ["boil", "emulsify", "pan_sauce"], "trigger_signals": ["before draining", "reserve", "pasta water", "drain"],
-        "ingredient_classes": ["pasta"], "equipment": ["pot"], "scope": "step",
-        "claim": "The starchy cooking water emulsifies fat and loosens a sauce so it clings to the pasta instead of pooling.",
-        "action": "Scoop out a cup of the water before you drain, and add it to the sauce a splash at a time.",
-        "signal": None, "failure_mode": None, "variants": [],
-        "mechanism": "Dissolved starch acts as an emulsifier, binding fat and water into a glossy sauce.",
-        "render_hint": "Reference the sauce in this recipe.",
-        "confidence": "high", "editor_note": "settled technique",
-    },
-    {
-        "id": "dont_overmix_batter", "kind": "check",
-        "title": "Overmixing batter bakes up tough",
-        "technique_tags": ["fold", "mix_gently"], "trigger_signals": ["mix until just combined", "fold in", "stir in the flour", "do not overmix"],
-        "ingredient_classes": ["flour", "batter"], "equipment": ["bowl"], "scope": "step",
-        "claim": "Mixing flour-based batters past 'just combined' develops gluten and knocks out air, baking up dense and tough.",
-        "action": "Stop as soon as the dry streaks disappear; a few lumps are fine.",
-        "signal": "A smooth, elastic, glossy batter that's been worked too long.",
-        "failure_mode": "Dense, tough, rubbery crumb.",
-        "variants": [], "mechanism": "Agitating hydrated flour builds gluten strands; muffins/quick breads want minimal development.",
-        "render_hint": "Name the batter (muffin, pancake, cake) in the recipe.",
-        "confidence": "high", "editor_note": "settled technique",
-    },
-]
+# Canonical seed — git-tracked, the backup + fresh-install bootstrap.
+_SEED_FILE = os.path.join(os.path.dirname(__file__), "cook_kb_seed.json")
 
 
 def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
@@ -147,7 +66,7 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS cook_tips_kb (
             id                 TEXT PRIMARY KEY,
-            kind               TEXT NOT NULL DEFAULT 'tip',     -- tip | check
+            kind               TEXT NOT NULL DEFAULT 'tip',      -- tip | check
             title              TEXT,
             technique_tags     TEXT,                            -- JSON array
             trigger_signals    TEXT,                            -- JSON array
@@ -159,7 +78,7 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
             signal             TEXT,                            -- check-only
             failure_mode       TEXT,                            -- check-only
             variants           TEXT,                            -- JSON [{case, note}]
-            exemplar_recipes   TEXT,                            -- JSON array: recipes that demonstrate this (shape may evolve)
+            exemplar_recipes   TEXT,                            -- JSON; internal QA, never sent
             mechanism          TEXT,                            -- grounding only, not rendered
             render_hint        TEXT,
             confidence         TEXT NOT NULL DEFAULT 'high',     -- high | medium | low
@@ -175,14 +94,33 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(cook_tips_kb)")}
     if "exemplar_recipes" not in cols:
         conn.execute("ALTER TABLE cook_tips_kb ADD COLUMN exemplar_recipes TEXT")
-    now = datetime.now(timezone.utc).isoformat()
-    existing = {r[0] for r in conn.execute("SELECT id FROM cook_tips_kb")}
-    for e in SEED_ENTRIES:
-        if e["id"] in existing:
-            continue
-        # Seed entries publish immediately — they're hand-vetted exemplars.
-        _insert(conn, {**e, "status": "published"}, now)
+    # Seed a FRESH (empty) table from the git-tracked seed file — only on empty, so
+    # curation is never clobbered or resurrected.
+    if conn.execute("SELECT COUNT(*) FROM cook_tips_kb").fetchone()[0] == 0:
+        _seed_from_file(conn)
     conn.commit()
+
+
+def _seed_from_file(conn: sqlite3.Connection) -> int:
+    """Import cook_kb_seed.json into a fresh table. Each entry seeds with its own
+    `status` (default 'draft'); source_note maps to editor_note. Missing/empty -> 0."""
+    try:
+        with open(_SEED_FILE, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return 0
+    if not isinstance(entries, list):
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    n = 0
+    for e in entries:
+        if not e.get("id"):
+            continue
+        e = {**e, "editor_note": e.get("editor_note") or e.get("source_note"),
+             "status": e.get("status", "draft")}
+        _insert(conn, e, now)
+        n += 1
+    return n
 
 
 def _insert(conn: sqlite3.Connection, e: dict, now: str) -> None:
@@ -304,9 +242,9 @@ def import_drafts(conn: sqlite3.Connection, entries: list[dict],
 
 def project_published(conn: sqlite3.Connection) -> list[dict]:
     """The runtime view for the augment pass (3c-b): PUBLISHED entries only, with
-    just the selection + generation fields — editor_note and confidence are
-    DROPPED before the model ever sees them (rejoined server-side by id). Stable,
-    key-ordered output so it can be a cacheable prompt prefix."""
+    just the selection + generation fields — editor_note / confidence /
+    exemplar_recipes are DROPPED before the model ever sees them (rejoined
+    server-side by id). Stable, key-ordered output so it can be a cacheable prefix."""
     out = []
     for e in list_kb(conn, status="published"):
         out.append({
