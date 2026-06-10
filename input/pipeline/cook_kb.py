@@ -37,11 +37,11 @@ TECHNIQUE_VOCAB = [
     "boil", "simmer", "poach", "blanch", "steam", "braise", "stew", "pickle",
     # transform
     "knead", "fold", "cream", "whip", "emulsify", "temper_eggs", "temper_chocolate",
-    "brine", "salt_ahead", "marinate", "proof", "rest_dough", "mix_gently",
+    "brine", "salt_ahead", "marinate", "proof", "rest_dough", "mix_gently", "bread_coat",
     # finish
     "rest_meat", "carryover", "thicken", "mount_butter", "season_to_taste", "finish",
     # situational
-    "mise_en_place", "doneness", "preheat", "pan_temp", "salting", "salt_vegetables",
+    "mise_en_place", "doneness", "preheat", "pan_temp", "salting", "salt_vegetables", "knife_skills",
 ]
 
 KINDS = ("tip", "check")

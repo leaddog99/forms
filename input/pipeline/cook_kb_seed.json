@@ -3,118 +3,281 @@
     "id": "salt_early_and_in_layers",
     "kind": "tip",
     "title": "Season early and in layers, not just at the end",
-    "technique_tags": ["salting", "season_to_taste", "brine"],
-    "trigger_signals": ["season with salt", "salt and pepper", "season to taste", "add salt"],
-    "ingredient_classes": ["meat", "poultry", "seafood", "vegetables"],
+    "technique_tags": [
+      "salting",
+      "season_to_taste",
+      "brine"
+    ],
+    "trigger_signals": [
+      "season with salt",
+      "salt and pepper",
+      "season to taste",
+      "add salt"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "seafood",
+      "vegetables"
+    ],
     "equipment": [],
     "scope": "either",
     "claim": "Salting early and at each stage seasons food all the way through; salt added only at the end sits on the surface and hits the tongue as a harsh, uneven coating.",
     "action": "Salt at the start so it has time to penetrate, then taste and adjust as you build, rather than dumping it all in at the finish.",
     "variants": [
-      {"case": "skin-on poultry", "note": "Salt the meat directly under the skin; the skin blocks surface salt from reaching the flesh."},
-      {"case": "shell-on shrimp", "note": "Dissolve the salt in a little liquid and toss, so it slips under the shells where you can't salt directly."}
+      {
+        "case": "skin-on poultry",
+        "note": "Salt the meat directly under the skin; the skin blocks surface salt from reaching the flesh."
+      },
+      {
+        "case": "shell-on shrimp",
+        "note": "Dissolve the salt in a little liquid and toss, so it slips under the shells where you can't salt directly."
+      }
     ],
     "mechanism": "Salt migrates into food slowly, faster with heat but never instantly; applied early it seasons throughout, applied late it only coats the surface.",
     "render_hint": "Name the actual ingredient and the stage in this recipe where seasoning happens; pick the variant only if it matches.",
     "confidence": "high",
     "source_note": "interpreted from general salting technique, cross-checked against ATK 100 Techniques #1",
     "exemplar_recipes": [
-      {"title": "Roasted Bone-In Chicken Breasts", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/8717-roasted-bone-in-chicken-breasts", "note": "salts the meat under the skin before roasting"},
-      {"title": "Crispy Salt and Pepper Shrimp", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/8115-crispy-salt-and-pepper-shrimp", "note": "brines shell-on shrimp so salt gets under the shell"},
-      {"title": "Cast Iron Steaks with Herb Butter", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/9249-cast-iron-steaks-with-herb-butter", "note": "seasons ahead for even interior seasoning"},
-      {"title": "Pan-Seared Thick-Cut Pork Chops", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/4656-pan-seared-thick-cut-pork-chops"}
+      {
+        "title": "Roasted Bone-In Chicken Breasts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8717-roasted-bone-in-chicken-breasts",
+        "note": "salts the meat under the skin before roasting"
+      },
+      {
+        "title": "Crispy Salt and Pepper Shrimp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8115-crispy-salt-and-pepper-shrimp",
+        "note": "brines shell-on shrimp so salt gets under the shell"
+      },
+      {
+        "title": "Cast Iron Steaks with Herb Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9249-cast-iron-steaks-with-herb-butter",
+        "note": "seasons ahead for even interior seasoning"
+      },
+      {
+        "title": "Pan-Seared Thick-Cut Pork Chops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/4656-pan-seared-thick-cut-pork-chops"
+      }
     ]
   },
   {
     "id": "bloom_spices_in_fat",
     "kind": "check",
     "title": "Bloom spices in fat or they taste raw",
-    "technique_tags": ["bloom_spices", "saute"],
-    "trigger_signals": ["add spices", "curry powder", "spice paste", "cook until fragrant", "stir in spices"],
-    "ingredient_classes": ["spices"],
-    "equipment": ["skillet", "saucepan"],
+    "technique_tags": [
+      "bloom_spices",
+      "saute"
+    ],
+    "trigger_signals": [
+      "add spices",
+      "curry powder",
+      "spice paste",
+      "cook until fragrant",
+      "stir in spices"
+    ],
+    "ingredient_classes": [
+      "spices"
+    ],
+    "equipment": [
+      "skillet",
+      "saucepan"
+    ],
     "scope": "step",
     "claim": "Stirring ground spices or a paste into hot fat before any liquid unlocks their full flavor; skip it and the spice character stays shallow and powdery.",
     "action": "Cook the spices in the fat until fragrant before adding liquid, watching the clock so they don't scorch.",
     "signal": "No aroma when the spices hit the fat means too cool; smoke or fast-darkening specks mean about to burn.",
     "failure_mode": "Flat, raw, powdery spice flavor (under-bloomed) or an acrid, scorched note (over-bloomed).",
     "variants": [
-      {"case": "dry spice blend", "note": "Stir into the fat with the aromatics; fragrant in 1-2 min."},
-      {"case": "spice paste", "note": "Into shimmering fat, cook longer; ready when fragrant and visibly darkened."}
+      {
+        "case": "dry spice blend",
+        "note": "Stir into the fat with the aromatics; fragrant in 1-2 min."
+      },
+      {
+        "case": "spice paste",
+        "note": "Into shimmering fat, cook longer; ready when fragrant and visibly darkened."
+      }
     ],
     "mechanism": "Many spice flavor compounds are fat-soluble; warming them in oil disperses them through the dish.",
     "render_hint": "Name the actual spices and fat, and pick the dry-blend or paste variant to match.",
     "confidence": "high",
     "source_note": "interpreted from general spice-blooming technique, cross-checked against ATK 100 Techniques #2",
     "exemplar_recipes": [
-      {"title": "Lamb Vindaloo", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/13576-lamb-vindaloo", "note": "blooms a dry spice blend with the aromatics"},
-      {"title": "Thai Panang Curry with Shrimp", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/13577-thai-panang-curry-with-shrimp", "note": "blooms a spice paste in shimmering fat"},
-      {"title": "Singapore Noodles", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/7976-singapore-noodles", "note": "blooms curry powder in oil to fix dusty texture"},
-      {"title": "Thai-Style Chicken and Sweet Potato Curry", "source": "ATK", "url": "https://www.americastestkitchen.com/cookscountry/recipes/8020-thai-style-chicken-and-sweet-potato-curry"}
+      {
+        "title": "Lamb Vindaloo",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13576-lamb-vindaloo",
+        "note": "blooms a dry spice blend with the aromatics"
+      },
+      {
+        "title": "Thai Panang Curry with Shrimp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13577-thai-panang-curry-with-shrimp",
+        "note": "blooms a spice paste in shimmering fat"
+      },
+      {
+        "title": "Singapore Noodles",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7976-singapore-noodles",
+        "note": "blooms curry powder in oil to fix dusty texture"
+      },
+      {
+        "title": "Thai-Style Chicken and Sweet Potato Curry",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8020-thai-style-chicken-and-sweet-potato-curry"
+      }
     ]
   },
   {
     "id": "finish_with_a_drizzle_or_sprinkle",
     "kind": "tip",
     "title": "A finishing drizzle or sprinkle wakes a dish up",
-    "technique_tags": ["season_to_taste", "finish"],
-    "trigger_signals": ["to finish", "just before serving", "garnish", "off the heat", "drizzle", "sprinkle over"],
+    "technique_tags": [
+      "season_to_taste",
+      "finish"
+    ],
+    "trigger_signals": [
+      "to finish",
+      "just before serving",
+      "garnish",
+      "off the heat",
+      "drizzle",
+      "sprinkle over"
+    ],
     "ingredient_classes": [],
     "equipment": [],
     "scope": "recipe",
     "claim": "A last-second hit of acid, good oil, fresh herbs, or flaky salt adds brightness, aroma, and crunch that cooking flattens.",
     "action": "Hold back a finisher and add it to the plated dish, then taste once more before serving.",
     "variants": [
-      {"case": "finishing salt", "note": "Use a coarse or flaky salt so it keeps its crunch instead of dissolving into the dish."},
-      {"case": "infused oil or acid", "note": "Drizzle a flavored oil or a squeeze of acid over the finished dish for richness and lift."},
-      {"case": "single spice", "note": "A lone spice (sumac, Aleppo, celery salt) finishes as well as a blend; sprinkle evenly right before serving."}
+      {
+        "case": "finishing salt",
+        "note": "Use a coarse or flaky salt so it keeps its crunch instead of dissolving into the dish."
+      },
+      {
+        "case": "infused oil or acid",
+        "note": "Drizzle a flavored oil or a squeeze of acid over the finished dish for richness and lift."
+      },
+      {
+        "case": "single spice",
+        "note": "A lone spice (sumac, Aleppo, celery salt) finishes as well as a blend; sprinkle evenly right before serving."
+      }
     ],
     "mechanism": "Cooking dulls volatile aromas and softens texture; a raw finish restores contrast in flavor, aroma, and crunch.",
     "render_hint": "Suggest a finisher that fits this recipe's cuisine and ingredients; don't invent one that clashes.",
     "confidence": "high",
     "source_note": "interpreted from general finishing technique, cross-checked against ATK 100 Techniques #3",
     "exemplar_recipes": [
-      {"title": "Fresh Herb Finishing Salts", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9694-fresh-herb-finishing-salts"},
-      {"title": "Za'atar", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/9962-zaatar"},
-      {"title": "Furikake", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/13585-furikake"},
-      {"title": "Sichuan Chili Oil", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/9756-sichuan-chili-oil", "note": "infused finishing oil"}
+      {
+        "title": "Fresh Herb Finishing Salts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9694-fresh-herb-finishing-salts"
+      },
+      {
+        "title": "Za'atar",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9962-zaatar"
+      },
+      {
+        "title": "Furikake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13585-furikake"
+      },
+      {
+        "title": "Sichuan Chili Oil",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9756-sichuan-chili-oil",
+        "note": "infused finishing oil"
+      }
     ]
   },
   {
     "id": "vinaigrette_slow_emulsion",
     "kind": "check",
     "title": "Add the oil slowly or the vinaigrette breaks",
-    "technique_tags": ["emulsify"],
-    "trigger_signals": ["vinaigrette", "whisk in oil", "emulsify", "dressing", "drizzle oil"],
+    "technique_tags": [
+      "emulsify"
+    ],
+    "trigger_signals": [
+      "vinaigrette",
+      "whisk in oil",
+      "emulsify",
+      "dressing",
+      "drizzle oil"
+    ],
     "ingredient_classes": [],
-    "equipment": ["bowl", "jar", "whisk"],
+    "equipment": [
+      "bowl",
+      "jar",
+      "whisk"
+    ],
     "scope": "step",
     "claim": "An emulsion forms only when oil is broken into fine droplets and dispersed into the acid; add it all at once and oil and acid stay separate.",
     "action": "Add the oil in stages while whisking hard, or shake in a sealed jar; a little mustard helps it come together and hold.",
     "signal": "Oil pooling on top instead of thickening into a uniform, slightly cloudy mixture.",
     "failure_mode": "Dressing splits into an oily layer over a watery one and tastes sharply acidic in spots.",
     "variants": [
-      {"case": "use right away", "note": "Whisk or shake with a bit of mustard; it holds long enough to dress the salad."},
-      {"case": "make ahead", "note": "Include an emulsifier such as mustard so it survives sitting without separating."}
+      {
+        "case": "use right away",
+        "note": "Whisk or shake with a bit of mustard; it holds long enough to dress the salad."
+      },
+      {
+        "case": "make ahead",
+        "note": "Include an emulsifier such as mustard so it survives sitting without separating."
+      }
     ],
     "mechanism": "Vigorous mixing disperses oil into droplets small enough to stay suspended in the acid; an emulsifier coats them so they don't recombine.",
     "render_hint": "Name the actual acid and oil in this recipe; choose the make-ahead variant only if it's batched.",
     "confidence": "high",
     "source_note": "interpreted from general vinaigrette/emulsion technique, cross-checked against ATK 100 Techniques #4",
     "exemplar_recipes": [
-      {"title": "Make-Ahead Vinaigrette", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8710-make-ahead-vinaigrette", "note": "stabilized emulsion that holds for days"},
-      {"title": "Make-Ahead Sherry-Shallot Vinaigrette", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8732-make-ahead-sherry-shallot-vinaigrette"},
-      {"title": "Cider-Caraway Vinaigrette", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/13593-cider-caraway-vinaigrette"},
-      {"title": "Bibb and Frisee Salad with Grapes and Celery", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11422-bibb-and-frisee-salad-with-grapes-and-celery"}
+      {
+        "title": "Make-Ahead Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8710-make-ahead-vinaigrette",
+        "note": "stabilized emulsion that holds for days"
+      },
+      {
+        "title": "Make-Ahead Sherry-Shallot Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8732-make-ahead-sherry-shallot-vinaigrette"
+      },
+      {
+        "title": "Cider-Caraway Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13593-cider-caraway-vinaigrette"
+      },
+      {
+        "title": "Bibb and Frisee Salad with Grapes and Celery",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11422-bibb-and-frisee-salad-with-grapes-and-celery"
+      }
     ]
   },
   {
     "id": "marinate_dont_over_acidify",
     "kind": "check",
     "title": "Acidic marinades turn proteins mushy if left too long",
-    "technique_tags": ["marinate", "brine"],
-    "trigger_signals": ["marinate", "marinade", "let sit in", "refrigerate overnight", "soak in"],
-    "ingredient_classes": ["meat", "poultry", "fish", "seafood"],
+    "technique_tags": [
+      "marinate",
+      "brine"
+    ],
+    "trigger_signals": [
+      "marinate",
+      "marinade",
+      "let sit in",
+      "refrigerate overnight",
+      "soak in"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "fish",
+      "seafood"
+    ],
     "equipment": [],
     "scope": "step",
     "claim": "Marinades flavor mainly the surface and salt does the deeper work; too long in acid denatures the exterior into a chalky or mushy layer, worst on fish and seafood.",
@@ -130,10 +293,23 @@
     "id": "quick_pickle_hot_brine",
     "kind": "tip",
     "title": "Pour hot brine over vegetables for fast pickles",
-    "technique_tags": ["pickle"],
-    "trigger_signals": ["quick pickle", "brine", "pickled", "vinegar and sugar", "let cool in brine"],
-    "ingredient_classes": ["vegetables"],
-    "equipment": ["saucepan", "jar"],
+    "technique_tags": [
+      "pickle"
+    ],
+    "trigger_signals": [
+      "quick pickle",
+      "brine",
+      "pickled",
+      "vinegar and sugar",
+      "let cool in brine"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "saucepan",
+      "jar"
+    ],
     "scope": "either",
     "claim": "A hot vinegar-sugar-salt brine poured over raw vegetables penetrates fast, giving bright, crisp pickles in under an hour.",
     "action": "Simmer the brine, pour it over snugly packed vegetables, and let it cool to room temperature before chilling.",
@@ -146,10 +322,26 @@
     "id": "salt_vegetables_to_purge_water",
     "kind": "check",
     "title": "Salt watery vegetables first or the dish turns soggy",
-    "technique_tags": ["salt_vegetables", "salting"],
-    "trigger_signals": ["cucumber", "cabbage", "zucchini", "eggplant", "shredded", "slaw", "let drain"],
-    "ingredient_classes": ["vegetables"],
-    "equipment": ["colander", "bowl"],
+    "technique_tags": [
+      "salt_vegetables",
+      "salting"
+    ],
+    "trigger_signals": [
+      "cucumber",
+      "cabbage",
+      "zucchini",
+      "eggplant",
+      "shredded",
+      "slaw",
+      "let drain"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "colander",
+      "bowl"
+    ],
     "scope": "step",
     "claim": "Salting high-moisture vegetables pulls out water before they go into a slaw, salad, or saute, concentrating flavor and stopping dilution.",
     "action": "Toss the cut vegetables with salt, let them drain 15-30 minutes, then squeeze or pat dry before combining.",
@@ -164,10 +356,22 @@
     "id": "saute_veg_splash_of_water",
     "kind": "tip",
     "title": "A splash of water cooks vegetables through evenly",
-    "technique_tags": ["saute"],
-    "trigger_signals": ["saute", "until tender", "cook the vegetables", "stir occasionally"],
-    "ingredient_classes": ["vegetables"],
-    "equipment": ["skillet", "saute_pan"],
+    "technique_tags": [
+      "saute"
+    ],
+    "trigger_signals": [
+      "saute",
+      "until tender",
+      "cook the vegetables",
+      "stir occasionally"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "skillet",
+      "saute_pan"
+    ],
     "scope": "step",
     "claim": "A little water steams firm vegetables to tenderness; once it cooks off, the same pan browns them, giving even texture without scorching.",
     "action": "Add a couple of tablespoons of water, cover briefly to steam, then uncover and let it evaporate so the vegetables brown.",
@@ -180,10 +384,25 @@
     "id": "steam_then_roast_vegetables",
     "kind": "tip",
     "title": "Steam dense vegetables before browning them",
-    "technique_tags": ["roast", "steam"],
-    "trigger_signals": ["roast", "cover with foil", "until tender", "carrots", "squash", "potatoes"],
-    "ingredient_classes": ["vegetables"],
-    "equipment": ["sheet_pan", "oven"],
+    "technique_tags": [
+      "roast",
+      "steam"
+    ],
+    "trigger_signals": [
+      "roast",
+      "cover with foil",
+      "until tender",
+      "carrots",
+      "squash",
+      "potatoes"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "sheet_pan",
+      "oven"
+    ],
     "scope": "step",
     "claim": "Covering dense vegetables at the start traps steam to cook them through; uncovering then caramelizes the surface without leaving the inside raw.",
     "action": "Roast covered until just tender, then uncover and continue until the edges are deeply browned.",
@@ -196,10 +415,25 @@
     "id": "reserve_pasta_water",
     "kind": "check",
     "title": "Save pasta water before draining",
-    "technique_tags": ["boil", "emulsify", "thicken"],
-    "trigger_signals": ["drain the pasta", "reserve", "pasta water", "toss with sauce", "al dente"],
-    "ingredient_classes": ["pasta"],
-    "equipment": ["pot", "colander"],
+    "technique_tags": [
+      "boil",
+      "emulsify",
+      "thicken"
+    ],
+    "trigger_signals": [
+      "drain the pasta",
+      "reserve",
+      "pasta water",
+      "toss with sauce",
+      "al dente"
+    ],
+    "ingredient_classes": [
+      "pasta"
+    ],
+    "equipment": [
+      "pot",
+      "colander"
+    ],
     "scope": "step",
     "claim": "Starchy cooking water emulsifies fat and sauce into a glossy coating that clings to the pasta; without it the sauce slides off and looks oily.",
     "action": "Scoop out a cup of cooking water before draining, then add it a splash at a time while tossing pasta and sauce.",
@@ -214,10 +448,24 @@
     "id": "fresh_tomato_sauce_short_cook",
     "kind": "tip",
     "title": "Bright tomato sauce doesn't need hours",
-    "technique_tags": ["reduce", "simmer"],
-    "trigger_signals": ["tomato sauce", "simmer", "crushed tomatoes", "marinara", "passata"],
-    "ingredient_classes": ["vegetables"],
-    "equipment": ["skillet", "saucepan"],
+    "technique_tags": [
+      "reduce",
+      "simmer"
+    ],
+    "trigger_signals": [
+      "tomato sauce",
+      "simmer",
+      "crushed tomatoes",
+      "marinara",
+      "passata"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "skillet",
+      "saucepan"
+    ],
     "scope": "either",
     "claim": "A short, brisk cook keeps tomatoes fresh and fruity; long simmering trades that brightness for a flat, cooked-down flavor.",
     "action": "Cook the sauce hard and fast just until thickened, and finish with raw olive oil or fresh basil for lift.",
@@ -231,39 +479,93 @@
     "id": "roux_cook_to_specified_color",
     "kind": "check",
     "title": "Cook the roux to the color the recipe specifies",
-    "technique_tags": ["thicken"],
-    "trigger_signals": ["roux", "whisk in flour", "cook the flour", "butter and flour", "make a paste", "until golden", "until brick-colored"],
+    "technique_tags": [
+      "thicken"
+    ],
+    "trigger_signals": [
+      "roux",
+      "whisk in flour",
+      "cook the flour",
+      "butter and flour",
+      "make a paste",
+      "until golden",
+      "until brick-colored"
+    ],
     "ingredient_classes": [],
-    "equipment": ["saucepan", "skillet", "whisk"],
+    "equipment": [
+      "saucepan",
+      "skillet",
+      "whisk"
+    ],
     "scope": "step",
     "claim": "Cooking flour in fat both removes its raw taste and coats the granules so they disperse without lumping; how dark you take it sets both the flavor and the thickening power.",
     "action": "Whisk to a smooth paste and cook to the color the recipe calls for and no further, since a darker roux thickens less.",
     "signal": "A raw-flour smell or visible lumps mean it needs more cooking and whisking; an acrid smell or brown specks on the pan mean it's scorching.",
     "failure_mode": "Under-cooked roux leaves a raw, pasty taste and a soupy sauce; over-darkened roux loses thickening power and turns the dish gluey.",
     "variants": [
-      {"case": "light/blond roux", "note": "Usually butter, cooked briefly over medium-low; for bechamel and cream sauces. Undercook it and the sauce won't set."},
-      {"case": "dark roux", "note": "Often oil; cooked much longer to a deep brown for nutty flavor in gumbo and etouffee, with less thickening power."},
-      {"case": "dry roux", "note": "Toast flour alone in the oven until browned, then whisk it with a little liquid before adding so it doesn't clump."}
+      {
+        "case": "light/blond roux",
+        "note": "Usually butter, cooked briefly over medium-low; for bechamel and cream sauces. Undercook it and the sauce won't set."
+      },
+      {
+        "case": "dark roux",
+        "note": "Often oil; cooked much longer to a deep brown for nutty flavor in gumbo and etouffee, with less thickening power."
+      },
+      {
+        "case": "dry roux",
+        "note": "Toast flour alone in the oven until browned, then whisk it with a little liquid before adding so it doesn't clump."
+      }
     ],
     "mechanism": "Fat coats the starch granules so they separate and disperse smoothly; browning builds flavor but breaks down the starch that does the thickening.",
     "render_hint": "Reference how dark this recipe wants the roux and pick the matching variant.",
     "confidence": "high",
     "source_note": "interpreted from general roux technique, cross-checked against ATK 100 Techniques #12",
     "exemplar_recipes": [
-      {"title": "Chicken and Sausage Gumbo for Two", "source": "ATK", "url": "https://www.americastestkitchen.com/cookscountry/recipes/7816-chicken-and-sausage-gumbo-for-two", "note": "dry-roux variant for a dark gumbo base"},
-      {"title": "Creole-Style Shrimp and Sausage Gumbo", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/661-creole-style-shrimp-and-sausage-gumbo"},
-      {"title": "Shrimp Etouffee", "source": "ATK", "url": "https://www.americastestkitchen.com/cookscountry/recipes/7888-shrimp-etouffee"},
-      {"title": "Creamy Baked Four-Cheese Pasta", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/20-creamy-baked-four-cheese-pasta", "note": "light roux for a bechamel"}
+      {
+        "title": "Chicken and Sausage Gumbo for Two",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7816-chicken-and-sausage-gumbo-for-two",
+        "note": "dry-roux variant for a dark gumbo base"
+      },
+      {
+        "title": "Creole-Style Shrimp and Sausage Gumbo",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/661-creole-style-shrimp-and-sausage-gumbo"
+      },
+      {
+        "title": "Shrimp Etouffee",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7888-shrimp-etouffee"
+      },
+      {
+        "title": "Creamy Baked Four-Cheese Pasta",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/20-creamy-baked-four-cheese-pasta",
+        "note": "light roux for a bechamel"
+      }
     ]
   },
   {
     "id": "rice_noodles_soak_dont_boil",
     "kind": "check",
     "title": "Soak rice noodles, don't hard-boil them",
-    "technique_tags": ["boil"],
-    "trigger_signals": ["rice noodles", "rice vermicelli", "soak", "boiling water", "pad thai"],
-    "ingredient_classes": ["noodles"],
-    "equipment": ["bowl", "pot"],
+    "technique_tags": [
+      "boil"
+    ],
+    "trigger_signals": [
+      "rice noodles",
+      "rice vermicelli",
+      "soak",
+      "boiling water",
+      "pad thai"
+    ],
+    "ingredient_classes": [
+      "noodles"
+    ],
+    "equipment": [
+      "bowl",
+      "pot"
+    ],
     "scope": "step",
     "claim": "Rice noodles overcook fast; a soak in hot rather than boiling water leaves them pliable but firm so they finish in the stir-fry without turning gummy.",
     "action": "Soak in hot water until just bendable but still firm, drain, and let them finish cooking in the sauce or stir-fry.",
@@ -279,10 +581,23 @@
     "id": "baked_rice_for_even_results",
     "kind": "tip",
     "title": "Baking rice gives even, hands-off results",
-    "technique_tags": ["boil", "steam"],
-    "trigger_signals": ["bake the rice", "cover tightly", "oven", "until water absorbed"],
-    "ingredient_classes": ["grains"],
-    "equipment": ["oven", "baking_dish"],
+    "technique_tags": [
+      "boil",
+      "steam"
+    ],
+    "trigger_signals": [
+      "bake the rice",
+      "cover tightly",
+      "oven",
+      "until water absorbed"
+    ],
+    "ingredient_classes": [
+      "grains"
+    ],
+    "equipment": [
+      "oven",
+      "baking_dish"
+    ],
     "scope": "either",
     "claim": "The oven's surrounding heat cooks rice more evenly than a single burner, avoiding the scorched bottom and mushy top of an uneven flame.",
     "action": "Combine the rice with measured hot liquid, cover tightly, bake, and fluff with a fork at the end.",
@@ -296,63 +611,152 @@
     "id": "pan_sauce_build_on_fond",
     "kind": "tip",
     "title": "Build a pan sauce on the browned bits",
-    "technique_tags": ["deglaze", "pan_sauce", "reduce", "mount_butter"],
-    "trigger_signals": ["pan sauce", "deglaze", "scrape up", "browned bits", "fond", "swirl in butter", "don't wash the pan"],
-    "ingredient_classes": ["meat", "poultry"],
-    "equipment": ["skillet"],
+    "technique_tags": [
+      "deglaze",
+      "pan_sauce",
+      "reduce",
+      "mount_butter"
+    ],
+    "trigger_signals": [
+      "pan sauce",
+      "deglaze",
+      "scrape up",
+      "browned bits",
+      "fond",
+      "swirl in butter",
+      "don't wash the pan"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "skillet"
+    ],
     "scope": "step",
     "claim": "The browned residue left after searing a protein (the fond) is concentrated flavor; deglazing dissolves it into a fast, rich sauce in minutes.",
     "action": "Leave the fond in the pan, saute aromatics, deglaze with stock or wine while scraping, reduce, brighten with a little acid near the end, and whisk in cold butter off the heat.",
     "variants": [
-      {"case": "pan choice", "note": "Build the sauce in a stainless skillet, not nonstick, so the flavorful fond sticks to the pan rather than the food."},
-      {"case": "finishing butter", "note": "Whisk in chilled butter off the heat, a piece at a time, for a glossy sauce that won't break."}
+      {
+        "case": "pan choice",
+        "note": "Build the sauce in a stainless skillet, not nonstick, so the flavorful fond sticks to the pan rather than the food."
+      },
+      {
+        "case": "finishing butter",
+        "note": "Whisk in chilled butter off the heat, a piece at a time, for a glossy sauce that won't break."
+      }
     ],
     "mechanism": "Fond is water-soluble browned flavor; liquid dissolves it, reduction concentrates it, and an off-heat butter emulsion enriches it without splitting.",
     "render_hint": "Reference the protein just cooked and the deglazing liquid this recipe specifies; note butter goes in off heat.",
     "confidence": "high",
     "source_note": "interpreted from general pan-sauce technique, cross-checked against ATK 100 Techniques #15",
     "exemplar_recipes": [
-      {"title": "Sauteed Chicken Cutlets with Mustard-Cider Sauce (Chicken Paillard)", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/1668-sauteed-chicken-cutlets-with-mustard-cider-sauce-chicken-paillard"},
-      {"title": "Sauteed Chicken Cutlets with Lemon, Caper, and Parsley Pan Sauce", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/3838-sauteed-chicken-cutlets-with-lemon-caper-and-parsley-pan-sauce"},
-      {"title": "Sauteed Chicken Cutlets with Porcini Sauce", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/4664-sauteed-chicken-cutlets-with-porcini-sauce"},
-      {"title": "Sauteed Pork Cutlets with Mustard-Cider Sauce", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/5949-sauteed-pork-cutlets-with-mustard-cider-sauce"}
+      {
+        "title": "Sauteed Chicken Cutlets with Mustard-Cider Sauce (Chicken Paillard)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/1668-sauteed-chicken-cutlets-with-mustard-cider-sauce-chicken-paillard"
+      },
+      {
+        "title": "Sauteed Chicken Cutlets with Lemon, Caper, and Parsley Pan Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/3838-sauteed-chicken-cutlets-with-lemon-caper-and-parsley-pan-sauce"
+      },
+      {
+        "title": "Sauteed Chicken Cutlets with Porcini Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/4664-sauteed-chicken-cutlets-with-porcini-sauce"
+      },
+      {
+        "title": "Sauteed Pork Cutlets with Mustard-Cider Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5949-sauteed-pork-cutlets-with-mustard-cider-sauce"
+      }
     ]
   },
   {
     "id": "sear_steak_flip_frequently",
     "kind": "check",
     "title": "Flip a thick steak often to avoid a gray band",
-    "technique_tags": ["sear", "pan_fry"],
-    "trigger_signals": ["sear the steak", "cast iron", "pat dry", "hot skillet", "until browned", "flip"],
-    "ingredient_classes": ["meat"],
-    "equipment": ["cast_iron", "skillet"],
+    "technique_tags": [
+      "sear",
+      "pan_fry"
+    ],
+    "trigger_signals": [
+      "sear the steak",
+      "cast iron",
+      "pat dry",
+      "hot skillet",
+      "until browned",
+      "flip"
+    ],
+    "ingredient_classes": [
+      "meat"
+    ],
+    "equipment": [
+      "cast_iron",
+      "skillet"
+    ],
     "scope": "step",
     "claim": "A thick steak browns best in an evenly heated, ripping-hot pan with frequent flipping; turning it every couple of minutes builds a crust while preventing a thick band of overcooked gray meat beneath it.",
     "action": "Dry and salt the steak, preheat the pan evenly, use generous oil, and flip about every 2 minutes, dropping the heat partway through, then rest before slicing.",
     "signal": "A thick gray ring forming under the crust, or a pale surface that means the pan wasn't hot enough.",
     "failure_mode": "An overcooked gray band beneath the crust, or weak browning from a too-cool or unevenly heated pan.",
     "variants": [
-      {"case": "thick steak", "note": "Flip every ~2 minutes and drop from medium-high to medium-low partway so the outside browns without overcooking the center."},
-      {"case": "even pan heat", "note": "Cast iron sears hard but heats unevenly; preheat it in the oven for an even surface before searing."}
+      {
+        "case": "thick steak",
+        "note": "Flip every ~2 minutes and drop from medium-high to medium-low partway so the outside browns without overcooking the center."
+      },
+      {
+        "case": "even pan heat",
+        "note": "Cast iron sears hard but heats unevenly; preheat it in the oven for an even surface before searing."
+      }
     ],
     "mechanism": "Frequent flipping keeps either face from overheating, so the interior cooks evenly while the surface still browns.",
     "render_hint": "This differs from delicate proteins: for steak, frequent flipping is correct, so do NOT tell the cook to leave it undisturbed.",
     "confidence": "high",
     "source_note": "interpreted from general steak-searing technique, cross-checked against ATK 100 Techniques #16",
     "exemplar_recipes": [
-      {"title": "Cast Iron Steaks with Herb Butter", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/9249-cast-iron-steaks-with-herb-butter"},
-      {"title": "Pan-Seared Sirloin Steaks with Miso-Butter Pan Sauce", "source": "ATK", "url": "https://www.americastestkitchen.com/cookscountry/recipes/13767-pan-seared-sirloin-steaks-with-miso-butter-pan-sauce"},
-      {"title": "Pan-Seared Strip Steak for Two", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/12370-pan-seared-strip-steak-for-two"},
-      {"title": "Cast Iron Pan-Seared Flank Steak with Crispy Potatoes", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/9192-cast-iron-pan-seared-flank-steak-with-crispy-potatoes-and-chimichurri"}
+      {
+        "title": "Cast Iron Steaks with Herb Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9249-cast-iron-steaks-with-herb-butter"
+      },
+      {
+        "title": "Pan-Seared Sirloin Steaks with Miso-Butter Pan Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/13767-pan-seared-sirloin-steaks-with-miso-butter-pan-sauce"
+      },
+      {
+        "title": "Pan-Seared Strip Steak for Two",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/12370-pan-seared-strip-steak-for-two"
+      },
+      {
+        "title": "Cast Iron Pan-Seared Flank Steak with Crispy Potatoes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9192-cast-iron-pan-seared-flank-steak-with-crispy-potatoes-and-chimichurri"
+      }
     ]
   },
   {
     "id": "handle_ground_meat_gently",
     "kind": "check",
     "title": "Overworking ground meat makes tough burgers",
-    "technique_tags": ["mix_gently"],
-    "trigger_signals": ["form patties", "shape into", "mix the meat", "ground beef", "ground turkey", "meatballs"],
-    "ingredient_classes": ["meat", "poultry"],
+    "technique_tags": [
+      "mix_gently"
+    ],
+    "trigger_signals": [
+      "form patties",
+      "shape into",
+      "mix the meat",
+      "ground beef",
+      "ground turkey",
+      "meatballs"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
     "equipment": [],
     "scope": "step",
     "claim": "Overworking ground meat makes it dense and rubbery; gentle handling, and salting the outside rather than mixing salt in, keeps burgers tender and juicy.",
@@ -360,103 +764,923 @@
     "signal": "A tacky, paste-like texture in the bowl, or patties that feel hard and compact.",
     "failure_mode": "Dense, rubbery, domed burgers, or dry ones if the meat is too lean or gets pressed during cooking.",
     "variants": [
-      {"case": "salting", "note": "Salt the outsides of the formed patties; mixing salt into the meat dissolves proteins and toughens it."},
-      {"case": "divot", "note": "Press a shallow divot in the center so the patty cooks flat instead of bulging into a ball."},
-      {"case": "fat content", "note": "85% lean beef or 93% lean poultry stays juicy; very lean grinds cook up dry and chalky."},
-      {"case": "cooking", "note": "Flip once and never press down, which squeezes out the juices."}
+      {
+        "case": "salting",
+        "note": "Salt the outsides of the formed patties; mixing salt into the meat dissolves proteins and toughens it."
+      },
+      {
+        "case": "divot",
+        "note": "Press a shallow divot in the center so the patty cooks flat instead of bulging into a ball."
+      },
+      {
+        "case": "fat content",
+        "note": "85% lean beef or 93% lean poultry stays juicy; very lean grinds cook up dry and chalky."
+      },
+      {
+        "case": "cooking",
+        "note": "Flip once and never press down, which squeezes out the juices."
+      }
     ],
     "mechanism": "Working ground meat releases sticky soluble proteins that bind it into a dense mass; salt mixed in does the same, so both are minimized.",
     "render_hint": "Reference the specific ground meat in this recipe; pull in only the variants the recipe's steps touch.",
     "confidence": "high",
     "source_note": "interpreted from general ground-meat handling technique, cross-checked against ATK 100 Techniques #17",
     "exemplar_recipes": [
-      {"title": "Classic Beef Burgers", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/12854-classic-beef-burgers"},
-      {"title": "Buffalo Chicken Burgers", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/12878-buffalo-chicken-burgers"},
-      {"title": "Classic Turkey Burgers", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/12855-classic-turkey-burgers"},
-      {"title": "Breakfast Pork Burgers", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/12882-breakfast-pork-burgers"}
+      {
+        "title": "Classic Beef Burgers",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12854-classic-beef-burgers"
+      },
+      {
+        "title": "Buffalo Chicken Burgers",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12878-buffalo-chicken-burgers"
+      },
+      {
+        "title": "Classic Turkey Burgers",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12855-classic-turkey-burgers"
+      },
+      {
+        "title": "Breakfast Pork Burgers",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12882-breakfast-pork-burgers"
+      }
     ]
   },
   {
     "id": "saute_fish_dry_and_flip_with_two_spatulas",
     "kind": "check",
     "title": "Let flaky fish form a crust, then flip with two spatulas",
-    "technique_tags": ["saute", "pan_fry"],
-    "trigger_signals": ["saute the fish", "fillet", "tilapia", "sole", "flounder", "flip", "pat dry", "until opaque"],
-    "ingredient_classes": ["fish", "seafood"],
-    "equipment": ["skillet"],
+    "technique_tags": [
+      "saute",
+      "pan_fry"
+    ],
+    "trigger_signals": [
+      "saute the fish",
+      "fillet",
+      "tilapia",
+      "sole",
+      "flounder",
+      "flip",
+      "pat dry",
+      "until opaque"
+    ],
+    "ingredient_classes": [
+      "fish",
+      "seafood"
+    ],
+    "equipment": [
+      "skillet"
+    ],
     "scope": "step",
     "claim": "Flaky fish sticks and tears if it's wet or moved too soon; a dry surface, a smoking-hot pan, and two thin spatulas for turning keep delicate fillets golden and intact.",
     "action": "Salt and pat the fillets dry, cook in a hot nonstick pan until the first side is golden and releases, then turn once using two thin spatulas.",
     "signal": "The fillet resisting and flaking when you slide a spatula under it means the crust hasn't set; tearing means it was moved too soon.",
     "failure_mode": "Fish sticks to the pan and breaks apart, or steams pale and gray instead of browning.",
     "variants": [
-      {"case": "thin fillets", "note": "Cut along the natural center seam and cook the thicker and thinner halves separately so each browns evenly."},
-      {"case": "thick fillets", "note": "Start over high heat then lower it to brown the outside without overcooking the center; a pinch of sugar in the salt rub speeds browning."}
+      {
+        "case": "thin fillets",
+        "note": "Cut along the natural center seam and cook the thicker and thinner halves separately so each browns evenly."
+      },
+      {
+        "case": "thick fillets",
+        "note": "Start over high heat then lower it to brown the outside without overcooking the center; a pinch of sugar in the salt rub speeds browning."
+      }
     ],
     "mechanism": "A dry surface lets the pan brown rather than steam the fish, and a set crust releases cleanly; two spatulas support the fragile fillet through the flip.",
     "render_hint": "Name the fish and whether this recipe cooks it skin-on; pick the thin/thick variant to match.",
     "confidence": "high",
     "source_note": "interpreted from general fish-sauteing technique, cross-checked against ATK 100 Techniques #18",
     "exemplar_recipes": [
-      {"title": "Sauteed Tilapia", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11306-sauteed-tilapia"},
-      {"title": "Sauteed Tilapia with Chive-Lemon Miso Butter", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/11307-sauteed-tilapia-with-chive-lemon-miso-butter"},
-      {"title": "Crispy Pan-Seared Black Sea Bass", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/13970-crispy-pan-seared-black-sea-bass"},
-      {"title": "Pan-Fried Sole with Lemony Herb Butter", "source": "ATK", "url": "https://www.americastestkitchen.com/cookscountry/recipes/6898-pan-fried-sole-with-lemony-herb-butter"}
+      {
+        "title": "Sauteed Tilapia",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11306-sauteed-tilapia"
+      },
+      {
+        "title": "Sauteed Tilapia with Chive-Lemon Miso Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11307-sauteed-tilapia-with-chive-lemon-miso-butter"
+      },
+      {
+        "title": "Crispy Pan-Seared Black Sea Bass",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13970-crispy-pan-seared-black-sea-bass"
+      },
+      {
+        "title": "Pan-Fried Sole with Lemony Herb Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/6898-pan-fried-sole-with-lemony-herb-butter"
+      }
     ]
   },
   {
     "id": "sear_scallops_dry_and_dont_crowd",
     "kind": "check",
     "title": "Dry scallops and don't crowd them, or they steam",
-    "technique_tags": ["sear", "pan_fry"],
-    "trigger_signals": ["sear scallops", "pat dry", "remove tendon", "hot pan", "golden crust", "in batches"],
-    "ingredient_classes": ["seafood"],
-    "equipment": ["skillet"],
+    "technique_tags": [
+      "sear",
+      "pan_fry"
+    ],
+    "trigger_signals": [
+      "sear scallops",
+      "pat dry",
+      "remove tendon",
+      "hot pan",
+      "golden crust",
+      "in batches"
+    ],
+    "ingredient_classes": [
+      "seafood"
+    ],
+    "equipment": [
+      "skillet"
+    ],
     "scope": "step",
     "claim": "Scallops carry a lot of surface moisture; unless they're dried well and seared in a hot, uncrowded nonstick pan, they steam in their own liquid and turn rubbery before a crust forms.",
     "action": "Remove the side tendon, blot the scallops very dry, sear in batches in a smoking-hot pan without moving them, then baste with butter as you finish the second side.",
     "signal": "Liquid pooling and a dull, wet surface instead of an active sear means the scallops are steaming.",
     "failure_mode": "Pale, rubbery, overcooked scallops with no golden crust.",
     "variants": [
-      {"case": "buying", "note": "Choose 'dry' (untreated) scallops; 'wet' ones are treated with STPP, which adds moisture that blocks browning and brings off-flavors."},
-      {"case": "butter baste", "note": "After searing the first side, add butter and spoon it over to deepen browning and flavor without burning."}
+      {
+        "case": "buying",
+        "note": "Choose 'dry' (untreated) scallops; 'wet' ones are treated with STPP, which adds moisture that blocks browning and brings off-flavors."
+      },
+      {
+        "case": "butter baste",
+        "note": "After searing the first side, add butter and spoon it over to deepen browning and flavor without burning."
+      }
     ],
     "mechanism": "Surface water must evaporate before browning starts; thorough drying plus high, uncrowded heat get the surface there before the interior overcooks.",
     "render_hint": "Reference the scallop size and the crust color this recipe wants.",
     "confidence": "high",
     "source_note": "interpreted from general scallop-searing technique, cross-checked against ATK 100 Techniques #19",
     "exemplar_recipes": [
-      {"title": "Pan-Seared Scallops", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/4955-pan-seared-scallops"},
-      {"title": "Pan-Seared Scallops with Sugar Snap Pea Slaw", "source": "ATK", "url": "https://www.americastestkitchen.com/cookscountry/recipes/8696-pan-seared-scallops-with-sugar-snap-pea-slaw"},
-      {"title": "Miso Butter-Basted Scallops with Bok Choy and Chile", "source": "ATK", "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9531-miso-butter-basted-scallops-with-bok-choy-and-chile"}
+      {
+        "title": "Pan-Seared Scallops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4955-pan-seared-scallops"
+      },
+      {
+        "title": "Pan-Seared Scallops with Sugar Snap Pea Slaw",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8696-pan-seared-scallops-with-sugar-snap-pea-slaw"
+      },
+      {
+        "title": "Miso Butter-Basted Scallops with Bok Choy and Chile",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9531-miso-butter-basted-scallops-with-bok-choy-and-chile"
+      }
     ]
   },
   {
     "id": "stir_fry_prep_ahead_and_dont_crowd",
     "kind": "check",
     "title": "Crowding a stir-fry steams it; prep ahead and work in batches",
-    "technique_tags": ["stir_fry", "saute", "mise_en_place"],
-    "trigger_signals": ["stir-fry", "high heat", "in batches", "keep moving", "prep all ingredients", "bite-size"],
-    "ingredient_classes": ["meat", "poultry", "vegetables", "seafood"],
-    "equipment": ["skillet", "wok"],
+    "technique_tags": [
+      "stir_fry",
+      "saute",
+      "mise_en_place"
+    ],
+    "trigger_signals": [
+      "stir-fry",
+      "high heat",
+      "in batches",
+      "keep moving",
+      "prep all ingredients",
+      "bite-size"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "vegetables",
+      "seafood"
+    ],
+    "equipment": [
+      "skillet",
+      "wok"
+    ],
     "scope": "step",
     "claim": "A home burner can't keep a crowded pan hot, so a piled-in stir-fry steams; bite-size pieces, small batches, and everything prepped in advance keep the heat up and the food browning.",
     "action": "Cut everything small and mix the sauce before heating the pan, then cook the protein in batches over high heat, add ingredients in stages, and add aromatics near the end.",
     "signal": "The pan going quiet and filling with liquid once food is added means it's overcrowded and steaming.",
     "failure_mode": "Soggy vegetables and gray, steamed meat that never browns.",
     "variants": [
-      {"case": "mise en place", "note": "Stir-fries cook in a flash, so everything must be cut and the sauce mixed before the pan goes on the heat."},
-      {"case": "don't over-stir", "note": "Despite the name, leave the food alone in spurts so it can brown and caramelize rather than just steam."},
-      {"case": "shrimp", "note": "An exception to high heat: start shrimp over medium-low so they don't toughen."}
+      {
+        "case": "mise en place",
+        "note": "Stir-fries cook in a flash, so everything must be cut and the sauce mixed before the pan goes on the heat."
+      },
+      {
+        "case": "don't over-stir",
+        "note": "Despite the name, leave the food alone in spurts so it can brown and caramelize rather than just steam."
+      },
+      {
+        "case": "shrimp",
+        "note": "An exception to high heat: start shrimp over medium-low so they don't toughen."
+      }
     ],
     "mechanism": "Browning needs sustained high surface heat; small batches and a flat pan keep the temperature up so food sears instead of releasing water and steaming.",
     "render_hint": "Reference the specific proteins and vegetables, and remind the cook to prep everything before the pan heats.",
     "confidence": "high",
     "source_note": "interpreted from general stir-fry technique, cross-checked against ATK 100 Techniques #20",
     "exemplar_recipes": [
-      {"title": "Stir-Fried Thai-Style Beef with Chiles and Shallots", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/2023-stir-fried-thai-style-beef-with-chiles-and-shallots"},
-      {"title": "Teriyaki Stir-Fried Beef with Green Beans and Shiitakes", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/3907-teriyaki-stir-fried-beef-with-green-beans-and-shiitakes"},
-      {"title": "Gongbao Jiding (Sichuan Kung Pao Chicken)", "source": "ATK", "url": "https://www.americastestkitchen.com/recipes/11227-kung-pao-chicken"}
+      {
+        "title": "Stir-Fried Thai-Style Beef with Chiles and Shallots",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/2023-stir-fried-thai-style-beef-with-chiles-and-shallots"
+      },
+      {
+        "title": "Teriyaki Stir-Fried Beef with Green Beans and Shiitakes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3907-teriyaki-stir-fried-beef-with-green-beans-and-shiitakes"
+      },
+      {
+        "title": "Gongbao Jiding (Sichuan Kung Pao Chicken)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11227-kung-pao-chicken"
+      }
+    ]
+  },
+  {
+    "id": "tofu_dry_or_firm_before_cooking",
+    "kind": "check",
+    "title": "Dry or firm tofu before cooking, or it falls apart",
+    "technique_tags": [
+      "pan_fry",
+      "braise"
+    ],
+    "trigger_signals": [
+      "tofu",
+      "press tofu",
+      "drain tofu",
+      "cornstarch",
+      "mapo",
+      "stir-fry tofu",
+      "pan-fry tofu"
+    ],
+    "ingredient_classes": [
+      "tofu"
+    ],
+    "equipment": [
+      "skillet",
+      "saucepan"
+    ],
+    "scope": "step",
+    "claim": "Tofu is full of water and crumbles easily; drying or firming its exterior first is what lets it brown and hold together instead of steaming into mush.",
+    "action": "For pan-frying, drain and press it dry then coat in cornstarch; for soft tofu in a braise, steep it in hot salted liquid first to tighten the outer layer.",
+    "signal": "Tofu releasing water and sticking instead of crisping, or breaking into crumbs when you move it.",
+    "failure_mode": "Tofu falls apart into bits, or steams pale and soggy instead of crisping or holding its shape.",
+    "variants": [
+      {
+        "case": "pan-frying",
+        "note": "Drain and press dry, then coat in cornstarch (or cornstarch-cornmeal), pressing to adhere for a crisp shell."
+      },
+      {
+        "case": "braising soft tofu",
+        "note": "Steep or microwave it in hot salted liquid first; heat and salt tighten the outer proteins so it stays intact while staying silky inside."
+      },
+      {
+        "case": "choosing type",
+        "note": "Firm and extra-firm hold up in stir-fries; soft is best for silky braises like mapo tofu and for pan-frying."
+      }
+    ],
+    "mechanism": "Surface moisture blocks browning and weakens structure; drying, a starch coat, or a hot-salt steep firms the exterior so it holds.",
+    "render_hint": "Name the tofu type and dish in this recipe, and pick the matching variant.",
+    "confidence": "high",
+    "source_note": "interpreted from general tofu technique, cross-checked against ATK 100 Techniques #21",
+    "exemplar_recipes": [
+      {
+        "title": "Mapo Tofu (Sichuan Braised Tofu with Beef)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9898-mapo-tofu-sichuan-braised-tofu-with-beef",
+        "note": "steeps soft tofu to keep it intact in a braise"
+      },
+      {
+        "title": "Warm Cabbage Salad with Crispy Tofu",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5471-warm-cabbage-salad-with-crispy-tofu",
+        "note": "dried and coated for pan-frying"
+      },
+      {
+        "title": "Vegetarian Mapo Tofu",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9966-vegetarian-mapo-tofu"
+      },
+      {
+        "title": "Tofu Banh Mi",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11698-tofu-banh-mi"
+      }
+    ]
+  },
+  {
+    "id": "foil_packet_layer_and_seal",
+    "kind": "tip",
+    "title": "Layer and seal a foil packet so everything cooks right",
+    "technique_tags": [
+      "steam",
+      "roast"
+    ],
+    "trigger_signals": [
+      "foil packet",
+      "en papillote",
+      "seal the foil",
+      "parchment packet",
+      "bake in foil"
+    ],
+    "ingredient_classes": [
+      "poultry",
+      "fish",
+      "vegetables"
+    ],
+    "equipment": [
+      "foil",
+      "oven",
+      "sheet_pan"
+    ],
+    "scope": "either",
+    "claim": "In a sealed foil or parchment packet, trapped steam cooks lean protein moist in its own juices; how you layer and season decides whether it's flavorful or bland and mushy.",
+    "action": "Slice sturdy vegetables thin as a bed, set the protein on top with soft vegetables above it, season generously, and seal tightly leaving headroom for steam.",
+    "variants": [
+      {
+        "case": "layering",
+        "note": "Sturdy vegetables or grains on the bottom as a bed and insulation; soft vegetables like tomatoes on top so they don't turn to mush."
+      },
+      {
+        "case": "seasoning",
+        "note": "Nothing browns inside the packet, so season generously (or pre-salt chicken) to avoid blandness."
+      },
+      {
+        "case": "doneness",
+        "note": "Poke a thermometer through the foil near the end, since the usual look, feel, and smell cues are hidden."
+      }
+    ],
+    "mechanism": "The sealed pouch traps steam from the food's own moisture; a bed of sturdy ingredients shields the protein from the pan's direct heat.",
+    "render_hint": "Reference the actual protein and vegetables in this recipe and which belong on the bottom vs. on top.",
+    "confidence": "high",
+    "source_note": "interpreted from general foil-packet/en papillote technique, cross-checked against ATK 100 Techniques #22",
+    "exemplar_recipes": [
+      {
+        "title": "Chicken Baked in Foil with Potatoes and Carrots",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7624-chicken-baked-in-foil-with-potatoes-and-carrots"
+      },
+      {
+        "title": "Spiced Fish and Couscous Packets",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13975-spiced-fish-and-couscous-packets"
+      },
+      {
+        "title": "Thai-Style Fish and Creamy Coconut Rice Packets for Two",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13137-thai-style-fish-and-creamy-coconut-rice-packets-for-two"
+      },
+      {
+        "title": "Cod Baked in Foil with Zucchini and Sun-Dried Tomatoes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11928-cod-baked-in-foil-with-zucchini-and-sun-dried-tomatoes"
+      }
+    ]
+  },
+  {
+    "id": "oven_fry_triple_coat",
+    "kind": "check",
+    "title": "Oven-fry with a full coating or the crust bakes up soft",
+    "technique_tags": [
+      "roast",
+      "bread_coat"
+    ],
+    "trigger_signals": [
+      "oven-fry",
+      "breading",
+      "panko",
+      "dredge",
+      "egg wash",
+      "crumb coating"
+    ],
+    "ingredient_classes": [
+      "poultry",
+      "fish",
+      "seafood",
+      "vegetables"
+    ],
+    "equipment": [
+      "oven",
+      "sheet_pan",
+      "wire_rack"
+    ],
+    "scope": "step",
+    "claim": "Oven-frying only gives a crunchy, fried-style crust if every layer of the coating does its job; skip a layer and it bakes up soft and bready.",
+    "action": "Dredge in flour, dip in a thick egg wash (thickened with mayo or buttermilk), then press on pre-toasted panko or crushed chips, and bake on a wire rack.",
+    "signal": "A pale, soft, or patchy crust that slides off means the egg wash was too thin or the crumbs weren't toasted.",
+    "failure_mode": "Soggy, baked-tasting coating instead of a crunchy fried one.",
+    "variants": [
+      {
+        "case": "toast the crumbs",
+        "note": "Pre-brown panko in a little oil before breading; raw crumbs won't crisp enough in the oven."
+      },
+      {
+        "case": "thick egg wash",
+        "note": "Thicken the egg with flour and mayo or buttermilk so the crumbs grip and moisture stays in the food."
+      },
+      {
+        "case": "wire rack",
+        "note": "Bake on a rack so air circulates and the underside crisps instead of steaming."
+      }
+    ],
+    "mechanism": "Flour gives the egg something to grip, the egg seals in moisture and glues the crumbs, and pre-toasted crumbs supply the crunch the oven can't fully develop.",
+    "render_hint": "Name the food being coated and reference whichever coating steps this recipe includes.",
+    "confidence": "high",
+    "source_note": "interpreted from general oven-frying technique, cross-checked against ATK 100 Techniques #23",
+    "exemplar_recipes": [
+      {
+        "title": "Oven-Fried Fish Sticks with Old Bay Dipping Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7368-oven-fried-fish-sticks-with-old-bay-dipping-sauce"
+      },
+      {
+        "title": "Oven-Fried Onion Rings",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/2938-oven-fried-onion-rings"
+      },
+      {
+        "title": "Oven-Fried Shrimp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/4556-oven-fried-shrimp"
+      },
+      {
+        "title": "Fiery Oven-Fried Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/2321-fiery-oven-fried-chicken"
+      }
+    ]
+  },
+  {
+    "id": "shallow_fry_hold_oil_temp",
+    "kind": "check",
+    "title": "Hold the oil temperature and don't crowd, or food turns greasy",
+    "technique_tags": [
+      "deep_fry"
+    ],
+    "trigger_signals": [
+      "shallow-fry",
+      "fry in batches",
+      "1/4 inch oil",
+      "heat oil to",
+      "fritters",
+      "until golden"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "seafood",
+      "vegetables"
+    ],
+    "equipment": [
+      "skillet",
+      "cast_iron",
+      "thermometer"
+    ],
+    "scope": "step",
+    "claim": "Shallow-frying crisps food in a thin layer of oil, but only if the oil stays in the right temperature range; crowding the pan drops the temp and the food soaks up oil instead of crisping.",
+    "action": "Heat the oil to the specified temperature, fry in small batches without crowding, flip halfway, let the oil return to temperature between batches, and drain on a rack.",
+    "signal": "Sluggish, quiet bubbling and pale, oil-logged food mean the oil is too cool or the pan is crowded.",
+    "failure_mode": "Greasy, soggy crust instead of a crisp golden one.",
+    "variants": [
+      {
+        "case": "oil depth",
+        "note": "Use 1/4 to 3/4 inch of oil so food is partially submerged, and flip it halfway through."
+      },
+      {
+        "case": "temperature check",
+        "note": "Use a thermometer, or drop in a pinch of panko: when it browns, the oil is ready."
+      },
+      {
+        "case": "batches",
+        "note": "Let the oil come back up to temperature between batches; with less oil it reheats quickly."
+      }
+    ],
+    "mechanism": "Hot oil flashes surface moisture to steam that keeps oil from soaking in; a temperature drop lets oil seep in and the food goes greasy.",
+    "render_hint": "Reference the food being fried and the oil temperature this recipe specifies.",
+    "confidence": "high",
+    "source_note": "interpreted from general shallow-frying technique, cross-checked against ATK 100 Techniques #24",
+    "exemplar_recipes": [
+      {
+        "title": "Crispy Vegetable Fritters",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11092-crispy-vegetable-fritters"
+      },
+      {
+        "title": "Drop Doughnuts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13850-drop-doughnuts"
+      },
+      {
+        "title": "Bean and Beef Taquitos with Avocado Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7038-bean-and-beef-taquitos-with-avocado-sauce"
+      },
+      {
+        "title": "Spicy Fried Chicken Sandwiches",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10342-spicy-fried-chicken-sandwiches"
+      }
+    ]
+  },
+  {
+    "id": "crispy_skin_dry_and_render",
+    "kind": "check",
+    "title": "Dry the skin and give the fat an exit for crisp results",
+    "technique_tags": [
+      "roast",
+      "salting"
+    ],
+    "trigger_signals": [
+      "crispy skin",
+      "roast chicken",
+      "air-dry",
+      "baking powder",
+      "poke the skin",
+      "pat dry"
+    ],
+    "ingredient_classes": [
+      "poultry"
+    ],
+    "equipment": [
+      "oven",
+      "wire_rack",
+      "roasting_pan"
+    ],
+    "scope": "step",
+    "claim": "Skin can't crisp until its surface moisture is gone and the fat underneath has an escape route; a salt-and-baking-powder rub plus air-drying and poked skin is what delivers crackling skin.",
+    "action": "Loosen the skin and poke holes over the fat deposits, rub with salt and baking powder (not baking soda), air-dry uncovered in the fridge at least 12 hours, then roast and finish with a high-heat blast.",
+    "signal": "Flabby, pale, or wet patches of skin mean trapped surface moisture or rendered fat with nowhere to go.",
+    "failure_mode": "Soft, flabby, greasy skin instead of crisp, crackling skin.",
+    "variants": [
+      {
+        "case": "baking powder",
+        "note": "Use baking powder, not baking soda, which turns bitter; its alkalinity speeds browning and helps dry the skin."
+      },
+      {
+        "case": "air-dry",
+        "note": "Rest uncovered in the fridge 12+ hours so surface moisture evaporates and the salt seasons the meat."
+      },
+      {
+        "case": "render the fat",
+        "note": "Poke holes in the skin over fat deposits so rendered fat escapes instead of pooling and steaming the skin soft."
+      }
+    ],
+    "mechanism": "Browning needs a dry surface; alkalinity accelerates the Maillard reaction, and escape routes let rendered fat leave rather than collect under the skin.",
+    "render_hint": "Reference the bird in this recipe and only the prep steps it actually calls for.",
+    "confidence": "high",
+    "source_note": "interpreted from general crispy-skin technique, cross-checked against ATK 100 Techniques #25",
+    "exemplar_recipes": [
+      {
+        "title": "Crisp Roast Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4125-crisp-roast-chicken"
+      },
+      {
+        "title": "Oven-Fried Chicken Wings",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7583-oven-fried-chicken-wings"
+      },
+      {
+        "title": "Roast Chicken with Couscous, Roasted Red Peppers, and Basil",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14316-roast-chicken-with-couscous-roasted-red-peppers-and-basil"
+      }
+    ]
+  },
+  {
+    "id": "roast_salmon_high_low",
+    "kind": "check",
+    "title": "Roast salmon gently to a low temp, and not like white fish",
+    "technique_tags": [
+      "roast"
+    ],
+    "trigger_signals": [
+      "roast salmon",
+      "salmon fillet",
+      "side of salmon",
+      "until it registers",
+      "score the skin"
+    ],
+    "ingredient_classes": [
+      "fish",
+      "seafood"
+    ],
+    "equipment": [
+      "oven",
+      "sheet_pan"
+    ],
+    "scope": "step",
+    "claim": "Salmon is rich and silky when cooked gently to a lower temperature than white fish; too hot or too far and it dries out and weeps white albumin.",
+    "action": "Preheat the sheet hot to jump-start browning, then drop the oven low to finish gently, and pull farmed salmon around 125F, wild around 120F.",
+    "signal": "White albumin weeping onto the surface means the heat was too high and moisture is being squeezed out.",
+    "failure_mode": "Dry, chalky salmon with unappetizing white albumin on the surface.",
+    "variants": [
+      {
+        "case": "high-low roast",
+        "note": "Lay the fish on a preheated sheet to brown, then lower the oven to finish it gently and evenly."
+      },
+      {
+        "case": "farmed vs wild",
+        "note": "Cook farmed to ~125F; wild is leaner and firmer and overcooks there, so pull it at ~120F."
+      }
+    ],
+    "mechanism": "A gentle finishing temperature cooks salmon's fatty, water-rich flesh evenly without forcing moisture out as squeezed-out albumin.",
+    "render_hint": "Reference whether this recipe uses fillets or a whole side, and note the farmed/wild temperature if known.",
+    "confidence": "high",
+    "source_note": "interpreted from general salmon-roasting technique, cross-checked against ATK 100 Techniques #26",
+    "exemplar_recipes": [
+      {
+        "title": "Oven-Roasted Salmon",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4127-oven-roasted-salmon"
+      },
+      {
+        "title": "Roasted Whole Side of Salmon",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10921-roasted-whole-side-of-salmon"
+      },
+      {
+        "title": "Pomegranate Roasted Salmon with Lentils and Chard",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12274-pomegranate-roasted-salmon-with-lentils-and-chard"
+      }
+    ]
+  },
+  {
+    "id": "broiler_set_distance_and_rotate",
+    "kind": "check",
+    "title": "Set the right broiler distance and rotate, or food burns in spots",
+    "technique_tags": [
+      "broil"
+    ],
+    "trigger_signals": [
+      "broil",
+      "broiler",
+      "inches from the element",
+      "until charred",
+      "rotate the sheet"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "seafood",
+      "vegetables"
+    ],
+    "equipment": [
+      "oven",
+      "broiler",
+      "sheet_pan"
+    ],
+    "scope": "step",
+    "claim": "A broiler chars with intense overhead heat, but every broiler runs differently and heats unevenly; without the right rack distance and a sense of its hot spots, food scorches in patches before it chars.",
+    "action": "Set the rack the distance the recipe specifies (close enough to char, far enough to avoid scorching), rotate the pan partway through, and parcook dense food before finishing it under the broiler.",
+    "signal": "Spotty scorching while other areas stay pale means a too-close rack or an uneven broiler you haven't mapped.",
+    "failure_mode": "Food burns in spots before it chars evenly, or chars before the inside cooks through.",
+    "variants": [
+      {
+        "case": "rack distance",
+        "note": "Too close makes hot-spot burns; far enough spreads the heat. Follow the specified distance, not just 'top rack'."
+      },
+      {
+        "case": "map your broiler",
+        "note": "Toast a sheet of white bread to reveal hot and cool spots, then position and rotate food accordingly."
+      },
+      {
+        "case": "parcook dense food",
+        "note": "Jump-start thick items in the microwave or oven, then finish under the broiler for char."
+      }
+    ],
+    "mechanism": "The element acts like concentrated overhead spotlights; distance diffuses them and rotation evens out the inevitable hot spots.",
+    "render_hint": "Reference the food being charred and the rack distance this recipe specifies.",
+    "confidence": "high",
+    "source_note": "interpreted from general broiler technique, cross-checked against ATK 100 Techniques #27",
+    "exemplar_recipes": [
+      {
+        "title": "Chicken Shawarma",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10840-chicken-shawarma"
+      },
+      {
+        "title": "Whole Romanesco with Berbere and Yogurt-Tahini Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14068-whole-romanesco-with-berbere-and-yogurt-tahini-sauce"
+      },
+      {
+        "title": "Broiled Smashed Zucchini with Garlicky Yogurt",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15865-broiled-smashed-zucchini-with-garlicky-yogurt"
+      },
+      {
+        "title": "Garlicky Broiled Shrimp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14570-garlicky-broiled-shrimp"
+      }
+    ]
+  },
+  {
+    "id": "two_level_grill_fire",
+    "kind": "tip",
+    "title": "Build two heat zones on the grill",
+    "technique_tags": [
+      "grill"
+    ],
+    "trigger_signals": [
+      "two-level fire",
+      "two zones",
+      "hotter side",
+      "cooler side",
+      "sear then move",
+      "half-grill"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "grill"
+    ],
+    "scope": "step",
+    "claim": "Building two heat zones, one hot and one cooler, lets you sear over high heat then finish gently without burning, and gives you a safe place to move food during flare-ups.",
+    "action": "Set up a hot zone and a cooler zone, sear the food over the hot side, then slide it to the cooler side to cook through.",
+    "variants": [
+      {
+        "case": "two-level fire (charcoal)",
+        "note": "Spread two-thirds of the coals over half the grate and one-third over the other half."
+      },
+      {
+        "case": "two-level fire (gas)",
+        "note": "Leave the primary burner on high and set the others to medium."
+      },
+      {
+        "case": "half-grill fire",
+        "note": "All coals on one half (or other burners off) for a more dramatic hot/cool split; good for fatty foods and as a flare-up refuge."
+      }
+    ],
+    "mechanism": "Two zones separate searing from cooking-through, so thick or fatty foods brown without charring before the center is done.",
+    "render_hint": "Reference the food being grilled and whether this recipe uses charcoal or gas.",
+    "confidence": "high",
+    "source_note": "interpreted from general grilling technique, cross-checked against ATK 100 Techniques #28",
+    "exemplar_recipes": [
+      {
+        "title": "Grilled Glazed Boneless, Skinless Chicken Breasts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7492-grilled-glazed-boneless-skinless-chicken-breasts"
+      },
+      {
+        "title": "Easy Grilled Steak Tacos (Tacos al Carbon)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11726-easy-grilled-steak-tacos-tacos-al-carbon"
+      },
+      {
+        "title": "Grilled Frozen Steaks",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8872-grilled-frozen-steaks"
+      },
+      {
+        "title": "Grilled Boneless Short Ribs with Argentine-Style Pepper Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8982-grilled-boneless-short-ribs-with-argentine-style-pepper-sauce"
+      }
+    ]
+  },
+  {
+    "id": "poach_off_heat_in_seasoned_liquid",
+    "kind": "check",
+    "title": "Poach off the heat in seasoned liquid",
+    "technique_tags": [
+      "poach"
+    ],
+    "trigger_signals": [
+      "poach",
+      "poached chicken",
+      "poached eggs",
+      "barely a simmer",
+      "cover and remove from heat"
+    ],
+    "ingredient_classes": [
+      "poultry",
+      "eggs"
+    ],
+    "equipment": [
+      "pot",
+      "dutch_oven"
+    ],
+    "scope": "step",
+    "claim": "Gentle poaching keeps lean protein and eggs tender and moist, but boiling toughens them and plain water leaves them bland; heating then finishing off the heat in seasoned liquid is the fix.",
+    "action": "Bring seasoned liquid to temperature, add the food, then cover and pull the pot off the heat so residual heat finishes it gently.",
+    "signal": "A rolling boil, or rubbery and bland results, means the heat was too high or the liquid wasn't seasoned.",
+    "failure_mode": "Tough, dry, washed-out protein, or wispy ragged poached eggs.",
+    "variants": [
+      {
+        "case": "off-heat finish",
+        "note": "Heat the liquid, add the food, then cover and remove from the heat; gentle residual heat cooks it through without seizing."
+      },
+      {
+        "case": "season the liquid",
+        "note": "Poach in seasoned liquid (salt, aromatics, a little soy), not plain water, or it tastes like spa food."
+      },
+      {
+        "case": "tidy eggs",
+        "note": "Drain the thin watery white through a colander first, and add vinegar and salt to help the egg set neatly."
+      }
+    ],
+    "mechanism": "Residual off-heat warmth holds the liquid in the gentle poaching range so proteins set tender instead of seizing and toughening.",
+    "render_hint": "Reference whether this recipe poaches chicken or eggs and pick the matching variants.",
+    "confidence": "high",
+    "source_note": "interpreted from general poaching technique, cross-checked against ATK 100 Techniques #29",
+    "exemplar_recipes": [
+      {
+        "title": "Perfect Poached Chicken Breasts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7763-perfect-poached-chicken-breasts"
+      },
+      {
+        "title": "Thai-Style Chicken Salad with Mango",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10918-thai-style-chicken-salad-with-mango"
+      },
+      {
+        "title": "Perfect Poached Eggs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9473-perfect-poached-eggs"
+      },
+      {
+        "title": "Salade Lyonnaise",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12594-salade-lyonnaise"
+      }
+    ]
+  },
+  {
+    "id": "butcher_whole_chicken_at_the_joints",
+    "kind": "tip",
+    "title": "Break down a whole chicken by cutting through the joints",
+    "technique_tags": [
+      "knife_skills"
+    ],
+    "trigger_signals": [
+      "cut up a whole chicken",
+      "butcher",
+      "break down the chicken",
+      "into 8 pieces",
+      "remove the backbone"
+    ],
+    "ingredient_classes": [
+      "poultry"
+    ],
+    "equipment": [
+      "chefs_knife",
+      "kitchen_shears",
+      "cutting_board"
+    ],
+    "scope": "step",
+    "claim": "Breaking down a whole chicken yourself is cheaper than buying parts, gives evenly sized pieces that cook at the same rate, and leaves you the back for stock; the trick is cutting through joints, not bone.",
+    "action": "Find each joint by wiggling and pulling the limb from the body, then cut through where the knife glides; if the blade hits something hard, reposition. Reserve the back for stock and don't rinse the raw bird.",
+    "variants": [
+      {
+        "case": "find the joint",
+        "note": "The knife should glide through a joint; if it hits bone you're off the joint, so wiggle the limb and reposition."
+      },
+      {
+        "case": "yield",
+        "note": "Expect about 25% loss, so buy a 4-pound bird for ~3 pounds of parts; still cheaper than packaged parts."
+      },
+      {
+        "case": "food safety",
+        "note": "Don't rinse the raw chicken, which only spreads bacteria around the sink."
+      }
+    ],
+    "mechanism": "Joints are soft connective tissue a knife passes through easily; cutting there rather than through bone gives clean, even parts.",
+    "render_hint": "Reference how many pieces this recipe needs and whether the back/bones get used.",
+    "confidence": "high",
+    "source_note": "interpreted from general poultry-butchery technique, cross-checked against ATK 100 Techniques #30",
+    "exemplar_recipes": [
+      {
+        "title": "Tandoori Chicken with Raita",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13580-tandoori-chicken-with-raita"
+      },
+      {
+        "title": "Slow-Roasted Chicken Parts with Shallot-Garlic Pan Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8185-slow-roasted-chicken-parts-with-shallot-garlic-pan-sauce"
+      },
+      {
+        "title": "Coq au Riesling",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8255-coq-au-riesling"
+      },
+      {
+        "title": "Spice-Rubbed Roast Chicken Parts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7758-spice-rubbed-roast-chicken-parts"
+      }
     ]
   }
 ]
