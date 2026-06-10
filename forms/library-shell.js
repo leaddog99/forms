@@ -418,6 +418,7 @@
     // `action` items run JS instead of navigating (see initNav wiring).
     { page: 'run-jobs',  label: 'Run queued jobs', action: 'runQueuedJobs', group: 'admin' },
     { page: 'jobs',      label: 'Scheduled jobs', href: '/forms/jobs_admin.html', group: 'admin' },
+    { page: 'cook-kb',   label: 'Cooking tips KB', href: '/forms/cook_kb.html', group: 'admin' },
     { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
     { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', group: 'admin' },
   ];

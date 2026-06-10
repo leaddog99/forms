@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Cooking Tips KB</title>
+  <!-- a/c/d editor for the cook tips/checks KNOWLEDGE BASE (cook_tips_kb). The
+       curated, owned moat: entries authored in OUR words, kept as drafts +
+       PUBLISHED. Only published entries reach the augment pass (provenance by id).
+       Master/detail — built for hundreds of entries. See cook_kb.py. -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260608c">
+  <style>
+    :root{ --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
+      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b; --ok:#2f7a3a; }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+    .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 80px; }
+    h1{ font-size:1.5rem; margin:0 0 2px; } .sub{ color:var(--muted); margin:0 0 16px; font-size:.92rem; }
+    .toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    .toolbar input[type=search],.toolbar select{ padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; font:inherit; }
+    .grid{ display:grid; grid-template-columns:320px 1fr; gap:18px; align-items:start; }
+    @media (max-width:820px){ .grid{ grid-template-columns:1fr; } }
+    .list{ background:var(--card); border:1px solid var(--border); border-radius:12px; max-height:72vh; overflow:auto; }
+    .row{ padding:9px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .row:hover{ background:#faf6f1; } .row.sel{ background:#fbf0e6; }
+    .row .rtop{ display:flex; gap:6px; align-items:center; }
+    .row .rid{ font-family:ui-monospace,Consolas,monospace; font-size:.82rem; color:var(--muted); }
+    .row .rtitle{ font-size:.92rem; font-weight:600; margin-top:1px; }
+    .pill{ font-size:.66rem; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:999px; }
+    .pill.tip{ background:#e3f0e4; color:var(--ok); } .pill.check{ background:#fbe7df; color:var(--accent-dark); }
+    .pill.draft{ background:#f3eee7; color:var(--muted); } .pill.published{ background:#e3f0e4; color:var(--ok); }
+    .editor{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; }
+    .f{ margin-bottom:12px; } .f label{ display:block; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
+    .f input,.f select,.f textarea{ width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--ink); font:inherit; font-size:.94rem; }
+    .f textarea{ min-height:54px; resize:vertical; } .f .hint{ font-size:.74rem; color:var(--muted); margin-top:3px; }
+    .frow{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; } @media(max-width:560px){ .frow{ grid-template-columns:1fr; } }
+    .checkonly{ border-left:3px solid var(--accent); padding-left:10px; }
+    .actions{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center; }
+    button{ font:inherit; font-size:.9rem; padding:9px 15px; border-radius:8px; cursor:pointer; border:1px solid var(--border); background:#fff; color:var(--ink); }
+    button.pri{ background:var(--accent); color:#fff; border-color:var(--accent); } button.pri:hover{ background:var(--accent-dark); }
+    button.danger{ color:var(--warn); border-color:#e7c9c9; margin-left:auto; }
+    .flash{ font-size:.85rem; } .flash.ok{ color:var(--ok); } .flash.err{ color:var(--warn); }
+    .empty{ padding:30px; color:var(--muted); text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Cooking Tips & Checks — Knowledge Base</h1>
+    <p class="sub">The curated, owned moat. Author in <b>our words</b> (technique is fact; expression is ours), keep as <b>drafts</b>, and <b>publish</b> — only published entries reach the recipe augment pass, each attached by id (provenance). Tips improve the result; checks warn about a failure as it happens.</p>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Search id / title / tag…">
+      <select id="fStatus"><option value="">All status</option><option value="published">Published</option><option value="draft">Draft</option></select>
+      <select id="fKind"><option value="">All kinds</option><option value="tip">Tips</option><option value="check">Checks</option></select>
+      <span style="flex:1"></span>
+      <button class="pri" id="newBtn">+ New entry</button>
+      <button id="importBtn" title="Paste a JSON array of authored entries — imported as drafts">Import drafts…</button>
+      <span class="flash" id="flash"></span>
+    </div>
+
+    <div class="grid">
+      <div class="list" id="list"><div class="empty">Loading…</div></div>
+      <div class="editor" id="editor"><div class="empty">Select an entry, or click <b>+ New entry</b>.</div></div>
+    </div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260608d"></script>
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'cook-kb' });
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const flash = (m, cls) => { const f = $('#flash'); f.textContent = m; f.className = 'flash ' + (cls||''); if (m) setTimeout(()=>{ if(f.textContent===m) f.textContent=''; }, 4000); };
+
+    let ENTRIES = [], VOCAB = [], selected = null;
+
+    async function load() {
+      const r = await fetch('/cook-kb');
+      const d = await r.json();
+      ENTRIES = d.entries || []; VOCAB = d.vocab || [];
+      renderList();
+      if (selected && !ENTRIES.find(e => e.id === selected)) selected = null;
+      if (selected) renderEditor(ENTRIES.find(e => e.id === selected));
+    }
+
+    function filtered() {
+      const t = ($('#search').value || '').toLowerCase().trim();
+      const st = $('#fStatus').value, kd = $('#fKind').value;
+      return ENTRIES.filter(e =>
+        (!st || e.status === st) && (!kd || e.kind === kd) &&
+        (!t || e.id.toLowerCase().includes(t) || (e.title||'').toLowerCase().includes(t)
+            || (e.technique_tags||[]).join(' ').toLowerCase().includes(t)));
+    }
+
+    function renderList() {
+      const rows = filtered();
+      $('#list').innerHTML = rows.length ? rows.map(e => `
+        <div class="row ${e.id===selected?'sel':''}" data-id="${esc(e.id)}">
+          <div class="rtop"><span class="pill ${e.kind}">${e.kind}</span><span class="pill ${e.status}">${e.status}</span><span class="rid">${esc(e.id)}</span></div>
+          <div class="rtitle">${esc(e.title || '(untitled)')}</div>
+        </div>`).join('') : '<div class="empty">No entries match.</div>';
+      $('#list').querySelectorAll('.row').forEach(el =>
+        el.addEventListener('click', () => { selected = el.dataset.id; renderList(); renderEditor(ENTRIES.find(e => e.id === selected)); }));
+    }
+
+    function field(id, label, val, opts={}) {
+      const v = esc(val ?? '');
+      if (opts.select) return `<div class="f"><label>${label}</label><select id="e_${id}">${opts.select.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select></div>`;
+      if (opts.area) return `<div class="f ${opts.cls||''}"><label>${label}</label><textarea id="e_${id}" ${opts.rows?`rows="${opts.rows}"`:''}>${v}</textarea>${opts.hint?`<div class="hint">${opts.hint}</div>`:''}</div>`;
+      return `<div class="f"><label>${label}</label><input id="e_${id}" value="${v}">${opts.hint?`<div class="hint">${opts.hint}</div>`:''}</div>`;
+    }
+
+    function renderEditor(e, isNew=false) {
+      e = e || {};
+      const list = (a) => (a||[]).join(', ');
+      $('#editor').innerHTML = `
+        <div class="frow">
+          ${field('id','ID (immutable key)', e.id, {hint: isNew?'snake_case, e.g. sear_dont_crowd':'cannot change'})}
+          ${field('kind','Kind', e.kind||'tip', {select:['tip','check']})}
+          ${field('status','Status', e.status||'draft', {select:['draft','published']})}
+        </div>
+        ${field('title','Title', e.title)}
+        <div class="frow">
+          ${field('scope','Scope', e.scope||'step', {select:['step','recipe','either']})}
+          ${field('confidence','Confidence', e.confidence||'high', {select:['high','medium','low']})}
+          <div class="f"><label>&nbsp;</label><div style="font-size:.74rem;color:var(--muted);padding-top:9px">checks warn; tips improve</div></div>
+        </div>
+        ${field('technique_tags','Technique tags (comma-sep)', list(e.technique_tags), {hint:'vocab: '+VOCAB.slice(0,16).join(', ')+'…'})}
+        ${field('trigger_signals','Trigger signals (comma-sep)', list(e.trigger_signals), {hint:'phrases in a step that suggest this applies'})}
+        <div class="frow">
+          ${field('ingredient_classes','Ingredient classes (comma)', list(e.ingredient_classes))}
+          ${field('equipment','Equipment (comma)', list(e.equipment))}
+          <div></div>
+        </div>
+        ${field('claim','Claim (the fact, our words)', e.claim, {area:true, rows:2})}
+        ${field('action','Action (what to do)', e.action, {area:true, rows:2})}
+        <div id="checkFields" style="${(e.kind||'tip')==='check'?'':'display:none'}">
+          ${field('signal','Signal (how you SEE it going wrong)', e.signal, {area:true, rows:2, cls:'checkonly'})}
+          ${field('failure_mode','Failure mode (the bad outcome)', e.failure_mode, {area:true, rows:2, cls:'checkonly'})}
+        </div>
+        ${field('variants','Variants (JSON: [{"case","note"}])', JSON.stringify(e.variants||[], null, 0), {area:true, rows:2, hint:'e.g. dry blend vs spice paste; leave [] if none'})}
+        ${field('mechanism','Mechanism (grounding only — never rendered)', e.mechanism, {area:true, rows:2})}
+        ${field('render_hint','Render hint (how to contextualize)', e.render_hint, {area:true, rows:1})}
+        ${field('editor_note','Editor note (internal; never sent to LLM)', e.editor_note, {hint:'e.g. "interpreted from braising technique" — provenance trail, not a citation'})}
+        <div class="actions">
+          <button class="pri" id="saveBtn">Save</button>
+          <button id="pubBtn">${e.status==='published'?'Unpublish':'Publish'}</button>
+          ${isNew?'':'<button class="danger" id="delBtn">Delete</button>'}
+        </div>`;
+      const idEl = $('#e_id'); if (!isNew && idEl) idEl.disabled = true;
+      $('#e_kind').addEventListener('change', ev => { $('#checkFields').style.display = ev.target.value==='check'?'':'none'; });
+      $('#saveBtn').addEventListener('click', () => saveEntry(isNew));
+      $('#pubBtn').addEventListener('click', () => togglePublish(e));
+      if ($('#delBtn')) $('#delBtn').addEventListener('click', () => delEntry(e.id));
+    }
+
+    function collect() {
+      const v = id => ($('#e_'+id) ? $('#e_'+id).value.trim() : '');
+      const csv = id => v(id).split(',').map(s=>s.trim()).filter(Boolean);
+      let variants = [];
+      try { variants = JSON.parse(v('variants') || '[]'); if (!Array.isArray(variants)) variants = []; }
+      catch(_) { throw new Error('Variants must be valid JSON array'); }
+      return {
+        kind: v('kind'), title: v('title'), scope: v('scope'), confidence: v('confidence'),
+        status: v('status'),
+        technique_tags: csv('technique_tags'), trigger_signals: csv('trigger_signals'),
+        ingredient_classes: csv('ingredient_classes'), equipment: csv('equipment'),
+        claim: v('claim'), action: v('action'),
+        signal: v('kind')==='check' ? v('signal') : null,
+        failure_mode: v('kind')==='check' ? v('failure_mode') : null,
+        variants, mechanism: v('mechanism'), render_hint: v('render_hint'), editor_note: v('editor_note'),
+      };
+    }
+
+    async function saveEntry(isNew) {
+      const id = ($('#e_id').value || '').trim();
+      if (!id) { flash('ID is required', 'err'); return; }
+      let body; try { body = collect(); } catch(e){ flash(e.message, 'err'); return; }
+      try {
+        const r = await fetch(`/cook-kb/${encodeURIComponent(id)}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        if (!r.ok){ const e = await r.json().catch(()=>({})); throw new Error(e.detail || r.status); }
+        selected = id; flash('Saved ✓', 'ok'); await load();
+      } catch(e){ flash('Error: ' + e.message, 'err'); }
+    }
+
+    async function togglePublish(e) {
+      const next = e.status === 'published' ? 'draft' : 'published';
+      try {
+        const r = await fetch(`/cook-kb/${encodeURIComponent(e.id)}/status`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({status: next}) });
+        if (!r.ok){ const x = await r.json().catch(()=>({})); throw new Error(x.detail || r.status); }
+        flash(next==='published'?'Published ✓':'Unpublished', 'ok'); await load();
+      } catch(x){ flash('Error: ' + x.message, 'err'); }
+    }
+
+    async function delEntry(id) {
+      if (!confirm(`Delete KB entry "${id}"?`)) return;
+      try {
+        const r = await fetch(`/cook-kb/${encodeURIComponent(id)}`, { method:'DELETE' });
+        if (!r.ok){ const e = await r.json().catch(()=>({})); throw new Error(e.detail || r.status); }
+        selected = null; $('#editor').innerHTML = '<div class="empty">Deleted.</div>'; await load();
+      } catch(e){ flash('Error: ' + e.message, 'err'); }
+    }
+
+    $('#newBtn').addEventListener('click', () => { selected = null; renderList(); renderEditor({kind:'tip',scope:'step',confidence:'high',status:'draft',variants:[]}, true); });
+    $('#importBtn').addEventListener('click', async () => {
+      const raw = prompt('Paste a JSON array of authored entries (imported as drafts):');
+      if (!raw) return;
+      let entries; try { entries = JSON.parse(raw); } catch(e){ flash('Invalid JSON', 'err'); return; }
+      try {
+        const r = await fetch('/cook-kb/import', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({entries}) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || r.status);
+        flash(`Imported ${d.imported}, skipped ${d.skipped}`, 'ok'); await load();
+      } catch(e){ flash('Import error: ' + e.message, 'err'); }
+    });
+    ['search','fStatus','fKind'].forEach(id => $('#'+id).addEventListener('input', renderList));
+    load();
+  </script>
+</body>
+</html>

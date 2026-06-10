@@ -835,6 +835,8 @@ def init_db():
             ensure_system_config_table(conn)
             from input.pipeline.scheduled_jobs import ensure_scheduled_jobs_table
             ensure_scheduled_jobs_table(conn)
+            from input.pipeline.cook_kb import ensure_cook_kb_table
+            ensure_cook_kb_table(conn)
             # Generic admin-managed tables (status_messages, etc.) — each
             # registered AdminModel's table is created + seeded here.
             from admin_models import ensure_admin_tables
@@ -2764,6 +2766,99 @@ def run_scheduled_job_now_endpoint(name: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
     return {"name": name, "job_id": job_id, "spawned": True,
             "stream_url": f"/jobs/{job_id}/stream"}
+
+
+# =========================================================================
+# Cook tips/checks KNOWLEDGE BASE — the curated, owned moat. Entries authored in
+# OUR words, curated as drafts + published; the augment pass (3c-b) may only
+# SELECT from PUBLISHED entries (provenance by id). See cook_kb.py.
+# =========================================================================
+
+@app.get("/cook-kb")
+def list_cook_kb_endpoint(status: Optional[str] = None):
+    """All KB entries (or filter by status=draft|published), + the controlled
+    technique vocab for the editor's tag picker."""
+    from input.pipeline import cook_kb
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cook_kb.ensure_cook_kb_table(conn)
+            return {"entries": cook_kb.list_kb(conn, status=status),
+                    "vocab": cook_kb.TECHNIQUE_VOCAB,
+                    "kinds": list(cook_kb.KINDS), "scopes": list(cook_kb.SCOPES),
+                    "confidences": list(cook_kb.CONFIDENCES)}
+    except Exception as e:
+        print(f"[ERROR] list_cook_kb failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/cook-kb/import")
+def import_cook_kb_endpoint(payload: dict = Body(...)):
+    """Bulk-import authored entries (e.g. the 100 ATK-topic drafts) as DRAFTS for
+    review. Body: {entries: [...]} or a bare list. Never auto-publishes. Defined
+    BEFORE /cook-kb/{kb_id} so the literal 'import' path isn't captured as an id."""
+    from input.pipeline import cook_kb
+    entries = payload.get("entries") if isinstance(payload, dict) else payload
+    if not isinstance(entries, list):
+        raise HTTPException(status_code=400, detail="Body must be {entries:[...]} or a JSON list")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cook_kb.ensure_cook_kb_table(conn)
+            return cook_kb.import_drafts(conn, entries)
+    except Exception as e:
+        print(f"[ERROR] import_cook_kb failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Import error: {e}")
+
+
+@app.post("/cook-kb/{kb_id}")
+def upsert_cook_kb_endpoint(kb_id: str, payload: dict = Body(...)):
+    """Create or update a KB entry (curate). New entries default to draft."""
+    from input.pipeline import cook_kb
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cook_kb.ensure_cook_kb_table(conn)
+            return cook_kb.upsert_kb(conn, kb_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] upsert_cook_kb failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+@app.post("/cook-kb/{kb_id}/status")
+def set_cook_kb_status_endpoint(kb_id: str, payload: dict = Body(...)):
+    """Publish or unpublish an entry (status=published|draft). Publishing is the
+    gate — only published entries reach the augment pass."""
+    from input.pipeline import cook_kb
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cook_kb.ensure_cook_kb_table(conn)
+            updated = cook_kb.set_status(conn, kb_id, payload.get("status", ""))
+            if not updated:
+                raise HTTPException(status_code=404, detail="Entry not found")
+            return updated
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] set_cook_kb_status failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+@app.delete("/cook-kb/{kb_id}")
+def delete_cook_kb_endpoint(kb_id: str):
+    from input.pipeline import cook_kb
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cook_kb.ensure_cook_kb_table(conn)
+            if not cook_kb.delete_kb(conn, kb_id):
+                raise HTTPException(status_code=404, detail="Entry not found")
+        return {"ok": True, "deleted": kb_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] delete_cook_kb failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
 
 
 # =========================================================================
