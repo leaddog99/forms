@@ -2792,18 +2792,21 @@ def list_cook_kb_endpoint(status: Optional[str] = None):
 
 
 @app.post("/cook-kb/import")
-def import_cook_kb_endpoint(payload: dict = Body(...)):
+def import_cook_kb_endpoint(payload: dict = Body(...), overwrite: bool = False):
     """Bulk-import authored entries (e.g. the 100 ATK-topic drafts) as DRAFTS for
-    review. Body: {entries: [...]} or a bare list. Never auto-publishes. Defined
+    review. Body: {entries: [...]} (+ optional "overwrite": true). Never
+    auto-publishes. Default SKIPS existing ids; ?overwrite=true UPDATES them in
+    place (keeping their status) — use to backfill a corrected file. Defined
     BEFORE /cook-kb/{kb_id} so the literal 'import' path isn't captured as an id."""
     from input.pipeline import cook_kb
     entries = payload.get("entries") if isinstance(payload, dict) else payload
+    ow = overwrite or (isinstance(payload, dict) and bool(payload.get("overwrite")))
     if not isinstance(entries, list):
         raise HTTPException(status_code=400, detail="Body must be {entries:[...]} or a JSON list")
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cook_kb.ensure_cook_kb_table(conn)
-            return cook_kb.import_drafts(conn, entries)
+            return cook_kb.import_drafts(conn, entries, overwrite=ow)
     except Exception as e:
         print(f"[ERROR] import_cook_kb failed: {e}")
         raise HTTPException(status_code=500, detail=f"Import error: {e}")

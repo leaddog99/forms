@@ -139,6 +139,7 @@
           ${field('failure_mode','Failure mode (the bad outcome)', e.failure_mode, {area:true, rows:2, cls:'checkonly'})}
         </div>
         ${field('variants','Variants (JSON: [{"case","note"}])', JSON.stringify(e.variants||[], null, 0), {area:true, rows:2, hint:'e.g. dry blend vs spice paste; leave [] if none'})}
+        ${field('exemplar_recipes','Exemplar recipes (JSON — internal QA, never shown/sent)', JSON.stringify(e.exemplar_recipes||[], null, 0), {area:true, rows:2, hint:'[{title, source, url, note?}] — source: ATK | BCC | other'})}
         ${field('mechanism','Mechanism (grounding only — never rendered)', e.mechanism, {area:true, rows:2})}
         ${field('render_hint','Render hint (how to contextualize)', e.render_hint, {area:true, rows:1})}
         ${field('editor_note','Editor note (internal; never sent to LLM)', e.editor_note, {hint:'e.g. "interpreted from braising technique" — provenance trail, not a citation'})}
@@ -160,7 +161,11 @@
       let variants = [];
       try { variants = JSON.parse(v('variants') || '[]'); if (!Array.isArray(variants)) variants = []; }
       catch(_) { throw new Error('Variants must be valid JSON array'); }
+      let exemplar_recipes = [];
+      try { exemplar_recipes = JSON.parse(v('exemplar_recipes') || '[]'); if (!Array.isArray(exemplar_recipes)) exemplar_recipes = []; }
+      catch(_) { throw new Error('Exemplar recipes must be valid JSON array'); }
       return {
+        exemplar_recipes,
         kind: v('kind'), title: v('title'), scope: v('scope'), confidence: v('confidence'),
         status: v('status'),
         technique_tags: csv('technique_tags'), trigger_signals: csv('trigger_signals'),

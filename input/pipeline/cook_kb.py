@@ -45,10 +45,10 @@ STATUSES = ("draft", "published")
 
 # JSON-encoded list/array columns.
 _LIST_COLS = ("technique_tags", "trigger_signals", "ingredient_classes",
-              "equipment", "variants")
+              "equipment", "variants", "exemplar_recipes")
 _ALL_COLS = ("id, kind, title, technique_tags, trigger_signals, ingredient_classes, "
              "equipment, scope, claim, action, signal, failure_mode, variants, "
-             "mechanism, render_hint, confidence, editor_note, status, "
+             "exemplar_recipes, mechanism, render_hint, confidence, editor_note, status, "
              "created_at, updated_at")
 
 
@@ -159,6 +159,7 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
             signal             TEXT,                            -- check-only
             failure_mode       TEXT,                            -- check-only
             variants           TEXT,                            -- JSON [{case, note}]
+            exemplar_recipes   TEXT,                            -- JSON array: recipes that demonstrate this (shape may evolve)
             mechanism          TEXT,                            -- grounding only, not rendered
             render_hint        TEXT,
             confidence         TEXT NOT NULL DEFAULT 'high',     -- high | medium | low
@@ -170,6 +171,10 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cook_kb_status ON cook_tips_kb(status)")
+    # Migration for tables created before exemplar_recipes existed.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(cook_tips_kb)")}
+    if "exemplar_recipes" not in cols:
+        conn.execute("ALTER TABLE cook_tips_kb ADD COLUMN exemplar_recipes TEXT")
     now = datetime.now(timezone.utc).isoformat()
     existing = {r[0] for r in conn.execute("SELECT id FROM cook_tips_kb")}
     for e in SEED_ENTRIES:
@@ -193,6 +198,7 @@ def _insert(conn: sqlite3.Connection, e: dict, now: str) -> None:
             e.get("scope", "step"), e.get("claim"), e.get("action"),
             e.get("signal"), e.get("failure_mode"),
             json.dumps(e.get("variants") or []),
+            json.dumps(e.get("exemplar_recipes") or []),
             e.get("mechanism"), e.get("render_hint"),
             e.get("confidence", "high"), e.get("editor_note"),
             e.get("status", "draft"), now, now,
@@ -266,26 +272,34 @@ def set_status(conn: sqlite3.Connection, kb_id: str, status: str) -> Optional[di
     return get_kb(conn, kb_id)
 
 
-def import_drafts(conn: sqlite3.Connection, entries: list[dict]) -> dict:
-    """Bulk-import authored entries as DRAFTS (never auto-publish a batch — the KB
-    is the moat; entries get reviewed in the editor before publish). Existing ids
-    are skipped (idempotent). Returns {imported, skipped}."""
+def import_drafts(conn: sqlite3.Connection, entries: list[dict],
+                  overwrite: bool = False) -> dict:
+    """Bulk-import authored entries as DRAFTS (the KB is the moat; entries get
+    reviewed before publish). Default is IDEMPOTENT: an existing id is SKIPPED.
+    With overwrite=True an existing id is UPDATED in place (content replaced) while
+    its existing STATUS is PRESERVED — so a published entry isn't silently
+    un-reviewed; use to backfill a corrected source file (e.g. add exemplars).
+    Accepts desktop's `source_note` (mapped to editor_note). Returns
+    {imported, updated, skipped}."""
     now = datetime.now(timezone.utc).isoformat()
     existing = {r[0] for r in conn.execute("SELECT id FROM cook_tips_kb")}
-    imported = skipped = 0
+    imported = updated = skipped = 0
     for e in entries:
         if not e.get("id"):
             skipped += 1; continue
+        e = {**e, "editor_note": e.get("editor_note") or e.get("source_note")}
         if e["id"] in existing:
-            skipped += 1; continue
-        # Accept desktop-Claude's JSON unedited: it used `source_note` (we renamed
-        # to editor_note); map it so existing batches import without hand-editing.
-        e = {**e, "editor_note": e.get("editor_note") or e.get("source_note"),
-             "status": "draft"}
-        _insert(conn, e, now)
+            if overwrite:
+                fields = {k: v for k, v in e.items() if k not in ("id", "status", "source_note")}
+                upsert_kb(conn, e["id"], fields)   # content updated, status kept
+                updated += 1
+            else:
+                skipped += 1
+            continue
+        _insert(conn, {**e, "status": "draft"}, now)
         existing.add(e["id"]); imported += 1
     conn.commit()
-    return {"imported": imported, "skipped": skipped}
+    return {"imported": imported, "updated": updated, "skipped": skipped}
 
 
 def project_published(conn: sqlite3.Connection) -> list[dict]:
