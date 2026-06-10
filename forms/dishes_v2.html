@@ -284,6 +284,14 @@
         </section>
 
         <section class="ed-block">
+          <details class="ed-accordion" id="rejectsAcc">
+            <summary>Rejects <span class="ed-pill" id="rejCount" style="margin-left:6px"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">URLs that ranked but were dropped (extract/save, or an anti-bot <b>fetch-fail</b>). <b>“would’ve qualified”</b> = its OU beats the cut bar, so it's worth recovering manually — open the link, run the bookmarklet, save normally.</p>
+            <ol class="ed-t10" id="rejectlist"><li class="ed-empty-fit">Loading…</li></ol>
+          </details>
+        </section>
+
+        <section class="ed-block">
           <details class="ed-accordion">
             <summary>Metadata</summary>
             <div class="ed-kv" style="margin-top:12px">
@@ -312,6 +320,42 @@
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       loadTopRecipes(d.name);
       loadCohort(d.name);
+      loadRejects(d.name);
+    }
+
+    // Rejects from the last run — URLs that ranked but were dropped (extract/
+    // save, or an anti-bot fetch-fail authority-scored in Phase A). "would've
+    // qualified" = OU beats the cut bar (bottom_ou) → worth a manual recovery.
+    async function loadRejects(name){
+      const wrap = $('#rejectlist'); if(!wrap) return;
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/rejects`);
+        if(!r.ok){ wrap.innerHTML = `<li class="ed-empty-fit">Failed (${r.status})</li>`; return; }
+        const data = await r.json();
+        const bar = data.bottom_ou;
+        const rejects = data.rejects || [];
+        const cnt = $('#rejCount'); if(cnt) cnt.textContent = rejects.length || '';
+        if(!rejects.length){ wrap.innerHTML = '<li class="ed-empty-fit">No rejects on the last run.</li>'; return; }
+        const ouOf = (x) => (typeof x.ou === 'number' ? x.ou : -999);
+        const qual = (x) => (bar != null && typeof x.ou === 'number' && x.ou >= bar);
+        rejects.sort((a,b) => (qual(b)-qual(a)) || (ouOf(b)-ouOf(a)));
+        wrap.innerHTML = rejects.map(x => {
+          const q = qual(x);
+          const antibot = /anti-bot|fetch-fail/i.test(x.reason || '');
+          let host = x.url; try { host = new URL(x.url).hostname.replace(/^www\./,''); } catch(_){}
+          return `<li class="ed-t10-row" style="${q?'background:#fbf3e9;':''}">
+            <span class="ed-t10-main">
+              <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(host)}</a>${q?' <span class="ed-t10-grade" title="OU beats the cut bar">would’ve qualified</span>':''}${antibot?' <span class="ed-t10-grade" title="likely anti-bot block">anti-bot?</span>':''}</span>
+              <span class="ed-t10-sub">${escapeHtml(x.reason || '')}</span>
+            </span>
+            <span class="ed-t10-stats">
+              <span class="ed-t10-stat score"><span class="v">${typeof x.ou==='number'?x.ou.toFixed(1):'—'}</span><span class="l">ou</span></span>
+              <span class="ed-t10-stat pct"><span class="v">${x.da ?? '—'}</span><span class="l">da</span></span>
+              <span class="ed-t10-stat pct"><span class="v">${x.pa ?? '—'}</span><span class="l">pa</span></span>
+            </span>
+          </li>`;
+        }).join('');
+      } catch(e){ wrap.innerHTML = `<li class="ed-empty-fit">${escapeHtml(String(e.message||e))}</li>`; }
     }
 
     // Shared row for both the winners list and the cohort list. rank_score
