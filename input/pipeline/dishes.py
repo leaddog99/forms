@@ -133,6 +133,13 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # 2-dish chapter); stored for every dish, even singletons.
     if "field_clout" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN field_clout REAL")
+    # Cosmetic display name, decoupled from the immutable `name` join key. `name`
+    # stays the key every linkage uses (_master.dish, dish_rejects.dish_name,
+    # dish_run_data_points.dish_name) — display_name is purely what's SHOWN, free
+    # to edit (e.g. capitalize "dal makhani" -> "Dal Makhani") with zero ripple.
+    # Falls back to `name` when blank.
+    if "display_name" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN display_name TEXT")
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -378,7 +385,7 @@ def row_to_dict(row: tuple) -> dict:
      created_at, updated_at, last_run_log_filename, auto_enrich,
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
-     identity_card_json, competitiveness_pct, field_clout) = row
+     identity_card_json, competitiveness_pct, field_clout, display_name) = row
     try:
         queries = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -423,6 +430,10 @@ def row_to_dict(row: tuple) -> dict:
         "identity_card": identity_card,
         "competitiveness_pct": competitiveness_pct,
         "field_clout": field_clout,
+        # Cosmetic label; `name` is the key. Resolved here so every reader gets a
+        # ready-to-show value without repeating the fallback.
+        "display_name": (display_name or "").strip() or name,
+        "display_name_set": bool((display_name or "").strip()),
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -433,7 +444,7 @@ _SELECT_ALL_COLS = (
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
-    "competitiveness_pct, field_clout"
+    "competitiveness_pct, field_clout, display_name"
 )
 
 
@@ -603,7 +614,7 @@ def create_dish(conn: sqlite3.Connection, *,
 _PATCHABLE = {
     "queries", "top_n_serpapi", "top_n_final",
     "refresh_ttl_days", "notes", "auto_enrich",
-    "description",
+    "description", "display_name",
 }
 
 
@@ -691,6 +702,21 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
                 params.append(stripped)
             else:
                 sets.append("description = NULL")
+
+    if "display_name" in patch:
+        dn = patch["display_name"]
+        if dn is None:
+            sets.append("display_name = NULL")
+        else:
+            if not isinstance(dn, str):
+                raise ValueError("display_name must be a string or null")
+            stripped = dn.strip()
+            # Blank or identical to the key -> store NULL so it falls back to name.
+            if stripped and stripped != name:
+                sets.append("display_name = ?")
+                params.append(stripped)
+            else:
+                sets.append("display_name = NULL")
 
     extras = set(patch.keys()) - _PATCHABLE
     if extras:

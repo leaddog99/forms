@@ -102,7 +102,7 @@
 
     function sortedDishes(){
       const t = term.toLowerCase();
-      const rows = Object.values(dishes).filter(d => !t || d.name.toLowerCase().includes(t) || (d.chapter || '').toLowerCase().includes(t));
+      const rows = Object.values(dishes).filter(d => !t || d.name.toLowerCase().includes(t) || (d.display_name || '').toLowerCase().includes(t) || (d.chapter || '').toLowerCase().includes(t));
       const sorters = {
         attention: (a, b) => (needsAttention(b) - needsAttention(a)) || a.name.localeCompare(b.name),
         name:    (a, b) => a.name.localeCompare(b.name),
@@ -127,7 +127,7 @@
         const li = document.createElement('li');
         li.className = 'ed-item' + (d.name === selected ? ' selected' : '');
         li.innerHTML =
-          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.name)}</span><span class="ed-item-flag ${flag(d)}"></span></div>` +
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.display_name || d.name)}</span><span class="ed-item-flag ${flag(d)}"></span></div>` +
           `<div class="ed-item-meta">${listMeta(d)}</div>`;
         li.addEventListener('click', () => { selected = d.name; renderList(); renderMain(); nav.afterSelect(); });
         ul.appendChild(li);
@@ -221,7 +221,8 @@
           </div>
         </div>
 
-        <h1 class="ed-title">${escapeHtml(d.name)}</h1>
+        <h1 class="ed-title">${escapeHtml(d.display_name || d.name)}</h1>
+        ${d.display_name_set ? `<p class="ed-submeta" style="margin:-2px 0 0">join key: <code>${escapeHtml(d.name)}</code> · immutable</p>` : ''}
         <div class="ed-status-strip">
           <span class="ed-pill ${statusCls}"><i class="d"></i>${neverRun(d) ? 'never run' : escapeHtml(d.last_run_status || 'unknown')}</span>
           <span class="ed-pill ${d.is_due ? 'warn' : ''}"><i class="d"></i>${nextRunLabel}</span>
@@ -229,6 +230,11 @@
           ${d.chapter ? `<span class="ed-pill"><i class="d"></i>${escapeHtml(d.chapter)}</span>` : ''}
         </div>
         <p class="ed-submeta">${d.last_run_count ?? 0} kept · last run ${fmtDate(d.last_refreshed)}${d.last_run_bottom_ou != null ? ' · bottom OU ' + num(d.last_run_bottom_ou,2) : ''}</p>
+
+        <div class="ed-field full" style="margin:8px 0 18px">
+          <label for="f_display">Display name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(cosmetic — what's shown everywhere; the join key “${escapeHtml(d.name)}” never changes). Blank = use the key.</span></label>
+          <input id="f_display" type="text" value="${escapeHtml(d.display_name_set ? d.display_name : '')}" placeholder="${escapeHtml(d.name)}">
+        </div>
 
         <section class="ed-block">
           <h3 class="ed-block-label">Search config</h3>
@@ -461,6 +467,7 @@
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#f_notes').value.trim(),
         auto_enrich: $('#f_enrich').checked,
+        display_name: ($('#f_display') ? $('#f_display').value.trim() : '') || null,
       };
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
       try {
