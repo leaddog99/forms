@@ -237,13 +237,12 @@
             <div id="qInfoPop" hidden style="margin:4px 0 10px;padding:12px 14px;border:1px solid var(--ed-line,#e2d6c3);border-radius:10px;background:#fffaf1;font-size:.86rem;line-height:1.5">
               <strong>Google search syntax</strong>
               <ul style="margin:6px 0 8px;padding-left:18px">
-                <li><code>"exact phrase"</code> — match it exactly</li>
-                <li><code>site:gr</code> — only that country's sites (e.g. Greek)</li>
-                <li><code>-site:domain.com</code> — exclude a site</li>
+                <li><code>"exact phrase"</code> — exact match (straight quotes only; smart/curly are auto-fixed)</li>
                 <li><code>-word</code> — exclude pages with that word <span style="color:var(--ed-warn,#b23b3b)">(drops <em>every</em> page containing it — careful)</span></li>
-                <li><code>cake OR pie</code> · <code>(a OR b) recipe</code> — either / grouped</li>
+                <li><code>-site:domain.com</code> — exclude a site · <code>site:gr</code> — only that country's sites</li>
+                <li><strong>Alternate phrasings → put each on its OWN line.</strong> Each runs as a separate search; results are merged. More reliable than <code>OR</code>.</li>
               </ul>
-              <span style="color:var(--muted,#6b5b4f)">Your blocklist exclusions are auto-appended every run (System → Search).</span><br>
+              <span style="color:var(--muted,#6b5b4f)">Only <code>"…"</code> and <code>-</code> are officially documented by Google. <code>OR</code> / <code>|</code> / parentheses pass through but are undocumented — precedence isn't guaranteed, so prefer separate lines. Blocklist exclusions are auto-appended each run (System → Search).</span><br>
               <a href="https://support.google.com/websearch/answer/2466433" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;color:var(--ed-accent,#9c5b34)">Full Google search operators reference ↗</a>
             </div>
             <textarea id="f_queries" class="ed-notes" style="min-height:90px" placeholder='"banana bread" | "banana nut bread"'>${escapeHtml(queriesText)}</textarea>
