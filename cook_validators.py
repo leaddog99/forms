@@ -198,13 +198,27 @@ def v_appearance_order(cook: CookMetadata) -> List[str]:
     return out
 
 
+_LAYERED_STAPLE = re.compile(r"\b(salt|pepper|oil|water|butter)\b", re.IGNORECASE)
+
+
 def v_reuse_referenced(cook: CookMetadata) -> List[str]:
-    """A tool/ingredient used again in a later step references its origin step."""
+    """A tool/ingredient used again in a later step references its origin step.
+    EXCEPT staples/seasonings added in LAYERS — salt, pepper, oil, water, or any
+    `to_taste` item — where each addition is a fresh small amount with no single
+    origin portion to point back to (you season in stages, not 'reuse the salt').
+    Distinctive single-portion reuse (a held pan, reserved water) is a put-aside
+    and carries reused_from_step legitimately; tools always point back."""
     out = []
+    layered = set()
+    for i in cook.ingredients:
+        if i.to_taste or _LAYERED_STAPLE.search(i.id) or _LAYERED_STAPLE.search(i.name or ""):
+            layered.add(i.id)
     first_ing: dict = {}
     first_eq: dict = {}
     for s in sorted(cook.steps, key=lambda x: x.number):
         for si in s.ingredients:
+            if si.ingredient_id in layered:
+                continue
             if si.ingredient_id in first_ing:
                 if si.reused_from_step is None:
                     out.append(f"step {s.number} '{si.label}': re-used (first at step "
