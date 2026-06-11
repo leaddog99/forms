@@ -416,8 +416,8 @@
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
     { page: 'users',     label: 'Users',     href: '/forms/users.html', group: 'admin' },
     // `action` items run JS instead of navigating (see initNav wiring).
-    { page: 'run-jobs',  label: 'Run queued jobs', action: 'runQueuedJobs', group: 'admin' },
-    { page: 'jobs',      label: 'Scheduled jobs', href: '/forms/jobs_admin.html', group: 'admin' },
+    { page: 'run-jobs',  label: 'Jobs-Queued', action: 'runQueuedJobs', group: 'admin' },
+    { page: 'jobs',      label: 'Job-Scheduled', href: '/forms/jobs_admin.html', group: 'admin' },
     { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', group: 'admin' },
     { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', group: 'admin' },
     { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
