@@ -882,6 +882,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Dev shield: keep the whole app OUT of search indexes while it's a development
+# surface reachable via the Cloudflare tunnel (recipes.tbotb.com). robots.txt
+# governs CRAWLING; this X-Robots-Tag governs INDEXING — so a crawler that is
+# allowed to fetch (Cloudflare's managed robots.txt currently Allows search)
+# still won't index the page. This header is the reliable in-app shield; the
+# /robots.txt route below is belt-and-suspenders. SCOPE/REMOVE per path when
+# real public pages ship (SEO recipe pages); for hard shielding use Cloudflare
+# Access (auth) in front of the tunnel.
+@app.middleware("http")
+async def _noindex_header(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
+@app.get("/robots.txt")
+def robots_txt():
+    # Dev: disallow all crawling. (Cloudflare may shadow this at the edge with
+    # its managed file; the X-Robots-Tag middleware above is what reliably keeps
+    # us out of the index.)
+    return Response("User-agent: *\nDisallow: /\n", media_type="text/plain")
+
+
 print("[FILE] Setting up static files...")
 
 # Serve the web frontend (HTML / JS / CSS / bookmarklet) from the
