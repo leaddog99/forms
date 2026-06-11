@@ -4053,6 +4053,11 @@
         if (r0.nutrition) payload.nutrition = r0.nutrition;
         if (r0.aggregateRating) payload.aggregateRating = r0.aggregateRating;
         if (r0.video) payload.video = r0.video;
+        // The step-anchored rework. The form has no UI to EDIT it (it's a
+        // read-only panel), so without this passthrough a plain Save would drop
+        // the whole _cook block — losing the entire enhancement pass. The rework
+        // flow stashes it onto lastExtractedRecipe (see the cook-rework poll).
+        if (r0._cook) payload._cook = r0._cook;
         if (r0.current_status) payload.current_status = r0.current_status;
         // _extract_trace round-trips so the timings/prompt panel survives a
         // sidebar reload. lastExtractionTrace wins over r0._extract_trace
