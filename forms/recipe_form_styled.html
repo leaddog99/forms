@@ -3765,19 +3765,22 @@
         if (!block || !link || !img) return;
         const v = r.video;
         const url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
-        if (!url) { block.style.display = 'none'; img.removeAttribute('src'); return; }
         const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
+        // Suppress the box unless a thumbnail actually LOADS. A broken/missing
+        // thumbnail (the "broken image" icon the user was seeing) is our best
+        // client-side signal that the source is unplayable (dead URL). Stay
+        // hidden until onload fires so there's no flash of a broken box. (A
+        // paywalled video with a valid thumbnail can't be detected client-side.)
+        img.onload = img.onerror = null;
+        block.style.display = 'none';
+        img.removeAttribute('src'); img.style.display = 'none';
+        if (!url || !thumb) return;          // no link, or no preview image -> stay hidden
         link.href = url;
-        if (thumb) {
-          img.src = thumb;
-          img.alt = (v && v.name) || r.name || 'Source video';
-          img.style.display = 'block';
-        } else {
-          img.removeAttribute('src');
-          img.style.display = 'none';
-        }
+        img.alt = (v && v.name) || r.name || 'Source video';
         if (cap) cap.textContent = (v && typeof v === 'object' && v.name) ? v.name : '';
-        block.style.display = '';
+        img.onload = () => { img.style.display = 'block'; block.style.display = ''; };
+        img.onerror = () => { block.style.display = 'none'; img.removeAttribute('src'); };
+        img.src = thumb;                     // load -> onload shows the box; onerror keeps it hidden
       })();
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
@@ -5945,19 +5948,22 @@
         if (!block || !link || !img) return;
         const v = r.video;
         const url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
-        if (!url) { block.style.display = 'none'; img.removeAttribute('src'); return; }
         const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
+        // Suppress the box unless a thumbnail actually LOADS. A broken/missing
+        // thumbnail (the "broken image" icon the user was seeing) is our best
+        // client-side signal that the source is unplayable (dead URL). Stay
+        // hidden until onload fires so there's no flash of a broken box. (A
+        // paywalled video with a valid thumbnail can't be detected client-side.)
+        img.onload = img.onerror = null;
+        block.style.display = 'none';
+        img.removeAttribute('src'); img.style.display = 'none';
+        if (!url || !thumb) return;          // no link, or no preview image -> stay hidden
         link.href = url;
-        if (thumb) {
-          img.src = thumb;
-          img.alt = (v && v.name) || r.name || 'Source video';
-          img.style.display = 'block';
-        } else {
-          img.removeAttribute('src');
-          img.style.display = 'none';
-        }
+        img.alt = (v && v.name) || r.name || 'Source video';
         if (cap) cap.textContent = (v && typeof v === 'object' && v.name) ? v.name : '';
-        block.style.display = '';
+        img.onload = () => { img.style.display = 'block'; block.style.display = ''; };
+        img.onerror = () => { block.style.display = 'none'; img.removeAttribute('src'); };
+        img.src = thumb;                     // load -> onload shows the box; onerror keeps it hidden
       })();
 
       // Invalidate technical metadata (root domain etc. from /url-metadata)
