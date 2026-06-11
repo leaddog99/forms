@@ -62,7 +62,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/4656-pan-seared-thick-cut-pork-chops"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "bloom_spices_in_fat",
@@ -129,7 +130,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/8020-thai-style-chicken-and-sweet-potato-curry"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "finish_with_a_drizzle_or_sprinkle",
@@ -192,7 +194,8 @@
         "url": "https://www.americastestkitchen.com/recipes/9756-sichuan-chili-oil",
         "note": "infused finishing oil"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "vinaigrette_slow_emulsion",
@@ -255,7 +258,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11422-bibb-and-frisee-salad-with-grapes-and-celery"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "marinate_dont_over_acidify",
@@ -287,7 +291,8 @@
     "mechanism": "Acid denatures surface proteins over time the way heat does; salt diffuses inward to season, but acid mostly degrades texture at the surface.",
     "render_hint": "Match the time guidance to the specific protein in this recipe.",
     "confidence": "high",
-    "source_note": "interpreted from general marinating technique"
+    "source_note": "interpreted from general marinating technique",
+    "status": "published"
   },
   {
     "id": "quick_pickle_hot_brine",
@@ -316,7 +321,8 @@
     "mechanism": "Heat speeds the brine's diffusion into the vegetable while a quick cool keeps the texture crisp rather than cooked.",
     "render_hint": "Reference the actual vegetables and the brine ratio in this recipe.",
     "confidence": "high",
-    "source_note": "interpreted from general quick-pickling technique"
+    "source_note": "interpreted from general quick-pickling technique",
+    "status": "published"
   },
   {
     "id": "salt_vegetables_to_purge_water",
@@ -350,7 +356,8 @@
     "mechanism": "Salt draws water out of vegetable cells by osmosis, so the water leaves before it can dilute the dish.",
     "render_hint": "Name the specific watery vegetable in this recipe.",
     "confidence": "high",
-    "source_note": "interpreted from general vegetable-salting technique"
+    "source_note": "interpreted from general vegetable-salting technique",
+    "status": "published"
   },
   {
     "id": "saute_veg_splash_of_water",
@@ -378,7 +385,8 @@
     "mechanism": "Water holds the pan at boiling temperature to cook the interior, then evaporates so the surface can climb hot enough to brown.",
     "render_hint": "Tie to the firm vegetable being cooked in this recipe.",
     "confidence": "medium",
-    "source_note": "interpreted from general sauteed-vegetable technique, aligned with ATK 100 Techniques #8"
+    "source_note": "interpreted from general sauteed-vegetable technique, aligned with ATK 100 Techniques #8",
+    "status": "published"
   },
   {
     "id": "steam_then_roast_vegetables",
@@ -409,7 +417,8 @@
     "mechanism": "Trapped steam conducts heat into the dense interior; removing the cover lets the surface dry and caramelize.",
     "render_hint": "Name the dense vegetable from this recipe.",
     "confidence": "medium",
-    "source_note": "interpreted from general steam-roasting technique, aligned with ATK 100 Techniques #9"
+    "source_note": "interpreted from general steam-roasting technique, aligned with ATK 100 Techniques #9",
+    "status": "published"
   },
   {
     "id": "reserve_pasta_water",
@@ -442,7 +451,8 @@
     "mechanism": "Dissolved starch acts as an emulsifier, binding fat and water into a sauce that coats the noodles.",
     "render_hint": "Reference the specific pasta shape and sauce in this recipe.",
     "confidence": "high",
-    "source_note": "interpreted from general pasta-water technique, aligned with ATK 100 Techniques #10"
+    "source_note": "interpreted from general pasta-water technique, aligned with ATK 100 Techniques #10",
+    "status": "published"
   },
   {
     "id": "fresh_tomato_sauce_short_cook",
@@ -473,7 +483,8 @@
     "mechanism": "Tomatoes thicken as moisture evaporates; a quick reduction concentrates them while preserving volatile fresh-tomato aromas that long cooking drives off.",
     "render_hint": "Reference the tomato product and aromatics this recipe uses.",
     "confidence": "medium",
-    "source_note": "interpreted from general fresh tomato sauce technique"
+    "source_note": "interpreted from general fresh tomato sauce technique",
+    "status": "published"
   },
   {
     "id": "roux_cook_to_specified_color",
@@ -543,7 +554,8 @@
         "url": "https://www.americastestkitchen.com/recipes/20-creamy-baked-four-cheese-pasta",
         "note": "light roux for a bechamel"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "rice_noodles_soak_dont_boil",
@@ -575,7 +587,8 @@
     "mechanism": "Rice starch hydrates and softens quickly; gentler heat hydrates without gelatinizing the noodle into mush before the final toss.",
     "render_hint": "Reference the noodle width and how this recipe finishes them.",
     "confidence": "high",
-    "source_note": "interpreted from general rice-noodle technique"
+    "source_note": "interpreted from general rice-noodle technique",
+    "status": "published"
   },
   {
     "id": "baked_rice_for_even_results",
@@ -605,7 +618,8 @@
     "mechanism": "Even, all-around oven heat removes the hot spot a burner creates under the pot, so the grains cook uniformly.",
     "render_hint": "Reference the rice type and liquid ratio in this recipe.",
     "confidence": "medium",
-    "source_note": "interpreted from general baked-rice technique"
+    "source_note": "interpreted from general baked-rice technique",
+    "status": "published"
   },
   {
     "id": "pan_sauce_build_on_fond",
@@ -671,7 +685,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/5949-sauteed-pork-cutlets-with-mustard-cider-sauce"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "sear_steak_flip_frequently",
@@ -736,7 +751,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/9192-cast-iron-pan-seared-flank-steak-with-crispy-potatoes-and-chimichurri"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "handle_ground_meat_gently",
@@ -806,7 +822,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12882-breakfast-pork-burgers"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "saute_fish_dry_and_flip_with_two_spatulas",
@@ -873,7 +890,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/6898-pan-fried-sole-with-lemony-herb-butter"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "sear_scallops_dry_and_dont_crowd",
@@ -932,7 +950,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9531-miso-butter-basted-scallops-with-bok-choy-and-chile"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "stir_fry_prep_ahead_and_dont_crowd",
@@ -1000,7 +1019,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/11227-kung-pao-chicken"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "tofu_dry_or_firm_before_cooking",
@@ -1072,7 +1092,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/11698-tofu-banh-mi"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "foil_packet_layer_and_seal",
@@ -1141,7 +1162,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/11928-cod-baked-in-foil-with-zucchini-and-sun-dried-tomatoes"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "oven_fry_triple_coat",
@@ -1214,7 +1236,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/2321-fiery-oven-fried-chicken"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "shallow_fry_hold_oil_temp",
@@ -1286,7 +1309,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/10342-spicy-fried-chicken-sandwiches"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "crispy_skin_dry_and_render",
@@ -1351,7 +1375,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/14316-roast-chicken-with-couscous-roasted-red-peppers-and-basil"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "roast_salmon_high_low",
@@ -1410,7 +1435,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12274-pomegranate-roasted-salmon-with-lentils-and-chard"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "broiler_set_distance_and_rotate",
@@ -1481,7 +1507,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/14570-garlicky-broiled-shrimp"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "two_level_grill_fire",
@@ -1547,7 +1574,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/8982-grilled-boneless-short-ribs-with-argentine-style-pepper-sauce"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "poach_off_heat_in_seasoned_liquid",
@@ -1615,7 +1643,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12594-salade-lyonnaise"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "butcher_whole_chicken_at_the_joints",
@@ -1681,7 +1710,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/7758-spice-rubbed-roast-chicken-parts"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "brine_lean_proteins_for_high_heat",
@@ -1745,7 +1775,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/15854-sweet-tea-brined-fried-chicken-thighs"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "braise_in_the_oven_not_stovetop",
@@ -1812,7 +1843,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1185-braised-lamb-shoulder-chops-with-tomatoes-and-red-wine"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "slow_roast_tough_cuts_low_and_slow",
@@ -1877,7 +1909,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8116-crispy-slow-roasted-pork-belly"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "artisan_bread_gluten_and_slash",
@@ -1945,7 +1978,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/4922-crispy-garlic-bread"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "leave_pancake_batter_lumpy",
@@ -2009,7 +2043,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/8603-apple-cinnamon-muffins"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "melt_butter_for_chewy_cookies",
@@ -2082,7 +2117,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/7847-thick-and-chewy-chocolate-chip-cookies"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "reverse_cream_for_fine_crumb_cakes",
@@ -2150,7 +2186,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/3583-new-york-style-crumb-cake"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "temper_eggs_for_smooth_custard",
@@ -2223,7 +2260,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/6103-banana-pudding"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "precook_fruit_and_thicken_for_cobblers",
@@ -2300,7 +2338,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/12524-strawberry-rhubarb-crisp"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "waterproof_all_butter_pie_dough",
@@ -2367,7 +2406,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12997-blueberry-earl-grey-pie"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "toast_and_grind_whole_spices",
@@ -2437,7 +2477,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15728-lamb-barbacoa"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "layer_glazes_in_stages",
@@ -2510,7 +2551,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/14235-pomegranate-glazed-roast-bone-in-leg-of-lamb"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "blender_emulsified_french_sauces",
@@ -2581,7 +2623,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/14630-asparagus-and-smoked-salmon-benedicts"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "use_aquafaba_for_structure",
@@ -2653,7 +2696,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12064-vegan-blueberry-muffins"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "brine_dried_beans_for_tender_skins",
@@ -2724,7 +2768,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/6396-cuban-style-black-beans-and-rice-moros-y-cristianos"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "shave_vegetables_to_tenderize_raw",
@@ -2793,7 +2838,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15328-shaved-asparagus-prosciutto-and-duxelles-tartines"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "use_vegetable_scraps_for_soup_flavor",
@@ -2857,7 +2903,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/8520-pennsylvania-dutch-chicken-and-corn-soup"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "quick_caramelize_onions_with_water",
@@ -2922,7 +2969,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9967-pasta-with-caramelized-onions-pecorino-romano-and-black-pepper"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "quick_braise_vegetables_on_stovetop",
@@ -2989,7 +3037,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/9661-braised-zucchini"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "finish_pasta_in_its_sauce",
@@ -3057,7 +3106,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/2243-skillet-lasagna"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "boil_hearty_grains_like_pasta",
@@ -3124,7 +3174,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10916-barley-with-fennel-dried-apricots-and-orange"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "fried_rice_without_day_old_rice",
@@ -3186,7 +3237,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8419-fried-brown-rice-with-pork-and-shrimp"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "rice_crust_tahdig",
@@ -3233,7 +3285,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8718-chelow-persian-style-rice-with-golden-crust"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "pan_roast_reverse_sear",
@@ -3303,7 +3356,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/10598-perfect-pan-seared-pork-tenderloin-steaks"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "butterfly_chicken_to_roast_over_a_bed",
@@ -3357,7 +3411,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/10920-roast-chicken-with-warm-bread-salad"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "sheet_pan_arrange_by_heat_and_timing",
@@ -3413,7 +3468,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/13207-sheet-pan-huevos-rancheros"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "cook_en_cocotte_no_added_liquid",
@@ -3468,7 +3524,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/5283-salmon-en-cocotte-with-leeks-and-white-wine"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "braise_chicken_keep_skin_above_liquid",
@@ -3523,7 +3580,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/8675-chicken-scarpariello"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "braise_without_searing_keep_meat_exposed",
@@ -3577,7 +3635,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/6216-classic-pot-roast"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "grill_vegetables_cut_oil_moderate_heat",
@@ -3630,7 +3689,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/7425-grilled-caesar-salad"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "make_grill_nonstick_with_oil_layers",
@@ -3689,7 +3749,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/14240-grill-roasted-stuffed-trout"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "grind_your_own_meat_for_burgers",
@@ -3743,7 +3804,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12858-grind-your-own-turkey-burger-blend"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "lobster_freeze_then_temp_the_tail",
@@ -3799,7 +3861,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/13969-grilled-lobsters"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "poach_fish_in_olive_oil",
@@ -3852,7 +3915,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/6981-poached-fish-fillets-with-cilantro-and-jalapeno-vinaigrette"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "cold_start_frying",
@@ -3902,7 +3966,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/10551-fried-brussels-sprouts-with-sriracha-dipping-sauce"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "oven_barbecue_with_liquid_smoke",
@@ -3965,7 +4030,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8505-sweet-and-tangy-barbecue-sauce"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "cast_iron_for_burnished_baked_crusts",
@@ -4018,7 +4084,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/874-southern-style-cornbread"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "tortillas_without_a_press",
@@ -4071,7 +4138,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/9410-homemade-taco-size-flour-tortillas"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "skillet_pizza_stovetop_then_oven",
@@ -4129,7 +4197,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/4364-barbecued-chicken-skillet-pizza"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "no_knead_bread_fold_and_dutch_oven",
@@ -4183,7 +4252,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/16106-cranberry-walnut-bread"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "no_churn_ice_cream_whipped_cream",
@@ -4249,7 +4319,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/11752-strawberry-buttermilk-no-churn-ice-cream"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "food_processor_cakes_melted_butter",
@@ -4316,7 +4387,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/57-simple-carrot-cake-with-cream-cheese-frosting"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "easy_lamination_grated_butter",
@@ -4370,7 +4442,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8496-ultimate-flaky-buttermilk-biscuits"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "make_your_own_bitters_infusion",
@@ -4420,7 +4493,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/13461-citrus-bitters"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "ferment_pickles_keep_submerged_in_salt_brine",
@@ -4482,7 +4556,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8662-sauerkraut"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "fresh_cheese_dont_use_uht_milk",
@@ -4553,7 +4628,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/15669-naan-flatbread-with-spiced-yogurt-paneer"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "fresh_pasta_by_hand_yolks_oil_rest",
@@ -4610,7 +4686,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/11304-pork-fennel-and-lemon-ragu-with-pappardelle"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "filled_pasta_press_out_air_cook_longer",
@@ -4680,7 +4757,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/12632-squash-filled-pasta"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "dumplings_that_stay_sealed",
@@ -4754,7 +4832,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/6141-shu-mai-steamed-chinese-dumplings"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "cook_whole_fish_small_semifirm",
@@ -4812,7 +4891,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8436-grilled-whole-trout-with-orange-and-fennel"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "dry_age_beef_in_the_fridge",
@@ -4864,7 +4944,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/11277-bacon-wrapped-filets-mignons"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "smoke_ribs_indoors_with_tea",
@@ -4913,7 +4994,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/5989-oven-barbecued-spareribs"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "grill_roast_centerpiece_cuts",
@@ -4982,7 +5064,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/9778-easy-grill-roasted-butterflied-chicken"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "paella_stagger_ingredients_for_socarrat",
@@ -5052,7 +5135,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/10659-slow-cooker-paella"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "charcoal_snake_for_low_slow_smoking",
@@ -5115,7 +5199,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/4797-best-charcoal-grill-smoked-pork-chops"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "chinatown_barbecue_glaze_honey_last",
@@ -5179,7 +5264,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/3422-chinese-barbecued-pork"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "confit_in_fat_low_and_slow",
@@ -5248,7 +5334,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/12029-garlic-confit-butter"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "cure_meat_and_fish",
@@ -5318,7 +5405,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1280-gravlax-for-a-crowd"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "flambe_safely_off_heat",
@@ -5380,7 +5468,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/478-shrimp-fra-diavolo-with-linguine"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "tempura_batter_minimize_gluten",
@@ -5439,7 +5528,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/11092-crispy-vegetable-fritters"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "home_oven_pizza_stone_high",
@@ -5508,7 +5598,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/10361-luau-pizza"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "nurture_a_sourdough_starter",
@@ -5570,7 +5661,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/9076-almost-no-knead-sourdough-bread"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "caramel_dont_stir_use_corn_syrup",
@@ -5632,7 +5724,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/11208-salted-caramel-filling"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "temper_chocolate_seed_method",
@@ -5685,7 +5778,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/11598-buckeye-candies"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "meringue_choose_the_right_type",
@@ -5747,7 +5841,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/11240-strawberry-lime-and-basil-pavlova-with-whipped-cream"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "churned_ice_cream_smaller_crystals",
@@ -5815,7 +5910,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/8897-strawberry-frozen-yogurt"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "assemble_a_layer_cake",
@@ -5884,7 +5980,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/8587-swiss-hazelnut-cake"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "souffle_medium_peaks_and_headspace",
@@ -5952,7 +6049,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/698-grand-marnier-souffle-with-shaved-chocolate"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "pate_a_choux_hot_start_release_steam",
@@ -6017,7 +6115,8 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10326-gougeres-with-aged-gouda-and-smoked-paprika"
       }
-    ]
+    ],
+    "status": "published"
   },
   {
     "id": "new_york_cheesecake_low_then_high",
@@ -6087,6 +6186,7 @@
         "source": "ATK",
         "url": "https://www.americastestkitchen.com/recipes/1998-light-new-york-cheesecake"
       }
-    ]
+    ],
+    "status": "published"
   }
 ]
