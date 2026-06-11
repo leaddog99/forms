@@ -82,26 +82,30 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
 def compose_identity_text(card: dict, *, title: str = "") -> str:
     """Build the embedding input from a dish identity card.
 
-    Lead with the canonical `likelyDish` phrase (highest-leverage
-    single token sequence for text-embedding-3-small), then the
-    optional original title, then structured fact lines. The result
-    is short (~60-80 tokens), signal-dense, and symmetric across
-    recipe and dish sides — both produce embed text from the same
-    composer, so cosine reflects semantic similarity rather than
-    format-similarity.
+    Lead with the canonical `likelyDish` phrase (highest-leverage single
+    token sequence for text-embedding-3-small), then structured fact lines.
+    Short (~50-70 tokens), signal-dense, and symmetric across recipe and dish
+    sides — both produce embed text from the same composer, so cosine reflects
+    semantic similarity rather than format-similarity.
 
-    `title` defaults to "" for dishes (where the card IS the
-    canonical name); recipes pass their `name` field so the literal
-    title still reinforces the embedding.
+    TITLE IS DELIBERATELY EXCLUDED (2026-06-11, after measurement): the raw
+    recipe title is marketing copy that varies wildly within one dish ("Perfect
+    No-Stir Risotto" vs "The Best EVER Risotto") and was the #1 source of
+    intra-dish spread — adding it nearly DOUBLED the L2 between same-dish
+    recipes (0.35 -> 0.68). `likelyDish` already names the dish canonically. The
+    `title` arg is kept for signature compatibility but no longer embedded.
+
+    Primary ingredients are NORMALIZED through the synonym dictionary
+    (ingredients_lib) so "arborio rice" / "risotto-style rice" / "risotto rice"
+    collapse to one term instead of sitting ~0.42 L2 apart.
     """
     if not isinstance(card, dict):
         return ""
+    from input.pipeline import ingredients_lib  # local: avoid import cycle
     parts: list[str] = []
     likely = (card.get("likelyDish") or "").strip()
     if likely:
         parts.append(likely)
-    if title and title.strip() and title.strip().lower() != likely.lower():
-        parts.append(title.strip())
     cuisine = (card.get("cuisine") or "").strip()
     ethnicity = (card.get("ethnicity") or "").strip()
     if cuisine:
@@ -110,7 +114,14 @@ def compose_identity_text(card: dict, *, title: str = "") -> str:
         parts.append(f"ethnicity: {ethnicity}")
     primary = card.get("primaryIngredients") or []
     if primary:
-        parts.append("primary: " + ", ".join(p for p in primary if p))
+        norm, seen = [], set()
+        for p in primary:
+            c = ingredients_lib.normalize(p)
+            if c and c not in seen:
+                seen.add(c)
+                norm.append(c)
+        if norm:
+            parts.append("primary: " + ", ".join(norm))
     technique = (card.get("technique") or "").strip()
     if technique:
         parts.append(f"technique: {technique}")

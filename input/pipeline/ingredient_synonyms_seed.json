@@ -1,0 +1,45 @@
+[
+  {
+    "canonical": "arborio rice",
+    "synonyms": ["risotto rice", "risotto-style rice", "italian short-grain rice", "short-grain italian rice"],
+    "category": "rice",
+    "note": "Arborio/carnaroli/vialone nano are the risotto short-grains; normalize phrasing so same-dish recipes don't scatter."
+  },
+  {
+    "canonical": "carnaroli rice",
+    "synonyms": ["carnaroli"],
+    "category": "rice",
+    "note": "Distinct cultivar from arborio; kept separate (a recipe specifying carnaroli means it)."
+  },
+  {
+    "canonical": "scallion",
+    "synonyms": ["green onion", "green onions", "spring onion", "spring onions", "scallions"],
+    "category": "allium"
+  },
+  {
+    "canonical": "cilantro",
+    "synonyms": ["coriander leaves", "fresh coriander", "chinese parsley"],
+    "category": "herb",
+    "note": "Leaf only; 'coriander' (the seed/spice) is a different ingredient — do NOT alias it here."
+  },
+  {
+    "canonical": "chickpeas",
+    "synonyms": ["garbanzo beans", "garbanzos", "ceci beans", "ceci"],
+    "category": "legume"
+  },
+  {
+    "canonical": "heavy cream",
+    "synonyms": ["double cream", "heavy whipping cream", "whipping cream"],
+    "category": "dairy"
+  },
+  {
+    "canonical": "eggplant",
+    "synonyms": ["aubergine", "aubergines", "brinjal"],
+    "category": "vegetable"
+  },
+  {
+    "canonical": "all-purpose flour",
+    "synonyms": ["plain flour", "ap flour"],
+    "category": "flour"
+  }
+]
