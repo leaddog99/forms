@@ -2628,9 +2628,18 @@
         h += sec('What we changed & why') + '<ul style="margin:4px 0;padding-left:20px">'
           + ck.technique_changes.map(t => `<li>${E(t)}</li>`).join('') + '</ul>';
       }
-      if ((ck.bundles || []).length) {
-        h += sec('The mise — bundles');
-        h += ck.bundles.map(b => `<div style="margin:6px 0"><b>${E(b.label)}</b>`
+      // A real COMBINATION (whisk/toss/bloom members together) reads differently
+      // from the "Measured & ready" catch-all, which is items measured INDIVIDUALLY
+      // and staged separately — same data shape, opposite meaning. Render the
+      // combinations first (joined, with the why), then the catch-all AFTER, each
+      // item on its own line so nothing implies they get combined.
+      const isCatchAll = (b) => /measured\s*[&+]?\s*(?:and\s+)?ready/i.test(b.label || '')
+                             || /^\s*kept separate/i.test(b.combine_note || '');
+      const combos = (ck.bundles || []).filter(b => !isCatchAll(b));
+      const prepared = (ck.bundles || []).filter(isCatchAll);
+      if (combos.length) {
+        h += sec('The mise — combine ahead');
+        h += combos.map(b => `<div style="margin:6px 0"><b>${E(b.label)}</b>`
           + (b.make_ahead ? ' <span style="font-size:.75rem;color:var(--muted)">(make ahead)</span>' : '')
           + '<br><span style="color:#555">'
           + (b.members || []).map(m => `${E(fmtAmt(m.amount))} ${E(m.label)}${m.prep_verb ? ', ' + E(m.prep_verb) : ''}`).join(' · ')
@@ -2638,6 +2647,12 @@
           + (b.combine_note ? `<div style="font-size:.82rem;color:var(--muted)">↳ ${E(b.combine_note)}</div>` : '')
           + (b.excluded_reason ? `<div style="font-size:.82rem;color:var(--muted)">↳ kept separate: ${E(b.excluded_reason)}</div>` : '')
           + '</div>').join('');
+      }
+      if (prepared.length) {
+        h += sec('Measured & ready — staged separately');
+        prepared.forEach(b => {
+          h += (b.members || []).map(m => `<div style="margin:2px 0;color:#555">• ${E(fmtAmt(m.amount))} <b>${E(m.label)}</b>${m.prep_verb ? ', ' + E(m.prep_verb) : ''}</div>`).join('');
+        });
       }
       if ((ck.reserved || []).length) {
         h += sec('Put-asides');
