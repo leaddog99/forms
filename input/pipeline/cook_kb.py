@@ -56,10 +56,10 @@ STATUSES = ("draft", "published")
 
 # JSON-encoded list/array columns.
 _LIST_COLS = ("technique_tags", "trigger_signals", "ingredient_classes",
-              "equipment", "variants", "exemplar_recipes")
+              "equipment", "variants", "exemplar_recipes", "media")
 _ALL_COLS = ("id, kind, title, technique_tags, trigger_signals, ingredient_classes, "
              "equipment, scope, claim, action, signal, failure_mode, variants, "
-             "exemplar_recipes, mechanism, render_hint, confidence, editor_note, status, "
+             "exemplar_recipes, media, mechanism, render_hint, confidence, editor_note, status, "
              "created_at, updated_at")
 
 # Canonical seed — git-tracked, the backup + fresh-install bootstrap.
@@ -84,6 +84,7 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
             failure_mode       TEXT,                            -- check-only
             variants           TEXT,                            -- JSON [{case, note}]
             exemplar_recipes   TEXT,                            -- JSON; internal QA, never sent
+            media              TEXT,                            -- JSON [{kind,provider,url,title,source,start_seconds?,note?}]
             mechanism          TEXT,                            -- grounding only, not rendered
             render_hint        TEXT,
             confidence         TEXT NOT NULL DEFAULT 'high',     -- high | medium | low
@@ -95,10 +96,12 @@ def ensure_cook_kb_table(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cook_kb_status ON cook_tips_kb(status)")
-    # Migration for tables created before exemplar_recipes existed.
+    # Migrations for columns added after a table was first created.
     cols = {r[1] for r in conn.execute("PRAGMA table_info(cook_tips_kb)")}
     if "exemplar_recipes" not in cols:
         conn.execute("ALTER TABLE cook_tips_kb ADD COLUMN exemplar_recipes TEXT")
+    if "media" not in cols:
+        conn.execute("ALTER TABLE cook_tips_kb ADD COLUMN media TEXT")
     # Seed a FRESH (empty) table from the git-tracked seed file — only on empty, so
     # curation is never clobbered or resurrected.
     if conn.execute("SELECT COUNT(*) FROM cook_tips_kb").fetchone()[0] == 0:
@@ -142,6 +145,7 @@ def _insert(conn: sqlite3.Connection, e: dict, now: str) -> None:
             e.get("signal"), e.get("failure_mode"),
             json.dumps(e.get("variants") or []),
             json.dumps(e.get("exemplar_recipes") or []),
+            json.dumps(e.get("media") or []),
             e.get("mechanism"), e.get("render_hint"),
             e.get("confidence", "high"), e.get("editor_note"),
             e.get("status", "draft"), now, now,
@@ -248,8 +252,9 @@ def import_drafts(conn: sqlite3.Connection, entries: list[dict],
 def project_published(conn: sqlite3.Connection) -> list[dict]:
     """The runtime view for the augment pass (3c-b): PUBLISHED entries only, with
     just the selection + generation fields — editor_note / confidence /
-    exemplar_recipes are DROPPED before the model ever sees them (rejoined
-    server-side by id). Stable, key-ordered output so it can be a cacheable prefix."""
+    exemplar_recipes / media are DROPPED before the model ever sees them (media is
+    rejoined server-side by id, see published_media_by_id). Stable, key-ordered
+    output so it can be a cacheable prefix."""
     out = []
     for e in list_kb(conn, status="published"):
         out.append({
@@ -266,4 +271,16 @@ def project_published(conn: sqlite3.Connection) -> list[dict]:
             },
             "render_hint": e.get("render_hint"),
         })
+    return out
+
+
+def published_media_by_id(conn: sqlite3.Connection) -> dict:
+    """{kb_id: media[]} for PUBLISHED entries that actually carry media. The augment
+    pass uses this to stamp curated media onto an attachment AFTER the model selects
+    a kb_id — media is CODE-sourced, never model-emitted (a URL can't be invented).
+    Kept out of project_published so it never enters the LLM prompt (token-free)."""
+    out = {}
+    for e in list_kb(conn, status="published"):
+        if e.get("media"):
+            out[e["id"]] = e["media"]
     return out

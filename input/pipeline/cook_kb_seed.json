@@ -6188,5 +6188,58 @@
       }
     ],
     "status": "published"
+  },
+  {
+    "id": "oblique_cut_tapered_vegetables",
+    "kind": "tip",
+    "title": "Roll-cut (oblique) tapered vegetables for even cooking",
+    "technique_tags": [
+      "knife_skills"
+    ],
+    "trigger_signals": [
+      "carrots",
+      "sliced carrots",
+      "chopped carrots",
+      "cut carrots",
+      "glazed carrots",
+      "roll cut",
+      "oblique cut",
+      "bias cut",
+      "parsnips"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "chefs_knife",
+      "cutting_board"
+    ],
+    "scope": "step",
+    "claim": "A carrot is thin at one end and thick at the other, so plain crosswise slices come out three different sizes and cook unevenly — the small pieces turn to mush before the fat ones are tender. The oblique (roll) cut levels that taper into same-size pieces.",
+    "action": "Make a diagonal cut, roll the carrot a quarter-turn, and cut again on the same diagonal; keep rolling and cutting down its length, aiming for pieces of equal size (near the fat end you may not cut all the way across).",
+    "mechanism": "Equal-size pieces present equal surface area to the heat, so they reach doneness at the same time instead of some scorching while others stay raw.",
+    "variants": [
+      {
+        "case": "when it matters most",
+        "note": "Reach for it when even doneness shows — glazing, roasting, or sauteing carrots and other tapered roots like parsnips."
+      },
+      {
+        "case": "also called the roll cut",
+        "note": "Same cut, two names: you roll the vegetable a turn between each diagonal cut."
+      }
+    ],
+    "render_hint": "Name the tapered vegetable in this recipe (carrots, parsnips) and the cut step; surface it only where pieces are cut for even cooking.",
+    "confidence": "high",
+    "editor_note": "Authored from the CIA cutting-carrots / oblique-cut video transcript (Chef Bill), in our words; technique = fact.",
+    "media": [
+      {
+        "kind": "video",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=y63_TvMVE7E",
+        "title": "The oblique (roll) cut for carrots",
+        "source": "Culinary Institute of America"
+      }
+    ],
+    "status": "published"
   }
 ]

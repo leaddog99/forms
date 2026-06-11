@@ -163,14 +163,31 @@ class StepEquipment(BaseModel):
     reused_from_step: Optional[int] = None
 
 
+class MediaRef(BaseModel):
+    """A curated media reference (video / image) carried by a KB entry. CODE-SOURCED,
+    never model-emitted: the augment model only selects a kb_id; code stamps the
+    entry's vetted media onto the attachment, so a URL can never be hallucinated.
+    Rights stance (image_policy / DL-16): reference + attribute + EMBED, never rehost."""
+    kind: str = Field(..., description="video | image")
+    provider: Optional[str] = Field(None, description="youtube | vimeo | ... (None = generic).")
+    url: str
+    title: Optional[str] = None
+    source: Optional[str] = Field(None, description="Attribution, e.g. 'Culinary Institute of America'.")
+    start_seconds: Optional[int] = Field(None, description="Optional deep-link into a video.")
+    note: Optional[str] = None
+
+
 class Attachment(BaseModel):
     """A KB-sourced tip or check attached by the AUGMENT pass (3c-b). `kb_id` is
     the PROVENANCE — it must trace to a PUBLISHED cook_tips_kb entry, validated
     mechanically so the model can't invent advice (the moat). `text` is the
-    entry's claim/action reworded for THIS recipe; `kind` is fixed by the entry."""
+    entry's claim/action reworded for THIS recipe; `kind` is fixed by the entry.
+    `media` is the entry's curated video/image refs, stamped by code (not the
+    model) at augment time — so a quiet ▶ link can render with the guidance."""
     kb_id: str
     kind: str = Field(..., description="tip | check — inherited from the KB entry, not chosen.")
     text: str = Field(..., description="The entry's guidance contextualized to this recipe.")
+    media: List[MediaRef] = Field(default_factory=list)
 
 
 class CookStep(BaseModel):

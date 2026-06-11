@@ -173,6 +173,7 @@ def augment_cook(cook: CookMetadata, log: Callable = print,
     with sqlite3.connect(DB_PATH) as conn:
         cook_kb.ensure_cook_kb_table(conn)
         kb = cook_kb.project_published(conn)
+        media_by_id = cook_kb.published_media_by_id(conn)  # code-pulled, model never sees it
     if not kb:
         log("[augment] no PUBLISHED KB entries — nothing to attach")
         return cook
@@ -185,8 +186,10 @@ def augment_cook(cook: CookMetadata, log: Callable = print,
     attached = dropped = 0
 
     def _make(kid: str, text: str):
-        # kind is taken from the KB entry by id — the model can't relabel a tip as a check.
-        return Attachment(kb_id=kid, kind=kind_by_id[kid], text=(text or "").strip())
+        # kind AND media are taken from the KB entry by id — the model can't relabel
+        # a tip as a check, nor invent a media URL (it only picked the kb_id).
+        return Attachment(kb_id=kid, kind=kind_by_id[kid], text=(text or "").strip(),
+                          media=media_by_id.get(kid, []))
 
     # recipe-level (scope=recipe/either)
     seen_recipe = set()

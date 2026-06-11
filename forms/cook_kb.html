@@ -86,10 +86,18 @@
     function filtered() {
       const t = ($('#search').value || '').toLowerCase().trim();
       const st = $('#fStatus').value, kd = $('#fKind').value;
-      return ENTRIES.filter(e =>
-        (!st || e.status === st) && (!kd || e.kind === kd) &&
-        (!t || e.id.toLowerCase().includes(t) || (e.title||'').toLowerCase().includes(t)
-            || (e.technique_tags||[]).join(' ').toLowerCase().includes(t)));
+      return ENTRIES.filter(e => {
+        if (st && e.status !== st) return false;
+        if (kd && e.kind !== kd) return false;
+        if (!t) return true;
+        // Search what a tip is ABOUT, not just its title — trigger_signals /
+        // ingredient_classes are where "carrot" lives, plus the claim text.
+        const hay = [e.id, e.title, e.claim,
+                     (e.technique_tags||[]).join(' '), (e.trigger_signals||[]).join(' '),
+                     (e.ingredient_classes||[]).join(' '), (e.equipment||[]).join(' ')
+                    ].join(' ').toLowerCase();
+        return hay.includes(t);
+      });
     }
 
     function renderList() {
@@ -108,6 +116,50 @@
       if (opts.select) return `<div class="f"><label>${label}</label><select id="e_${id}">${opts.select.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select></div>`;
       if (opts.area) return `<div class="f ${opts.cls||''}"><label>${label}</label><textarea id="e_${id}" ${opts.rows?`rows="${opts.rows}"`:''}>${v}</textarea>${opts.hint?`<div class="hint">${opts.hint}</div>`:''}</div>`;
       return `<div class="f"><label>${label}</label><input id="e_${id}" value="${v}">${opts.hint?`<div class="hint">${opts.hint}</div>`:''}</div>`;
+    }
+
+    // Grow each textarea to fit its content (no clipping, no inner scroll), and
+    // still allow manual vertical resize. Re-runs on input and after each render.
+    function autoGrowTextareas(scope) {
+      (scope || document).querySelectorAll('textarea').forEach(ta => {
+        ta.style.overflow = 'hidden';
+        ta.style.resize = 'vertical';
+        const grow = () => { ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; };
+        if (!ta._autogrow) { ta.addEventListener('input', grow); ta._autogrow = true; }
+        grow();
+      });
+    }
+
+    const ytId = (u) => { const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : null; };
+
+    // Live preview of the media JSON: a clickable YouTube thumbnail that expands
+    // to an inline player (click again to collapse). Curator sees the actual video
+    // while editing. The thumbnail is the derived img.youtube.com URL (no fetch).
+    function renderMediaPreview() {
+      const ta = document.getElementById('e_media'), box = document.getElementById('mediaPreview');
+      if (!ta || !box) return;
+      let media = [];
+      try { media = JSON.parse(ta.value || '[]'); if (!Array.isArray(media)) media = []; } catch (_) { box.innerHTML = ''; return; }
+      box.innerHTML = media.map((m, i) => {
+        const id = (m.kind !== 'image') ? ytId(m.url) : null;
+        if (id) return `<div class="mprev" data-id="${id}" style="display:inline-block;margin:4px 10px 0 0;vertical-align:top;cursor:pointer">`
+          + `<div class="mthumb" style="position:relative;width:200px;height:112px;border-radius:8px;overflow:hidden;background:#000">`
+          + `<img src="https://img.youtube.com/vi/${id}/mqdefault.jpg" style="width:100%;height:100%;object-fit:cover;display:block">`
+          + `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.8)">▶</span></div>`
+          + `<div style="font-size:.76rem;color:#666;max-width:240px">${esc(m.title || '')}${m.source ? ' — ' + esc(m.source) : ''} <span style="color:#999">(click to play)</span></div></div>`;
+        if (m.kind === 'image' && m.url) return `<img src="${esc(m.url)}" style="max-width:200px;border-radius:8px;margin:4px 10px 0 0;vertical-align:top">`;
+        return '';
+      }).join('');
+      box.querySelectorAll('.mprev').forEach(el => el.addEventListener('click', () => {
+        const id = el.dataset.id, t = el.querySelector('.mthumb');
+        if (el.dataset.open) { el.dataset.open = '';
+          t.style.width = '200px'; t.style.height = '112px';
+          t.innerHTML = `<img src="https://img.youtube.com/vi/${id}/mqdefault.jpg" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#fff;text-shadow:0 1px 6px rgba(0,0,0,.8)">▶</span>`;
+        } else { el.dataset.open = '1';
+          t.style.width = '400px'; t.style.height = '225px';
+          t.innerHTML = `<iframe width="400" height="225" src="https://www.youtube.com/embed/${id}?autoplay=1" frameborder="0" allow="autoplay; encrypted-media; fullscreen" allowfullscreen style="border:0;display:block"></iframe>`;
+        }
+      }));
     }
 
     function renderEditor(e, isNew=false) {
@@ -140,6 +192,8 @@
         </div>
         ${field('variants','Variants (JSON: [{"case","note"}])', JSON.stringify(e.variants||[], null, 0), {area:true, rows:2, hint:'e.g. dry blend vs spice paste; leave [] if none'})}
         ${field('exemplar_recipes','Exemplar recipes (JSON — internal QA, never shown/sent)', JSON.stringify(e.exemplar_recipes||[], null, 0), {area:true, rows:2, hint:'[{title, source, url, note?}] — source: ATK | BCC | other'})}
+        ${field('media','Media (JSON — curated video/image refs, embed-only)', JSON.stringify(e.media||[], null, 0), {area:true, rows:2, hint:'[{kind:"video"|"image", provider:"youtube", url, title, source, start_seconds?, note?}] — reference+attribute, never rehost'})}
+        <div id="mediaPreview" style="margin:-4px 0 10px"></div>
         ${field('mechanism','Mechanism (grounding only — never rendered)', e.mechanism, {area:true, rows:2})}
         ${field('render_hint','Render hint (how to contextualize)', e.render_hint, {area:true, rows:1})}
         ${field('editor_note','Editor note (internal; never sent to LLM)', e.editor_note, {hint:'e.g. "interpreted from braising technique" — provenance trail, not a citation'})}
@@ -153,6 +207,9 @@
       $('#saveBtn').addEventListener('click', () => saveEntry(isNew));
       $('#pubBtn').addEventListener('click', () => togglePublish(e));
       if ($('#delBtn')) $('#delBtn').addEventListener('click', () => delEntry(e.id));
+      autoGrowTextareas($('#editor'));
+      const mta = $('#e_media'); if (mta) mta.addEventListener('input', renderMediaPreview);
+      renderMediaPreview();
     }
 
     function collect() {
@@ -164,8 +221,11 @@
       let exemplar_recipes = [];
       try { exemplar_recipes = JSON.parse(v('exemplar_recipes') || '[]'); if (!Array.isArray(exemplar_recipes)) exemplar_recipes = []; }
       catch(_) { throw new Error('Exemplar recipes must be valid JSON array'); }
+      let media = [];
+      try { media = JSON.parse(v('media') || '[]'); if (!Array.isArray(media)) media = []; }
+      catch(_) { throw new Error('Media must be valid JSON array'); }
       return {
-        exemplar_recipes,
+        exemplar_recipes, media,
         kind: v('kind'), title: v('title'), scope: v('scope'), confidence: v('confidence'),
         status: v('status'),
         technique_tags: csv('technique_tags'), trigger_signals: csv('trigger_signals'),

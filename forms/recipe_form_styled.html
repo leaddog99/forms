@@ -2599,6 +2599,31 @@
       const E = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
         ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmtAmt = (a) => a ? (a.imperial || a.metric || '') : '';
+      // A KB attachment's curated media (video/image) rendered as a QUIET, clickable
+      // preview — opt-in, never an autoplay wall. The URL is code-sourced from the KB
+      // entry by kb_id (the model never emits it) and only ever linked/thumbnailed,
+      // never rehosted (image_policy / DL-16). For YouTube the thumbnail URL is
+      // DERIVED from the video id (img.youtube.com — creator-sanctioned hotlink, no
+      // fetch). Deep-links a video at start_seconds.
+      const ytId = (u) => { const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : null; };
+      const mediaHtml = (a) => (a.media || []).map(m => {
+        let href = m.url || '';
+        if (m.start_seconds) href += (href.includes('?') ? '&' : '?') + 't=' + m.start_seconds + 's';
+        const label = m.title ? E(m.title) : (m.kind === 'image' ? 'View' : 'Watch');
+        const src = m.source ? E(m.source) : '';
+        const id = (m.kind !== 'image') ? ytId(m.url) : null;
+        const A = (inner) => `<a href="${E(href)}" target="_blank" rel="noopener" title="${E(m.source || '')}" style="display:inline-flex;gap:8px;align-items:center;margin:4px 0 2px 18px;text-decoration:none;color:#7a5a2a">${inner}</a>`;
+        if (id) {  // YouTube: derived thumbnail with a ▶ overlay
+          return A(`<span style="position:relative;flex:0 0 auto;line-height:0">`
+            + `<img src="https://img.youtube.com/vi/${id}/mqdefault.jpg" alt="" loading="lazy" style="width:120px;height:67px;object-fit:cover;border-radius:6px;display:block">`
+            + `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.3rem;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7)">▶</span></span>`
+            + `<span style="font-size:.8rem;line-height:1.2">${label}${src ? `<br><span style="color:var(--muted)">${src}</span>` : ''}</span>`);
+        }
+        if (m.kind === 'image' && m.url) {  // image: thumbnail preview
+          return A(`<img src="${E(m.url)}" alt="${E(label)}" loading="lazy" style="max-width:160px;border-radius:6px;display:block">`);
+        }
+        return A(`<span style="font-size:.78rem">▶ ${label}${src ? ` <span style="color:var(--muted)">(${src})</span>` : ''}</span>`);  // fallback link
+      }).join('');
       const v = ck.validators || {};
       status.innerHTML = (v.passed
           ? '<span style="color:#2f7a3a">✓ gauntlet passed</span>'
@@ -2677,7 +2702,7 @@
             // KB-sourced attachments (3c-b) carry kb_id provenance (shown on hover);
             // fall back to the deprecated bare tip/check for a pre-3c-b _cook.
             + ((s.attachments || []).length
-                ? s.attachments.map(a => `<div style="font-size:.84rem;color:${a.kind === 'check' ? '#b8602a' : '#2f7a3a'}" title="from knowledge base: ${E(a.kb_id)}">${a.kind === 'check' ? '✓' : '💡'} ${E(a.text)}</div>`).join('')
+                ? s.attachments.map(a => `<div style="font-size:.84rem;color:${a.kind === 'check' ? '#b8602a' : '#2f7a3a'}" title="from knowledge base: ${E(a.kb_id)}">${a.kind === 'check' ? '✓' : '💡'} ${E(a.text)}</div>` + mediaHtml(a)).join('')
                 : (s.tip ? `<div style="font-size:.84rem;color:#2f7a3a">💡 ${E(s.tip)}</div>` : '')
                   + (s.check ? `<div style="font-size:.84rem;color:#b8602a">✓ ${E(s.check)}</div>` : ''))
             + `</div></div>`;
@@ -2685,7 +2710,7 @@
       }
       if ((ck.tips || []).length) {
         h += sec('Good to know');
-        h += ck.tips.map(a => `<div style="font-size:.86rem;color:${a.kind === 'check' ? '#b8602a' : '#2f7a3a'};margin:3px 0" title="from knowledge base: ${E(a.kb_id)}">${a.kind === 'check' ? '✓' : '💡'} ${E(a.text)}</div>`).join('');
+        h += ck.tips.map(a => `<div style="font-size:.86rem;color:${a.kind === 'check' ? '#b8602a' : '#2f7a3a'};margin:3px 0" title="from knowledge base: ${E(a.kb_id)}">${a.kind === 'check' ? '✓' : '💡'} ${E(a.text)}</div>` + mediaHtml(a)).join('');
       }
       if (ck.finish) h += sec('Finish') + `<p style="margin:4px 0">${E(ck.finish)}</p>`;
       if (ck.cooks_note) h += `<p style="margin:8px 0;font-size:.86rem;color:var(--muted)"><b>Cook's note:</b> ${E(ck.cooks_note)}</p>`;
