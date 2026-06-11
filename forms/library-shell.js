@@ -409,7 +409,7 @@
     { page: 'cookbooks', label: 'Cookbooks', comingSoon: true, group: 'user' },
     { page: 'equipment', label: 'Equipment', comingSoon: true, group: 'user' },
     { page: 'gourmet',   label: 'Gourmet',   comingSoon: true, group: 'user' },
-    { page: 'install',   label: 'Install bookmarklet', href: '/forms/install.html', group: 'user' },
+    { page: 'install',   label: 'Bookmarklet', href: '/forms/install.html', group: 'user' },
     // --- admin group (corpus + system back-office — TBOTB side) ---
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
