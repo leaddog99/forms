@@ -1682,5 +1682,4411 @@
         "url": "https://www.americastestkitchen.com/cookscountry/recipes/7758-spice-rubbed-roast-chicken-parts"
       }
     ]
+  },
+  {
+    "id": "brine_lean_proteins_for_high_heat",
+    "kind": "tip",
+    "title": "Brine lean proteins headed for high or long dry heat",
+    "technique_tags": [
+      "brine",
+      "salting"
+    ],
+    "trigger_signals": [
+      "brine",
+      "salt water",
+      "soak in brine",
+      "buttermilk brine",
+      "dissolve salt"
+    ],
+    "ingredient_classes": [
+      "poultry",
+      "pork",
+      "seafood"
+    ],
+    "equipment": [
+      "bowl",
+      "container"
+    ],
+    "scope": "step",
+    "claim": "Salt in a brine restructures muscle proteins so they hold more water, keeping lean proteins juicy through frying, grilling, or long dry roasting; but it's the wrong move for moist cooking or crisp skin.",
+    "action": "Dissolve salt (and optional sugar for flavor and browning) in liquid, submerge the protein in the fridge, and follow the recipe's time exactly.",
+    "variants": [
+      {
+        "case": "when to brine",
+        "note": "Lean cuts (poultry, pork, shrimp) about to face high heat or a long dry roast benefit most."
+      },
+      {
+        "case": "when to skip",
+        "note": "Skip for braises and moist cooking, for crisp-skin dishes (extra moisture defeats the skin), and for well-marbled beef or lamb, which do better salted."
+      },
+      {
+        "case": "don't overdo it",
+        "note": "More time isn't better; over-brining makes meat spongy and too salty, so stick to the stated time."
+      }
+    ],
+    "mechanism": "Salt draws into the meat and changes the protein structure, creating gaps that hold on to water during cooking.",
+    "render_hint": "Reference the actual protein and how it's cooked in this recipe; flag if brining would fight crisp skin.",
+    "confidence": "high",
+    "source_note": "interpreted from general brining technique, cross-checked against ATK 100 Techniques #31",
+    "exemplar_recipes": [
+      {
+        "title": "Extra-Crunchy Fried Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/2081-extra-crunchy-fried-chicken",
+        "note": "salty buttermilk brine before frying"
+      },
+      {
+        "title": "Grilled Glazed Pork Tenderloin Roast",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7406-grilled-glazed-pork-tenderloin-roast"
+      },
+      {
+        "title": "Sweet Tea-Brined Fried Chicken Thighs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15854-sweet-tea-brined-fried-chicken-thighs"
+      }
+    ]
+  },
+  {
+    "id": "braise_in_the_oven_not_stovetop",
+    "kind": "tip",
+    "title": "Braise in the oven for even, gentle heat",
+    "technique_tags": [
+      "braise",
+      "stew"
+    ],
+    "trigger_signals": [
+      "braise",
+      "cover and transfer to oven",
+      "simmer in liquid",
+      "dutch oven",
+      "low and slow"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "Most braises do better in the oven than on a burner: surrounding heat cooks gently and evenly, while a burner concentrates heat on the pot bottom, scorching and breaking down the sauce. Tenderness comes from collagen melting to gelatin, not from the liquid itself.",
+    "action": "Brown, build the liquid, then cover and braise in a low oven, keeping the liquid below a boil; strain and reduce the liquid into a sauce.",
+    "variants": [
+      {
+        "case": "vessel",
+        "note": "Use a roomy pot with a tight lid, like an enameled cast-iron Dutch oven, that goes from stovetop to oven."
+      },
+      {
+        "case": "keep it gentle",
+        "note": "Hold the liquid below boiling; above a simmer the meat can turn dry and stringy rather than silky."
+      },
+      {
+        "case": "exceptions",
+        "note": "Quick vegetable and seafood braises are fine on the stovetop; long meat braises want the oven."
+      }
+    ],
+    "mechanism": "Even oven heat surrounds the pot for uniform cooking; long, gentle heat melts collagen into gelatin that lubricates the muscle fibers.",
+    "render_hint": "Reference the cut and braising liquid in this recipe; correct any 'the liquid tenderizes it' framing.",
+    "confidence": "high",
+    "source_note": "interpreted from general braising technique, cross-checked against ATK 100 Techniques #32",
+    "exemplar_recipes": [
+      {
+        "title": "Pomegranate-Braised Beef Short Ribs with Prunes and Sesame",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13581-pomegranate-braised-beef-short-ribs-with-prunes-and-sesame"
+      },
+      {
+        "title": "Red Wine-Braised Pork Chops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6765-red-wine-braised-pork-chops"
+      },
+      {
+        "title": "Braised Chicken Thighs with Lemon, Spices, and Torn Basil",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15483-braised-chicken-thighs-with-lemon-spices-and-torn-basil"
+      },
+      {
+        "title": "Braised Lamb Shoulder Chops with Tomatoes and Red Wine",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1185-braised-lamb-shoulder-chops-with-tomatoes-and-red-wine"
+      }
+    ]
+  },
+  {
+    "id": "slow_roast_tough_cuts_low_and_slow",
+    "kind": "tip",
+    "title": "Slow-roast tough cuts low and slow (and never lean ones)",
+    "technique_tags": [
+      "roast",
+      "salting",
+      "brine"
+    ],
+    "trigger_signals": [
+      "slow-roast",
+      "low oven",
+      "pork shoulder",
+      "chuck",
+      "brisket",
+      "until fork-tender"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "pork"
+    ],
+    "equipment": [
+      "oven",
+      "wire_rack"
+    ],
+    "scope": "step",
+    "claim": "Tough, fatty cuts turn meltingly tender when held a long time in a low oven so their collagen converts to gelatin; the same low-and-slow treatment would dry a lean cut to a husk.",
+    "action": "Salt or brine ahead, then roast in a low oven, holding the meat in the 160-180F range long enough for the collagen to break down; rest before slicing.",
+    "variants": [
+      {
+        "case": "right cuts",
+        "note": "Pork shoulder, beef chuck, brisket, short ribs thrive; lean cuts like tenderloin or rack of lamb dry out, so don't use this on them."
+      },
+      {
+        "case": "season ahead",
+        "note": "Brining or salting ahead seasons deep and helps tenderize via osmosis over time."
+      }
+    ],
+    "mechanism": "Collagen begins converting to gelatin above 140F; holding the meat just above that for hours tenderizes without overcooking, and low heat evens interior-to-exterior doneness.",
+    "render_hint": "Reference the specific cut; warn if it's a lean cut that shouldn't be slow-roasted.",
+    "confidence": "high",
+    "source_note": "interpreted from general slow-roasting technique, cross-checked against ATK 100 Techniques #33",
+    "exemplar_recipes": [
+      {
+        "title": "Cuban-Style Oven-Roasted Pork",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/3062-cuban-style-oven-roasted-pork"
+      },
+      {
+        "title": "Slow-Roasted Chuck Roast",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/7573-slow-roasted-chuck-roast"
+      },
+      {
+        "title": "Spice-Crusted Slow-Roasted Medium-Rare Beef Short Ribs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/14927-spice-crusted-slow-roasted-medium-rare-beef-short-ribs"
+      },
+      {
+        "title": "Crispy Slow-Roasted Pork Belly",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8116-crispy-slow-roasted-pork-belly"
+      }
+    ]
+  },
+  {
+    "id": "artisan_bread_gluten_and_slash",
+    "kind": "tip",
+    "title": "Develop the gluten, then slash the loaf",
+    "technique_tags": [
+      "knead",
+      "proof"
+    ],
+    "trigger_signals": [
+      "knead",
+      "bread flour",
+      "instant yeast",
+      "let rise",
+      "shape the loaf",
+      "slash"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "stand_mixer",
+      "oven",
+      "baking_stone"
+    ],
+    "scope": "step",
+    "claim": "A good artisan loaf needs strong gluten from kneading and a controlled slash before baking; without the slash the loaf bursts wherever a random weak spot happens to be.",
+    "action": "Knead until the dough is smooth and elastic, rise, shape into a taut loaf, rise again, then slash the top before baking so it expands where you intend.",
+    "variants": [
+      {
+        "case": "flour and yeast",
+        "note": "Bread flour gives the protein for strong gluten; instant (rapid-rise) yeast can go straight into the dry ingredients, while active dry must be dissolved first."
+      },
+      {
+        "case": "kneading",
+        "note": "A stand mixer with a dough hook avoids the extra flour hand-kneading tends to add, which would toughen the crumb."
+      },
+      {
+        "case": "slashing",
+        "note": "Cut a shallow slash on top so the loaf rises evenly instead of tearing at a random weak point."
+      }
+    ],
+    "mechanism": "Kneading aligns gluten into a stretchy network that traps the yeast's carbon dioxide; the slash gives the expanding loaf a designated release point.",
+    "render_hint": "Reference the loaf shape and flour/yeast this recipe uses.",
+    "confidence": "high",
+    "source_note": "interpreted from general bread-baking technique, cross-checked against ATK 100 Techniques #34",
+    "exemplar_recipes": [
+      {
+        "title": "Classic Italian Bread",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/16023-classic-italian-bread"
+      },
+      {
+        "title": "Rustic Italian Bread",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/5-rustic-italian-bread"
+      },
+      {
+        "title": "Panzanella (Italian Bread Salad)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6608-italian-bread-salad-panzanella"
+      },
+      {
+        "title": "Crispy Garlic Bread",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/4922-crispy-garlic-bread"
+      }
+    ]
+  },
+  {
+    "id": "leave_pancake_batter_lumpy",
+    "kind": "check",
+    "title": "Leave pancake and muffin batter lumpy",
+    "technique_tags": [
+      "mix_gently",
+      "leaven"
+    ],
+    "trigger_signals": [
+      "pancake batter",
+      "muffin batter",
+      "don't overmix",
+      "until just combined",
+      "lumpy batter"
+    ],
+    "ingredient_classes": [
+      "batter"
+    ],
+    "equipment": [
+      "bowl",
+      "whisk"
+    ],
+    "scope": "step",
+    "claim": "Stirring pancake and muffin batter smooth makes flat, dense results; leaving it lumpy keeps it viscous so it holds air and rises tall. (Not, as often claimed, because mixing builds gluten; these batters are too thin for that.)",
+    "action": "Gently stir wet into dry just until lumpy pockets of flour remain, and for pancakes let the batter rest briefly so those pockets hydrate.",
+    "signal": "Batter that streams off the spoon in a smooth thin ribbon has been overmixed; properly lumpy batter drops in clumps.",
+    "failure_mode": "Flat, dense, spongy pancakes or muffins with little rise.",
+    "variants": [
+      {
+        "case": "rest pancakes",
+        "note": "Let pancake batter rest so flour pockets hydrate; muffin batters with fruit usually don't need it."
+      },
+      {
+        "case": "two leaveners",
+        "note": "Many pancakes use both baking powder and baking soda; the soda adds tang and deepens browning."
+      }
+    ],
+    "mechanism": "A lumpy batter is more viscous, so it spreads less and traps air pockets that expand into height during cooking.",
+    "render_hint": "Reference whether it's pancakes or muffins and keep the corrected reason (viscosity, not gluten).",
+    "confidence": "high",
+    "source_note": "interpreted from general quick-batter technique, cross-checked against ATK 100 Techniques #35",
+    "exemplar_recipes": [
+      {
+        "title": "Easy Pancakes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10906-easy-pancakes"
+      },
+      {
+        "title": "Banana-Walnut Muffins",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/13892-banana-walnut-muffins"
+      },
+      {
+        "title": "Deluxe Blueberry Pancakes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14903-deluxe-blueberry-pancakes"
+      },
+      {
+        "title": "Apple-Cinnamon Muffins",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8603-apple-cinnamon-muffins"
+      }
+    ]
+  },
+  {
+    "id": "melt_butter_for_chewy_cookies",
+    "kind": "tip",
+    "title": "Melt or brown the butter for chewier cookies and bars",
+    "technique_tags": [
+      "bake",
+      "mix_gently"
+    ],
+    "trigger_signals": [
+      "melted butter",
+      "brown the butter",
+      "chewy cookies",
+      "blondies",
+      "brownies",
+      "brown sugar"
+    ],
+    "ingredient_classes": [
+      "dough",
+      "batter"
+    ],
+    "equipment": [
+      "microwave",
+      "skillet",
+      "bowl"
+    ],
+    "scope": "step",
+    "claim": "Melting (or browning) the butter instead of creaming it frees its water to build the gluten that gives cookies and bars their chew; a few other levers push the chew further.",
+    "action": "Melt or brown the butter and whisk it with the sugar and eggs, then fold in the flour by hand just until combined.",
+    "variants": [
+      {
+        "case": "brown it",
+        "note": "Browning evaporates some of the butter's water and adds nutty flavor; unsalted butter starts with less water."
+      },
+      {
+        "case": "add a little oil",
+        "note": "A bit of oil alongside the butter mixes saturated and unsaturated fat for a sturdier, chewier bite."
+      },
+      {
+        "case": "brown sugar",
+        "note": "Brown sugar's molasses is hygroscopic, pulling in moisture so the cookies stay chewy."
+      },
+      {
+        "case": "stir by hand",
+        "note": "Hand-mixing adds less air than a stand mixer, keeping the texture dense and chewy rather than cakey."
+      }
+    ],
+    "mechanism": "Melted butter's water hydrates the flour to develop chew-giving gluten; less aeration and hygroscopic sugar keep the texture dense and moist.",
+    "render_hint": "Reference the specific cookie or bar and pick only the levers this recipe uses.",
+    "confidence": "high",
+    "source_note": "interpreted from general cookie technique, cross-checked against ATK 100 Techniques #36",
+    "exemplar_recipes": [
+      {
+        "title": "Chewy Hazelnut Brown Butter Sugar Cookies",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/6228-chewy-hazelnut-brown-butter-sugar-cookies"
+      },
+      {
+        "title": "Browned Butter Blondies",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11341-browned-butter-blondies"
+      },
+      {
+        "title": "Chewy Brownies",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5873-chewy-brownies"
+      },
+      {
+        "title": "Thick and Chewy Chocolate Chip Cookies",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7847-thick-and-chewy-chocolate-chip-cookies"
+      }
+    ]
+  },
+  {
+    "id": "reverse_cream_for_fine_crumb_cakes",
+    "kind": "tip",
+    "title": "Reverse-cream for a flat, fine-crumbed cake",
+    "technique_tags": [
+      "cream",
+      "bake"
+    ],
+    "trigger_signals": [
+      "reverse cream",
+      "beat butter into dry ingredients",
+      "sandy",
+      "fine crumb",
+      "streusel",
+      "layer cake"
+    ],
+    "ingredient_classes": [
+      "batter"
+    ],
+    "equipment": [
+      "stand_mixer",
+      "bowl"
+    ],
+    "scope": "step",
+    "claim": "Reverse creaming (cutting softened butter into the dry ingredients before adding liquid) yields a sturdy, fine, flat-topped cake, ideal when you need streusel not to sink or layers to stack evenly.",
+    "action": "Mix the dry ingredients with sugar, beat in softened butter until sandy and pebbly, then add eggs and liquid in stages.",
+    "variants": [
+      {
+        "case": "when to use it",
+        "note": "Reach for it for streusel-topped coffee cakes, evenly stacked layer cakes, and filled cupcakes."
+      },
+      {
+        "case": "watch the texture",
+        "note": "Underdone mixing leaves it domed with tunneling; the butter-flour mixture should look like wet sand before liquids go in."
+      }
+    ],
+    "mechanism": "Butter coats the flour first, slowing hydration and gluten development, and less air is beaten in, so the cake rises less and bakes flat with a tight crumb.",
+    "render_hint": "Reference the cake type and why a flat, fine crumb matters here (streusel, stacking).",
+    "confidence": "high",
+    "source_note": "interpreted from general cake-mixing technique, cross-checked against ATK 100 Techniques #37",
+    "exemplar_recipes": [
+      {
+        "title": "Lemon Layer Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3431-lemon-layer-cake"
+      },
+      {
+        "title": "Classic White Layer Cake with Raspberry-Almond Filling",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/1070-classic-white-layer-cake-with-raspberry-almond-filling"
+      },
+      {
+        "title": "Coconut Layer Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/327-coconut-layer-cake"
+      },
+      {
+        "title": "Sour Cream Coffee Cake with Brown Sugar-Pecan Streusel",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/398-sour-cream-coffee-cake-with-brown-sugar-pecan-streusel"
+      },
+      {
+        "title": "New York-Style Crumb Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3583-new-york-style-crumb-cake"
+      }
+    ]
+  },
+  {
+    "id": "temper_eggs_for_smooth_custard",
+    "kind": "check",
+    "title": "Temper eggs so custard doesn't curdle",
+    "technique_tags": [
+      "temper_eggs",
+      "thicken"
+    ],
+    "trigger_signals": [
+      "temper",
+      "whisk hot into eggs",
+      "custard",
+      "pudding",
+      "curd",
+      "creme anglaise",
+      "coats the back of a spoon"
+    ],
+    "ingredient_classes": [
+      "eggs",
+      "dairy"
+    ],
+    "equipment": [
+      "saucepan",
+      "whisk",
+      "strainer"
+    ],
+    "scope": "step",
+    "claim": "Egg yolks curdle into scrambled bits if heated too fast; tempering (whisking hot liquid slowly into the eggs before returning to heat) warms and dilutes them so they thicken smoothly instead.",
+    "action": "Whisk the hot liquid into the eggs a little at a time off the heat, return to low or medium heat to thicken, and strain at the end for a silky result.",
+    "signal": "Specks or curds forming, or the custard refusing to coat the spoon, mean it's heating too fast or too high.",
+    "failure_mode": "Scrambled, grainy custard with curdled bits and a watery separation.",
+    "variants": [
+      {
+        "case": "doneness",
+        "note": "Around 175-180F it coats the spoon and a finger swiped across the back leaves a clean line; under 170 it's too thin, over 180 it curdles."
+      },
+      {
+        "case": "safety net",
+        "note": "Strain the finished custard through a fine-mesh sieve to catch any stray bits."
+      }
+    ],
+    "mechanism": "Adding hot liquid gradually raises the egg temperature gently and dilutes the proteins so they set into a smooth gel rather than clumping.",
+    "render_hint": "Reference the custard being made and its target consistency.",
+    "confidence": "high",
+    "source_note": "interpreted from general egg-tempering technique, cross-checked against ATK 100 Techniques #38",
+    "exemplar_recipes": [
+      {
+        "title": "Classic Vanilla Pudding",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10836-classic-vanilla-pudding"
+      },
+      {
+        "title": "Creme Anglaise",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3398-creme-anglaise"
+      },
+      {
+        "title": "Meyer Lemon Curd",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15221-meyer-lemon-curd"
+      },
+      {
+        "title": "Chocolate Semifreddo",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10913-chocolate-semifreddo"
+      },
+      {
+        "title": "Banana Pudding",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/6103-banana-pudding"
+      }
+    ]
+  },
+  {
+    "id": "precook_fruit_and_thicken_for_cobblers",
+    "kind": "check",
+    "title": "Precook and thicken fruit so cobblers aren't watery",
+    "technique_tags": [
+      "bake",
+      "thicken",
+      "caramelize"
+    ],
+    "trigger_signals": [
+      "cobbler",
+      "crisp",
+      "fruit filling",
+      "cornstarch",
+      "tapioca",
+      "soupy",
+      "watery filling"
+    ],
+    "ingredient_classes": [
+      "fruit"
+    ],
+    "equipment": [
+      "skillet",
+      "oven",
+      "food_processor"
+    ],
+    "scope": "step",
+    "claim": "Raw fruit sheds its juice in the oven and leaves a soupy filling and soggy topping; cooking off some liquid and using the right thickener gives a cohesive, concentrated filling.",
+    "action": "Saute some of the fruit to drive off and concentrate juices, stir in reserved fresh fruit, and thicken with cornstarch or tapioca rather than flour.",
+    "signal": "Thin juices pooling and sloshing in the dish, and a topping going soggy on top, mean the filling wasn't reduced or thickened enough.",
+    "failure_mode": "Soupy, washed-out filling under a soggy, sunken topping.",
+    "variants": [
+      {
+        "case": "thickener",
+        "note": "Use cornstarch or tapioca, not flour, which leaves a starchy taste."
+      },
+      {
+        "case": "biscuit topping",
+        "note": "Use melted butter for cobbler biscuits; cold-butter biscuits fall apart on the hot filling."
+      },
+      {
+        "case": "crisp topping",
+        "note": "Pinch the crisp topping into pea-size clumps so it stays crisp and doesn't sink."
+      }
+    ],
+    "mechanism": "Evaporating part of the juice concentrates flavor, and a measured dose of starch binds the rest into a cohesive filling instead of a puddle.",
+    "render_hint": "Reference the specific fruit and whether the topping is biscuit (cobbler) or crumb (crisp).",
+    "confidence": "high",
+    "source_note": "interpreted from general cobbler/crisp technique, cross-checked against ATK 100 Techniques #39",
+    "exemplar_recipes": [
+      {
+        "title": "Skillet Peach Cobbler",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/3791-skillet-peach-cobbler"
+      },
+      {
+        "title": "Cranberry-Apple Crisp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/3180-cranberry-apple-crisp"
+      },
+      {
+        "title": "Pear Crisp with Miso and Almonds",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/14278-pear-crisp-with-miso-and-almonds"
+      },
+      {
+        "title": "Skillet Cherry Cobbler",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5722-skillet-cherry-cobbler"
+      },
+      {
+        "title": "Strawberry-Rhubarb Crisp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/12524-strawberry-rhubarb-crisp"
+      }
+    ]
+  },
+  {
+    "id": "waterproof_all_butter_pie_dough",
+    "kind": "tip",
+    "title": "Waterproof some of the flour for a foolproof all-butter crust",
+    "technique_tags": [
+      "bake"
+    ],
+    "trigger_signals": [
+      "pie dough",
+      "all-butter crust",
+      "grate butter",
+      "ice water",
+      "food processor",
+      "flaky crust"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "food_processor",
+      "box_grater"
+    ],
+    "scope": "step",
+    "claim": "All-butter crust usually cracks and toughens because the flour grabs too much water; processing part of the flour with butter into a paste 'waterproofs' it, so the dough rolls easily and bakes shatteringly flaky.",
+    "action": "Process some flour with cubed butter to a paste, pulse in the remaining flour and frozen grated butter, then add ice water (which only the un-waterproofed flour absorbs) and chill.",
+    "variants": [
+      {
+        "case": "two butters",
+        "note": "Cubed butter goes into the paste for tenderness; frozen grated butter stays in pieces that melt into flaky layers."
+      },
+      {
+        "case": "water balance",
+        "note": "Too little water and the crust falls apart; too much and it shrinks and toughens. The waterproofing makes the amount forgiving."
+      }
+    ],
+    "mechanism": "Coating part of the flour in fat limits how much water it can absorb, capping gluten so the crust stays tender while grated butter creates steam voids for flakiness.",
+    "render_hint": "Reference whether this recipe is single- or double-crust and the chill step.",
+    "confidence": "high",
+    "source_note": "interpreted from general pie-dough technique, cross-checked against ATK 100 Techniques #40",
+    "exemplar_recipes": [
+      {
+        "title": "Foolproof All-Butter Dough for Double-Crust Pie",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10330-foolproof-all-butter-dough-for-double-crust-pie"
+      },
+      {
+        "title": "Foolproof All-Butter Dough for Single-Crust Pie",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10331-foolproof-all-butter-dough-for-single-crust-pie"
+      },
+      {
+        "title": "Sweet Cherry Pie",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6066-sweet-cherry-pie"
+      },
+      {
+        "title": "Fresh Peach Pie",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7511-fresh-peach-pie"
+      },
+      {
+        "title": "Blueberry Earl Grey Pie",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12997-blueberry-earl-grey-pie"
+      }
+    ]
+  },
+  {
+    "id": "toast_and_grind_whole_spices",
+    "kind": "tip",
+    "title": "Toast whole spices dry, then grind them fresh",
+    "technique_tags": [
+      "grind_spices",
+      "toast"
+    ],
+    "trigger_signals": [
+      "whole spices",
+      "toast the spices",
+      "grind",
+      "cumin seeds",
+      "coriander seeds",
+      "dried chiles",
+      "until fragrant"
+    ],
+    "ingredient_classes": [
+      "spices"
+    ],
+    "equipment": [
+      "skillet",
+      "spice_grinder",
+      "mortar_and_pestle"
+    ],
+    "scope": "step",
+    "claim": "Whole spices toasted dry and ground fresh deliver far more flavor than pre-ground jars, which have already lost their volatile aromas; toasting also browns the spices for extra depth.",
+    "action": "Toast whole spices in a dry pan over medium heat until fragrant (about 1-3 minutes, chiles 2-6), remove immediately so they don't burn, cool, and grind.",
+    "variants": [
+      {
+        "case": "vs blooming",
+        "note": "This is dry toasting of whole spices before grinding; blooming is cooking already-ground spices in fat. Different steps, both add flavor."
+      },
+      {
+        "case": "chiles",
+        "note": "Dried chiles can be toasted in a dry pan or a 350F oven until fragrant and puffed; lower the heat if they smoke."
+      }
+    ],
+    "mechanism": "Toasting releases the spices' volatile oils on demand and triggers browning of their sugars and proteins for new flavor compounds.",
+    "render_hint": "Name the actual whole spices or chiles in this recipe.",
+    "confidence": "high",
+    "source_note": "interpreted from general spice technique, cross-checked against ATK 100 Techniques #41",
+    "exemplar_recipes": [
+      {
+        "title": "Pistachio Dukkah",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9960-pistachio-dukkah"
+      },
+      {
+        "title": "Best Ground Beef Chili",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8564-best-ground-beef-chili"
+      },
+      {
+        "title": "Spice Rub for Steaks and Chops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1132-spice-rub-for-steaks-and-chops"
+      },
+      {
+        "title": "Pollo en Mole Poblano (Chicken in Puebla-Style Mole)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9064-chicken-mole-poblano"
+      },
+      {
+        "title": "Lamb Barbacoa",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15728-lamb-barbacoa"
+      }
+    ]
+  },
+  {
+    "id": "layer_glazes_in_stages",
+    "kind": "check",
+    "title": "Brush glaze on in stages so it doesn't slide off",
+    "technique_tags": [
+      "glaze",
+      "caramelize"
+    ],
+    "trigger_signals": [
+      "glaze",
+      "brush with glaze",
+      "lacquered",
+      "meatloaf",
+      "glazed roast",
+      "second coat"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "fish"
+    ],
+    "equipment": [
+      "pastry_brush",
+      "oven",
+      "skillet"
+    ],
+    "scope": "step",
+    "claim": "A glaze brushed on all at once slides off into the pan and burns; applying it in layers, letting each set before the next, builds a thick coat that clings.",
+    "action": "Brush on part of the glaze, let it set and turn tacky (or bake partway), then add the next layer, repeating so it builds up on the food.",
+    "signal": "Glaze running off and pooling or scorching in the bottom of the pan means it went on too thick at once or too early.",
+    "failure_mode": "Glaze ends up burnt in the pan instead of lacquered on the food.",
+    "variants": [
+      {
+        "case": "oven items",
+        "note": "For something like meatloaf, brush on half, bake partway, then brush on the rest."
+      },
+      {
+        "case": "browned-first items",
+        "note": "For a seared roast, add glaze to the skillet and turn the roast repeatedly to build coats during roasting."
+      }
+    ],
+    "mechanism": "A set, tacky first coat gives the next coat something to grip, like a crumb coat on a cake; the sugar in the glaze caramelizes for a burnished surface.",
+    "render_hint": "Reference the protein and whether it's browned first or goes straight into the oven.",
+    "confidence": "high",
+    "source_note": "interpreted from general glazing technique, cross-checked against ATK 100 Techniques #42",
+    "exemplar_recipes": [
+      {
+        "title": "Turkey Meatloaf with Ketchup-Brown Sugar Glaze",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9712-turkey-meatloaf-with-ketchup-brown-sugar-glaze"
+      },
+      {
+        "title": "Mustardy Apple Butter-Glazed Pork Chops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12212-mustardy-apple-butter-glazed-pork-chops"
+      },
+      {
+        "title": "Double-Glazed Salmon with Lemon and Thyme",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15030-double-glazed-salmon-with-lemon-and-thyme"
+      },
+      {
+        "title": "Honey-Glazed Pork Shoulder",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/14250-honey-glazed-pork-shoulder"
+      },
+      {
+        "title": "Pomegranate-Glazed Roast Bone-In Leg of Lamb",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14235-pomegranate-glazed-roast-bone-in-leg-of-lamb"
+      }
+    ]
+  },
+  {
+    "id": "blender_emulsified_french_sauces",
+    "kind": "check",
+    "title": "Use the blender (and add fat slowly) so hollandaise doesn't break",
+    "technique_tags": [
+      "emulsify"
+    ],
+    "trigger_signals": [
+      "hollandaise",
+      "bearnaise",
+      "mayonnaise",
+      "aioli",
+      "blender",
+      "drizzle in butter",
+      "emulsify"
+    ],
+    "ingredient_classes": [
+      "eggs",
+      "dairy"
+    ],
+    "equipment": [
+      "blender",
+      "measuring_cup"
+    ],
+    "scope": "step",
+    "claim": "Egg-and-fat sauces like hollandaise, bearnaise, and mayonnaise break easily by hand; a blender's vortex makes finer droplets for a sturdier emulsion, as long as the fat goes in slowly.",
+    "action": "Blend the yolks and acid until frothy, then drizzle in the hot butter (or oil) very slowly with the blender running, and thin with hot water if needed.",
+    "signal": "The sauce splitting into oily liquid with curds means the fat went in too fast, it overheated, or it over-blended.",
+    "failure_mode": "A broken sauce: a greasy puddle with scrambled or separated egg.",
+    "variants": [
+      {
+        "case": "warm sauces",
+        "note": "For hollandaise and bearnaise, keep the butter hot (around 180F) so the sauce stays warm and emulsifies."
+      },
+      {
+        "case": "don't over-blend",
+        "note": "Stop once emulsified; over-processing can cause it to separate. Adjust consistency with a little hot water."
+      }
+    ],
+    "mechanism": "The blender's powerful vortex disperses fat into very small droplets suspended in the egg, and slow addition keeps the emulsion from overwhelming and breaking.",
+    "render_hint": "Reference which sauce this recipe makes and its fat (butter vs oil).",
+    "confidence": "high",
+    "source_note": "interpreted from general emulsion-sauce technique, cross-checked against ATK 100 Techniques #43",
+    "exemplar_recipes": [
+      {
+        "title": "Foolproof Hollandaise Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6407-foolproof-hollandaise-sauce"
+      },
+      {
+        "title": "Blender Bearnaise Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8131-blender-bearnaise-sauce"
+      },
+      {
+        "title": "Preserved Lemon Aioli",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11549-preserved-lemon-aioli"
+      },
+      {
+        "title": "Peppercorn-Crusted Beef Tenderloin with Hollandaise Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13564-peppercorn-crusted-beef-tenderloin-with-hollandaise-sauce"
+      },
+      {
+        "title": "Asparagus and Smoked Salmon Benedicts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/14630-asparagus-and-smoked-salmon-benedicts"
+      }
+    ]
+  },
+  {
+    "id": "use_aquafaba_for_structure",
+    "kind": "tip",
+    "title": "Use aquafaba to bind and whip like eggs",
+    "technique_tags": [
+      "whip",
+      "fold"
+    ],
+    "trigger_signals": [
+      "aquafaba",
+      "chickpea liquid",
+      "vegan",
+      "whip to stiff peaks",
+      "cream of tartar",
+      "egg-free"
+    ],
+    "ingredient_classes": [
+      "legumes"
+    ],
+    "equipment": [
+      "stand_mixer",
+      "strainer"
+    ],
+    "scope": "step",
+    "claim": "Aquafaba, the liquid from a can of chickpeas, binds and whips much like egg whites, giving vegan baked goods structure and lift, and adds body to sauces and drinks straight from the can.",
+    "action": "Shake the can, strain off the liquid, whisk and measure it, and (for baking) whip it with cream of tartar to stiff peaks before folding it in.",
+    "variants": [
+      {
+        "case": "use canned",
+        "note": "Canned chickpea liquid works; liquid from home-cooked dried chickpeas and other beans does not foam reliably."
+      },
+      {
+        "case": "stabilize",
+        "note": "Whip with cream of tartar so the proteins trap air into a stable, stiff foam."
+      },
+      {
+        "case": "make ahead",
+        "note": "Freeze in 1-tablespoon cubes; thawed aquafaba whips just as well, and it keeps about a week in the fridge."
+      }
+    ],
+    "mechanism": "Aquafaba's proteins and starches trap air into a foam (reinforced by cream of tartar), and its natural sugar helps the foam hold without weeping.",
+    "render_hint": "Reference whether this recipe whips the aquafaba (baking) or uses it as a binder.",
+    "confidence": "high",
+    "source_note": "interpreted from general aquafaba technique, cross-checked against ATK 100 Techniques #44",
+    "exemplar_recipes": [
+      {
+        "title": "Vegan Dark Chocolate Cupcakes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12564-vegan-dark-chocolate-cupcakes"
+      },
+      {
+        "title": "Pasta e Ceci (Pasta with Chickpeas)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8574-pasta-e-ceci-pasta-with-chickpeas"
+      },
+      {
+        "title": "Vegan Chocolate Mousse",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/14221-vegan-chocolate-mousse"
+      },
+      {
+        "title": "Chana Masala",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13153-chana-masala"
+      },
+      {
+        "title": "Vegan Blueberry Muffins",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12064-vegan-blueberry-muffins"
+      }
+    ]
+  },
+  {
+    "id": "brine_dried_beans_for_tender_skins",
+    "kind": "tip",
+    "title": "Brine dried beans in salt water for tender skins",
+    "technique_tags": [
+      "brine"
+    ],
+    "trigger_signals": [
+      "dried beans",
+      "soak the beans",
+      "salt water",
+      "overnight soak",
+      "quick soak"
+    ],
+    "ingredient_classes": [
+      "legumes"
+    ],
+    "equipment": [
+      "bowl",
+      "pot",
+      "colander"
+    ],
+    "scope": "step",
+    "claim": "Soaking dried beans in salt water (not plain water) gives them tender skins that resist bursting, cooks them faster, and yields a creamier, more even texture.",
+    "action": "Rinse and pick over the beans, soak in salted water (about 3 tablespoons salt per 4 quarts water per pound), drain, and rinse before cooking.",
+    "variants": [
+      {
+        "case": "overnight",
+        "note": "Soak in cold salted water 8 to 24 hours at room temperature."
+      },
+      {
+        "case": "quick soak",
+        "note": "Bring beans and salted water to a boil, cover, off heat, and let stand 1 hour."
+      },
+      {
+        "case": "make ahead",
+        "note": "Brined, drained beans can be frozen up to a month."
+      }
+    ],
+    "mechanism": "Sodium replaces some of the calcium and magnesium binding the skin's pectin, weakening it so water penetrates and the skins soften instead of splitting.",
+    "render_hint": "Reference the specific bean and the soak method this recipe uses.",
+    "confidence": "high",
+    "source_note": "interpreted from general bean-brining technique, cross-checked against ATK 100 Techniques #45",
+    "exemplar_recipes": [
+      {
+        "title": "Cranberry Beans with Warm Spices",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13838-cranberry-beans-with-warm-spices"
+      },
+      {
+        "title": "Texas-Style Pinto Beans",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/9684-texas-style-pinto-beans"
+      },
+      {
+        "title": "Lentil Salad with Olives, Mint, and Feta",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6687-lentil-salad-with-olives-mint-and-feta"
+      },
+      {
+        "title": "French Pork and White Bean Casserole (Cassoulet)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/4959-french-pork-and-white-bean-casserole-cassoulet"
+      },
+      {
+        "title": "Cuban-Style Black Beans and Rice (Moros y Cristianos)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6396-cuban-style-black-beans-and-rice-moros-y-cristianos"
+      }
+    ]
+  },
+  {
+    "id": "shave_vegetables_to_tenderize_raw",
+    "kind": "tip",
+    "title": "Shave vegetables thin to tenderize them raw",
+    "technique_tags": [
+      "shave"
+    ],
+    "trigger_signals": [
+      "shave",
+      "thin ribbons",
+      "mandoline",
+      "peeler",
+      "thinly slice",
+      "raw salad",
+      "slaw"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "peeler",
+      "mandoline",
+      "chefs_knife"
+    ],
+    "scope": "step",
+    "claim": "Shaving vegetables very thin tenderizes them without cooking, opening up raw uses for everything from zucchini to Brussels sprouts, mushrooms, and even beets.",
+    "action": "Shave the vegetable into thin ribbons or slices with a peeler, mandoline, or sharp knife, and for tougher ones dress and let rest to soften further.",
+    "variants": [
+      {
+        "case": "tough vegetables",
+        "note": "Dress shaved Brussels sprouts, beets, or celery and let them rest (a warm vinaigrette helps) to tenderize and brighten."
+      },
+      {
+        "case": "delicate vegetables",
+        "note": "Serve shaved zucchini and other soft vegetables promptly before the ribbons turn soggy."
+      }
+    ],
+    "mechanism": "Slicing thin enough breaks down the vegetable's structure mechanically, so it eats tender without heat.",
+    "render_hint": "Name the vegetable being shaved and whether it's tough (rest it) or delicate (serve promptly).",
+    "confidence": "high",
+    "source_note": "interpreted from general shaving technique, cross-checked against ATK 100 Techniques #46",
+    "exemplar_recipes": [
+      {
+        "title": "Zucchini Ribbon Greek-Style Salad",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15858-zucchini-ribbon-greek-style-salad"
+      },
+      {
+        "title": "Shaved Salad with Pan-Seared Scallops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14196-shaved-salad-with-pan-seared-scallops"
+      },
+      {
+        "title": "Shaved Celery Salad with Pomegranate-Honey Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/14318-shave-celery-salad-with-pomegranate-honey-vinaigrette"
+      },
+      {
+        "title": "Brussels Sprout Salad with Warm Bacon Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8566-brussels-sprout-salad-with-warm-bacon-vinaigrette"
+      },
+      {
+        "title": "Shaved Asparagus, Prosciutto, and Duxelles Tartines",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15328-shaved-asparagus-prosciutto-and-duxelles-tartines"
+      }
+    ]
+  },
+  {
+    "id": "use_vegetable_scraps_for_soup_flavor",
+    "kind": "tip",
+    "title": "Cook with the scraps for deeper vegetable soup flavor",
+    "technique_tags": [
+      "simmer",
+      "saute"
+    ],
+    "trigger_signals": [
+      "corn cobs",
+      "squash seeds",
+      "vegetable broth",
+      "stems",
+      "peels",
+      "scraps",
+      "simmer the cobs"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "strainer",
+      "blender"
+    ],
+    "scope": "step",
+    "claim": "The seeds, peels, cores, and cobs usually thrown away carry deep vegetable flavor; using them builds a robust soup instead of a thin one propped up with broth or cream.",
+    "action": "Put the trimmings to work, then strain or discard them: saute squash seeds and fibers for an aromatic base, simmer corn cobs in the pot like bones, or puree soft scraps into the soup.",
+    "variants": [
+      {
+        "case": "corn cobs",
+        "note": "Simmer the stripped cobs in the soup to release starch and corn 'milk', then discard before serving."
+      },
+      {
+        "case": "squash seeds",
+        "note": "Saute the seeds and fibers in fat for an aromatic base, then strain them out before blending."
+      },
+      {
+        "case": "soft scraps",
+        "note": "Puree cooked sweet potato skins, broccoli stems, or cauliflower cores right into the soup."
+      }
+    ],
+    "mechanism": "Skins, seeds, and cobs hold concentrated flavor and starch; extracting it (then straining) deepens the soup without diluting it.",
+    "render_hint": "Reference the specific vegetable and which scrap this recipe puts to use.",
+    "confidence": "medium",
+    "source_note": "interpreted from general vegetable-scrap technique, cross-checked against ATK 100 Techniques #47",
+    "exemplar_recipes": [
+      {
+        "title": "Curried Butternut Squash and Apple Soup",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/4470-curried-butternut-squash-and-apple-soup"
+      },
+      {
+        "title": "Cauliflower Soup",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7491-cauliflower-soup"
+      },
+      {
+        "title": "Pennsylvania Dutch Chicken and Corn Soup",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8520-pennsylvania-dutch-chicken-and-corn-soup"
+      }
+    ]
+  },
+  {
+    "id": "quick_caramelize_onions_with_water",
+    "kind": "tip",
+    "title": "Caramelize onions faster with water (and a pinch of baking soda)",
+    "technique_tags": [
+      "caramelize",
+      "saute"
+    ],
+    "trigger_signals": [
+      "caramelize onions",
+      "caramelized onions",
+      "deeply browned onions",
+      "low and slow onions",
+      "press the onions"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "skillet"
+    ],
+    "scope": "step",
+    "claim": "Classic caramelized onions take over an hour; adding water up front (to steam-soften) and finishing with a little baking soda gets you there in about half the time without the watery, pale shortcut result.",
+    "action": "Start the onions over high heat with water and oil, covered, until the water steams them soft; uncover, lower the heat, and repeatedly press them into the pan and stir to brown, finishing with a touch of baking soda dissolved in water.",
+    "variants": [
+      {
+        "case": "water first",
+        "note": "Steam-softens the onions fast; the first phase is about softening, not browning, so moisture helps here."
+      },
+      {
+        "case": "baking soda finish",
+        "note": "A small amount raises the pH to speed caramelization and bring out sweetness, so you don't need added sugar."
+      },
+      {
+        "case": "slice through the root",
+        "note": "Cutting with the grain keeps the onions intact instead of breaking down to mush."
+      }
+    ],
+    "mechanism": "Steam softens the onions quickly; pressing them into the pan maximizes contact for browning, and high pH from baking soda accelerates caramelization and Maillard browning.",
+    "render_hint": "Reference how dark this recipe wants the onions and whether it uses the baking-soda finish.",
+    "confidence": "high",
+    "source_note": "interpreted from general caramelized-onion technique, cross-checked against ATK 100 Techniques #48",
+    "exemplar_recipes": [
+      {
+        "title": "Caramelized Onions",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10011-caramelized-onions"
+      },
+      {
+        "title": "Caramelized Onion Dip",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9900-caramelized-onion-dip"
+      },
+      {
+        "title": "Caramelized Onion, Tomato, and Goat Cheese Tart",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9901-caramelized-onion-tomato-and-goat-cheese-tart"
+      },
+      {
+        "title": "Pasta with Caramelized Onions, Pecorino Romano, and Black Pepper",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9967-pasta-with-caramelized-onions-pecorino-romano-and-black-pepper"
+      }
+    ]
+  },
+  {
+    "id": "quick_braise_vegetables_on_stovetop",
+    "kind": "tip",
+    "title": "Quick-braise vegetables on the stovetop for bright color",
+    "technique_tags": [
+      "braise",
+      "simmer"
+    ],
+    "trigger_signals": [
+      "braise the vegetables",
+      "small amount of liquid",
+      "covered",
+      "crisp-tender",
+      "simmer until just tender"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "skillet"
+    ],
+    "scope": "step",
+    "claim": "Braising doesn't have to mean mushy; a quick stovetop braise in a little seasoned liquid leaves vegetables crisp-tender and vividly colored, cooking them in their own juices for concentrated flavor.",
+    "action": "Cook aromatics, add the vegetables with a small amount of seasoned liquid, cover, and simmer just until tender, then reduce the liquid into a sauce; skip the sear for fresh flavor.",
+    "variants": [
+      {
+        "case": "stovetop not oven",
+        "note": "Do this on the stovetop; the oven's stronger heat would turn most vegetables mushy and gray."
+      },
+      {
+        "case": "medleys in batches",
+        "note": "Add an assortment in staggered batches so nothing overcooks, even when pieces are the same size."
+      }
+    ],
+    "mechanism": "A short, gentle simmer in just enough liquid cooks the vegetables in their own juices to crisp-tender, while the liquid concentrates into a sauce.",
+    "render_hint": "Reference the specific vegetable(s) and whether they go in staggered.",
+    "confidence": "high",
+    "source_note": "interpreted from general quick-braise technique, cross-checked against ATK 100 Techniques #49",
+    "exemplar_recipes": [
+      {
+        "title": "Braised Spring Vegetables",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8302-braised-spring-vegetables"
+      },
+      {
+        "title": "Braised Brussels Sprouts with Tarragon-Mustard Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1257-braised-brussels-sprouts-with-tarragon-mustard-butter"
+      },
+      {
+        "title": "Braised Eggplant with Paprika, Coriander, and Yogurt",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11903-braised-eggplant-with-paprika-coriander-and-yogurt"
+      },
+      {
+        "title": "Braised Asparagus with Lemon and Chives",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/14703-braised-asparagus-with-lemon-and-chives"
+      },
+      {
+        "title": "Braised Zucchini",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/9661-braised-zucchini"
+      }
+    ]
+  },
+  {
+    "id": "finish_pasta_in_its_sauce",
+    "kind": "tip",
+    "title": "Finish pasta in its sauce so the sauce clings",
+    "technique_tags": [
+      "boil",
+      "simmer",
+      "thicken"
+    ],
+    "trigger_signals": [
+      "finish in the sauce",
+      "parboil",
+      "shy of al dente",
+      "simmer pasta in sauce",
+      "risotto-style pasta"
+    ],
+    "ingredient_classes": [
+      "pasta"
+    ],
+    "equipment": [
+      "pot",
+      "dutch_oven"
+    ],
+    "scope": "step",
+    "claim": "Sauce slides off pasta cooked separately; parboiling the pasta short of al dente and finishing it in the sauce infuses it with flavor and thickens the sauce so it clings.",
+    "action": "Boil the pasta until just shy of al dente, drain, then simmer it in the sauce until done, loosening with reserved pasta water as needed.",
+    "variants": [
+      {
+        "case": "best for thin sauces",
+        "note": "Especially effective with brothy or wine-based sauces, but it works with any sauce and shape."
+      },
+      {
+        "case": "risotto-style",
+        "note": "Or add seasoned liquid to the parcooked pasta in increments, as for risotto, until absorbed and the pasta is glossy and al dente."
+      }
+    ],
+    "mechanism": "Finishing in the sauce lets the pasta absorb flavor while the starch it sheds thickens the sauce into a coating that clings.",
+    "render_hint": "Reference the sauce type and pasta shape; remind the cook to reserve pasta water.",
+    "confidence": "high",
+    "source_note": "interpreted from general pasta-finishing technique, cross-checked against ATK 100 Techniques #50",
+    "exemplar_recipes": [
+      {
+        "title": "Linguine with Seafood (Linguine allo Scoglio)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9715-linguine-with-seafood-linguine-allo-scoglio"
+      },
+      {
+        "title": "Spaghetti al Vino Bianco",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/6980-spaghetti-al-vino-bianco"
+      },
+      {
+        "title": "Spaghetti All'Assassina",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15027-spaghetti-all-assassina"
+      },
+      {
+        "title": "Grown-Up Stovetop Macaroni and Cheese",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9491-grown-up-stovetop-macaroni-and-cheese"
+      },
+      {
+        "title": "Skillet Lasagna",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/2243-skillet-lasagna"
+      }
+    ]
+  },
+  {
+    "id": "boil_hearty_grains_like_pasta",
+    "kind": "tip",
+    "title": "Boil hearty grains like pasta, not like rice",
+    "technique_tags": [
+      "boil"
+    ],
+    "trigger_signals": [
+      "farro",
+      "barley",
+      "wheat berries",
+      "boil the grains",
+      "drain the grains",
+      "abundant water"
+    ],
+    "ingredient_classes": [
+      "grains"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "colander"
+    ],
+    "scope": "step",
+    "claim": "Large, dense grains like farro, barley, and wheat berries cook most reliably boiled in plenty of salted water and drained, the way you cook pasta, rather than by the measured-water absorption method.",
+    "action": "Boil the grains in abundant salted water, stirring occasionally, until tender but chewy; taste for doneness, then drain off the excess.",
+    "variants": [
+      {
+        "case": "for salads",
+        "note": "Rinse and spread the drained grains on a sheet to cool and dry so they don't clump."
+      },
+      {
+        "case": "absorption is for small grains",
+        "note": "Rice, quinoa, and bulgur do better by the absorption method; save the pasta method for the big chewy grains."
+      }
+    ],
+    "mechanism": "Dense grains absorb wildly different amounts of water, so a fixed ratio risks gluey or scorched results; an open pot lets each grain take just what it needs and rinses off excess surface starch.",
+    "render_hint": "Name the specific grain and whether it's headed for a salad.",
+    "confidence": "high",
+    "source_note": "interpreted from general grain-cooking technique, cross-checked against ATK 100 Techniques #51",
+    "exemplar_recipes": [
+      {
+        "title": "Farro with Mushrooms and Thyme",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/7321-farro-with-mushrooms-and-thyme"
+      },
+      {
+        "title": "Pesto Farro Salad with Cherry Tomatoes and Artichokes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12256-pesto-farro-salad-with-cherry-tomatoes-and-artichokes"
+      },
+      {
+        "title": "Wheat Berry Salad with Blueberries and Goat Cheese",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11669-wheat-berry-salad-with-blueberries-and-goat-cheese"
+      },
+      {
+        "title": "Barley with Lemon and Herbs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10914-barley-with-lemon-and-herbs"
+      },
+      {
+        "title": "Barley with Fennel, Dried Apricots, and Orange",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10916-barley-with-fennel-dried-apricots-and-orange"
+      }
+    ]
+  },
+  {
+    "id": "fried_rice_without_day_old_rice",
+    "kind": "tip",
+    "title": "Fast-track day-old rice for fried rice",
+    "technique_tags": [
+      "saute",
+      "boil"
+    ],
+    "trigger_signals": [
+      "fried rice",
+      "day-old rice",
+      "leftover rice",
+      "chilled rice",
+      "dry the rice"
+    ],
+    "ingredient_classes": [
+      "grains"
+    ],
+    "equipment": [
+      "saucepan",
+      "sheet_pan",
+      "skillet"
+    ],
+    "scope": "step",
+    "claim": "Fresh rice turns fried rice into a soggy clump; chilled, dried rice fries up firm and separate. You can fake day-old rice in under an hour instead of cooking it the day before.",
+    "action": "Rinse the raw rice, saute it briefly in oil, cook it with a bit less water than usual, rest it under a towel, then spread it on a sheet and chill about 20 minutes before frying.",
+    "variants": [
+      {
+        "case": "white rice",
+        "note": "Rinse, oil-coat, cook drier, then chill on a sheet; don't freeze, which halts the starch retrogradation that firms the grains."
+      },
+      {
+        "case": "brown rice",
+        "note": "Skip the chilling: its bran layer keeps freshly cooked grains from clumping, so cook it pasta-style and fry it fresh."
+      },
+      {
+        "case": "cook in batches",
+        "note": "Stir-fry in batches so the rice and add-ins sear instead of steaming."
+      }
+    ],
+    "mechanism": "Chilling lets rice starch retrograde into firm crystalline grains; cooking drier and oil-coating each grain gets you there fast without overnight waiting.",
+    "render_hint": "Reference whether this recipe uses white or brown rice and pick the matching variant.",
+    "confidence": "high",
+    "source_note": "interpreted from general fried-rice technique, cross-checked against ATK 100 Techniques #52",
+    "exemplar_recipes": [
+      {
+        "title": "Faux Leftover Rice",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6491-faux-leftover-rice"
+      },
+      {
+        "title": "Thai-Style Curried Chicken Fried Rice",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/312-thai-style-curried-chicken-fried-rice"
+      },
+      {
+        "title": "Fried Brown Rice with Pork and Shrimp",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8419-fried-brown-rice-with-pork-and-shrimp"
+      }
+    ]
+  },
+  {
+    "id": "rice_crust_tahdig",
+    "kind": "tip",
+    "title": "Build a golden rice crust (tahdig)",
+    "technique_tags": [
+      "boil",
+      "steam"
+    ],
+    "trigger_signals": [
+      "tahdig",
+      "chelow",
+      "golden crust",
+      "crispy rice",
+      "parcook the rice",
+      "oil the pot"
+    ],
+    "ingredient_classes": [
+      "grains"
+    ],
+    "equipment": [
+      "dutch_oven"
+    ],
+    "scope": "step",
+    "claim": "Persian-style chelow pairs fluffy separate grains on top with a crisp golden crust on the bottom; the crust forms when oiled, packed parcooked rice steams in a heavy pot.",
+    "action": "Rinse and parcook the rice, oil the bottom and sides of a heavy Dutch oven, pack in a layer for the crust, mound the rest with butter and a little water, and cook; rest the pot on a damp towel before lifting the crust.",
+    "variants": [
+      {
+        "case": "the pot",
+        "note": "Use a large, heavy Dutch oven that holds heat for browning; a cast-iron skillet is too shallow."
+      },
+      {
+        "case": "release the crust",
+        "note": "Rest the finished pot on a damp towel so the crust cools and contracts, then scoop the fluffy rice first and lift the crust in shards."
+      }
+    ],
+    "mechanism": "Rinsing removes surface starch so the top grains stay separate; oil plus steady bottom heat browns the packed layer into a crisp crust.",
+    "render_hint": "Reference the rice type and serving style (scooped vs. flipped).",
+    "confidence": "high",
+    "source_note": "interpreted from general tahdig technique, cross-checked against ATK 100 Techniques #53",
+    "exemplar_recipes": [
+      {
+        "title": "Chelow ba Tahdig (Persian-Style Rice with Golden Crust)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8718-chelow-persian-style-rice-with-golden-crust"
+      }
+    ]
+  },
+  {
+    "id": "pan_roast_reverse_sear",
+    "kind": "tip",
+    "title": "Reverse-sear: roast gently first, then sear",
+    "technique_tags": [
+      "roast",
+      "sear"
+    ],
+    "trigger_signals": [
+      "pan-roast",
+      "reverse sear",
+      "roast then sear",
+      "low oven then skillet",
+      "tenderloin",
+      "thick chops"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "oven",
+      "skillet",
+      "wire_rack"
+    ],
+    "scope": "step",
+    "claim": "For small roasts and thick chops, roasting gently in a low oven first and searing last gives a deeper crust and edge-to-edge doneness, avoiding the gray overcooked band that searing-first produces.",
+    "action": "Roast the meat in a low oven until nearly done (which also dries the surface), then sear it quickly in a smoking-hot skillet to brown, and rest before slicing.",
+    "variants": [
+      {
+        "case": "why it works",
+        "note": "The low oven evens out the interior and dries the surface, so the final sear browns fast without overcooking the layer beneath."
+      },
+      {
+        "case": "don't use the broiler",
+        "note": "Broiler heat browns too slowly to beat overcooking; a hot pan's direct contact crusts the surface faster."
+      }
+    ],
+    "mechanism": "A dry, pre-warmed surface browns almost instantly, so the quick final sear builds crust without time for a gray band to form.",
+    "render_hint": "Reference the cut and target doneness; note the sear comes last.",
+    "confidence": "high",
+    "source_note": "interpreted from general reverse-sear technique, cross-checked against ATK 100 Techniques #54",
+    "exemplar_recipes": [
+      {
+        "title": "Classic Roast Beef Tenderloin for a Crowd",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10301-classic-roast-beef-tenderloin-for-a-crowd"
+      },
+      {
+        "title": "Classic Roast Beef Tenderloin with Shallot-Parsley Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4652-classic-roast-beef-tenderloin"
+      },
+      {
+        "title": "Roasted Rack of Lamb with Roasted Red Pepper Relish",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8560-roasted-rack-of-lamb-with-roasted-red-pepper-relish"
+      },
+      {
+        "title": "Pan-Seared Chicken Breasts",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5861-pan-seared-chicken-breasts"
+      },
+      {
+        "title": "Perfect Pan-Seared Pork Tenderloin Steaks",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10598-perfect-pan-seared-pork-tenderloin-steaks"
+      }
+    ]
+  },
+  {
+    "id": "butterfly_chicken_to_roast_over_a_bed",
+    "kind": "tip",
+    "title": "Butterfly a chicken to cook it flat over a bed",
+    "technique_tags": [
+      "roast",
+      "knife_skills",
+      "salting"
+    ],
+    "trigger_signals": [
+      "butterfly",
+      "spatchcock",
+      "remove the backbone",
+      "flatten the chicken",
+      "roast over",
+      "bread salad"
+    ],
+    "ingredient_classes": [
+      "poultry"
+    ],
+    "equipment": [
+      "kitchen_shears",
+      "skillet",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "Snipping out the backbone and flattening a chicken makes it cook faster and more evenly, and roasting it over a bed of bread or vegetables lets the drippings flavor everything underneath.",
+    "action": "Cut out the backbone with shears, press the breastbone flat, salt under the skin and rest if time allows, then roast skin-up over a bed of sturdy ingredients in a skillet at high heat.",
+    "variants": [
+      {
+        "case": "keep the fat",
+        "note": "Leave the excess fat and skin on here; the rendered drippings soak into the bed below and crisp it."
+      },
+      {
+        "case": "use a skillet",
+        "note": "A skillet's smaller surface lets the bed cook through and brown without scorching the way a big roasting pan can."
+      },
+      {
+        "case": "season ahead",
+        "note": "Salt under the skin and rest in the fridge to season the meat and dry the skin for better browning."
+      }
+    ],
+    "mechanism": "Opening the bird flat exposes breast and thigh to even heat and shortens cooking; the bed catches fat and juices for flavor and crisping.",
+    "render_hint": "Reference what the chicken is roasted over (bread, potatoes, vegetables).",
+    "confidence": "high",
+    "source_note": "interpreted from general butterflied-chicken technique, cross-checked against ATK 100 Techniques #55",
+    "exemplar_recipes": [
+      {
+        "title": "Roast Chicken with Warm Bread Salad",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10920-roast-chicken-with-warm-bread-salad"
+      }
+    ]
+  },
+  {
+    "id": "sheet_pan_arrange_by_heat_and_timing",
+    "kind": "check",
+    "title": "Arrange a sheet-pan supper by heat zone and timing",
+    "technique_tags": [
+      "roast"
+    ],
+    "trigger_signals": [
+      "sheet pan",
+      "rimmed baking sheet",
+      "one-pan",
+      "arrange on the pan",
+      "add halfway through"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "vegetables"
+    ],
+    "equipment": [
+      "sheet_pan",
+      "wire_rack",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "On a sheet pan the edges run hotter than the middle and ingredients cook at different rates; arrange and time them deliberately or some scorch while others stay raw.",
+    "action": "Put sturdy vegetables around the hot edges or as a bed, keep delicate items in the middle or on top, start long-cookers first and add quick ones later, and rotate the pan partway through.",
+    "signal": "Edges browning hard while the center is pale, or the protein done before the vegetables, means the layout or timing was off.",
+    "failure_mode": "An unevenly cooked meal: scorched edges, raw centers, or a done protein over crunchy vegetables.",
+    "variants": [
+      {
+        "case": "protein placement",
+        "note": "Set steaks or chops on the hot pan for a crust; elevate breaded or skin-on items on a rack so they don't steam, and let their drippings flavor the food below."
+      },
+      {
+        "case": "use a sturdy pan",
+        "note": "A heavy rimmed sheet won't warp and spill in the prolonged heat."
+      }
+    ],
+    "mechanism": "A sheet pan heats unevenly and offers no lid, so placement and staggered timing are what get every component done at once.",
+    "render_hint": "Reference the actual protein and vegetables and which belong at the edges vs. the center.",
+    "confidence": "high",
+    "source_note": "interpreted from general sheet-pan technique, cross-checked against ATK 100 Techniques #56",
+    "exemplar_recipes": [
+      {
+        "title": "One-Pan Steak with Sweet Potatoes and Scallions",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8973-one-pan-steak-with-sweet-potatoes-and-scallions"
+      },
+      {
+        "title": "Sheet-Pan Huevos Rancheros",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13207-sheet-pan-huevos-rancheros"
+      }
+    ]
+  },
+  {
+    "id": "cook_en_cocotte_no_added_liquid",
+    "kind": "tip",
+    "title": "Cook en cocotte: covered, low, no added liquid",
+    "technique_tags": [
+      "roast",
+      "braise"
+    ],
+    "trigger_signals": [
+      "en cocotte",
+      "covered pot",
+      "no liquid",
+      "low oven",
+      "in its own juices",
+      "foil then lid"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry",
+      "fish"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "Cooking en cocotte (a tightly covered pot in a low oven with no added liquid) traps the protein's own juices for exceptionally tender, intensely flavored meat or fish, plus a concentrated built-in sauce.",
+    "action": "Sear the meat or poultry (skip for fish), saute aromatics, set the protein on a small bed of vegetables, cover tightly with foil and then the lid, and bake in a low (around 250F) oven until just done.",
+    "variants": [
+      {
+        "case": "choose tender cuts",
+        "note": "Unlike braising, this cooks just to done without breaking down much collagen, so use tender cuts like pork loin, chicken, or fish."
+      },
+      {
+        "case": "trap the juices",
+        "note": "Seal with foil under the lid so the protein's own moisture, not added broth, creates the cooking environment."
+      }
+    ],
+    "mechanism": "A tight seal and gentle heat keep the protein's exuded juices in the pot, protecting lean cuts from overcooking and concentrating flavor.",
+    "render_hint": "Reference the specific protein and whether it gets seared first (not fish).",
+    "confidence": "high",
+    "source_note": "interpreted from general en cocotte technique, cross-checked against ATK 100 Techniques #57",
+    "exemplar_recipes": [
+      {
+        "title": "Turkey Breast en Cocotte with Mole",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5572-turkey-breast-en-cocotte-with-mole"
+      },
+      {
+        "title": "Salmon en Cocotte with Leeks and White Wine",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5283-salmon-en-cocotte-with-leeks-and-white-wine"
+      }
+    ]
+  },
+  {
+    "id": "braise_chicken_keep_skin_above_liquid",
+    "kind": "check",
+    "title": "Keep braised chicken skin above the liquid so it crisps",
+    "technique_tags": [
+      "braise",
+      "sear"
+    ],
+    "trigger_signals": [
+      "braised chicken",
+      "crispy skin",
+      "skin side up",
+      "above the liquid",
+      "skillet braise",
+      "scarpariello"
+    ],
+    "ingredient_classes": [
+      "poultry"
+    ],
+    "equipment": [
+      "skillet",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "Braised chicken skin turns rubbery and slips off when it sits in the liquid; pre-crisping it and keeping it elevated and uncovered above the braise is what keeps it crisp while the meat stays tender.",
+    "action": "Pat dry, brown the skin side in a hot skillet, then perch the chicken skin-up on the other ingredients so the skin rides above the liquid, and braise uncovered at a moderate oven temperature.",
+    "signal": "Skin sitting down in the liquid, or going soft and sticking to the pot, means it isn't elevated or the vessel is trapping steam.",
+    "failure_mode": "Flabby, rubbery skin that tears off, often over meat that's tough if cooked too hot.",
+    "variants": [
+      {
+        "case": "use a skillet",
+        "note": "A wide, shallow, uncovered skillet lets steam escape and keeps the skin dry; a Dutch oven traps steam and softens it."
+      },
+      {
+        "case": "don't crank the heat",
+        "note": "Hold around 350F; hotter (400F) cooks the meat through before the collagen breaks down, leaving it tough."
+      }
+    ],
+    "mechanism": "Skin only crisps in dry heat above the liquid; pre-browning renders fat and sets it, and an open skillet lets escaping steam keep it dry.",
+    "render_hint": "Reference the chicken pieces and the braise; emphasize skin-up and uncovered.",
+    "confidence": "high",
+    "source_note": "interpreted from general braised-chicken technique, cross-checked against ATK 100 Techniques #58",
+    "exemplar_recipes": [
+      {
+        "title": "One-Pan Lemon-Braised Chicken Thighs with Chickpeas and Fennel",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8787-one-pan-lemon-braised-chicken-thighs-with-chickpeas-and-fennel"
+      },
+      {
+        "title": "Chicken Scarpariello",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8675-chicken-scarpariello"
+      }
+    ]
+  },
+  {
+    "id": "braise_without_searing_keep_meat_exposed",
+    "kind": "tip",
+    "title": "Skip the sear if part of the meat sits above the braise",
+    "technique_tags": [
+      "braise",
+      "stew"
+    ],
+    "trigger_signals": [
+      "without searing",
+      "no sear",
+      "skip browning",
+      "above the liquid",
+      "oven braise",
+      "pot roast",
+      "stew"
+    ],
+    "ingredient_classes": [
+      "meat"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "For long oven braises with a robustly flavored liquid, you can skip the messy stovetop sear as long as part of the meat stays above the liquid; the oven browns the exposed surfaces as it cooks.",
+    "action": "Build a well-flavored braising liquid, add the meat so it isn't fully submerged, braise low and slow, and turn or stir partway through to expose new surfaces to brown.",
+    "variants": [
+      {
+        "case": "turn to brown",
+        "note": "Only the exposed surface browns, so flip a roast or stir a stew partway to brown more of the meat."
+      },
+      {
+        "case": "needs a strong liquid",
+        "note": "This works because well-seasoned braising ingredients make up for the fond a sear would have built."
+      }
+    ],
+    "mechanism": "Exposed meat above the liquid eventually reaches browning temperature in the oven, developing Maillard flavor without a separate searing step.",
+    "render_hint": "Reference the cut and the braising liquid; note the meat shouldn't be fully submerged.",
+    "confidence": "high",
+    "source_note": "interpreted from general no-sear braising technique, cross-checked against ATK 100 Techniques #59",
+    "exemplar_recipes": [
+      {
+        "title": "Catalan-Style Beef Stew with Mushrooms",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6764-catalan-style-beef-stew-with-mushrooms"
+      },
+      {
+        "title": "Classic Pot Roast",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6216-classic-pot-roast"
+      }
+    ]
+  },
+  {
+    "id": "grill_vegetables_cut_oil_moderate_heat",
+    "kind": "check",
+    "title": "Grill vegetables over moderate heat, cut for surface area",
+    "technique_tags": [
+      "grill"
+    ],
+    "trigger_signals": [
+      "grill the vegetables",
+      "grilled zucchini",
+      "grilled peppers",
+      "cut-side down",
+      "oil the grate",
+      "medium-hot fire"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "grill"
+    ],
+    "scope": "step",
+    "claim": "Grilled vegetables scorch outside while staying raw inside, or fall through the grate, unless you cut them for surface area, oil them, and use moderate heat.",
+    "action": "Cut vegetables to maximize flat surface (halves or 1/2-inch slices, flattened peppers), brush them and the grate with oil, build a medium-hot fire, and grill cut-side down first before flipping, moving them to avoid scorching.",
+    "signal": "Charring fast while still crunchy inside means the fire's too hot; vegetables going limp and watery instead of browned means they're steaming, not grilling.",
+    "failure_mode": "Scorched exteriors over raw interiors, pieces lost through the grate, or watery, steamed vegetables.",
+    "variants": [
+      {
+        "case": "skip the gadgets",
+        "note": "Grill baskets have openings too big for cut vegetables, and most grill pans steam them; grill directly on an oiled grate."
+      },
+      {
+        "case": "quick-char exceptions",
+        "note": "A few, like romaine halves, want fast high heat to char the outside while staying crisp within."
+      }
+    ],
+    "mechanism": "Maximized surface area plus oil and moderate heat let vegetables char and cook through evenly before they burn or dry out.",
+    "render_hint": "Name the vegetables and how this recipe cuts them.",
+    "confidence": "high",
+    "source_note": "interpreted from general vegetable-grilling technique, cross-checked against ATK 100 Techniques #60",
+    "exemplar_recipes": [
+      {
+        "title": "Tunisian-Style Grilled Vegetables (Mechouia)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7411-tunisian-style-grilled-vegetables-mechouia"
+      },
+      {
+        "title": "Grilled Caesar Salad",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7425-grilled-caesar-salad"
+      }
+    ]
+  },
+  {
+    "id": "make_grill_nonstick_with_oil_layers",
+    "kind": "check",
+    "title": "Build up oil on a hot grate so fish doesn't stick",
+    "technique_tags": [
+      "grill"
+    ],
+    "trigger_signals": [
+      "grill the fish",
+      "grilled salmon",
+      "grilled scallops",
+      "oil the grate",
+      "stick to the grates",
+      "skin side"
+    ],
+    "ingredient_classes": [
+      "fish",
+      "seafood"
+    ],
+    "equipment": [
+      "grill"
+    ],
+    "scope": "step",
+    "claim": "Fish and shellfish weld to grill grates through a direct protein-to-metal bond; the fix is a barrier of polymerized oil built up on a hot, clean grate, plus oiling the fish itself.",
+    "action": "Preheat the grill hot, scrape the grate clean, then repeatedly wipe it with an oiled rag and let the oil burn off until it's black and glossy; oil the fish and lay it down, leaving it until it releases on its own.",
+    "signal": "The fish resisting and tearing when you try to move it means a crust hasn't set or the grate wasn't conditioned.",
+    "failure_mode": "Fish cemented to the grate and torn apart when you lift it.",
+    "variants": [
+      {
+        "case": "condition the grate",
+        "note": "Wipe with an oiled rag, let it smoke off, and repeat several times; one pass isn't enough to build the nonstick layer."
+      },
+      {
+        "case": "let it release",
+        "note": "Lay fish perpendicular to the bars and don't move it until it lifts cleanly."
+      }
+    ],
+    "mechanism": "Heating oil on the grate polymerizes it into a slick layer that keeps proteins from bonding to the bare metal.",
+    "render_hint": "Name the fish or shellfish and whether it's skin-on.",
+    "confidence": "high",
+    "source_note": "interpreted from general grill technique, cross-checked against ATK 100 Techniques #61",
+    "exemplar_recipes": [
+      {
+        "title": "Grilled Salmon Fillets",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11101-grilled-salmon-fillets"
+      },
+      {
+        "title": "Grilled Scallops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6968-grilled-scallops"
+      },
+      {
+        "title": "Grill-Roasted Stuffed Trout",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14240-grill-roasted-stuffed-trout"
+      }
+    ]
+  },
+  {
+    "id": "grind_your_own_meat_for_burgers",
+    "kind": "tip",
+    "title": "Grind your own meat for tender, custom burgers",
+    "technique_tags": [
+      "grind_meat",
+      "mix_gently"
+    ],
+    "trigger_signals": [
+      "grind your own",
+      "grind the meat",
+      "food processor",
+      "burger blend",
+      "freeze the meat",
+      "pulse"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "food_processor",
+      "sheet_pan"
+    ],
+    "scope": "step",
+    "claim": "Store-ground meat is over-processed to a fine, tough pulp; grinding your own in a food processor gives a loose, tender, coarse grind and lets you build your own blend of cuts and fat.",
+    "action": "Cut the meat into 1/2-inch pieces, freeze briefly until firm but pliable, then pulse in a food processor to a coarse grind, discarding gristle; shape gently and salt only the outside.",
+    "variants": [
+      {
+        "case": "build a blend",
+        "note": "Combine cuts for flavor and fat (sirloin plus a little butter, short ribs for richness, skirt for texture)."
+      },
+      {
+        "case": "lean poultry",
+        "note": "Grind some to a paste as a binder, use dark meat, and add a pinch of baking soda to keep the patties tender."
+      }
+    ],
+    "mechanism": "A brief freeze keeps the meat from smearing so it cuts cleanly into coarse, loose pieces rather than a dense paste.",
+    "render_hint": "Reference the cut(s) this recipe grinds and the target grind.",
+    "confidence": "high",
+    "source_note": "interpreted from general meat-grinding technique, cross-checked against ATK 100 Techniques #62",
+    "exemplar_recipes": [
+      {
+        "title": "Grind-Your-Own Sirloin Burger Blend",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12856-grind-your-own-sirloin-burger-blend"
+      },
+      {
+        "title": "Grind-Your-Own Turkey Burger Blend",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12858-grind-your-own-turkey-burger-blend"
+      }
+    ]
+  },
+  {
+    "id": "lobster_freeze_then_temp_the_tail",
+    "kind": "tip",
+    "title": "Sedate lobster in the freezer and temp the tail",
+    "technique_tags": [
+      "boil"
+    ],
+    "trigger_signals": [
+      "live lobster",
+      "boil lobster",
+      "lobster tail",
+      "freeze the lobster",
+      "until it registers"
+    ],
+    "ingredient_classes": [
+      "seafood"
+    ],
+    "equipment": [
+      "pot",
+      "thermometer"
+    ],
+    "scope": "step",
+    "claim": "A live lobster is easier and more humane to handle after a short freeze, and the foolproof doneness cue isn't a weight chart but the tail temperature.",
+    "action": "Freeze the lobster about 30 minutes to sedate it, cook it, then insert a thermometer into the base of the tail; it's done at 140F.",
+    "variants": [
+      {
+        "case": "why freeze first",
+        "note": "A half hour in the freezer anesthetizes the lobster before it goes into the pot or onto the grill."
+      },
+      {
+        "case": "cook promptly",
+        "note": "Cook lobster live or right after killing; its flesh deteriorates and is prone to bacteria once it dies."
+      }
+    ],
+    "mechanism": "Cold sedates the lobster, and the thickest part of the tail reaching 140F signals the meat is cooked through.",
+    "render_hint": "Reference how this recipe cooks the lobster (boil, grill).",
+    "confidence": "high",
+    "source_note": "interpreted from general lobster technique, cross-checked against ATK 100 Techniques #63",
+    "exemplar_recipes": [
+      {
+        "title": "Boiled Lobster",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7553-boiled-lobster"
+      },
+      {
+        "title": "New England Lobster Rolls",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7405-new-england-lobster-rolls-recipe"
+      },
+      {
+        "title": "Grilled Lobsters",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13969-grilled-lobsters"
+      }
+    ]
+  },
+  {
+    "id": "poach_fish_in_olive_oil",
+    "kind": "tip",
+    "title": "Poach fish in olive oil for silky, moist results",
+    "technique_tags": [
+      "poach"
+    ],
+    "trigger_signals": [
+      "poach",
+      "olive oil",
+      "oil-poached",
+      "submerge in oil",
+      "gentle heat",
+      "fish fillets"
+    ],
+    "ingredient_classes": [
+      "fish",
+      "seafood"
+    ],
+    "equipment": [
+      "skillet",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "Gently poaching fish in olive oil instead of water keeps it remarkably moist and velvety, because oil and water repel, so little moisture leaves the fish and it cooks more gently than water at the same temperature.",
+    "action": "Season the fillets, heat the oil above the target temperature, nestle the fish in (partly submerged, with a halved onion to displace oil), and finish in a low oven, flipping once, to about 130-135F.",
+    "variants": [
+      {
+        "case": "use less oil",
+        "note": "You don't need to fully submerge the fish; a small pan and a halved onion let you poach several fillets in a modest amount of oil."
+      },
+      {
+        "case": "steady temperature",
+        "note": "Heat the oil high, add the fish to drop it into range, then rely on the even oven to hold the gentle poaching temperature."
+      }
+    ],
+    "mechanism": "Oil can't easily pull moisture from the fish, and it carries less heat energy than water, so the fish stays moist and cooks slowly and evenly.",
+    "render_hint": "Reference the fish and the infused oil that becomes a sauce.",
+    "confidence": "high",
+    "source_note": "interpreted from general oil-poaching technique, cross-checked against ATK 100 Techniques #64",
+    "exemplar_recipes": [
+      {
+        "title": "Poached Fish Fillets with Sherry-Tomato Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6979-poached-fish-fillets-with-sherry-tomato-vinaigrette"
+      },
+      {
+        "title": "Poached Fish Fillets with Cilantro and Jalapeno Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/6981-poached-fish-fillets-with-cilantro-and-jalapeno-vinaigrette"
+      }
+    ]
+  },
+  {
+    "id": "cold_start_frying",
+    "kind": "tip",
+    "title": "Start fries in cold oil for less mess and fat",
+    "technique_tags": [
+      "deep_fry"
+    ],
+    "trigger_signals": [
+      "cold oil",
+      "cold-start",
+      "french fries",
+      "add to cold oil",
+      "fried brussels sprouts"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "dutch_oven"
+    ],
+    "scope": "step",
+    "claim": "Adding potatoes (or Brussels sprouts) to cold oil and heating them together gives crisp, restaurant-quality results with no double-frying, less oil, far less splatter, and even lower fat than traditional frying.",
+    "action": "Cut the vegetables, stir them into cold oil in a deep pot, set over high heat, and cook (without stirring at first) until the oil reaches a boil and they turn golden and crisp.",
+    "variants": [
+      {
+        "case": "potatoes",
+        "note": "Use low-starch Yukon Golds, which need no presoaking; cut into even sticks."
+      },
+      {
+        "case": "Brussels sprouts",
+        "note": "Their high moisture would splatter in hot oil; a cold start calms them and lets them brown deeply."
+      }
+    ],
+    "mechanism": "A gentle cold start cooks the vegetables through while losing less surface moisture, so they absorb less oil and crisp without a separate first fry.",
+    "render_hint": "Reference the vegetable and that it goes into cold oil.",
+    "confidence": "high",
+    "source_note": "interpreted from general cold-start frying technique, cross-checked against ATK 100 Techniques #65",
+    "exemplar_recipes": [
+      {
+        "title": "Easier French Fries",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4812-easier-french-fries"
+      },
+      {
+        "title": "Fried Brussels Sprouts with Sriracha Dipping Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10551-fried-brussels-sprouts-with-sriracha-dipping-sauce"
+      }
+    ]
+  },
+  {
+    "id": "oven_barbecue_with_liquid_smoke",
+    "kind": "check",
+    "title": "Get smoky bark indoors with liquid smoke and a cover-then-uncover roast",
+    "technique_tags": [
+      "roast",
+      "brine",
+      "smoke"
+    ],
+    "trigger_signals": [
+      "indoor barbecue",
+      "pulled pork",
+      "liquid smoke",
+      "bark",
+      "oven barbecue",
+      "cover then uncover"
+    ],
+    "ingredient_classes": [
+      "pork",
+      "poultry"
+    ],
+    "equipment": [
+      "oven",
+      "sheet_pan",
+      "wire_rack"
+    ],
+    "scope": "step",
+    "claim": "Indoor barbecue done in a slow cooker turns out mushy and smokeless; roasting with liquid smoke, covered then uncovered, gives shreddable meat with a real smoky bark.",
+    "action": "Brine the meat, rub it with a wet rub carrying liquid smoke plus a spice rub, roast covered to stay moist, then uncover and roast to about 200F to build the bark.",
+    "signal": "Meat staying pale and soft with no crust forming, or tasting flat and unsmoky, means it wasn't uncovered to brown or lacked the liquid smoke.",
+    "failure_mode": "Soft, uniformly mushy meat with little smoke flavor and no bark.",
+    "variants": [
+      {
+        "case": "smoke source",
+        "note": "Use liquid smoke in the brine and wet rub; wood chips set off smoke alarms and long tea-smoking turns the meat tea-flavored."
+      },
+      {
+        "case": "cover then uncover",
+        "note": "Cover for part of the roast to keep it moist (the oven is dry), then uncover to develop the crust."
+      }
+    ],
+    "mechanism": "Liquid smoke supplies smoke flavor without a smoker, and the cover/uncover sequence balances moisture against crust formation in a dry oven.",
+    "render_hint": "Reference the cut and the smoke source this recipe uses.",
+    "confidence": "high",
+    "source_note": "interpreted from general indoor-barbecue technique, cross-checked against ATK 100 Techniques #66",
+    "exemplar_recipes": [
+      {
+        "title": "Indoor Pulled Pork with Sweet and Tangy Barbecue Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5024-indoor-pulled-pork-with-sweet-and-tangy-barbecue-sauce"
+      },
+      {
+        "title": "Lexington Vinegar Barbecue Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5025-lexington-vinegar-barbecue-sauce"
+      },
+      {
+        "title": "Sweet and Tangy Barbecue Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8505-sweet-and-tangy-barbecue-sauce"
+      }
+    ]
+  },
+  {
+    "id": "cast_iron_for_burnished_baked_crusts",
+    "kind": "tip",
+    "title": "Preheat cast iron for deeply browned baked crusts",
+    "technique_tags": [
+      "bake"
+    ],
+    "trigger_signals": [
+      "cast iron",
+      "preheat the skillet",
+      "dutch baby",
+      "cornbread",
+      "skillet cookie",
+      "burnished crust"
+    ],
+    "ingredient_classes": [
+      "batter",
+      "dough"
+    ],
+    "equipment": [
+      "cast_iron",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "A preheated cast-iron skillet browns baked goods evenly and deeply without sticking, thanks to its slick seasoning and excellent heat retention.",
+    "action": "Grease the skillet with oil (higher smoke point than butter), preheat it in a hot oven until shimmering, then pour in the batter so it sizzles on contact and bake, rotating partway.",
+    "variants": [
+      {
+        "case": "why it works",
+        "note": "The seasoning acts like natural nonstick, and the heavy pan holds heat to jump-start crisping the moment batter hits it."
+      },
+      {
+        "case": "maintain seasoning",
+        "note": "After washing, heat the dry skillet and rub a little oil into the interior to keep it nonstick."
+      }
+    ],
+    "mechanism": "Cast iron's retained heat and polymerized-oil seasoning give an immediate, even sear to the batter's surface for a crisp, release-clean crust.",
+    "render_hint": "Reference the baked good (Dutch baby, cornbread, skillet cookie) and the preheat step.",
+    "confidence": "high",
+    "source_note": "interpreted from general cast-iron baking technique, cross-checked against ATK 100 Techniques #67",
+    "exemplar_recipes": [
+      {
+        "title": "Dutch Baby with Burrata and Prosciutto",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14617-dutch-baby-with-burrata-and-prosciutto"
+      },
+      {
+        "title": "Southern-Style Cornbread",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/874-southern-style-cornbread"
+      }
+    ]
+  },
+  {
+    "id": "tortillas_without_a_press",
+    "kind": "tip",
+    "title": "Make tortillas without a press",
+    "technique_tags": [
+      "knead"
+    ],
+    "trigger_signals": [
+      "tortillas",
+      "masa harina",
+      "no tortilla press",
+      "corn tortillas",
+      "flour tortillas",
+      "press the dough"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "skillet",
+      "rolling_pin",
+      "pie_plate"
+    ],
+    "scope": "step",
+    "claim": "You don't need a tortilla press; corn and flour tortillas come out tender and pliable with the right ingredients and a household tool to flatten them.",
+    "action": "Mix the dough with salt, shape it, flatten each ball (press corn dough in a cut-open zipper bag with a pie plate, or roll flour dough with a pin), and cook in a hot skillet until spotty brown, then steam under towels.",
+    "variants": [
+      {
+        "case": "corn",
+        "note": "Use masa harina (no substitute); a cut-open zipper-lock bag releases the dough better than parchment when you press it flat."
+      },
+      {
+        "case": "flour",
+        "note": "Don't skimp on fat or it turns brittle; warm water melts the shortening to limit gluten for tenderness, and a brief chill makes the dough rollable. Skip baking powder."
+      }
+    ],
+    "mechanism": "Fat coating the flour limits gluten for tenderness, and steaming the cooked tortillas under towels keeps them soft and pliable.",
+    "render_hint": "Reference whether this recipe makes corn or flour tortillas and pick the matching variant.",
+    "confidence": "high",
+    "source_note": "interpreted from general tortilla technique, cross-checked against ATK 100 Techniques #68",
+    "exemplar_recipes": [
+      {
+        "title": "Homemade Corn Tortillas",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9093-homemade-corn-tortillas"
+      },
+      {
+        "title": "Homemade Taco-Size Flour Tortillas",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/9410-homemade-taco-size-flour-tortillas"
+      }
+    ]
+  },
+  {
+    "id": "skillet_pizza_stovetop_then_oven",
+    "kind": "tip",
+    "title": "Make pizza in a skillet: start on the stovetop, finish in the oven",
+    "technique_tags": [
+      "bake",
+      "knead"
+    ],
+    "trigger_signals": [
+      "skillet pizza",
+      "no pizza stone",
+      "press dough into skillet",
+      "crispy crust",
+      "ovensafe skillet"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "skillet",
+      "cast_iron",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "You can make crisp-crusted pizza without a peel or stone: starting it in a cold ovensafe skillet on the stovetop browns the bottom, and the heated skillet then acts like a pizza stone in the oven.",
+    "action": "Press room-temperature dough into a greased ovensafe skillet, set it over medium-high heat until the bottom is spotty brown, add toppings, then bake at 500F until the crust is golden and the cheese bubbles.",
+    "variants": [
+      {
+        "case": "pan choice",
+        "note": "Any ovensafe skillet works (cast iron, stainless, or nonstick rated to 500F)."
+      },
+      {
+        "case": "why no stone",
+        "note": "The thick skillet retains heat like a stone once hot, but without the long preheat a stone needs."
+      }
+    ],
+    "mechanism": "The stovetop jump-starts the bottom crust while the skillet heats; in the oven the hot, heavy pan delivers the even high heat that crisps the base.",
+    "render_hint": "Reference the toppings and the skillet type.",
+    "confidence": "high",
+    "source_note": "interpreted from general skillet-pizza technique, cross-checked against ATK 100 Techniques #69",
+    "exemplar_recipes": [
+      {
+        "title": "Skillet Pizza",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/4361-skillet-pizza"
+      },
+      {
+        "title": "Classic Pizza Dough",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10422-classic-pizza-dough"
+      },
+      {
+        "title": "Barbecued Chicken Skillet Pizza",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/4364-barbecued-chicken-skillet-pizza"
+      }
+    ]
+  },
+  {
+    "id": "no_knead_bread_fold_and_dutch_oven",
+    "kind": "tip",
+    "title": "Skip kneading: use a wet dough, folds, and a hot Dutch oven",
+    "technique_tags": [
+      "fold",
+      "proof",
+      "bake"
+    ],
+    "trigger_signals": [
+      "no-knead",
+      "wet dough",
+      "high hydration",
+      "fold the dough",
+      "preheated dutch oven",
+      "rustic loaf"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "A wet dough plus long rests and a few gentle folds builds gluten without kneading, and baking in a preheated covered Dutch oven gives an open crumb and a crisp, browned crust.",
+    "action": "Mix a high-hydration dough, let it rest, fold it over itself between rests to develop structure, then score and bake in a screaming-hot preheated Dutch oven (covered, then uncovered to brown) to about 205F.",
+    "variants": [
+      {
+        "case": "folding not kneading",
+        "note": "Folding brings the proteins together, aerates the dough, and redistributes bubbles for an open crumb, doing the job kneading would."
+      },
+      {
+        "case": "Dutch oven steam",
+        "note": "A preheated covered pot traps the dough's steam like a steam-injected oven for oven spring and a crisp crust; uncover near the end to brown."
+      }
+    ],
+    "mechanism": "High hydration and time let gluten develop on its own; the covered hot pot traps steam that expands the loaf and sets a crisp crust.",
+    "render_hint": "Reference the loaf and any mix-ins; note the preheated covered Dutch oven.",
+    "confidence": "high",
+    "source_note": "interpreted from general no-knead bread technique, cross-checked against ATK 100 Techniques #70",
+    "exemplar_recipes": [
+      {
+        "title": "No-Knead Rustic Loaf",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/16024-no-knead-rustic-loaf"
+      },
+      {
+        "title": "Cranberry Walnut Bread",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/16106-cranberry-walnut-bread"
+      }
+    ]
+  },
+  {
+    "id": "no_churn_ice_cream_whipped_cream",
+    "kind": "tip",
+    "title": "Make no-churn ice cream with whipped cream and a blender",
+    "technique_tags": [
+      "whip",
+      "fold"
+    ],
+    "trigger_signals": [
+      "no-churn",
+      "ice cream",
+      "whip the cream",
+      "sweetened condensed milk",
+      "without an ice cream maker"
+    ],
+    "ingredient_classes": [
+      "dairy"
+    ],
+    "equipment": [
+      "blender"
+    ],
+    "scope": "step",
+    "claim": "You can make velvety ice cream without a machine: air whipped into cream stands in for churning, and condensed milk and corn syrup keep it scoopable and smooth in the freezer.",
+    "action": "Whip chilled heavy cream in a blender to stiff peaks, blend in sweetened condensed milk, milk, corn syrup, sugar, salt, and flavorings, then fold in mix-ins and freeze until firm.",
+    "variants": [
+      {
+        "case": "use a blender",
+        "note": "A blender gives the right fluffy texture; a stand mixer whips in too much air and the result tastes like frozen whipped topping."
+      },
+      {
+        "case": "smooth texture",
+        "note": "Corn syrup adds body and condensed milk keeps it velvety, both limiting icy crystals in the freezer."
+      }
+    ],
+    "mechanism": "Air trapped in the whipped cream replaces the air an ice cream maker incorporates, and sugars in condensed milk and corn syrup suppress large ice crystals.",
+    "render_hint": "Reference the flavor and any mix-ins this recipe uses.",
+    "confidence": "high",
+    "source_note": "interpreted from general no-churn ice cream technique, cross-checked against ATK 100 Techniques #71",
+    "exemplar_recipes": [
+      {
+        "title": "Magic Vanilla Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/6025-magic-vanilla-ice-cream"
+      },
+      {
+        "title": "Birthday Cake No-Churn Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11760-birthday-cake-no-churn-ice-cream"
+      },
+      {
+        "title": "Salted Caramel-Coconut No-Churn Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11759-salted-caramel-coconut-no-churn-ice-cream"
+      },
+      {
+        "title": "Dark Chocolate No-Churn Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11755-dark-chocolate-no-churn-ice-cream"
+      },
+      {
+        "title": "Strawberry-Buttermilk No-Churn Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11752-strawberry-buttermilk-no-churn-ice-cream"
+      }
+    ]
+  },
+  {
+    "id": "food_processor_cakes_melted_butter",
+    "kind": "tip",
+    "title": "Use a food processor and melted butter for foolproof snacking cakes",
+    "technique_tags": [
+      "bake",
+      "emulsify"
+    ],
+    "trigger_signals": [
+      "food processor",
+      "melted butter",
+      "pound cake",
+      "snacking cake",
+      "carrot cake",
+      "no-bowl"
+    ],
+    "ingredient_classes": [
+      "batter"
+    ],
+    "equipment": [
+      "food_processor"
+    ],
+    "scope": "step",
+    "claim": "Pound and other snacking cakes turn out foolproof when you skip finicky creaming: hot melted butter plus a food processor emulsify the batter fast, before it can curdle.",
+    "action": "Process the sugar and eggs, stream in hot melted butter to emulsify, then fold in sifted flour by hand (or in the processor); the processor can also chop nuts, shred carrots, and make frosting.",
+    "variants": [
+      {
+        "case": "why melted butter",
+        "note": "Melted butter and the fast blade emulsify the liquids quickly, avoiding the curdled, unfixable batter that creaming can produce."
+      },
+      {
+        "case": "does it all",
+        "note": "For cakes like carrot cake, the processor shreds, mixes, and frosts, so you barely dirty a bowl."
+      }
+    ],
+    "mechanism": "Hot fat and rapid blending form a stable emulsion before the egg proteins can break, giving a fine, even crumb.",
+    "render_hint": "Reference the specific cake and whether the processor also does prep.",
+    "confidence": "high",
+    "source_note": "interpreted from general food-processor cake technique, cross-checked against ATK 100 Techniques #72",
+    "exemplar_recipes": [
+      {
+        "title": "Easy Pound Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/9305-easy-pound-cake"
+      },
+      {
+        "title": "Lemon Pound Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/2918-lemon-pound-cake"
+      },
+      {
+        "title": "Almond Pound Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/3319-almond-pound-cake"
+      },
+      {
+        "title": "Easy Ginger Pound Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/9301-easy-ginger-pound-cake"
+      },
+      {
+        "title": "Simple Carrot Cake with Cream Cheese Frosting",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/57-simple-carrot-cake-with-cream-cheese-frosting"
+      }
+    ]
+  },
+  {
+    "id": "easy_lamination_grated_butter",
+    "kind": "tip",
+    "title": "Laminate the easy way with grated or sliced cold butter",
+    "technique_tags": [
+      "laminate",
+      "fold",
+      "bake"
+    ],
+    "trigger_signals": [
+      "laminate",
+      "flaky layers",
+      "grate the butter",
+      "fold the dough",
+      "biscuits",
+      "croissant dough"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "box_grater",
+      "rolling_pin"
+    ],
+    "scope": "step",
+    "claim": "You can get the flaky, multilayered payoff of lamination without the fussy butter block by working cold butter into the dough as gratings or thin slices and doing a simplified fold-and-roll.",
+    "action": "Grate frozen butter (or toss sliced chilled butter in flour), work it into the dough, then roll and fold a few times, keeping everything cold, before shaping and baking.",
+    "variants": [
+      {
+        "case": "biscuits",
+        "note": "Grate frozen butter into the flour and do about five folds with no rests for tall, flaky biscuits."
+      },
+      {
+        "case": "croissant-style",
+        "note": "Toss larger sliced butter pieces in flour to spread them into flakes, then roll and shape (as for morning buns)."
+      }
+    ],
+    "mechanism": "Distributed cold butter melts in the oven and leaves steam-filled gaps, building flaky layers the way a butter block would, with far less effort.",
+    "render_hint": "Reference the pastry (biscuits, buns) and the grate-vs-slice method.",
+    "confidence": "high",
+    "source_note": "interpreted from general lamination technique, cross-checked against ATK 100 Techniques #73",
+    "exemplar_recipes": [
+      {
+        "title": "Morning Buns",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/6304-morning-buns"
+      },
+      {
+        "title": "Ultimate Flaky Buttermilk Biscuits",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8496-ultimate-flaky-buttermilk-biscuits"
+      }
+    ]
+  },
+  {
+    "id": "make_your_own_bitters_infusion",
+    "kind": "tip",
+    "title": "Make bitters by infusing high-proof alcohol",
+    "technique_tags": [
+      "infuse"
+    ],
+    "trigger_signals": [
+      "bitters",
+      "infuse",
+      "steep",
+      "high-proof vodka",
+      "tincture",
+      "aromatics in alcohol"
+    ],
+    "ingredient_classes": [],
+    "equipment": [
+      "jar",
+      "strainer"
+    ],
+    "scope": "step",
+    "claim": "Homemade bitters are about as hard as brewing tea: alcohol extracts and preserves the flavors of barks, spices, herbs, and fruits, no heat required.",
+    "action": "Combine aromatics with high-proof vodka in a jar, steep one to two weeks (shaking occasionally), strain through cheesecloth, and sweeten with simple syrup.",
+    "variants": [
+      {
+        "case": "alcohol proof",
+        "note": "100-proof vodka extracts faster; 80-proof works too with an extra week of steeping."
+      },
+      {
+        "case": "beyond cocktails",
+        "note": "Use bitters like a flavoring extract: a few drops in ice cream, whipped cream, or baked goods."
+      }
+    ],
+    "mechanism": "Alcohol is both a solvent that pulls flavor compounds from the aromatics without heat and a preservative that keeps the finished bitters stable.",
+    "render_hint": "Reference the specific aromatics and steeping time.",
+    "confidence": "high",
+    "source_note": "interpreted from general bitters technique, cross-checked against ATK 100 Techniques #74",
+    "exemplar_recipes": [
+      {
+        "title": "Old-Fashioned Aromatic Bitters",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13460-old-fashioned-aromatic-bitters"
+      },
+      {
+        "title": "Citrus Bitters",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13461-citrus-bitters"
+      }
+    ]
+  },
+  {
+    "id": "ferment_pickles_keep_submerged_in_salt_brine",
+    "kind": "check",
+    "title": "Keep ferments submerged in a proper salt brine",
+    "technique_tags": [
+      "ferment",
+      "pickle",
+      "salting"
+    ],
+    "trigger_signals": [
+      "ferment",
+      "fermented",
+      "salt brine",
+      "submerge",
+      "sour dill",
+      "sauerkraut",
+      "kimchi"
+    ],
+    "ingredient_classes": [
+      "vegetables"
+    ],
+    "equipment": [
+      "jar",
+      "cheesecloth"
+    ],
+    "scope": "step",
+    "claim": "Traditional fermentation lets good bacteria sour and preserve vegetables, but it only works safely if the salt is right and the vegetables stay submerged below the brine.",
+    "action": "Salt the vegetables, cover with brine, weigh them down so they stay under the surface, cover with cheesecloth, and ferment in a cool dark place, skimming residue and tasting until done before refrigerating.",
+    "signal": "Vegetables poking above the brine, or fuzzy mold and an off smell, mean it isn't submerged or wasn't salted properly.",
+    "failure_mode": "Moldy or spoiled ferment instead of crisp, tangy pickles.",
+    "variants": [
+      {
+        "case": "the salt",
+        "note": "Use canning and pickling salt; table salt's additives give the brine off-flavors."
+      },
+      {
+        "case": "stay submerged",
+        "note": "A parchment round and a brine-filled bag keep the vegetables under the surface, where the good bacteria thrive and mold can't."
+      }
+    ],
+    "mechanism": "Salt and an anaerobic, submerged environment favor lactic-acid bacteria that outcompete spoilage microbes and acidify the brine.",
+    "render_hint": "Name the vegetable being fermented and reference keeping it submerged.",
+    "confidence": "high",
+    "source_note": "interpreted from general fermentation technique, cross-checked against ATK 100 Techniques #75",
+    "exemplar_recipes": [
+      {
+        "title": "Sour Dill Pickles",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13014-sour-dill-pickles"
+      },
+      {
+        "title": "Cabbage Kimchi",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9274-cabbage-kimchi"
+      },
+      {
+        "title": "Sauerkraut",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8662-sauerkraut"
+      }
+    ]
+  },
+  {
+    "id": "fresh_cheese_dont_use_uht_milk",
+    "kind": "check",
+    "title": "Curdle fresh milk with acid (and never use UHT milk)",
+    "technique_tags": [
+      "curdle"
+    ],
+    "trigger_signals": [
+      "fresh cheese",
+      "ricotta",
+      "paneer",
+      "curdle",
+      "curds and whey",
+      "lemon juice",
+      "buttermilk"
+    ],
+    "ingredient_classes": [
+      "dairy"
+    ],
+    "equipment": [
+      "saucepan",
+      "strainer",
+      "cheesecloth"
+    ],
+    "scope": "step",
+    "claim": "Fresh cheeses like ricotta and paneer come from curdling milk with acid, but ultra-pasteurized (UHT) milk won't form curds, and over-stirring ruins the texture.",
+    "action": "Heat fresh (not UHT) whole milk, add acid (lemon juice, vinegar, or buttermilk), let it sit undisturbed until it separates into curds and whey, then drain in cheesecloth.",
+    "signal": "Milk that stays uniformly liquid instead of separating into curds and whey signals UHT milk or not enough acid/heat.",
+    "failure_mode": "No curds form, or a grainy, dry, fat-poor cheese from disturbing or over-stirring it.",
+    "variants": [
+      {
+        "case": "milk choice",
+        "note": "Use the freshest whole milk; ultra-pasteurized/UHT milk is heated so high its proteins won't coagulate."
+      },
+      {
+        "case": "don't disturb",
+        "note": "Leave the milk still as it curdles, and stir minimally after, so the curds keep their milk fat for good texture."
+      }
+    ],
+    "mechanism": "Acid and heat coagulate milk proteins into curds; UHT processing alters those proteins so they can't set, and agitation drives out the fat that makes the cheese creamy.",
+    "render_hint": "Reference whether this recipe makes paneer (pressed) or ricotta (moist) and the acid used.",
+    "confidence": "high",
+    "source_note": "interpreted from general fresh-cheese technique, cross-checked against ATK 100 Techniques #76",
+    "exemplar_recipes": [
+      {
+        "title": "Saag Paneer (Indian-Style Spinach with Fresh Cheese)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7028-indian-style-spinach-with-fresh-cheese-saag-paneer"
+      },
+      {
+        "title": "Homemade Ricotta Cheese",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7516-homemade-ricotta-cheese"
+      },
+      {
+        "title": "Corn Ricotta Toast with Pickled Corn and Cherry Tomatoes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9272-corn-ricotta-toast-with-pickled-corn-and-cherry-tomatoes"
+      },
+      {
+        "title": "Fusilli with Ricotta and Spinach",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7855-fusilli-with-ricotta-and-spinach"
+      },
+      {
+        "title": "Naan Flatbread with Spiced-Yogurt Paneer",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/15669-naan-flatbread-with-spiced-yogurt-paneer"
+      }
+    ]
+  },
+  {
+    "id": "fresh_pasta_by_hand_yolks_oil_rest",
+    "kind": "tip",
+    "title": "Make rollable fresh pasta by hand with yolks, oil, and a rest",
+    "technique_tags": [
+      "knead"
+    ],
+    "trigger_signals": [
+      "fresh pasta",
+      "without a machine",
+      "egg yolks",
+      "rolling pin",
+      "rest the dough",
+      "roll thin"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "rolling_pin",
+      "chefs_knife"
+    ],
+    "scope": "step",
+    "claim": "Fresh pasta rolls out thin by hand, without a machine, if the dough is made supple with extra yolks and oil and then rested so the gluten relaxes.",
+    "action": "Knead a dough enriched with egg yolks and olive oil, rest it at least an hour, then roll it thin, lifting frequently and using only a little flour, before cutting into noodles.",
+    "variants": [
+      {
+        "case": "supple dough",
+        "note": "Extra egg yolks and olive oil limit gluten and add pliability so the dough won't spring back."
+      },
+      {
+        "case": "go easy on flour",
+        "note": "Too much flour while rolling leaves the surface coarse and gummy; a little cling keeps it from springing back."
+      }
+    ],
+    "mechanism": "Fat from yolks and oil limits gluten development and the rest relaxes the gluten, so the dough rolls thin without resisting.",
+    "render_hint": "Reference the noodle shape this recipe cuts.",
+    "confidence": "high",
+    "source_note": "interpreted from general fresh-pasta technique, cross-checked against ATK 100 Techniques #77",
+    "exemplar_recipes": [
+      {
+        "title": "Fresh Pasta Without a Machine",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6948-fresh-pasta-without-a-machine"
+      },
+      {
+        "title": "Olive Oil Sauce with Anchovies and Parsley",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6949-olive-oil-sauce-with-anchovies-and-parsley"
+      },
+      {
+        "title": "Pork, Fennel, and Lemon Ragu with Pappardelle",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11304-pork-fennel-and-lemon-ragu-with-pappardelle"
+      }
+    ]
+  },
+  {
+    "id": "filled_pasta_press_out_air_cook_longer",
+    "kind": "check",
+    "title": "Press out the air and cook ravioli longer than you think",
+    "technique_tags": [
+      "knead",
+      "boil"
+    ],
+    "trigger_signals": [
+      "ravioli",
+      "filled pasta",
+      "seal the edges",
+      "press out air",
+      "egg white",
+      "agnolotti"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "rolling_pin",
+      "pot"
+    ],
+    "scope": "step",
+    "claim": "Hand-made ravioli burst if air is trapped inside and come out doughy if undercooked at the doubled edges; sealing out the air and boiling longer than machine pasta fixes both.",
+    "action": "Brush the dough with egg white, mound the filling, press out all the air as you seal each piece, trim, then boil until the doubled edges are supple (longer than you'd expect, around 13 minutes).",
+    "signal": "Ravioli ballooning and splitting in the pot, or doughy, chewy edges when you bite in, mean trapped air or undercooking.",
+    "failure_mode": "Ravioli burst open and spill their filling, or have raw, doughy edges.",
+    "variants": [
+      {
+        "case": "seal clean",
+        "note": "Cut the sheet into individual rectangles and fold each one so you can press out air and seal cleanly."
+      },
+      {
+        "case": "cook longer",
+        "note": "Hand-rolled dough is thicker, so it needs about twice as long as machine ravioli to cook through at the edges."
+      }
+    ],
+    "mechanism": "Trapped air expands into steam that ruptures the wrapper, and the doubled-over dough at the edges needs extra time in boiling water to fully cook.",
+    "render_hint": "Reference the filling and remind the cook to press out air and cook to supple edges.",
+    "confidence": "high",
+    "source_note": "interpreted from general filled-pasta technique, cross-checked against ATK 100 Techniques #78",
+    "exemplar_recipes": [
+      {
+        "title": "Three-Cheese Ravioli with Browned Butter-Pine Nut Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11522-three-cheese-ravioli-with-browned-butter-pine-nut-sauce"
+      },
+      {
+        "title": "Meat Ravioli with Quick Tomato Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11523-meat-ravioli-with-quick-tomato-sauce"
+      },
+      {
+        "title": "Agnolotti",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12614-agnolotti"
+      },
+      {
+        "title": "Artichoke-Lemon Ravioli with Browned Butter-Pine Nut Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11524-artichoke-lemon-ravioli-with-browned-butter-pine-nut-sauce"
+      },
+      {
+        "title": "Squash-Filled Pasta",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12632-squash-filled-pasta"
+      }
+    ]
+  },
+  {
+    "id": "dumplings_that_stay_sealed",
+    "kind": "check",
+    "title": "Shape dumplings so they don't fall apart",
+    "technique_tags": [
+      "knead"
+    ],
+    "trigger_signals": [
+      "dumplings",
+      "potstickers",
+      "wrapper",
+      "seal the dumpling",
+      "boiling water dough",
+      "pleat"
+    ],
+    "ingredient_classes": [
+      "dough",
+      "meat"
+    ],
+    "equipment": [
+      "pot",
+      "skillet"
+    ],
+    "scope": "step",
+    "claim": "Dumplings fall apart for predictable reasons: a dough too dry or too wet, too much filling, a loose filling, or trapped air; a boiling-water wrapper and a cohesive filling, sealed tight, prevent it.",
+    "action": "Make the wrapper from flour and boiling water for a supple-not-sticky dough, mix the filling vigorously so it holds together, use the right amount, press out the air, and pleat or fold to seal.",
+    "signal": "Dumplings ballooning or bursting in the pot, or filling tumbling out when you bite in, point to trapped air, overfilling, or a loose filling.",
+    "failure_mode": "Dumplings split open or unseal during cooking, or the filling falls out.",
+    "variants": [
+      {
+        "case": "boiling-water dough",
+        "note": "Boiling water hydrates the flour fast and loosens the gluten so the wrapper stays sealed instead of snapping back open."
+      },
+      {
+        "case": "cohesive filling",
+        "note": "Mix the meat vigorously to release sticky myosin so the filling binds together."
+      },
+      {
+        "case": "press out air",
+        "note": "Seal out trapped air, which would balloon and burst the dumpling during cooking."
+      }
+    ],
+    "mechanism": "A pliable boiling-water wrapper seals reliably, vigorous mixing makes a binding filling, and removing air prevents steam from rupturing the dumpling.",
+    "render_hint": "Reference the filling and the seal/pleat method this recipe uses.",
+    "confidence": "high",
+    "source_note": "interpreted from general dumpling technique, cross-checked against ATK 100 Techniques #79",
+    "exemplar_recipes": [
+      {
+        "title": "Chinese Pork Dumplings",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10249-chinese-pork-dumplings"
+      },
+      {
+        "title": "Shrimp Potstickers",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3131-shrimp-potstickers"
+      },
+      {
+        "title": "Cabbage and Mushroom Potstickers",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11655-cabbage-and-mushroom-potstickers"
+      },
+      {
+        "title": "Pan-Fried Dumplings with Plant-Based Meat",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/15055-pan-fried-dumplings-with-plant-based-meat"
+      },
+      {
+        "title": "Shu Mai (Steamed Chinese Dumplings)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6141-shu-mai-steamed-chinese-dumplings"
+      }
+    ]
+  },
+  {
+    "id": "cook_whole_fish_small_semifirm",
+    "kind": "tip",
+    "title": "Cook whole fish small, semifirm, and slashed",
+    "technique_tags": [
+      "roast",
+      "grill"
+    ],
+    "trigger_signals": [
+      "whole fish",
+      "whole roasted fish",
+      "grilled whole fish",
+      "snapper",
+      "slash the skin",
+      "on the bone"
+    ],
+    "ingredient_classes": [
+      "fish"
+    ],
+    "equipment": [
+      "oven",
+      "grill",
+      "fish_spatula"
+    ],
+    "scope": "step",
+    "claim": "A whole fish cooked on the bone is deeply flavorful and moist, as long as you pick a small, semifirm one and cook it with high, even heat.",
+    "action": "Choose a semifirm fish under about 2 pounds, rinse and pat dry, slash the skin of larger ones, season inside and out, then roast in a very hot oven or grill over a medium-hot fire.",
+    "variants": [
+      {
+        "case": "size and type",
+        "note": "Pick snapper, trout, or striped bass under ~2 pounds; bigger fish burn outside before the center cooks."
+      },
+      {
+        "case": "slash larger fish",
+        "note": "Shallow slashes let larger fish cook evenly (the skin won't shrink and curl) and make doneness easier to judge; small fish don't need them."
+      },
+      {
+        "case": "handling",
+        "note": "Use a fish spatula to flip on the grill and to lift the fillets cleanly off the skeleton."
+      }
+    ],
+    "mechanism": "A small, semifirm fish cooks through before its skin burns, and slashing prevents skin shrinkage that causes uneven cooking.",
+    "render_hint": "Reference the fish variety and whether it's roasted or grilled.",
+    "confidence": "high",
+    "source_note": "interpreted from general whole-fish technique, cross-checked against ATK 100 Techniques #80",
+    "exemplar_recipes": [
+      {
+        "title": "Whole Roast Snapper with Citrus Vinaigrette",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14237-whole-roast-snapper-with-citrus-vinaigrette"
+      },
+      {
+        "title": "Grilled Whole Trout with Orange and Fennel",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8436-grilled-whole-trout-with-orange-and-fennel"
+      }
+    ]
+  },
+  {
+    "id": "dry_age_beef_in_the_fridge",
+    "kind": "tip",
+    "title": "Dry-age beef briefly in the refrigerator",
+    "technique_tags": [
+      "dry_age",
+      "salting"
+    ],
+    "trigger_signals": [
+      "dry-age",
+      "dry aged",
+      "age the beef",
+      "cheesecloth",
+      "concentrated beef flavor"
+    ],
+    "ingredient_classes": [
+      "meat"
+    ],
+    "equipment": [
+      "wire_rack",
+      "refrigerator"
+    ],
+    "scope": "step",
+    "claim": "A few days of dry-aging a thick beef cut in your own refrigerator concentrates its flavor and tenderizes it, capturing some of what commercial dry-aging does, at a fraction of the cost.",
+    "action": "Pat the beef dry, wrap it loosely in cheesecloth, set it on a rack in the coldest part of the fridge for 3 to 4 days, then trim the dried exterior before cooking.",
+    "variants": [
+      {
+        "case": "best cuts",
+        "note": "Use thick, traditionally dry-aged cuts like top loin, tenderloin, porterhouse, rib-eye, or strip."
+      },
+      {
+        "case": "the wrap",
+        "note": "Loose cheesecloth lets air circulate while preventing over-drying in the less-humid home fridge."
+      }
+    ],
+    "mechanism": "Surface moisture evaporates to concentrate flavor while enzymes break down connective tissue and proteins into tender texture and savory amino acids.",
+    "render_hint": "Reference the cut and the short home-aging window.",
+    "confidence": "high",
+    "source_note": "interpreted from general dry-aging technique, cross-checked against ATK 100 Techniques #81",
+    "exemplar_recipes": [
+      {
+        "title": "Top Loin Roast",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1517-top-loin-roast"
+      },
+      {
+        "title": "Bacon-Wrapped Filets Mignons",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11277-bacon-wrapped-filets-mignons"
+      }
+    ]
+  },
+  {
+    "id": "smoke_ribs_indoors_with_tea",
+    "kind": "tip",
+    "title": "Smoke ribs indoors with ground tea, not wood chips",
+    "technique_tags": [
+      "smoke",
+      "roast"
+    ],
+    "trigger_signals": [
+      "smoke ribs indoors",
+      "oven ribs",
+      "tea leaves",
+      "lapsang souchong",
+      "spareribs",
+      "no smoker"
+    ],
+    "ingredient_classes": [
+      "pork"
+    ],
+    "equipment": [
+      "oven",
+      "baking_stone",
+      "sheet_pan"
+    ],
+    "scope": "step",
+    "claim": "You can smoke ribs in the oven without a smoker by using ground smoky tea as the smoke source, since a home oven can't get hot enough to smoke wood chips.",
+    "action": "Remove the membrane, rub and chill the ribs, spread ground Lapsang souchong tea on a sheet over a hot baking stone at high heat to smoke the ribs ~30 minutes, then lower the heat with apple juice under foil to cook tender and broil to crisp.",
+    "variants": [
+      {
+        "case": "the smoke source",
+        "note": "Grind smoky Lapsang souchong tea for max surface area; wood chips won't smoke at home oven temperatures."
+      },
+      {
+        "case": "chill first",
+        "note": "Chill the ribs in the freezer as the oven heats so they can take the 500F blast without toughening."
+      }
+    ],
+    "mechanism": "Smoldering ground tea supplies smoke flavor in a sealed oven, then low moist heat melts collagen to gelatin like a braise, with a broil for the bark.",
+    "render_hint": "Reference the ribs and the tea-smoke step.",
+    "confidence": "high",
+    "source_note": "interpreted from general indoor-smoking technique, cross-checked against ATK 100 Techniques #82",
+    "exemplar_recipes": [
+      {
+        "title": "Oven-Barbecued Spareribs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5989-oven-barbecued-spareribs"
+      }
+    ]
+  },
+  {
+    "id": "grill_roast_centerpiece_cuts",
+    "kind": "tip",
+    "title": "Grill-roast big cuts over indirect heat",
+    "technique_tags": [
+      "grill",
+      "roast",
+      "sear"
+    ],
+    "trigger_signals": [
+      "grill-roast",
+      "indirect heat",
+      "half-grill fire",
+      "leg of lamb",
+      "whole chicken",
+      "lid down"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "grill"
+    ],
+    "scope": "step",
+    "claim": "Large centerpiece cuts cook through with smoky flavor and a browned crust when you grill-roast them over indirect heat, turning the covered grill into an outdoor oven.",
+    "action": "Set up a two-zone (half-grill) fire, cook the meat over the cooler side with the lid down until nearly done, then sear over the hot side for a crust; for very lean roasts, sear first and finish on the cool side.",
+    "variants": [
+      {
+        "case": "fatty cuts",
+        "note": "Start lamb, ham, or skin-on chicken over the cooler side so fat renders gently and avoids flare-ups, then sear."
+      },
+      {
+        "case": "charcoal fuel",
+        "note": "Use briquettes, not hardwood lump, which burns out fast; briquettes last the long cook."
+      }
+    ],
+    "mechanism": "Indirect, moderate heat cooks the interior evenly without scorching, and a hot zone finishes the crust.",
+    "render_hint": "Reference the cut and whether it's seared before or after roasting.",
+    "confidence": "high",
+    "source_note": "interpreted from general grill-roasting technique, cross-checked against ATK 100 Techniques #83",
+    "exemplar_recipes": [
+      {
+        "title": "Grilled Bone-In Leg of Lamb with Charred-Scallion Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11459-grilled-bone-in-leg-of-lamb-with-charred-scallion-sauce"
+      },
+      {
+        "title": "Grill-Roasted Ham",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/4682-grill-roasted-ham"
+      },
+      {
+        "title": "Grill-Roasted Beef Tenderloin",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8794-grill-roasted-beef-tenderloin"
+      },
+      {
+        "title": "Easy Grill-Roasted Whole Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11725-easy-grill-roasted-whole-chicken"
+      },
+      {
+        "title": "Easy Grill-Roasted Butterflied Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/9778-easy-grill-roasted-butterflied-chicken"
+      }
+    ]
+  },
+  {
+    "id": "paella_stagger_ingredients_for_socarrat",
+    "kind": "tip",
+    "title": "Grill paella, staggering ingredients for an even socarrat",
+    "technique_tags": [
+      "grill",
+      "boil"
+    ],
+    "trigger_signals": [
+      "paella",
+      "socarrat",
+      "on the grill",
+      "saffron rice",
+      "partially submerge",
+      "crisp rice crust"
+    ],
+    "ingredient_classes": [
+      "grains",
+      "seafood",
+      "poultry"
+    ],
+    "equipment": [
+      "grill",
+      "roasting_pan"
+    ],
+    "scope": "step",
+    "claim": "Grilled paella gets a smoky flavor and the prized crisp socarrat crust, but only if you keep the fire steady and stagger and place the ingredients so each cooks perfectly.",
+    "action": "Build an even, long-lasting fire under a wide pan, brown chicken and move it to the cooler edges, toast the rice in aromatics, add hot broth, nestle shrimp and clams partly submerged in the center, scatter chorizo then peas, and cook until the bottom sizzles into a crust.",
+    "variants": [
+      {
+        "case": "placement",
+        "note": "Keep chicken at the cooler perimeter and partially submerge seafood in the center so nothing overcooks."
+      },
+      {
+        "case": "build the crust",
+        "note": "Cook until the liquid is absorbed and the rice on the bottom sizzles; rotate and slide the pan for an even socarrat."
+      }
+    ],
+    "mechanism": "Staggered timing and placement match each ingredient to the right heat, while sustained bottom heat caramelizes the rice into socarrat.",
+    "render_hint": "Reference the specific proteins and the socarrat goal.",
+    "confidence": "high",
+    "source_note": "interpreted from general paella technique, cross-checked against ATK 100 Techniques #84",
+    "exemplar_recipes": [
+      {
+        "title": "Paella on the Grill",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8890-paella-on-the-grill"
+      },
+      {
+        "title": "Paella",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/1978-paella"
+      },
+      {
+        "title": "Cast Iron Paella",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9447-cast-iron-paella"
+      },
+      {
+        "title": "Multicooker Paella",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13976-multicooker-paella"
+      },
+      {
+        "title": "Slow-Cooker Paella",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10659-slow-cooker-paella"
+      }
+    ]
+  },
+  {
+    "id": "charcoal_snake_for_low_slow_smoking",
+    "kind": "tip",
+    "title": "Use a charcoal snake to smoke low and slow in a kettle grill",
+    "technique_tags": [
+      "smoke",
+      "grill"
+    ],
+    "trigger_signals": [
+      "charcoal snake",
+      "kettle grill",
+      "smoked beef ribs",
+      "low and slow",
+      "wood chunks",
+      "water pan"
+    ],
+    "ingredient_classes": [
+      "meat",
+      "poultry"
+    ],
+    "equipment": [
+      "grill"
+    ],
+    "scope": "step",
+    "claim": "A charcoal snake turns a kettle grill into a smoker, giving hours of steady low heat without reloading coals so you can smoke big cuts like Texas-style beef ribs.",
+    "action": "Arrange briquettes in a C around the grill's edge with a gap, top with wood chunks, set a water pan in the center, light only one end, and place the meat off-center over the pan and gap so it smokes without burning.",
+    "variants": [
+      {
+        "case": "the snake",
+        "note": "Coals ignite each other along the C, so heat lasts for hours and the meat needs no repositioning."
+      },
+      {
+        "case": "for chicken",
+        "note": "Faster proteins can use two coal piles flanking a water pan with wood-chip foil packets for gentler smoke."
+      }
+    ],
+    "mechanism": "A slow-burning line of coals plus smoldering wood and a water pan mimics a smoker's steady, moist, indirect heat.",
+    "render_hint": "Reference the cut and the snake setup.",
+    "confidence": "high",
+    "source_note": "interpreted from general kettle-smoking technique, cross-checked against ATK 100 Techniques #85",
+    "exemplar_recipes": [
+      {
+        "title": "Texas-Style Smoked Beef Ribs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11587-texas-style-smoked-beef-ribs"
+      },
+      {
+        "title": "Charcoal Grill-Roasted Whole Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/600-charcoal-grill-roasted-whole-chicken"
+      },
+      {
+        "title": "Smoked Citrus Chicken",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/14794-smoked-citrus-chicken"
+      },
+      {
+        "title": "Best Charcoal Grill-Smoked Pork Chops",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4797-best-charcoal-grill-smoked-pork-chops"
+      }
+    ]
+  },
+  {
+    "id": "chinatown_barbecue_glaze_honey_last",
+    "kind": "check",
+    "title": "Glaze Chinatown barbecue in two stages so honey doesn't blacken",
+    "technique_tags": [
+      "roast",
+      "grill",
+      "glaze",
+      "steam"
+    ],
+    "trigger_signals": [
+      "char siu",
+      "chinese barbecue",
+      "roast duck",
+      "lacquered",
+      "five-spice",
+      "honey glaze"
+    ],
+    "ingredient_classes": [
+      "pork",
+      "poultry"
+    ],
+    "equipment": [
+      "grill",
+      "oven",
+      "dutch_oven"
+    ],
+    "scope": "step",
+    "claim": "Chinatown-style duck and char siu get their mahogany lacquer from a sweet glaze, but brushing honey on too early burns it black; a moist-heat start plus a two-stage glaze fixes both flavor and color.",
+    "action": "Render and cook the meat with moist heat first (steam the duck or braise char siu in its marinade), apply a savory first glaze during cooking, and brush the honey-based second glaze on only at the very end to darken it.",
+    "signal": "Skin or surface turning black and bitter rather than deep mahogany means a sugary glaze went on too early.",
+    "failure_mode": "Burnt, blackened, bitter exterior instead of glossy mahogany lacquer (or billowing smoke from dripping fat).",
+    "variants": [
+      {
+        "case": "duck",
+        "note": "Prick and steam the duck to render fat, then grill-roast over a pan; first glaze (soy, sesame, five-spice) during cooking, honey glaze last."
+      },
+      {
+        "case": "char siu",
+        "note": "Cut ribs apart and braise in the marinade to penetrate flavor fast, reduce the liquid to a glaze, roast over a water-filled sheet to catch drips."
+      }
+    ],
+    "mechanism": "Moist heat renders fat and cooks gently while the sugary honey glaze, applied last, caramelizes to mahogany without scorching.",
+    "render_hint": "Reference whether it's duck or char siu and emphasize the honey glaze going on last.",
+    "confidence": "high",
+    "source_note": "interpreted from general Chinese-barbecue technique, cross-checked against ATK 100 Techniques #86",
+    "exemplar_recipes": [
+      {
+        "title": "Charcoal-Grill-Roasted Chinese-Style Duck",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/3480-charcoal-grill-roasted-chinese-style-duck"
+      },
+      {
+        "title": "Chinese-Style Barbecued Spareribs",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10314-chinese-style-barbecued-spareribs"
+      },
+      {
+        "title": "Chinese Barbecued Pork",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3422-chinese-barbecued-pork"
+      }
+    ]
+  },
+  {
+    "id": "confit_in_fat_low_and_slow",
+    "kind": "tip",
+    "title": "Confit food in fat, low and slow, for silky richness",
+    "technique_tags": [
+      "confit",
+      "salting"
+    ],
+    "trigger_signals": [
+      "confit",
+      "duck leg",
+      "cooked in fat",
+      "submerged in fat",
+      "garlic confit",
+      "low oven"
+    ],
+    "ingredient_classes": [
+      "poultry",
+      "vegetables"
+    ],
+    "equipment": [
+      "dutch_oven",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "Confit, slow-cooking salted food submerged in fat, yields meltingly tender, silky results that also keep for weeks under the fat.",
+    "action": "Salt-cure the food, then cook it gently submerged in fat in a low oven until completely tender; store it under the fat, and crisp meat in a skillet to serve.",
+    "variants": [
+      {
+        "case": "duck or meat",
+        "note": "Cure 8-24 hours, cover the legs in their own melted fat, and bake low (around 300F) in a Dutch oven until the bones twist free."
+      },
+      {
+        "case": "vegetables",
+        "note": "Garlic, fennel, and mushrooms confit in olive oil and needn't be fully submerged; the exposed bits caramelize."
+      }
+    ],
+    "mechanism": "Salt seasons and retains moisture while gentle, even heat in fat slowly breaks the food down to silky tenderness; fat coverage preserves it.",
+    "render_hint": "Reference whether it's meat (own fat) or vegetables (olive oil) and the storage/crisping step.",
+    "confidence": "high",
+    "source_note": "interpreted from general confit technique, cross-checked against ATK 100 Techniques #87",
+    "exemplar_recipes": [
+      {
+        "title": "Duck Leg Confit",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15226-duck-leg-confit"
+      },
+      {
+        "title": "Fennel Confit",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14406-fennel-confit"
+      },
+      {
+        "title": "Garlic Confit",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/12026-garlic-confit"
+      },
+      {
+        "title": "Turkey Thigh Confit with Citrus Mustard Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13314-turkey-thigh-confit-with-citrus-mustard-sauce"
+      },
+      {
+        "title": "Garlic Confit Butter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/12029-garlic-confit-butter"
+      }
+    ]
+  },
+  {
+    "id": "cure_meat_and_fish",
+    "kind": "tip",
+    "title": "Cure your own bacon and gravlax with salt and time",
+    "technique_tags": [
+      "cure",
+      "smoke",
+      "salting"
+    ],
+    "trigger_signals": [
+      "cure",
+      "homemade bacon",
+      "gravlax",
+      "pork belly",
+      "curing salt",
+      "dry cure"
+    ],
+    "ingredient_classes": [
+      "pork",
+      "fish"
+    ],
+    "equipment": [
+      "container",
+      "smoker"
+    ],
+    "scope": "step",
+    "claim": "Cured foods like bacon and gravlax are easy at home: a salt cure firms, seasons, and (with the right ingredients) preserves the food over a few days.",
+    "action": "For bacon, dry-cure skinned pork belly in a salt-sugar rub for 7-10 days, flipping every other day, rinse, then smoke to 150F; for gravlax, coat salmon in salt, sugar, dill, and a splash of liquor, weight and refrigerate a few days, basting daily.",
+    "variants": [
+      {
+        "case": "bacon safety",
+        "note": "Include pink curing salt in the rub to prevent bacterial growth, and rinse after curing so it isn't overly salty."
+      },
+      {
+        "case": "gravlax (no smoke)",
+        "note": "Salmon needs no smoking, just the salt-sugar-dill cure under a weight, making it the easiest cure to start with."
+      }
+    ],
+    "mechanism": "Salt draws out moisture and seasons the food throughout; curing salt and the dehydrated environment hold spoilage microbes in check.",
+    "render_hint": "Reference whether it's bacon (cure then smoke) or gravlax (cure only).",
+    "confidence": "high",
+    "source_note": "interpreted from general curing technique, cross-checked against ATK 100 Techniques #88",
+    "exemplar_recipes": [
+      {
+        "title": "Homemade Bacon",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9458-homemade-bacon"
+      },
+      {
+        "title": "Brown Sugar-Black Pepper Homemade Bacon",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15796-brown-sugar-black-pepper-homemade-bacon"
+      },
+      {
+        "title": "Spicy Candied Bacon",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/14444-spicy-candied-bacon"
+      },
+      {
+        "title": "Gravlax",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9477-gravlax"
+      },
+      {
+        "title": "Gravlax for a Crowd",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1280-gravlax-for-a-crowd"
+      }
+    ]
+  },
+  {
+    "id": "flambe_safely_off_heat",
+    "kind": "check",
+    "title": "Flambe safely: add alcohol off heat and watch the flame",
+    "technique_tags": [
+      "flambe"
+    ],
+    "trigger_signals": [
+      "flambe",
+      "flame",
+      "light the alcohol",
+      "ignite",
+      "bananas foster",
+      "calvados"
+    ],
+    "ingredient_classes": [],
+    "equipment": [
+      "skillet",
+      "long_match"
+    ],
+    "scope": "step",
+    "claim": "Flambeing builds deep flavor through Maillard browning, but overheated alcohol flares dangerously and cold alcohol won't light; warming it briefly off the heat gives controlled flames.",
+    "action": "Turn off the exhaust fan and nearby burners, keep a lid handy, add the alcohol off the heat and warm it a few seconds, then ignite with a long match at arm's length and shake the pan until the flames die.",
+    "signal": "Vapors flaring up too high signal alcohol that's too hot; failure to catch signals alcohol that's too cold or too diluted.",
+    "failure_mode": "A dangerous flare-up, or the alcohol failing to ignite at all.",
+    "variants": [
+      {
+        "case": "control the flame",
+        "note": "Warm the alcohol to about 100F off heat for moderate, long-burning flames; for large amounts, flambe in two stages."
+      },
+      {
+        "case": "if it flares",
+        "note": "Slide a lid over the pan from the side, not over the flames, to smother it; let the alcohol cool before retrying."
+      }
+    ],
+    "mechanism": "Igniting alcohol vapor adds intense heat for browning; the right vapor amount (from warming, not overheating) keeps flames controlled.",
+    "render_hint": "Reference the dish and the liquor; emphasize off-heat addition and the safety setup.",
+    "confidence": "high",
+    "source_note": "interpreted from general flambe technique, cross-checked against ATK 100 Techniques #89",
+    "exemplar_recipes": [
+      {
+        "title": "French-Style Pork Chops with Apples and Calvados",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8190-french-style-pork-chops-with-apples-and-calvados"
+      },
+      {
+        "title": "Bananas Foster",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/3477-bananas-foster"
+      },
+      {
+        "title": "Flambeed Pan-Roasted Lobster",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/1822-flambeed-pan-roasted-lobster"
+      },
+      {
+        "title": "Shrimp Fra Diavolo with Linguine",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/478-shrimp-fra-diavolo-with-linguine"
+      }
+    ]
+  },
+  {
+    "id": "tempura_batter_minimize_gluten",
+    "kind": "check",
+    "title": "Keep tempura batter light by limiting gluten",
+    "technique_tags": [
+      "deep_fry"
+    ],
+    "trigger_signals": [
+      "tempura",
+      "light batter",
+      "lacy crust",
+      "cornstarch",
+      "seltzer",
+      "vodka batter"
+    ],
+    "ingredient_classes": [
+      "seafood",
+      "vegetables"
+    ],
+    "equipment": [
+      "dutch_oven"
+    ],
+    "scope": "step",
+    "claim": "Tempura batter turns tough, greasy, and doughy if gluten develops from overmixing or sitting; cornstarch, seltzer, and vodka keep it lacy and crisp.",
+    "action": "Whisk the batter just before frying (small lumps are fine), using cornstarch in place of some flour, seltzer instead of tap water, and vodka for part of the liquid, then fry in hot oil and serve immediately.",
+    "signal": "Thick, heavy batter or a greasy, doughy crust means too much gluten developed.",
+    "failure_mode": "Tough, greasy, doughy coating instead of a lacy, crisp one.",
+    "variants": [
+      {
+        "case": "cornstarch",
+        "note": "Replacing part of the flour with cornstarch develops no gluten and adds crispness."
+      },
+      {
+        "case": "seltzer and vodka",
+        "note": "Seltzer's bubbles lighten the crust and its acidity limits gluten; vodka's alcohol inhibits gluten so the batter stays tender even if it sits."
+      }
+    ],
+    "mechanism": "Less gluten means the batter steam-puffs into a delicate lacy shell instead of stiffening into a heavy, oil-absorbing crust.",
+    "render_hint": "Reference what's being fried and that the batter is mixed just before frying.",
+    "confidence": "high",
+    "source_note": "interpreted from general tempura technique, cross-checked against ATK 100 Techniques #90",
+    "exemplar_recipes": [
+      {
+        "title": "Shrimp Tempura",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/4734-shrimp-tempura"
+      },
+      {
+        "title": "Fried Cheese-Stuffed Zucchini Blossoms",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/11541-fried-cheese-stuffed-zucchini-blossoms"
+      },
+      {
+        "title": "Crispy Vegetable Fritters",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11092-crispy-vegetable-fritters"
+      }
+    ]
+  },
+  {
+    "id": "home_oven_pizza_stone_high",
+    "kind": "tip",
+    "title": "Mimic a pizza oven: stone near the top, dough cold-fermented",
+    "technique_tags": [
+      "bake",
+      "knead",
+      "proof"
+    ],
+    "trigger_signals": [
+      "thin-crust pizza",
+      "baking stone",
+      "pizza parlor",
+      "cold ferment",
+      "broiler",
+      "near the top"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "baking_stone",
+      "oven"
+    ],
+    "scope": "step",
+    "claim": "A home oven can brown a thin crust like a parlor's if you put the baking stone near the top (so the ceiling reflects heat onto the pie) and cold-ferment the dough for chew and flavor.",
+    "action": "Cold-ferment the dough at least 24 hours, preheat a stone about 4 inches from the top of the oven at max heat (with the broiler), then bake the stretched pizza on the hot stone, rotating halfway.",
+    "variants": [
+      {
+        "case": "stone placement",
+        "note": "Place the stone high, not low; the narrow gap to the ceiling reflects heat onto the top like a commercial oven, browning before the crust dries out."
+      },
+      {
+        "case": "cold fermentation",
+        "note": "A long cold rise gives smaller bubbles (chewy not puffy), more flavor, and looser, easier-to-stretch dough."
+      }
+    ],
+    "mechanism": "A high stone plus a low ceiling traps and reflects heat onto the pizza top, browning cheese and crust before the interior toughens.",
+    "render_hint": "Reference the toppings and the cold-ferment timing.",
+    "confidence": "high",
+    "source_note": "interpreted from general home-pizza technique, cross-checked against ATK 100 Techniques #91",
+    "exemplar_recipes": [
+      {
+        "title": "Thin-Crust Pizza",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6316-thin-crust-pizza"
+      },
+      {
+        "title": "One-Hour Pizza",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/10602-one-hour-pizza"
+      },
+      {
+        "title": "Vegan Mushroom Pizza with Cashew Ricotta",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12488-vegan-mushroom-pizza-with-cashew-ricotta"
+      },
+      {
+        "title": "Thin-Crust Pizza with Pumpkin, Cashew Ricotta, and Apple-Fennel Slaw",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/15284-thin-crust-pizza-with-pumpkin-cashew-ricotta-and-apple-fennel-slaw"
+      },
+      {
+        "title": "Luau Pizza",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10361-luau-pizza"
+      }
+    ]
+  },
+  {
+    "id": "nurture_a_sourdough_starter",
+    "kind": "tip",
+    "title": "Build and maintain a sourdough starter with regular feedings",
+    "technique_tags": [
+      "ferment",
+      "proof"
+    ],
+    "trigger_signals": [
+      "sourdough starter",
+      "feed the starter",
+      "levain",
+      "discard",
+      "whole-wheat flour",
+      "filtered water"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "jar",
+      "bowl"
+    ],
+    "scope": "step",
+    "claim": "A sourdough starter is just a culture of wild yeast and bacteria grown from flour and water; with regular feedings it becomes strong enough to leaven and flavor bread for years.",
+    "action": "Mix flour and water and let it ferment at room temperature, then feed daily (discarding some each time) for about two weeks until it doubles 8-12 hours after feeding; maintain with weekly feedings.",
+    "variants": [
+      {
+        "case": "get it going faster",
+        "note": "Use a 50-50 whole-wheat and all-purpose flour mix; the whole wheat feeds the microbes better than all-purpose alone."
+      },
+      {
+        "case": "water matters",
+        "note": "Use filtered or bottled water; chlorine in tap water can kill the starter."
+      },
+      {
+        "case": "discard before feeding",
+        "note": "Removing some starter each feeding clears waste and keeps it from overflowing."
+      }
+    ],
+    "mechanism": "Regular feedings keep the yeast and bacteria multiplying and healthy so the starter can reliably leaven dough.",
+    "render_hint": "Reference whether the recipe is building a new starter or feeding an established one.",
+    "confidence": "high",
+    "source_note": "interpreted from general sourdough-starter technique, cross-checked against ATK 100 Techniques #92",
+    "exemplar_recipes": [
+      {
+        "title": "Sourdough Starter",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9075-sourdough-starter"
+      },
+      {
+        "title": "Classic Sourdough Bread (Pain au Levain)",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/9082-classic-sourdough-bread-pain-au-levain"
+      },
+      {
+        "title": "Almost No-Knead Sourdough Bread 2.0",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9076-almost-no-knead-sourdough-bread"
+      }
+    ]
+  },
+  {
+    "id": "caramel_dont_stir_use_corn_syrup",
+    "kind": "check",
+    "title": "Make caramel without stirring, with corn syrup to prevent graininess",
+    "technique_tags": [
+      "caramelize"
+    ],
+    "trigger_signals": [
+      "caramel",
+      "melt the sugar",
+      "amber",
+      "corn syrup",
+      "salted caramel",
+      "until it registers"
+    ],
+    "ingredient_classes": [],
+    "equipment": [
+      "saucepan",
+      "thermometer"
+    ],
+    "scope": "step",
+    "claim": "Caramel seizes into grains or burns if sugar heats unevenly or gets stirred; pouring sugar into the center, not stirring, and adding corn syrup keep it smooth and amber.",
+    "action": "Combine water and corn syrup, pour the sugar into the center without touching the sides, and cook without stirring (just gentle swirling) to the target color and temperature on a thermometer, in a large high-sided pan.",
+    "signal": "Cloudy graininess or crystals on the pan sides mean it's crystallizing; a smell of scorching or color past deep amber means it's burning.",
+    "failure_mode": "Grainy, seized caramel, or burnt, bitter caramel.",
+    "variants": [
+      {
+        "case": "don't stir",
+        "note": "Pour sugar into the center off the sides and don't stir; stirring promotes crystallization. Corn syrup's glucose keeps sucrose molecules apart so it won't turn grainy."
+      },
+      {
+        "case": "use a thermometer and big pan",
+        "note": "Color alone is unreliable; a thermometer is accurate, and a large high-sided pan keeps the caramel from erupting when you add cream."
+      }
+    ],
+    "mechanism": "Even heating and corn syrup prevent sugar crystals from clumping; precise temperature control stops it short of burning.",
+    "render_hint": "Reference the target color/temperature and what the caramel is for (sauce, candy).",
+    "confidence": "high",
+    "source_note": "interpreted from general caramel technique, cross-checked against ATK 100 Techniques #93",
+    "exemplar_recipes": [
+      {
+        "title": "Salted Caramels",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/12049-salted-caramels"
+      },
+      {
+        "title": "Salted Caramel Cupcakes",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/14295-salted-caramel-cupcakes"
+      },
+      {
+        "title": "Basque Cider Salted Caramel Sauce",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15225-basque-cider-salted-caramel-sauce"
+      },
+      {
+        "title": "Salted Caramel Filling",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11208-salted-caramel-filling"
+      }
+    ]
+  },
+  {
+    "id": "temper_chocolate_seed_method",
+    "kind": "check",
+    "title": "Temper chocolate by seeding so it sets glossy and snappy",
+    "technique_tags": [
+      "temper_chocolate"
+    ],
+    "trigger_signals": [
+      "temper chocolate",
+      "shiny",
+      "snap",
+      "dipping chocolate",
+      "seed",
+      "coating"
+    ],
+    "ingredient_classes": [],
+    "equipment": [
+      "microwave",
+      "box_grater",
+      "bowl"
+    ],
+    "scope": "step",
+    "claim": "Just-melted chocolate sets up dull, streaky, and soft because its cocoa-butter crystals are disordered; tempering, easiest by seeding with grated chocolate, restores the glossy, snappy beta-crystal structure.",
+    "action": "Chop and gently melt about three-quarters of the chocolate (no hotter than body temperature), then stir in the finely grated remaining quarter to seed it with stable crystals until smooth.",
+    "signal": "Chocolate setting dull, streaky, blotchy, soft, or with a whitish bloom means it's out of temper, usually from overheating.",
+    "failure_mode": "Dull, blotchy, soft chocolate that melts on your fingers instead of a glossy, snappy coating.",
+    "variants": [
+      {
+        "case": "don't overheat",
+        "note": "Melt at 50% power, stirring, and keep it barely warm; too much heat destroys the stable crystals you need."
+      },
+      {
+        "case": "seed it",
+        "note": "Stir finely grated unmelted chocolate into the melted chocolate to introduce stable beta crystals that template the rest."
+      }
+    ],
+    "mechanism": "Stable beta crystals from the grated seed chocolate spread through the melt so it solidifies dense, shiny, and hard.",
+    "render_hint": "Reference what the chocolate coats (candies, cookies) and the keep-it-cool caution.",
+    "confidence": "high",
+    "source_note": "interpreted from general chocolate-tempering technique, cross-checked against ATK 100 Techniques #94",
+    "exemplar_recipes": [
+      {
+        "title": "Millionaire's Shortbread",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/9253-millionaires-shortbread"
+      },
+      {
+        "title": "Buckeye Candies",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/11598-buckeye-candies"
+      }
+    ]
+  },
+  {
+    "id": "meringue_choose_the_right_type",
+    "kind": "tip",
+    "title": "Pick the right meringue: Italian or Swiss over French",
+    "technique_tags": [
+      "whip"
+    ],
+    "trigger_signals": [
+      "meringue",
+      "egg whites and sugar",
+      "pavlova",
+      "meringue pie",
+      "italian meringue",
+      "swiss meringue"
+    ],
+    "ingredient_classes": [
+      "eggs"
+    ],
+    "equipment": [
+      "stand_mixer",
+      "saucepan"
+    ],
+    "scope": "step",
+    "claim": "Italian and Swiss meringues (sugar dissolved from the start) are more reliable than fussy French meringue, and they give tall, stable results for pies and pavlovas.",
+    "action": "For a stable, weep-resistant pie topping, whip hot sugar syrup into the whites (Italian); for a crisp-shelled, marshmallowy pavlova, warm the whites and sugar together then whip (Swiss).",
+    "variants": [
+      {
+        "case": "Italian for pies",
+        "note": "Beating a hot sugar syrup into the whites makes a tall, fluffy topping that cooks through and resists weeping."
+      },
+      {
+        "case": "Swiss for pavlova",
+        "note": "Warming whites and sugar (to about 160F) and adding extra sugar gives a crisp shell over a marshmallowy interior."
+      }
+    ],
+    "mechanism": "Dissolving the sugar into the whites from the start stabilizes the foam, avoiding the gritty or deflated results of mistimed French meringue.",
+    "render_hint": "Reference the application (pie topping vs pavlova) and pick the matching meringue.",
+    "confidence": "high",
+    "source_note": "interpreted from general meringue technique, cross-checked against ATK 100 Techniques #95",
+    "exemplar_recipes": [
+      {
+        "title": "Mile-High Lemon Meringue Pie",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/3017-mile-high-lemon-meringue-pie"
+      },
+      {
+        "title": "Orange, Cranberry, and Mint Pavlova with Whipped Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11239-orange-cranberry-and-mint-pavlova-with-whipped-cream"
+      },
+      {
+        "title": "Individual Pavlovas with Tropical Fruit",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/5164-individual-pavlovas-with-tropical-fruit"
+      },
+      {
+        "title": "Strawberry, Lime, and Basil Pavlova with Whipped Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/11240-strawberry-lime-and-basil-pavlova-with-whipped-cream"
+      }
+    ]
+  },
+  {
+    "id": "churned_ice_cream_smaller_crystals",
+    "kind": "tip",
+    "title": "Churn premium ice cream with a colder base and corn syrup",
+    "technique_tags": [
+      "temper_eggs",
+      "freeze"
+    ],
+    "trigger_signals": [
+      "ice cream",
+      "churn",
+      "ice cream maker",
+      "frozen yogurt",
+      "custard base",
+      "corn syrup"
+    ],
+    "ingredient_classes": [
+      "dairy"
+    ],
+    "equipment": [
+      "ice_cream_maker",
+      "saucepan"
+    ],
+    "scope": "step",
+    "claim": "Home ice cream turns icy because it freezes slowly into big crystals; starting with a much colder base and using corn syrup gives smaller crystals and a smooth, dense scoop.",
+    "action": "Cook the custard, then freeze part of it and stir it back in to chill the base to about 30F before churning, use corn syrup in place of some sugar, and freeze the churned ice cream spread thin in a chilled metal pan.",
+    "variants": [
+      {
+        "case": "colder base",
+        "note": "A base near 30F churns to soft-serve faster, so smaller crystals form and less air is beaten in for a denser texture."
+      },
+      {
+        "case": "corn syrup",
+        "note": "Its viscosity blocks water from forming big crystals, and it keeps the ice cream firmer in a home freezer."
+      }
+    ],
+    "mechanism": "Faster freezing and moisture-binding corn syrup keep ice crystals too small for the tongue to detect, so the texture reads as smooth.",
+    "render_hint": "Reference the flavor and whether it's ice cream or frozen yogurt.",
+    "confidence": "high",
+    "source_note": "interpreted from general churned ice cream technique, cross-checked against ATK 100 Techniques #96",
+    "exemplar_recipes": [
+      {
+        "title": "Rich Vanilla Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6628-rich-vanilla-ice-cream"
+      },
+      {
+        "title": "Triple Ginger Ice Cream",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/6616-triple-ginger-ice-cream"
+      },
+      {
+        "title": "Frozen Yogurt",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8876-frozen-yogurt"
+      },
+      {
+        "title": "Orange Frozen Yogurt",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/8865-orange-frozen-yogurt"
+      },
+      {
+        "title": "Strawberry Frozen Yogurt",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8897-strawberry-frozen-yogurt"
+      }
+    ]
+  },
+  {
+    "id": "assemble_a_layer_cake",
+    "kind": "tip",
+    "title": "Bake and assemble a clean, level layer cake",
+    "technique_tags": [
+      "bake",
+      "cream"
+    ],
+    "trigger_signals": [
+      "layer cake",
+      "frost",
+      "assemble the cake",
+      "parchment circles",
+      "offset spatula",
+      "level the layers"
+    ],
+    "ingredient_classes": [
+      "batter"
+    ],
+    "equipment": [
+      "cake_pan",
+      "wire_rack",
+      "offset_spatula"
+    ],
+    "scope": "step",
+    "claim": "A bakery-looking layer cake comes from good pan prep, flat reverse-creamed layers, full cooling, and tidy assembly, not from skill alone.",
+    "action": "Grease the pans and line them with parchment, make the batter by reverse creaming for flat tops, divide it evenly and tap out bubbles, cool the layers fully, level any domes, then fill and frost with an offset spatula.",
+    "variants": [
+      {
+        "case": "clean layers",
+        "note": "Grease the pan, line the bottom with a parchment circle, divide batter evenly, and tap the pans to release air bubbles that cause tunnels."
+      },
+      {
+        "case": "tidy finish",
+        "note": "Cool completely before assembling, brush off crumbs, and press nuts or coconut into the sides to hide imperfections."
+      }
+    ],
+    "mechanism": "Reverse creaming yields flat, even layers, and full cooling plus careful spreading keeps fillings from sliding or the cake from going soggy.",
+    "render_hint": "Reference the cake and its filling/frosting/glaze.",
+    "confidence": "high",
+    "source_note": "interpreted from general layer-cake technique, cross-checked against ATK 100 Techniques #97",
+    "exemplar_recipes": [
+      {
+        "title": "Chocolate-Almond Coconut Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/10341-chocolate-almond-coconut-cake"
+      },
+      {
+        "title": "Chocolate-Caramel Layer Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8513-chocolate-caramel-layer-cake"
+      },
+      {
+        "title": "Carrot Layer Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/6957-carrot-layer-cake"
+      },
+      {
+        "title": "Chocolate Blackout Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/3177-chocolate-blackout-cake"
+      },
+      {
+        "title": "Swiss Hazelnut Cake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/8587-swiss-hazelnut-cake"
+      }
+    ]
+  },
+  {
+    "id": "souffle_medium_peaks_and_headspace",
+    "kind": "tip",
+    "title": "Souffle: aim for medium peaks and leave headspace",
+    "technique_tags": [
+      "whip",
+      "fold",
+      "bake"
+    ],
+    "trigger_signals": [
+      "souffle",
+      "egg whites",
+      "ramekin",
+      "fold in the whites",
+      "rise above the dish"
+    ],
+    "ingredient_classes": [
+      "eggs"
+    ],
+    "equipment": [
+      "souffle_dish",
+      "stand_mixer"
+    ],
+    "scope": "step",
+    "claim": "Souffles aren't fragile and won't fall from noise; the keys to a tall, properly textured one are whipping the whites to the right stage and leaving headspace in the dish.",
+    "action": "Grease the dish and coat it with sugar or cheese, whip the whites to stiff peaks then combine them vigorously enough to knock structure down to a 'medium' state, fill leaving an inch of headspace, and bake; check by pulling the top open with two spoons.",
+    "variants": [
+      {
+        "case": "the whites",
+        "note": "Whip to stiff peaks, then stir vigorously into the base to break the structure to an effective medium; soft peaks bake up squat, too-stiff bakes up dry and airy."
+      },
+      {
+        "case": "doneness",
+        "note": "Leave an inch of headspace so it sets before rising over, and check by opening the top with two spoons; a soupy center just goes back in the oven."
+      }
+    ],
+    "mechanism": "Whipped whites trap air that steam expands; medium structure gives the ideal rise, and coated dish walls let it climb.",
+    "render_hint": "Reference whether the souffle is sweet or savory and its flavor.",
+    "confidence": "high",
+    "source_note": "interpreted from general souffle technique, cross-checked against ATK 100 Techniques #98",
+    "exemplar_recipes": [
+      {
+        "title": "Chocolate Souffle",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/1576-chocolate-souffle"
+      },
+      {
+        "title": "Make-Ahead Chocolate Souffle",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/1577-make-ahead-chocolate-souffle"
+      },
+      {
+        "title": "Cheese Souffle",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/7670-cheese-souffle"
+      },
+      {
+        "title": "Make-Ahead Cheese Souffles",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/15180-make-ahead-cheese-souffles"
+      },
+      {
+        "title": "Grand Marnier Souffle with Shaved Chocolate",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/698-grand-marnier-souffle-with-shaved-chocolate"
+      }
+    ]
+  },
+  {
+    "id": "pate_a_choux_hot_start_release_steam",
+    "kind": "check",
+    "title": "Pate a choux: hot start, spaced out, vented to stay crisp",
+    "technique_tags": [
+      "bake"
+    ],
+    "trigger_signals": [
+      "pate a choux",
+      "cream puffs",
+      "profiteroles",
+      "gougeres",
+      "eclairs",
+      "puffs"
+    ],
+    "ingredient_classes": [
+      "dough"
+    ],
+    "equipment": [
+      "food_processor",
+      "oven",
+      "piping_bag"
+    ],
+    "scope": "step",
+    "claim": "Pate a choux puffs collapse, bake lopsided, or turn soggy if the dough is too soft, crowded, or not vented; a sturdy dough, spacing, a hot start, and releasing steam fix it.",
+    "action": "Cook the flour paste, beat in the eggs (a food processor does this fast for lighter puffs), pipe 1-inch apart, bake with a high-heat blast then lower to finish, and slit and dry the baked puffs to keep them crisp.",
+    "signal": "Puffs spreading flat, baking lopsided or collapsing, or going limp and soggy as they cool, signal a too-soft dough, crowding, or trapped moisture.",
+    "failure_mode": "Flat, lopsided, collapsed, or soggy cardboard-textured puffs.",
+    "variants": [
+      {
+        "case": "hot start, then lower",
+        "note": "Steam leavens the puffs, so a high-heat blast gets them rising before you lower the heat to set them."
+      },
+      {
+        "case": "vent the steam",
+        "note": "Pipe them an inch apart, then slit the baked puffs and dry them in a turned-off oven so they crisp instead of going soggy."
+      }
+    ],
+    "mechanism": "A sturdy egg-rich dough holds its shape while steam puffs it; spacing and venting let the steam escape so the shells stay crisp.",
+    "render_hint": "Reference the pastry (profiteroles, gougeres, eclairs) and the vent-and-dry step.",
+    "confidence": "high",
+    "source_note": "interpreted from general pate a choux technique, cross-checked against ATK 100 Techniques #99",
+    "exemplar_recipes": [
+      {
+        "title": "Profiteroles",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/145-profiteroles"
+      },
+      {
+        "title": "Chocolate Profiteroles",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/13721-chocolate-profiteroles"
+      },
+      {
+        "title": "Gougeres",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10325-gougeres"
+      },
+      {
+        "title": "Gougeres with Aged Gouda and Smoked Paprika",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/10326-gougeres-with-aged-gouda-and-smoked-paprika"
+      }
+    ]
+  },
+  {
+    "id": "new_york_cheesecake_low_then_high",
+    "kind": "check",
+    "title": "Bake New York cheesecake low to set, then high to brown",
+    "technique_tags": [
+      "bake",
+      "temper_eggs"
+    ],
+    "trigger_signals": [
+      "new york cheesecake",
+      "cream cheese filling",
+      "graham crust",
+      "browned top",
+      "springform"
+    ],
+    "ingredient_classes": [
+      "dairy"
+    ],
+    "equipment": [
+      "springform_pan",
+      "oven",
+      "strainer"
+    ],
+    "scope": "step",
+    "claim": "New York cheesecake cracks, turns grainy, or stays oozy under a browned top when the traditional high-then-low bake is at the mercy of your oven; baking low to set then briefly high to brown is foolproof.",
+    "action": "Parbake a graham-and-flour crust, mix and strain the filling, rest it and pop surface bubbles, then bake low (around 200F) until the center reaches 165F, and finish with a few minutes at high heat near the top to brown.",
+    "signal": "Cracks, a grainy or curdled texture, burnt edges, or an oozy center under a browned top mean the filling overcooked or the heat was uneven.",
+    "failure_mode": "A cracked, grainy/curdled, or unevenly cooked cheesecake (burnt edges or raw center).",
+    "variants": [
+      {
+        "case": "low then high",
+        "note": "Bake gently to set the custard fully, then crank the heat only at the end to brown the top fast, so it can't overcook the filling."
+      },
+      {
+        "case": "crisp crust",
+        "note": "Add a little flour to the graham crumbs and parbake so the crust resists going soggy over the long bake."
+      }
+    ],
+    "mechanism": "Gentle heat sets the egg-and-dairy custard smoothly without curdling, and a short high-heat finish browns the surface before it can overcook.",
+    "render_hint": "Reference any topping and the low-then-high bake.",
+    "confidence": "high",
+    "source_note": "interpreted from general New York cheesecake technique, cross-checked against ATK 100 Techniques #100",
+    "exemplar_recipes": [
+      {
+        "title": "Foolproof New York Cheesecake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/8208-foolproof-new-york-cheesecake"
+      },
+      {
+        "title": "Mixed Berry Coulis",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cooksillustrated/recipes/78-mixed-berry-coulis"
+      },
+      {
+        "title": "La Vina-Style Cheesecake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/15199-la-vina-style-cheesecake"
+      },
+      {
+        "title": "Strawberry Compote",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/cookscountry/recipes/13795-strawberry-compote"
+      },
+      {
+        "title": "Light New York Cheesecake",
+        "source": "ATK",
+        "url": "https://www.americastestkitchen.com/recipes/1998-light-new-york-cheesecake"
+      }
+    ]
   }
 ]

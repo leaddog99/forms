@@ -479,3 +479,26 @@ Re-reworked Singapore Noodles + Frico (stale versions) and fired fresh reworks o
 
 ### NEXT — Phase 4 (the visible payoff)
 The cook-view RENDERER via the cookbook surface — render the standardized `_cook` into the real, customizable cook MODE (mise in appearance order as living progress, steps as the driving units, page-turn). Then voice (Claudette) on the `window.cookView` base. Also queued: prompt-CACHE the projected published KB (stable prefix; same lever on the extraction prompt); ship the curated/PUBLISHED KB in the seed file (not just drafts) for the portable product.
+
+---
+
+## Session log — 2026-06-11 — Cook KB grows 30 → 100: ATK techniques #31–100 imported as drafts
+
+Bulk-import session continuing the cook tips/checks KB ([[project_cook_kb]]). The user pasted the remaining **70 ATK "100 Techniques" entries** (#31–100) in 7 batches of 10 (Desktop-Claude authored in OUR words; `source_note` cites ATK as a topic checklist, never source text). Each batch ran the same disciplined pipeline.
+
+### The import pipeline (per batch)
+For every 10: (1) write to a temp file; (2) **validate** — id collisions vs the seed (none), internal dupe ids (none), `kind`∈{tip,check} / `scope`∈{step,recipe,either} / `confidence`∈{high,medium,low} all valid, and unknown `technique_tags` flagged; (3) **fold any new tags into `TECHNIQUE_VOCAB`** in `cook_kb.py` (the no-silent-invention rule — log additions, never let an unknown tag pass); (4) **import to the live `recipes.db`** via `cook_kb.import_drafts` (lands as DRAFTS — publish gate stays with the user; WAL makes the concurrent write safe while the server runs); (5) **append the same entries to the git-tracked `cook_kb_seed.json`** (the version-controlled KB backup + fresh-install bootstrap, kept in sync with the DB); (6) verify `py_compile` + seed JSON validity; clean up temp.
+
+### Result
+- **KB total 30 → 100.** All 70 imported clean across 7 batches — **0 collisions, 0 dupes** end-to-end. Seed file 30 → 100 entries, valid JSON.
+- One mis-paste caught: the first "batch" was the existing #21–30 (already in seed+DB) — the validation step flagged all 10 as pre-existing, user said "my mistake," nothing imported.
+- **`TECHNIQUE_VOCAB` grew by 16 tags** (6 → 8 groups; added **baking** + **preserve/specialty**): `bake`, `leaven`, `grind_spices`, `glaze`, `shave`, `grind_meat`, `smoke`, `ferment`, `infuse`, `curdle`, `laminate`, `flambe`, `dry_age`, `cure`, `confit`, `freeze`.
+- Live DB at session end: **54 published / 46 draft** (the user published briskly via `cook_kb.html` as we went). The 46 new drafts await the user's review/publish.
+
+### Files (committed)
+`input/pipeline/cook_kb.py` (vocab +16) + `input/pipeline/cook_kb_seed.json` (+70 entries) + this log. NOT committed: `recipes.sql` was already modified at session start (pre-existing stale dump from the prior reworks — separate `bcc_backup.bat` concern, [[project_db_backup]]); the live DB rows are backed up via the seed file regardless.
+
+### Follow-ups
+- User to **review + publish** the 46 drafts (publish gate is theirs).
+- Refresh `recipes.sql` (`bcc_backup.bat`) so the git dump carries the new `cook_tips_kb` rows.
+- Still queued from prior session: **Phase 4 renderer** (the visible payoff), prompt-cache the projected published KB, ship the PUBLISHED KB in the seed for the portable product.

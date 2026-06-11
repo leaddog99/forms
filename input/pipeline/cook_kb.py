@@ -31,17 +31,22 @@ from typing import Optional
 # rather than silently inventing tags, then fold them in here.
 TECHNIQUE_VOCAB = [
     # dry heat
-    "sear", "saute", "pan_fry", "deep_fry", "stir_fry", "roast", "broil", "grill",
-    "toast", "bloom_spices", "caramelize", "sweat", "reduce", "deglaze", "pan_sauce",
+    "sear", "saute", "pan_fry", "deep_fry", "stir_fry", "roast", "broil", "grill", "smoke", "flambe",
+    "toast", "bloom_spices", "grind_spices", "grind_meat", "caramelize", "sweat", "reduce", "deglaze", "pan_sauce", "glaze",
     # wet heat
-    "boil", "simmer", "poach", "blanch", "steam", "braise", "stew", "pickle",
+    "boil", "simmer", "poach", "blanch", "steam", "braise", "stew", "pickle", "ferment",
     # transform
     "knead", "fold", "cream", "whip", "emulsify", "temper_eggs", "temper_chocolate",
     "brine", "salt_ahead", "marinate", "proof", "rest_dough", "mix_gently", "bread_coat",
+    "infuse", "curdle",
+    # baking
+    "bake", "leaven", "laminate",
+    # preserve / specialty
+    "dry_age", "cure", "confit", "freeze",
     # finish
     "rest_meat", "carryover", "thicken", "mount_butter", "season_to_taste", "finish",
     # situational
-    "mise_en_place", "doneness", "preheat", "pan_temp", "salting", "salt_vegetables", "knife_skills",
+    "mise_en_place", "doneness", "preheat", "pan_temp", "salting", "salt_vegetables", "knife_skills", "shave",
 ]
 
 KINDS = ("tip", "check")
