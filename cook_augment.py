@@ -17,6 +17,7 @@ code. See recipe_anchor/phase3-pipeline-design.md + project_cook_kb.
 from __future__ import annotations
 
 import json
+import re
 from typing import Callable, Optional
 
 import anthropic
@@ -96,7 +97,10 @@ ingredient / equipment / stage. One or two tight sentences. Never contradict the
 - If an entry lists variants, pick the ONE that matches this recipe and ignore the rest.
 - A step-scoped entry goes in `step_augments` (by step number); a recipe-scoped entry that \
 applies to the whole dish goes in `recipe_tips`. At most {_MAX_PER_STEP} per step and \
-{_MAX_RECIPE} recipe-level. Do not repeat the same kb_id.
+{_MAX_RECIPE} recipe-level.
+- NO REDUNDANCY: attach each piece of guidance to the SINGLE most relevant place. Do not repeat \
+a kb_id, do not say the same thing twice in different words across steps, and do not echo in \
+recipe_tips anything you already attached to a step. Every tip/check must add something new.
 
 KNOWLEDGE BASE (the only entries you may use):
 {json.dumps(kb, ensure_ascii=False, indent=2)}
@@ -195,4 +199,78 @@ def augment_cook(cook: CookMetadata, log: Callable = print,
             step.attachments.append(_make(kid, a.get("text"))); seen.add(kid); attached += 1
 
     log(f"[augment] attached {attached} item(s); dropped {dropped} (invented kb_id or out-of-range step)")
+    return cook
+
+
+# --------------------------------------------------------------------------- #
+# Redundancy check (deterministic) — run before persist
+# --------------------------------------------------------------------------- #
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _words(s: str) -> set:
+    return set(_WORD_RE.findall((s or "").lower()))
+
+
+def _near_dup(a: str, b: str, thresh: float = 0.75) -> bool:
+    """True if a and b say nearly the same thing. Word-set Jaccard with a high
+    threshold so distinct advice is preserved; exact-match for very short texts."""
+    wa, wb = _words(a), _words(b)
+    if len(wa) < 4 or len(wb) < 4:
+        return (a or "").strip().lower() == (b or "").strip().lower()
+    union = len(wa | wb)
+    return union > 0 and len(wa & wb) / union >= thresh
+
+
+def dedupe_annotations(cook: CookMetadata, log: Callable = print) -> CookMetadata:
+    """The redundancy check before publish. Removes repeated guidance IN PLACE:
+    (1) a recipe-level tip whose entry is already attached to a step (the step is
+    more specific); (2) near-duplicate TEXT across all tips + step attachments
+    (e.g. the same entry attached to two steps with near-identical wording);
+    (3) near-duplicate technique_changes. Conservative — high word-overlap
+    threshold, so the same technique applied at genuinely distinct moments with
+    distinct wording survives."""
+    removed = 0
+    # (1) recipe tip duplicated by a step attachment of the same entry
+    step_kbids = {a.kb_id for s in cook.steps for a in s.attachments}
+    keep = [t for t in cook.tips if t.kb_id not in step_kbids]
+    removed += len(cook.tips) - len(keep)
+    cook.tips = keep
+
+    # (2) near-duplicate annotation text — recipe tips first, then steps in order
+    seen: list = []
+
+    def _fresh(text: str) -> bool:
+        if any(_near_dup(text, s) for s in seen):
+            return False
+        seen.append(text)
+        return True
+
+    new_tips = []
+    for t in cook.tips:
+        if _fresh(t.text):
+            new_tips.append(t)
+        else:
+            removed += 1
+    cook.tips = new_tips
+    for s in cook.steps:
+        kept = []
+        for a in s.attachments:
+            if _fresh(a.text):
+                kept.append(a)
+            else:
+                removed += 1
+        s.attachments = kept
+
+    # (3) near-duplicate technique_changes (the rework occasionally restates one)
+    tc: list = []
+    for ch in cook.technique_changes:
+        if any(_near_dup(ch, k) for k in tc):
+            removed += 1
+        else:
+            tc.append(ch)
+    cook.technique_changes = tc
+
+    if removed:
+        log(f"[augment] redundancy check: removed {removed} duplicate annotation(s)")
     return cook

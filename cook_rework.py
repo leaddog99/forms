@@ -26,7 +26,7 @@ import anthropic
 
 from cook_model import CookMetadata
 from cook_validators import run_all
-from cook_augment import augment_cook
+from cook_augment import augment_cook, dedupe_annotations
 
 _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
@@ -419,6 +419,9 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
             augment_cook(cook, log, recipe_name=name)
         except Exception as e:  # noqa: BLE001 — augment is non-fatal
             log(f"[cook-rework] augment pass failed (non-fatal): {e}")
+        # Redundancy check before persist — strips repeated guidance/technique_changes.
+        # Runs even if augment raised (still de-dupes the rework's own output).
+        dedupe_annotations(cook, log)
 
     cook.validators = report
     cook.schema_version = 1
