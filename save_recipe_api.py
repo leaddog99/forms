@@ -869,6 +869,15 @@ app = FastAPI()
 # Initialize DB immediately instead of using lifespan
 print("[SETUP] Initializing database...")
 init_db()
+# Load the ingredient synonym map (cached) so embeddings.normalize() canonicalizes
+# ingredient phrasing during embed composition. Seeds the table on first run.
+try:
+    with sqlite3.connect(DB_PATH) as _c:
+        from input.pipeline import ingredients_lib
+        ingredients_lib.load_map(_c)
+        print(f"[SETUP] ingredient synonym map loaded ({len(ingredients_lib._MAP or {})} terms)")
+except Exception as _e:
+    print(f"[SETUP] ingredient synonym map load failed: {_e}")
 print("[OK] Database initialized successfully")
 
 print("[NET] Setting up CORS...")
@@ -1056,41 +1065,118 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+def _master_result_row(d: dict, rid: str, *, dish=None, rank_score=None, distance=None) -> dict:
+    """Shared result shape for the recommender (dish-anchored + vector paths)."""
+    m = d.get("_master") or {}
+    exc = m.get("exceptionalism") or {}
+    src = d.get("_source") or {}
+    img = d.get("image")
+    return {
+        "recipe_id": rid,
+        "name": d.get("name") or "(no title)",
+        "dish": dish if dish is not None else m.get("dish"),
+        "grade": exc.get("grade"),
+        "rank_score": (round(rank_score, 1) if rank_score is not None else None),
+        "distance": (round(distance, 4) if distance is not None else None),
+        "preview_image": src.get("previewImage")
+                         or (img[0] if isinstance(img, list) and img else None),
+        "bcc_url": _bcc_link_permalink(rid),
+        "source_url": src.get("originalUrl") or "",
+    }
+
+
+def _dish_cohort_ranked(conn, dish_name: str, want: int, exclude_recipe_id=None) -> list[dict]:
+    """The dish's curated cohort, ordered by quality (rank_score desc, unscored
+    last). Exact membership — the right answer to 'show me better <dish>s', with
+    no vector cutoff to drop legitimate same-dish recipes."""
+    rows = conn.execute(
+        """
+        SELECT m.recipe_id, m.data, dp.rank_score
+        FROM master_recipes m
+        LEFT JOIN dish_run_data_points dp
+          ON dp.dish_name = :dish AND dp.url = m.url_normalized
+        WHERE json_extract(m.data, '$._master.dish') = :dish
+        ORDER BY dp.rank_score IS NULL, dp.rank_score DESC, m.id
+        """, {"dish": dish_name}).fetchall()
+    out: list[dict] = []
+    for rid, dj, rank_score in rows:
+        if exclude_recipe_id and rid == exclude_recipe_id:
+            continue
+        try:
+            d = json.loads(dj)
+        except Exception:
+            continue
+        out.append(_master_result_row(d, rid, dish=dish_name, rank_score=rank_score))
+        if len(out) >= want:
+            break
+    return out
+
+
 @app.post("/recipes/similar-master")
 def similar_master_recipes(payload: dict = Body(...)):
-    """Recommender: given a recipe (the one the user just extracted — may be
-    unsaved), temp-embed it and return the curated MASTER recipes most similar
-    to it, ordered by vector distance (most similar first); rank_score rides
-    along as a quality cue. Recipe→recipe similarity (recipes_master_vec) — deliberately
-    bypasses dish-matching; answers "show me great recipes like this", not
-    "what dish is this / how good is mine".
+    """Recommender: given a recipe (the one on screen — may be unsaved), return
+    the curated MASTER recipes most like it. Two tiers:
 
-    Body: {"recipe": {...recipe data...}, "k": <optional int, default 8>}.
-    Matches with L2 distance > SIMILAR_MAX_DIST are dropped — we'd rather
-    return nothing than "closest but unrelated" when there's no real match.
-    Each result: recipe_id, name, dish, grade, rank_score, distance,
+      1. DISH-ANCHORED (preferred): if the recipe confidently matches a dish,
+         return that dish's COHORT ordered by quality (rank_score). Exact
+         membership answers 'show me better risottos' — no vector cutoff to drop
+         legitimate same-dish recipes (the bug: a risotto query landed 0.894
+         from the cluster and got dropped though 8 risottos sat right there).
+      2. VECTOR fallback: no confident dish match → recipe→recipe KNN over
+         recipes_master_vec, cutoff from config `similar_max_distance`.
+
+    Body: {"recipe": {...}, "k": <optional int, default 8>}. Each result:
+    recipe_id, name, dish, grade, rank_score, distance (null in dish mode),
     preview_image, bcc_url, source_url."""
-    SIMILAR_MAX_DIST = 0.8
     recipe = (payload or {}).get("recipe") or {}
     want = max(1, min(int((payload or {}).get("k") or 8), 25))
-    from input.pipeline.embeddings import compose_recipe_text, embed_text
+    from input.pipeline.embeddings import compose_recipe_text, embed_text, find_best_dish_match
     from input.pipeline import vector_store
+    try:
+        from input.pipeline import system_config as _cfg
+        similar_max = float(_cfg.get_setting("similar_max_distance", 0.95))
+    except Exception:
+        similar_max = 0.95
 
-    txt = compose_recipe_text(recipe)
-    if not txt.strip():
-        return {"query_name": recipe.get("name") or "", "results": [], "considered": 0, "shown": 0}
     try:
         with sqlite3.connect(DB_PATH) as conn:
             vector_store.enable_vec(conn)
+
+            # --- Tier 1: dish-anchored -------------------------------------
+            dish_match = None
+            try:
+                dish_match = find_best_dish_match(conn, recipe)
+            except Exception as e:
+                print(f"[SIMILAR] dish-match skipped: {e}")
+            if dish_match and dish_match.get("dish_name"):
+                cohort = _dish_cohort_ranked(conn, dish_match["dish_name"], want,
+                                             exclude_recipe_id=recipe.get("recipe_id"))
+                if cohort:
+                    print(f"[SIMILAR] {recipe.get('name','')!r} -> dish-anchored "
+                          f"{dish_match['dish_name']!r} ({len(cohort)} cohort, "
+                          f"conf={dish_match.get('confidence'):.3f})")
+                    return {
+                        "query_name": recipe.get("name") or "",
+                        "mode": "dish",
+                        "dish": dish_match["dish_name"],
+                        "match_confidence": round(dish_match.get("confidence") or 0, 3),
+                        "considered": len(cohort), "shown": len(cohort),
+                        "results": cohort,
+                    }
+
+            # --- Tier 2: vector fallback -----------------------------------
+            txt = compose_recipe_text(recipe)
+            if not txt.strip():
+                return {"query_name": recipe.get("name") or "", "mode": "vector",
+                        "results": [], "considered": 0, "shown": 0}
             qvec = embed_text(txt)
             raw = vector_store.find_similar_master_recipes(conn, qvec, k=max(want * 4, 20))
-            near = [r for r in raw if r["distance"] <= SIMILAR_MAX_DIST]
+            near = [r for r in raw if r["distance"] <= similar_max]
             results: list[dict] = []
             for r in near:
                 row = conn.execute(
                     "SELECT recipe_id, data, url_normalized FROM master_recipes WHERE id = ?",
-                    (r["id"],),
-                ).fetchone()
+                    (r["id"],)).fetchone()
                 if not row:
                     continue
                 rid, dj, urln = row
@@ -1098,40 +1184,21 @@ def similar_master_recipes(payload: dict = Body(...)):
                     d = json.loads(dj)
                 except Exception:
                     continue
-                m = d.get("_master") or {}
-                exc = m.get("exceptionalism") or {}
-                src = d.get("_source") or {}
-                img = d.get("image")
-                dish = m.get("dish")
+                dish = (d.get("_master") or {}).get("dish")
                 rs = conn.execute(
                     "SELECT rank_score FROM dish_run_data_points WHERE dish_name = ? AND url = ?",
-                    (dish, urln),
-                ).fetchone() if dish else None
-                results.append({
-                    "recipe_id": rid,
-                    "name": d.get("name") or "(no title)",
-                    "dish": dish,
-                    "grade": exc.get("grade"),
-                    "rank_score": (round(rs[0], 1) if rs and rs[0] is not None else None),
-                    "distance": round(r["distance"], 4),
-                    "preview_image": src.get("previewImage")
-                                     or (img[0] if isinstance(img, list) and img else None),
-                    "bcc_url": _bcc_link_permalink(rid),
-                    "source_url": src.get("originalUrl") or "",
-                })
-            # Most SIMILAR first — order by vector distance ascending. rank_score
-            # still rides along as a quality cue, but similarity drives the order
-            # (user call 2026-06-03; pure rank_score sort wrongly floated the
-            # least-similar high-rank item, e.g. the healthline pancakes, to #1).
+                    (dish, urln)).fetchone() if dish else None
+                results.append(_master_result_row(
+                    d, rid, dish=dish,
+                    rank_score=(rs[0] if rs and rs[0] is not None else None),
+                    distance=r["distance"]))
             results.sort(key=lambda x: x["distance"])
             results = results[:want]
-            print(f"[SIMILAR] {recipe.get('name','')!r} -> {len(results)} shown "
-                  f"(of {len(near)} within {SIMILAR_MAX_DIST}, {len(raw)} scanned)")
+            print(f"[SIMILAR] {recipe.get('name','')!r} -> vector {len(results)} shown "
+                  f"(of {len(near)} within {similar_max}, {len(raw)} scanned)")
             return {
-                "query_name": recipe.get("name") or "",
-                "considered": len(near),
-                "shown": len(results),
-                "results": results,
+                "query_name": recipe.get("name") or "", "mode": "vector",
+                "considered": len(near), "shown": len(results), "results": results,
             }
     except Exception as e:
         print(f"[ERROR] similar_master_recipes failed: {e}")
