@@ -6241,5 +6241,62 @@
       }
     ],
     "status": "published"
+  },
+  {
+    "id": "mantecatura_finish_for_creaminess",
+    "kind": "tip",
+    "title": "Mantecatura: finish off the heat for creaminess (risotto, pasta, gnocchi)",
+    "technique_tags": [
+      "mount_butter",
+      "emulsify",
+      "finish"
+    ],
+    "trigger_signals": [
+      "mantecatura",
+      "mantecare",
+      "all onda",
+      "off the heat",
+      "stir in the butter",
+      "cold butter",
+      "stir in the parmesan",
+      "reserve pasta water",
+      "reserved cooking water",
+      "starchy water",
+      "until creamy and glossy",
+      "gnocchi"
+    ],
+    "ingredient_classes": [
+      "grains",
+      "pasta",
+      "dough",
+      "dairy"
+    ],
+    "equipment": [
+      "skillet",
+      "saucepan",
+      "wooden_spoon"
+    ],
+    "scope": "step",
+    "claim": "Mantecatura is the Italian finishing move that turns risotto, pasta, or gnocchi creamy: off the heat, you beat in a cold fat (butter and/or grated cheese) and a little starchy cooking water so they emulsify into a glossy, velvety bind. It's the difference between a loose or pasty dish and a luxe, cohesive one.",
+    "action": "Pull the pan off the heat, add cold butter and/or grated hard cheese (plus a splash of the starchy cooking water), and stir or shake vigorously until it turns glossy and creamy. For risotto, rock the pan back and forth so the surface ripples (all'onda).",
+    "mechanism": "Vigorous agitation off the heat emulsifies the fat with the starch (from the rice or the reserved pasta/gnocchi water) into a stable creamy suspension; cold butter added off the heat melds in silkily instead of splitting into greasy pools, and the hot/cold shock releases the butter's water for that soft body.",
+    "variants": [
+      {
+        "case": "risotto",
+        "note": "Off the heat, beat in cold butter (freezer-cold is even better) plus grated Parmigiano, Grana, or Pecorino - or a creamy cheese like Gorgonzola or Taleggio - and rock the pan so the surface ripples ('all'onda'). The hot-rice/cold-butter shock gives that loose, wavy creaminess."
+      },
+      {
+        "case": "pasta",
+        "note": "Drain a couple minutes shy of al dente and reserve a ladle or two of the starchy water; toss the pasta with its sauce over low heat, loosening with the reserved water and finishing with butter (no need to be cold), oil, cream, or grated cheese until it clings and glosses."
+      },
+      {
+        "case": "gnocchi",
+        "note": "Scoop them out the moment they float and reserve the starchy water; toss in the pan with the sauce and a splash of that water over low heat for just 1-2 minutes until creamy and coated."
+      }
+    ],
+    "render_hint": "Name whether this recipe is risotto, pasta, or gnocchi and use the matching variant. For risotto stress off-heat + cold butter + the all'onda wave; for pasta/gnocchi stress reserving the starchy cooking water.",
+    "confidence": "high",
+    "editor_note": "Authored in our words from a description of mantecatura (Italian off-heat finishing technique); technique = fact, expression ours.",
+    "status": "published"
   }
 ]
