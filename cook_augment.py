@@ -130,15 +130,30 @@ def _recipe_view(cook: CookMetadata, recipe_name: Optional[str]) -> dict:
 
 def _call(kb: list, view: dict, log: Callable) -> dict:
     user = "Attach guidance to this reworked recipe:\n\n" + json.dumps(view, ensure_ascii=False, indent=2)
+    # The system prompt (rules + the projected KB) carries NO per-recipe data — it's
+    # identical across reworks until the KB is edited/published — so we mark it as a
+    # prompt-cache prefix (tools + system are cached together). Consecutive reworks
+    # then re-read those ~15K input tokens at a fraction of the price instead of
+    # re-paying full freight. It's content-addressed: a KB edit changes the text and
+    # auto-misses the next call (which re-writes the cache), so no invalidation code
+    # is needed. Default ephemeral TTL is 5 min — the right window for a batch of runs.
     resp = _client.messages.create(
-        model=SONNET, max_tokens=_MAX_TOKENS, system=_system_prompt(kb),
+        model=SONNET, max_tokens=_MAX_TOKENS,
+        system=[{
+            "type": "text",
+            "text": _system_prompt(kb),
+            "cache_control": {"type": "ephemeral"},
+        }],
         tools=[_ATTACH_TOOL], tool_choice={"type": "tool", "name": "attach_guidance"},
         messages=[{"role": "user", "content": user}],
     )
     for block in resp.content:
         if block.type == "tool_use":
             u = resp.usage
-            log(f"[augment] sonnet: {u.input_tokens} in / {u.output_tokens} out")
+            cw = getattr(u, "cache_creation_input_tokens", 0) or 0
+            cr = getattr(u, "cache_read_input_tokens", 0) or 0
+            log(f"[augment] sonnet: {u.input_tokens} in / {u.output_tokens} out "
+                f"(cache: {cr} read / {cw} write)")
             return block.input
     raise RuntimeError("attach_guidance tool was not called (tool_choice should have forced it)")
 
