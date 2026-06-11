@@ -2,15 +2,19 @@ r"""backup_db.py — back up recipes.db to the ADAM data disk (and refresh the
 local .sql dump that lives in git).
 
 What it does, in order:
-  1. Writes a fresh logical dump to ./recipes.sql — every real table as
-     CREATE + INSERT text. The vec0 virtual tables (dishes_vec,
-     recipes_master_vec) are EXCLUDED: they're a DERIVED index and their
-     shadow tables can't be dumped/restored cleanly. Both rebuild for
-     free/offline from their source-of-truth BLOB columns — dishes.embedding
-     and master_recipes.embedding — via vector_store.rebuild_master_vec_from_blobs
-     (and the dish equivalent). Those BLOB columns ARE in the dump, so the
-     git fallback no longer loses any vectors. The dump is the diffable,
-     binary-independent fallback that gets committed to git.
+  1. Writes a fresh logical dump to ./recipes.sql — every source-of-truth table
+     as CREATE + INSERT text, rows in STABLE-KEY ORDER (not rowid) so the git
+     diff stays small: an unchanged row keeps its position even when a table is
+     delete-and-replaced (master_recipes, dish_run_data_points). EXCLUDED:
+       - vec0 virtual tables (dishes_vec, recipes_master_vec) — a DERIVED index;
+         shadow tables don't dump/restore cleanly. Both rebuild for free/offline
+         from the source-of-truth BLOB columns (dishes.embedding,
+         master_recipes.embedding) via vector_store.rebuild_master_vec_from_blobs.
+         Those BLOB columns ARE in the dump, so no vectors are lost.
+       - rebuildable CACHE tables (llm_extract_cache, metabase_url) — they rewrite
+         on every extract / Moz lookup and dominated the diff; they're not
+         source-of-truth and stay in the full ADAM .db copy below.
+     The dump is the diffable, binary-independent fallback committed to git.
   2. Copies recipes.db AND recipes.sql to ADAM (\\Adam\tbotb, mapped Z:)
      under Backups\recipes-db\ with a timestamp in the filename.
   3. Verifies the copied .db with PRAGMA integrity_check before trusting it.
@@ -36,9 +40,52 @@ SQL = HERE / "recipes.sql"
 DEFAULT_ADAM = Path(r"Z:\Backups\recipes-db")
 
 
+# Rebuildable CACHE tables — excluded from the git dump (they rewrite on every
+# extract / Moz lookup, so they dominate the diff and aren't source-of-truth).
+# The full ADAM .db copy still has them; the git dump is for diffable SoT data.
+_EXCLUDE_TABLES = ("llm_extract_cache", "metabase_url")
+
+# Stable sort key per table so the dump is DETERMINISTIC and delete-and-replace
+# stops reshuffling rows. Default is the primary key; the override is for tables
+# whose INTEGER pk (`id`) is an autoincrement that's reassigned on reinsert —
+# order by the row's durable identity instead so unchanged rows hold their place.
+_ORDER_OVERRIDE = {
+    "recipes": '"recipe_id"',
+    "master_recipes": '"recipe_id"',
+}
+
+
+def _sql_literal(v) -> str:
+    """Format one value as a SQLite literal (the four storage classes)."""
+    if v is None:
+        return "NULL"
+    if isinstance(v, bool):           # before int (bool is an int subclass)
+        return "1" if v else "0"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, float):
+        return repr(v)                # round-trippable full precision
+    if isinstance(v, (bytes, bytearray)):
+        return "X'" + v.hex() + "'"
+    return "'" + str(v).replace("'", "''") + "'"
+
+
+def _order_by(mem: sqlite3.Connection, table: str) -> str | None:
+    if table in _ORDER_OVERRIDE:
+        return _ORDER_OVERRIDE[table]
+    pk = [c[1] for c in mem.execute(f'PRAGMA table_info("{table}")') if c[5]]
+    pk.sort(key=lambda name: next(c[5] for c in mem.execute(
+        f'PRAGMA table_info("{table}")') if c[1] == name))  # by pk seq
+    return ", ".join(f'"{c}"' for c in pk) if pk else None
+
+
 def write_sql_dump(db_path: Path, out_path: Path) -> list[str]:
-    """Logical dump of every real table, vec0 virtual tables excluded.
-    Returns the list of excluded vec table names."""
+    """Deterministic, stable-ordered logical dump of every source-of-truth table.
+    EXCLUDED: vec0 virtual tables (derived index, rebuilt from the embedding
+    BLOBs) and the rebuildable cache tables (_EXCLUDE_TABLES). Rows are emitted
+    in stable-key order (not rowid) so an unchanged row keeps its position across
+    delete-and-replace batches — that's what keeps the git diff small. Returns the
+    list of excluded vec table names."""
     import sqlite_vec  # only needed to drop the vec0 vtables on the copy
 
     src = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -56,14 +103,41 @@ def write_sql_dump(db_path: Path, out_path: Path) -> list[str]:
     ]
     for vt in vts:  # dropping a vec0 vtable also drops its shadow tables
         mem.execute(f'DROP TABLE IF EXISTS "{vt}"')
+
+    # Real tables in creation order; their CREATE comes with each, indexes/
+    # triggers/views go at the end so cross-table references resolve.
+    tables = [
+        (r[0], r[1]) for r in mem.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY rowid")
+    ]
     with open(out_path, "w", encoding="utf-8") as f:
-        f.write("-- recipes.db logical dump\n")
+        f.write("-- recipes.db logical dump (deterministic, stable-ordered)\n")
         f.write(
-            f"-- vector index tables excluded ({', '.join(vts) or 'none'}); "
-            "rebuilt from dishes.embedding via input/pipeline/vector_store.py\n"
+            f"-- excluded vec index tables ({', '.join(vts) or 'none'}) — "
+            "rebuilt from the embedding BLOBs via input/pipeline/vector_store.py\n"
         )
-        for line in mem.iterdump():
-            f.write(line + "\n")
+        f.write(
+            f"-- excluded rebuildable caches ({', '.join(_EXCLUDE_TABLES)}) — "
+            "kept in the full ADAM .db copy, not in this diffable SoT dump\n"
+        )
+        f.write("PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;\n")
+        for name, create_sql in tables:
+            if name in _EXCLUDE_TABLES or create_sql is None:
+                continue
+            f.write(create_sql + ";\n")
+            ob = _order_by(mem, name)
+            q = f'SELECT * FROM "{name}"' + (f" ORDER BY {ob}" if ob else "")
+            for row in mem.execute(q):
+                f.write(f'INSERT INTO "{name}" VALUES('
+                        + ",".join(_sql_literal(v) for v in row) + ");\n")
+        # indexes / triggers / views (skip auto-indexes, which have sql IS NULL)
+        for name, sql in mem.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type IN ('index','trigger','view') AND sql IS NOT NULL "
+                "ORDER BY type, name"):
+            f.write(sql + ";\n")
+        f.write("COMMIT;\n")
     src.close()
     mem.close()
     return vts
