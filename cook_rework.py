@@ -36,7 +36,7 @@ _MAX_TOKENS = 8192
 # Bump when the prompt/schema changes so stale reworks are detectable + re-runnable.
 # v2: rework no longer invents tips/checks — the augment pass (cook_augment) attaches
 # them from the PUBLISHED KB with provenance (kb_id).
-REWORK_PROMPT_VERSION = "cook-rework-v2-2026-06-10"
+REWORK_PROMPT_VERSION = "cook-rework-v2.1-2026-06-10"
 
 
 # --------------------------------------------------------------------------- #
@@ -72,6 +72,11 @@ def build_rework_input(recipe: dict) -> dict:
         "name": recipe.get("name") or "",
         "yield": recipe.get("recipeYield"),
         "dish": master.get("dish"),
+        # Source description + notes often carry technique + TOOLS the steps imply
+        # but don't spell out (e.g. "use a microplane for the garlic") — the model
+        # needs them to build a complete equipment list, not just the main pans.
+        "description": recipe.get("description") or None,
+        "notes": recipe.get("notes") or None,
         "ingredients": rows,
         "steps": step_texts,
     }
@@ -265,8 +270,12 @@ everything else under a "Measured & ready" bundle so 100% of measuring is in the
 - Put-asides: anything set aside and used later goes in `reserved` (created_step/consumed_step).
 - Precision: amount is the PREPARED state ("2 Tbsp minced"); raw count -> shopping_hint. No \
 bare informal measures (handful/ladle/drizzle) — a number is required.
-- Equipment: size the things where size affects outcome (bowls/pots/pans), inferred from \
-quantities; leave size off spoons/tongs/timers; reuse points back via reused_from_step.
+- Equipment: list EVERY tool the method needs, not just the main pans. Capture tools IMPLIED \
+by a prep verb (grate -> grater/microplane, zest -> zester, whisk -> whisk, sieve/sift -> \
+sieve, purée -> blender, mash -> masher) and any tool NAMED in the source ingredients, steps, \
+or notes (a recipe that says "garlic, grated" needs a grater). Size the things where size \
+affects outcome (bowls/pots/pans), inferred from quantities; leave size off small tools; reuse \
+points back via reused_from_step.
 - Anchor each step: short imperative name; instruction with {{ingN}} tokens (ingredients in \
 order), {{amt:...}} for times/temps, {{bundle:ID}} for a bundle. One action per step. A step's \
 ingredient reference may be an ingredient id OR a bundle id (to deploy a pre-combined bundle as \
