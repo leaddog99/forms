@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Ingredient Synonyms</title>
+  <!-- a/c/d editor for the ingredient synonym dictionary (ingredient_synonyms).
+       Canonical-data-in-DB: a curated map of variant phrasings -> one canonical
+       term, used to normalize ingredients BEFORE embedding so same-dish recipes
+       don't scatter (e.g. "risotto-style rice" -> "arborio rice"). See
+       input/pipeline/ingredients_lib.py + docs/named-embeddings.md.
+       DISCIPLINE: put SYNONYMS here (same thing, another name). VARIETIES that
+       merely behave alike (arborio vs carnaroli) stay their OWN canonical — the
+       dish identity already clusters them; don't merge. -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260608c">
+  <style>
+    :root{ --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
+      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b; --ok:#2f7a3a; }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+    .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 80px; }
+    h1{ font-size:1.5rem; margin:0 0 2px; } .sub{ color:var(--muted); margin:0 0 16px; font-size:.92rem; }
+    .toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    .toolbar input[type=search],.toolbar input[type=text]{ padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; font:inherit; }
+    .grid{ display:grid; grid-template-columns:320px 1fr; gap:18px; align-items:start; }
+    @media (max-width:820px){ .grid{ grid-template-columns:1fr; } }
+    .list{ background:var(--card); border:1px solid var(--border); border-radius:12px; max-height:72vh; overflow:auto; }
+    .row{ padding:9px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+    .row:hover{ background:#faf6f1; } .row.sel{ background:#fbf0e6; }
+    .row .rtitle{ font-size:.95rem; font-weight:600; }
+    .row .rmeta{ font-size:.78rem; color:var(--muted); margin-top:1px; }
+    .editor{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; }
+    .f{ margin-bottom:12px; } .f label{ display:block; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
+    .f input,.f select,.f textarea{ width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--ink); font:inherit; font-size:.94rem; }
+    .frow{ display:grid; grid-template-columns:1fr 1fr; gap:12px; } @media(max-width:560px){ .frow{ grid-template-columns:1fr; } }
+    .synrow{ display:grid; grid-template-columns:1fr 130px 30px; gap:8px; margin-bottom:7px; align-items:center; }
+    .synrow input,.synrow select{ padding:7px 9px; border:1px solid var(--border); border-radius:7px; font:inherit; font-size:.9rem; }
+    .synrow button{ padding:4px; border:none; background:none; color:var(--warn); cursor:pointer; font-size:1.1rem; }
+    .actions{ display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; align-items:center; }
+    button{ font:inherit; font-size:.9rem; padding:9px 15px; border-radius:8px; cursor:pointer; border:1px solid var(--border); background:#fff; color:var(--ink); }
+    button.pri{ background:var(--accent); color:#fff; border-color:var(--accent); } button.pri:hover{ background:var(--accent-dark); }
+    button.danger{ color:var(--warn); border-color:#e7c9c9; margin-left:auto; }
+    button.link{ border:none; background:none; color:var(--accent-dark); padding:4px 0; text-decoration:underline; }
+    .flash{ font-size:.85rem; } .flash.ok{ color:var(--ok); } .flash.err{ color:var(--warn); }
+    .empty{ padding:30px; color:var(--muted); text-align:center; }
+    .test{ display:flex; gap:8px; align-items:center; margin-left:auto; font-size:.85rem; }
+    .test .arrow{ color:var(--muted); } .test code{ background:#f3eee7; padding:2px 6px; border-radius:5px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Ingredient Synonym Dictionary</h1>
+    <p class="sub">Map variant phrasings to one <b>canonical</b> term so the embedding sees consistent ingredients (e.g. <code>risotto-style rice → arborio rice</code>). Put true <b>synonyms</b> here; keep <b>varieties</b> that merely behave alike (arborio vs carnaroli) as their own canonical — the dish identity already clusters them.</p>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Search canonical / alias / category…">
+      <button class="pri" id="newBtn">+ New group</button>
+      <span class="flash" id="flash"></span>
+      <span class="test">
+        normalize test: <input type="text" id="testIn" placeholder="green onions" style="width:130px">
+        <span class="arrow">→</span> <code id="testOut">—</code>
+      </span>
+    </div>
+
+    <div class="grid">
+      <div class="list" id="list"><div class="empty">Loading…</div></div>
+      <div class="editor" id="editor"><div class="empty">Select a group, or click <b>+ New group</b>.</div></div>
+    </div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260611a"></script>
+  <script>
+    const $ = (s, el=document) => el.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    let GROUPS = [], TYPES = ['synonym','regional','misspelling','brand','variety'], selected = null;
+
+    if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'ingredient-synonyms' });
+
+    function flash(msg, ok=true){ const f=$('#flash'); f.textContent=msg; f.className='flash '+(ok?'ok':'err'); if(ok) setTimeout(()=>{f.textContent='';},2500); }
+
+    async function load(){
+      const r = await fetch('/ingredient-synonyms');
+      const d = await r.json();
+      GROUPS = d.groups || []; if (d.alias_types) TYPES = d.alias_types;
+      renderList();
+    }
+
+    function filtered(){
+      const t = ($('#search').value||'').toLowerCase().trim();
+      if(!t) return GROUPS;
+      return GROUPS.filter(g => (g.canonical+' '+(g.category||'')+' '+(g.synonyms||[]).map(s=>s.alias).join(' ')).toLowerCase().includes(t));
+    }
+    function renderList(){
+      const rows = filtered();
+      $('#list').innerHTML = rows.length ? rows.map(g => `
+        <div class="row ${selected===g.canonical?'sel':''}" data-c="${esc(g.canonical)}">
+          <div class="rtitle">${esc(g.canonical)}</div>
+          <div class="rmeta">${(g.synonyms||[]).length} alias${(g.synonyms||[]).length===1?'':'es'}${g.category?' · '+esc(g.category):''}</div>
+        </div>`).join('') : '<div class="empty">No groups.</div>';
+      $('#list').querySelectorAll('.row').forEach(el => el.addEventListener('click', () => {
+        selected = el.dataset.c; renderList(); renderEditor(GROUPS.find(g=>g.canonical===selected));
+      }));
+    }
+
+    function synRow(alias='', type='synonym'){
+      const opts = TYPES.map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('');
+      const div = document.createElement('div'); div.className='synrow';
+      div.innerHTML = `<input class="s-alias" value="${esc(alias)}" placeholder="alias phrase"><select class="s-type">${opts}</select><button title="remove">×</button>`;
+      div.querySelector('button').addEventListener('click', ()=> div.remove());
+      return div;
+    }
+
+    function renderEditor(g, isNew=false){
+      g = g || {canonical:'', synonyms:[], category:'', note:''};
+      $('#editor').innerHTML = `
+        <div class="frow">
+          <div class="f"><label>Canonical term (the one we keep)</label><input id="e_canon" value="${esc(g.canonical)}" ${isNew?'':'readonly'} placeholder="arborio rice"></div>
+          <div class="f"><label>Category</label><input id="e_cat" value="${esc(g.category||'')}" placeholder="rice"></div>
+        </div>
+        <div class="f"><label>Note (curator)</label><textarea id="e_note" rows="2" placeholder="why / scope">${esc(g.note||'')}</textarea></div>
+        <div class="f"><label>Aliases → normalize to the canonical</label><div id="syns"></div>
+          <button class="link" id="addSyn">+ add alias</button></div>
+        <div class="actions">
+          <button class="pri" id="saveBtn">Save</button>
+          ${isNew?'':'<button class="danger" id="delBtn">Delete group</button>'}
+        </div>`;
+      const box = $('#syns');
+      (g.synonyms||[]).forEach(s => box.appendChild(synRow(s.alias, s.type)));
+      if(!(g.synonyms||[]).length) box.appendChild(synRow());
+      $('#addSyn').addEventListener('click', ()=> box.appendChild(synRow()));
+      $('#saveBtn').addEventListener('click', ()=> save(isNew));
+      if($('#delBtn')) $('#delBtn').addEventListener('click', ()=> del(g.canonical));
+    }
+
+    function collect(){
+      const synonyms = [...$('#syns').querySelectorAll('.synrow')].map(r=>({
+        alias: r.querySelector('.s-alias').value.trim(),
+        type: r.querySelector('.s-type').value
+      })).filter(s=>s.alias);
+      return { canonical: $('#e_canon').value.trim(), category: $('#e_cat').value.trim()||null,
+               note: $('#e_note').value.trim()||null, synonyms };
+    }
+    async function save(isNew){
+      const body = collect();
+      if(!body.canonical){ flash('Canonical term is required', false); return; }
+      try{
+        const r = await fetch('/ingredient-synonyms', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+        flash('Saved'); selected = body.canonical; await load(); renderEditor(GROUPS.find(g=>g.canonical===selected));
+      }catch(e){ flash('Save failed: '+e.message, false); }
+    }
+    async function del(canon){
+      if(!confirm(`Delete the "${canon}" group?`)) return;
+      try{
+        const r = await fetch('/ingredient-synonyms/'+encodeURIComponent(canon), {method:'DELETE'});
+        if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.detail||r.status); }
+        flash('Deleted'); selected=null; await load(); $('#editor').innerHTML='<div class="empty">Select a group, or click <b>+ New group</b>.</div>';
+      }catch(e){ flash('Delete failed: '+e.message, false); }
+    }
+
+    $('#newBtn').addEventListener('click', ()=>{ selected=null; renderList(); renderEditor({canonical:'',synonyms:[],category:'',note:''}, true); });
+    $('#search').addEventListener('input', renderList);
+    // normalize test box
+    let testT=null;
+    $('#testIn').addEventListener('input', e=>{
+      clearTimeout(testT);
+      testT=setTimeout(async ()=>{
+        const term=e.target.value; if(!term){ $('#testOut').textContent='—'; return; }
+        const r=await fetch('/ingredient-synonyms/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({term})});
+        const d=await r.json(); $('#testOut').textContent=d.canonical||'—';
+      }, 250);
+    });
+    load();
+  </script>
+</body>
+</html>

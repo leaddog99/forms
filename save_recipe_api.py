@@ -1205,6 +1205,57 @@ def similar_master_recipes(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"Similar lookup failed: {e}")
 
 
+# --- Ingredient synonym dictionary (ACD) -------------------------------------
+@app.get("/ingredient-synonyms")
+def list_ingredient_synonyms():
+    """All synonym groups for the a/c/d editor, plus the alias-type vocab."""
+    from input.pipeline import ingredients_lib
+    with sqlite3.connect(DB_PATH) as conn:
+        ingredients_lib.ensure_ingredient_synonyms_table(conn)
+        return {"groups": ingredients_lib.list_groups(conn),
+                "alias_types": list(ingredients_lib.ALIAS_TYPES)}
+
+
+@app.post("/ingredient-synonyms")
+def upsert_ingredient_synonym(payload: dict = Body(...)):
+    """Create/replace a canonical group. Body: {canonical, synonyms:[{alias,type}|str],
+    category?, note?}. Reloads the cached map so embed-time normalize() is live."""
+    from input.pipeline import ingredients_lib
+    canon = (payload or {}).get("canonical")
+    if not canon or not str(canon).strip():
+        raise HTTPException(status_code=400, detail="canonical is required")
+    with sqlite3.connect(DB_PATH) as conn:
+        ingredients_lib.ensure_ingredient_synonyms_table(conn)
+        try:
+            g = ingredients_lib.upsert_group(
+                conn, canon, payload.get("synonyms") or [],
+                payload.get("category"), payload.get("note"))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        ingredients_lib.load_map(conn)  # refresh the in-process cache
+    return g
+
+
+@app.delete("/ingredient-synonyms/{canonical}")
+def delete_ingredient_synonym(canonical: str):
+    from input.pipeline import ingredients_lib
+    with sqlite3.connect(DB_PATH) as conn:
+        ingredients_lib.ensure_ingredient_synonyms_table(conn)
+        ok = ingredients_lib.delete_group(conn, canonical)
+        ingredients_lib.load_map(conn)
+    if not ok:
+        raise HTTPException(status_code=404, detail="canonical not found")
+    return {"deleted": canonical}
+
+
+@app.post("/ingredient-synonyms/normalize")
+def normalize_ingredient_preview(payload: dict = Body(...)):
+    """Preview: what does a term normalize to right now? (editor test box)."""
+    from input.pipeline import ingredients_lib
+    term = (payload or {}).get("term") or ""
+    return {"term": term, "canonical": ingredients_lib.normalize(term)}
+
+
 # Claim a recipe — fast in-DB copy from wherever it lives (master or
 # another user) into the target user's personal collection. Pure SQL,
 # no LLM, no re-extract. Use cases:
