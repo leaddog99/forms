@@ -482,9 +482,9 @@ The cook-view RENDERER via the cookbook surface — render the standardized `_co
 
 ---
 
-## Session log — 2026-06-11 — Cook KB grows 30 → 100: ATK techniques #31–100 imported as drafts
+## Session log — 2026-06-11 — Cook KB 30 → 100, ALL published, prompt-cached, seed ships live
 
-Bulk-import session continuing the cook tips/checks KB ([[project_cook_kb]]). The user pasted the remaining **70 ATK "100 Techniques" entries** (#31–100) in 7 batches of 10 (Desktop-Claude authored in OUR words; `source_note` cites ATK as a topic checklist, never source text). Each batch ran the same disciplined pipeline.
+Bulk-import session continuing the cook tips/checks KB ([[project_cook_kb]]). The user pasted the remaining **70 ATK "100 Techniques" entries** (#31–100) in 7 batches of 10 (Desktop-Claude authored in OUR words; `source_note` cites ATK as a topic checklist, never source text). Each batch ran the same disciplined pipeline. Then: published all 100, wired prompt-caching into the augment pass, and shipped the seed fully published. **Both prior-session KB follow-ups (prompt-cache, seed-published) are now DONE.**
 
 ### The import pipeline (per batch)
 For every 10: (1) write to a temp file; (2) **validate** — id collisions vs the seed (none), internal dupe ids (none), `kind`∈{tip,check} / `scope`∈{step,recipe,either} / `confidence`∈{high,medium,low} all valid, and unknown `technique_tags` flagged; (3) **fold any new tags into `TECHNIQUE_VOCAB`** in `cook_kb.py` (the no-silent-invention rule — log additions, never let an unknown tag pass); (4) **import to the live `recipes.db`** via `cook_kb.import_drafts` (lands as DRAFTS — publish gate stays with the user; WAL makes the concurrent write safe while the server runs); (5) **append the same entries to the git-tracked `cook_kb_seed.json`** (the version-controlled KB backup + fresh-install bootstrap, kept in sync with the DB); (6) verify `py_compile` + seed JSON validity; clean up temp.
@@ -493,12 +493,23 @@ For every 10: (1) write to a temp file; (2) **validate** — id collisions vs th
 - **KB total 30 → 100.** All 70 imported clean across 7 batches — **0 collisions, 0 dupes** end-to-end. Seed file 30 → 100 entries, valid JSON.
 - One mis-paste caught: the first "batch" was the existing #21–30 (already in seed+DB) — the validation step flagged all 10 as pre-existing, user said "my mistake," nothing imported.
 - **`TECHNIQUE_VOCAB` grew by 16 tags** (6 → 8 groups; added **baking** + **preserve/specialty**): `bake`, `leaven`, `grind_spices`, `glaze`, `shave`, `grind_meat`, `smoke`, `ferment`, `infuse`, `curdle`, `laminate`, `flambe`, `dry_age`, `cure`, `confit`, `freeze`.
-- Live DB at session end: **54 published / 46 draft** (the user published briskly via `cook_kb.html` as we went). The 46 new drafts await the user's review/publish.
+- The user published briskly via `cook_kb.html` as we went; at import-end the DB was 54 published / 46 draft.
 
-### Files (committed)
-`input/pipeline/cook_kb.py` (vocab +16) + `input/pipeline/cook_kb_seed.json` (+70 entries) + this log. NOT committed: `recipes.sql` was already modified at session start (pre-existing stale dump from the prior reworks — separate `bcc_backup.bat` concern, [[project_db_backup]]); the live DB rows are backed up via the seed file regardless.
+### Published ALL 100 ("haven't seen anything I didn't like, don't think I will")
+One UPDATE flipped the 46 remaining drafts → published (live DB now **100/100 published**). **Verified the augment pass picks them up:** `augment_cook()` projects `cook_kb.project_published(DB_PATH)` and validates every attachment's `kb_id` against that injected set (the anti-invention moat), so the projection *is* the available+valid set. `project_published` now returns **100** (was 54); spot-checked 5 new entries spanning the range (present); confirmed internal fields (`editor_note`/`confidence`/`exemplar_recipes`/`status`) are stripped from the projection. The running server serves the new published KB live (reads the DB each augment — no restart).
+
+### Prompt-caching the projected KB (the queued optimization, the user's actual want)
+Settled the in-memory-cache question first: **NO RAM cache** — the `project_published` SELECT is sub-ms and dwarfed by the Sonnet call it precedes; fetch-fresh is what made the publish instantly live with no restart; a RAM cache adds an invalidation obligation (a footgun class that's bitten this project). The caching that matters is **Anthropic prompt-caching**, a different mechanism (saves LLM *input tokens*, not DB reads). `cook_augment.py` `_call`: the `system` block (rules + projected KB + tools — **no per-recipe data**) now carries `cache_control: ephemeral`, with per-call cache read/write logging. **Verified live, real production path, twice:** call 1 wrote **51,500** tokens (the KB prefix is ~51.5K — bigger than expected); call 2 read all 51,500 from cache with only 21 uncached tokens — identical tool output. Cache reads bill ~0.1×, so each warm rework saves ~46K Sonnet-input-token-equivalents. **Content-addressed → a KB edit auto-misses + re-writes the next call, so no invalidation code** (exactly why it beats a RAM cache). Default 5-min TTL fits a batch of runs.
+
+### Seed ships fully published (portable-package bootstrap)
+Stamped all 100 `cook_kb_seed.json` entries `status: published` so `_seed_from_file` boots a **fresh / portable install with the full KB live**, not as drafts — no manual publish step for a new instance owner. Safe: seeding only runs on an EMPTY table (running DB untouched, verified via a throwaway temp DB → 100 published / `project_published` 100). Also re-syncs the git-side seed backup with the fully-published curation state.
+
+### Files (committed + pushed, branch `split/enrichment-api`)
+- `c632103` — import #31–100: `cook_kb.py` (vocab +16) + `cook_kb_seed.json` (+70) + this log.
+- `95ef4f4`, `3e1754c` — `recipes.sql` backup refreshes (post-import, then post-publish-all) via `bcc_backup.bat`; ADAM copies written; `integrity_check: ok`. [[project_db_backup]]
+- `a145b35` — augment prompt-cache.
+- `2f6ac76` — seed ships published.
 
 ### Follow-ups
-- User to **review + publish** the 46 drafts (publish gate is theirs).
-- Refresh `recipes.sql` (`bcc_backup.bat`) so the git dump carries the new `cook_tips_kb` rows.
-- Still queued from prior session: **Phase 4 renderer** (the visible payoff), prompt-cache the projected published KB, ship the PUBLISHED KB in the seed for the portable product.
+- **Phase 4 renderer** (the visible payoff) — the cook-view render via the cookbook surface; then voice (Claudette). The only headline KB item left.
+- Same prompt-cache lever is available on the **extraction prompt** if/when wanted (the docstring flags it).
