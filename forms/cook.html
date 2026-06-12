@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<!--
+  cook.html — the Phase-4 cook-view renderer (recipe_anchor/START_HERE.md §4).
+  Renders a recipe's `_cook` block (the step-anchored, mise-complete rework
+  emitted by cook_rework + cook_augment) into the finished cookbook design
+  prototyped in cookbook-cookview.html — but driven entirely by LIVE data:
+  it fetches GET /recipes/{id}?user_id= and renders recipe.data._cook.
+
+  Built VOICE-AWARE from the start (recipe_anchor/voice-cook-spec.md): discrete,
+  addressable step units; a JS-drivable controller (window.cookView:
+  current/next/back/repeat) the future conversational loop drives; and per-step
+  `spokenText()` (token-expanded + de-abbreviated for the ear). Tier-1 TTS
+  (browser SpeechSynthesis) speaks steps today; POST /cook/ask answers open
+  cooking questions grounded in THIS recipe (Claudette). The full hands-free
+  loop (VAD/STT/barge-in) attaches to this substrate next — not a retrofit.
+
+  The model emits ONLY the data; this CSS/JS/template is a fixed app asset.
+  Views (Shopping / In-order / Bundles) are COMPUTED from one CookMetadata,
+  never stored. Deferred (data/dep-driven): equipment->product picks (no catalog
+  yet), form-variant pickers (no _cook carries form_variants today; rendered
+  only-when-present), the page-turn teleprompter.
+-->
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Cook view</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400;1,9..144,500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f1e6; --card:#fffdf7; --ink:#2a2420; --ink-soft:#6f6456;
+    --clay:#bd4c2a; --clay-deep:#9c3c1f; --clay-bg:#f1e3d4;
+    --sea:#3c6a5d; --sea-deep:#2f5448; --sea-bg:#e8efe3;
+    --line:rgba(42,36,32,0.12);
+    --shadow:0 1px 2px rgba(42,36,32,.06), 0 8px 24px rgba(42,36,32,.07);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--paper);
+    background-image:radial-gradient(rgba(42,36,32,.025) 1px, transparent 1px);
+    background-size:18px 18px; color:var(--ink);
+    font-family:"Source Serif 4", Georgia, serif; font-size:18px;line-height:1.6;
+    -webkit-font-smoothing:antialiased; padding:0 0 120px;
+  }
+  .wrap{max-width:660px;margin:0 auto;padding:0 20px;}
+  .muted{color:var(--ink-soft);}
+
+  /* ---------- Header ---------- */
+  header{padding:30px 0 8px;}
+  .kicker{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--clay);font-weight:600;margin:0 0 12px;}
+  h1.title{font-family:"Fraunces",serif;font-weight:900;font-size:clamp(36px,9vw,56px);line-height:1.0;margin:0 0 4px;letter-spacing:-.01em;}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin:16px 0 0;font-size:14.5px;color:var(--ink-soft);letter-spacing:.02em;}
+  .meta span{display:inline-flex;align-items:center;gap:7px;}
+  .meta b{color:var(--ink);font-weight:600;}
+  .blurb{margin:18px 0 0;font-size:16.5px;color:var(--ink-soft);line-height:1.62;border-left:3px solid var(--sea-bg);padding-left:16px;}
+  .changed{margin:14px 0 0;padding:13px 16px;background:var(--sea-bg);border:1px solid var(--line);border-radius:12px;}
+  .changed .cn-label{font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--sea);margin:0 0 7px;}
+  .changed ul{margin:0;padding-left:20px;} .changed li{font-size:15px;line-height:1.5;color:var(--sea-deep);margin:3px 0;}
+
+  /* ---------- Preferences ---------- */
+  .prefs{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    margin:20px 0 0;padding:13px 16px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);}
+  .prefs-label{font-size:11.5px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-soft);}
+  .seg{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px;}
+  .seg-btn{border:0;background:none;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;color:var(--ink-soft);padding:7px 18px;border-radius:999px;transition:color .2s,background .25s;}
+  .seg-btn.active{background:var(--clay);color:#fff;box-shadow:0 1px 3px rgba(42,36,32,.18);}
+
+  /* ---------- Collapsible cards (ingredients / equipment) ---------- */
+  details.card{margin:16px 0 8px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;}
+  details.card>summary{list-style:none;cursor:pointer;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;font-family:"Fraunces",serif;font-weight:600;font-size:17px;}
+  details.card>summary::-webkit-details-marker{display:none;}
+  .chev{transition:transform .25s ease;color:var(--clay);font-size:14px;}
+  details.card[open]>summary .chev{transform:rotate(180deg);}
+
+  .viewseg{display:flex;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:3px;margin:2px 0 4px;gap:2px;}
+  .viewseg button{flex:1;border:0;background:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:var(--ink-soft);padding:8px;border-radius:999px;transition:color .2s,background .25s;}
+  .viewseg button.active{background:var(--clay);color:#fff;box-shadow:0 1px 3px rgba(42,36,32,.18);}
+  .viewhint{margin:2px 2px 10px;font-size:12.5px;color:var(--ink-soft);font-style:italic;}
+
+  .ilist{margin:0;padding:0 18px 16px;list-style:none;}
+  .ghead{padding:14px 2px 6px;font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);}
+  .gnote{padding:0 2px 4px;font-size:13px;color:var(--ink-soft);font-style:italic;}
+  .irow{display:flex;align-items:flex-start;gap:12px;padding:9px 2px;border-top:1px dashed var(--line);cursor:pointer;transition:opacity .25s;}
+  .ghead + .irow, .gnote + .irow{border-top:none;}
+  .ibox{flex:0 0 auto;width:22px;height:22px;margin-top:1px;border:2px solid var(--clay);border-radius:6px;position:relative;background:var(--card);transition:background .2s,border-color .2s,transform .12s;}
+  .irow:active .ibox{transform:scale(.9);}
+  .ibox::after{content:'\2713';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:13px;font-weight:700;opacity:0;transform:scale(.5);transition:opacity .2s,transform .2s;}
+  .irow.done{opacity:.5;} .irow.done .ibox{background:var(--sea);border-color:var(--sea);}
+  .irow.done .ibox::after{opacity:1;transform:scale(1);}
+  .iqty{flex:0 0 auto;min-width:78px;color:var(--clay-deep);font-weight:600;font-variant-numeric:tabular-nums;}
+  .iname{flex:1;color:var(--ink);}
+  .inote{display:block;font-size:13px;color:var(--ink-soft);font-style:italic;margin-top:1px;}
+  .totaste{font-size:12px;color:var(--sea);font-weight:600;}
+  .bundle-tag{font-size:.85em;font-weight:600;color:var(--clay-deep);}
+
+  .eqlist{margin:0;padding:2px 20px 18px;list-style:none;}
+  .eqlist li{padding:9px 0;border-top:1px dashed var(--line);display:flex;justify-content:space-between;gap:16px;font-size:16px;align-items:baseline;}
+  .eqlist li:first-child{border-top:none;}
+  .eqlist .e-name b{font-weight:600;} .eqlist .e-why{display:block;font-size:13px;color:var(--ink-soft);font-style:italic;}
+  .eqlist .e-size{color:var(--clay-deep);font-weight:600;white-space:nowrap;font-style:italic;font-size:14.5px;text-align:right;}
+  .eqlist .e-size.none{color:var(--ink-soft);opacity:.55;font-weight:400;font-style:normal;}
+
+  /* put-asides */
+  .asides{margin:16px 0 8px;padding:14px 18px;background:var(--clay-bg);border:1px solid var(--line);border-radius:14px;}
+  .asides .cn-label{font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);margin:0 0 8px;}
+  .aside-row{padding:7px 0;border-top:1px dashed var(--line);font-size:15px;color:#7a4a31;}
+  .aside-row:first-of-type{border-top:none;}
+  .aside-row b{color:var(--clay-deep);} .aside-row .held{font-size:12.5px;color:var(--ink-soft);font-style:italic;margin-left:4px;}
+
+  /* ---------- Section rule ---------- */
+  .rule{display:flex;align-items:center;gap:14px;margin:32px 0 20px;font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);}
+  .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--line);}
+
+  /* ---------- Steps ---------- */
+  .step{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 18px 16px;margin:0 0 16px;scroll-margin-top:70px;transition:opacity .3s,border-color .3s;}
+  .step.done{opacity:.55;border-color:var(--sea);}
+  .step.current{border-color:var(--clay);box-shadow:0 0 0 2px rgba(189,76,42,.25), var(--shadow);}
+  .sbox{flex:0 0 auto;width:30px;height:30px;margin-top:2px;border:2px solid var(--clay);border-radius:8px;position:relative;background:var(--card);cursor:pointer;transition:background .25s,border-color .25s,transform .12s;}
+  .sbox:active{transform:scale(.9);}
+  .sbox::after{content:'\2713';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:17px;font-weight:700;opacity:0;transform:scale(.5);transition:opacity .2s,transform .2s;}
+  .step.done .sbox{background:var(--sea);border-color:var(--sea);}
+  .step.done .sbox::after{opacity:1;transform:scale(1);}
+  .sbody{flex:1;min-width:0;}
+  .num-row{display:flex;align-items:center;gap:11px;margin:0 0 12px;}
+  .num{flex:0 0 auto;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-family:"Fraunces",serif;font-weight:600;font-size:16px;background:var(--clay);color:#fff;transition:background .3s;}
+  .step.done .num{background:var(--sea);}
+  .step-name{font-family:"Fraunces",serif;font-weight:600;font-size:18px;color:var(--ink);}
+  .step-sched{font-weight:400;font-size:.72rem;color:var(--ink-soft);letter-spacing:.02em;text-transform:uppercase;margin-left:2px;}
+  .need{display:block;margin:0 0 9px;padding:9px 13px;border-radius:10px;font-size:15px;line-height:1.5;background:var(--clay-bg);}
+  .need .tag{display:block;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;margin:0 0 4px;color:var(--clay);}
+  .need .body{color:#7a4a31;} .need .body b{color:var(--clay-deep);font-weight:600;} .need .spec{font-style:italic;opacity:.9;}
+  .instr{margin:12px 0 0;font-size:18px;line-height:1.56;}
+  .instr b{font-weight:600;color:var(--ink);}
+  .att{font-size:14.5px;margin:8px 0 0;line-height:1.45;}
+  .att.tip{color:var(--sea-deep);} .att.check{color:var(--clay-deep);}
+  .att .att-ic{font-weight:700;margin-right:5px;}
+  .media{display:inline-flex;gap:8px;align-items:center;margin:5px 0 2px 20px;text-decoration:none;color:#7a5a2a;}
+  .media img{width:120px;height:67px;object-fit:cover;border-radius:6px;display:block;}
+  .media .play{position:relative;line-height:0;} .media .play .pic{}
+  .media .play::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.3rem;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.7);}
+  .step-read{margin-top:12px;border:0;background:none;cursor:pointer;color:var(--clay-deep);font-family:inherit;font-size:13.5px;font-weight:600;padding:6px 0 0;display:inline-flex;align-items:center;gap:6px;}
+  .step-read:hover{color:var(--clay);}
+
+  .finish-box{margin:24px 0 0;padding:16px 18px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);}
+  .finish-box .cn-label{font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);margin:0 0 6px;}
+  .chefnote{margin:18px 0 0;padding:15px 18px;background:var(--sea-bg);border:1px solid var(--line);border-radius:14px;}
+  .chefnote .cn-label{font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--sea);margin:0 0 6px;}
+  .chefnote p{margin:0;font-size:16px;line-height:1.6;color:var(--sea-deep);font-style:italic;}
+  .knowbox{margin:16px 0 0;}
+  .knowbox .cn-label{font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--clay);margin:0 0 6px;}
+  .credit{text-align:center;font-size:13.5px;color:var(--ink-soft);margin:26px 0 0;line-height:1.6;font-style:italic;}
+
+  /* ---------- Cookbook chrome ---------- */
+  #cb-prog{position:fixed;top:0;left:0;height:3px;width:0;z-index:120;background:linear-gradient(90deg,#bd4c2a,#9c3c1f);transition:width .1s linear;}
+  .cb-chrome{position:fixed;top:0;left:0;right:0;z-index:110;display:flex;align-items:center;gap:10px;padding:10px 16px;color:#f7efe2;background:linear-gradient(180deg,rgba(25,15,8,.55),rgba(25,15,8,0));transition:background .25s;}
+  .cb-chrome.solid{background:rgba(36,24,16,.94);box-shadow:0 2px 12px rgba(0,0,0,.25);}
+  .cb-chrome a,.cb-chrome span{color:#f7efe2;text-decoration:none;}
+  .cb-chrome .cb-back{font-size:.9rem;cursor:pointer;}
+  .cb-chrome .cb-t{flex:1;text-align:center;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;opacity:0;transition:opacity .25s;}
+  .cb-chrome.solid .cb-t{opacity:.85;}
+  /* Compact hero: a banner ~the height of the title + padding (clears the fixed
+     chrome) — get to the cooking, don't scroll past a poster. */
+  .cb-hero{position:relative;display:flex;align-items:flex-end;overflow:hidden;color:#fff;background:#6f3d22;}
+  .cb-hero .cb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .cb-hero .cb-scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,10,4,.55),rgba(20,10,4,.15) 55%,rgba(20,10,4,.7));}
+  .cb-hero .cb-w{position:relative;padding:48px 22px 12px;max-width:760px;margin:0 auto;width:100%;}
+  .cb-hero .cb-eye{font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:#f1d6b6;margin:0 0 4px;}
+  .cb-hero h1{font-family:"Fraunces",Georgia,serif;font-size:clamp(1.6rem,5vw,2.3rem);line-height:1.06;margin:0;font-weight:900;text-shadow:0 2px 14px rgba(0,0,0,.45);}
+  .cb-hero .cb-cue{display:none;}
+  @keyframes cbbob{0%,100%{transform:translateX(-50%) translateY(0);}50%{transform:translateX(-50%) translateY(5px);}}
+
+  /* ---------- Bottom control bar ---------- */
+  .barwrap{position:fixed;left:0;right:0;bottom:0;z-index:115;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(to top, var(--paper) 72%, rgba(246,241,230,0));display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .btn{font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.02em;padding:11px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  .btn.primary{background:var(--clay);color:#fff;border-color:var(--clay);}
+  .btn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
+
+  /* ---------- Ask Claudette ---------- */
+  #ask{position:fixed;left:0;right:0;bottom:0;z-index:130;transform:translateY(110%);transition:transform .3s ease;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(42,36,32,.16);padding:16px 18px calc(16px + env(safe-area-inset-bottom));}
+  #ask.open{transform:translateY(0);}
+  #ask .ask-hd{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;}
+  #ask .ask-hd .who{font-family:"Fraunces",serif;font-weight:600;font-size:18px;color:var(--clay-deep);display:flex;align-items:center;gap:8px;}
+  #ask .ask-x{border:0;background:none;font-size:22px;cursor:pointer;color:var(--ink-soft);line-height:1;}
+  #ask .ask-wrap{max-width:660px;margin:0 auto;}
+  #ask .ask-row{display:flex;gap:8px;}
+  #ask textarea{flex:1;font-family:inherit;font-size:16px;border:1px solid var(--line);border-radius:12px;padding:11px 13px;resize:none;background:var(--paper);color:var(--ink);min-height:46px;}
+  #ask .ask-send{flex:0 0 auto;}
+  #ask .ask-ans{margin:12px 0 0;font-size:16px;line-height:1.6;color:var(--ink);white-space:pre-wrap;max-height:38vh;overflow:auto;}
+  #ask .ask-ans .a-speak{margin:8px 0 0;}
+  #ask .ask-ctx{font-size:12px;color:var(--ink-soft);font-style:italic;margin:6px 0 0;}
+  #ask .ask-priv{font-size:11.5px;color:var(--ink-soft);margin:10px 0 0;opacity:.8;}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid var(--clay-bg);border-top-color:var(--clay);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;}
+  @keyframes sp{to{transform:rotate(360deg);}}
+
+  #loadmsg{max-width:660px;margin:40px auto;padding:0 20px;text-align:center;color:var(--ink-soft);}
+
+  /* ---------- Voice loop (hands-free) ---------- */
+  #handsfree.on{background:var(--sea);color:#fff;border-color:var(--sea);}
+  #vstatus{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(66px + env(safe-area-inset-bottom));z-index:118;display:none;align-items:center;gap:10px;width:min(92vw,600px);padding:11px 18px;background:rgba(36,24,16,.95);color:#f7efe2;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-size:14.5px;}
+  #vstatus.show{display:flex;}
+  #vstatus .vdot{flex:0 0 auto;width:11px;height:11px;border-radius:50%;background:#9c3c1f;}
+  #vstatus.listening .vdot{background:#5ec27a;animation:vpulse 1.4s ease-in-out infinite;}
+  #vstatus.hearing .vdot{background:#ffd166;animation:vpulse .5s ease-in-out infinite;}
+  #vstatus.thinking .vdot{background:#ffd166;}
+  #vstatus.speaking .vdot{background:#7ab8ff;animation:vpulse 1s ease-in-out infinite;}
+  #vstatus .vmsg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  @keyframes vpulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+  /* ---------- Touch mode gesture pad ---------- */
+  #handsfree.on, #touchmode.on, #talkbtn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
+  #gesturepad{position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:117;display:none;height:118px;border-radius:18px;background:rgba(36,24,16,.94);color:#f7efe2;box-shadow:0 8px 28px rgba(0,0,0,.35);touch-action:none;user-select:none;-webkit-user-select:none;}
+  #gesturepad.show{display:block;}
+  #gesturepad .gp-inner{position:relative;width:100%;height:100%;}
+  #gesturepad .gp-c{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1.5;}
+  #gesturepad .gp-c b{font-family:"Fraunces",serif;font-size:16px;}
+  #gesturepad .gp-hint{font-size:12px;opacity:.65;}
+  #gesturepad .gp-a{position:absolute;font-size:12.5px;opacity:.6;font-weight:600;letter-spacing:.02em;}
+  #gesturepad .gp-l{left:14px;top:50%;transform:translateY(-50%);}
+  #gesturepad .gp-r{right:14px;top:50%;transform:translateY(-50%);}
+  #gesturepad .gp-u{top:9px;left:50%;transform:translateX(-50%);}
+  #gesturepad .gp-d{bottom:9px;left:50%;transform:translateX(-50%);}
+</style>
+</head><body>
+
+<div id="cb-prog"></div>
+<div class="cb-chrome" id="cb-chrome">
+  <a class="cb-back" id="cb-back">‹ Recipe</a>
+  <span class="cb-t" id="cb-title"></span>
+  <span style="width:60px"></span>
+</div>
+
+<div class="cb-hero" id="cb-hero" style="display:none">
+  <img class="cb-img" id="cb-img" alt="">
+  <div class="cb-scrim"></div>
+  <div class="cb-w">
+    <p class="cb-eye" id="cb-eye"></p>
+    <h1 id="cb-h1"></h1>
+  </div>
+  <div class="cb-cue">scroll to cook ↓</div>
+</div>
+
+<div id="loadmsg">Loading the cook view…</div>
+<div class="wrap" id="main" style="display:none">
+  <header>
+    <p class="kicker" id="hd-kicker">Reworked for cooking</p>
+    <h1 class="title" id="hd-title"></h1>
+    <div class="meta" id="hd-meta"></div>
+    <p class="blurb" id="hd-blurb" style="display:none"></p>
+    <div class="changed" id="hd-changed" style="display:none">
+      <p class="cn-label">What we changed &amp; why</p><ul id="hd-changed-list"></ul>
+    </div>
+  </header>
+
+  <div class="prefs" id="prefs">
+    <span class="prefs-label">Measurements</span>
+    <div class="seg" role="group" aria-label="Measurement units">
+      <button class="seg-btn active" data-units="imp">Imperial</button><button class="seg-btn" data-units="met">Metric</button>
+    </div>
+  </div>
+
+  <details class="card" id="ing-card" open>
+    <summary>Ingredients <span class="chev">&#9662;</span></summary>
+    <div style="padding:6px 18px 0">
+      <div class="viewseg" role="group" aria-label="Ingredient view">
+        <button data-view="bundles" class="active">Bundles</button>
+        <button data-view="order">As needed</button>
+        <button data-view="shop">Shopping</button>
+      </div>
+      <p class="viewhint" id="view-hint"></p>
+    </div>
+    <div class="ilist" id="ingredient-rows"></div>
+  </details>
+
+  <details class="card" id="eq-card">
+    <summary>Equipment <span class="muted" style="font-weight:400;font-size:13px;margin-left:auto;margin-right:10px" id="eq-count"></span><span class="chev">&#9662;</span></summary>
+    <ul class="eqlist" id="equipment-rows"></ul>
+  </details>
+
+  <div class="asides" id="asides" style="display:none">
+    <p class="cn-label">Put-asides — held on the counter</p>
+    <div id="aside-rows"></div>
+  </div>
+
+  <div class="rule">Steps</div>
+  <div id="steps"></div>
+
+  <div class="finish-box" id="finish-box" style="display:none">
+    <p class="cn-label">Finish</p><p id="finish-text" style="margin:0"></p>
+  </div>
+  <div class="knowbox" id="knowbox" style="display:none">
+    <p class="cn-label">Good to know</p><div id="know-rows"></div>
+  </div>
+  <div class="chefnote" id="chefnote" style="display:none">
+    <p class="cn-label">A cook's note</p><p id="chefnote-text"></p>
+  </div>
+  <p class="credit" id="credit" style="display:none"></p>
+</div>
+
+<div id="vstatus"><span class="vdot"></span><span class="vmsg">Listening…</span></div>
+<div id="gesturepad"><div class="gp-inner">
+  <span class="gp-a gp-u">↑ restart</span>
+  <span class="gp-a gp-l">← back</span>
+  <div class="gp-c"><b>No-look pad</b><span class="gp-hint">swipe ← → to move · double-tap = repeat</span></div>
+  <span class="gp-a gp-r">next →</span>
+  <span class="gp-a gp-d">↓ end</span>
+</div></div>
+<div class="barwrap" id="barwrap" style="display:none">
+  <button class="btn primary" id="handsfree">🎙️ Start hands-free</button>
+  <button class="btn" id="touchmode">🙈 No-look</button>
+  <button class="btn on" id="talkbtn">🔊 Talk</button>
+  <button class="btn" id="readstep">🔊 Read step</button>
+  <button class="btn" id="askbtn">💬 Ask</button>
+  <button class="btn" id="awake">☀ Awake</button>
+  <button class="btn" id="reset">↺ Reset</button>
+</div>
+
+<div id="ask">
+  <div class="ask-wrap">
+    <div class="ask-hd">
+      <span class="who">👩‍🍳 Claudette</span>
+      <button class="ask-x" id="ask-x" aria-label="Close">×</button>
+    </div>
+    <div class="ask-row">
+      <textarea id="ask-q" rows="1" placeholder="Ask anything — &ldquo;can I swap panko for breadcrumbs?&rdquo;, &ldquo;what does blond vs brown garlic mean?&rdquo;"></textarea>
+      <button class="btn primary ask-send" id="ask-send">Ask</button>
+    </div>
+    <p class="ask-ctx" id="ask-ctx"></p>
+    <div class="ask-ans" id="ask-ans"></div>
+    <p class="ask-priv">Your question + this recipe are sent to Claudette (the AI). Step navigation and reading stay on your device.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  // ---- query params -------------------------------------------------------
+  var Q = new URLSearchParams(location.search);
+  var RECIPE_ID = Q.get('recipe_id') || '';
+  var USER_ID = Q.get('user_id'); if (USER_ID === null) USER_ID = '1';
+
+  var E = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+
+  var RECIPE = null, CK = null;
+  var units = 'imp', view = 'bundles';
+  var checked = {};                 // ingredient-id -> bool (mise check, shared across views)
+  var IDX = { ing:{}, bundle:{}, eq:{}, uses:{} };  // lookup maps
+
+  // ---- amount helpers -----------------------------------------------------
+  function amtStr(a){ if(!a) return ''; if(typeof a==='string') return a;
+    var s = (units==='met') ? (a.metric||a.imperial) : (a.imperial||a.metric); return s||''; }
+
+  // ---- build lookup indexes from _cook -----------------------------------
+  function buildIndex(){
+    IDX = { ing:{}, bundle:{}, eq:{}, uses:{} };
+    (CK.ingredients||[]).forEach(function(i){ IDX.ing[i.id]=i; });
+    (CK.bundles||[]).forEach(function(b){ IDX.bundle[b.id]=b; });
+    (CK.equipment||[]).forEach(function(e){ IDX.eq[e.id]=e; });
+    // collect every DEPLOYED use of each ingredient (bundle members + step
+    // ingredients) — the model keeps amounts on the USE, not the ingredient.
+    function addUse(id, amount, label){ if(!id) return;
+      (IDX.uses[id]=IDX.uses[id]||[]).push({amount:amount, label:label}); }
+    (CK.bundles||[]).forEach(function(b){ (b.members||[]).forEach(function(m){ addUse(m.ingredient_id, m.amount, m.label); }); });
+    (CK.steps||[]).forEach(function(s){ (s.ingredients||[]).forEach(function(si){ addUse(si.ingredient_id, si.amount, si.label); }); });
+  }
+  // representative deployed amount for an ingredient (first use); '' if none.
+  function ingAmount(ing){ var u=IDX.uses[ing.id]; return (u&&u.length)? amtStr(u[0].amount) : ''; }
+
+  // ====================================================================== //
+  //  INGREDIENTS — three computed views (Shopping / In-order / Bundles)
+  // ====================================================================== //
+  function ingRowEl(ing, opts){
+    opts=opts||{};
+    var div=document.createElement('div');
+    div.className='irow'+(checked[ing.id]?' done':'');
+    div.setAttribute('data-ing', ing.id);
+    var qty = opts.amount!=null ? opts.amount : ingAmount(ing);
+    var nameHtml = E(opts.label || ing.name);
+    if (ing.to_taste) nameHtml += ' <span class="totaste">· to taste</span>';
+    if (opts.bundleTag) nameHtml += ' <span class="bundle-tag">('+E(opts.bundleTag)+')</span>';
+    if (opts.prepVerb)  nameHtml += ', '+E(opts.prepVerb);
+    var sub = [];
+    if (ing.shopping_hint && opts.showHint) sub.push('buy '+E(ing.shopping_hint));
+    if (ing.note) sub.push(E(ing.note));
+    var noteHtml = sub.length ? '<span class="inote">'+sub.join(' · ')+'</span>' : '';
+    div.innerHTML = '<span class="ibox"></span><span class="iqty">'+E(qty)+'</span>'
+      + '<span class="iname">'+nameHtml+noteHtml+'</span>';
+    div.addEventListener('click', function(){
+      checked[ing.id] = !checked[ing.id];
+      // reflect on every row for this ingredient across views currently mounted
+      document.querySelectorAll('.irow[data-ing="'+CSSesc(ing.id)+'"]').forEach(function(r){
+        r.classList.toggle('done', !!checked[ing.id]); });
+    });
+    return div;
+  }
+  function CSSesc(s){ return String(s).replace(/"/g,'\\"'); }
+  function ghead(t){ var h=document.createElement('div'); h.className='ghead'; h.textContent=t; return h; }
+  function gnote(t){ var n=document.createElement('div'); n.className='gnote'; n.textContent='— '+t; return n; }
+
+  function renderIngredients(){
+    var c=document.getElementById('ingredient-rows'); c.innerHTML='';
+    var hint=document.getElementById('view-hint');
+    var ings = (CK.ingredients||[]);
+
+    if (view==='order'){
+      hint.textContent='In the order the recipe reaches for them.';
+      ings.slice().sort(function(a,b){ return (a.first_step||0)-(b.first_step||0); })
+        .forEach(function(r){ c.appendChild(ingRowEl(r, {})); });
+
+    } else if (view==='bundles'){
+      hint.textContent='Grouped into the mise — what you combine, and when.';
+      // bundles are stored sorted by first_step (appearance-order invariant)
+      (CK.bundles||[]).forEach(function(b){
+        c.appendChild(ghead(b.label + (b.make_ahead ? '  (make ahead)' : '')));
+        if (b.combine_note) c.appendChild(gnote(b.combine_note));
+        if (b.excluded_reason) c.appendChild(gnote('kept separate: '+b.excluded_reason));
+        (b.members||[]).forEach(function(m){
+          var ing = IDX.ing[m.ingredient_id] || {id:m.ingredient_id, name:m.label};
+          c.appendChild(ingRowEl(ing, {amount:amtStr(m.amount), label:m.label, prepVerb:m.prep_verb}));
+        });
+      });
+      // any ingredient not in a bundle (e.g. a to-taste finisher) still belongs somewhere
+      var inBundle={}; (CK.bundles||[]).forEach(function(b){ (b.members||[]).forEach(function(m){ inBundle[m.ingredient_id]=1; }); });
+      var orphans = ings.filter(function(i){ return !inBundle[i.id]; });
+      if (orphans.length){ c.appendChild(ghead('Also')); orphans.forEach(function(r){ c.appendChild(ingRowEl(r, {})); }); }
+
+    } else {
+      hint.textContent='By store aisle — one pass through the market.';
+      var byAisle={}, order=[];
+      ings.forEach(function(i){ var a=i.aisle||'Other'; if(!byAisle[a]){byAisle[a]=[];order.push(a);} byAisle[a].push(i); });
+      order.forEach(function(a){
+        c.appendChild(ghead(a));
+        byAisle[a].forEach(function(r){ c.appendChild(ingRowEl(r, {showHint:true})); });
+      });
+    }
+  }
+
+  // ====================================================================== //
+  //  EQUIPMENT (order of need; product picks deferred — no catalog yet)
+  // ====================================================================== //
+  function renderEquipment(){
+    var ul=document.getElementById('equipment-rows'); ul.innerHTML='';
+    var eq=(CK.equipment||[]);
+    document.getElementById('eq-count').textContent = eq.length ? eq.length+' items' : '';
+    eq.forEach(function(e){
+      var li=document.createElement('li');
+      var size = e.size ? amtStr(e.size) : '';
+      li.innerHTML = '<span class="e-name"><b>'+E(e.name)+'</b>'
+        + (e.why ? '<span class="e-why">'+E(e.why)+'</span>' : '') + '</span>'
+        + '<span class="e-size'+(size?'':' none')+'">'+E(size||'any')+'</span>';
+      ul.appendChild(li);
+    });
+  }
+
+  // ====================================================================== //
+  //  PUT-ASIDES (reserved items, held created_step -> consumed_step)
+  // ====================================================================== //
+  function renderAsides(){
+    var box=document.getElementById('asides'), rows=document.getElementById('aside-rows');
+    var rs=(CK.reserved||[]); if(!rs.length){ box.style.display='none'; return; }
+    box.style.display=''; rows.innerHTML='';
+    rs.forEach(function(r){
+      var amt=r.amount?amtStr(r.amount):'';
+      var held='held from step '+r.created_step+(r.consumed_step?(' → back in at step '+r.consumed_step):' (served as-is)');
+      rows.innerHTML += '<div class="aside-row"><b>'+E(r.label)+'</b>'+(amt?(' — '+E(amt)):'')
+        +' <span class="held">'+E(held)+'</span>'+(r.note?('<br><span class="held">'+E(r.note)+'</span>'):'')+'</div>';
+    });
+  }
+
+  // ====================================================================== //
+  //  STEPS — anchored, token-expanded, checkable, voice-aware
+  // ====================================================================== //
+  var YT = function(u){ var m=String(u||'').match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/); return m?m[1]:null; };
+  function mediaHtml(att){
+    return (att.media||[]).map(function(m){
+      var href=m.url||''; if(m.start_seconds) href+=(href.indexOf('?')>=0?'&':'?')+'t='+m.start_seconds+'s';
+      var label=m.title?E(m.title):(m.kind==='image'?'View':'Watch');
+      var src=m.source?E(m.source):'';
+      var id=(m.kind!=='image')?YT(m.url):null;
+      var inner;
+      if(id){ inner='<span class="play"><img class="pic" src="https://img.youtube.com/vi/'+id+'/mqdefault.jpg" alt="" loading="lazy"></span>'
+        +'<span style="font-size:.82rem;line-height:1.2">'+label+(src?'<br><span class="muted">'+src+'</span>':'')+'</span>'; }
+      else if(m.kind==='image'&&m.url){ inner='<img src="'+E(m.url)+'" alt="'+label+'" loading="lazy" style="max-width:150px;border-radius:6px">'; }
+      else { inner='<span style="font-size:.82rem">▶ '+label+(src?' <span class="muted">('+src+')</span>':'')+'</span>'; }
+      return '<a class="media" href="'+E(href)+'" target="_blank" rel="noopener" title="'+E(m.source||'')+'">'+inner+'</a>';
+    }).join('');
+  }
+  // Expand {ingN}/{amt:..}/{bundle:ID} into DISPLAY html (bold).
+  function expandInstr(step){
+    var html=E(step.instruction||'');
+    html=html.replace(/\{ing(\d+)\}/g, function(mm,n){
+      var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return mm;
+      var a=amtStr(si.amount); return '<b>'+E((a?a+' ':'')+(si.label||''))+'</b>'; });
+    html=html.replace(/\{amt:([^}]*)\}/g, function(mm,x){
+      var parts=x.split('|'); var val = (units==='met'&&parts[1])?parts[1]:parts[0]; return '<b>'+E(val.trim())+'</b>'; });
+    html=html.replace(/\{bundle:([^}]*)\}/g, function(mm,id){
+      var b=IDX.bundle[id.trim()]; return '<b>'+E(b?b.label:id)+'</b>'; });
+    return html;
+  }
+  // Expand the SAME tokens into PLAIN, de-abbreviated speech (for TTS / voice).
+  function spokenText(step){
+    var t=String(step.instruction||'');
+    t=t.replace(/\{ing(\d+)\}/g, function(mm,n){
+      var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return '';
+      var a=amtStr(si.amount); return (a?a+' ':'')+(si.label||''); });
+    t=t.replace(/\{amt:([^}]*)\}/g, function(mm,x){ var p=x.split('|'); return ((units==='met'&&p[1])?p[1]:p[0]).trim(); });
+    t=t.replace(/\{bundle:([^}]*)\}/g, function(mm,id){ var b=IDX.bundle[id.trim()]; return b?b.label:id; });
+    return deAbbrev((step.name? step.name+'. ':'') + t);
+  }
+  // de-abbreviate for the ear: units + common fractions spoken in full.
+  function deAbbrev(s){
+    s=String(s);
+    var FRAC={'½':'one half','⅓':'one third','⅔':'two thirds','¼':'one quarter','¾':'three quarters','⅛':'one eighth'};
+    // "1½" -> "one and a half"; bare "½" -> "one half"
+    s=s.replace(/(\d+)\s*([½⅓⅔¼¾⅛])/g, function(m,whole,fr){
+      var w=parseInt(whole,10); var f=FRAC[fr]||fr;
+      var half={'½':'a half','⅓':'a third','⅔':'two thirds','¼':'a quarter','¾':'three quarters','⅛':'an eighth'}[fr]||f;
+      return numWord(w)+' and '+half; });
+    s=s.replace(/([½⅓⅔¼¾⅛])/g, function(m,fr){ return FRAC[fr]||fr; });
+    s=s.replace(/(\d+)\s*\/\s*(\d+)/g, function(m,a,b){ return a+' over '+b; }); // "1/2"->"1 over 2" (rare)
+    var UNIT=[[/\bTbsp\b\.?/g,'tablespoons'],[/\btbsp\b\.?/g,'tablespoons'],[/\btsp\b\.?/g,'teaspoons'],
+      [/\blb\b\.?/g,'pounds'],[/\blbs\b\.?/g,'pounds'],[/\boz\b\.?/g,'ounces'],
+      [/\bqt\b\.?/g,'quarts'],[/\bpt\b\.?/g,'pints'],[/\bgal\b\.?/g,'gallons'],
+      [/\bmin\b\.?/g,'minutes'],[/\bhr\b\.?/g,'hours'],[/\bsec\b\.?/g,'seconds'],
+      [/°F\b/g,' degrees Fahrenheit'],[/°C\b/g,' degrees Celsius'],
+      [/\bml\b/g,'milliliters'],[/\bmL\b/g,'milliliters'],[/\bL\b/g,'liters'],
+      [/\bg\b/g,'grams'],[/\bkg\b/g,'kilograms'],[/\bcm\b/g,'centimeters'],[/\bin\b\.?/g,'inches']];
+    UNIT.forEach(function(p){ s=s.replace(p[0], p[1]); });
+    return s.replace(/\s+/g,' ').trim();
+  }
+  function numWord(n){ var W=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve']; return W[n]!=null?W[n]:String(n); }
+
+  function stepEl(step){
+    var div=document.createElement('div');
+    div.className='step'; div.setAttribute('data-step', step.number);
+    var sched=[ (step.duration_minutes?step.duration_minutes+' min':''), step.attention ].filter(Boolean).join(' · ');
+    // equipment "need" band — names (+size) in order, deduped per step
+    var eqHtml='';
+    var eqs=(step.equipment||[]).map(function(se){ return IDX.eq[se.equipment_id]; }).filter(Boolean);
+    if(eqs.length){
+      eqHtml='<div class="need"><span class="tag">Equipment</span><span class="body">'
+        + eqs.map(function(e){ var sz=e.size?amtStr(e.size):''; return '<b>'+E(e.name)+'</b>'+(sz?' <span class="spec">('+E(sz)+')</span>':''); }).join(' · ')
+        + '</span></div>';
+    }
+    var attHtml=(step.attachments||[]).map(function(a){
+      var ic=a.kind==='check'?'✓':'💡';
+      return '<div class="att '+(a.kind==='check'?'check':'tip')+'" title="from knowledge base: '+E(a.kb_id)+'"><span class="att-ic">'+ic+'</span>'+E(a.text)+'</div>'+mediaHtml(a);
+    }).join('');
+    if(!attHtml){ // pre-3c-b fallback (deprecated bare tip/check)
+      if(step.tip) attHtml+='<div class="att tip"><span class="att-ic">💡</span>'+E(step.tip)+'</div>';
+      if(step.check) attHtml+='<div class="att check"><span class="att-ic">✓</span>'+E(step.check)+'</div>';
+    }
+    div.innerHTML='<span class="sbox" role="button" aria-label="Mark step '+step.number+' done"></span>'
+      + '<div class="sbody">'
+      + '<div class="num-row"><div class="num">'+step.number+'</div><div class="step-name">'+E(step.name)
+      +   (sched?' <span class="step-sched">'+E(sched)+'</span>':'')+'</div></div>'
+      + eqHtml
+      + '<p class="instr">'+expandInstr(step)+'</p>'
+      + attHtml
+      + '<button class="step-read" title="Read this step aloud">🔊 Read step</button>'
+      + '</div>';
+    // check toggles done + advances
+    var box=div.querySelector('.sbox');
+    box.addEventListener('click', function(){ toggleStep(div, step); });
+    div.querySelector('.step-read').addEventListener('click', function(e){ e.stopPropagation(); speak(spokenText(step)); markCurrent(step.number); });
+    return div;
+  }
+  function renderSteps(){
+    var c=document.getElementById('steps'); c.innerHTML='';
+    (CK.steps||[]).forEach(function(s){ c.appendChild(stepEl(s)); });
+    markCurrent(firstUncheckedNumber());
+  }
+
+  // ---- step state + the voice-drivable controller ------------------------
+  function stepDiv(n){ return document.querySelector('.step[data-step="'+n+'"]'); }
+  function isDone(n){ var d=stepDiv(n); return d && d.classList.contains('done'); }
+  function firstUncheckedNumber(){
+    var d=[].slice.call(document.querySelectorAll('.step')).find(function(el){ return !el.classList.contains('done'); });
+    return d ? parseInt(d.getAttribute('data-step'),10) : null;
+  }
+  function markCurrent(n){
+    document.querySelectorAll('.step.current').forEach(function(el){ el.classList.remove('current'); });
+    if(n!=null){ var d=stepDiv(n); if(d) d.classList.add('current'); }
+    updateProgress();
+  }
+  function toggleStep(div, step){
+    var wasDone=div.classList.contains('done');
+    div.classList.toggle('done');
+    if(!wasDone){
+      var nextN=null, all=[].slice.call(document.querySelectorAll('.step'));
+      for(var i=0;i<all.length;i++){ var nn=parseInt(all[i].getAttribute('data-step'),10);
+        if(nn>step.number && !all[i].classList.contains('done')){ nextN=nn; break; } }
+      markCurrent(nextN);
+      if(nextN){ var nd=stepDiv(nextN); if(nd) setTimeout(function(){ nd.scrollIntoView({behavior:'smooth',block:'start'}); },170); }
+    } else {
+      markCurrent(firstUncheckedNumber());
+    }
+    updateProgress();
+  }
+  function updateProgress(){
+    var all=document.querySelectorAll('.step'), done=document.querySelectorAll('.step.done');
+    var pct = all.length ? (done.length/all.length*100) : 0;
+    document.getElementById('cb-prog').style.width = pct + '%';
+  }
+
+  // window.cookView — the API the conversational voice loop drives (next/back/
+  // repeat/read). Today the checkboxes + buttons call the same paths.
+  window.cookView = {
+    steps: function(){ return (CK&&CK.steps)||[]; },
+    currentNumber: function(){ return firstUncheckedNumber(); },
+    currentStep: function(){ var n=this.currentNumber(); return n==null?null:(CK.steps||[]).find(function(s){return s.number===n;}); },
+    stepByNumber: function(n){ return (CK.steps||[]).find(function(s){return s.number===n;})||null; },
+    spokenText: function(step){ step=step||this.currentStep(); return step?spokenText(step):''; },
+    go: function(step){ step=step||this.currentStep(); if(step){ markCurrent(step.number);   // move + scroll, SILENT
+      var d=stepDiv(step.number); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); } return step; },
+    read: function(step){ step=this.go(step); if(step && talk) speak(spokenText(step)); return step; },   // speaks only if Talk is on
+    next: function(){ var n=this.currentNumber(); if(n==null) return null; var d=stepDiv(n); var s=this.stepByNumber(n);
+      toggleStep(d, s); var cs=this.currentStep(); if(cs) this.read(cs); return cs; },
+    back: function(){ var all=[].slice.call(document.querySelectorAll('.step.done')); var last=all[all.length-1];
+      if(last){ var n=parseInt(last.getAttribute('data-step'),10); toggleStep(last, this.stepByNumber(n));
+        last.scrollIntoView({behavior:'smooth',block:'start'}); this.read(this.stepByNumber(n)); return n; } return null; },
+    repeat: function(){ return this.read(this.currentStep()); },
+    reset: function(){ document.querySelectorAll('.step.done').forEach(function(el){ el.classList.remove('done'); });
+      markCurrent(firstUncheckedNumber()); window.scrollTo({top:0,behavior:'smooth'}); }
+  };
+
+  // ====================================================================== //
+  //  VOICE — Claudette's voice (OpenAI gpt-4o-mini-tts) + the hands-free loop
+  //  (mic → Silero VAD endpointing → faster-whisper → command / Claudette).
+  //  Built as ONE piece per recipe_anchor/voice-cook-spec.md. Browser
+  //  SpeechSynthesis stays as the offline/failure fallback for speaking.
+  // ====================================================================== //
+  var _audioEl = null, _speaking = false, _speakSeq = 0;
+  var hf = false, micStream = null, awaitingQ = false;
+  var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
+  var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
+  var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
+  function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+  // Set true for strict "Alexa mode": require "Claudette" before commands too.
+  var REQUIRE_WAKE_FOR_COMMANDS = false;
+  var vstatus = document.getElementById('vstatus');
+
+  function setVoiceStatus(state, msg){
+    if(!vstatus) return;
+    vstatus.className = 'show ' + (state || '');
+    var ic = {listening:'🎧', hearing:'🗣️', thinking:'⏳', speaking:'🔊'}[state] || '';
+    var m = vstatus.querySelector('.vmsg');
+    if(m && msg != null) m.textContent = (ic ? ic + ' ' : '') + msg;
+  }
+  function hideVoiceStatus(){ if(vstatus) vstatus.className = ''; }
+  function _listenHint(){ var n = window.cookView.currentNumber();
+    return n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
+                     : 'Listening — say “hey chef…” to ask a question'; }
+  function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 500;   // ignore echo tail after she stops
+    if (hf) setVoiceStatus('listening', _listenHint()); }
+
+  // Single reusable <audio>, UNLOCKED on a user gesture (Start/Read/Ask tap) so
+  // iOS Safari lets us play TTS programmatically afterwards (it blocks audio not
+  // tied to a gesture — why hands-free was silent on iPhone). Reusing ONE element
+  // (vs new Audio() each time) also means a new clip REPLACES the current one, so
+  // rapid taps can't stack overlapping playback.
+  function _ensureAudioEl(){ if(!_audioEl){ _audioEl = new Audio(); _audioEl.preload = 'auto'; } return _audioEl; }
+  function unlockAudio(){
+    try{ var a = _ensureAudioEl(); if (a._unlocked) return;
+      a.src = URL.createObjectURL(encodeWAV(new Float32Array(1600), 8000));   // 0.2s of silence
+      var p = a.play(); if(p && p.then) p.then(function(){ a._unlocked = true; }).catch(function(){});
+    }catch(e){}
+  }
+  // TTS audio cache (keyed by spoken text) so a step's voice is PREFETCHED and
+  // plays instantly on "next" — no OpenAI round-trip between command and speech.
+  // A value is a Promise while in-flight, then the blob URL; prefetch + speak
+  // share the SAME entry so they never double-fetch the same line.
+  var _ttsCache = {};
+  function getSpeechUrl(text){
+    var c = _ttsCache[text];
+    if (typeof c === 'string') return Promise.resolve(c);   // ready → instant
+    if (c && c.then) return c;                               // in-flight → share it
+    var pr = fetch('/cook/speak', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text:text}) })
+      .then(function(r){ if(!r.ok) throw new Error('tts'); return r.blob(); })
+      .then(function(blob){ var url = URL.createObjectURL(blob); _ttsCache[text] = url; return url; });
+    _ttsCache[text] = pr;
+    pr.catch(function(){ if(_ttsCache[text] === pr) delete _ttsCache[text]; });
+    return pr;
+  }
+  function prefetchSpeak(text){ text = String(text || '').trim(); if(text) getSpeechUrl(text).catch(function(){}); }
+  function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){ prefetchSpeak(spokenText(s)); }); }
+  function _playUrl(url){
+    return new Promise(function(res){
+      var a = _ensureAudioEl(); a.src = url; _speaking = true;
+      a.onended = function(){ _onSpeakEnd(); res(); };
+      a.onerror = function(){ _onSpeakEnd(); res(); };
+      var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); res(); });
+    });
+  }
+  // Speak via OpenAI TTS (warm Claudette voice), from the prefetch cache when
+  // warm; fall back to browser synth on failure.
+  function speak(text){
+    text = String(text || '').trim(); if (!text) return Promise.resolve();
+    stopSpeaking();                       // bumps _speakSeq + stops the current clip
+    var seq = _speakSeq;
+    if (hf) setVoiceStatus('speaking', text);
+    return getSpeechUrl(text)
+      .then(function(url){ if(seq !== _speakSeq) return; return _playUrl(url); })   // superseded → drop
+      .catch(function(){ if(seq === _speakSeq) return _browserSpeak(text); });      // OpenAI down → robot fallback
+  }
+  function _browserSpeak(text){
+    if (!('speechSynthesis' in window)) { _onSpeakEnd(); return Promise.resolve(); }
+    return new Promise(function(res){ try{ speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text); u.rate = 0.97; _speaking = true;
+      u.onend = function(){ _onSpeakEnd(); res(); }; u.onerror = function(){ _onSpeakEnd(); res(); };
+      speechSynthesis.speak(u); }catch(e){ _onSpeakEnd(); res(); } });
+  }
+  function stopSpeaking(){
+    _speakSeq++;                          // invalidate any in-flight speak()
+    try{ if(_audioEl){ _audioEl.pause(); } }catch(e){}
+    if('speechSynthesis' in window){ try{ speechSynthesis.cancel(); }catch(e){} }
+    _speaking = false;
+  }
+
+  // ---- the hands-free loop (self-contained Web Audio energy VAD) -------- //
+  // No external engine: getUserMedia → ScriptProcessor computes per-frame RMS
+  // against an adaptive noise floor → endpoint after a silence hang → one
+  // utterance WAV to /cook/listen. Self-contained = works offline + always
+  // fires the mic prompt (portable-package fit). Silero is a future upgrade.
+  var SILENCE_HANG_MS = 800, MIN_VOICE_MS = 350;
+  var BARGE_IN = false, BARGE_THRESH = 0.06;  // barge-in OFF: on speaker (no real AEC) her own voice self-triggered the cutoff. Re-enable only with a headset.
+  // A short confirmation beep (via the live AudioContext) — used instead of
+  // speaking "Yes?" over the cook's question, so the question isn't lost.
+  function cue(){
+    try{ if(!AC) return; var o=AC.createOscillator(), g=AC.createGain(); o.type='sine'; o.frequency.value=880;
+      o.connect(g); g.connect(AC.destination); var t=AC.currentTime; g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.18,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+      o.start(t); o.stop(t+0.2);
+    }catch(e){}
+  }
+
+  async function startHandsFree(){
+    if (hf) { stopHandsFree(); return; }
+    var btn = document.getElementById('handsfree');
+    unlockAudio();   // we're inside the Start tap (a user gesture) — unlock iOS audio now
+    setTalk(true);   // voice mode always speaks
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      setVoiceStatus('', 'This browser can’t open the mic — use the buttons.'); return;
+    }
+    if (!window.isSecureContext){
+      setVoiceStatus('', 'Mic needs https or localhost. You’re on ' + location.protocol + '//' + location.host + ' — open the page via http://localhost:8009.');
+      return;
+    }
+    btn.textContent = '⏳ Starting…'; btn.disabled = true;
+    try{
+      // Our own stream so we can force echo cancellation (Claudette shouldn't
+      // hear herself); AGC off so the energy threshold stays meaningful.
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:false } });
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      if (AC.state === 'suspended') await AC.resume();
+      capRate = AC.sampleRate;
+      srcNode = AC.createMediaStreamSource(micStream);
+      procNode = AC.createScriptProcessor(4096, 1, 1);
+      procNode.onaudioprocess = onAudioFrame;
+      sinkNode = AC.createGain(); sinkNode.gain.value = 0;          // mute: never route mic to speakers
+      srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
+      capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
+      hf = true; btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
+      setVoiceStatus('speaking', 'Starting…');
+      window.cookView.read();      // speak the current step; _onSpeakEnd → listening
+      prefetchAllSteps();          // warm TTS for every step so "next" plays instantly
+    }catch(e){
+      console.error('[voice] start failed', e);
+      btn.disabled = false; btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on');
+      var nm = (e && e.name) ? e.name : 'Error';
+      var hint = nm === 'NotAllowedError' ? 'mic permission blocked — allow it via the address-bar mic icon AND Windows Settings ▸ Privacy ▸ Microphone (let desktop apps / your browser use the mic).'
+               : nm === 'NotFoundError'   ? 'no microphone was found.'
+               : nm === 'NotReadableError'? 'the mic is in use or blocked by another app.'
+               : nm === 'SecurityError'   ? 'blocked — the page must be https or localhost.'
+               : (e && e.message) ? e.message : 'could not start the mic.';
+      setVoiceStatus('', '🎙️ ' + nm + ' — ' + hint);   // stays visible so we can read it
+      if (nm === 'NotFoundError' && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
+        try{ var devs = await navigator.mediaDevices.enumerateDevices();
+          var ins = devs.filter(function(d){ return d.kind === 'audioinput'; }).length;
+          setVoiceStatus('', '🎙️ No mic on this device (' + ins + ' audio inputs). Use a headset/USB mic, or just open bestcooksclub.com on your phone — voice runs there too. Also check Windows ▸ Privacy ▸ Microphone is ON.');
+        }catch(_e){}
+      }
+      _teardownAudio();
+    }
+  }
+  function _teardownAudio(){
+    try{ if(procNode){ procNode.disconnect(); procNode.onaudioprocess = null; } }catch(e){}
+    try{ if(srcNode) srcNode.disconnect(); }catch(e){}
+    try{ if(sinkNode) sinkNode.disconnect(); }catch(e){}
+    try{ if(AC) AC.close(); }catch(e){}
+    if(micStream){ micStream.getTracks().forEach(function(t){ t.stop(); }); }
+    procNode = srcNode = sinkNode = AC = null; micStream = null;
+  }
+  function stopHandsFree(){
+    hf = false; awaitingQ = false; capturing = false; stopSpeaking();
+    _teardownAudio();
+    var btn = document.getElementById('handsfree'); if(btn){ btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on'); }
+    hideVoiceStatus();
+  }
+  // Per-frame RMS energy → adaptive-threshold VAD with a silence hang for endpointing.
+  function onAudioFrame(e){
+    if(!hf) return;
+    var input = e.inputBuffer.getChannelData(0), n = input.length, sum = 0;
+    for(var i=0;i<n;i++){ var s = input[i]; sum += s*s; }
+    var rms = Math.sqrt(sum / n), frameMs = n / capRate * 1000;
+    // While Claudette speaks: ignore her own voice off the speakers UNLESS a clearly
+    // louder, nearby voice comes in (barge-in). A phone's echo cancellation keeps her
+    // leakage well under BARGE_THRESH; flip BARGE_IN=false if she self-cuts on a device
+    // with weak echo cancellation (e.g. desktop speakers).
+    if(_speaking){ if(BARGE_IN && rms > BARGE_THRESH){ stopSpeaking(); } else return; }
+    if(!_speaking && _now() < _speakGuard) return;            // short echo tail after she stops
+    // When waiting for the cook's question (after the wake word), listen more eagerly.
+    var onT = awaitingQ ? Math.max(0.014, noiseFloor * 2.5) : Math.max(0.022, noiseFloor * 3.5);
+    var offT = awaitingQ ? Math.max(0.010, noiseFloor * 1.8) : Math.max(0.015, noiseFloor * 2.2);
+    if(!capturing){
+      noiseFloor = 0.95 * noiseFloor + 0.05 * rms;                 // track ambient while quiet
+      if(rms > onT){
+        capturing = true; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; onSpeechStart();
+      }
+    }
+    if(capturing){
+      capBuf.push(new Float32Array(input)); capLen += n;
+      if(rms > offT){ voiceMs += frameMs; silenceMs = 0; } else { silenceMs += frameMs; }
+      if(silenceMs >= SILENCE_HANG_MS || capLen > capRate * 15){    // endpoint (or 15s safety cap)
+        capturing = false;
+        if(voiceMs >= MIN_VOICE_MS){ onSpeechEnd(_flatten(capBuf, capLen)); }
+        else if(hf){ setVoiceStatus('listening', _listenHint()); }  // too short — ignore
+        capBuf = []; capLen = 0;
+      }
+    }
+  }
+  function _flatten(chunks, total){ var out = new Float32Array(total), o = 0;
+    for(var i=0;i<chunks.length;i++){ out.set(chunks[i], o); o += chunks[i].length; } return out; }
+  function onSpeechStart(){ if(hf) setVoiceStatus('hearing', awaitingQ ? 'got your question…' : 'hearing you…'); }
+  function onSpeechEnd(samples){
+    if(!hf) return;
+    setVoiceStatus('thinking', '…');
+    var fd = new FormData(); fd.append('audio', encodeWAV(samples, capRate), 'utt.wav');
+    fetch('/cook/listen', { method:'POST', body:fd })
+      .then(function(r){ return r.ok ? r.json() : {text:''}; })
+      .then(function(j){ routeUtterance((j.text || '').trim()); })
+      .catch(function(){ if(hf) setVoiceStatus('listening', _listenHint()); });
+  }
+  // Route a transcript: a command runs instantly; "Claudette …" opens the LLM;
+  // a non-command without the wake word is ignored (don't fire the LLM on
+  // kitchen chatter / Claudette's own voice). Generous command synonyms.
+  // Route a transcript. Commands are ANCHORED (the de-filled utterance must BE
+  // the command, not merely contain it) so conversation like "next time…" never
+  // fires. Questions are gated behind the "Claudette" wake word — no chatter hits
+  // the LLM. Anything else is ignored. Flip REQUIRE_WAKE_FOR_COMMANDS for strict
+  // Alexa-mode (wake word before commands too).
+  // Wake word "Claudette" — base.en mishears proper names, so match common
+  // transcriptions generously (cloud et, Colette, clawed et, Claude…). "hey chef"
+  // is an easier-to-recognize alternate. _G strips all occurrences (for short
+  // command utterances); _LEAD strips only a leading wake (preserves a question
+  // that legitimately mentions a wake-like word later).
+  var _WAKE_SRC = "(hey chef|hey chefs|hey chef's|a chef|chef|chefs|chef's|hey chair|hey jeff|jeff|jeff's|jjeff|geoff|jefe|claudette|claudettes|claudet|cloudette|cloudet|colette|claudia|claudie|claude|claud|cloud et|clawed et)";
+  var _WAKE      = new RegExp("\\b" + _WAKE_SRC + "\\b", "i");
+  var _WAKE_G    = new RegExp("\\b" + _WAKE_SRC + "\\b", "ig");
+  var _WAKE_LEAD = new RegExp("^[\\s,.:;!?-]*" + _WAKE_SRC + "\\b[\\s,.:;!?-]*", "i");
+
+  var _CMDS = [
+    [/^(next|next step|next one|done|continue|keep going|go on|got it|move on|ready|finished|carry on)$/, function(){ window.cookView.next(); }],
+    [/^(back|previous|go back|undo|last step|one back|back up|backup)$/, function(){ window.cookView.back(); }],
+    [/^(repeat|again|say again|repeat that|one more time|what was that|come again|read that again)$/, function(){ window.cookView.repeat(); }],
+    [/^(start over|restart|reset|from the top|begin again|start again)$/, function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); }],
+    [/^(stop|pause|quiet|stop listening|that's enough|that is enough|never mind|hush|halt|stop cooking)$/, function(){ stopHandsFree(); }]
+  ];
+  function routeUtterance(text){
+    if(!hf) return;
+    var t = text.toLowerCase().replace(/[^\w\s']/g,' ').replace(/\s+/g,' ').trim();
+    if(t.length < 2){ setVoiceStatus('listening', _listenHint()); return; }
+
+    if(awaitingQ){ awaitingQ = false; askClaudette(text); return; }   // pending Q after bare "Claudette"
+
+    var hadWake = _WAKE.test(t);
+    // strip wake word + leading/trailing fillers, then test as a WHOLE command
+    var cmd = t.replace(_WAKE_G,' ').replace(/\s+/g,' ')
+               .replace(/^(ok|okay|um|uh|hey|please|now|and|so|could you|can you|let's|lets)\s+/,'')
+               .replace(/\s+(please|now|step|for me)$/,'').trim();
+    if(!REQUIRE_WAKE_FOR_COMMANDS || hadWake){
+      for(var i=0;i<_CMDS.length;i++){ if(_CMDS[i][0].test(cmd)){ _CMDS[i][1](); return; } }
+    }
+    if(hadWake){   // a question — gated by the wake word so noise never hits the LLM
+      var q = text.replace(_WAKE_LEAD,'').replace(/^[\s,.:;!?-]+/,'').trim();
+      if(q.length < 2){ awaitingQ = true; cue(); _speakGuard = _now() + 250;   // beep, don't talk over the question
+        setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
+      askClaudette(q); return;
+    }
+    setVoiceStatus('listening', 'Heard “' + text + '” — say a command, or “hey chef …” to ask');
+  }
+  function askClaudette(question){
+    setVoiceStatus('thinking', 'Claudette is thinking…');
+    var cur = window.cookView.currentNumber();
+    fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){ speak(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.')); })
+      .catch(function(){ speak('Sorry, I could not reach the kitchen brain just now.'); });
+  }
+  // 16kHz mono Float32 → 16-bit PCM WAV blob (what faster-whisper ingests).
+  function encodeWAV(samples, rate){
+    var buf = new ArrayBuffer(44 + samples.length*2), v = new DataView(buf);
+    function w(o,s){ for(var i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); }
+    w(0,'RIFF'); v.setUint32(4, 36 + samples.length*2, true); w(8,'WAVE'); w(12,'fmt ');
+    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true);
+    w(36,'data'); v.setUint32(40, samples.length*2, true);
+    var o=44; for(var i=0;i<samples.length;i++,o+=2){ var s=Math.max(-1,Math.min(1,samples[i])); v.setInt16(o, s<0?s*0x8000:s*0x7FFF, true); }
+    return new Blob([v], {type:'audio/wav'});
+  }
+
+  // ---- Talk toggle (speak steps or stay silent) ------------------------- //
+  function setTalk(on){
+    talk = !!on;
+    var b = document.getElementById('talkbtn');
+    if(b){ b.classList.toggle('on', talk); b.textContent = talk ? '🔊 Talk' : '🔇 Talk'; }
+    if(!talk) stopSpeaking();
+  }
+
+  // ---- Touch mode (a knuckle-friendly gesture pad — "almost hands-free") - //
+  // A dedicated pad captures the swipes so the page can still scroll freely:
+  //   swipe → next · swipe ← back · swipe ↑ restart · swipe ↓ end · double-tap repeat.
+  function setTouchMode(on){
+    touchMode = !!on;
+    var pad = document.getElementById('gesturepad');
+    if(pad) pad.classList.toggle('show', touchMode);
+    var b = document.getElementById('touchmode');
+    if(b){ b.classList.toggle('on', touchMode); b.textContent = touchMode ? '🙈 No-look on' : '🙈 No-look'; }
+    if(touchMode){ unlockAudio(); window.cookView.go(window.cookView.currentStep()); }
+  }
+  function endTouch(){ stopSpeaking(); setTouchMode(false); }
+  function wireTouchPad(){
+    var pad = document.getElementById('gesturepad'); if(!pad) return;
+    var sx=0, sy=0, st=0, lastTap=0, SW=42;
+    function start(x,y){ unlockAudio(); sx=x; sy=y; st=_now(); }
+    function end(x,y){
+      var dx=x-sx, dy=y-sy, ax=Math.abs(dx), ay=Math.abs(dy), dt=_now()-st;
+      if(ax<SW && ay<SW && dt<450){            // tap → double-tap = repeat
+        var now=_now(); if(now-lastTap < 340){ lastTap=0; window.cookView.repeat(); } else { lastTap=now; }
+        return;
+      }
+      if(ax > ay){ if(dx>0) window.cookView.next(); else window.cookView.back(); }   // → next · ← back
+      else { if(dy<0){ window.cookView.reset(); window.cookView.read(); } else { endTouch(); } }  // ↑ restart · ↓ end
+    }
+    pad.addEventListener('touchstart', function(e){ var t=e.changedTouches[0]; start(t.clientX,t.clientY); }, {passive:true});
+    pad.addEventListener('touchend',   function(e){ e.preventDefault(); var t=e.changedTouches[0]; end(t.clientX,t.clientY); }, {passive:false});
+    pad.addEventListener('mousedown',  function(e){ start(e.clientX,e.clientY); });    // desktop testing
+    pad.addEventListener('mouseup',    function(e){ end(e.clientX,e.clientY); });
+  }
+
+  // ====================================================================== //
+  //  TOP-LEVEL RENDER
+  // ====================================================================== //
+  function renderAll(){
+    buildIndex();
+    var name = RECIPE.name || 'Recipe';
+    document.title = name + ' — cook view';
+    document.getElementById('cb-title').textContent = name;
+    document.getElementById('cb-h1').textContent = name;
+    document.getElementById('hd-title').textContent = name;
+
+    // hero image: the recipe's own hero (image[0] / previewImage). When it's
+    // present the title already sits OVER the image, so the in-document header
+    // title + eyebrow are hidden to avoid showing the name twice. With no hero,
+    // the header title is the only title — keep it.
+    var src = (RECIPE._source||{});
+    var img = (RECIPE.image && RECIPE.image[0]) || src.previewImage || '';
+    if(img){ var hero=document.getElementById('cb-hero'); hero.style.display='';
+      document.getElementById('cb-img').src=img;
+      document.getElementById('hd-title').style.display='none';
+      document.getElementById('hd-kicker').style.display='none'; }
+    document.getElementById('cb-eye').textContent = [src.siteName, (RECIPE.recipeCategory||'')].filter(Boolean).join(' · ');
+
+    // meta line: yield + time + method
+    var yld = CK.recipe_yield || RECIPE.recipeYield;
+    var mins = CK.total_time_minutes;
+    var metaEl=document.getElementById('hd-meta'); var meta=[];
+    if(yld) meta.push('<span>👥 Serves <b>'+E(yld)+'</b></span>');
+    if(mins) meta.push('<span>⏱ <b>'+(mins>=60?(Math.round(mins/6)/10)+' hr':mins+' min')+'</b></span>');
+    if(RECIPE.cookingMethod) meta.push('<span>'+E(RECIPE.cookingMethod)+'</span>');
+    metaEl.innerHTML=meta.join('');
+
+    if(CK.headnote){ var b=document.getElementById('hd-blurb'); b.style.display=''; b.textContent=CK.headnote; }
+    if((CK.technique_changes||[]).length){ document.getElementById('hd-changed').style.display='';
+      document.getElementById('hd-changed-list').innerHTML=(CK.technique_changes||[]).map(function(t){return '<li>'+E(t)+'</li>';}).join(''); }
+
+    renderIngredients(); renderEquipment(); renderAsides(); renderSteps();
+
+    if(CK.finish){ document.getElementById('finish-box').style.display=''; document.getElementById('finish-text').textContent=CK.finish; }
+    if((CK.tips||[]).length){ document.getElementById('knowbox').style.display='';
+      document.getElementById('know-rows').innerHTML=(CK.tips||[]).map(function(a){
+        return '<div class="att '+(a.kind==='check'?'check':'tip')+'" title="from knowledge base: '+E(a.kb_id)+'"><span class="att-ic">'+(a.kind==='check'?'✓':'💡')+'</span>'+E(a.text)+'</div>'+mediaHtml(a);
+      }).join(''); }
+    if(CK.cooks_note){ document.getElementById('chefnote').style.display=''; document.getElementById('chefnote-text').textContent=CK.cooks_note; }
+
+    // credit (provenance) — never send the cook away, but attribute honestly
+    var url=(src.originalUrl||''); var site=src.siteName||src.domain||'';
+    if(site||url){ var cr=document.getElementById('credit'); cr.style.display='';
+      cr.innerHTML='Reworked from '+(site?'<em>'+E(site)+'</em>':'the original source')+(url?'. Verify against the original at '+E((url.split('/')[2]||url)):'') + '.'; }
+
+    document.getElementById('loadmsg').style.display='none';
+    document.getElementById('main').style.display='';
+    document.getElementById('barwrap').style.display='';
+    document.getElementById('ask-ctx').textContent = name + ' — Claudette can see this recipe.';
+  }
+
+  // ====================================================================== //
+  //  CONTROLS
+  // ====================================================================== //
+  function wireControls(){
+    // units
+    [].slice.call(document.querySelectorAll('.seg-btn')).forEach(function(b){
+      b.addEventListener('click', function(){ units=b.getAttribute('data-units');
+        document.querySelectorAll('.seg-btn').forEach(function(x){ x.classList.toggle('active', x===b); });
+        renderIngredients(); renderEquipment(); renderAsides();
+        // re-render steps preserving done/current state
+        var done={}; document.querySelectorAll('.step.done').forEach(function(el){ done[el.getAttribute('data-step')]=1; });
+        var cur=document.querySelector('.step.current'); var curN=cur?cur.getAttribute('data-step'):null;
+        renderSteps();
+        Object.keys(done).forEach(function(n){ var d=stepDiv(n); if(d) d.classList.add('done'); });
+        markCurrent(curN!=null?parseInt(curN,10):firstUncheckedNumber());
+        _ttsCache = {}; if(hf) prefetchAllSteps();   // spoken text changed with units → re-warm
+      });
+    });
+    // ingredient view switch
+    [].slice.call(document.querySelectorAll('.viewseg button')).forEach(function(b){
+      b.addEventListener('click', function(){ view=b.getAttribute('data-view');
+        document.querySelectorAll('.viewseg button').forEach(function(x){ x.classList.toggle('active', x===b); });
+        renderIngredients(); });
+    });
+    // bottom bar
+    document.getElementById('reset').addEventListener('click', function(){
+      checked={}; document.querySelectorAll('.irow.done').forEach(function(r){ r.classList.remove('done'); });
+      stopSpeaking(); window.cookView.reset();
+    });
+    document.getElementById('readstep').addEventListener('click', function(){   // explicit → always speaks, even if Talk is off
+      unlockAudio(); var s = window.cookView.currentStep(); window.cookView.go(s); if(s) speak(spokenText(s)); });
+    document.getElementById('handsfree').addEventListener('click', startHandsFree);
+    document.getElementById('touchmode').addEventListener('click', function(){ setTouchMode(!touchMode); });
+    document.getElementById('talkbtn').addEventListener('click', function(){ setTalk(!talk); });
+    wireTouchPad();
+    document.getElementById('cb-back').addEventListener('click', function(){
+      location.href='/forms/recipe_form_styled.html?recipe_id='+encodeURIComponent(RECIPE_ID)+'&user_id='+encodeURIComponent(USER_ID); });
+
+    // keep-screen-awake (wake lock)
+    var wakeLock=null, awakeBtn=document.getElementById('awake');
+    awakeBtn.addEventListener('click', async function(){
+      if(!('wakeLock' in navigator)){ awakeBtn.textContent='✕ Not supported'; return; }
+      try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; awakeBtn.classList.remove('on'); awakeBtn.textContent='☀ Keep screen awake'; }
+        else { wakeLock=await navigator.wakeLock.request('screen'); awakeBtn.classList.add('on'); awakeBtn.textContent='☀ Screen staying on';
+          wakeLock.addEventListener('release', function(){ awakeBtn.classList.remove('on'); awakeBtn.textContent='☀ Keep screen awake'; }); } }
+      catch(err){ awakeBtn.textContent='✕ Unavailable'; }
+    });
+    document.addEventListener('visibilitychange', async function(){ if(wakeLock&&document.visibilityState==='visible'){ try{ wakeLock=await navigator.wakeLock.request('screen'); }catch(e){} } });
+
+    // chrome solidify on scroll
+    var chrome=document.getElementById('cb-chrome');
+    addEventListener('scroll', function(){ chrome.classList.toggle('solid', scrollY>innerHeight*0.4); }, {passive:true});
+
+    wireAsk();
+  }
+
+  // ====================================================================== //
+  //  ASK CLAUDETTE (Tier 3 keystone — grounded Q&A; voice wraps this later)
+  // ====================================================================== //
+  function wireAsk(){
+    var panel=document.getElementById('ask'), q=document.getElementById('ask-q'),
+        send=document.getElementById('ask-send'), ans=document.getElementById('ask-ans');
+    function open(){ panel.classList.add('open'); setTimeout(function(){ q.focus(); }, 120); }
+    function close(){ panel.classList.remove('open'); stopSpeaking(); }
+    document.getElementById('askbtn').addEventListener('click', open);
+    document.getElementById('ask-x').addEventListener('click', close);
+    q.addEventListener('input', function(){ q.style.height='auto'; q.style.height=Math.min(120,q.scrollHeight)+'px'; });
+    q.addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); ask(); } });
+    send.addEventListener('click', ask);
+
+    function ask(){
+      var question=q.value.trim(); if(!question) return;
+      unlockAudio();   // gesture (Send tap) — unlock iOS audio so the spoken answer plays
+      ans.innerHTML='<span class="spin"></span> Claudette is thinking…';
+      send.disabled=true;
+      var cur=window.cookView.currentNumber();
+      fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
+        .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+        .then(function(res){
+          if(!res.ok){ ans.textContent = (res.j && res.j.detail) ? res.j.detail : 'Sorry — Claudette is unavailable right now.'; return; }
+          var answer=res.j.answer||'(no answer)';
+          ans.innerHTML='<div class="a-text"></div>'
+            + '<button class="btn a-speak" id="a-speak">🔊 Read answer</button>';
+          ans.querySelector('.a-text').textContent=answer;
+          document.getElementById('a-speak').addEventListener('click', function(){ speak(deAbbrev(answer)); });
+          speak(deAbbrev(answer));   // speak by default — hands are busy
+        })
+        .catch(function(){ ans.textContent='Sorry — could not reach Claudette.'; })
+        .finally(function(){ send.disabled=false; });
+    }
+  }
+
+  // ====================================================================== //
+  //  BOOT
+  // ====================================================================== //
+  function fail(msg){ document.getElementById('loadmsg').innerHTML='<p>'+E(msg)+'</p>'
+    + '<p><a href="/forms/recipe_form_styled.html?recipe_id='+E(RECIPE_ID)+'&user_id='+E(USER_ID)+'">Open the recipe editor</a></p>'; }
+  if(!RECIPE_ID){ fail('No recipe specified.'); return; }
+  fetch('/recipes/'+encodeURIComponent(RECIPE_ID)+'?user_id='+encodeURIComponent(USER_ID))
+    .then(function(r){ if(!r.ok) throw new Error('not found'); return r.json(); })
+    .then(function(j){ RECIPE=j.data||{}; CK=RECIPE._cook;
+      if(!CK){ fail('This recipe hasn’t been reworked for cooking yet. Open it in the editor and hit "Rework for cooking".'); return; }
+      renderAll(); wireControls();
+    })
+    .catch(function(){ fail('Could not load this recipe.'); });
+})();
+</script>
+</body></html>

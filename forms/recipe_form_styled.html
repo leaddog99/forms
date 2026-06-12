@@ -2648,6 +2648,15 @@
       const sec = (t) => `<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#6b5b4f);margin:14px 0 6px">${t}</div>`;
 
       let h = '';
+      // The real payoff: a link to the full hands-free cook view (forms/cook.html,
+      // the Phase-4 renderer). This panel stays the read-only debug inspector;
+      // the cook view is where you actually cook (big checks, units, 3 ingredient
+      // views, Read-step TTS, Ask Claudette). Opens in a new tab so the editor stays.
+      {
+        const _rid = (document.getElementById('recipe_id')?.value || '').trim();
+        const _uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+        if (_rid) h += `<a href="/forms/cook.html?recipe_id=${encodeURIComponent(_rid)}&user_id=${encodeURIComponent(_uid)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;margin:6px 0 10px;padding:10px 16px;background:var(--accent,#b8602a);color:#fff;border-radius:999px;text-decoration:none;font-weight:700;font-size:.92rem">🍳 Open cook view ↗</a>`;
+      }
       if (ck.headnote) h += `<p style="margin:8px 0;font-style:italic">${E(ck.headnote)}</p>`;
       if ((ck.technique_changes || []).length) {
         h += sec('What we changed & why') + '<ul style="margin:4px 0;padding-left:20px">'

@@ -1023,6 +1023,89 @@ def open_recipe_by_url(recipe_id: str):
     return RedirectResponse(url=target, status_code=302)
 
 
+@app.get("/cook/{recipe_id}")
+def open_cook_view(recipe_id: str):
+    """Clean entry to the hands-free cook view (Phase-4 renderer, forms/cook.html).
+    Mirrors /r/<id>: resolve the owner so the page fetches from the right table,
+    then redirect. Unknown UUIDs still redirect (the page shows a friendly
+    not-reworked / not-found state) rather than 404-ing past the renderer."""
+    owner = _find_recipe_owner(recipe_id)
+    target = f"/forms/cook.html?recipe_id={recipe_id}"
+    if owner is not None:
+        target += f"&user_id={owner}"
+    return RedirectResponse(url=target, status_code=302)
+
+
+@app.post("/cook/ask")
+def cook_ask_endpoint(payload: dict = Body(...)):
+    """Claudette — grounded cooking Q&A for the cook view (Tier-3 keystone of the
+    hands-free experience; see cook_ask.py + recipe_anchor/voice-cook-spec.md).
+    The voice loop will later feed this STT text and speak the reply; today it
+    backs the typed "Ask Claudette" box. Loads the recipe, answers grounded in its
+    `_cook`, journals tokens, and degrades to a friendly 503 on an LLM failure."""
+    recipe_id = (payload.get("recipe_id") or "").strip()
+    question = (payload.get("question") or "").strip()
+    current_step = payload.get("current_step")
+    try:
+        user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
+    except (TypeError, ValueError):
+        user_id = PLACEHOLDER_USER_ID
+    if not recipe_id or not question:
+        raise HTTPException(status_code=400, detail="recipe_id and question are required.")
+
+    table = _recipes_table_for(user_id)
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+    recipe = json.loads(row[0])
+
+    usage_log: list = []
+    try:
+        from cook_ask import ask as claudette_ask
+        answer = claudette_ask(recipe, question, current_step=current_step, usage_log=usage_log)
+    except Exception as e:
+        print(f"[ERROR] /cook/ask({recipe_id}): {e}")
+        raise HTTPException(status_code=503, detail="Claudette is unavailable right now — try again in a moment.")
+    _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
+    return {"answer": answer}
+
+
+@app.post("/cook/listen")
+async def cook_listen(audio: UploadFile = File(...)):
+    """Speech-to-text for the hands-free loop: one VAD-endpointed utterance
+    (WAV from the browser) -> faster-whisper (base.en, CPU) -> text. The browser
+    routes the text (command keyword vs Claudette question). Audio stays on the
+    host. Degrades to a friendly 503 if the model can't load/transcribe."""
+    data = await audio.read()
+    try:
+        from cook_stt import transcribe
+        text = transcribe(data)
+    except Exception as e:
+        print(f"[ERROR] /cook/listen: {e}")
+        raise HTTPException(status_code=503, detail="Speech recognition is unavailable.")
+    return {"text": text}
+
+
+@app.post("/cook/speak")
+def cook_speak(payload: dict = Body(...)):
+    """Text-to-speech in Claudette's warm voice (OpenAI gpt-4o-mini-tts) — speaks
+    a step or a Claudette answer. Returns MP3 bytes the cook view plays via an
+    <audio> element. The page falls back to browser SpeechSynthesis on failure."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required.")
+    try:
+        from cook_tts import synthesize
+        audio = synthesize(text)
+    except Exception as e:
+        print(f"[ERROR] /cook/speak: {e}")
+        raise HTTPException(status_code=503, detail="Voice synthesis is unavailable.")
+    return Response(content=audio, media_type="audio/mpeg")
+
+
 # Fetch one recipe by recipe_id. Same shape as list_recipes() rows so the
 # form's existing loadForm path can consume it directly.
 #

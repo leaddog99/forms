@@ -546,3 +546,46 @@ The jobs-queue **drain is dead** (enqueue→spawn replaced it; zero queued rows)
 - `content_to_tip` (transcript/URL → LLM-drafted tip, dedup via an `applies` embedding) — the obvious next build; foundation proven.
 - `similar_max_distance` works via default but isn't registered in System config; residual asymmetry for no-`_identity`-card recipes (compute card if missing); seed types are all `synonym` (set regional/variety as you curate).
 - `youtube-transcript-api` installed in the venv; no `requirements.txt` here — record the dep for the portable package.
+
+---
+
+## Session log — 2026-06-11 (late) — Phase 4 cook-view renderer SHIPPED + the hands-free voice loop ("Claudette") + No-look touch mode
+
+The big visible payoff of the whole recipe-anchor/cook-rework arc: the standardized `_cook` block is now a real, usable **cook surface** — and it's driven hands-free by voice and by a knuckle-swipe pad. Built end-to-end this session on `split/enrichment-api`; all four threads ([[project_recipe_anchor]] phase 4, [[project_cook_voice]], [[project_cook_kb]] surfacing). Verified server-side automatically + iterated live on the user's iPhone.
+
+### Phase 4 — the cook-view renderer (`forms/cook.html`)
+New self-contained page, driven entirely by live data: fetches `GET /recipes/{id}?user_id=` and renders `recipe._cook` into the finished cookbook design (lifted from the `cookbook-cookview.html` prototype). Built against the EXACT real `_cook` shape (dumped Chicken Milanese first — deployed amounts live on the USES, not the ingredient). Renders: compact hero (title de-duped — header title hidden when a hero image exists), headnote, "what we changed", **units toggle** (both faces from `CookAmount`), **three computed ingredient views** — **Bundles · As needed · Shopping** (default Bundles, per user), the mise with combine-notes, equipment in order-of-need, **put-asides**, anchored **steps** with `{ingN}`/`{amt}`/`{bundle}` token expansion, KB **attachments + media** (YouTube thumb, embed-not-rehost), finish/cook's-note/good-to-know, honest provenance credit. Big tap targets, **check-to-advance** + current-step highlight + progress bar + keep-screen-awake. Entry route **`GET /cook/{id}`** (mirrors `/r/`, resolves owner) + an **"🍳 Open cook view"** link from the recipe-form cook panel. Deferred (data/dep-driven): equipment→product picks (no catalog), form-variant pickers (no `_cook` carries them), per-step beauty shots.
+
+### Claudette — grounded Q&A (the brain) — `cook_ask.py` + `POST /cook/ask`
+Plain conversational completion (Sonnet `claude-sonnet-4-6`), warm "speak-it-aloud" system prompt, grounded in a compact context built from `_cook` (ingredients/mise/steps/put-asides/finish + current step). Token-journaled (`build_usage_entry("cook_ask", …)`), degrades to a friendly 503. Verified live: "how do I know the cutlets are done?" → recipe's *3-min-a-side* + the global *165°F/thermometer* fact — exactly the recipe-context + world-knowledge blend the user wanted. This is the Tier-3 keystone; the voice loop just feeds it STT and speaks the reply.
+
+### The voice loop (STT + TTS, browser-first, built as one piece — voice-cook-spec.md)
+- **STT — `cook_stt.py` + `POST /cook/listen`:** **faster-whisper `base.en`, CPU/int8** ("the faster variant"; no GPU on this box). Lazy-loaded + warm; greedy decode. Audio stays on the host.
+- **TTS — `cook_tts.py` + `POST /cook/speak`:** **OpenAI `gpt-4o-mini-tts`, voice "coral"**, steerable warm-Claudette `instructions`. MP3 bytes. (Browser `SpeechSynthesis` kept as offline/failure fallback.)
+- **Verified WITHOUT a browser:** `/cook/speak` → MP3 → `/cook/listen` round-trip returned the text **exactly** ("Add the garlic and cook until fragrant."). 1.8s TTS / 2.5s STT.
+- **Browser loop (in `cook.html`):**
+  - **VAD = self-contained Web Audio energy VAD** (ScriptProcessor RMS vs an adaptive noise floor + silence-hang endpointing). **Dropped `@ricky0123/vad-web`** — its UMD bundle does `e.vad=t(e.ort)` (needs `window.ort`), so it bailed *before* `getUserMedia` → **no mic dialog**. Self-contained = always prompts, works offline, portable-package fit. Silero is a future upgrade.
+  - **Wake word "chef / hey chef / jeff"** (The Bear homage 🐻‍❄️ — and what base.en hears for a shouted "chef" anyway), fuzzy-matched (base.en mangles "Claudette"). Questions are **wake-gated** so chatter never hits the LLM.
+  - **Commands anchored** to the whole utterance (next/back/repeat/restart/stop + synonyms) so "next time…" never fires. `REQUIRE_WAKE_FOR_COMMANDS` flag for strict Alexa-mode.
+  - **Wake→question no longer lost:** a **beep** (not spoken "Yes?") + a lowered mic threshold while awaiting the question (she stopped talking over the cook).
+  - **Latency:** every step's TTS is **prefetched + cached** (shared in-flight promise) → "next" plays **instantly**; only Whisper hearing "next" remains.
+  - **iOS fixed:** unlock a **single reusable `<audio>`** on the Start/Read/Ask gesture (Safari blocks non-gesture audio → hands-free was silent on iPhone) + a sequence token → also kills the **double-tap overlap**.
+  - **Status** clarified with icons: 🎧 Listening · 🗣️ hearing you · ⏳ thinking · 🔊 speaking.
+  - **Barge-in** is implemented but **DEFAULT OFF** — on a speaker (no real AEC) her own voice self-triggered the cutoff ("speaks one syllable → listening"). Re-enable only with a headset.
+
+### "No-look" touch mode (almost hands-free, no mic) + Talk toggle
+- **🙈 No-look:** a dedicated **gesture pad** above the bar (so the page still scrolls) — swipe **→ next · ← back · ↑ restart · ↓ end**, **double-tap = repeat**. (Pad, not full-screen, to avoid the vertical-swipe-vs-scroll conflict.)
+- **🔊 Talk** toggle (independent of mode): on = navigation speaks; off = silent move + auto-scroll ("reset scroll, no speech"). Voice forces Talk on; **Read step** always speaks. Controller gained a silent `go()`; `read()` respects Talk.
+
+### Verified / ops
+JS `node --check` clean throughout; Python `py_compile` clean; `/cook/*` routes verified live after a gated detached restart (no job running). Works on the user's iPhone over `https://bestcooksclub.com` (HTTPS = secure context; localhost/tunnel both fine — `NotFoundError` earlier was just Remote-Desktop not forwarding the mic). `faster-whisper` (+ `ctranslate2`, `av`, `onnxruntime`) installed into the server venv (`C:\Users\john\PyCharm\venv`).
+
+### Follow-ups (priority order)
+- **Sub-steps (2.1 / 2.2)** — the user's "most important" next item; auto-split each step's instruction into one-action sub-steps for snappier voice pacing + better No-look fit (then full-screen up/down swipes become safe). Recommended: client-side auto-split now, model-authored sub-steps later. NOT built.
+- **No-look UX redesign** — deeper/larger pad with the button lowered; a bottom control bar that pops up (up/down caret) to reveal mode choices so the gesture area can be bigger. "Buttons need UX work — will do for now."
+- **"next" STT latency** — reduce with a faster/local keyword spotter, or move `/cook/ask` to **Haiku + streaming** so questions start speaking in ~1s.
+- **Barge-in** returns once we have real AEC / a headset path.
+- **Portable-package deps** — record `faster-whisper` + `youtube-transcript-api` (no `requirements.txt` yet); decide on a self-host TTS (Kokoro) + local STT for the no-cloud build.
+
+### Files (branch `split/enrichment-api`)
+New: `forms/cook.html`, `cook_ask.py`, `cook_stt.py`, `cook_tts.py`. Modified: `save_recipe_api.py` (`/cook/{id}`, `/cook/ask`, `/cook/listen`, `/cook/speak`), `forms/recipe_form_styled.html` ("Open cook view" link).
