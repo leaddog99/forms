@@ -151,6 +151,33 @@ def integrity_ok(db_path: Path) -> bool:
         c.close()
 
 
+def run_backup(dest: Path = DEFAULT_ADAM, no_adam: bool = False) -> dict:
+    """Refresh ./recipes.sql and (unless no_adam) copy recipes.db + .sql to `dest`
+    with a PRAGMA integrity_check on the copy. Returns a result dict; RAISES on a
+    hard failure (missing DB, ADAM unreachable, integrity fail) so a scheduled-job
+    handler records the error. The recipes.sql refresh happens BEFORE the ADAM copy,
+    so the git-side dump is current even if ADAM is down."""
+    if not DB.exists():
+        raise FileNotFoundError(f"{DB} not found")
+    vts = write_sql_dump(DB, SQL)
+    out = {"sql_mb": round(SQL.stat().st_size / 1e6, 1), "excluded": vts, "adam": False}
+    if no_adam:
+        return out
+    if not dest.parent.exists():  # e.g. Z:\ not mounted / UNC unreachable
+        raise RuntimeError(f"{dest.parent} not reachable — is ADAM mounted?")
+    dest.mkdir(parents=True, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    db_dst = dest / f"recipes_{ts}.db"
+    sql_dst = dest / f"recipes_{ts}.sql"
+    shutil.copy2(DB, db_dst)
+    shutil.copy2(SQL, sql_dst)
+    if not integrity_ok(db_dst):
+        raise RuntimeError(f"integrity_check FAILED on the backup copy {db_dst}")
+    out.update({"adam": True, "db_dst": str(db_dst), "sql_dst": str(sql_dst),
+                "integrity": "ok"})
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Back up recipes.db to ADAM.")
     ap.add_argument("--dest", type=Path, default=DEFAULT_ADAM,
@@ -158,38 +185,20 @@ def main() -> int:
     ap.add_argument("--no-adam", action="store_true",
                     help="only refresh local recipes.sql; skip the ADAM copy")
     args = ap.parse_args()
-
-    if not DB.exists():
-        print(f"ERROR: {DB} not found", file=sys.stderr)
+    try:
+        r = run_backup(dest=args.dest, no_adam=args.no_adam)
+    except Exception as e:  # noqa: BLE001
+        print(f"ERROR: {e}", file=sys.stderr)
         return 1
-
-    vts = write_sql_dump(DB, SQL)
-    print(f"recipes.sql refreshed ({SQL.stat().st_size / 1e6:.1f} MB); "
-          f"excluded vec tables: {vts or 'none'}")
-
-    if args.no_adam:
-        print("--no-adam: skipped ADAM copy.")
-        return 0
-
-    dest = args.dest
-    if not dest.parent.exists():  # e.g. Z:\ not mounted
-        print(f"ERROR: {dest.parent} not reachable — is ADAM (Z:) mounted?",
-              file=sys.stderr)
-        return 2
-    dest.mkdir(parents=True, exist_ok=True)
-    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    db_dst = dest / f"recipes_{ts}.db"
-    sql_dst = dest / f"recipes_{ts}.sql"
-    shutil.copy2(DB, db_dst)
-    shutil.copy2(SQL, sql_dst)
-    print(f"copied -> {db_dst}")
-    print(f"copied -> {sql_dst}")
-
-    if integrity_ok(db_dst):
+    print(f"recipes.sql refreshed ({r['sql_mb']} MB); "
+          f"excluded vec tables: {r['excluded'] or 'none'}")
+    if r.get("adam"):
+        print(f"copied -> {r['db_dst']}")
+        print(f"copied -> {r['sql_dst']}")
         print("integrity_check: ok")
-        return 0
-    print("integrity_check: FAILED on the backup copy!", file=sys.stderr)
-    return 3
+    elif args.no_adam:
+        print("--no-adam: skipped ADAM copy.")
+    return 0
 
 
 if __name__ == "__main__":
