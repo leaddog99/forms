@@ -117,6 +117,9 @@
   .step{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 18px 16px;margin:0 0 16px;scroll-margin-top:70px;transition:opacity .3s,border-color .3s;}
   .step.done{opacity:.55;border-color:var(--sea);}
   .step.current{border-color:var(--clay);box-shadow:0 0 0 2px rgba(189,76,42,.25), var(--shadow);}
+  /* De-emphasize upcoming steps so the current one stands out (updates live as
+     .current moves down the list). */
+  .step.current ~ .step{opacity:.38;}
   .sbox{flex:0 0 auto;width:30px;height:30px;margin-top:2px;border:2px solid var(--clay);border-radius:8px;position:relative;background:var(--card);cursor:pointer;transition:background .25s,border-color .25s,transform .12s;}
   .sbox:active{transform:scale(.9);}
   .sbox::after{content:'\2713';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:17px;font-weight:700;opacity:0;transform:scale(.5);transition:opacity .2s,transform .2s;}
@@ -172,9 +175,17 @@
   @keyframes cbbob{0%,100%{transform:translateX(-50%) translateY(0);}50%{transform:translateX(-50%) translateY(5px);}}
 
   /* ---------- Bottom control bar ---------- */
-  .barwrap{position:fixed;left:0;right:0;bottom:0;z-index:115;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:linear-gradient(to top, var(--paper) 72%, rgba(246,241,230,0));display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
-  .btn{font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.02em;padding:11px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);box-shadow:var(--shadow);cursor:pointer;display:inline-flex;align-items:center;gap:8px;}
+  /* Bottom dock — vstatus + No-look pad + control bar STACK in one fixed column
+     so they can never overlap (the old per-element bottom: offsets collided when
+     the buttons wrapped). Gaps pass clicks through to the page. */
+  #cookdock{position:fixed;left:0;right:0;bottom:0;z-index:115;display:flex;flex-direction:column;align-items:center;gap:8px;padding-bottom:env(safe-area-inset-bottom);pointer-events:none;}
+  #cookdock > *{pointer-events:auto;}
+  .barwrap{width:100%;padding:9px 12px;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -3px 16px rgba(42,36,32,.08);display:flex;gap:8px;justify-content:center;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .barwrap::-webkit-scrollbar{display:none;}
+  .btn{flex:0 0 auto;font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.01em;padding:9px 13px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:background .12s,color .12s,border-color .12s;}
+  .btn:active{transform:translateY(1px);}
   .btn.primary{background:var(--clay);color:#fff;border-color:var(--clay);}
+  .btn.primary.on{background:var(--clay-deep);border-color:var(--clay-deep);}
   .btn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
 
   /* ---------- Ask Chef ---------- */
@@ -198,7 +209,7 @@
 
   /* ---------- Voice loop (hands-free) ---------- */
   #handsfree.on{background:var(--sea);color:#fff;border-color:var(--sea);}
-  #vstatus{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(66px + env(safe-area-inset-bottom));z-index:118;display:none;align-items:center;gap:10px;width:min(92vw,600px);padding:11px 18px;background:rgba(36,24,16,.95);color:#f7efe2;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-size:14.5px;}
+  #vstatus{display:none;align-items:center;gap:10px;width:min(94%,560px);padding:10px 16px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);font-size:14px;}
   #vstatus.show{display:flex;}
   #vstatus .vdot{flex:0 0 auto;width:11px;height:11px;border-radius:50%;background:#9c3c1f;}
   #vstatus.listening .vdot{background:#5ec27a;animation:vpulse 1.4s ease-in-out infinite;}
@@ -210,16 +221,18 @@
 
   /* ---------- Touch mode gesture pad ---------- */
   #handsfree.on, #touchmode.on, #talkbtn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
-  #gesturepad{position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:117;display:none;height:118px;border-radius:18px;background:rgba(36,24,16,.94);color:#f7efe2;box-shadow:0 8px 28px rgba(0,0,0,.35);touch-action:none;user-select:none;-webkit-user-select:none;}
+  #gesturepad{display:none;width:min(94%,560px);height:104px;border-radius:18px;background:var(--card);color:var(--sea);border:1px solid var(--line);box-shadow:var(--shadow);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;}
   #gesturepad.show{display:block;}
-  /* Three tap zones split by vertical dividers: tap to act, double-tap the
-     side zones for restart/stop, middle = pause/resume. No swipes. */
+  /* Three tap zones split by vertical dividers. Tap: L=back · M=pause/resume ·
+     R=next (instant, repeatable). Long-press a side zone: L=restart · R=stop. */
   #gesturepad .gp-inner{display:flex;width:100%;height:100%;}
-  #gesturepad .gp-zone{flex:1;display:grid;place-content:center;text-align:center;line-height:1.35;gap:4px;position:relative;transition:background .08s;}
-  #gesturepad .gp-zM{flex:.78;border-left:1px solid rgba(247,239,226,.20);border-right:1px solid rgba(247,239,226,.20);}
-  #gesturepad .gp-zone b{font-family:"Fraunces",serif;font-size:19px;}
-  #gesturepad .gp-sub{font-size:11px;opacity:.55;letter-spacing:.02em;}
-  #gesturepad .gp-zone.flash{background:rgba(247,239,226,.13);}
+  #gesturepad .gp-zone{flex:1;display:grid;place-content:center;position:relative;transition:background .08s;}
+  #gesturepad .gp-zM{flex:.7;border-left:1px solid var(--line);border-right:1px solid var(--line);}
+  #gesturepad .gp-ic{display:flex;opacity:.82;}
+  #gesturepad .gp-ic svg{width:36px;height:36px;display:block;}
+  #gesturepad .gp-zM .gp-ic svg{width:40px;height:40px;}
+  #gesturepad .gp-zone.flash{background:var(--sea-bg);}
+  #gesturepad .gp-zone.flash .gp-ic{opacity:1;}
 </style>
 </head><body>
 
@@ -297,20 +310,22 @@
   <p class="credit" id="credit" style="display:none"></p>
 </div>
 
-<div id="vstatus"><span class="vdot"></span><span class="vmsg">Listening…</span></div>
-<div id="gesturepad"><div class="gp-inner">
-  <div class="gp-zone gp-zL"><b>◀ Back</b><span class="gp-sub">double-tap · restart</span></div>
-  <div class="gp-zone gp-zM"><b>⏯</b><span class="gp-sub">pause / resume</span></div>
-  <div class="gp-zone gp-zR"><b>Next ▶</b><span class="gp-sub">double-tap · stop</span></div>
-</div></div>
-<div class="barwrap" id="barwrap" style="display:none">
-  <button class="btn primary" id="handsfree">🎙️ Start hands-free</button>
-  <button class="btn" id="touchmode">🙈 No-look</button>
-  <button class="btn on" id="talkbtn">🔊 Talk</button>
-  <button class="btn" id="readstep">🔊 Read step</button>
-  <button class="btn" id="askbtn">💬 Ask</button>
-  <button class="btn" id="awake">☀ Awake</button>
-  <button class="btn" id="reset">↺ Reset</button>
+<div id="cookdock">
+  <div id="vstatus"><span class="vdot"></span><span class="vmsg">Listening…</span></div>
+  <div id="gesturepad"><div class="gp-inner">
+    <div class="gp-zone gp-zL"><span class="gp-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></span></div>
+    <div class="gp-zone gp-zM"><span class="gp-ic" id="gp-mid-icon"></span></div>
+    <div class="gp-zone gp-zR"><span class="gp-ic"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6z"/></svg></span></div>
+  </div></div>
+  <div class="barwrap" id="barwrap" style="display:none">
+    <button class="btn primary" id="handsfree">🎙️ Hands-free</button>
+    <button class="btn" id="touchmode">🙈 No-look</button>
+    <button class="btn on" id="talkbtn">🔊 Talk</button>
+    <button class="btn" id="readstep">▶ Read</button>
+    <button class="btn" id="askbtn">💬 Ask</button>
+    <button class="btn" id="awake">☀ Awake</button>
+    <button class="btn" id="reset">↺ Reset</button>
+  </div>
 </div>
 
 <div id="ask">
@@ -577,9 +592,11 @@
     var d=[].slice.call(document.querySelectorAll('.step')).find(function(el){ return !el.classList.contains('done'); });
     return d ? parseInt(d.getAttribute('data-step'),10) : null;
   }
+  var _curStepNum = null, _stepEnteredAt = 0;   // current step + when it became current (smart Back)
   function markCurrent(n){
     document.querySelectorAll('.step.current').forEach(function(el){ el.classList.remove('current'); });
     if(n!=null){ var d=stepDiv(n); if(d) d.classList.add('current'); }
+    if(n !== _curStepNum){ _curStepNum = n; _stepEnteredAt = _now(); _backArmed = false; }   // arrival → reset smart-Back state
     updateProgress();
   }
   function toggleStep(div, step){
@@ -623,6 +640,25 @@
       markCurrent(firstUncheckedNumber()); window.scrollTo({top:0,behavior:'smooth'}); }
   };
 
+  // Smart Back (the pad's ◀), music-player "previous" pattern:
+  //   • tapped within the first few seconds of a step  → previous step
+  //   • tapped once you're INTO the step (past BACK_RESTART_MS) → restart THIS step
+  //   • the VERY NEXT Back after a restart → previous step (the escape, so you can
+  //     never get stuck re-reading the same step over and over)
+  // `_backArmed` survives only while you stay on the same step; markCurrent clears
+  // it the moment the step changes (next / previous / jump).
+  var BACK_RESTART_MS = 3000;
+  var _backArmed = false;
+  function smartBack(){
+    if(_backArmed){ _backArmed = false; window.cookView.back(); return; }   // escape → previous
+    if((_now() - _stepEnteredAt) > BACK_RESTART_MS){
+      window.cookView.repeat();        // restart current step (re-read from the top)
+      _backArmed = true;                // arm: the next Back goes to the previous step
+    } else {
+      window.cookView.back();           // previous step
+    }
+  }
+
   // ====================================================================== //
   //  VOICE — Chef's voice (OpenAI gpt-4o-mini-tts) + the hands-free loop
   //  (mic → Silero VAD endpointing → faster-whisper → command / Chef).
@@ -651,6 +687,7 @@
     return n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
                      : 'Listening — say “hey chef…” to ask a question'; }
   function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 500;   // ignore echo tail after she stops
+    refreshMidIcon();
     if (hf) setVoiceStatus('listening', _listenHint()); }
 
   // Single reusable <audio>, UNLOCKED on a user gesture (Start/Read/Ask tap) so
@@ -685,7 +722,7 @@
   function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){ prefetchSpeak(spokenText(s)); }); }
   function _playUrl(url){
     return new Promise(function(res){
-      var a = _ensureAudioEl(); a.src = url; _speaking = true;
+      var a = _ensureAudioEl(); a.src = url; _speaking = true; refreshMidIcon();
       a.onended = function(){ _onSpeakEnd(); res(); };
       a.onerror = function(){ _onSpeakEnd(); res(); };
       var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); res(); });
@@ -705,7 +742,7 @@
   function _browserSpeak(text){
     if (!('speechSynthesis' in window)) { _onSpeakEnd(); return Promise.resolve(); }
     return new Promise(function(res){ try{ speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text); u.rate = 0.97; _speaking = true;
+      var u = new SpeechSynthesisUtterance(text); u.rate = 0.97; _speaking = true; refreshMidIcon();
       u.onend = function(){ _onSpeakEnd(); res(); }; u.onerror = function(){ _onSpeakEnd(); res(); };
       speechSynthesis.speak(u); }catch(e){ _onSpeakEnd(); res(); } });
   }
@@ -716,6 +753,11 @@
     if('speechSynthesis' in window){ try{ speechSynthesis.cancel(); }catch(e){} }
     _speaking = false;
   }
+  // Middle-zone icon reflects state: PAUSE glyph while speaking (tap to pause),
+  // PLAY glyph while paused/idle (tap to play/resume) — standard transport convention.
+  var _SVG_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>';
+  var _SVG_PLAY  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  function refreshMidIcon(){ var m = document.getElementById('gp-mid-icon'); if(m) m.innerHTML = _speaking ? _SVG_PAUSE : _SVG_PLAY; }
   // Pause/resume the CURRENT clip without killing it (distinct from stopSpeaking,
   // which hard-stops by bumping _speakSeq). Middle-zone tap on the No-look pad.
   // Playing → pause in place · paused → resume from position · idle → read step.
@@ -723,14 +765,12 @@
     var a = _ensureAudioEl();
     if(_speaking && a && a.src && !a.paused){          // playing → pause (resume-able)
       try{ a.pause(); }catch(e){}
-      _pausedMid = true; _speaking = false;
-      if(hf) setVoiceStatus('speaking', 'paused — tap middle to resume');
+      _pausedMid = true; _speaking = false; refreshMidIcon();
       return;
     }
     if(_pausedMid && a && a.src && !a.ended){           // paused → resume from where it stopped
-      _pausedMid = false; _speaking = true;
+      _pausedMid = false; _speaking = true; refreshMidIcon();
       var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); });
-      if(hf) setVoiceStatus('speaking', 'resuming…');
       return;
     }
     _pausedMid = false; window.cookView.read();          // idle/ended → (re)read current step
@@ -950,42 +990,37 @@
     if(pad) pad.classList.toggle('show', touchMode);
     var b = document.getElementById('touchmode');
     if(b){ b.classList.toggle('on', touchMode); b.textContent = touchMode ? '🙈 No-look on' : '🙈 No-look'; }
-    if(touchMode){ unlockAudio(); window.cookView.go(window.cookView.currentStep()); }
+    if(touchMode){ unlockAudio(); refreshMidIcon(); window.cookView.go(window.cookView.currentStep()); }
   }
   function endTouch(){ stopSpeaking(); setTouchMode(false); }
   function wireTouchPad(){
     var pad = document.getElementById('gesturepad'); if(!pad) return;
-    var DBL = 300, pending = null, lastRegion = null, lastT = 0;
+    // TAP = instant, repeatable nav (no double-tap: two fast NEXT taps used to read
+    // as a double-tap and exit). LONG-PRESS a side zone for the rare destructive
+    // action — it can't collide with rapid tapping.
+    var HOLD = 500, holdTimer = null, held = false, downRegion = null;
     function regionAt(x){ var r = pad.getBoundingClientRect();
       var f = (x - r.left) / Math.max(1, r.width);
       return f < 0.38 ? 'L' : (f > 0.62 ? 'R' : 'M'); }
     function flash(region){
       var z = pad.querySelector(region==='L' ? '.gp-zL' : region==='R' ? '.gp-zR' : '.gp-zM');
       if(z){ z.classList.add('flash'); setTimeout(function(){ z.classList.remove('flash'); }, 150); } }
-    function single(region){ flash(region);
-      if(region==='L') window.cookView.back();
+    function tap(region){ flash(region);
+      if(region==='L') smartBack();                  // back / restart-step (context-aware)
       else if(region==='R') window.cookView.next();
       else togglePlayPause(); }
-    function dbl(region){ flash(region);
-      if(region==='L'){ window.cookView.reset(); window.cookView.read(); }   // restart
-      else if(region==='R'){ endTouch(); }                                   // stop / end
-      else togglePlayPause(); }
-    function onTap(x){
-      unlockAudio();
-      var region = regionAt(x), now = _now();
-      if(region === 'M'){                       // middle: no double action → fire now
-        if(pending){ clearTimeout(pending); pending = null; lastRegion = null; }
-        flash('M'); togglePlayPause(); return;
-      }
-      if(pending && lastRegion === region && (now - lastT) < DBL){   // second tap, same side → double
-        clearTimeout(pending); pending = null; lastRegion = null; dbl(region); return;
-      }
-      if(pending){ clearTimeout(pending); }     // stale / different region
-      lastRegion = region; lastT = now;
-      pending = setTimeout(function(){ pending = null; lastRegion = null; single(region); }, DBL);
-    }
-    pad.addEventListener('touchend', function(e){ e.preventDefault(); onTap(e.changedTouches[0].clientX); }, {passive:false});
-    pad.addEventListener('mouseup',  function(e){ onTap(e.clientX); });   // desktop testing
+    function hold(region){ flash(region);
+      if(region==='L'){ window.cookView.reset(); window.cookView.read(); }   // restart whole recipe
+      else if(region==='R'){ endTouch(); } }                                 // stop / end
+    function down(x){ unlockAudio(); downRegion = regionAt(x); held = false;
+      if(downRegion==='L' || downRegion==='R'){
+        holdTimer = setTimeout(function(){ held = true; hold(downRegion); }, HOLD); } }
+    function up(){ if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+      if(!held && downRegion){ tap(downRegion); } downRegion = null; held = false; }
+    pad.addEventListener('touchstart', function(e){ down(e.changedTouches[0].clientX); }, {passive:true});
+    pad.addEventListener('touchend',   function(e){ e.preventDefault(); up(); }, {passive:false});
+    pad.addEventListener('mousedown',  function(e){ down(e.clientX); });   // desktop testing
+    pad.addEventListener('mouseup',    function(e){ up(); });
   }
 
   // ====================================================================== //
