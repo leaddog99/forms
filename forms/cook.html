@@ -11,7 +11,7 @@
   current/next/back/repeat) the future conversational loop drives; and per-step
   `spokenText()` (token-expanded + de-abbreviated for the ear). Tier-1 TTS
   (browser SpeechSynthesis) speaks steps today; POST /cook/ask answers open
-  cooking questions grounded in THIS recipe (Claudette). The full hands-free
+  cooking questions grounded in THIS recipe (Chef). The full hands-free
   loop (VAD/STT/barge-in) attaches to this substrate next — not a retrofit.
 
   The model emits ONLY the data; this CSS/JS/template is a fixed app asset.
@@ -177,7 +177,7 @@
   .btn.primary{background:var(--clay);color:#fff;border-color:var(--clay);}
   .btn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
 
-  /* ---------- Ask Claudette ---------- */
+  /* ---------- Ask Chef ---------- */
   #ask{position:fixed;left:0;right:0;bottom:0;z-index:130;transform:translateY(110%);transition:transform .3s ease;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -8px 30px rgba(42,36,32,.16);padding:16px 18px calc(16px + env(safe-area-inset-bottom));}
   #ask.open{transform:translateY(0);}
   #ask .ask-hd{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;}
@@ -212,15 +212,14 @@
   #handsfree.on, #touchmode.on, #talkbtn.on{background:var(--sea);color:#fff;border-color:var(--sea);}
   #gesturepad{position:fixed;left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));z-index:117;display:none;height:118px;border-radius:18px;background:rgba(36,24,16,.94);color:#f7efe2;box-shadow:0 8px 28px rgba(0,0,0,.35);touch-action:none;user-select:none;-webkit-user-select:none;}
   #gesturepad.show{display:block;}
-  #gesturepad .gp-inner{position:relative;width:100%;height:100%;}
-  #gesturepad .gp-c{position:absolute;inset:0;display:grid;place-content:center;text-align:center;line-height:1.5;}
-  #gesturepad .gp-c b{font-family:"Fraunces",serif;font-size:16px;}
-  #gesturepad .gp-hint{font-size:12px;opacity:.65;}
-  #gesturepad .gp-a{position:absolute;font-size:12.5px;opacity:.6;font-weight:600;letter-spacing:.02em;}
-  #gesturepad .gp-l{left:14px;top:50%;transform:translateY(-50%);}
-  #gesturepad .gp-r{right:14px;top:50%;transform:translateY(-50%);}
-  #gesturepad .gp-u{top:9px;left:50%;transform:translateX(-50%);}
-  #gesturepad .gp-d{bottom:9px;left:50%;transform:translateX(-50%);}
+  /* Three tap zones split by vertical dividers: tap to act, double-tap the
+     side zones for restart/stop, middle = pause/resume. No swipes. */
+  #gesturepad .gp-inner{display:flex;width:100%;height:100%;}
+  #gesturepad .gp-zone{flex:1;display:grid;place-content:center;text-align:center;line-height:1.35;gap:4px;position:relative;transition:background .08s;}
+  #gesturepad .gp-zM{flex:.78;border-left:1px solid rgba(247,239,226,.20);border-right:1px solid rgba(247,239,226,.20);}
+  #gesturepad .gp-zone b{font-family:"Fraunces",serif;font-size:19px;}
+  #gesturepad .gp-sub{font-size:11px;opacity:.55;letter-spacing:.02em;}
+  #gesturepad .gp-zone.flash{background:rgba(247,239,226,.13);}
 </style>
 </head><body>
 
@@ -300,11 +299,9 @@
 
 <div id="vstatus"><span class="vdot"></span><span class="vmsg">Listening…</span></div>
 <div id="gesturepad"><div class="gp-inner">
-  <span class="gp-a gp-u">↑ restart</span>
-  <span class="gp-a gp-l">← back</span>
-  <div class="gp-c"><b>No-look pad</b><span class="gp-hint">swipe ← → to move · double-tap = repeat</span></div>
-  <span class="gp-a gp-r">next →</span>
-  <span class="gp-a gp-d">↓ end</span>
+  <div class="gp-zone gp-zL"><b>◀ Back</b><span class="gp-sub">double-tap · restart</span></div>
+  <div class="gp-zone gp-zM"><b>⏯</b><span class="gp-sub">pause / resume</span></div>
+  <div class="gp-zone gp-zR"><b>Next ▶</b><span class="gp-sub">double-tap · stop</span></div>
 </div></div>
 <div class="barwrap" id="barwrap" style="display:none">
   <button class="btn primary" id="handsfree">🎙️ Start hands-free</button>
@@ -319,7 +316,7 @@
 <div id="ask">
   <div class="ask-wrap">
     <div class="ask-hd">
-      <span class="who">👩‍🍳 Claudette</span>
+      <span class="who">🧑‍🍳 Chef</span>
       <button class="ask-x" id="ask-x" aria-label="Close">×</button>
     </div>
     <div class="ask-row">
@@ -328,7 +325,7 @@
     </div>
     <p class="ask-ctx" id="ask-ctx"></p>
     <div class="ask-ans" id="ask-ans"></div>
-    <p class="ask-priv">Your question + this recipe are sent to Claudette (the AI). Step navigation and reading stay on your device.</p>
+    <p class="ask-priv">Your question + this recipe are sent to Chef (the AI). Step navigation and reading stay on your device.</p>
   </div>
 </div>
 
@@ -627,18 +624,18 @@
   };
 
   // ====================================================================== //
-  //  VOICE — Claudette's voice (OpenAI gpt-4o-mini-tts) + the hands-free loop
-  //  (mic → Silero VAD endpointing → faster-whisper → command / Claudette).
+  //  VOICE — Chef's voice (OpenAI gpt-4o-mini-tts) + the hands-free loop
+  //  (mic → Silero VAD endpointing → faster-whisper → command / Chef).
   //  Built as ONE piece per recipe_anchor/voice-cook-spec.md. Browser
   //  SpeechSynthesis stays as the offline/failure fallback for speaking.
   // ====================================================================== //
-  var _audioEl = null, _speaking = false, _speakSeq = 0;
+  var _audioEl = null, _speaking = false, _speakSeq = 0, _pausedMid = false;
   var hf = false, micStream = null, awaitingQ = false;
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
   function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
-  // Set true for strict "Alexa mode": require "Claudette" before commands too.
+  // Set true for strict "Alexa mode": require "Chef" before commands too.
   var REQUIRE_WAKE_FOR_COMMANDS = false;
   var vstatus = document.getElementById('vstatus');
 
@@ -694,7 +691,7 @@
       var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); res(); });
     });
   }
-  // Speak via OpenAI TTS (warm Claudette voice), from the prefetch cache when
+  // Speak via OpenAI TTS (warm Chef voice), from the prefetch cache when
   // warm; fall back to browser synth on failure.
   function speak(text){
     text = String(text || '').trim(); if (!text) return Promise.resolve();
@@ -714,9 +711,29 @@
   }
   function stopSpeaking(){
     _speakSeq++;                          // invalidate any in-flight speak()
+    _pausedMid = false;                   // a hard stop clears any mid-step pause
     try{ if(_audioEl){ _audioEl.pause(); } }catch(e){}
     if('speechSynthesis' in window){ try{ speechSynthesis.cancel(); }catch(e){} }
     _speaking = false;
+  }
+  // Pause/resume the CURRENT clip without killing it (distinct from stopSpeaking,
+  // which hard-stops by bumping _speakSeq). Middle-zone tap on the No-look pad.
+  // Playing → pause in place · paused → resume from position · idle → read step.
+  function togglePlayPause(){
+    var a = _ensureAudioEl();
+    if(_speaking && a && a.src && !a.paused){          // playing → pause (resume-able)
+      try{ a.pause(); }catch(e){}
+      _pausedMid = true; _speaking = false;
+      if(hf) setVoiceStatus('speaking', 'paused — tap middle to resume');
+      return;
+    }
+    if(_pausedMid && a && a.src && !a.ended){           // paused → resume from where it stopped
+      _pausedMid = false; _speaking = true;
+      var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); });
+      if(hf) setVoiceStatus('speaking', 'resuming…');
+      return;
+    }
+    _pausedMid = false; window.cookView.read();          // idle/ended → (re)read current step
   }
 
   // ---- the hands-free loop (self-contained Web Audio energy VAD) -------- //
@@ -750,7 +767,7 @@
     }
     btn.textContent = '⏳ Starting…'; btn.disabled = true;
     try{
-      // Our own stream so we can force echo cancellation (Claudette shouldn't
+      // Our own stream so we can force echo cancellation (Chef shouldn't
       // hear herself); AGC off so the energy threshold stays meaningful.
       micStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:false } });
@@ -806,7 +823,7 @@
     var input = e.inputBuffer.getChannelData(0), n = input.length, sum = 0;
     for(var i=0;i<n;i++){ var s = input[i]; sum += s*s; }
     var rms = Math.sqrt(sum / n), frameMs = n / capRate * 1000;
-    // While Claudette speaks: ignore her own voice off the speakers UNLESS a clearly
+    // While Chef speaks: ignore her own voice off the speakers UNLESS a clearly
     // louder, nearby voice comes in (barge-in). A phone's echo cancellation keeps her
     // leakage well under BARGE_THRESH; flip BARGE_IN=false if she self-cuts on a device
     // with weak echo cancellation (e.g. desktop speakers).
@@ -844,20 +861,20 @@
       .then(function(j){ routeUtterance((j.text || '').trim()); })
       .catch(function(){ if(hf) setVoiceStatus('listening', _listenHint()); });
   }
-  // Route a transcript: a command runs instantly; "Claudette …" opens the LLM;
+  // Route a transcript: a command runs instantly; "Chef …" opens the LLM;
   // a non-command without the wake word is ignored (don't fire the LLM on
-  // kitchen chatter / Claudette's own voice). Generous command synonyms.
+  // kitchen chatter / Chef's own voice). Generous command synonyms.
   // Route a transcript. Commands are ANCHORED (the de-filled utterance must BE
   // the command, not merely contain it) so conversation like "next time…" never
-  // fires. Questions are gated behind the "Claudette" wake word — no chatter hits
+  // fires. Questions are gated behind the "Chef" wake word — no chatter hits
   // the LLM. Anything else is ignored. Flip REQUIRE_WAKE_FOR_COMMANDS for strict
   // Alexa-mode (wake word before commands too).
-  // Wake word "Claudette" — base.en mishears proper names, so match common
-  // transcriptions generously (cloud et, Colette, clawed et, Claude…). "hey chef"
-  // is an easier-to-recognize alternate. _G strips all occurrences (for short
-  // command utterances); _LEAD strips only a leading wake (preserves a question
-  // that legitimately mentions a wake-like word later).
-  var _WAKE_SRC = "(hey chef|hey chefs|hey chef's|a chef|chef|chefs|chef's|hey chair|hey jeff|jeff|jeff's|jjeff|geoff|jefe|claudette|claudettes|claudet|cloudette|cloudet|colette|claudia|claudie|claude|claud|cloud et|clawed et)";
+  // Wake word "Chef" (alt "Jeff" — the homage, and what base.en often hears for a
+  // shouted "chef" anyway). base.en mangles short words, so match common
+  // transcriptions generously (chefs, hey chair, jefe, geoff…). _G strips all
+  // occurrences (for short command utterances); _LEAD strips only a leading wake
+  // (preserves a question that legitimately mentions a wake-like word later).
+  var _WAKE_SRC = "(hey chef|hey chefs|hey chef's|a chef|chef|chefs|chef's|hey chair|hey jeff|jeff|jeff's|jjeff|geoff|jefe)";
   var _WAKE      = new RegExp("\\b" + _WAKE_SRC + "\\b", "i");
   var _WAKE_G    = new RegExp("\\b" + _WAKE_SRC + "\\b", "ig");
   var _WAKE_LEAD = new RegExp("^[\\s,.:;!?-]*" + _WAKE_SRC + "\\b[\\s,.:;!?-]*", "i");
@@ -874,7 +891,7 @@
     var t = text.toLowerCase().replace(/[^\w\s']/g,' ').replace(/\s+/g,' ').trim();
     if(t.length < 2){ setVoiceStatus('listening', _listenHint()); return; }
 
-    if(awaitingQ){ awaitingQ = false; askClaudette(text); return; }   // pending Q after bare "Claudette"
+    if(awaitingQ){ awaitingQ = false; askChef(text); return; }   // pending Q after bare "Chef"
 
     var hadWake = _WAKE.test(t);
     // strip wake word + leading/trailing fillers, then test as a WHOLE command
@@ -888,12 +905,12 @@
       var q = text.replace(_WAKE_LEAD,'').replace(/^[\s,.:;!?-]+/,'').trim();
       if(q.length < 2){ awaitingQ = true; cue(); _speakGuard = _now() + 250;   // beep, don't talk over the question
         setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
-      askClaudette(q); return;
+      askChef(q); return;
     }
     setVoiceStatus('listening', 'Heard “' + text + '” — say a command, or “hey chef …” to ask');
   }
-  function askClaudette(question){
-    setVoiceStatus('thinking', 'Claudette is thinking…');
+  function askChef(question){
+    setVoiceStatus('thinking', 'Chef is thinking…');
     var cur = window.cookView.currentNumber();
     fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
@@ -921,9 +938,12 @@
     if(!talk) stopSpeaking();
   }
 
-  // ---- Touch mode (a knuckle-friendly gesture pad — "almost hands-free") - //
-  // A dedicated pad captures the swipes so the page can still scroll freely:
-  //   swipe → next · swipe ← back · swipe ↑ restart · swipe ↓ end · double-tap repeat.
+  // ---- Touch mode (a knuckle-friendly tap pad — "almost hands-free") ----- //
+  // Three tap zones split by vertical dividers (no swipes — they fought the
+  // page scroll). Single tap: LEFT = back · MIDDLE = pause/resume · RIGHT = next.
+  // Double-tap a side zone: LEFT = restart · RIGHT = stop/end. The middle has no
+  // double action, so it fires immediately; the side zones wait DBL ms to tell a
+  // single tap from a double.
   function setTouchMode(on){
     touchMode = !!on;
     var pad = document.getElementById('gesturepad');
@@ -935,21 +955,37 @@
   function endTouch(){ stopSpeaking(); setTouchMode(false); }
   function wireTouchPad(){
     var pad = document.getElementById('gesturepad'); if(!pad) return;
-    var sx=0, sy=0, st=0, lastTap=0, SW=42;
-    function start(x,y){ unlockAudio(); sx=x; sy=y; st=_now(); }
-    function end(x,y){
-      var dx=x-sx, dy=y-sy, ax=Math.abs(dx), ay=Math.abs(dy), dt=_now()-st;
-      if(ax<SW && ay<SW && dt<450){            // tap → double-tap = repeat
-        var now=_now(); if(now-lastTap < 340){ lastTap=0; window.cookView.repeat(); } else { lastTap=now; }
-        return;
+    var DBL = 300, pending = null, lastRegion = null, lastT = 0;
+    function regionAt(x){ var r = pad.getBoundingClientRect();
+      var f = (x - r.left) / Math.max(1, r.width);
+      return f < 0.38 ? 'L' : (f > 0.62 ? 'R' : 'M'); }
+    function flash(region){
+      var z = pad.querySelector(region==='L' ? '.gp-zL' : region==='R' ? '.gp-zR' : '.gp-zM');
+      if(z){ z.classList.add('flash'); setTimeout(function(){ z.classList.remove('flash'); }, 150); } }
+    function single(region){ flash(region);
+      if(region==='L') window.cookView.back();
+      else if(region==='R') window.cookView.next();
+      else togglePlayPause(); }
+    function dbl(region){ flash(region);
+      if(region==='L'){ window.cookView.reset(); window.cookView.read(); }   // restart
+      else if(region==='R'){ endTouch(); }                                   // stop / end
+      else togglePlayPause(); }
+    function onTap(x){
+      unlockAudio();
+      var region = regionAt(x), now = _now();
+      if(region === 'M'){                       // middle: no double action → fire now
+        if(pending){ clearTimeout(pending); pending = null; lastRegion = null; }
+        flash('M'); togglePlayPause(); return;
       }
-      if(ax > ay){ if(dx>0) window.cookView.next(); else window.cookView.back(); }   // → next · ← back
-      else { if(dy<0){ window.cookView.reset(); window.cookView.read(); } else { endTouch(); } }  // ↑ restart · ↓ end
+      if(pending && lastRegion === region && (now - lastT) < DBL){   // second tap, same side → double
+        clearTimeout(pending); pending = null; lastRegion = null; dbl(region); return;
+      }
+      if(pending){ clearTimeout(pending); }     // stale / different region
+      lastRegion = region; lastT = now;
+      pending = setTimeout(function(){ pending = null; lastRegion = null; single(region); }, DBL);
     }
-    pad.addEventListener('touchstart', function(e){ var t=e.changedTouches[0]; start(t.clientX,t.clientY); }, {passive:true});
-    pad.addEventListener('touchend',   function(e){ e.preventDefault(); var t=e.changedTouches[0]; end(t.clientX,t.clientY); }, {passive:false});
-    pad.addEventListener('mousedown',  function(e){ start(e.clientX,e.clientY); });    // desktop testing
-    pad.addEventListener('mouseup',    function(e){ end(e.clientX,e.clientY); });
+    pad.addEventListener('touchend', function(e){ e.preventDefault(); onTap(e.changedTouches[0].clientX); }, {passive:false});
+    pad.addEventListener('mouseup',  function(e){ onTap(e.clientX); });   // desktop testing
   }
 
   // ====================================================================== //
@@ -1005,7 +1041,7 @@
     document.getElementById('loadmsg').style.display='none';
     document.getElementById('main').style.display='';
     document.getElementById('barwrap').style.display='';
-    document.getElementById('ask-ctx').textContent = name + ' — Claudette can see this recipe.';
+    document.getElementById('ask-ctx').textContent = name + ' — Chef can see this recipe.';
   }
 
   // ====================================================================== //
@@ -1065,7 +1101,7 @@
   }
 
   // ====================================================================== //
-  //  ASK CLAUDETTE (Tier 3 keystone — grounded Q&A; voice wraps this later)
+  //  ASK CHEF (Tier 3 keystone — grounded Q&A; voice wraps this later)
   // ====================================================================== //
   function wireAsk(){
     var panel=document.getElementById('ask'), q=document.getElementById('ask-q'),
@@ -1081,14 +1117,14 @@
     function ask(){
       var question=q.value.trim(); if(!question) return;
       unlockAudio();   // gesture (Send tap) — unlock iOS audio so the spoken answer plays
-      ans.innerHTML='<span class="spin"></span> Claudette is thinking…';
+      ans.innerHTML='<span class="spin"></span> Chef is thinking…';
       send.disabled=true;
       var cur=window.cookView.currentNumber();
       fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
         .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
         .then(function(res){
-          if(!res.ok){ ans.textContent = (res.j && res.j.detail) ? res.j.detail : 'Sorry — Claudette is unavailable right now.'; return; }
+          if(!res.ok){ ans.textContent = (res.j && res.j.detail) ? res.j.detail : 'Sorry — Chef is unavailable right now.'; return; }
           var answer=res.j.answer||'(no answer)';
           ans.innerHTML='<div class="a-text"></div>'
             + '<button class="btn a-speak" id="a-speak">🔊 Read answer</button>';
@@ -1096,7 +1132,7 @@
           document.getElementById('a-speak').addEventListener('click', function(){ speak(deAbbrev(answer)); });
           speak(deAbbrev(answer));   // speak by default — hands are busy
         })
-        .catch(function(){ ans.textContent='Sorry — could not reach Claudette.'; })
+        .catch(function(){ ans.textContent='Sorry — could not reach Chef.'; })
         .finally(function(){ send.disabled=false; });
     }
   }
@@ -1112,6 +1148,13 @@
     .then(function(j){ RECIPE=j.data||{}; CK=RECIPE._cook;
       if(!CK){ fail('This recipe hasn’t been reworked for cooking yet. Open it in the editor and hit "Rework for cooking".'); return; }
       renderAll(); wireControls();
+      // Warm the persistent TTS cache (media.db) shortly after load, in the
+      // background, using the EXACT client spoken strings — so the first Read /
+      // hands-free play of any step is instant, and every later session (any
+      // device/user) is a cache hit. First open of a cold recipe pays the
+      // synthesis once; repeats are free. Uses the existing client path, so no
+      // server-side spoken-string duplication (deAbbrev stays in one place).
+      setTimeout(function(){ try{ prefetchAllSteps(); }catch(e){} }, 1200);
     })
     .catch(function(){ fail('Could not load this recipe.'); });
 })();

@@ -1038,10 +1038,10 @@ def open_cook_view(recipe_id: str):
 
 @app.post("/cook/ask")
 def cook_ask_endpoint(payload: dict = Body(...)):
-    """Claudette — grounded cooking Q&A for the cook view (Tier-3 keystone of the
+    """Chef — grounded cooking Q&A for the cook view (Tier-3 keystone of the
     hands-free experience; see cook_ask.py + recipe_anchor/voice-cook-spec.md).
     The voice loop will later feed this STT text and speak the reply; today it
-    backs the typed "Ask Claudette" box. Loads the recipe, answers grounded in its
+    backs the typed "Ask Chef" box. Loads the recipe, answers grounded in its
     `_cook`, journals tokens, and degrades to a friendly 503 on an LLM failure."""
     recipe_id = (payload.get("recipe_id") or "").strip()
     question = (payload.get("question") or "").strip()
@@ -1064,11 +1064,11 @@ def cook_ask_endpoint(payload: dict = Body(...)):
 
     usage_log: list = []
     try:
-        from cook_ask import ask as claudette_ask
-        answer = claudette_ask(recipe, question, current_step=current_step, usage_log=usage_log)
+        from cook_ask import ask as chef_ask
+        answer = chef_ask(recipe, question, current_step=current_step, usage_log=usage_log)
     except Exception as e:
         print(f"[ERROR] /cook/ask({recipe_id}): {e}")
-        raise HTTPException(status_code=503, detail="Claudette is unavailable right now — try again in a moment.")
+        raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.")
     _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
     return {"answer": answer}
 
@@ -1077,7 +1077,7 @@ def cook_ask_endpoint(payload: dict = Body(...)):
 async def cook_listen(audio: UploadFile = File(...)):
     """Speech-to-text for the hands-free loop: one VAD-endpointed utterance
     (WAV from the browser) -> faster-whisper (base.en, CPU) -> text. The browser
-    routes the text (command keyword vs Claudette question). Audio stays on the
+    routes the text (command keyword vs Chef question). Audio stays on the
     host. Degrades to a friendly 503 if the model can't load/transcribe."""
     data = await audio.read()
     try:
@@ -1091,19 +1091,22 @@ async def cook_listen(audio: UploadFile = File(...)):
 
 @app.post("/cook/speak")
 def cook_speak(payload: dict = Body(...)):
-    """Text-to-speech in Claudette's warm voice (OpenAI gpt-4o-mini-tts) — speaks
-    a step or a Claudette answer. Returns MP3 bytes the cook view plays via an
+    """Text-to-speech in Chef's warm voice (OpenAI gpt-4o-mini-tts) — speaks
+    a step or a Chef answer. Returns MP3 bytes the cook view plays via an
     <audio> element. The page falls back to browser SpeechSynthesis on failure."""
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="text is required.")
     try:
-        from cook_tts import synthesize
-        audio = synthesize(text)
+        from cook_tts import synthesize_cached
+        # Cache-first (media.db): a step spoken before — any session/device/user —
+        # serves instantly and free. Miss synthesizes once and stores.
+        audio, hit = synthesize_cached(text, MEDIA_DB_PATH)
     except Exception as e:
         print(f"[ERROR] /cook/speak: {e}")
         raise HTTPException(status_code=503, detail="Voice synthesis is unavailable.")
-    return Response(content=audio, media_type="audio/mpeg")
+    return Response(content=audio, media_type="audio/mpeg",
+                    headers={"X-TTS-Cache": "hit" if hit else "miss"})
 
 
 # Fetch one recipe by recipe_id. Same shape as list_recipes() rows so the
@@ -3798,12 +3801,17 @@ def cook_rework_endpoint(recipe_id: str, request: Request, user_id: int = PLACEH
         _require_perm(request, "edit_master")
     table = _recipes_table_for(user_id)
     with sqlite3.connect(DB_PATH) as conn:
-        if not conn.execute(f"SELECT 1 FROM {table} WHERE recipe_id = ? AND user_id = ?",
-                            (recipe_id, user_id)).fetchone():
+        row = conn.execute(
+            f"SELECT json_extract(data, '$.name') FROM {table} "
+            f"WHERE recipe_id = ? AND user_id = ?", (recipe_id, user_id)).fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Recipe not found")
+        # log_label puts the recipe NAME in the log filename (entity_ref is the
+        # opaque UUID, needed for locking) — see jobs._build_log_filename.
         job_id = jobs_lib.enqueue_job(
             conn, type="cook_rework",
-            params={"recipe_id": recipe_id, "user_id": user_id},
+            params={"recipe_id": recipe_id, "user_id": user_id,
+                    "log_label": (row[0] or recipe_id)},
             entity_ref=f"cook:{recipe_id}")
     import subprocess
     proj = os.path.dirname(os.path.abspath(__file__))

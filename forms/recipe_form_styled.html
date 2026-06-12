@@ -2593,7 +2593,15 @@
       const status = document.getElementById('cookPanelStatus');
       if (!panel || !body) return;
       const ck = recipe && recipe._cook;
-      if (!ck) { panel.classList.add('hidden'); panel.open = false; return; }
+      // CLEAR the body when there's no _cook — otherwise the previous recipe's
+      // rendered cook lingers in the (hidden) DOM and can resurface, looking like
+      // "this recipe saved a different recipe's cook view". (Seen with the dev test
+      // recipe.) Always reset before deciding to show.
+      if (!ck) {
+        body.innerHTML = '';
+        if (status) status.textContent = '';
+        panel.classList.add('hidden'); panel.open = false; return;
+      }
       panel.classList.remove('hidden');
 
       const E = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
@@ -2651,7 +2659,7 @@
       // The real payoff: a link to the full hands-free cook view (forms/cook.html,
       // the Phase-4 renderer). This panel stays the read-only debug inspector;
       // the cook view is where you actually cook (big checks, units, 3 ingredient
-      // views, Read-step TTS, Ask Claudette). Opens in a new tab so the editor stays.
+      // views, Read-step TTS, Ask Chef). Opens in a new tab so the editor stays.
       {
         const _rid = (document.getElementById('recipe_id')?.value || '').trim();
         const _uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
@@ -3829,6 +3837,7 @@
       // fields the form has no UI for (provenance, classification, nutrition,
       // _scoring, etc.). Same passthrough mechanism the extract path uses.
       lastExtractedRecipe = r;
+      lastExtractedRecipeKey = _curRecipeKey();   // #recipe_id set above (~line 3621)
 
       // Restore the extraction trace panel from the saved record so the
       // user can see when/how this recipe was extracted, not just records
@@ -4070,7 +4079,20 @@
       // metadata actually land in the saved record on both new extracts
       // and re-saves of existing records. For provenance/classification
       // the form-edited keys win and the passthrough fills the gaps.
-      if (lastExtractedRecipe) {
+      // IDENTITY GUARD: only carry the rich blocks forward when the stashed recipe
+      // actually IS the one being saved. We skip ONLY on a positive mismatch (both
+      // keys present and different) so normal saves are byte-for-byte unchanged —
+      // this can never silently drop _cook on a legit save, only stop a stale
+      // in-memory recipe (e.g. the dev test recipe) from writing its _cook/_scoring
+      // onto a different record.
+      const _saveKey = (payload.recipe_id || _curRecipeKey() || '').trim();
+      const _identityMismatch = lastExtractedRecipeKey && _saveKey
+        && lastExtractedRecipeKey !== _saveKey;
+      if (_identityMismatch) {
+        console.warn('[save] skipping rich passthrough — stashed recipe differs',
+          { stashed: lastExtractedRecipeKey, saving: _saveKey });
+      }
+      if (lastExtractedRecipe && !_identityMismatch) {
         const r0 = lastExtractedRecipe;
         if (r0.provenance) {
           payload.provenance = { ...r0.provenance, ...payload.provenance };
@@ -4598,6 +4620,7 @@
       // Drop any stashed passthrough fields so the next save doesn't carry
       // provenance/classification/etc. from a previously loaded record.
       lastExtractedRecipe = null;
+      lastExtractedRecipeKey = null;
       lastExtractionTrace = null;
       if (typeof clearExtractionTrace === 'function') clearExtractionTrace();
       const driftBanner = document.getElementById('sourceDriftBanner');
@@ -4819,6 +4842,7 @@
         const measurements = data._measurements || [];
         // Stash so the next save persists it (passthrough -> server carry-forward).
         if (!lastExtractedRecipe) lastExtractedRecipe = {};
+        lastExtractedRecipeKey = _curRecipeKey();   // measured the CURRENT recipe
         lastExtractedRecipe._measurements = measurements;
         // Re-key metric data onto the rows by ingredient string.
         const metricByRaw = buildMetricByRaw(measurements);
@@ -5390,6 +5414,12 @@
     // the form has no UI for (provenance, classification, _scoring) instead
     // of dropping them on the floor.
     let lastExtractedRecipe = null;
+    // The recipe_id `lastExtractedRecipe` belongs to — stamped at every assignment.
+    // The save passthrough is GUARDED on this: rich blocks (_cook/_scoring/…) are
+    // only carried forward when this matches the recipe being saved, so a stale
+    // in-memory recipe can never write its _cook onto a different record.
+    let lastExtractedRecipeKey = null;
+    const _curRecipeKey = () => (document.getElementById('recipe_id')?.value || '').trim();
 
     // Last extraction trace (timings + prompts + token usage). Persisted to
     // the saved recipe at recipe._extract_trace so reloads can re-render it.
@@ -5852,6 +5882,7 @@
       // Remember the full extract so save can pass through provenance,
       // classification, and _scoring (none of which have form fields).
       lastExtractedRecipe = r;
+      lastExtractedRecipeKey = _curRecipeKey();   // extract handler set #recipe_id first
       // recipe_id is now app-minted at extract time and lives on r.id. The
       // calling extract handler sets the form field; we just don't clear it
       // here anymore.

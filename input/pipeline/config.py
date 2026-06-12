@@ -11,8 +11,8 @@
 # stay in code — they're not batch-pipeline-only tunables. The user's
 # call 2026-05-24.
 #
-# RECIPE_PHRASES stays in code too — it's 154 entries of semi-data and
-# is reviewed/diffed in code rather than tuned in a config file.
+# RECIPE_PHRASES stays in code too — ~158 entries of semi-data,
+# reviewed/diffed in code rather than tuned in a config file.
 
 import json as _json
 from pathlib import Path as _Path
@@ -62,6 +62,11 @@ RECIPE_PHRASES = [
     "pinch of", "sea salt", "kosher salt", "ground black pepper",
     "freshly ground", "ground cumin", "ground cinnamon", "cinnamon stick",
     "ground ginger", "cloves of", "to taste",
+    # Imprecise-measure signals (added 2026-06-12 from an 830-recipe survey).
+    # Anchored with "of" (or intrinsically cooking-only like "dollop") so they
+    # don't fire in narrative prose the way bare "splash"/"handful" would — same
+    # narrative-false-positive bar that drove the 2026-05-23 pruning below.
+    "squeeze of", "splash of", "dollop", "knob of", "drizzle of",
 
     # ------ Recipe-specific composite phrases ------
     "unsalted butter", "1 medium", "1 large", "medium onion", "large onion",
@@ -79,7 +84,7 @@ RECIPE_PHRASES = [
     "rinse the", "rinse off", "salt the", "low heat", "medium heat",
     "high heat", "spread the", "stir the", "stir in", "stir into",
     "fill the", "fill a", "set aside", "sprinkle the", "pour the",
-    "scrub the", "seal the", "drizzle the", "spread the", "slide the",
+    "scrub the", "seal the", "drizzle the", "slide the",
     "fold in", "fold into", "bake for", "hand mixer", "stand mixer",
     "cool completely", "beat together", "beat until", "before serving",
     "serve immediately", "top with", "pour batter", "pour into", "pour over",

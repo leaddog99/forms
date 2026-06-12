@@ -30,11 +30,16 @@ _IMPERIAL_RE = re.compile(
     re.IGNORECASE)
 _IMPERIAL_TEMP_RE = re.compile(r"\d\s*°?\s*F\b")
 
-# Informal measures the precision phase should have replaced with a number.
-# pinch/dash/clove/count are legitimately unit-neutral and NOT flagged here.
-_INFORMAL_RE = re.compile(
-    r"\b(?:handful|ladle|thread|threads|drizzle|splash|glug|knob|dollop|"
-    r"scant|hearty|generous)\b", re.IGNORECASE)
+# A real measure carries a NUMBER — a digit or a cooking-fraction glyph. IMPRECISE
+# measures (splash, drizzle, glug, knob, "a handful", pinch, dash, "to taste") are
+# valid and unitless: they are measurements people understand, not defects. The model
+# marks them convertible=False (CookAmount docstring: "vessel-as-measure ('a
+# handful')") and the numeric gate EXEMPTS them. A survey of 830 recipes confirmed
+# these words are overwhelmingly legitimate — verbs ("Drizzle with oil", "Ladle into
+# bowls"), the form "saffron threads", or finishing/to-taste prose — so we do NOT
+# word-scan step prose at all. Precision is enforced structurally: a CONVERTIBLE
+# amount (one the model claims has a real unit) must show a number.
+_NUMERIC_RE = re.compile(r"[0-9¼½¾⅐⅑⅒⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞]")
 
 # Lookback phrases — a step must be self-contained.
 _LOOKBACK_RE = re.compile(
@@ -116,16 +121,18 @@ def v_definite_article(cook: CookMetadata) -> List[str]:
 
 
 def v_every_measure_numeric(cook: CookMetadata) -> List[str]:
-    """No bare informal measures (handful/ladle/thread/drizzle…) standing in for a
-    real quantity, in amounts or step prose."""
+    """A CONVERTIBLE amount — one the model claims carries a real unit+number — must
+    show a number. Imprecise measures (splash/drizzle/pinch/"a handful"/to-taste) are
+    convertible=False and EXEMPT: they're valid unitless measurements, not defects.
+    Step prose is NOT word-scanned (a finishing 'drizzle of oil' is correct English)."""
     out = []
     for where, a in _iter_amounts(cook):
-        if _INFORMAL_RE.search(a.imperial) or _INFORMAL_RE.search(a.metric):
-            out.append(f"{where}: informal measure ({a.imperial!r}) — needs a number")
-    for s in cook.steps:
-        m = _INFORMAL_RE.search(s.instruction)
-        if m:
-            out.append(f"step {s.number}: informal measure '{m.group(0)}' in prose")
+        if not a.convertible:
+            continue
+        if not _NUMERIC_RE.search(a.imperial or "") and not _NUMERIC_RE.search(a.metric or ""):
+            out.append(f"{where}: convertible amount carries no number "
+                       f"({a.imperial!r}/{a.metric!r}) — give a number or mark it "
+                       f"unitless (convertible=False)")
     return out
 
 

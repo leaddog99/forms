@@ -1,7 +1,7 @@
-"""cook_stt.py — Claudette's ears (faster-whisper, base.en, CPU/int8).
+"""cook_stt.py — Chef's ears (faster-whisper, base.en, CPU/int8).
 
 Transcribes a short utterance captured in the cook view's hands-free loop and
-returns text the browser routes (a command like "next"/"back", or a Claudette
+returns text the browser routes (a command like "next"/"back", or a Chef
 question). Recognition runs server-side, so the mic audio stays on the host —
 which for this app is the user's own machine (portable-package privacy stance,
 recipe_anchor/voice-cook-spec.md "only a deliberate question leaves the device";

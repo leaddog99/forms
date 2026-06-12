@@ -589,3 +589,39 @@ JS `node --check` clean throughout; Python `py_compile` clean; `/cook/*` routes 
 
 ### Files (branch `split/enrichment-api`)
 New: `forms/cook.html`, `cook_ask.py`, `cook_stt.py`, `cook_tts.py`. Modified: `save_recipe_api.py` (`/cook/{id}`, `/cook/ask`, `/cook/listen`, `/cook/speak`), `forms/recipe_form_styled.html` ("Open cook view" link).
+
+---
+
+## Session log — 2026-06-12 — cook-rework measure-validation reframe, save cross-contamination guard, Claudette→Chef, TTS cache, No-look tap pad
+
+A long interactive session that started from cook-rework failures and ranged across the gauntlet, a data-contamination scare, the voice persona, and the No-look UX.
+
+### "splash"/"drizzle" reworks were failing the gauntlet — reframed the measure gate (the real fix)
+Two reworks (Spanakorizo "Drizzle", Galaktoboureko "splash") failed `every-measure-numeric` because it **text-scanned step prose** for an informal-word list (`handful|ladle|thread|drizzle|splash|glug|knob|dollop|scant|hearty|generous`) and hard-failed on any hit → the whole rework discarded. A batch **survey of 830 recipes** (method-step prose) proved the list premise wrong: those words are overwhelmingly *legitimate* — verbs ("Drizzle with oil", "Ladle into bowls", "Dollop and spread"), the form "saffron threads", "hearty bread", and the adjectives "generous/scant" (which modify a real/unit-neutral measure). The user's steer: **imprecise measures are valid measurements, not defects** — same class as the already-exempt pinch/dash. So I deleted the word list entirely and **reframed the gate around `convertible`** (`cook_validators.py`): a `convertible=True` amount must carry a number (digit/fraction glyph); imprecise measures the model marks `convertible=False` are valid and exempt; **prose is no longer scanned at all.** Proof: 59 non-numeric structured amounts across the 16 reworked recipes ("to taste"×26, "all"×19, "as needed", "a small pinch", back-refs like "reserved half") — 100% `convertible=False`, 0 would fail. The 8-gate self-test still passes (the planted `CookAmount("a handful")` defaults `convertible=True` → still fires). Re-ran the two recipes (jobs 175/176) → both persist correctly now.
+
+### Cook-rework log filenames now carry the recipe name
+`jobs._build_log_filename` preferred the `entity_ref` tail, which for cook_rework is the opaque recipe UUID (the entity-lock key). Added a generic `params.log_label` (the cook-rework endpoint passes the recipe name) → `job_cook-rework_177_spanakorizo-with-jammy-eggs_….log`. Dish-refresh unchanged; non-ASCII (Greek) degrades gracefully; capped 60 chars.
+
+### "Chicken Milanese showed on Spanakorizo" — explained + hardened
+The user saw a wrong `_cook` on Spanakorizo. Root: job 170 hit the Drizzle false-positive, FAILED the gauntlet, didn't persist → the recipe kept stale `_cook` panel content (Chicken Milanese = the dev test recipe). A corpus scan found **0** currently-mismatched `_cook` blocks. Hardened the recipe form (`recipe_form_styled.html`): (1) `populateCookPanel` now CLEARS its body when a recipe has no `_cook` (no lingering stale render); (2) a **save identity guard** — the rich-block passthrough (`_cook`/`_scoring`/`_measurements`/nutrition/video/…) sourced from the `lastExtractedRecipe` global is now skipped on a *positive* recipe-id mismatch (`lastExtractedRecipeKey` stamped at every assignment), so a stale in-memory recipe can never write its blocks onto a different record. Skips only on hard mismatch → normal saves byte-for-byte unchanged (can't silently drop `_cook`).
+
+### is_recipe scorer — five imprecise-measure phrases added (NOT to the gauntlet)
+Distinct list from the gauntlet: `RECIPE_PHRASES` (is_recipe, threshold 7). Added `squeeze of`, `splash of`, `dollop`, `knob of`, `drizzle of` — high-signal, "of"-anchored so they don't fire in the narrative articles that the 2026-05-23 pruning targeted. Skipped bare splash/drizzle/handful + the non-measures. Also deduped a pre-existing `"spread the"`. 158 phrases, no dupes. (Helps borderline/thin/partially-English pages cross the bar next batch.)
+
+### Voice persona: Claudette → **Chef** (alt "Jeff")
+Renamed across `cook_ask.py`/`cook_tts.py`/`cook_stt.py`/`save_recipe_api.py`/`forms/cook.html`/`recipe_form_styled.html` + `voice-cook-spec.md`. Wake words `chef`/`hey chef`/`jeff` kept; dropped the dead `claudette`-family STT-mishearing aliases; persona chip → 🧑‍🍳 Chef. **Scope correction:** Chef stays **recipe-grounded** (general *cooking* questions OK) but is **NOT** a general-purpose assistant — off-topic questions get a one-line warm redirect (`CHEF_SYSTEM`).
+
+### Persistent TTS cache + load-time pre-warm (no-lag spoken steps)
+`cook_tts.py`: content-addressed BLOB store in `media.db` (`tts_audio`, key = sha256 of text+voice+model+instructions) + `synthesize_cached()`; `/cook/speak` is cache-first (`X-TTS-Cache: hit|miss`). Verified: miss 1.98s → hit 0.001s, identical bytes, self-invalidating. **Pre-warm** done the clean way: `cook.html` calls `prefetchAllSteps()` on load (1.2s after render) → warms the persistent cache with the EXACT client spoken strings, so first Read/hands-free play is instant and every later session (any device/user) is a free hit. **Deliberately did NOT** port `spokenText`/`deAbbrev` to Python for true rework-time synthesis (byte-fragile dual-maintenance) — load-prefetch gets ~the same payoff with one source of truth.
+
+### No-look pad: swipes → three tap zones + pause/resume
+`cook.html`: replaced the swipe pad with three divider-split zones — tap L=Back · M=Pause/Resume · R=Next; double-tap L=Restart · R=Stop/End. Added real **pause/resume** (`togglePlayPause` pauses the `<audio>` clip in place and resumes from position, distinct from the hard-stop `stopSpeaking`). Side single-taps wait 300ms to disambiguate a double-tap (middle fires instantly); tapped zone flashes for feedback.
+
+### Verified / ops
+All touched Python `py_compile` clean; `cook.html`/`recipe_form_styled.html` inline JS `node --check` clean; gauntlet self-test green; TTS cache round-trip + log-naming + RECIPE_PHRASES integrity verified. Server restarted onto the branch (no job running) so the in-server changes (`/cook/*`, validator-for-in-process, log naming, Chef Q&A) go live; cook.html changes are no-cache → live on reload.
+
+### Follow-ups
+- **Hey Chef turn-taking** (the user's "funky" report): the awkwardness is the ~2.5s Whisper round-trip between "Hey Chef" and the cue in the two-turn flow + pause-sensitive endpointing. Options: lean on the one-breath "Hey Chef, <q>" path + lengthen the awaiting-question window (small); a tap-to-ask affordance on the new pad (medium); a local wake-word spotter (bigger). Needs on-device tuning — NOT changed yet.
+- True rework-time server TTS pre-warm available if wanted (cost: deAbbrev dual-maintenance) — currently declined in favor of load-prefetch.
+- 3 other reworks failed on *different* gates (Frico `definite-article` "a ¼ cup"; Courgette risotto `reuse-referenced` salt; Portokalopita `mise-complete` res_syrup) — separate from splash/drizzle, not yet addressed.
+- Portable-package deps still unrecorded (`faster-whisper`, `youtube-transcript-api`; no `requirements.txt`).

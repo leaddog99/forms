@@ -1,4 +1,4 @@
-# Spec addendum — Voice / hands-free cook view ("Claudette")
+# Spec addendum — Voice / hands-free cook view ("Chef")
 
 **Why:** while cooking your hands are full and messy. The step-anchored cook view is
 the ideal surface for hands-free use — speak the step, say "next" to advance, and ask
@@ -24,8 +24,8 @@ The experience is a continuous loop, hands never touch the screen:
 3. **VAD detects SILENCE** — energy below threshold for ~500–800 ms = the user stopped →
    **endpoint** the utterance (finalize). *This silence-trigger is the crux.* No button.
 4. **Route** the finalized text: a command keyword (next/back/repeat…) executes instantly;
-   anything else is a Claudette question → LLM → streamed answer → TTS.
-5. **Barge-in** — while Claudette/TTS is speaking, keep the mic live; a new utterance (or
+   anything else is a Chef question → LLM → streamed answer → TTS.
+5. **Barge-in** — while Chef/TTS is speaking, keep the mic live; a new utterance (or
    "stop") interrupts playback immediately. A real conversation, not turn-locked.
 
 **Silence-detection options (pick per accuracy/latency):**
@@ -46,7 +46,7 @@ endpoint early.
 Read the current step aloud; advance reads the next.
 - **v1: browser `SpeechSynthesis`** (Web Speech API) — free, on-device, zero latency, no
   backend. Good enough to ship.
-- **upgrade: OpenAI TTS** (`gpt-4o-mini-tts` / `tts-1`) — a branded, warmer **"Claudette"**
+- **upgrade: OpenAI TTS** (`gpt-4o-mini-tts` / `tts-1`) — a branded, warmer **"Chef"**
   voice; costs + latency + a backend audio route. Do later.
 - Spoken text is **derived at render time** from `step.instruction`: expand the
   `{ingN}`/`{amt}`/`{bundle}` tokens and de-abbreviate for the ear ("1½ lb" → "one and a
@@ -63,16 +63,16 @@ controls (the left checkboxes + autoscroll):
 - Routing: transcribe → if the text matches a command keyword, execute it; **else it's a
   question** → Tier 3.
 
-### Tier 3 — Ask Claudette (open cooking Q&A)
+### Tier 3 — Ask Chef (open cooking Q&A)
 Non-keyword utterances are questions for a resident cooking expert, grounded in THIS recipe.
 - Flow: capture audio → **STT** (browser SpeechRecognition for v1; **Whisper** upgrade for
   accuracy/other languages) → call an LLM with **{question + recipe context (`_cook` +
-  ingredients/steps) + a "Claudette" system prompt}** → **TTS** the answer.
+  ingredients/steps) + a "Chef" system prompt}** → **TTS** the answer.
 - Example: *"what does blond vs brown mean in sautéing garlic?"* → grounded explanation.
 - **Backend:** new `POST /cook/ask {recipe_id, question}` → Anthropic SDK (a cheaper tier —
   Sonnet/Haiku — is fine for Q&A; recipe context grounds it) → text (+ optional TTS audio).
 - **Wake / cost control:** always-listen for commands (cheap, local); gate question-mode
-  behind a push-to-talk button or a "Claudette…" wake word so not every utterance hits the
+  behind a push-to-talk button or a "Chef…" wake word so not every utterance hits the
   LLM. Decide before wiring Tier 3.
 
 ## Build order (recommendation)
@@ -83,16 +83,16 @@ so the renderer comes first and is **designed for the loop from the start**.
    pointer the loop drives.
 2. **Voice phase (the conversational loop)** — built as ONE coherent piece, because the
    value is in the loop, not the parts: VAD/silence-endpointing + interim transcript +
-   command routing (next/back/repeat) + Claudette Q&A + TTS + barge-in. Start with the
+   command routing (next/back/repeat) + Chef Q&A + TTS + barge-in. Start with the
    browser-only stack (SpeechRecognition + SpeechSynthesis) end-to-end to prove the loop +
-   tune the silence window; then upgrade engines (Whisper STT, OpenAI "Claudette" TTS,
+   tune the silence window; then upgrade engines (Whisper STT, OpenAI "Chef" TTS,
    Silero VAD) without changing the loop.
 3. Wake/cost control inside that phase: commands are local + free; gate the LLM call so noise
-   and mid-sentence pauses don't fire Claudette (min-utterance length + the silence window;
-   a "Claudette…" prefix optional once VAD is good).
+   and mid-sentence pauses don't fire Chef (min-utterance length + the silence window;
+   a "Chef…" prefix optional once VAD is good).
 
 Privacy note (portable-package): continuous VAD + SpeechRecognition stay on-device; only a
-deliberate Claudette question leaves the machine. Make that boundary explicit in the UI.
+deliberate Chef question leaves the machine. Make that boundary explicit in the UI.
 
 ## State of the art (researched June 2026) + component picks
 
@@ -122,11 +122,11 @@ semantic upgrade — don't over-invest in hand-tuning silence thresholds.
   Universal-Streaming** (~307 ms, native turn detection), **gpt-4o-transcribe** (best WER
   ~8.9%), **ElevenLabs Scribe v2 Realtime** (~150 ms, 90+ langs).
 
-**TTS (speaking — the "Claudette" voice)**
+**TTS (speaking — the "Chef" voice)**
 - v1: **browser `SpeechSynthesis`** — free, on-device, zero latency.
 - branded/low-latency upgrade: **Cartesia Sonic 3** (~40 ms TTFA, fastest), **ElevenLabs
   Flash 2.5** (sub-100 ms), **OpenAI gpt-4o-mini-tts** (~250 ms, *steerable character* — good
-  for a warm "Claudette" persona).
+  for a warm "Chef" persona).
 - open/self-host (portable-package): **Kokoro-82M** (tiny, fast, runs on consumer hardware,
   best open low-latency English), Fish Speech S2, Piper.
 

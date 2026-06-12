@@ -1,8 +1,11 @@
-"""cook_ask.py — "Claudette", the resident cooking assistant for the cook view.
+"""cook_ask.py — "Chef", the resident cooking companion for the cook view.
 
-Answers an open cooking question GROUNDED in the specific recipe the cook is
-making (its `_cook` block — ingredients, mise, steps, put-asides) while still
-drawing on the model's general cooking knowledge. Powers `POST /cook/ask`.
+Answers the cook's question ("Hey Chef …") GROUNDED in the specific recipe being
+made (its `_cook` block — ingredients, mise, steps, put-asides), while drawing on
+general cooking knowledge when the question is about technique rather than this
+dish. It is a COOKING companion, NOT a general-purpose assistant: off-topic, non-
+cooking questions get a brief, friendly redirect back to the kitchen. Powers
+`POST /cook/ask`.
 
 This is the Tier-3 keystone of the hands-free cook experience
 (recipe_anchor/voice-cook-spec.md): today a typed question; tomorrow the voice
@@ -32,16 +35,21 @@ MODEL = "claude-sonnet-4-6"      # warm, accurate cooking Q&A grounded by recipe
 _MAX_TOKENS = 700
 ASK_PROMPT_VERSION = "cook-ask-v1-2026-06-11"
 
-CLAUDETTE_SYSTEM = (
-    "You are Claudette, a warm, sharp cooking companion talking to someone who is "
+CHEF_SYSTEM = (
+    "You are Chef, a warm, sharp cooking companion talking to someone who is "
     "cooking RIGHT NOW — hands busy, maybe messy. Your reply will be READ ALOUD, so:\n"
     "- Be brief and conversational: usually one to three sentences. No lists, no "
     "markdown, no headings, no emoji — just natural spoken prose.\n"
     "- Answer the actual question first and directly; add at most one short reason or tip.\n"
     "- You are grounded in THIS recipe (given below). When the question is about this "
     "dish — an amount, a substitution, timing, doneness, what's next, why a step matters "
-    "— answer from the recipe's real details. When it's general cooking knowledge, draw "
-    "on your full expertise.\n"
+    "— answer from the recipe's real details. General COOKING questions (technique, "
+    "ingredients, equipment, why something works) are fair game — draw on your full "
+    "culinary expertise.\n"
+    "- You are a COOKING companion, NOT a general-purpose assistant. If asked something "
+    "unrelated to cooking, food, or this recipe, warmly redirect in one short sentence "
+    "(e.g. 'Let's keep our heads in the kitchen — what can I help you cook?') and don't "
+    "answer the off-topic question.\n"
     "- Never invent specifics about this recipe that aren't in the context. If something "
     "genuinely isn't specified, say so briefly and give your best general guidance.\n"
     "- Be calm and encouraging. On anything touching food safety (doneness temperatures, "
@@ -67,7 +75,7 @@ def _expand_instruction(step: dict) -> str:
     """Expand the renderer tokens into plain text for grounding — {ingN} ->
     'amount label', {amt:IMP|MET} -> imperial face, {bundle:ID} stripped to a
     readable phrase isn't available here so left as the id's tail. Mirrors the
-    cook.html expander (imperial), so Claudette reads exactly what the cook sees."""
+    cook.html expander (imperial), so Chef reads exactly what the cook sees."""
     text = str(step.get("instruction") or "")
     ings = step.get("ingredients") or []
 
@@ -154,7 +162,7 @@ def build_context(recipe: dict, current_step: Optional[int]) -> str:
 # --------------------------------------------------------------------------- #
 def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
         usage_log: Optional[list] = None) -> str:
-    """Answer `question` as Claudette, grounded in `recipe`. Returns plain text
+    """Answer `question` as Chef, grounded in `recipe`. Returns plain text
     suitable for TTS. Appends a token-journal entry to `usage_log` if provided.
     Raises on a hard API failure — the caller (endpoint) maps that to a friendly
     503 rather than leaking a stack trace to the cook."""
@@ -171,7 +179,7 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
     resp = _client.messages.create(
         model=MODEL,
         max_tokens=_MAX_TOKENS,
-        system=CLAUDETTE_SYSTEM,
+        system=CHEF_SYSTEM,
         messages=[{"role": "user", "content": user}],
     )
     if usage_log is not None:

@@ -284,7 +284,15 @@ def _slug_for_log(s: str) -> str:
 def _build_log_filename(job: dict) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
     type_slug = _slug_for_log(job.get("type") or "job")
-    entity_slug = _slug_for_log((job.get("entity_ref") or "").split(":", 1)[-1])
+    # Prefer an explicit human label (e.g. the recipe name) so the filename reads
+    # cleanly; fall back to the entity_ref tail (e.g. a dish slug). cook_rework keys
+    # its entity_ref on an opaque recipe UUID for locking, so without this the log
+    # name would carry the UUID instead of the recipe — you couldn't tell which
+    # recipe a log belongs to.
+    params = job.get("params") or {}
+    label = params.get("log_label") if isinstance(params, dict) else None
+    slug_src = label or (job.get("entity_ref") or "").split(":", 1)[-1]
+    entity_slug = _slug_for_log(slug_src)[:60].strip("-")
     suffix = f"_{entity_slug}" if entity_slug else ""
     return f"job_{type_slug}_{job['id']}{suffix}_{ts}.log"
 
