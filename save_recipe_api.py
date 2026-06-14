@@ -2322,37 +2322,60 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
 
 @app.get("/dishes/{name}/top-recipes")
 def list_dish_top_recipes(name: str):
-    """Return the master_recipes rows tagged as the top-N for this dish
-    (`_master.dish = name AND _master.kind = 'top'`). Used by the
-    dishes form to surface what's currently in the curated set —
-    each row links back to its original source URL and to the
-    BCC permalink for the saved master copy.
+    """Return the top-N recipes for this dish, DERIVED from the scoring ledger —
+    `dish_run_data_points` rows with `selected = 1` at the latest `model_version`,
+    ordered by `rank_score`, JOINed to their `master_recipes` content.
 
-    Ordered by `_master.rank` ascending (1 = top), with un-ranked rows
-    at the end. Returns [] when the dish has never refreshed or had
-    no successful saves. Cheap — single SELECT, ~10-25 rows typically.
+    The ledger is the source of truth for ranking. We deliberately DO NOT trust the
+    denormalized `_master.kind='top'` label: a later re-save of a winner (open it
+    in the editor, tweak, save) re-grades via embedding-match and overwrites
+    `_master`, silently dropping `kind`/`dish`/`rank` — which once demoted a 100/100
+    NYT recipe out of the top-10 (2026-06-14) even though the ledger still had it
+    `selected`. The batch still STAMPS the label (used for its delete-and-replace
+    cleanup), but display no longer depends on it.
+
+    Falls back to the legacy `kind='top'` label query for any dish whose latest run
+    predates the `selected` column. Cheap — a single JOIN, ~10-25 rows.
     """
     try:
         with sqlite3.connect(DB_PATH) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
+            dish = existing["name"]
             rows = conn.execute(
                 """
                 SELECT m.id, m.recipe_id, m.data,
                        dp.rank_score, dp.ou_percentile, dp.power_percentile
-                FROM master_recipes m
-                LEFT JOIN dish_run_data_points dp
-                  ON dp.dish_name = :dish AND dp.url = m.url_normalized
-                WHERE json_extract(m.data, '$._master.dish') = :dish
-                  AND json_extract(m.data, '$._master.kind') = 'top'
-                ORDER BY dp.rank_score IS NULL, dp.rank_score DESC,
-                         CAST(json_extract(m.data, '$._master.rank') AS INTEGER) ASC, m.id
+                FROM dish_run_data_points dp
+                JOIN master_recipes m
+                  ON m.url_normalized = dp.url AND m.user_id = 0
+                WHERE dp.dish_name = :dish
+                  AND dp.selected = 1
+                  AND dp.model_version = (
+                      SELECT MAX(model_version) FROM dish_run_data_points
+                      WHERE dish_name = :dish)
+                ORDER BY dp.rank_score DESC, m.id
                 """,
-                {"dish": existing["name"]},
+                {"dish": dish},
             ).fetchall()
+            if not rows:   # legacy fallback — latest run predates the `selected` column
+                rows = conn.execute(
+                    """
+                    SELECT m.id, m.recipe_id, m.data,
+                           dp.rank_score, dp.ou_percentile, dp.power_percentile
+                    FROM master_recipes m
+                    LEFT JOIN dish_run_data_points dp
+                      ON dp.dish_name = :dish AND dp.url = m.url_normalized
+                    WHERE json_extract(m.data, '$._master.dish') = :dish
+                      AND json_extract(m.data, '$._master.kind') = 'top'
+                    ORDER BY dp.rank_score IS NULL, dp.rank_score DESC,
+                             CAST(json_extract(m.data, '$._master.rank') AS INTEGER) ASC, m.id
+                    """,
+                    {"dish": dish},
+                ).fetchall()
             out: list[dict] = []
-            for seq_id, recipe_uuid, dj, rank_score, ou_pct, pwr_pct in rows:
+            for seq, (seq_id, recipe_uuid, dj, rank_score, ou_pct, pwr_pct) in enumerate(rows, start=1):
                 try:
                     d = json.loads(dj)
                 except Exception:
@@ -2365,7 +2388,7 @@ def list_dish_top_recipes(name: str):
                     "id": seq_id,
                     "recipe_id": recipe_uuid,
                     "name": d.get("name") or "(no title)",
-                    "rank": master.get("rank"),
+                    "rank": seq,   # position in canonical rank_score order (1 = top)
                     "source_url": source.get("originalUrl") or "",
                     "site_name": friendly_site_name(
                         source.get("siteName"), source.get("originalUrl")),
