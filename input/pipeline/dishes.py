@@ -144,6 +144,7 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
     ensure_dish_rejects_table(conn)
+    ensure_editors_choice_table(conn)
     # Index on refresh_ttl_days so the agent's "find due" query is cheap.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_dishes_ttl "
@@ -217,6 +218,95 @@ def ensure_dish_rejects_table(conn: sqlite3.Connection) -> None:
         "ON dish_rejects(status)"
     )
     conn.commit()
+
+
+# --------------------------------------------------------------------------- #
+# Editor's Choice — curator pins (junction-style membership)
+# --------------------------------------------------------------------------- #
+def ensure_editors_choice_table(conn: sqlite3.Connection) -> None:
+    """Curator pins: a (dish, url) membership an admin adds by hand. Each refresh
+    INCLUDES these URLs in the dish's candidate pool, so they're scored into the
+    ledger like any SerpAPI result and surface in the top-N IF they rank. This is
+    a junction-style membership — the pin is a (collection, url) row, NOT a stamp
+    on the recipe — which is exactly the shape the future many-to-many 'collections'
+    model generalizes. url_normalized is the dedup/JOIN key shared with the ledger
+    and master_recipes.url_normalized."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dish_editors_choice (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            dish_name       TEXT NOT NULL COLLATE NOCASE,
+            url             TEXT NOT NULL,
+            url_normalized  TEXT NOT NULL,
+            note            TEXT,
+            added_at        TEXT NOT NULL,
+            UNIQUE(dish_name, url_normalized)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_dish_editors_choice_dish "
+        "ON dish_editors_choice(dish_name)"
+    )
+    conn.commit()
+
+
+_EC_COLS = ("id", "dish_name", "url", "url_normalized", "note", "added_at")
+_EC_SELECT = "SELECT " + ", ".join(_EC_COLS) + " FROM dish_editors_choice"
+
+
+def _ec_row(row) -> Optional[dict]:
+    return dict(zip(_EC_COLS, row)) if row else None
+
+
+def add_editors_choice(conn: sqlite3.Connection, dish_name: str, url: str,
+                       note: Optional[str] = None) -> dict:
+    """Pin a URL to a dish. Idempotent on (dish, normalized url)."""
+    from input.pipeline.url_utils import normalize_url
+    url = (url or "").strip()
+    if not url:
+        raise ValueError("url is required")
+    norm = normalize_url(url)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO dish_editors_choice (dish_name, url, url_normalized, note, added_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(dish_name, url_normalized) DO UPDATE SET
+               url = excluded.url, note = excluded.note""",
+        (dish_name, url, norm, note, now),
+    )
+    conn.commit()
+    return get_editors_choice(conn, dish_name, norm)
+
+
+def get_editors_choice(conn: sqlite3.Connection, dish_name: str,
+                       url_normalized: str) -> Optional[dict]:
+    return _ec_row(conn.execute(
+        _EC_SELECT + " WHERE dish_name = ? AND url_normalized = ?",
+        (dish_name, url_normalized)).fetchone())
+
+
+def list_editors_choice(conn: sqlite3.Connection, dish_name: str) -> list[dict]:
+    """All pins for a dish, newest first."""
+    return [_ec_row(r) for r in conn.execute(
+        _EC_SELECT + " WHERE dish_name = ? ORDER BY added_at DESC", (dish_name,))]
+
+
+def remove_editors_choice(conn: sqlite3.Connection, dish_name: str,
+                          url_normalized: str) -> int:
+    """Unpin. Returns rows deleted (0 or 1)."""
+    n = conn.execute(
+        "DELETE FROM dish_editors_choice WHERE dish_name = ? AND url_normalized = ?",
+        (dish_name, url_normalized)).rowcount
+    conn.commit()
+    return n
+
+
+def editors_choice_urls(conn: sqlite3.Connection, dish_name: str) -> list[str]:
+    """The pinned URLs (original form) for a dish — added to the batch candidate
+    pool on refresh so they're scored alongside the SerpAPI results."""
+    return [r[0] for r in conn.execute(
+        "SELECT url FROM dish_editors_choice WHERE dish_name = ?", (dish_name,))]
 
 
 def replace_rejects_for_dish(conn: sqlite3.Connection, dish_name: str,

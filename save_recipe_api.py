@@ -2429,6 +2429,74 @@ def list_dish_top_recipes(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+# Editor's Choice — curator pins (a (dish, url) membership). The dish's next
+# refresh adds these URLs to its candidate pool so they're scored into the ledger
+# like any SerpAPI result and surface in the top-N if they rank. This is the first
+# concrete brick of the many-to-many 'collections' model (membership is a junction
+# row, not a stamp on the recipe). See list_dish_top_recipes for how display reads
+# the ledger, not a label.
+@app.get("/dishes/{name}/editors-choice")
+def list_dish_editors_choice(name: str):
+    """Curator pins for a dish (newest first)."""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            pins = dishes_lib.list_editors_choice(conn, existing["name"])
+        return {"dish": existing["name"], "count": len(pins), "pins": pins}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] list_dish_editors_choice({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/dishes/{name}/editors-choice")
+def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(...)):
+    """Pin a URL to a dish (admin only). Body: {url, note?}. Idempotent on the
+    normalized URL. The pin takes effect on the dish's next refresh."""
+    _require_perm(request, "manage_dishes")
+    url = (payload.get("url") or "").strip()
+    note = (payload.get("note") or "").strip() or None
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            pin = dishes_lib.add_editors_choice(conn, existing["name"], url, note)
+        return {"ok": True, "pin": pin}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] add_dish_editors_choice({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.delete("/dishes/{name}/editors-choice")
+def remove_dish_editors_choice(name: str, request: Request, url_normalized: str = ""):
+    """Unpin by url_normalized (query param; admin only)."""
+    _require_perm(request, "manage_dishes")
+    if not url_normalized:
+        raise HTTPException(status_code=400, detail="url_normalized is required")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            existing = dishes_lib.get_dish(conn, name)
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            n = dishes_lib.remove_editors_choice(conn, existing["name"], url_normalized)
+        return {"ok": True, "removed": n}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] remove_dish_editors_choice({name!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.get("/dishes/{name}/cohort")
 def list_dish_cohort(name: str):
     """The full SCORED cohort for a dish, straight from dish_run_data_points
@@ -3442,6 +3510,13 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     print(f"top_n_serpapi: {top_serp} per query, top_n_final: {top_final}")
     print(f"[REFRESH-DISH] {canonical_name!r} starting")
 
+    # Editor's Choice pins for this dish — added to the candidate pool so they're
+    # scored alongside the SerpAPI results and surface in the top-N if they rank.
+    with sqlite3.connect(DB_PATH) as conn:
+        pinned_urls = dishes_lib.editors_choice_urls(conn, canonical_name)
+    if pinned_urls:
+        print(f"[REFRESH-DISH] {len(pinned_urls)} Editor's Choice pin(s) to include")
+
     try:
         batch_result = await asyncio.to_thread(
             build_batch,
@@ -3449,6 +3524,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             dish=canonical_name,
             top_n_serpapi=top_serp,
             top_n_final=top_final,
+            extra_urls=pinned_urls or None,
         )
     except Exception as e:
         print(f"[REFRESH-DISH] build_batch failed: {e}")

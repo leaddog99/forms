@@ -854,6 +854,7 @@ def build_batch(
     dish: Optional[str] = None,
     top_n_serpapi: int = DEFAULT_TOP_SERPAPI,
     top_n_final: int = DEFAULT_TOP_FINAL,
+    extra_urls: Optional[list[str]] = None,
 ) -> dict:
     """Run the full front-end pipeline. Accepts a single query string OR
     a list of queries (the multi-query dish case — e.g. "spaghetti with
@@ -888,6 +889,33 @@ def build_batch(
     serpapi_union = len(entries)
     print(f"      -> {serpapi_union} unique URLs across {len(queries)} "
           f"verbatim queries (paginated)")
+
+    # Editor's Choice — merge curator-pinned URLs into the candidate pool so they
+    # are scored alongside the SerpAPI results (and surface in the top-N IFF they
+    # rank — junction-style membership, not a forced override). A pin already in
+    # the SERP results is just tagged; a new one is appended as a candidate.
+    if extra_urls:
+        existing_norms = {normalize_url(e["url"]) or e["url"] for e in entries}
+        pinned_added = 0
+        for pin in extra_urls:
+            pin = (pin or "").strip()
+            if not pin:
+                continue
+            key = normalize_url(pin) or pin
+            if key in existing_norms:
+                for e in entries:
+                    if (normalize_url(e["url"]) or e["url"]) == key:
+                        e["_pinned"] = True
+                continue
+            entries.append({
+                "url": pin, "title": "", "google_rank": None,
+                "domain": root_domain(pin), "_queries": ["editors-choice"],
+                "_pinned": True,
+            })
+            existing_norms.add(key)
+            pinned_added += 1
+        print(f"      -> + {pinned_added} Editor's Choice pin(s) merged into the pool "
+              f"({len(extra_urls)} pinned total)")
     # Surface a thin candidate pool rather than silently loosening the
     # query. A tight (quoted) query legitimately returns fewer matches;
     # the admin broadens it by hand if they want more. We never fall back
