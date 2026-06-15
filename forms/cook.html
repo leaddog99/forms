@@ -958,12 +958,16 @@
   var _WAKE_G    = new RegExp("\\b" + _WAKE_SRC + "\\b", "ig");
   var _WAKE_LEAD = new RegExp("^[\\s,.:;!?-]*" + _WAKE_SRC + "\\b[\\s,.:;!?-]*", "i");
 
+  // Commands are anchored (the utterance must BE the command). Kept DELIBERATE and
+  // unambiguous — instruction-common / filler words (done, finished, continue, got
+  // it, ready, go on…) were removed because the louder TTS echoes them back into the
+  // mic and self-advances ("cook until done" → heard "done" → next). Say "next".
   var _CMDS = [
-    [/^(next|next step|next one|done|continue|keep going|go on|got it|move on|ready|finished|carry on)$/, function(){ window.cookView.next(); }],
-    [/^(back|previous|go back|undo|last step|one back|back up|backup)$/, function(){ window.cookView.back(); }],
-    [/^(repeat|again|say again|repeat that|one more time|what was that|come again|read that again)$/, function(){ window.cookView.repeat(); }],
-    [/^(start over|restart|reset|from the top|begin again|start again)$/, function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); }],
-    [/^(stop|pause|quiet|stop listening|that's enough|that is enough|never mind|hush|halt|stop cooking)$/, function(){ stopHandsFree(); }]
+    [/^(next|next step|next one|move on)$/, function(){ window.cookView.next(); }],
+    [/^(back|go back|previous|previous step|last step|one back|back up)$/, function(){ window.cookView.back(); }],
+    [/^(repeat|repeat that|say again|say it again|one more time|read that again|come again)$/, function(){ window.cookView.repeat(); }],
+    [/^(start over|restart|from the top|begin again|start again)$/, function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); }],
+    [/^(stop|stop listening|stop cooking|halt)$/, function(){ stopHandsFree(); }]
   ];
   function routeUtterance(text){
     if(!hf) return;
