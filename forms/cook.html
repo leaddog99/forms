@@ -531,7 +531,14 @@
       var half={'½':'a half','⅓':'a third','⅔':'two thirds','¼':'a quarter','¾':'three quarters','⅛':'an eighth'}[fr]||f;
       return numWord(w)+' and '+half; });
     s=s.replace(/([½⅓⅔¼¾⅛])/g, function(m,fr){ return FRAC[fr]||fr; });
-    s=s.replace(/(\d+)\s*\/\s*(\d+)/g, function(m,a,b){ return a+' over '+b; }); // "1/2"->"1 over 2" (rare)
+    // ASCII fractions spoken naturally. Mixed numbers first ("1 1/2" -> "one and a
+    // half"), then solo ("1/4" -> "one quarter"); unknown denominators fall back to
+    // "a over b". (The “1/4 -> one over four” bug.)
+    var FRAC_MIX = {'1/2':'a half','1/3':'a third','2/3':'two thirds','1/4':'a quarter','3/4':'three quarters','1/8':'an eighth','3/8':'three eighths','5/8':'five eighths','7/8':'seven eighths','1/6':'a sixth','5/6':'five sixths','2/4':'a half'};
+    var FRAC_SOLO = {'1/2':'one half','1/3':'one third','2/3':'two thirds','1/4':'one quarter','3/4':'three quarters','1/8':'one eighth','3/8':'three eighths','5/8':'five eighths','7/8':'seven eighths','1/6':'one sixth','5/6':'five sixths','2/4':'one half'};
+    s=s.replace(/(\d+)\s+(\d+)\s*\/\s*(\d+)/g, function(m,whole,a,b){
+      var f=FRAC_MIX[a+'/'+b]; return f ? (numWord(parseInt(whole,10))+' and '+f) : m; });
+    s=s.replace(/(\d+)\s*\/\s*(\d+)/g, function(m,a,b){ return FRAC_SOLO[a+'/'+b] || (a+' over '+b); });
     var UNIT=[[/\bTbsp\b\.?/g,'tablespoons'],[/\btbsp\b\.?/g,'tablespoons'],[/\btsp\b\.?/g,'teaspoons'],
       [/\blb\b\.?/g,'pounds'],[/\blbs\b\.?/g,'pounds'],[/\boz\b\.?/g,'ounces'],
       [/\bqt\b\.?/g,'quarts'],[/\bpt\b\.?/g,'pints'],[/\bgal\b\.?/g,'gallons'],
@@ -670,7 +677,8 @@
   var _lastHeard = '';   // last Whisper transcript — surfaced in the Listening status to debug mishears
   // Conversational follow-up: for a window AFTER Chef answers, the next utterance is
   // treated as a question WITHOUT re-saying "hey chef" (commands still win first).
-  var FOLLOWUP_MS = 12000, followUpUntil = 0, _pendingFollowUp = false;
+  // _asking gates while a question is in flight (no double-asks, no self-echo route).
+  var FOLLOWUP_MS = 20000, followUpUntil = 0, _pendingFollowUp = false, _asking = false;
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
@@ -691,9 +699,9 @@
     var base = n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
                          : 'Listening — say “hey chef…” to ask a question';
     return _lastHeard ? (base + ' · heard: “' + _lastHeard + '”') : base; }
-  function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 500;   // ignore echo tail after she stops
-    refreshMidIcon();
-    if (_pendingFollowUp){ _pendingFollowUp = false; followUpUntil = _now() + FOLLOWUP_MS; }   // open the follow-up window once the answer finishes
+  function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 700;   // ignore the (louder) echo tail after she stops
+    refreshMidIcon(); _asking = false;
+    if (_pendingFollowUp){ _pendingFollowUp = false; followUpUntil = _now() + FOLLOWUP_MS; }   // re-extend the window once the answer finishes
     if (hf) setVoiceStatus('listening', (followUpUntil > _now())
       ? '🎧 Ask a follow-up — no “hey chef” needed (or say a command)'
       : _listenHint()); }
@@ -981,22 +989,24 @@
     }
     // Conversational follow-up — a substantive utterance shortly after an answer
     // routes to the LLM without "hey chef" (commands already handled above).
-    if(_now() < followUpUntil && t.split(' ').filter(Boolean).length >= 2){
-      followUpUntil = 0; askChef(text); return;
+    if(!_asking && _now() < followUpUntil && t.split(' ').filter(Boolean).length >= 2){
+      askChef(text); return;
     }
     setVoiceStatus('listening', 'Heard “' + text + '” — say a command, or “hey chef …” to ask');
   }
   function askChef(question){
+    _asking = true;
     setVoiceStatus('thinking', 'Chef is thinking…');
     var cur = window.cookView.currentNumber();
     fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
-        if (res.ok && res.j.answer) _pendingFollowUp = true;   // a real answer → allow a no-wake follow-up next
-        speak(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.'));
+        if (res.ok && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + 30000; }  // open NOW (don't depend on onended) — re-extended at speak end
+        else { _asking = false; }
+        speak(deAbbrev(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.')));
       })
-      .catch(function(){ speak('Sorry, I could not reach the kitchen brain just now.'); });
+      .catch(function(){ _asking = false; speak('Sorry, I could not reach the kitchen brain just now.'); });
   }
   // 16kHz mono Float32 → 16-bit PCM WAV blob (what faster-whisper ingests).
   function encodeWAV(samples, rate){
