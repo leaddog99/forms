@@ -625,3 +625,41 @@ All touched Python `py_compile` clean; `cook.html`/`recipe_form_styled.html` inl
 - True rework-time server TTS pre-warm available if wanted (cost: deAbbrev dual-maintenance) — currently declined in favor of load-prefetch.
 - 3 other reworks failed on *different* gates (Frico `definite-article` "a ¼ cup"; Courgette risotto `reuse-referenced` salt; Portokalopita `mise-complete` res_syrup) — separate from splash/drizzle, not yet addressed.
 - Portable-package deps still unrecorded (`faster-whisper`, `youtube-transcript-api`; no `requirements.txt`).
+
+---
+
+## Session log — 2026-06-12 (late) → 06-15 — cook-view control dock, nightly backup automated, top-10 reads the ledger (NYT bug), Editor's Choice pins, Collections design, voice-loop hardening
+
+Continues on `split/enrichment-api`. Spans the cook-view UI polish, a backup-automation decision, a data-integrity fix that exposed the many-to-many "collections" architecture, the first M2M brick, and a long voice-loop tuning thread (verified live on the user's iPad/desktop). Everything committed+pushed throughout.
+
+### Cook-view bottom redesign — control dock + icon pad + smart Back + step dimming (9e58381)
+The bottom area was a mess (the No-look pad overlaid the buttons; garish colors). Root cause: vstatus + pad + bar were three independently `position:fixed` elements with hand-tuned `bottom:` offsets that collided when the buttons wrapped. Rebuilt as **one fixed flex-column `#cookdock`** (can't overlap), all on the page's design tokens (card/line/sea), bar = single-row horizontal-scroll. **No-look pad → pure SVG icons** (⏮ back · ⏸/▶ pause-resume state-swapped · ⏭ next), **tap = instant nav, long-press a side zone = restart-recipe (L) / stop (R)** (double-tap collided with rapid Next). **Smart Back** (music-player "previous"): tap ◀ restarts the current step if you're >3s into it, else previous; an escape arm so it can't loop. Upcoming steps fade (`.step.current ~ .step`).
+
+### Nightly DB backup — automated, 3 AM (refactor ad3ce91; Task Scheduler retargeted)
+User asked to automate the ADAM backup via the scheduled-jobs system. Investigation found there ALREADY was a daily Task-Scheduler task **"BCC Recipes DB Backup"** (was 1 PM). **Decision (user's call): keep it an INDEPENDENT OS task, not a `scheduled_jobs` row** — a backup must fire even when the app scheduler is off. Retargeted it to **03:00 + WakeToRun + StartWhenAvailable**. Refactored `backup_db.py` into a `run_backup(dest, no_adam)` callable (the built `db_backup` job handler + scheduled row were then removed once "independent task" was chosen). Memory `project_db_backup` updated.
+
+### Top-10 now reads the SCORING LEDGER, not the `_master.kind='top'` label (cce098c) — the NYT bug
+User ran a Chocolate Chip Cookies batch; the NYT recipe scored **100/100 (selected, rank 1)** but showed in "also ran," not the top-10. Traced: NYT WAS the #1 winner and extracted fine, but the user then opened it, ran a cook-rework, and **saved** it — the master-save re-grades via embedding-match and **overwrites `_master`, dropping `kind='top'`/`dish`/`rank`** (same family as the morning's "_cook dropped on save"). The old top-recipes query filtered on that label → NYT fell out. **Fix (user's idea): query the ledger instead of trusting the label.** `/dishes/{name}/top-recipes` now derives from `dish_run_data_points` (`selected=1`, latest `model_version`, by `rank_score`) JOINed to master content; the label survives only for the batch's delete-and-replace cleanup. NYT back at #1, immune to re-save clobbering. (The DB hand-edit to re-stamp NYT was correctly BLOCKED by the auto-mode classifier — the code fix was the right path anyway.)
+
+### Editor's Choice — curator pins as junction membership (6105d03)
+First concrete brick of the collections model. `dish_editors_choice (dish, url_normalized, note)` table + lib; `build_batch(extra_urls=)` merges pinned URLs into the candidate pool so they're **scored into the ledger like any SERP result and surface in the top-N if they rank** (the "if it scores high enough it appears" semantic). `/dishes/{name}/editors-choice` GET/POST/DELETE (mutations `manage_dishes`-gated); a panel in `dishes_v2.html` (paste URL → Pin, list, unpin). A pin is a `(dish,url)` row, NOT a stamp on the recipe → same recipe pins to many dishes.
+
+### Collections — the many-to-many design note (`docs/collections.md`, 92303fc; memory `project_collections`)
+The head-scratcher: "dish" is one TYPE of **collection** (dish/chef/method/ingredient/list; editors_choice is an overlay). Membership is a junction — and `dish_run_data_points` already IS one (M2M by dish_name). The single `_master.dish`/`_master.exceptionalism` stamp is the "latest wins" weakness; traced precisely with the zucchini / stuffed-zucchini case (membership survives via the ledger after today's fix, but the shared master ROW + grade are still single-owner, and the batch's delete-and-replace can yank the shared row). The two remaining fixes (delete-and-replace on the junction not master rows; grade-on-member-row) are documented. **Scoring is lazy/per-membership/batch-driven — a new recipe is NOT scored against every collection on creation** (a plain save gets one matched-dish grade). The `dishes→collections` rename (~800 occ) is cosmetic and explicitly **not** needed — add a `type` column instead.
+
+### Voice loop ("Chef") hardening — verified live on iPad/desktop
+A long tuning thread (commits 8b09dfc, dd65cb6, 1df2b7e, e620d09, c4f774b, e0a6a2a, 46d550d):
+- **Louder TTS** — `<audio>` maxes at the source level, so 100% on iPad was quiet. Route through a Web Audio GainNode (×2). Confirmed louder on iPad. **Gated to coarse-pointer devices only** — on desktop the MediaElementSource re-route double-played the audio ~1s apart; desktop now uses the element directly.
+- **Conversational follow-up** — the real "Hey Chef follow-up never answers" cause: a follow-up has no wake word so it wasn't routed to `/cook/ask`. After an answer, a window (opened immediately on the answer, 20s, `_asking`-guarded against self-echo) routes the next utterance straight to the LLM — no re-waking. Proved the multi-turn state machine in node.
+- **Command vocab tightened** — the louder TTS echoed instruction words ("cook until **done**") into the mic, matching over-generous "next" synonyms → auto-advanced to the finish/summary. Reduced to deliberate words; added **voice "pause"/"resume"** (was wrongly mapped to stopHandsFree).
+- **deAbbrev fractions** — ASCII `1/4` → "one quarter", `1 1/2` → "one and a half" (was "one over four"); also de-abbreviate voice Q&A answers.
+- **Visibility:** the Listening status now shows `· heard: "…"` (last transcript), and a collapsible **🪵 Voice log** panel captures every transcript + routing decision with a **Save-to-server** button → `logs/cook_voice_<day>.log` the dev reads (new `POST /cook/voice-log`). Closes the debug loop for remote-device voice tuning.
+
+### Verified / ops
+Python `py_compile` + `node --check` clean throughout; `/cook/ask` answers verified live (grounded blend); `/cook/voice-log` round-trip writes the log; ledger-derived top-10 returns the right 10 incl. NYT; Editor's Choice add/list/remove + batch injection verified. Server restarted onto branch several times (detached venv uvicorn, zombie-port-safe PowerShell kill→Start-Process). `recipes.sql` refreshed + ADAM backup run.
+
+### Follow-ups (priority)
+- **Voice #5 — now diagnose from the saved Voice log**: first-"hey chef" wake reliability (many `/cook/listen` never routed), VAD false-capture flood, STT latency (local spotter / Haiku-streaming), AEC/barge-in (needs headset).
+- **Collections build** (when ready): delete-and-replace on the junction + grade-on-member-row + `type` column + per-type sourcing + browse-by-type. Editor's Choice v2: force-show-below-rank, score-on-add.
+- **#10 — app as a resilient service** (auto power-on BIOS + NSSM/startup-task) — still open; tunnel already auto-starts, the app does not.
+- The 3 other failed reworks (definite-article / reuse-referenced / mise-complete) still unaddressed.
