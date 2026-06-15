@@ -667,6 +667,7 @@
   // ====================================================================== //
   var _audioEl = null, _speaking = false, _speakSeq = 0, _pausedMid = false;
   var hf = false, micStream = null, awaitingQ = false;
+  var _lastHeard = '';   // last Whisper transcript — surfaced in the Listening status to debug mishears
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
@@ -684,8 +685,9 @@
   }
   function hideVoiceStatus(){ if(vstatus) vstatus.className = ''; }
   function _listenHint(){ var n = window.cookView.currentNumber();
-    return n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
-                     : 'Listening — say “hey chef…” to ask a question'; }
+    var base = n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
+                         : 'Listening — say “hey chef…” to ask a question';
+    return _lastHeard ? (base + ' · heard: “' + _lastHeard + '”') : base; }
   function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 500;   // ignore echo tail after she stops
     refreshMidIcon();
     if (hf) setVoiceStatus('listening', _listenHint()); }
@@ -695,12 +697,34 @@
   // tied to a gesture — why hands-free was silent on iPhone). Reusing ONE element
   // (vs new Audio() each time) also means a new clip REPLACES the current one, so
   // rapid taps can't stack overlapping playback.
-  function _ensureAudioEl(){ if(!_audioEl){ _audioEl = new Audio(); _audioEl.preload = 'auto'; } return _audioEl; }
+  function _ensureAudioEl(){ if(!_audioEl){ _audioEl = new Audio(); _audioEl.preload = 'auto'; _audioEl.volume = 1; } return _audioEl; }
+  // Boost TTS above the <audio> element's ceiling — iPad speakers play OpenAI's
+  // (modestly-leveled) MP3 quietly even at 100% system volume. Route the element
+  // through a Web Audio GainNode (gain > 1). Best-effort: if Web Audio routing
+  // fails, the element still plays at its normal level (just not boosted). Tune
+  // TTS_GAIN; ~2 is a strong boost, lower it if you hear clipping/distortion.
+  var TTS_GAIN = 2.0;
+  var _spkCtx = null, _spkGain = null, _spkSrc = null;
+  function _setupPlaybackGain(){
+    if (_spkSrc) return;                                   // wire once
+    try{
+      var Ctx = window.AudioContext || window.webkitAudioContext; if(!Ctx) return;
+      _spkCtx = new Ctx();
+      if (_spkCtx.state === 'suspended') _spkCtx.resume();
+      _spkSrc = _spkCtx.createMediaElementSource(_ensureAudioEl());
+      _spkGain = _spkCtx.createGain(); _spkGain.gain.value = TTS_GAIN;
+      _spkSrc.connect(_spkGain); _spkGain.connect(_spkCtx.destination);
+    }catch(e){ _spkSrc = null; /* fall back to direct element output */ }
+  }
   function unlockAudio(){
-    try{ var a = _ensureAudioEl(); if (a._unlocked) return;
-      a.src = URL.createObjectURL(encodeWAV(new Float32Array(1600), 8000));   // 0.2s of silence
-      var p = a.play(); if(p && p.then) p.then(function(){ a._unlocked = true; }).catch(function(){});
-    }catch(e){}
+    var a = _ensureAudioEl();
+    if (!a._unlocked){
+      try{
+        a.src = URL.createObjectURL(encodeWAV(new Float32Array(1600), 8000));   // 0.2s of silence
+        var p = a.play(); if(p && p.then) p.then(function(){ a._unlocked = true; }).catch(function(){});
+      }catch(e){}
+    }
+    _setupPlaybackGain();   // inside the user gesture, so iOS lets the context start
   }
   // TTS audio cache (keyed by spoken text) so a step's voice is PREFETCHED and
   // plays instantly on "next" — no OpenAI round-trip between command and speech.
@@ -723,6 +747,7 @@
   function _playUrl(url){
     return new Promise(function(res){
       var a = _ensureAudioEl(); a.src = url; _speaking = true; refreshMidIcon();
+      if (_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
       a.onended = function(){ _onSpeakEnd(); res(); };
       a.onerror = function(){ _onSpeakEnd(); res(); };
       var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); res(); });
@@ -928,6 +953,7 @@
   ];
   function routeUtterance(text){
     if(!hf) return;
+    _lastHeard = (text || '').trim().slice(0, 60);   // show what Whisper heard, even on a match
     var t = text.toLowerCase().replace(/[^\w\s']/g,' ').replace(/\s+/g,' ').trim();
     if(t.length < 2){ setVoiceStatus('listening', _listenHint()); return; }
 
