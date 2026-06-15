@@ -1105,7 +1105,7 @@
     { name:'tip',     re:/\b(read (the |me the |out the )?(tip|tips|hint)|what'?s the tip|is there a tip|any (tip|tips|hints)|the tip please|give me the tip)\b/, act:function(){ readCurrentTip(); } },
     { name:'repeat',  re:/\b(repeat|say (that|it) again|again please|one more time|come again|read (that|it) again|what did you say)\b|^again$/, act:function(){ window.cookView.repeat(); } },
     { name:'restart', re:/\b(start over|restart|from the top|begin again|start again|start from the beginning)\b/, act:function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); } },
-    { name:'shush',   re:/\b(stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough)$/, act:function(){ stopSpeaking(); if(hf) setVoiceStatus('listening', _listenHint()); } },
+    { name:'cancel',  re:/\b(cancel|never ?mind|forget it|stop it|that's enough|drop it|stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough|cancel|nevermind)$/, act:function(){ stopSpeaking(); setAwaiting(false); setAsking(false); _tipOffer = null; if(hf) setVoiceStatus('listening', _listenHint()); } },
     { name:'pause',   re:/\b(pause|hold on|wait a (second|sec|minute|moment)|resume|un ?pause)\b|^(wait|hold)$/, act:function(){ togglePlayPause(); } },
     { name:'back',    re:/\b(go back|back up|previous step|previous one|last step|one step back|back one|back a step)\b|^(back|previous|backward)$/, act:function(){ window.cookView.back(); } },
     { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along)\b|^(next|forward|skip)$/, act:function(){ window.cookView.next(); } },
@@ -1177,14 +1177,22 @@
     // Pending question after a bare "hey chef": the NEXT real utterance is the question.
     // An empty/too-short capture keeps us waiting (re-cue) instead of stealing a later one.
     if(awaitingQ){
-      // The awaited question must be substantive — a breath/cough/filler captured
-      // during the pause must NOT become a phantom question (which makes Chef
-      // narrate the step). Keep awaiting silently on filler/too-short.
-      if(t.length < 2 || _BARE_WAKE_RESIDUE.test(t)){
-        vlog('ignored', '(awaiting Q — not a question; still listening)');
+      // Strip wake + filler to see what's really being said while we wait.
+      var aq = t.replace(_WAKE_G, ' ').replace(/\s+/g, ' ')
+                .replace(/^(ok|okay|um|uh|hey|hi|so|and|a|an|the|he's|hes|may|my|well|please|now)\s+/, '')
+                .replace(/\s+(please|now)$/, '').trim();
+      // Nothing substantive (empty / a repeated bare "hey chef" / breath / filler) →
+      // keep waiting QUIETLY. Critically, don't re-speak the confirmation (the "keeps
+      // repeating I'm here" loop) and don't fire the LLM on noise.
+      if(!aq || _BARE_WAKE_RESIDUE.test(aq)){
+        vlog('ignored', '(awaiting Q — nothing asked; still listening)');
         setVoiceStatus('hearing', '🎧 I’m listening — what do you need?'); return;
       }
-      setAwaiting(false); vlog('ask', text); askChef(text); return;
+      // Commands STILL win while awaiting — so "stop" / "cancel" / "next" act instead
+      // of being sent to Chef as a question (the "stop doesn't work" bug).
+      var awRule = matchCommand(aq);
+      if(awRule){ setAwaiting(false); vlog('command', awRule.name + ' (while awaiting)'); awRule.act(); return; }
+      setAwaiting(false); vlog('ask', aq); askChef(aq); return;
     }
 
     if(t.length < 2){ vlog('ignored', '(too short)'); setVoiceStatus('listening', _listenHint()); return; }
