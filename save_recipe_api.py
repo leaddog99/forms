@@ -857,6 +857,26 @@ def init_db():
             interrupted = jobs_lib.reset_interrupted_jobs(conn)
             if interrupted:
                 print(f"[JOBS] reset {interrupted} interrupted job(s) from prior run")
+            # Performance indexes (2026-06-15 query audit). Expression indexes on the
+            # hot JSON fields the corpus filters/groups by — without them every such
+            # query SCANs + parses all ~19KB master_recipes blobs (the recommender
+            # path measured 21.9ms -> 0.23ms, ~95x, with idx_mr_dish). Mirrors the
+            # existing idx_recipe_json_id precedent. Plus DROP two prefix-redundant
+            # indexes (single-col indexes whose columns are a prefix of a composite/
+            # unique index that already covers them). All idempotent → safe every boot.
+            for _ix_stmt in (
+                "CREATE INDEX IF NOT EXISTS idx_mr_dish ON master_recipes(json_extract(data,'$._master.dish'))",
+                "CREATE INDEX IF NOT EXISTS idx_mr_likelydish ON master_recipes(json_extract(data,'$._identity.likelyDish'))",
+                "CREATE INDEX IF NOT EXISTS idx_recipes_likelydish ON recipes(json_extract(data,'$._identity.likelyDish'))",
+                "CREATE INDEX IF NOT EXISTS idx_mr_chapter ON master_recipes(json_extract(data,'$.classification.chapter'))",
+                "DROP INDEX IF EXISTS idx_drdp_dish",                  # prefix of idx_drdp_dish_rank
+                "DROP INDEX IF EXISTS idx_dish_editors_choice_dish",   # prefix of the (dish,url) unique
+            ):
+                try:
+                    conn.execute(_ix_stmt)
+                except Exception as _ix_e:  # noqa: BLE001
+                    print(f"[SETUP] perf-index skipped ({_ix_stmt[:48]}…): {_ix_e}")
+
             # Refresh query-planner statistics. WITHOUT them SQLite mis-planned the
             # dish top-10 JOIN — scanning all of master_recipes instead of using the
             # (url_normalized, user_id) index — turning a ~9ms query into a multi-
