@@ -310,6 +310,31 @@
   <p class="credit" id="credit" style="display:none"></p>
 </div>
 
+<style>
+  #vlogPanel{margin:22px 16px 110px;border:1px solid var(--line);border-radius:12px;background:var(--card);}
+  #vlogPanel>summary{cursor:pointer;padding:12px 16px;font-weight:600;font-size:14px;list-style:none;}
+  #vlogPanel>summary::-webkit-details-marker{display:none;}
+  .vlog-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 14px 8px;}
+  .vlog-bar .btn{padding:5px 11px;font-size:12px;}
+  #vlogMsg{font-size:12px;color:var(--ink-soft);}
+  #vlogBody{max-height:320px;overflow:auto;padding:6px 14px 14px;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.55;}
+  .vlog-row{display:flex;gap:8px;align-items:baseline;padding:1px 0;border-bottom:1px solid rgba(42,36,32,.05);}
+  .vlog-t{color:var(--ink-soft);flex:0 0 auto;}
+  .vlog-k{flex:0 0 62px;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.04em;}
+  .k-heard{color:#7a6a5c;} .k-command{color:var(--sea);} .k-ask,.k-followup{color:#3a6ea5;}
+  .k-answer{color:var(--sea-deep);} .k-ignored{color:#b3a795;} .k-wake{color:var(--clay);} .k-error{color:var(--clay-deep);}
+</style>
+<details id="vlogPanel">
+  <summary>🪵 Voice log <span class="ed-pill" id="vlogCount"></span></summary>
+  <div class="vlog-bar">
+    <button type="button" class="btn" id="vlogSave">Save to server</button>
+    <button type="button" class="btn" id="vlogCopy">Copy</button>
+    <button type="button" class="btn" id="vlogClear">Clear</button>
+    <span id="vlogMsg"></span>
+  </div>
+  <div id="vlogBody"></div>
+</details>
+
 <div id="cookdock">
   <div id="vstatus"><span class="vdot"></span><span class="vmsg">Listening…</span></div>
   <div id="gesturepad"><div class="gp-inner">
@@ -679,6 +704,23 @@
   // treated as a question WITHOUT re-saying "hey chef" (commands still win first).
   // _asking gates while a question is in flight (no double-asks, no self-echo route).
   var FOLLOWUP_MS = 20000, followUpUntil = 0, _pendingFollowUp = false, _asking = false;
+  // Voice debug log — every STT transcript + how it routed, so we can SEE what the
+  // mic heard on a remote device. Shown in a collapsible panel; Save POSTs it to a
+  // logs/cook_voice_<day>.log the dev reads. (#5 turn-taking diagnostics.)
+  var _vlog = [];
+  function vlog(kind, text){
+    var d = new Date(), p = function(n){ return ('0'+n).slice(-2); };
+    _vlog.push({ t: p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()), kind: kind, text: String(text||'').slice(0,200) });
+    if(_vlog.length > 400) _vlog.shift();
+    renderVlog();
+  }
+  function renderVlog(){
+    var el = document.getElementById('vlogBody'); if(!el) return;
+    var cnt = document.getElementById('vlogCount'); if(cnt) cnt.textContent = _vlog.length || '';
+    el.innerHTML = _vlog.slice(-150).reverse().map(function(e){
+      return '<div class="vlog-row"><span class="vlog-t">'+e.t+'</span><span class="vlog-k k-'+e.kind+'">'+e.kind+'</span><span>'+E(e.text)+'</span></div>';
+    }).join('');
+  }
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
@@ -973,10 +1015,11 @@
   function routeUtterance(text){
     if(!hf) return;
     _lastHeard = (text || '').trim().slice(0, 60);   // show what Whisper heard, even on a match
+    vlog('heard', text);
     var t = text.toLowerCase().replace(/[^\w\s']/g,' ').replace(/\s+/g,' ').trim();
-    if(t.length < 2){ setVoiceStatus('listening', _listenHint()); return; }
+    if(t.length < 2){ vlog('ignored', '(too short)'); setVoiceStatus('listening', _listenHint()); return; }
 
-    if(awaitingQ){ awaitingQ = false; askChef(text); return; }   // pending Q after bare "Chef"
+    if(awaitingQ){ awaitingQ = false; vlog('ask', text); askChef(text); return; }   // pending Q after bare "Chef"
 
     var hadWake = _WAKE.test(t);
     // strip wake word + leading/trailing fillers, then test as a WHOLE command
@@ -984,19 +1027,20 @@
                .replace(/^(ok|okay|um|uh|hey|please|now|and|so|could you|can you|let's|lets)\s+/,'')
                .replace(/\s+(please|now|step|for me)$/,'').trim();
     if(!REQUIRE_WAKE_FOR_COMMANDS || hadWake){
-      for(var i=0;i<_CMDS.length;i++){ if(_CMDS[i][0].test(cmd)){ _CMDS[i][1](); return; } }
+      for(var i=0;i<_CMDS.length;i++){ if(_CMDS[i][0].test(cmd)){ vlog('command', cmd); _CMDS[i][1](); return; } }
     }
     if(hadWake){   // a question — gated by the wake word so noise never hits the LLM
       var q = text.replace(_WAKE_LEAD,'').replace(/^[\s,.:;!?-]+/,'').trim();
       if(q.length < 2){ awaitingQ = true; cue(); _speakGuard = _now() + 250;   // beep, don't talk over the question
-        setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
-      askChef(q); return;
+        vlog('wake', '(awaiting question)'); setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
+      vlog('ask', q); askChef(q); return;
     }
     // Conversational follow-up — a substantive utterance shortly after an answer
     // routes to the LLM without "hey chef" (commands already handled above).
     if(!_asking && _now() < followUpUntil && t.split(' ').filter(Boolean).length >= 2){
-      askChef(text); return;
+      vlog('followup', text); askChef(text); return;
     }
+    vlog('ignored', text);
     setVoiceStatus('listening', 'Heard “' + text + '” — say a command, or “hey chef …” to ask');
   }
   function askChef(question){
@@ -1007,11 +1051,11 @@
       body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
-        if (res.ok && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + 30000; }  // open NOW (don't depend on onended) — re-extended at speak end
-        else { _asking = false; }
+        if (res.ok && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + 30000; vlog('answer', res.j.answer); }  // open NOW (don't depend on onended)
+        else { _asking = false; vlog('error', (res.j && res.j.detail) || 'no answer'); }
         speak(deAbbrev(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.')));
       })
-      .catch(function(){ _asking = false; speak('Sorry, I could not reach the kitchen brain just now.'); });
+      .catch(function(){ _asking = false; vlog('error', 'fetch failed'); speak('Sorry, I could not reach the kitchen brain just now.'); });
   }
   // 16kHz mono Float32 → 16-bit PCM WAV blob (what faster-whisper ingests).
   function encodeWAV(samples, rate){
@@ -1137,7 +1181,27 @@
   // ====================================================================== //
   //  CONTROLS
   // ====================================================================== //
+  function wireVlog(){
+    var save=document.getElementById('vlogSave'), copy=document.getElementById('vlogCopy'),
+        clr=document.getElementById('vlogClear'), msg=document.getElementById('vlogMsg');
+    function toText(){ return _vlog.map(function(e){ return '['+e.t+'] '+e.kind+': '+e.text; }).join('\n'); }
+    if(save) save.addEventListener('click', function(){
+      if(msg) msg.textContent='Saving…';
+      fetch('/cook/voice-log', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ recipe_id:RECIPE_ID, recipe_name:(RECIPE&&RECIPE.name)||'', entries:_vlog }) })
+        .then(function(r){ return r.json(); })
+        .then(function(j){ if(msg) msg.textContent = j.ok ? ('Saved '+j.written+' → '+j.file) : ('Save failed: '+(j.error||'')); })
+        .catch(function(){ if(msg) msg.textContent='Save failed (offline?)'; });
+    });
+    if(copy) copy.addEventListener('click', function(){
+      try{ navigator.clipboard.writeText(toText()).then(function(){ if(msg) msg.textContent='Copied'; },
+        function(){ if(msg) msg.textContent='Copy blocked — select the text'; }); }
+      catch(e){ if(msg) msg.textContent='Copy not supported'; }
+    });
+    if(clr) clr.addEventListener('click', function(){ _vlog=[]; renderVlog(); if(msg) msg.textContent='Cleared'; });
+  }
   function wireControls(){
+    wireVlog();
     // units
     [].slice.call(document.querySelectorAll('.seg-btn')).forEach(function(b){
       b.addEventListener('click', function(){ units=b.getAttribute('data-units');

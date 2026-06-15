@@ -1109,6 +1109,35 @@ def cook_speak(payload: dict = Body(...)):
                     headers={"X-TTS-Cache": "hit" if hit else "miss"})
 
 
+@app.post("/cook/voice-log")
+def cook_voice_log(payload: dict = Body(...)):
+    """Persist a cook-view voice-debug buffer (client-captured STT transcripts +
+    how each routed) to a per-day file under logs/ so the dev can SEE what the mic
+    actually heard on a remote device — the whole point being a closed debug loop
+    for the voice loop (#5). Best-effort; never errors the caller."""
+    try:
+        rid = (payload.get("recipe_id") or "").strip()
+        name = (payload.get("recipe_name") or "").strip()
+        entries = payload.get("entries") or []
+        if not entries:
+            return {"ok": True, "written": 0}
+        os.makedirs("logs", exist_ok=True)
+        day = datetime.now().strftime("%Y-%m-%d")
+        fname = f"cook_voice_{day}.log"
+        with open(os.path.join("logs", fname), "a", encoding="utf-8") as f:
+            f.write(f"\n==== voice log {datetime.now().isoformat()} · {name or rid} "
+                    f"({len(entries)} entries) ====\n")
+            for e in entries[-500:]:
+                t = str(e.get("t") or "")
+                kind = str(e.get("kind") or "")
+                text = str(e.get("text") or "").replace("\n", " ")
+                f.write(f"  [{t}] {kind:9} {text}\n")
+        return {"ok": True, "written": len(entries), "file": f"/logs/{fname}"}
+    except Exception as e:  # noqa: BLE001
+        print(f"[ERROR] /cook/voice-log: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 # Fetch one recipe by recipe_id. Same shape as list_recipes() rows so the
 # form's existing loadForm path can consume it directly.
 #
