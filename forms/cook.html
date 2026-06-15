@@ -1105,8 +1105,15 @@
   }
   // Proactive offer: after reading a step that HAS a tip (hands-free + Talk on),
   // ask once "want me to read it?" and accept a yes/no next utterance.
+  // DEFAULT OFF: while Chef speaks the offer the mic is deaf (no barge-in/AEC yet),
+  // so a cook who says "next" during "Read the tip?" gets it SWALLOWED — it broke
+  // core nav "right from the first step" (2026-06-15). The deterministic "read the
+  // tip" command stays, so tips are always available on request. Re-enable once
+  // P1 barge-in lands and the offer can be talked over.
+  var TIP_OFFER_ENABLED = false;
   var _tipOffer = null, _lastTipOfferStep = null;
   function maybeOfferTip(step){
+    if(!TIP_OFFER_ENABLED) return;
     if(!hf || !talk || !step) return;
     if(window.cookView.currentNumber() !== step.number) return;  // moved on mid-read — don't offer a stale step
     if(step.number === _lastTipOfferStep) return;             // don't re-offer on repeat/re-read
