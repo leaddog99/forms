@@ -763,6 +763,7 @@
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
+  var _hbFrames = 0, _hbPeak = 0;   // mic heartbeat: confirms the frame loop is alive + shows rms vs threshold + state
   function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
   // Set true for strict "Alexa mode": require "Chef" before commands too.
   var REQUIRE_WAKE_FOR_COMMANDS = false;
@@ -908,7 +909,12 @@
   // against an adaptive noise floor → endpoint after a silence hang → one
   // utterance WAV to /cook/listen. Self-contained = works offline + always
   // fires the mic prompt (portable-package fit). Silero is a future upgrade.
-  var SILENCE_HANG_MS = 800, MIN_VOICE_MS = 350;
+  // MIN_VOICE_MS lowered 350→170: a crisp one-word command ("next"/"back") voices
+  // ~250-340ms and was being DROPPED as too-short (desktop log 2026-06-15: real
+  // "back" at 341ms discarded) — so only multi-word phrases registered, and the
+  // cook had to drag words out / yell. 170ms still rejects clicks/coughs; a sub-
+  // 170ms blip that slips through just transcribes empty and is ignored.
+  var SILENCE_HANG_MS = 800, MIN_VOICE_MS = 170;
   var BARGE_IN = false, BARGE_THRESH = 0.06;  // barge-in OFF: on speaker (no real AEC) her own voice self-triggered the cutoff. Re-enable only with a headset.
   // A short confirmation beep (via the live AudioContext) — used instead of
   // speaking "Yes?" over the cook's question, so the question isn't lost.
@@ -934,10 +940,13 @@
     }
     btn.textContent = '⏳ Starting…'; btn.disabled = true;
     try{
-      // Our own stream so we can force echo cancellation (Chef shouldn't
-      // hear herself); AGC off so the energy threshold stays meaningful.
+      // Our own stream so we can force echo cancellation (Chef shouldn't hear
+      // herself). autoGainControl ON: a desktop/laptop mic at arm's length is far
+      // too quiet with AGC off — speech sat below the energy threshold and nothing
+      // captured ("goes to listening but doesn't hear", desktop 2026-06-15). AGC
+      // boosts it to a consistent level; the adaptive noiseFloor still gates.
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:false } });
+        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true } });
       AC = new (window.AudioContext || window.webkitAudioContext)();
       if (AC.state === 'suspended') await AC.resume();
       capRate = AC.sampleRate;
@@ -994,6 +1003,24 @@
     var input = e.inputBuffer.getChannelData(0), n = input.length, sum = 0;
     for(var i=0;i<n;i++){ var s = input[i]; sum += s*s; }
     var rms = Math.sqrt(sum / n), frameMs = n / capRate * 1000;
+    // Mic heartbeat (#5 diagnostics) — BEFORE the speaking guard so it still fires
+    // while Chef talks, exposing a stuck _speaking (mic-deaf-forever) state. Every
+    // ~50 frames (~4s) log peak rms vs the on-threshold + speaking/capturing flags.
+    // If NO 'mic' lines appear, the ScriptProcessor isn't firing at all.
+    _hbPeak = rms > _hbPeak ? rms : _hbPeak;
+    if(++_hbFrames >= 50){
+      var _onT = Math.max(0.022, noiseFloor * 3.5);
+      vlog('mic', 'peak ' + _hbPeak.toFixed(3) + ' · floor ' + noiseFloor.toFixed(3) +
+        ' · onT ' + _onT.toFixed(3) +
+        ' · speaking=' + (_speaking ? 1 : 0) + ' cap=' + (capturing ? 1 : 0));
+      // Live on-screen level so the cook can SEE the mic working without saving a
+      // log: shows peak vs the trip threshold while idly listening.
+      if(hf && !_speaking && !capturing && !awaitingQ){
+        setVoiceStatus('listening', '🎚 mic ' + _hbPeak.toFixed(3) + ' / trips at ' + _onT.toFixed(3) +
+          (_hbPeak >= _onT ? ' ✓ heard you' : ' — say next/back or “hey chef”'));
+      }
+      _hbFrames = 0; _hbPeak = 0;
+    }
     // While Chef speaks: ignore her own voice off the speakers UNLESS a clearly
     // louder, nearby voice comes in (barge-in). A phone's echo cancellation keeps her
     // leakage well under BARGE_THRESH; flip BARGE_IN=false if she self-cuts on a device
