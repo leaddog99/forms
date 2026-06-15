@@ -1087,6 +1087,11 @@
   var _WAKE      = new RegExp("\\b" + _WAKE_SRC + "\\b", "i");
   var _WAKE_G    = new RegExp("\\b" + _WAKE_SRC + "\\b", "ig");
   var _WAKE_LEAD = new RegExp("^[\\s,.:;!?-]*" + _WAKE_SRC + "\\b[\\s,.:;!?-]*", "i");
+  // After stripping the wake word, these leftover tokens mean it was a BARE wake
+  // (often a mis-transcription of "hey chef" — base.en hears "he's chef", "and
+  // chef", "may chef", "a chef"). Such an utterance is NOT a question → confirm +
+  // listen, never send to the LLM (which would narrate the step).
+  var _BARE_WAKE_RESIDUE = /^(he's|hes|hey|hi|yo|hello|hay|may|my|a|an|the|and|so|well|ok|okay|um+|uh+|hmm+|er|ah|yes|yeah|there|now|please|chef|chefs)$/i;
 
   // FORGIVING command matcher (was: exact ^anchored$ — rejected "go to the next
   // step", "say that again", "go back one"…, which then silently dead-ended). Now
@@ -1172,8 +1177,13 @@
     // Pending question after a bare "hey chef": the NEXT real utterance is the question.
     // An empty/too-short capture keeps us waiting (re-cue) instead of stealing a later one.
     if(awaitingQ){
-      if(t.length < 2){ vlog('ignored', '(awaiting Q — too short; still listening)'); cue();
-        setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
+      // The awaited question must be substantive — a breath/cough/filler captured
+      // during the pause must NOT become a phantom question (which makes Chef
+      // narrate the step). Keep awaiting silently on filler/too-short.
+      if(t.length < 2 || _BARE_WAKE_RESIDUE.test(t)){
+        vlog('ignored', '(awaiting Q — not a question; still listening)');
+        setVoiceStatus('hearing', '🎧 I’m listening — what do you need?'); return;
+      }
       setAwaiting(false); vlog('ask', text); askChef(text); return;
     }
 
@@ -1193,9 +1203,16 @@
     // 2. wake word → deliberately addressed Chef. Could be a question OR conversational
     //    navigation; ask_or_act() decides in ONE call (answers, or returns an action).
     if(hadWake){
-      var q = text.replace(_WAKE_LEAD,'').replace(/^[\s,.:;!?-]+/,'').trim();
-      if(q.length < 2){ setAwaiting(true); cue(); _speakGuard = _now() + 250;   // beep, don't talk over the question
-        vlog('wake', '(awaiting question)'); setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
+      // Strip ALL wake tokens + edge filler; if nothing substantive remains it's a
+      // BARE wake (incl. mis-hears "he's/and/may chef") → CONFIRM we're listening and
+      // await the question. Never send a bare wake to the LLM — it narrates the step.
+      var q = t.replace(_WAKE_G, ' ').replace(/\s+/g, ' ')
+               .replace(/^(ok|okay|um|uh|hey|hi|yo|hello|so|and|a|an|the|he's|hes|hay|may|my|well|please|now)\s+/, '')
+               .replace(/\s+(please|now)$/, '').trim();
+      if(!q || _BARE_WAKE_RESIDUE.test(q)){
+        setAwaiting(true); vlog('wake', '(bare wake — confirming)');
+        speak("I'm here. What can I do for you?"); return;
+      }
       vlog('ask', q); askChef(q); return;
     }
 
