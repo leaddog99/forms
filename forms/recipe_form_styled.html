@@ -3216,7 +3216,9 @@
       listEl.innerHTML = '<li class="empty-state">Loading...</li>';
       try {
         const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
-        const res = await fetch(`${API}/recipes?user_id=${encodeURIComponent(uid)}`);
+        // summary=1 → slim list projection (just the fields the cards render);
+        // keeps the master-list payload ~700KB instead of ~13MB of full recipes.
+        const res = await fetch(`${API}/recipes?user_id=${encodeURIComponent(uid)}&summary=1`);
         const data = await res.json();
         _recipesCache = Array.isArray(data) ? data : [];
         renderRecipes();

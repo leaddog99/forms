@@ -699,6 +699,13 @@ Investigated "unify the rankers (Stage 3)" and **disproved it by measurement**: 
 ### DB index migration SHIPPED
 Added to `init_db` (idempotent every boot → fresh/portable installs included): expression indexes `idx_mr_dish` (master `$._master.dish`), `idx_mr_likelydish` + `idx_recipes_likelydish` (`$._identity.likelyDish`), `idx_mr_chapter` (`$.classification.chapter`) — mirroring the existing `idx_recipe_json_id` precedent. Verified the recommender path now SEARCHes `idx_mr_dish` → **21.9ms → 0.22ms (~100×)**. Also audited ALL indexes for redundancy and **dropped two prefix-redundant ones**: `idx_drdp_dish` (prefix of `idx_drdp_dish_rank`) + `idx_dish_editors_choice_dish` (prefix of the `(dish,url)` unique). Everything else is used or on a tiny table. ANALYZE refreshed; `PRAGMA optimize` maintains.
 
+### `/recipes` list projection SHIPPED
+`GET /recipes` gained `summary=1` (slim `_recipe_list_data` projection — only the fields the sidebar cards render: name/classification/_scoring/_source/_batch/_master.exceptionalism/_grade/image/editorial.opinion/provenance.author) + `limit`/`offset` pagination (0=all default; full-data default unchanged so other consumers are safe). Sidebar (`recipe_form_styled.html` loadRecipes) now fetches `&summary=1`. Verified master list **10.87MB → 0.96MB (~11×)**, all sidebar fields present, limit works. NOTE: if the sidebar ever renders a NEW field, add it to `_recipe_list_data` or the card silently loses it.
+
+### Voice fix
+Disabled the proactive "Read the tip?" auto-offer by default (`TIP_OFFER_ENABLED=false`): on the turn-locked mic (no barge-in yet) it spoke right after step 1 and SWALLOWED a cook's "next" (mic deaf while Chef talks) — broke core nav "right from the first step". Deterministic "read the tip" command stays. Re-enable post-P1-barge-in.
+
 ### Next
-- `/recipes` pagination + list projection (loads/parses ~13MB of full blobs, no LIMIT — the steepest scaling cliff); `/domains/{domain}/recipes` host-column index (88ms double scan).
+- `/domains/{domain}/recipes` host-column index (88ms double scan); consider an `updated_at` index on the recipe tables if the list grows.
+- Voice P1 (barge-in/AEC, Silero VAD, semantic turn-detector, Murf streaming TTS).
 - Voice P1 (when ready): Silero VAD + semantic turn-detector + sherpa-onnx wake + WebRTC-loopback AEC barge-in; wire Murf streaming TTS; extract the client loop to `voice-agent.js`.

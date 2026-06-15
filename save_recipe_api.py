@@ -4363,44 +4363,83 @@ async def start_job_runner():
     print("[STARTUP] job runner DISABLED (no background poll; invoke jobs manually)")
 
 
+# Slim projection for the list/sidebar. The sidebar (recipe_form_styled.html
+# loadRecipes/renderRecipes) only renders these fields — keep ONLY them so the
+# list payload drops the heavy body (ingredients/instructions/_cook/_measurements/
+# nutrition/_identity/embedding-adjacent prose…). At user_id=0 that's ~702 rows ×
+# ~19KB ≈ 13MB → ~700KB (audit 2026-06-15). Nested shape preserved so the
+# sidebar's r.data.* pickers work unchanged. If the sidebar ever renders a new
+# field, ADD it here (else the card silently loses it) — see the getter list in
+# recipe_form_styled.html renderRecipes().
+def _recipe_list_data(d: dict) -> dict:
+    out: dict = {"name": d.get("name")}
+    cls = d.get("classification") or {}
+    if cls:
+        out["classification"] = {"chapter": cls.get("chapter"), "story": cls.get("story")}
+    sc = d.get("_scoring") or {}
+    if sc:
+        out["_scoring"] = {k: sc.get(k) for k in
+                           ("ouScore", "pageAuthority", "domainAuthority", "rootDomain")}
+    src = d.get("_source") or {}
+    if src:
+        out["_source"] = {k: src.get(k) for k in ("originalUrl", "previewImage", "siteName")}
+    b = d.get("_batch") or {}
+    if b:
+        out["_batch"] = {"rank": b.get("rank"), "name": b.get("name")}
+    m = d.get("_master")
+    if isinstance(m, dict):
+        out["_master"] = {"exceptionalism": m.get("exceptionalism")}
+    if d.get("_grade") is not None:
+        out["_grade"] = d.get("_grade")
+    if d.get("image") is not None:
+        out["image"] = d.get("image")
+    ed = d.get("editorial") or {}
+    if ed.get("opinion"):
+        out["editorial"] = {"opinion": ed.get("opinion")}
+    pv = d.get("provenance") or {}
+    if pv.get("author"):
+        out["provenance"] = {"author": pv.get("author")}
+    return out
+
+
 # List recipes for the given owner. user_id=0 returns the master collection
 # (master_recipes table); any other value returns that owner's personal
-# recipes. Default preserves the prior behavior for the form's sidebar.
+# recipes. `summary=1` returns the slim list projection (the sidebar uses it —
+# big payload win); `limit`/`offset` paginate (0 = all, the default). Default
+# (no params) preserves the prior full-data behavior for any other consumer.
 @app.get("/recipes")
-def list_recipes(user_id: int = PLACEHOLDER_USER_ID):
+def list_recipes(user_id: int = PLACEHOLDER_USER_ID, summary: int = 0,
+                 limit: int = 0, offset: int = 0):
     table = _recipes_table_for(user_id)
-    print(f"[LIST] List recipes endpoint called user_id={user_id} table={table}")
+    print(f"[LIST] List recipes user_id={user_id} table={table} summary={summary} limit={limit}")
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
-                f"FROM {table} WHERE user_id = ? ORDER BY updated_at DESC",
-                (user_id,),
-            )
-            rows = cursor.fetchall()
+            sql = (f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
+                   f"FROM {table} WHERE user_id = ? ORDER BY updated_at DESC")
+            params: list = [user_id]
+            if limit and limit > 0:
+                sql += " LIMIT ? OFFSET ?"
+                params += [int(limit), max(0, int(offset))]
+            rows = conn.execute(sql, params).fetchall()
             result = []
-
             for row in rows:
                 try:
-                    recipe_entry = {
-                        "id": row[0],
-                        "recipe_id": row[1],
-                        "user_id": row[2],
-                        "data": json.loads(row[3]),
-                        "source_changed_at": row[4],
-                        "created_at": row[5],
-                        "updated_at": row[6],
-                        "bccUrl": _bcc_permalink(row[1]),
-                    }
-                    result.append(recipe_entry)
+                    data = json.loads(row[3])
                 except json.JSONDecodeError as e:
                     print(f"[WARN] Failed to parse recipe {row[1]}: {e}")
                     continue
-
+                result.append({
+                    "id": row[0],
+                    "recipe_id": row[1],
+                    "user_id": row[2],
+                    "data": _recipe_list_data(data) if summary else data,
+                    "source_changed_at": row[4],
+                    "created_at": row[5],
+                    "updated_at": row[6],
+                    "bccUrl": _bcc_permalink(row[1]),
+                })
             print(f"[OK] Returning {len(result)} recipes")
             return result
-
     except Exception as e:
         print(f"[ERROR] Error in list_recipes: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
