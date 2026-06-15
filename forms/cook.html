@@ -967,6 +967,7 @@
     [/^(back|go back|previous|previous step|last step|one back|back up)$/, function(){ window.cookView.back(); }],
     [/^(repeat|repeat that|say again|say it again|one more time|read that again|come again)$/, function(){ window.cookView.repeat(); }],
     [/^(start over|restart|from the top|begin again|start again)$/, function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); }],
+    [/^(pause|resume|pause please|resume please)$/, function(){ togglePlayPause(); }],   // pause/resume the speech (not the session)
     [/^(stop|stop listening|stop cooking|halt)$/, function(){ stopHandsFree(); }]
   ];
   function routeUtterance(text){
