@@ -35,6 +35,38 @@ MODEL = "claude-sonnet-4-6"      # warm, accurate cooking Q&A grounded by recipe
 _MAX_TOKENS = 700
 ASK_PROMPT_VERSION = "cook-ask-v1-2026-06-11"
 
+# The voice loop hands wake-gated utterances here. Most are questions, but some
+# are navigation phrased conversationally ("okay, I'm done — let's move on",
+# "take me back a step"). Rather than a brittle keyword regex OR a second LLM
+# round-trip, we give Chef ONE optional tool: if the cook clearly wants to move
+# through the recipe, she calls `navigate` instead of answering — same single
+# call, no added latency for real questions. Deterministic keyword commands
+# ("next", "back") never reach here; the client runs those instantly client-side.
+_NAV_ACTIONS = ("next", "back", "repeat", "restart", "pause", "resume", "stop", "goto")
+_NAVIGATE_TOOL = {
+    "name": "navigate",
+    "description": (
+        "Move through the recipe on the cook's behalf. Call this ONLY when the cook "
+        "clearly wants to change position or playback — advance, go back, start over, "
+        "pause/resume the reading, stop the session, or jump to a specific step number. "
+        "'repeat' means RE-READ THE CURRENT STEP'S INSTRUCTION aloud — NOTHING else. "
+        "Do NOT call this for requests to read or hear a TIP, a hint, an ingredient, an "
+        "amount, or any explanation: 'read the tip', \"what's the tip\", 'is there a "
+        "tip', 'read the ingredients', and every how/why/what/can-I/is-it-done/how-long/"
+        "substitution question are ANSWERED IN WORDS, never navigation."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": list(_NAV_ACTIONS),
+                       "description": "The navigation/playback action the cook intends."},
+            "step": {"type": "integer",
+                     "description": "1-based step number, only when action is 'goto'."},
+        },
+        "required": ["action"],
+    },
+}
+
 CHEF_SYSTEM = (
     "You are Chef, a warm, sharp cooking companion talking to someone who is "
     "cooking RIGHT NOW — hands busy, maybe messy. Your reply will be READ ALOUD, so:\n"
@@ -189,3 +221,102 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
             pass
     parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
     return ("".join(parts)).strip() or "I'm not sure how to answer that — could you rephrase?"
+
+
+def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = None,
+               usage_log: Optional[list] = None) -> dict:
+    """Voice-loop entry: ONE Sonnet call that either ANSWERS the cook's question
+    or, when the utterance is clearly navigation phrased conversationally
+    ("okay I'm done, move on" / "take me back one"), returns a structured
+    `navigate` action instead. Deterministic keyword commands ("next", "back")
+    never reach here — the client runs those instantly. Returns one of:
+      {"kind": "action", "action": <enum>, "step": <int|None>}
+      {"kind": "answer", "text": <str>}
+    Raises on a hard API failure (caller maps to a friendly 503)."""
+    question = (question or "").strip()
+    if not question:
+        return {"kind": "answer", "text": "What would you like to know?"}
+
+    context = build_context(recipe, current_step)
+    user = (
+        "Here is the recipe I'm cooking right now, as structured context:\n\n"
+        f"{context}\n\n"
+        f"What I just said: {question}"
+    )
+    resp = _client.messages.create(
+        model=MODEL,
+        max_tokens=_MAX_TOKENS,
+        system=CHEF_SYSTEM,
+        tools=[_NAVIGATE_TOOL],
+        messages=[{"role": "user", "content": user}],
+    )
+    if usage_log is not None:
+        try:
+            usage_log.append(build_usage_entry("cook_ask", MODEL, resp))
+        except Exception:
+            pass
+
+    for b in resp.content:
+        if getattr(b, "type", None) == "tool_use" and getattr(b, "name", None) == "navigate":
+            inp = b.input or {}
+            action = inp.get("action")
+            if action in _NAV_ACTIONS:
+                out = {"kind": "action", "action": action}
+                if action == "goto":
+                    try:
+                        out["step"] = int(inp.get("step"))
+                    except (TypeError, ValueError):
+                        # 'goto' with no usable number — degrade to an answer.
+                        return {"kind": "answer",
+                                "text": "Which step would you like to jump to?"}
+                return out
+    parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
+    text = ("".join(parts)).strip() or "I'm not sure how to answer that — could you rephrase?"
+    return {"kind": "answer", "text": text}
+
+
+def _grounding_context(recipe: dict, current_step: Optional[int]) -> str:
+    """The recipe-domain grounding string handed to the generic voice engine."""
+    return (
+        "Here is the recipe I'm cooking right now, as structured context:\n\n"
+        + build_context(recipe, current_step)
+        + "\n\nThe cook just said:"
+    )
+
+
+def ask_or_act_stream(recipe: dict, question: str, *, current_step: Optional[int] = None,
+                      usage_log: Optional[list] = None):
+    """STREAMING voice variant — delegates the LLM/streaming/tool/journaling
+    mechanics to the generic `voice_agent` engine, supplying only the recipe
+    domain specifics (Chef persona, recipe grounding, step-navigation tool). A
+    GENERATOR yielding recipe-flavored events so the client can speak the first
+    sentence while Chef composes the rest:
+        {"type": "sentence", "text": ...}
+        {"type": "action", "action": <nav>, "step": <int|None>}   (terminal)
+        {"type": "done"}
+    This is the recipe ADAPTER over voice_agent.stream_grounded; a future
+    person/product voice app writes its own adapter the same way."""
+    import voice_agent
+    ctx = _grounding_context(recipe, current_step)
+    for ev in voice_agent.stream_grounded(
+        system=CHEF_SYSTEM, context=ctx, question=question, model=MODEL,
+        max_tokens=_MAX_TOKENS, tools=[_NAVIGATE_TOOL], operation="cook_ask",
+        usage_log=usage_log,
+    ):
+        if ev["type"] == "action" and ev.get("name") == "navigate":
+            inp = ev.get("input") or {}
+            action = inp.get("action")
+            if action in _NAV_ACTIONS:
+                step = None
+                if action == "goto":
+                    try:
+                        step = int(inp.get("step"))
+                    except (TypeError, ValueError):
+                        yield {"type": "sentence", "text": "Which step would you like to jump to?"}
+                        yield {"type": "done"}
+                        return
+                yield {"type": "action", "action": action, "step": step}
+                return
+            # unrecognized action — ignore; let the stream finish normally
+        else:
+            yield ev

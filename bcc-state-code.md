@@ -663,3 +663,37 @@ Python `py_compile` + `node --check` clean throughout; `/cook/ask` answers verif
 - **Collections build** (when ready): delete-and-replace on the junction + grade-on-member-row + `type` column + per-type sourcing + browse-by-type. Editor's Choice v2: force-show-below-rank, score-on-add.
 - **#10 — app as a resilient service** (auto power-on BIOS + NSSM/startup-task) — still open; tunnel already auto-starts, the app does not.
 - The 3 other failed reworks (definite-article / reuse-referenced / mise-complete) still unaddressed.
+
+---
+
+## Session log — 2026-06-15 — voice loop deep-dive + redesign: P0 conversational fixes, STREAMING answer pipeline + reusable voice-agent engine; SQLite ANALYZE perf fix; Cajun cohort diagnosis
+
+A long voice-focused session that started from "diagnose the saved voice log" and grew into a full voice-interface redesign, a reusable engine, a DB-performance fix, and a dishes-cohort diagnosis. All on `split/enrichment-api`. Memory: [[project_voice_redesign]], [[reference_sqlite_analyze]]. Design: `docs/voice-agent-architecture.md`.
+
+### Voice deep-dive + redesign decision (research-before-design)
+Two parallel investigations (code audit of the whole voice loop + a 2026 licensable-voice-AI landscape survey). Verdict, after the user corrected an over-weighting of "redistributable": **portable ≠ offline** (we're already cloud+BYOK), so rank by solves-problems → BYOK → cost, not license. **DECISION: stay with our own CASCADE (pay-per-EVENT, BYOK); do NOT adopt a per-minute managed platform** — ElevenLabs/Vapi bill connected-session time *including silence* (a 30-min mostly-idle cook ≈ $2.40–9), structurally mispriced for us; our cascade is cents/cook and keeps the transcript for grounding + deterministic nav. **Murf** restored as the planned per-char streaming-TTS upgrade; **Flet** = not now (native-app shell, no conversational AI). ElevenLabs = one-off benchmark only.
+
+### P0 — conversational-logic fixes (cook.html, all client-side, live on reload)
+The audit found the loop dead-ended for fixable reasons: `awaitingQ`/`_asking` could wedge forever (no timeouts), exact-anchored command regex rejected natural phrasings, every drop was screen-only. Shipped: **watchdogs** (`setAwaiting`/`setAsking` force-clear); a **forgiving command matcher** (`_CMD_RULES` + `_Q_BLOCK`, synonyms + filler-tolerant, shush-vs-stop split) ; **diagnostic logging** (`stt` latency/outcome, coalesced `vad` flood, `session` markers — the prior log couldn't show any of the reported failures); 1-word follow-ups + unified `FOLLOWUP_MS`. **Smart router**: `/cook/ask` gained `allow_actions` → `cook_ask.ask_or_act` (a `navigate` tool) so a wake-gated utterance is ONE call that answers OR navigates (fixes conversational nav like "let's move on"). **Tip handling** (from the live Cajun cook log, which showed "read the tip" misrouting to `repeat`): a deterministic client `tip` command (instant, no LLM) + a tightened server tool description (tip/content requests answer, never navigate) + a proactive spoken **"Read the tip?"** yes/no offer on tip-bearing steps.
+
+### Streaming answer pipeline + REUSABLE voice-agent engine (the headline build)
+Killed the ~6s "hey chef" lag by streaming. Built for reuse per the user's steer (3 planned instances: recipe+cooking, person+bio, product+category):
+- **`voice_agent.py`** — generic "grounded voice agent" engine: `stream_grounded` (Anthropic streaming + sentence-chunking + tool/action detection + journaling; **answer-XOR-navigate** via an `emitted_text` guard so a spurious trailing tool call after an answer is dropped), `grounded`, `sse`. Domain-agnostic, reused unchanged.
+- **`cook_ask.ask_or_act_stream`** — thin recipe ADAPTER (persona/context/nav-tool only) over the engine.
+- **`POST /cook/ask-stream`** — SSE endpoint (sync generator → Starlette threadpool, no event-loop block; journals in `finally`).
+- **Client** — `askChef` consumes SSE; `makeAnswerPlayer` plays sentences back-to-back as they arrive (pipelined TTS via the shared cache, `_streamSeq` cancels), `finish()` mirrors `_onSpeakEnd`; falls back to non-streaming `askChefOnce`. **Proven live: sentence 1 ~1s before the full answer finishes.**
+- Doc `docs/voice-agent-architecture.md` (layers, event protocol, add-an-instance checklist, the remaining `voice-agent.js` client-extraction task).
+
+### SQLite ANALYZE perf fix — the dish top-10 "long loading"
+User hit a multi-second load on a fresh Cajun dish run. Root cause (via `EXPLAIN QUERY PLAN`): **no `ANALYZE` stats** (`sqlite_stat1` absent) → the top-10 JOIN scanned all of `master_recipes` instead of using the `(url_normalized,user_id)` index. **Not a missing index** — a mis-plan. Ran `ANALYZE` (persists in the file; a fresh connection re-plans → live with no restart; **94ms→9ms**, endpoint 14ms) and added **`PRAGMA optimize` to `init_db`** so it stays fixed + fresh/portable installs get stats. Memory [[reference_sqlite_analyze]].
+
+### DB read-path audit (findings captured, NOT yet applied)
+Read-only audit of all user-facing queries. Top items (measured): **expression index on `master_recipes(json_extract(data,'$._master.dish'))`** → recommender path 21.9ms→0.23ms (**95×**), also speeds delete-for-dish/fit-data/cohort; **`GET /recipes`** loads+parses every master blob with no LIMIT (~70ms, ~13MB — paginate + return a list projection); **`/domains/{domain}/recipes`** double full-table parse (~88ms — add+index a `host` column). Bundle expression indexes for `_master.dish` / `_identity.likelyDish` / `classification.chapter` into one migration. Biggest risk class: `json_extract` in WHERE/ORDER BY over the big `data` blobs.
+
+### Cajun cohort diagnosis (selection is CORRECT; display is misleading)
+User: two top-scoring Cajun recipes sat in "also-ran" above the #1 winner. Diagnosed: `selected=1` is the batch's winner set (passed is_recipe + extracted); `rank_score` is **pure authority** computed for EVERY SERP candidate including rejected non-recipes. The two high also-rans are a **spice blend** (gimmesomeoven/cajun-seasoning — the "too thin, 3 instructions" save) and a **listicle** (tasteofhome/collection) — correctly excluded, but high-authority so they sort above the winners. The reserved **`cohort_status` column is never populated**. **Chosen fix (next build):** plumb the batch reject reasons → `cohort_status` and label them inline in the cohort panel ("not selected — too thin / not a recipe"), keeping them in place (the OU fit needs the full authority landscape). NOT yet built.
+
+### Next
+- Build the `cohort_status` labeling fix (plumb rejects → ledger → cohort panel display).
+- Apply the DB index migration (the three expression indexes + ANALYZE) and `/recipes` pagination.
+- Voice P1 (when ready): Silero VAD + semantic turn-detector + sherpa-onnx wake + WebRTC-loopback AEC barge-in; wire Murf streaming TTS; extract the client loop to `voice-agent.js`.

@@ -323,6 +323,7 @@
   .vlog-k{flex:0 0 62px;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.04em;}
   .k-heard{color:#7a6a5c;} .k-command{color:var(--sea);} .k-ask,.k-followup{color:#3a6ea5;}
   .k-answer{color:var(--sea-deep);} .k-ignored{color:#b3a795;} .k-wake{color:var(--clay);} .k-error{color:var(--clay-deep);}
+  .k-stt{color:#5a7a8a;} .k-vad{color:#a08a6a;} .k-session{color:#8a7a9a;font-weight:600;}
 </style>
 <details id="vlogPanel">
   <summary>🪵 Voice log <span class="ed-pill" id="vlogCount"></span></summary>
@@ -661,7 +662,8 @@
     spokenText: function(step){ step=step||this.currentStep(); return step?spokenText(step):''; },
     go: function(step){ step=step||this.currentStep(); if(step){ markCurrent(step.number);   // move + scroll, SILENT
       var d=stepDiv(step.number); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); } return step; },
-    read: function(step){ step=this.go(step); if(step && talk) speak(spokenText(step)); return step; },   // speaks only if Talk is on
+    read: function(step){ step=this.go(step); if(step && talk){ var _pr=speak(spokenText(step));   // speaks only if Talk is on
+        if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); }); } return step; },   // offer the step's tip once it's read
     next: function(){ var n=this.currentNumber(); if(n==null) return null; var d=stepDiv(n); var s=this.stepByNumber(n);
       toggleStep(d, s); var cs=this.currentStep(); if(cs) this.read(cs); return cs; },
     back: function(){ var all=[].slice.call(document.querySelectorAll('.step.done')); var last=all[all.length-1];
@@ -697,13 +699,33 @@
   //  Built as ONE piece per recipe_anchor/voice-cook-spec.md. Browser
   //  SpeechSynthesis stays as the offline/failure fallback for speaking.
   // ====================================================================== //
-  var _audioEl = null, _speaking = false, _speakSeq = 0, _pausedMid = false;
+  var _audioEl = null, _speaking = false, _speakSeq = 0, _pausedMid = false, _streamSeq = 0;
   var hf = false, micStream = null, awaitingQ = false;
   var _lastHeard = '';   // last Whisper transcript — surfaced in the Listening status to debug mishears
   // Conversational follow-up: for a window AFTER Chef answers, the next utterance is
   // treated as a question WITHOUT re-saying "hey chef" (commands still win first).
   // _asking gates while a question is in flight (no double-asks, no self-echo route).
-  var FOLLOWUP_MS = 20000, followUpUntil = 0, _pendingFollowUp = false, _asking = false;
+  var FOLLOWUP_MS = 25000, followUpUntil = 0, _pendingFollowUp = false, _asking = false;
+  // Watchdogs (#5): an orphaned "hey chef" used to wedge awaitingQ forever (next
+  // noise → eaten as a question, commands dead), and a skipped _onSpeakEnd left
+  // _asking stuck true (follow-ups dead). These force-clear both so the loop can
+  // never get permanently stuck. setAwaiting()/clearAsking() are the only writers.
+  var _awaitTimer = null, _askTimer = null;
+  var AWAIT_MS = 12000, ASK_WATCHDOG_MS = 30000;
+  function setAwaiting(on){
+    awaitingQ = !!on;
+    if(_awaitTimer){ clearTimeout(_awaitTimer); _awaitTimer = null; }
+    if(on){ _awaitTimer = setTimeout(function(){
+      if(awaitingQ){ awaitingQ = false; vlog('error', 'awaitingQ timed out — back to listening');
+        if(hf) setVoiceStatus('listening', _listenHint()); } }, AWAIT_MS); }
+  }
+  function setAsking(on){
+    _asking = !!on;
+    if(_askTimer){ clearTimeout(_askTimer); _askTimer = null; }
+    if(on){ _askTimer = setTimeout(function(){
+      if(_asking){ _asking = false; vlog('error', '_asking watchdog reset (no speak-end)');
+        if(hf) setVoiceStatus('listening', _listenHint()); } }, ASK_WATCHDOG_MS); }
+  }
   // Voice debug log — every STT transcript + how it routed, so we can SEE what the
   // mic heard on a remote device. Shown in a collapsible panel; Save POSTs it to a
   // logs/cook_voice_<day>.log the dev reads. (#5 turn-taking diagnostics.)
@@ -720,6 +742,23 @@
     el.innerHTML = _vlog.slice(-150).reverse().map(function(e){
       return '<div class="vlog-row"><span class="vlog-t">'+e.t+'</span><span class="vlog-k k-'+e.kind+'">'+e.kind+'</span><span>'+E(e.text)+'</span></div>';
     }).join('');
+  }
+  // ---- voice diagnostics (#5) -------------------------------------------- //
+  // The named failures — "many /cook/listen never routed", a VAD false-capture
+  // flood, and STT latency — were ALL invisible in the log (silent fetch catch,
+  // silent too-short drops, no timing). These make them visible so a real cooking
+  // session produces data we can act on. Drops are COALESCED so the flood can't
+  // bury real routing events in the 400-entry ring.
+  var _vadDropCount = 0, _vadDropMaxVoice = 0;
+  function noteVadDrop(voiceMs, capMs){
+    _vadDropCount++; if(voiceMs > _vadDropMaxVoice) _vadDropMaxVoice = voiceMs;
+    if(_vadDropCount >= 12) flushVadDrops();
+  }
+  function flushVadDrops(){
+    if(!_vadDropCount) return;
+    vlog('vad', _vadDropCount + ' short capture(s) dropped (loudest ' + _vadDropMaxVoice +
+      'ms voice < ' + MIN_VOICE_MS + 'ms; noiseFloor ' + noiseFloor.toFixed(3) + ')');
+    _vadDropCount = 0; _vadDropMaxVoice = 0;
   }
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
@@ -742,7 +781,7 @@
                          : 'Listening — say “hey chef…” to ask a question';
     return _lastHeard ? (base + ' · heard: “' + _lastHeard + '”') : base; }
   function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 700;   // ignore the (louder) echo tail after she stops
-    refreshMidIcon(); _asking = false;
+    refreshMidIcon(); setAsking(false);
     if (_pendingFollowUp){ _pendingFollowUp = false; followUpUntil = _now() + FOLLOWUP_MS; }   // re-extend the window once the answer finishes
     if (hf) setVoiceStatus('listening', (followUpUntil > _now())
       ? '🎧 Ask a follow-up — no “hey chef” needed (or say a command)'
@@ -835,6 +874,7 @@
   }
   function stopSpeaking(){
     _speakSeq++;                          // invalidate any in-flight speak()
+    _streamSeq++;                         // and cancel any in-flight streamed answer
     _pausedMid = false;                   // a hard stop clears any mid-step pause
     try{ if(_audioEl){ _audioEl.pause(); } }catch(e){}
     if('speechSynthesis' in window){ try{ speechSynthesis.cancel(); }catch(e){} }
@@ -908,6 +948,9 @@
       srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
       capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
       hf = true; btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
+      var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
+      vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
+        ' · ' + (navigator.userAgent || '').slice(0, 64));
       setVoiceStatus('speaking', 'Starting…');
       window.cookView.read();      // speak the current step; _onSpeakEnd → listening
       prefetchAllSteps();          // warm TTS for every step so "next" plays instantly
@@ -939,7 +982,8 @@
     procNode = srcNode = sinkNode = AC = null; micStream = null;
   }
   function stopHandsFree(){
-    hf = false; awaitingQ = false; capturing = false; stopSpeaking();
+    flushVadDrops(); vlog('session', 'STOP');
+    hf = false; setAwaiting(false); setAsking(false); _tipOffer = null; _lastTipOfferStep = null; capturing = false; stopSpeaking();
     _teardownAudio();
     var btn = document.getElementById('handsfree'); if(btn){ btn.textContent = '🎙️ Start hands-free'; btn.classList.remove('on'); }
     hideVoiceStatus();
@@ -971,7 +1015,8 @@
       if(silenceMs >= SILENCE_HANG_MS || capLen > capRate * 15){    // endpoint (or 15s safety cap)
         capturing = false;
         if(voiceMs >= MIN_VOICE_MS){ onSpeechEnd(_flatten(capBuf, capLen)); }
-        else if(hf){ setVoiceStatus('listening', _listenHint()); }  // too short — ignore
+        else { noteVadDrop(Math.round(voiceMs), Math.round(capLen / capRate * 1000));
+          if(hf) setVoiceStatus('listening', _listenHint()); }  // too short — ignore (counted)
         capBuf = []; capLen = 0;
       }
     }
@@ -981,12 +1026,22 @@
   function onSpeechStart(){ if(hf) setVoiceStatus('hearing', awaitingQ ? 'got your question…' : 'hearing you…'); }
   function onSpeechEnd(samples){
     if(!hf) return;
+    flushVadDrops();                       // quantify the false-capture flood before this real send
     setVoiceStatus('thinking', '…');
     var fd = new FormData(); fd.append('audio', encodeWAV(samples, capRate), 'utt.wav');
+    var t0 = _now(), capMs = Math.round(samples.length / capRate * 1000);
     fetch('/cook/listen', { method:'POST', body:fd })
-      .then(function(r){ return r.ok ? r.json() : {text:''}; })
-      .then(function(j){ routeUtterance((j.text || '').trim()); })
-      .catch(function(){ if(hf) setVoiceStatus('listening', _listenHint()); });
+      .then(function(r){ return r.ok ? r.json() : {text:'', _http:r.status}; })
+      .then(function(j){
+        var ms = Math.round(_now() - t0), txt = (j.text || '').trim();
+        // STT round-trip: latency + outcome. The diagnostic for "many /cook/listen
+        // never routed" (#5) — distinguishes slow / empty / failed from a real miss.
+        vlog('stt', ms + 'ms · ' + (j._http ? ('HTTP ' + j._http)
+          : (txt ? (capMs + 'ms audio') : '(empty — VAD sent silence/noise)')));
+        routeUtterance(txt);
+      })
+      .catch(function(){ vlog('stt', Math.round(_now() - t0) + 'ms · FETCH FAILED');
+        if(hf) setVoiceStatus('listening', _listenHint()); });
   }
   // Route a transcript: a command runs instantly; "Chef …" opens the LLM;
   // a non-command without the wake word is ignored (don't fire the LLM on
@@ -1006,62 +1061,236 @@
   var _WAKE_G    = new RegExp("\\b" + _WAKE_SRC + "\\b", "ig");
   var _WAKE_LEAD = new RegExp("^[\\s,.:;!?-]*" + _WAKE_SRC + "\\b[\\s,.:;!?-]*", "i");
 
-  // Commands are anchored (the utterance must BE the command). Kept DELIBERATE and
-  // unambiguous — instruction-common / filler words (done, finished, continue, got
-  // it, ready, go on…) were removed because the louder TTS echoes them back into the
-  // mic and self-advances ("cook until done" → heard "done" → next). Say "next".
-  var _CMDS = [
-    [/^(next|next step|next one|move on)$/, function(){ window.cookView.next(); }],
-    [/^(back|go back|previous|previous step|last step|one back|back up)$/, function(){ window.cookView.back(); }],
-    [/^(repeat|repeat that|say again|say it again|one more time|read that again|come again)$/, function(){ window.cookView.repeat(); }],
-    [/^(start over|restart|from the top|begin again|start again)$/, function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); }],
-    [/^(pause|resume|pause please|resume please)$/, function(){ togglePlayPause(); }],   // pause/resume the speech (not the session)
-    [/^(stop|stop listening|stop cooking|halt)$/, function(){ stopHandsFree(); }]
+  // FORGIVING command matcher (was: exact ^anchored$ — rejected "go to the next
+  // step", "say that again", "go back one"…, which then silently dead-ended). Now
+  // a keyword can sit inside a short utterance with filler around it. Still DELIBERATE:
+  // echo-prone instruction words (done/finished/continue/got it/ready) stay OUT, and
+  // a question pattern (_Q_BLOCK) vetoes nav so "how long until the next flip" asks,
+  // not advances. Anything a keyword misses still routes to Chef (ask_or_act), which
+  // can navigate conversationally — so a deliberate utterance never dead-ends.
+  var _Q_BLOCK = /\b(how (much|long|many|do|does|should|hot|cold|big)|why|what (kind|sort|temp|temperature|else|happens)|when should|is it|are they|are these|can i|could i|should i|do i|do you|what if)\b/;
+  var _CMD_RULES = [
+    { name:'tip',     re:/\b(read (the |me the |out the )?(tip|tips|hint)|what'?s the tip|is there a tip|any (tip|tips|hints)|the tip please|give me the tip)\b/, act:function(){ readCurrentTip(); } },
+    { name:'repeat',  re:/\b(repeat|say (that|it) again|again please|one more time|come again|read (that|it) again|what did you say)\b|^again$/, act:function(){ window.cookView.repeat(); } },
+    { name:'restart', re:/\b(start over|restart|from the top|begin again|start again|start from the beginning)\b/, act:function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); } },
+    { name:'shush',   re:/\b(stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough)$/, act:function(){ stopSpeaking(); if(hf) setVoiceStatus('listening', _listenHint()); } },
+    { name:'pause',   re:/\b(pause|hold on|wait a (second|sec|minute|moment)|resume|un ?pause)\b|^(wait|hold)$/, act:function(){ togglePlayPause(); } },
+    { name:'back',    re:/\b(go back|back up|previous step|previous one|last step|one step back|back one|back a step)\b|^(back|previous|backward)$/, act:function(){ window.cookView.back(); } },
+    { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along)\b|^(next|forward|skip)$/, act:function(){ window.cookView.next(); } },
+    { name:'stop',    re:/\b(stop cooking|stop listening|end session|turn off|i'm done cooking|that's all|all done)\b|^(stop|halt|exit|quit)$/, act:function(){ stopHandsFree(); } }
   ];
+  function matchCommand(cmd){
+    var wc = cmd.split(' ').filter(Boolean).length;
+    if(!wc || wc > 7) return null;       // empty or too long to be a spoken command
+    if(_Q_BLOCK.test(cmd)) return null;  // it's a question — hand to Chef, don't navigate
+    for(var i=0;i<_CMD_RULES.length;i++){ if(_CMD_RULES[i].re.test(cmd)) return _CMD_RULES[i]; }
+    return null;
+  }
+  // ---- step tips: read on demand + a proactive spoken offer ------------- //
+  // Tips live on step.attachments ({kind:'tip'|'check', text}); reading them is
+  // deterministic + instant (no LLM → can't be misrouted to "repeat", the bug the
+  // 06-15 cook log showed). The offer is SPOKEN so a hands-free cook never has to
+  // look at the screen to learn a tip exists.
+  function currentStepTips(){
+    var s = window.cookView.currentStep(); if(!s) return [];
+    var tips = (s.attachments || []).filter(function(a){ return a.kind !== 'check'; })
+                                     .map(function(a){ return a.text; }).filter(Boolean);
+    if(!tips.length && s.tip) tips = [s.tip];
+    return tips;
+  }
+  function readCurrentTip(){
+    var tips = currentStepTips();
+    if(!tips.length){ speak("There's no tip for this step."); return; }
+    speak(deAbbrev(tips.join('. ')));
+  }
+  // Proactive offer: after reading a step that HAS a tip (hands-free + Talk on),
+  // ask once "want me to read it?" and accept a yes/no next utterance.
+  var _tipOffer = null, _lastTipOfferStep = null;
+  function maybeOfferTip(step){
+    if(!hf || !talk || !step) return;
+    if(window.cookView.currentNumber() !== step.number) return;  // moved on mid-read — don't offer a stale step
+    if(step.number === _lastTipOfferStep) return;             // don't re-offer on repeat/re-read
+    var tips = currentStepTips(); if(!tips.length) return;
+    _lastTipOfferStep = step.number;
+    _tipOffer = { text: tips.join('. '), until: _now() + 16000 };
+    vlog('command', 'tip:offer');
+    speak('Read the tip?');
+  }
   function routeUtterance(text){
     if(!hf) return;
     _lastHeard = (text || '').trim().slice(0, 60);   // show what Whisper heard, even on a match
     vlog('heard', text);
     var t = text.toLowerCase().replace(/[^\w\s']/g,' ').replace(/\s+/g,' ').trim();
+
+    // Answer to a pending "want me to read the tip?" offer. Explicit yes → read it;
+    // explicit no → drop it quietly; anything else → clear the offer and route normally
+    // (so "next"/a question during the offer isn't trapped).
+    if(_tipOffer && _now() < _tipOffer.until && t.length >= 1){
+      if(/^(yes|yeah|yep|yup|sure|please|ok|okay|read it|read the tip|go ahead|do it|tell me|i do|yes please)\b/.test(t)){
+        var tip = _tipOffer.text; _tipOffer = null; vlog('command', 'tip→read'); speak(deAbbrev(tip)); return;
+      }
+      if(/^(no|nope|nah|no thanks|skip|skip it|i'm good|im good|later|don'?t|that's ok|no thank you)\b/.test(t)){
+        _tipOffer = null; vlog('command', 'tip→declined'); if(hf) setVoiceStatus('listening', _listenHint()); return;
+      }
+      _tipOffer = null;   // not a yes/no — fall through to normal routing
+    }
+
+    // Pending question after a bare "hey chef": the NEXT real utterance is the question.
+    // An empty/too-short capture keeps us waiting (re-cue) instead of stealing a later one.
+    if(awaitingQ){
+      if(t.length < 2){ vlog('ignored', '(awaiting Q — too short; still listening)'); cue();
+        setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
+      setAwaiting(false); vlog('ask', text); askChef(text); return;
+    }
+
     if(t.length < 2){ vlog('ignored', '(too short)'); setVoiceStatus('listening', _listenHint()); return; }
 
-    if(awaitingQ){ awaitingQ = false; vlog('ask', text); askChef(text); return; }   // pending Q after bare "Chef"
-
     var hadWake = _WAKE.test(t);
-    // strip wake word + leading/trailing fillers, then test as a WHOLE command
     var cmd = t.replace(_WAKE_G,' ').replace(/\s+/g,' ')
-               .replace(/^(ok|okay|um|uh|hey|please|now|and|so|could you|can you|let's|lets)\s+/,'')
-               .replace(/\s+(please|now|step|for me)$/,'').trim();
+               .replace(/^(ok|okay|um|uh|hey|please|now|and|so|well|alright|could you|can you|would you|let's|lets|i want to|i'd like to|i wanna|i need to)\s+/,'')
+               .replace(/\s+(please|now|step|for me|chef)$/,'').trim();
+
+    // 1. deterministic keyword command — INSTANT (no LLM). Wake optional.
     if(!REQUIRE_WAKE_FOR_COMMANDS || hadWake){
-      for(var i=0;i<_CMDS.length;i++){ if(_CMDS[i][0].test(cmd)){ vlog('command', cmd); _CMDS[i][1](); return; } }
+      var rule = matchCommand(cmd);
+      if(rule){ vlog('command', rule.name + ' ← “' + cmd + '”'); rule.act(); return; }
     }
-    if(hadWake){   // a question — gated by the wake word so noise never hits the LLM
+
+    // 2. wake word → deliberately addressed Chef. Could be a question OR conversational
+    //    navigation; ask_or_act() decides in ONE call (answers, or returns an action).
+    if(hadWake){
       var q = text.replace(_WAKE_LEAD,'').replace(/^[\s,.:;!?-]+/,'').trim();
-      if(q.length < 2){ awaitingQ = true; cue(); _speakGuard = _now() + 250;   // beep, don't talk over the question
+      if(q.length < 2){ setAwaiting(true); cue(); _speakGuard = _now() + 250;   // beep, don't talk over the question
         vlog('wake', '(awaiting question)'); setVoiceStatus('hearing', 'go ahead, ask your question…'); return; }
       vlog('ask', q); askChef(q); return;
     }
-    // Conversational follow-up — a substantive utterance shortly after an answer
-    // routes to the LLM without "hey chef" (commands already handled above).
-    if(!_asking && _now() < followUpUntil && t.split(' ').filter(Boolean).length >= 2){
+
+    // 3. follow-up window — a substantive utterance shortly after an answer needs no wake
+    //    word (one-word follow-ups like "why?" now welcome — chars, not word count).
+    if(!_asking && _now() < followUpUntil && t.length >= 2){
       vlog('followup', text); askChef(text); return;
     }
+
+    // 4. ambient kitchen chatter — heard, not for Chef. Stay SILENT (don't nag the cook).
     vlog('ignored', text);
     setVoiceStatus('listening', 'Heard “' + text + '” — say a command, or “hey chef …” to ask');
   }
-  function askChef(question){
-    _asking = true;
+  // Run a navigation action Chef chose conversationally (via ask_or_act). Each nav
+  // method speaks the new step itself, so we don't double-speak.
+  function doChefAction(action, step){
+    var cv = window.cookView;
+    switch(action){
+      case 'next':    cv.next(); break;
+      case 'back':    cv.back(); break;
+      case 'repeat':  cv.repeat(); break;
+      case 'restart': cv.reset(); setTimeout(function(){ cv.read(); }, 350); break;
+      case 'pause': case 'resume': togglePlayPause(); break;
+      case 'stop':    stopHandsFree(); break;
+      case 'goto':    var s = (step != null) ? cv.stepByNumber(step) : null;
+                      if(s) cv.read(s); else cv.repeat(); break;
+      default:        cv.repeat();
+    }
+  }
+  // STREAMING answer player: plays a sequence of sentences back-to-back as they
+  // arrive (each synthesized via the shared TTS cache, pipelined so sentence N+1
+  // is fetching while N plays). Bypasses speak() so sentences don't stop each
+  // other; a single _streamSeq token cancels the whole sequence (bumped by
+  // stopSpeaking / a new ask / navigation). finish() mirrors _onSpeakEnd: opens
+  // the follow-up window + clears _asking. This is the latency win — first word
+  // ~1s after you stop, vs waiting for the whole answer to generate + synthesize.
+  function makeAnswerPlayer(){
+    var mySeq = ++_streamSeq;            // claim the stream; later asks/stops invalidate us
+    var queue = [], playing = false, ended = false, finished = false;
+    function alive(){ return mySeq === _streamSeq && hf; }
+    function finish(){
+      if(finished) return; finished = true;
+      _speaking = false; _speakGuard = _now() + 700; refreshMidIcon(); setAsking(false);
+      followUpUntil = _now() + FOLLOWUP_MS;   // a follow-up needs no "hey chef"
+      if(alive()) setVoiceStatus('listening', '🎧 Ask a follow-up — no “hey chef” needed (or say a command)');
+    }
+    function playNext(){
+      if(!alive()){ return; }
+      if(!queue.length){ playing = false; if(ended) finish(); return; }
+      playing = true;
+      queue.shift().then(function(url){
+        if(!alive()) return;
+        var a = _ensureAudioEl(); a.src = url; _speaking = true; refreshMidIcon();
+        if(_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
+        a.onended = function(){ _speaking = false; playNext(); };
+        a.onerror = function(){ _speaking = false; playNext(); };
+        if(alive()) setVoiceStatus('speaking', '…');
+        var p = a.play(); if(p && p.catch) p.catch(function(){ _speaking = false; playNext(); });
+      }).catch(function(){ if(alive()) playNext(); });
+    }
+    return {
+      seq: mySeq,
+      enqueue: function(text){ text = String(text || '').trim(); if(!text) return;
+        queue.push(getSpeechUrl(deAbbrev(text)));   // start synth NOW (pipelined)
+        if(!playing) playNext(); },
+      markEnded: function(){ ended = true; if(!playing && !queue.length) finish(); }
+    };
+  }
+  // Non-streaming fallback (the prior, proven path) — used if SSE streaming isn't
+  // available or the stream errors, so Chef never goes mute on us.
+  function askChefOnce(question){
+    setAsking(true);
     setVoiceStatus('thinking', 'Chef is thinking…');
     var cur = window.cookView.currentNumber();
     fetch('/cook/ask', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
+      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur, allow_actions:true }) })
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
-        if (res.ok && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + 30000; vlog('answer', res.j.answer); }  // open NOW (don't depend on onended)
-        else { _asking = false; vlog('error', (res.j && res.j.detail) || 'no answer'); }
+        if (res.ok && res.j && res.j.action){      // Chef chose to navigate, not answer
+          vlog('command', 'chef→' + res.j.action + (res.j.step != null ? (' ' + res.j.step) : ''));
+          setAsking(false); doChefAction(res.j.action, res.j.step); return;
+        }
+        if (res.ok && res.j && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + FOLLOWUP_MS; vlog('answer', res.j.answer); }
+        else { setAsking(false); vlog('error', (res.j && res.j.detail) || 'no answer'); }
         speak(deAbbrev(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.')));
       })
-      .catch(function(){ _asking = false; vlog('error', 'fetch failed'); speak('Sorry, I could not reach the kitchen brain just now.'); });
+      .catch(function(){ setAsking(false); vlog('error', 'fetch failed'); speak('Sorry, I could not reach the kitchen brain just now.'); });
+  }
+  // Streamed ask: sentences play as they arrive; an action navigates. Falls back
+  // to askChefOnce if the browser/stream can't deliver SSE.
+  function askChef(question){
+    setAsking(true);
+    setVoiceStatus('thinking', 'Chef is thinking…');
+    stopSpeaking();                       // cancel any current speech/stream (bumps _streamSeq)
+    var cur = window.cookView.currentNumber();
+    var player = null, terminated = false, fullText = '';
+    fetch('/cook/ask-stream', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur }) })
+      .then(function(r){
+        if(!r.ok || !r.body || !r.body.getReader){ throw new Error('no-stream'); }
+        var reader = r.body.getReader(), dec = new TextDecoder(), sbuf = '';
+        function handle(ev){
+          if(terminated) return;
+          if(ev.type === 'action'){ terminated = true; vlog('command', 'chef→' + ev.action + (ev.step != null ? (' ' + ev.step) : ''));
+            setAsking(false); doChefAction(ev.action, ev.step); return; }
+          if(ev.type === 'sentence'){ fullText += (fullText ? ' ' : '') + ev.text;
+            if(!player) player = makeAnswerPlayer(); player.enqueue(ev.text); return; }
+          if(ev.type === 'done'){ if(player) player.markEnded(); else setAsking(false);
+            if(fullText) vlog('answer', fullText); return; }
+          if(ev.type === 'error'){ terminated = true; vlog('error', ev.detail || 'stream error');
+            setAsking(false); speak(ev.detail || 'Sorry, I could not answer that.'); return; }
+        }
+        function pump(){
+          return reader.read().then(function(res){
+            if(res.done){ if(player) player.markEnded(); return; }
+            sbuf += dec.decode(res.value, { stream:true });
+            var frames = sbuf.split('\n\n'); sbuf = frames.pop();
+            frames.forEach(function(f){ var m = f.match(/^data: (.*)$/m); if(!m) return;
+              var ev; try{ ev = JSON.parse(m[1]); }catch(e){ return; } handle(ev); });
+            return terminated ? null : pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function(err){
+        // SSE unavailable or dropped before anything spoke → fall back cleanly.
+        if(!player && !terminated){ vlog('error', 'stream fallback (' + (err && err.message || 'err') + ')'); askChefOnce(question); }
+        else { setAsking(false); }
+      });
   }
   // 16kHz mono Float32 → 16-bit PCM WAV blob (what faster-whisper ingests).
   function encodeWAV(samples, rate){

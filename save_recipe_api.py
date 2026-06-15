@@ -857,6 +857,17 @@ def init_db():
             interrupted = jobs_lib.reset_interrupted_jobs(conn)
             if interrupted:
                 print(f"[JOBS] reset {interrupted} interrupted job(s) from prior run")
+            # Refresh query-planner statistics. WITHOUT them SQLite mis-planned the
+            # dish top-10 JOIN — scanning all of master_recipes instead of using the
+            # (url_normalized, user_id) index — turning a ~9ms query into a multi-
+            # second one on a cold cache (the "long loading" on a fresh dish run,
+            # 2026-06-15). PRAGMA optimize re-ANALYZEs only what changed, cheaply,
+            # every boot — and establishes stats on a fresh/portable install so the
+            # good plan is the default out of the box.
+            try:
+                conn.execute("PRAGMA optimize")
+            except Exception as _opt_e:  # noqa: BLE001
+                print(f"[SETUP] PRAGMA optimize skipped: {_opt_e}")
         print("[OK] Database tables ready")
     except Exception as e:
         print(f"[ERROR] Database initialization error: {e}")
@@ -1046,6 +1057,11 @@ def cook_ask_endpoint(payload: dict = Body(...)):
     recipe_id = (payload.get("recipe_id") or "").strip()
     question = (payload.get("question") or "").strip()
     current_step = payload.get("current_step")
+    # The voice loop sets allow_actions=true: a wake-gated utterance becomes ONE
+    # call that either answers OR returns a navigate action (conversational nav
+    # like "I'm done, move on"). The typed "Ask Chef" box leaves it off (the user
+    # navigates by clicking) and gets a plain answer.
+    allow_actions = bool(payload.get("allow_actions"))
     try:
         user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
     except (TypeError, ValueError):
@@ -1064,13 +1080,68 @@ def cook_ask_endpoint(payload: dict = Body(...)):
 
     usage_log: list = []
     try:
-        from cook_ask import ask as chef_ask
-        answer = chef_ask(recipe, question, current_step=current_step, usage_log=usage_log)
+        if allow_actions:
+            from cook_ask import ask_or_act
+            result = ask_or_act(recipe, question, current_step=current_step, usage_log=usage_log)
+        else:
+            from cook_ask import ask as chef_ask
+            result = {"kind": "answer",
+                      "text": chef_ask(recipe, question, current_step=current_step, usage_log=usage_log)}
     except Exception as e:
         print(f"[ERROR] /cook/ask({recipe_id}): {e}")
         raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.")
     _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
-    return {"answer": answer}
+    if result.get("kind") == "action":
+        return {"action": result.get("action"), "step": result.get("step")}
+    # Back-compat: always include `answer` so existing callers keep working.
+    return {"answer": result.get("text", "")}
+
+
+@app.post("/cook/ask-stream")
+def cook_ask_stream_endpoint(payload: dict = Body(...)):
+    """Streaming Chef — the low-latency voice path. Streams the answer as SSE
+    `sentence` events (so the cook view speaks the first sentence while Chef is
+    still composing the rest) OR a single `action` event when Chef navigates
+    conversationally. Recipe adapter over the generic voice_agent engine
+    (voice_agent.py / cook_ask.ask_or_act_stream). Tokens journaled at stream end."""
+    recipe_id = (payload.get("recipe_id") or "").strip()
+    question = (payload.get("question") or "").strip()
+    current_step = payload.get("current_step")
+    try:
+        user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
+    except (TypeError, ValueError):
+        user_id = PLACEHOLDER_USER_ID
+    if not recipe_id or not question:
+        raise HTTPException(status_code=400, detail="recipe_id and question are required.")
+
+    table = _recipes_table_for(user_id)
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+    recipe = json.loads(row[0])
+
+    usage_log: list = []
+
+    def events():
+        try:
+            from cook_ask import ask_or_act_stream
+            for ev in ask_or_act_stream(recipe, question, current_step=current_step, usage_log=usage_log):
+                yield ev
+        except Exception as e:  # noqa: BLE001
+            print(f"[ERROR] /cook/ask-stream({recipe_id}): {e}")
+            yield {"type": "error", "detail": "Chef is unavailable right now — try again in a moment."}
+        finally:
+            _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
+
+    import voice_agent
+    return StreamingResponse(
+        voice_agent.sse(events()),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/cook/listen")
