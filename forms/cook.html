@@ -763,6 +763,12 @@
   var _spkCtx = null, _spkGain = null, _spkSrc = null;
   function _setupPlaybackGain(){
     if (_spkSrc) return;                                   // wire once
+    // ONLY on touch/coarse-pointer devices (phones, tablets) where the speakers are
+    // quiet. On desktop the <audio> element is plenty loud, and routing it through
+    // Web Audio (createMediaElementSource) can double the output — the element's
+    // direct path + the buffered graph path ~1s apart. Skip the boost there.
+    var coarse = false; try{ coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
+    if (!coarse) return;
     try{
       var Ctx = window.AudioContext || window.webkitAudioContext; if(!Ctx) return;
       _spkCtx = new Ctx();
