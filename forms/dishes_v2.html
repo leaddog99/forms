@@ -8,7 +8,7 @@
        separate from the working dishes.html (operational backup / candidate
        successor). Third clone of the a/c/d/v template (the heaviest table).
        Wired to the real /dishes API. See memory/project_admin_editor_nav.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260603a">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260615a">
   <style>
     .d-check{ display:flex; align-items:center; gap:9px; }
     .d-check input{ width:auto; }
@@ -401,16 +401,23 @@
     // (.ed-t10-stats) so the numbers line up straight down each column.
     // Caller maps its payload to {rank_score, ou_pct, pwr_pct, name, domain,
     // thumb, grade, selected, href, title}.
+    // Why a scored candidate isn't a winner — so a high-authority also-ran reads
+    // "not selected · too thin" instead of looking like a ranking bug.
+    const STATUS_LBL = { too_thin:'too thin', extract_failed:'couldn’t extract',
+      save_failed:'save failed', fetch_failed:'fetch blocked', rejected:'rejected',
+      reserve:'below the cut' };
     function scoreRow(r, i){
       const thumb = r.thumb ? `<span class="ed-t10-thumb"><img src="${escapeHtml(r.thumb)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
       const star  = r.selected ? ' <span class="ed-t10-grade" title="selected winner">★</span>' : '';
       const grade = r.grade ? ` <span class="ed-t10-grade">${escapeHtml(r.grade)}</span>` : '';
+      const statusChip = (!r.selected && r.status && STATUS_LBL[r.status])
+        ? ` <span class="ed-t10-status" title="scored on authority, but not a kept winner">not selected · ${STATUS_LBL[r.status]}</span>` : '';
       const rk  = (typeof r.rank_score === 'number') ? r.rank_score.toFixed(1) : '—';
       const oup = (typeof r.ou_pct === 'number') ? Math.round(r.ou_pct) : '—';
       const pwp = (typeof r.pwr_pct === 'number') ? Math.round(r.pwr_pct) : '—';
       return `<a class="ed-t10-row" href="${escapeHtml(r.href || '#')}" target="_blank" rel="noopener" title="${escapeHtml(r.title || 'Open')}">
           <span class="ed-t10-rank">${i + 1}</span>${thumb}
-          <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(r.name)}${star}</span><span class="ed-t10-sub">${escapeHtml(r.domain)}${grade}</span></span>
+          <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(r.name)}${star}</span><span class="ed-t10-sub">${escapeHtml(r.domain)}${grade}${statusChip}</span></span>
           <span class="ed-t10-stats">
             <span class="ed-t10-stat score"><span class="v">${rk}</span><span class="l">score</span></span>
             <span class="ed-t10-stat pct"><span class="v">${oup}</span><span class="l">ou%</span></span>
@@ -513,7 +520,7 @@
             rank_score: c.rank_score, ou_pct: c.ou_percentile, pwr_pct: c.power_percentile,
             name: c.name || domain, domain,
             thumb: (c.preview_image || '').trim(),
-            grade: c.grade, selected: !!c.selected,
+            grade: c.grade, selected: !!c.selected, status: c.cohort_status,
             href: c.url || '#', title: 'Open source page',
           }, i);
         }).join('');

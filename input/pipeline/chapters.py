@@ -127,12 +127,30 @@ def replace_data_points_for_dish(
     return len(points)
 
 
+def _cohort_status_for_reason(reason: str) -> str:
+    """Map a save-loop reject `reason` to a short, display-friendly cohort_status.
+    These are WHY a scored candidate isn't a winner — so the cohort panel can show
+    'not selected — too thin' instead of a high authority score looking like a
+    mis-rank (the Cajun seasoning/collection case, 2026-06-15)."""
+    r = (reason or "").lower()
+    if r.startswith("skip-thin"):
+        return "too_thin"
+    if r.startswith("extract-miss"):
+        return "extract_failed"
+    if r.startswith("save-fail"):
+        return "save_failed"
+    if r.startswith("fetch-fail"):
+        return "fetch_failed"
+    return "rejected"
+
+
 def score_data_points_for_dish(
     conn: sqlite3.Connection,
     dish_name: str,
     ou_fit: Optional[dict],
     power_weight: float,
     selected_urls: "list[str] | tuple[str, ...]" = (),
+    reject_reasons: "dict[str, str] | None" = None,
 ) -> int:
     """Fill the scoring columns on dish_run_data_points for one dish, in SQL.
 
@@ -187,6 +205,28 @@ def score_data_points_for_dish(
             f"WHERE dish_name = ? AND url IN ({marks})",
             (dish_name, *urls),
         )
+    # cohort_status: WHY each scored candidate is or isn't a winner, so the cohort
+    # panel reads honestly. 'selected' (a saved winner) → a reject reason (too_thin /
+    # extract_failed / save_failed / fetch_failed — high-authority pages that lost on
+    # quality, not rank) → 'reserve' (scored, ranked below the cut, never attempted).
+    # Rebuilt each call so the post-save re-flag (saved winners + rejects) is canonical.
+    conn.execute("UPDATE dish_run_data_points SET cohort_status = NULL WHERE dish_name = ?", (dish_name,))
+    conn.execute(
+        "UPDATE dish_run_data_points SET cohort_status = 'selected' WHERE dish_name = ? AND selected = 1",
+        (dish_name,),
+    )
+    for ru, reason in (reject_reasons or {}).items():
+        nu = normalize_url(ru) or ru
+        conn.execute(
+            "UPDATE dish_run_data_points SET cohort_status = ? "
+            "WHERE dish_name = ? AND url = ? AND selected = 0",
+            (_cohort_status_for_reason(reason), dish_name, nu),
+        )
+    conn.execute(
+        "UPDATE dish_run_data_points SET cohort_status = 'reserve' "
+        "WHERE dish_name = ? AND cohort_status IS NULL AND rank_score IS NOT NULL",
+        (dish_name,),
+    )
     conn.commit()
     return conn.execute(
         "SELECT COUNT(*) FROM dish_run_data_points "

@@ -254,6 +254,10 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
   padding:1px 6px; border-radius:5px; border:1px solid #e3d3c4; color:var(--accent-dark); }
 .ed-t10-dapa{ font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.7em; color:var(--muted);
   white-space:nowrap; font-variant-numeric:tabular-nums; }
+/* "not selected · <why>" chip on cohort also-rans — muted/quiet so it reads as
+   an explanation, not an error. High-authority pages that lost on quality. */
+.ed-t10-status{ font-size:.68em; font-style:italic; color:var(--muted);
+  padding:0 4px; border-radius:4px; background:rgba(0,0,0,.04); white-space:nowrap; }
 /* Aligned numeric columns (score / ou% / pwr%) for the dish top + cohort
    lists. Fixed-width, right-aligned, tabular-nums → values line up straight
    down each column instead of ragged-right. rank_score is the headline. */

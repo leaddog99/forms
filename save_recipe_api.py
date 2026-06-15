@@ -2620,7 +2620,7 @@ def list_dish_cohort(name: str):
                 """
                 SELECT p.url, p.da, p.pa, p.ou, p.power,
                        p.ou_percentile, p.power_percentile, p.rank_score,
-                       p.selected, p.model_version,
+                       p.selected, p.model_version, p.cohort_status,
                        m.name, m.preview_image, m.grade
                 FROM dish_run_data_points p
                 LEFT JOIN (
@@ -2641,7 +2641,7 @@ def list_dish_cohort(name: str):
             ).fetchall()
             cols = ["url", "da", "pa", "ou", "power", "ou_percentile",
                     "power_percentile", "rank_score", "selected",
-                    "model_version", "name", "preview_image", "grade"]
+                    "model_version", "cohort_status", "name", "preview_image", "grade"]
             cohort = [dict(zip(cols, r)) for r in rows]
             return {
                 "dish": dish,
@@ -3859,10 +3859,15 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         try:
             from input.pipeline.chapters import score_data_points_for_dish
             from input.pipeline.config import POWER_BLEND_WEIGHT
+            # Pass the save-loop rejects so cohort_status can explain WHY a
+            # high-authority also-ran isn't a winner (too thin / extract-fail / …).
+            reject_map = {r["url"]: r.get("reason", "rejected")
+                          for r in rejects if r.get("url")}
             with sqlite3.connect(DB_PATH) as conn:
                 score_data_points_for_dish(conn, canonical_name,
                                            batch_result.get("ou_fit") or {},
-                                           POWER_BLEND_WEIGHT, saved_urls)
+                                           POWER_BLEND_WEIGHT, saved_urls,
+                                           reject_reasons=reject_map)
         except Exception as e:
             print(f"[REFRESH-DISH] winner re-flag failed (non-fatal): {e}")
 
