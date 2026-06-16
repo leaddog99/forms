@@ -848,6 +848,40 @@ def _predict_pa_from_fit(ou_fit: dict, da: float) -> Optional[float]:
     return None
 
 
+def _apply_paywall_remap(entries: list[dict]) -> int:
+    """SELECTION-side paywall correction: lift gated premium publishers' PA to its
+    free-equivalent BEFORE the OU fit + rank_by_blend, so the winner SELECTOR stops
+    penalizing the paywall (mirrors the display-side remap in
+    score_data_points_for_dish). adjusted = max(pa, free_mean + (pa-paid_mean)*
+    (free_std/paid_std)) — one-directional (only LIFTS; a publisher above the free
+    line is untouched). The caller snapshots RAW pa into fit_data_points (the ledger)
+    BEFORE calling this, and score_data_points re-applies the SAME remap there — so
+    no double-count. Calibration lives on the domains master. Returns # lifted."""
+    try:
+        from input.pipeline.domains_lib import get_paywall_calibrations
+        cals = {c["domain"]: c for c in get_paywall_calibrations()
+                if c.get("pa_std") and c["pa_std"] > 0}
+    except Exception:
+        cals = {}
+    if not cals:
+        return 0
+    n = 0
+    for e in entries:
+        host = (urlparse(e.get("url") or "").hostname or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        c = cals.get(host)
+        pa = e.get("pa")
+        if not c or not isinstance(pa, (int, float)):
+            continue
+        remap = c["free_mean"] + (pa - c["pa_mean"]) * (c["free_std"] / c["pa_std"])
+        if remap > pa:
+            e["pa"] = float(remap)
+            e["_pa_raw"] = pa          # keep the original for transparency
+            n += 1
+    return n
+
+
 def build_batch(
     queries: list[str] | str,
     *,
@@ -950,6 +984,13 @@ def build_batch(
         for e in entries
         if isinstance(e.get("da"), (int, float)) and isinstance(e.get("pa"), (int, float))
     ]
+    # Selection-side paywall PA-remap (AFTER the raw fit_data_points snapshot, so the
+    # ledger stays truthful and score_data_points re-applies the same remap without
+    # double-counting). Lifts gated premium publishers so they're ranked + selected
+    # on merit, not penalized for the paywall. No-op when no domains are flagged.
+    _n_remap = _apply_paywall_remap(entries)
+    if _n_remap:
+        print(f"      -> paywall PA-remap lifted {_n_remap} premium-publisher entr(ies)")
     ou_fit = _compute_custom_ou(entries)
 
     # Foreign-locale batches (e.g. `site:.gr`) harvest low-authority

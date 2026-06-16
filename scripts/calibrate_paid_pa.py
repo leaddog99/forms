@@ -68,21 +68,27 @@ def free_ref(rows, da, window=8):
     return st.mean(nbr), st.pstdev(nbr), len(nbr)
 
 
-def serpapi_recipe_urls(domain, want=80):
+def serpapi_recipe_urls(domain, want=100, recipe_path="recipes"):
+    """Discover a publisher's recipe URLs via SerpAPI. KEY DETAILS: scope the
+    query to the recipes PATH (`site:domain/recipes`) and pass filter=0 so Google
+    doesn't omit "similar" results — that's the difference between ~5 and ~90 hits.
+    Google's site: ranking surfaces the most-notable pages naturally. Restrict to
+    the canonical host (domain / www.domain) so the calibration matches what the
+    scorer remaps (archive.* / prod.* subdomains excluded)."""
     if not SERPAPI_KEY:
         print("  [skip] no SERPAPI_KEY"); return []
     urls, seen = [], set()
     for start in range(0, want + 20, 10):
         try:
             r = requests.get("https://serpapi.com/search.json", params={
-                "engine": "google", "q": f"site:{domain} recipe",
-                "num": 10, "start": start, "api_key": SERPAPI_KEY}, timeout=30)
+                "engine": "google", "q": f"site:{domain}/{recipe_path}",
+                "num": 10, "start": start, "filter": 0, "api_key": SERPAPI_KEY}, timeout=30)
             res = r.json().get("organic_results") or []
         except Exception as e:
             print(f"  [serpapi err] {e}"); break
         for it in res:
             link = it.get("link") or ""
-            if domain in _host(link) and link not in seen and _is_recipe_url(link):
+            if _host(link) == domain and link not in seen and _is_recipe_url(link):
                 seen.add(link); urls.append(link)
         if not res or len(urls) >= want:
             break

@@ -171,11 +171,18 @@ def set_paywall_calibration(conn, domain, *, da=None, pa_mean, pa_std, pa_n,
     conn.commit()
 
 
-def get_paywall_calibrations(conn) -> list:
-    """Flagged premium publishers with a usable calibration — for the scorer.
-    Returns dicts {domain, da, pa_mean, pa_std, free_mean, free_std}; only rows
-    with a positive pa_cal_std (a real spread to scale against)."""
+def get_paywall_calibrations(conn=None, db_path: str = _DEFAULT_DB) -> list:
+    """Flagged premium publishers with a usable calibration — for the scorer AND
+    the batch winner-selector. Returns dicts {domain, da, pa_mean, pa_std,
+    free_mean, free_std}; only rows with a positive pa_cal_std (a real spread to
+    scale against) and a solid sample (n>=15). Pass a `conn`, or omit it to open
+    `db_path` (lets build_query_batch read it connection-free)."""
+    own = conn is None
+    if own:
+        conn = sqlite3.connect(db_path)
     try:
+        if own:
+            ensure_domains_table(conn)
         rows = conn.execute(
             "SELECT domain, domain_authority, pa_cal_mean, pa_cal_std, "
             "pa_cal_free_mean, pa_cal_free_std FROM domains "
@@ -185,10 +192,16 @@ def get_paywall_calibrations(conn) -> list:
             # discovered recipe pages) so the remap only fires on solid samples.
             "AND COALESCE(pa_cal_n, 0) >= 15"
         ).fetchall()
+        return [{"domain": r[0], "da": r[1], "pa_mean": r[2], "pa_std": r[3],
+                 "free_mean": r[4], "free_std": r[5]} for r in rows]
     except Exception:
         return []
-    return [{"domain": r[0], "da": r[1], "pa_mean": r[2], "pa_std": r[3],
-             "free_mean": r[4], "free_std": r[5]} for r in rows]
+    finally:
+        if own:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def seed_domains(conn: sqlite3.Connection) -> int:
