@@ -3557,10 +3557,18 @@
           if (badgeWrap.firstChild) item.appendChild(badgeWrap.firstChild);
         }
 
-        item.onclick = () => {
-          loadForm(r);
+        item.onclick = async () => {
           sidebar.classList.remove('open');
           document.body.classList.remove('sidebar-open');  // mirror syncBodyLock
+          // The sidebar list is now a SLIM projection (summary=1 — no ingredients/
+          // instructions/_cook), so fetch the FULL record before populating the form.
+          // (Loading the slim cache row directly dropped ingredients + method steps.)
+          try {
+            const uid = (r.user_id != null ? r.user_id : (document.getElementById('user_id')?.value || '1'));
+            const res = await fetch(`${API}/recipes/${encodeURIComponent(r.recipe_id)}?user_id=${encodeURIComponent(uid)}`);
+            if (res.ok) { loadForm(await res.json()); return; }
+          } catch (e) { /* fall through to the slim row below */ }
+          loadForm(r);   // degraded fallback if the full fetch fails
         };
         listEl.appendChild(item);
       });
