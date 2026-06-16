@@ -654,6 +654,18 @@
 
   // window.cookView — the API the conversational voice loop drives (next/back/
   // repeat/read). Today the checkboxes + buttons call the same paths.
+  // Warm end-of-recipe sign-off so "next" past the last step doesn't dead-end
+  // (first real cook feedback 2026-06-15 — "we don't end well"). Random line;
+  // spoken when Talk is on, always shown. Data-driven home (a "finish" Messages
+  // category) is a later upgrade — see memory project_cookview_feedback.
+  var _FINISH_LINES = ["Enjoy!", "Time to serve — dig in!", "Bon appétit!",
+    "That's the last step — enjoy your meal!", "All done. Time to eat!",
+    "Beautifully done — enjoy!"];
+  function celebrateFinish(){
+    var line = _FINISH_LINES[Math.floor(Math.random() * _FINISH_LINES.length)];
+    setVoiceStatus('speaking', '🎉 ' + line);
+    if(talk) speak(line);
+  }
   window.cookView = {
     steps: function(){ return (CK&&CK.steps)||[]; },
     currentNumber: function(){ return firstUncheckedNumber(); },
@@ -664,8 +676,11 @@
       var d=stepDiv(step.number); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); } return step; },
     read: function(step){ step=this.go(step); if(step && talk){ var _pr=speak(spokenText(step));   // speaks only if Talk is on
         if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); }); } return step; },   // offer the step's tip once it's read
-    next: function(){ var n=this.currentNumber(); if(n==null) return null; var d=stepDiv(n); var s=this.stepByNumber(n);
-      toggleStep(d, s); var cs=this.currentStep(); if(cs) this.read(cs); return cs; },
+    next: function(){ var n=this.currentNumber(); if(n==null){ celebrateFinish(); return null; }   // already past the last step
+      var d=stepDiv(n); var s=this.stepByNumber(n);
+      toggleStep(d, s); var cs=this.currentStep();
+      if(cs){ this.read(cs); } else { celebrateFinish(); }   // just completed the last step → sign off warmly
+      return cs; },
     back: function(){ var all=[].slice.call(document.querySelectorAll('.step.done')); var last=all[all.length-1];
       if(last){ var n=parseInt(last.getAttribute('data-step'),10); toggleStep(last, this.stepByNumber(n));
         last.scrollIntoView({behavior:'smooth',block:'start'}); this.read(this.stepByNumber(n)); return n; } return null; },
