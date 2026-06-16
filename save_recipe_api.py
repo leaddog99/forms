@@ -1237,6 +1237,37 @@ def cook_voice_log(payload: dict = Body(...)):
 # This is also a security boundary: a cross-table fetch (e.g. requesting
 # a master row with user_id=1) returns 404 — the caller has no way to
 # discover someone else's recipes by guessing recipe_ids.
+@app.get("/recipes/{recipe_id}/memberships")
+def recipe_memberships_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
+    """All collections this recipe belongs to — dish winners (from the scoring
+    ledger) + publisher/other collections (the collection_members junction),
+    keyed on the recipe's url_normalized. Powers the form's 'Member of' chips."""
+    from input.pipeline import collections_lib
+    table = _recipes_table_for(user_id)
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                f"SELECT url_normalized FROM {table} WHERE recipe_id = ?", (recipe_id,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Recipe not found")
+            url_norm = row[0] or ""
+            out: list = []
+            if url_norm:
+                for (dn,) in conn.execute(
+                    "SELECT DISTINCT dish_name FROM dish_run_data_points "
+                    "WHERE url = ? AND selected = 1", (url_norm,)):
+                    if dn:
+                        out.append({"type": "dish", "key": dn, "selected": True})
+                out += collections_lib.get_memberships_for_url(conn, url_norm)
+            return {"recipe_id": recipe_id, "memberships": out}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] recipe_memberships({recipe_id!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.get("/recipes/{recipe_id}")
 def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
     table = _recipes_table_for(user_id)

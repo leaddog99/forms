@@ -730,9 +730,15 @@ User wants the domain/publisher page to work like dishes_v2 (refresh a publisher
 - ⚠️ **SerpAPI key 401 (Invalid API key)** — was valid earlier this session (harvested 90/53), now rejected → likely QUOTA exhausted from the session's discovery calls (or key changed). Check serpapi.com/manage-api-key before the next harvest.
 - **NOT YET (stages 2-3):** domains-page UI (refresh button → publisher_refresh job → top-N panel + search) + membership chips on the recipe form.
 
-### Next
-- **Domains page UI** (stage 2): refresh endpoint (`POST /domains/{domain}/refresh-top` → harvest_publisher_top → replace_members) + dishes_v2-style top-N panel + search; **membership chips on the recipe form** (stage 3).
+### Domains page + collections membership — ALL 3 STAGES SHIPPED + live-validated
+- Stage 1 (`collections_lib.py`): membership junction + publisher harvest + recipe-path detection (above).
+- **Stage 2 — domains page like dishes:** `POST /domains/{domain}/refresh-top` (detect path → harvest → replace_members → persist recipe_path/keep) + `GET /domains/{domain}/top`; domains.html "Top recipes — publisher refresh" panel (keep-N + recipe_path inputs, Refresh button, ranked list w/ ★/in-corpus/PA). Live: Milk Street auto-detected 'recipes', 43 scored, top-10 kept. (Refresh inline ~30-45s — could become a job.)
+- **Stage 3 — membership chips:** `GET /recipes/{id}/memberships` (dish winners + publisher/other) + "Member of:" chips on the recipe form. Verified: a Potato Gratin winner shows its dish chip.
+
+### Next (queued — none in flight)
+- Authenticated Playwright fetch to INGEST gated recipes (CI/Milk Street) into the corpus (calibration + top-N queues ready); promote publisher refresh to a background job (vs inline ~30-45s); membership chips will then light up for ingested publisher picks.
 - Re-run a dish with ATK to see the paid-PA selection half land (ATK → selected winner).
+- Intelligent sub-steps (2.1/2.2 — the cook-view "most important"); Voice P1 (barge-in/AEC, Murf streaming TTS, voice-agent.js extraction).
 - **Intelligent sub-steps (2.1/2.2 — user's "most important"):** break dense steps into memory-sized chunks for voice, cluster-but-split (not naive sentence split). Client-side auto-split first, model-authored later; then full-screen up/down No-look swipes become safe.
 - Voice P1 (barge-in/AEC — the real "interrupt Chef" fix, also re-enables the tip offer; Silero VAD, semantic turn-detector, Murf streaming TTS).
 - Voice P1 (when ready): Silero VAD + semantic turn-detector + sherpa-onnx wake + WebRTC-loopback AEC barge-in; wire Murf streaming TTS; extract the client loop to `voice-agent.js`.

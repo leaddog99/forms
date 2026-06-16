@@ -1000,6 +1000,11 @@
       border: 1px solid var(--line);
     }
     .scoring-strip.hidden { display: none; }
+    .member-chips { margin: 8px 0 4px; display: flex; flex-wrap: wrap; align-items: center; }
+    .member-chips.hidden { display: none; }
+    .member-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px;
+      margin: 2px 4px 2px 0; border: 1px solid var(--line, #e3d3c4); border-radius: 999px;
+      font-size: 0.8em; background: #fff; color: var(--ink, #3a2f28); }
     .score-chip {
       display: flex;
       flex-direction: column;
@@ -1786,6 +1791,11 @@
             <span class="exc-chip-basis" id="score_match_basis"></span>
           </div>
         </div>
+
+        <!-- Collections this recipe belongs to: dish winners (scoring ledger) +
+             publisher / other collections (the membership junction). Multi-membership
+             made visible — one recipe can be in many collections at once. -->
+        <div class="member-chips hidden" id="membershipChips"></div>
 
         <!-- "Recipes you'd like" recommender: temp-embeds the current recipe
              and queries the curated master set for the top-ranked similar
@@ -2793,6 +2803,28 @@
         + '</ul>'
         + '<p style="font-size:.84rem;color:var(--muted)">Each line is a gauntlet check. Hit Re-rework to try again, or pass these along to tune the engine.</p>';
       panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // "Member of:" chips — the collections this recipe belongs to (dish winners
+    // from the scoring ledger + publisher/other from the membership junction).
+    // Multi-membership made visible from the recipe side.
+    async function loadMemberships(recipeId) {
+      const el = document.getElementById('membershipChips');
+      if (!el) return;
+      el.classList.add('hidden'); el.innerHTML = '';
+      if (!recipeId) return;
+      try {
+        const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+        const r = await fetch(`${API}/recipes/${encodeURIComponent(recipeId)}/memberships?user_id=${encodeURIComponent(uid)}`);
+        if (!r.ok) return;
+        const mem = (await r.json()).memberships || [];
+        if (!mem.length) return;
+        const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const icon = t => t === 'dish' ? '🍽' : (t === 'publisher' ? '📰' : '🏷');
+        el.innerHTML = '<span style="color:var(--muted);font-size:.82em;margin-right:6px">Member of:</span>' +
+          mem.map(m => `<span class="member-chip" title="${esc(m.type)}${m.selected ? ' · kept' : ''}">${icon(m.type)} ${esc(String(m.key))}</span>`).join('');
+        el.classList.remove('hidden');
+      } catch (e) { /* non-fatal — chips just stay hidden */ }
     }
 
     function populateScoringStrip(recipe) {
@@ -3840,6 +3872,7 @@
       // recipe-text score were denormalized into it at extract time).
       invalidateMetadataCache && invalidateMetadataCache();
       populateScoringStrip(r);
+      loadMemberships(r.recipe_id);
       populateCohortMeta && populateCohortMeta(r);
       populateCookPanel && populateCookPanel(r);
 
@@ -6051,6 +6084,7 @@
       // recipe-text score were denormalized into it at extract time).
       invalidateMetadataCache && invalidateMetadataCache();
       populateScoringStrip(r);
+      loadMemberships(r.recipe_id);
       populateCohortMeta && populateCohortMeta(r);
       populateCookPanel && populateCookPanel(r);
 
