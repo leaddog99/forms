@@ -97,6 +97,9 @@ _PAYWALL_COLUMNS = {
     "pa_cal_free_mean": "REAL",                     # matched-DA free PA mean (target)
     "pa_cal_free_std": "REAL",                      # ...std
     "pa_cal_at": "TEXT",                            # when calibrated (ISO)
+    # How many top recipes to KEEP (mark selected) on a publisher refresh — the
+    # domains-page analog of a dish's top_n_final. Default 10, curator-overridable.
+    "keep_top_n": "INTEGER NOT NULL DEFAULT 10",
 }
 
 

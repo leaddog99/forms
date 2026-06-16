@@ -1,0 +1,194 @@
+"""collections_lib.py — generic typed collections + membership (the M2M junction).
+
+A recipe (by url_normalized) can belong to MANY collections — a dish, a
+publisher's "best of", a chef, a curated list. Each is a (collection_type,
+collection_key) pair; `collection_members` is the junction + per-collection
+ranking ledger. One recipe → many membership rows (the "join" is free).
+
+First consumer: PUBLISHER collections (the domains page, dishes-page-style). A
+publisher refresh discovers the publisher's recipe URLs (SERP `site:domain/recipes`
++ filter=0), Moz-scores them, ranks by PA (most-notable), and keeps the top-N
+(`keep`, default 10, per-publisher overridable — the analog of a dish's
+top_n_final). Content extraction is SEPARATE (authenticated fetch) — this is the
+discovery + ranking ledger. See docs/collections.md / project_collections.
+
+Dishes keep their own ledger (dish_run_data_points) for now; a recipe's full
+membership view unions both.
+"""
+from __future__ import annotations
+
+import os
+import sqlite3
+from datetime import datetime, timezone
+from urllib.parse import urlparse
+
+import requests
+
+from input.pipeline.url_scoring import score_url_via_moz  # loads .env on import
+from input.pipeline.url_utils import normalize_url
+
+_SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+
+
+def ensure_collection_members_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS collection_members (
+            collection_type TEXT NOT NULL,     -- 'publisher' (later 'dish','chef',…)
+            collection_key  TEXT NOT NULL,     -- the domain / dish name / …
+            url_normalized  TEXT NOT NULL,     -- the recipe (→ master_recipes/recipes)
+            title           TEXT,
+            da              REAL,
+            pa              REAL,
+            adjusted_pa     REAL,              -- paid-remapped PA (when it competes cross-collection)
+            rank_score      REAL,
+            rank            INTEGER,           -- 1-based within the collection
+            selected        INTEGER NOT NULL DEFAULT 0,  -- 1 = a kept top-N member
+            note            TEXT,
+            model_version   TEXT,              -- the refresh run id
+            created_at      TEXT NOT NULL,
+            PRIMARY KEY (collection_type, collection_key, url_normalized)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_coll_members_url ON collection_members(url_normalized)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_coll_members_coll ON collection_members(collection_type, collection_key, rank)")
+    conn.commit()
+
+
+def replace_members(conn, collection_type, collection_key, members, model_version=None) -> int:
+    """Delete-and-replace the members of ONE collection — on the JUNCTION, never a
+    master content row (the collections-correct delete-replace). `members` = dicts
+    {url, title, da, pa, adjusted_pa, rank_score, rank, selected, note}."""
+    ensure_collection_members_table(conn)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "DELETE FROM collection_members WHERE collection_type = ? AND collection_key = ?",
+        (collection_type, collection_key),
+    )
+    conn.executemany(
+        """
+        INSERT INTO collection_members
+            (collection_type, collection_key, url_normalized, title, da, pa,
+             adjusted_pa, rank_score, rank, selected, note, model_version, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        [(collection_type, collection_key, normalize_url(m["url"]) or m["url"], m.get("title"),
+          m.get("da"), m.get("pa"), m.get("adjusted_pa"), m.get("rank_score"),
+          m.get("rank"), 1 if m.get("selected") else 0, m.get("note"),
+          model_version, now) for m in members],
+    )
+    conn.commit()
+    return len(members)
+
+
+def get_collection_top(conn, collection_type, collection_key, limit=50) -> list:
+    """Top members of a collection, LEFT-JOINed to master_recipes on url_normalized
+    (the url work): an already-ingested recipe shows its REAL name/grade/thumbnail
+    and `ingested=True`; a discovered-but-not-yet-fetched one shows the SERP title +
+    `ingested=False`. The join is the canonical-URL link between ledger and content."""
+    ensure_collection_members_table(conn)
+    rows = conn.execute(
+        """
+        SELECT cm.url_normalized, cm.title, cm.da, cm.pa, cm.adjusted_pa,
+               cm.rank_score, cm.rank, cm.selected,
+               m.recipe_id,
+               json_extract(m.data, '$.name'),
+               json_extract(m.data, '$._master.exceptionalism.grade'),
+               COALESCE(json_extract(m.data, '$._source.previewImage'),
+                        json_extract(m.data, '$.image[0]'))
+        FROM collection_members cm
+        LEFT JOIN master_recipes m
+          ON m.url_normalized = cm.url_normalized AND m.user_id = 0
+        WHERE cm.collection_type = ? AND cm.collection_key = ?
+        ORDER BY cm.rank IS NULL, cm.rank, cm.pa DESC
+        LIMIT ?
+        """,
+        (collection_type, collection_key, limit),
+    ).fetchall()
+    cols = ["url", "ledger_title", "da", "pa", "adjusted_pa", "rank_score", "rank",
+            "selected", "recipe_id", "name", "grade", "preview_image"]
+    out = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        d["ingested"] = d["recipe_id"] is not None
+        d["title"] = d.get("name") or d.get("ledger_title") or d["url"]
+        out.append(d)
+    return out
+
+
+def get_memberships_for_url(conn, url) -> list:
+    """All collections a recipe belongs to (for the recipe form's 'Member of' chips)."""
+    ensure_collection_members_table(conn)
+    nu = normalize_url(url) or url
+    rows = conn.execute(
+        "SELECT collection_type, collection_key, rank, selected FROM collection_members "
+        "WHERE url_normalized = ? ORDER BY collection_type, rank",
+        (nu,),
+    ).fetchall()
+    return [{"type": r[0], "key": r[1], "rank": r[2], "selected": bool(r[3])} for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# Publisher harvest — discover + Moz-score + rank by PA
+# --------------------------------------------------------------------------- #
+def _host(u):
+    return (urlparse(u).hostname or "").replace("www.", "").lower() if u else ""
+
+
+def _is_recipe_url(u):
+    segs = [s for s in urlparse(u).path.lower().strip("/").split("/") if s]
+    return len(segs) >= 2 and segs[0] in ("recipe", "recipes")
+
+
+def discover_publisher_recipe_urls(domain, want=80, recipe_path="recipes", query=None) -> list:
+    """Recipe URLs on a publisher via SerpAPI. PER-PUBLISHER CONFIGURABLE query:
+    default is the PATH-prefix form `site:domain/recipes` + filter=0 (precise — for
+    NYT/ATK/Milk Street it found ~90 real /recipes/ pages vs ~2 for the term form,
+    measured 2026-06-16; `site:domain/path` is a valid Google operator). Pass an
+    explicit `query` (e.g. `site:domain recipes` term-search) for publishers whose
+    recipes aren't under /recipes/. filter=0 stops Google omitting 'similar' hits.
+    Canonical host only. (NOTE: SerpAPI 401 = bad/exhausted key — check the key.)"""
+    if not _SERPAPI_KEY:
+        return []
+    q = query or f"site:{domain}/{recipe_path}"
+    out, seen = [], set()
+    for start in range(0, want + 20, 10):
+        try:
+            r = requests.get("https://serpapi.com/search.json", params={
+                "engine": "google", "q": q, "num": 10,
+                "start": start, "filter": 0, "api_key": _SERPAPI_KEY}, timeout=30)
+            res = r.json().get("organic_results") or []
+        except Exception:
+            break
+        for it in res:
+            link = it.get("link") or ""
+            if _host(link) == domain and link not in seen and _is_recipe_url(link):
+                seen.add(link)
+                out.append((link, it.get("title") or ""))
+        if not res or len(out) >= want:
+            break
+    return out[:want]
+
+
+def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path="recipes", query=None) -> tuple:
+    """Discover + Moz-score a publisher's recipe URLs, rank by PA, mark the top
+    `keep` as selected. Returns (members, n_discovered, n_scored). `members` are
+    ready for replace_members. `recipe_path`/`query` configure discovery per
+    publisher. Content extraction is a separate step (auth-fetch)."""
+    found = discover_publisher_recipe_urls(domain, want=discover_n,
+                                           recipe_path=recipe_path, query=query)
+    scored = []
+    for url, title in found:
+        s = score_url_via_moz(url)
+        if s and s.get("page_authority"):
+            scored.append({"url": url, "title": title,
+                           "da": float(s["domain_authority"]),
+                           "pa": float(s["page_authority"])})
+    scored.sort(key=lambda m: -m["pa"])
+    keep = max(1, int(keep or 10))
+    for i, m in enumerate(scored, 1):
+        m["rank"] = i
+        m["rank_score"] = m["pa"]          # within-publisher rank IS page authority
+        m["selected"] = 1 if i <= keep else 0
+    return scored, len(found), len(scored)
