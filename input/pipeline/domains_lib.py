@@ -55,6 +55,9 @@ EDITABLE_FIELDS = (
     "da_last_scored",
     "notes",
     "failure_count",
+    "keep_top_n",     # publisher top-N to keep on refresh
+    "recipe_path",    # publisher recipe URL path segment (detected, overridable)
+    "paywall",        # gated premium publisher (drives PA-remap)
 )
 
 

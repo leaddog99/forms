@@ -3372,6 +3372,49 @@ def domain_recipes_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.post("/domains/{domain}/refresh-top")
+def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
+    """Publisher refresh — the domains-page analog of a dish refresh. Detects the
+    recipe path (if not stored), harvests the publisher's recipe URLs (SerpAPI +
+    Moz, ranked by PA), keeps the top-N (`keep`, default domains.keep_top_n=10,
+    overridable), and stores them as publisher collection membership. Returns the
+    ranked top list. Runs inline (~30-45s of Moz lookups). Content extraction of
+    gated recipes is a separate step (authenticated fetch)."""
+    from input.pipeline import domains_lib, collections_lib
+    try:
+        host = domains_lib._canon_host(domain)
+        with sqlite3.connect(DB_PATH) as conn:
+            row = domains_lib.get_domain(conn, host) or {}
+            keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
+            recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
+            members, n_found, n_scored, used_path = collections_lib.harvest_publisher_top(
+                host, keep=keep, discover_n=50, recipe_path=recipe_path)
+            collections_lib.replace_members(conn, "publisher", host, members)
+            conn.execute("UPDATE domains SET recipe_path = ?, keep_top_n = ? WHERE domain = ?",
+                         (used_path or "", keep, host))
+            conn.commit()
+            top = collections_lib.get_collection_top(conn, "publisher", host, limit=max(keep, 50))
+        return {"domain": host, "recipe_path": used_path, "keep": keep,
+                "discovered": n_found, "scored": n_scored, "stored": len(members), "top": top}
+    except Exception as e:
+        print(f"[ERROR] refresh_domain_top({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+
+
+@app.get("/domains/{domain}/top")
+def domain_top_endpoint(domain: str):
+    """Stored publisher top-N ledger (collection_members) for the domains page."""
+    from input.pipeline import domains_lib, collections_lib
+    try:
+        host = domains_lib._canon_host(domain)
+        with sqlite3.connect(DB_PATH) as conn:
+            top = collections_lib.get_collection_top(conn, "publisher", host, limit=100)
+        return {"domain": host, "count": len(top), "top": top}
+    except Exception as e:
+        print(f"[ERROR] domain_top({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.post("/domains/{domain}/enrich")
 def enrich_domain_endpoint(domain: str):
     """Quick Haiku profile of a domain — story, language, country, cuisine

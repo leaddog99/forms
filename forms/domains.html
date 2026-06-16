@@ -215,6 +215,20 @@
         </section>
 
         <section class="ed-block">
+          <h3 class="ed-block-label">Top recipes — publisher refresh</h3>
+          <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes (SerpAPI + Moz, ranked by page authority) and keep the top N. The recipe path is auto-detected per publisher — set it manually if blank (some sites use flat URLs). ★ = kept; “in corpus” = already ingested. Gated recipe content is fetched separately.</p>
+          <div class="ed-form-grid">
+            ${field('f_recipe_path', 'Recipe path', d.recipe_path || '', { placeholder: 'auto-detect (e.g. recipes)' })}
+            ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
+          </div>
+          <div class="ed-actions" style="margin:10px 0 6px">
+            <button type="button" class="ed-btn" id="refreshTopBtn" title="Discover + score this publisher's recipes and keep the top N">🔄 Refresh top recipes</button>
+            <span class="ed-save-hint" id="topHint"></span>
+          </div>
+          <ol class="ed-t10" id="domainTopList"><li class="ed-empty-fit">Open or refresh to load the top recipes.</li></ol>
+        </section>
+
+        <section class="ed-block">
           <h3 class="ed-block-label">Curator notes</h3>
           <textarea id="f_notes" class="ed-notes" placeholder="Anything else worth recording about this site…">${escapeHtml(d.notes || '')}</textarea>
         </section>
@@ -234,7 +248,59 @@
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
+      $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
+      loadDomainTop(d.domain);         // stored publisher top-N ledger
+    }
+
+    // Render the publisher top-N ledger (rank · title · PA · in-corpus badge).
+    function renderDomainTop(list){
+      const el = $('#domainTopList'); if (!el) return;
+      if (!list || !list.length){ el.innerHTML = '<li class="ed-empty-fit">No top recipes yet — click “Refresh top recipes”.</li>'; return; }
+      el.innerHTML = list.map((m, i) => {
+        const star = m.selected ? ' <span class="ed-t10-grade" title="kept (top-N)">★</span>' : '';
+        const grade = m.grade ? ` <span class="ed-t10-grade">${escapeHtml(m.grade)}</span>` : '';
+        const inCorpus = m.ingested ? ' <span class="ed-t10-grade" title="already in the corpus">in corpus</span>' : '';
+        const href = m.ingested && m.recipe_id ? `/r/${encodeURIComponent(m.recipe_id)}` : (m.url || '#');
+        const pa = (typeof m.pa === 'number') ? Math.round(m.pa) : '—';
+        return `<a class="ed-t10-row" href="${escapeHtml(href)}" target="_blank" rel="noopener">
+            <span class="ed-t10-rank">${m.rank || i + 1}</span>
+            <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(m.title || m.url)}${star}${grade}${inCorpus}</span></span>
+            <span class="ed-t10-stats"><span class="ed-t10-stat score"><span class="v">${pa}</span><span class="l">PA</span></span></span>
+          </a>`;
+      }).join('');
+    }
+
+    async function loadDomainTop(domain){
+      const el = $('#domainTopList'); if (!el) return;
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        renderDomainTop((await r.json()).top || []);
+      } catch (e) { el.innerHTML = `<li class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</li>`; }
+    }
+
+    // Publisher refresh: discover + Moz-score + keep top-N (inline, ~30-45s).
+    async function doRefreshTop(domain){
+      const btn = $('#refreshTopBtn'), hint = $('#topHint');
+      const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
+      const recipe_path = ($('#f_recipe_path')?.value || '').trim();
+      btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Harvesting…';
+      if (hint){ hint.style.color = ''; hint.textContent = 'Discovering + scoring recipes (~30–45s)…'; }
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keep, recipe_path }) });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        renderDomainTop(data.top || []);
+        if ($('#f_recipe_path') && data.recipe_path) $('#f_recipe_path').value = data.recipe_path;
+        if (hint){ hint.textContent = data.scored
+          ? `Kept ${data.stored} of ${data.scored} scored (${data.discovered} found, path “${data.recipe_path || '—'}”).`
+          : `No recipes found — set the recipe path manually${data.recipe_path ? '' : ' (auto-detect blank)'}.`; }
+      } catch (e) {
+        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Refresh failed: ${e.message || e}`; }
+      } finally { btn.disabled = false; btn.textContent = label; }
     }
 
     // Quick LLM profile of the site → fills story / language / country /
@@ -324,6 +390,8 @@
         domain_authority: numOrNull($('#f_domain_authority').value),
         failure_count: numOrNull($('#f_failure_count').value) || 0,
         notes: $('#f_notes').value.trim(),
+        recipe_path: ($('#f_recipe_path')?.value || '').trim(),
+        keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
       };
     }
 
