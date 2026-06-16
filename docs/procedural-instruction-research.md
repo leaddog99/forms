@@ -33,6 +33,11 @@ The LLM/algorithm that splits a dense `_cook` step into sub-steps should:
 - **Interruption / place-keeping ("where was I?")** — central for cooks, but no primary source survived verification (procedural prospective memory). Our check-to-advance + current-step highlight already place-keeps; a spoken resumption cue ("you're on step 4 — searing") is the likely design. **Candidate for a follow-up research run.**
 - **Applied practice** (aviation/surgical checklists/Gawande, IKEA, Carroll minimalism, Toyota TWI "important steps + key points", mise en place) — requested but no dedicated primary source survived; answered only indirectly via the cognitive-load principles. Also a follow-up.
 
+## Build status
+
+- **v1 SHIPPED** (cook.html, client-side, works on existing `_cook`): `splitSpoken()` element-interactivity splitter (split independent / keep coupled `while|until|as`); voice `next/back/repeat` operate at **sub-step** granularity (back/repeat = the voice re-scan); on-screen "Step N · part i/m" cue; whole step stays visible (screen tolerates more). **Spoken mise** pre-step (`speakMise`) at fresh hands-free start + `mise` command — clusters laid out + measured ONCE by name. **`where was I`** command (`whereWasI`) — step N of M + current sub-step (place-keeping). Silent/screen mode (Talk off) = whole-step, unchanged.
+- **v2 (planned):** model-authored sub-steps in `_cook` (rework emits the split + better cluster NAMES + steps refer to clusters by name, no amount repetition — the dual voice/screen split done right); sub-step the mise itself (check-to-advance per cluster); **verbosity preference** read at cook-page gen (verbose↔concise → expertise fade); follow-up research run on interruption/place-keeping + applied checklists/TWI.
+
 ## Reuse — it's a general procedural-delivery engine
 
 None of the above is cooking-specific — it's about presenting *any* procedure to a human executing it. The same sub-step engine (split-on-independence, voice-short/screen-full, expertise fade, check-to-advance) applies to plumbing, assembly, repair. The `_cook` schema (ingredients/equipment/steps/tips) is a general procedure schema. This is both the build plan for sub-steps AND the differentiation story: a cognitively-grounded, cross-domain procedural-guidance platform, cooking-first.
