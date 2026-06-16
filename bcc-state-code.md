@@ -705,7 +705,9 @@ Added to `init_db` (idempotent every boot → fresh/portable installs included):
 ### Voice fix
 Disabled the proactive "Read the tip?" auto-offer by default (`TIP_OFFER_ENABLED=false`): on the turn-locked mic (no barge-in yet) it spoke right after step 1 and SWALLOWED a cook's "next" (mic deaf while Chef talks) — broke core nav "right from the first step". Deterministic "read the tip" command stays. Re-enable post-P1-barge-in.
 
+### `/domains/{domain}/recipes` optimized (last audit item)
+Was an 85ms double full-table parse (loaded+`json.loads`'d all 960 blobs to derive host in Python). Rejected an expression index — SQL can't replicate `urlparse().hostname` (ports/casing/www) exactly, and getting it wrong corrupts the domain browse. Instead: cheap pass over `(recipe_id, url_normalized)` only → match host via `host_from_url`; parse `data` ONLY for candidates (matches + the ~48 empty-url rows that fall back to `_source.originalUrl`, 38 live). **Byte-identical results vs old across 5 domains; 85.6ms → ~20-27ms (~3-4×)**; no schema/index/save-path change. `domains_lib.py`.
+
 ### Next
-- `/domains/{domain}/recipes` host-column index (88ms double scan); consider an `updated_at` index on the recipe tables if the list grows.
-- Voice P1 (barge-in/AEC, Silero VAD, semantic turn-detector, Murf streaming TTS).
+- Voice P1 (barge-in/AEC — the real "interrupt Chef" fix, also re-enables the tip offer; Silero VAD, semantic turn-detector, Murf streaming TTS). Optional: backfill `url_normalized` for the 38 empty-but-sourced rows (drops the domains fallback floor + helps cache/dedup/joins).
 - Voice P1 (when ready): Silero VAD + semantic turn-detector + sherpa-onnx wake + WebRTC-loopback AEC barge-in; wire Murf streaming TTS; extract the client loop to `voice-agent.js`.

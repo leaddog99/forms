@@ -255,26 +255,44 @@ def recipes_for_domain(conn: sqlite3.Connection, domain: str) -> dict:
     }
     for tbl, bucket in (("master_recipes", "master"), ("recipes", "user")):
         try:
-            rows = conn.execute(
-                f"SELECT recipe_id, url_normalized, data FROM {tbl}"
+            # Cheap pass: pull ONLY recipe_id + url_normalized (no ~19KB data blob).
+            # Match the host off url_normalized; rows with an empty url_normalized
+            # fall back to the source URL's host (older rows predating the url
+            # backfill — 38 such rows still carry _source.originalUrl). The data
+            # blob is then parsed ONLY for candidates (matches + the few empties),
+            # not the whole table — the audit's 960-blob scan → ~matches+empties.
+            id_rows = conn.execute(
+                f"SELECT recipe_id, url_normalized FROM {tbl}"
             ).fetchall()
         except Exception:
             continue
-        items = []
-        for recipe_id, url_norm, dj in rows:
-            try:
-                d = json.loads(dj)
-            except Exception:
-                d = {}
+        match_ids: list = []      # url_normalized host == this domain
+        fallback_ids: list = []   # empty url_normalized → check _source.originalUrl
+        for recipe_id, url_norm in id_rows:
             h = host_from_url(url_norm or "")
-            if not h:
-                h = host_from_url((d.get("_source") or {}).get("originalUrl") or "")
-            if h != host:
-                continue
-            items.append({
-                "recipe_id": recipe_id,
-                "name": d.get("name") or "(no title)",
-            })
+            if h == host:
+                match_ids.append(recipe_id)
+            elif not h:
+                fallback_ids.append(recipe_id)
+        items = []
+        need = match_ids + fallback_ids
+        if need:
+            mset = set(match_ids)
+            placeholders = ",".join("?" * len(need))
+            for recipe_id, dj in conn.execute(
+                f"SELECT recipe_id, data FROM {tbl} WHERE recipe_id IN ({placeholders})",
+                need,
+            ):
+                try:
+                    d = json.loads(dj)
+                except Exception:
+                    d = {}
+                if recipe_id in mset:
+                    items.append({"recipe_id": recipe_id, "name": d.get("name") or "(no title)"})
+                else:  # empty url_normalized — match on the source URL's host
+                    fh = host_from_url((d.get("_source") or {}).get("originalUrl") or "")
+                    if fh == host:
+                        items.append({"recipe_id": recipe_id, "name": d.get("name") or "(no title)"})
         items.sort(key=lambda x: x["name"].lower())
         result[bucket]["items"] = items
         result[bucket]["count"] = len(items)
