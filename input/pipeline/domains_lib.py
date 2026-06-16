@@ -100,6 +100,10 @@ _PAYWALL_COLUMNS = {
     # How many top recipes to KEEP (mark selected) on a publisher refresh — the
     # domains-page analog of a dish's top_n_final. Default 10, curator-overridable.
     "keep_top_n": "INTEGER NOT NULL DEFAULT 10",
+    # The publisher's recipe URL path segment (e.g. 'recipes', 'recipe', 'cooking').
+    # NOT assumed — detected per publisher (collections_lib.detect_recipe_path) and
+    # stored here, curator-overridable. '' = not yet detected.
+    "recipe_path": "TEXT NOT NULL DEFAULT ''",
 }
 
 

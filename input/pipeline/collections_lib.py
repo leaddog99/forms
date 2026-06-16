@@ -136,34 +136,34 @@ def _host(u):
     return (urlparse(u).hostname or "").replace("www.", "").lower() if u else ""
 
 
-def _is_recipe_url(u):
+def _first_seg(u):
     segs = [s for s in urlparse(u).path.lower().strip("/").split("/") if s]
-    return len(segs) >= 2 and segs[0] in ("recipe", "recipes")
+    return segs[0] if segs else ""
 
 
-def discover_publisher_recipe_urls(domain, want=80, recipe_path="recipes", query=None) -> list:
-    """Recipe URLs on a publisher via SerpAPI. PER-PUBLISHER CONFIGURABLE query:
-    default is the PATH-prefix form `site:domain/recipes` + filter=0 (precise — for
-    NYT/ATK/Milk Street it found ~90 real /recipes/ pages vs ~2 for the term form,
-    measured 2026-06-16; `site:domain/path` is a valid Google operator). Pass an
-    explicit `query` (e.g. `site:domain recipes` term-search) for publishers whose
-    recipes aren't under /recipes/. filter=0 stops Google omitting 'similar' hits.
-    Canonical host only. (NOTE: SerpAPI 401 = bad/exhausted key — check the key.)"""
+def _under_path(u, seg):
+    """True if url's path is `/<seg>/<slug>…` (a leaf under the recipe path)."""
+    segs = [s for s in urlparse(u).path.lower().strip("/").split("/") if s]
+    return len(segs) >= 2 and segs[0] == (seg or "").lower()
+
+
+def _serp_links(query, want=50) -> list:
+    """Raw organic links for a SerpAPI query (filter=0, paginated). Unfiltered —
+    callers filter. Returns [(link, title), …]."""
     if not _SERPAPI_KEY:
         return []
-    q = query or f"site:{domain}/{recipe_path}"
     out, seen = [], set()
     for start in range(0, want + 20, 10):
         try:
             r = requests.get("https://serpapi.com/search.json", params={
-                "engine": "google", "q": q, "num": 10,
+                "engine": "google", "q": query, "num": 10,
                 "start": start, "filter": 0, "api_key": _SERPAPI_KEY}, timeout=30)
             res = r.json().get("organic_results") or []
         except Exception:
             break
         for it in res:
             link = it.get("link") or ""
-            if _host(link) == domain and link not in seen and _is_recipe_url(link):
+            if link and link not in seen:
                 seen.add(link)
                 out.append((link, it.get("title") or ""))
         if not res or len(out) >= want:
@@ -171,13 +171,61 @@ def discover_publisher_recipe_urls(domain, want=80, recipe_path="recipes", query
     return out[:want]
 
 
-def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path="recipes", query=None) -> tuple:
+def detect_recipe_path(domain) -> str:
+    """Find the publisher's recipe URL path segment — DON'T assume `/recipes`. Probe
+    common candidates (`recipes`, `recipe`, `recipe-finder`…); whichever has the most
+    `site:domain/<cand>` leaf hits wins. If none, broad-scan `site:domain` and infer
+    the dominant first segment among leaf (slug) URLs, preferring a recipe-ish one.
+    Returns the segment (e.g. 'recipes') or '' if undetectable."""
+    if not _SERPAPI_KEY:
+        return "recipes"
+    best, best_n = "", 0
+    for cand in ("recipes", "recipe", "recipe-finder", "cooking"):
+        hits = [l for l, _ in _serp_links(f"site:{domain}/{cand}", want=12)
+                if _host(l) == domain and _under_path(l, cand)]
+        if len(hits) > best_n:
+            best, best_n = cand, len(hits)
+    if best_n >= 3:
+        return best
+    # Fallback: infer from a broad scan of the domain's leaf URLs.
+    from collections import Counter
+    segs = Counter()
+    for l, _ in _serp_links(f"site:{domain}", want=60):
+        if _host(l) == domain:
+            s = _first_seg(l)
+            p = [x for x in urlparse(l).path.strip("/").split("/") if x]
+            if s and len(p) >= 2:
+                segs[s] += 1
+    for seg, _ in segs.most_common():
+        if "recipe" in seg:
+            return seg
+    return segs.most_common(1)[0][0] if segs else ""
+
+
+def discover_publisher_recipe_urls(domain, want=80, recipe_path="recipes") -> list:
+    """Recipe URLs on a publisher via SerpAPI `site:domain/<recipe_path>` + filter=0
+    (precise — path-prefix is a valid Google operator; for Milk Street it found 45
+    real recipe pages vs 0 for the term form, measured 2026-06-16). `recipe_path` is
+    DETECTED per publisher (detect_recipe_path), never assumed. Canonical host only."""
+    if not recipe_path:
+        return []
+    out, seen = [], set()
+    for link, title in _serp_links(f"site:{domain}/{recipe_path}", want=want + 20):
+        if _host(link) == domain and link not in seen and _under_path(link, recipe_path):
+            seen.add(link)
+            out.append((link, title))
+        if len(out) >= want:
+            break
+    return out
+
+
+def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None) -> tuple:
     """Discover + Moz-score a publisher's recipe URLs, rank by PA, mark the top
-    `keep` as selected. Returns (members, n_discovered, n_scored). `members` are
-    ready for replace_members. `recipe_path`/`query` configure discovery per
-    publisher. Content extraction is a separate step (auth-fetch)."""
-    found = discover_publisher_recipe_urls(domain, want=discover_n,
-                                           recipe_path=recipe_path, query=query)
+    `keep` as selected. `recipe_path` is detected if not supplied. Returns
+    (members, n_discovered, n_scored, recipe_path). Content extraction is separate."""
+    if not recipe_path:
+        recipe_path = detect_recipe_path(domain)
+    found = discover_publisher_recipe_urls(domain, want=discover_n, recipe_path=recipe_path)
     scored = []
     for url, title in found:
         s = score_url_via_moz(url)
@@ -191,4 +239,4 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path="recipes",
         m["rank"] = i
         m["rank_score"] = m["pa"]          # within-publisher rank IS page authority
         m["selected"] = 1 if i <= keep else 0
-    return scored, len(found), len(scored)
+    return scored, len(found), len(scored), recipe_path
