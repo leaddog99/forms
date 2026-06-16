@@ -169,19 +169,44 @@ def score_data_points_for_dish(
         return 0
     a0, a1, a2 = (float(x) for x in ou_fit["coefficients"])
     pw = float(power_weight)
-    # !r => full-precision float literal (no rounding drift); our own
-    # coefficients, never user input, so no injection concern.
-    ou_expr = f"pa - ({a0!r}*da*da + {a1!r}*da + {a2!r})"
+
+    # Paywall PA-remap: for flagged premium publishers, replace the gated (link-
+    # starved) PA with its free-equivalent BEFORE scoring, so OU stops penalizing
+    # them for the paywall instead of quality. adjusted_PA = free_mean + (PA −
+    # paid_mean)·(free_std/paid_std) — shift AND scale (scripts/calibrate_paid_pa.py;
+    # calibration lives on the domains master). No flagged domains (or none with a
+    # solid sample) → eff_pa is just `pa` → byte-identical to the prior behavior.
+    # Matched by the data point's normalized url host (with/without www).
+    from input.pipeline import domains_lib
+    _whens = []
+    for c in domains_lib.get_paywall_calibrations(conn):
+        h = c["domain"]; ps = float(c["pa_std"])
+        if ps <= 0:
+            continue
+        cond = (f"(instr(url, {('//' + h + '/')!r}) > 0 "
+                f"OR instr(url, {('//www.' + h + '/')!r}) > 0)")
+        # max(pa, remap): the correction is ONE-DIRECTIONAL — a paywall can only
+        # SUPPRESS page links, never inflate them, so we only ever LIFT. A publisher
+        # already at/above the free line (e.g. NYT) keeps its real PA, untouched.
+        _whens.append(f"WHEN {cond} THEN max(pa, {float(c['free_mean'])!r} + "
+                      f"(pa - {float(c['pa_mean'])!r}) * ({float(c['free_std'])!r} / {ps!r}))")
+    eff_pa = ("CASE " + " ".join(_whens) + " ELSE pa END") if _whens else "pa"
+
+    # !r => full-precision float literal (no rounding drift); our own coefficients.
+    ou_inner = f"(epa - ({a0!r}*da*da + {a1!r}*da + {a2!r}))"
     conn.execute(
         f"""
-        WITH scored AS (
-            SELECT url,
-                   ({ou_expr})                                    AS ou,
-                   da + pa                                        AS power,
-                   PERCENT_RANK() OVER (ORDER BY ({ou_expr})) * 100.0 AS ou_pct,
-                   PERCENT_RANK() OVER (ORDER BY da + pa)      * 100.0 AS power_pct
+        WITH base AS (
+            SELECT url, da, ({eff_pa}) AS epa
             FROM dish_run_data_points
             WHERE dish_name = :d AND da IS NOT NULL AND pa IS NOT NULL
+        ), scored AS (
+            SELECT url,
+                   {ou_inner}                                     AS ou,
+                   da + epa                                       AS power,
+                   PERCENT_RANK() OVER (ORDER BY {ou_inner}) * 100.0 AS ou_pct,
+                   PERCENT_RANK() OVER (ORDER BY da + epa)    * 100.0 AS power_pct
+            FROM base
         )
         UPDATE dish_run_data_points AS p
         SET ou               = (SELECT ou       FROM scored s WHERE s.url = p.url),

@@ -86,6 +86,19 @@ _COUNT_COLUMNS = {
     "counts_updated_at": "TEXT",
 }
 
+# Paywall PA-calibration (shift-and-scale remap of a gated publisher's PA to its
+# free-equivalent). Recomputed by scripts/calibrate_paid_pa.py; consumed by the
+# scorer (score_data_points_for_dish) for paywall=1 domains.
+_PAYWALL_COLUMNS = {
+    "paywall": "INTEGER NOT NULL DEFAULT 0",        # 1 = gated premium publisher
+    "pa_cal_mean": "REAL",                          # this publisher's recipe-PA mean
+    "pa_cal_std": "REAL",                           # ...std (spread)
+    "pa_cal_n": "INTEGER",                          # sample size behind the calibration
+    "pa_cal_free_mean": "REAL",                     # matched-DA free PA mean (target)
+    "pa_cal_free_std": "REAL",                      # ...std
+    "pa_cal_at": "TEXT",                            # when calibrated (ISO)
+}
+
 
 def ensure_domains_table(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -120,10 +133,62 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
     for col, decl in _COUNT_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    # Paywall PA-calibration (2026-06-16): premium/gated publishers earn far less
+    # PAGE authority than free sites at the same DA, so OU penalizes them unfairly.
+    # We store a per-publisher shift-and-scale calibration so the scorer can remap
+    # their PA to a free-equivalent. `paywall=1` flags a gated premium publisher;
+    # pa_cal_* are this publisher's own PA mean/std/n; pa_cal_free_* are the matched-
+    # DA free reference at calibration time. See scripts/calibrate_paid_pa.py.
+    for col, decl in _PAYWALL_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_domains_root ON domains(root_domain)"
     )
     conn.commit()
+
+
+def set_paywall_calibration(conn, domain, *, da=None, pa_mean, pa_std, pa_n,
+                            free_mean, free_std, paywall=True):
+    """Store/refresh a premium publisher's PA-calibration on its domains row
+    (creating a minimal row if absent). Recomputed by the harvester; read by the
+    scorer to remap gated PA to free-equivalent."""
+    ensure_domains_table(conn)
+    host = _canon_host(domain)
+    now = _now()
+    if not domain_exists(conn, host):
+        conn.execute(
+            "INSERT INTO domains (domain, root_domain, created_at, updated_at) VALUES (?,?,?,?)",
+            (host, root_domain(host) or host, now, now),
+        )
+    sets = ["paywall = ?", "pa_cal_mean = ?", "pa_cal_std = ?", "pa_cal_n = ?",
+            "pa_cal_free_mean = ?", "pa_cal_free_std = ?", "pa_cal_at = ?", "updated_at = ?"]
+    params = [1 if paywall else 0, pa_mean, pa_std, pa_n, free_mean, free_std, now, now]
+    if da is not None:
+        sets.append("domain_authority = ?"); params.append(da)
+    params.append(host)
+    conn.execute(f"UPDATE domains SET {', '.join(sets)} WHERE domain = ?", params)
+    conn.commit()
+
+
+def get_paywall_calibrations(conn) -> list:
+    """Flagged premium publishers with a usable calibration — for the scorer.
+    Returns dicts {domain, da, pa_mean, pa_std, free_mean, free_std}; only rows
+    with a positive pa_cal_std (a real spread to scale against)."""
+    try:
+        rows = conn.execute(
+            "SELECT domain, domain_authority, pa_cal_mean, pa_cal_std, "
+            "pa_cal_free_mean, pa_cal_free_std FROM domains "
+            "WHERE paywall = 1 AND pa_cal_mean IS NOT NULL AND pa_cal_std > 0 "
+            "AND pa_cal_free_mean IS NOT NULL AND pa_cal_free_std IS NOT NULL "
+            # Ignore thin/unreliable calibrations (e.g. a publisher with too few
+            # discovered recipe pages) so the remap only fires on solid samples.
+            "AND COALESCE(pa_cal_n, 0) >= 15"
+        ).fetchall()
+    except Exception:
+        return []
+    return [{"domain": r[0], "da": r[1], "pa_mean": r[2], "pa_std": r[3],
+             "free_mean": r[4], "free_std": r[5]} for r in rows]
 
 
 def seed_domains(conn: sqlite3.Connection) -> int:
