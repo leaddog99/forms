@@ -667,63 +667,41 @@
     if(talk) speak(line);
   }
 
-  // ---- sub-step engine — memory-sized voice chunks ----------------------- //
-  // Research (docs/procedural-instruction-research.md): working memory ≈4 chunks,
-  // load = element INTERACTIVITY. So split a step's spoken text into voice-sized
-  // sub-steps — split INDEPENDENT actions apart, keep COUPLED ones (while/until/as)
-  // together — and speak one at a time. repeat/back ARE the voice "re-scan" (a
-  // cook can re-hear, just at higher friction than a glance). Heuristic client-side
-  // v1; model-authored sub-steps on `_cook` are the v2 upgrade.
-  function splitSpoken(step){
-    var full = spokenText(step);
-    if(!full) return [];
-    var parts = (full.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [full]).map(function(s){ return s.trim(); }).filter(Boolean);
-    var pieces = [];
-    parts.forEach(function(p){
-      if(p.split(' ').filter(Boolean).length > 14){   // only break LONG sentences on sequential markers
-        p.split(/(?:;\s+|,\s+then\s+|,\s+and\s+then\s+)/i).forEach(function(x){ x = x.trim(); if(x) pieces.push(x); });
-      } else pieces.push(p);
-    });
-    // Merge coupled clauses (while/until/as…) and tiny fragments into the prior chunk.
-    var COUPLE = /^(while|as|until|then|meanwhile|stirring|whisking|tossing|so that|to coat|to combine|to deglaze)\b/i;
-    var out = [];
-    pieces.forEach(function(p){
-      if(out.length && (COUPLE.test(p) || p.split(' ').filter(Boolean).length <= 3)){
-        out[out.length - 1] += (/[.!?]$/.test(out[out.length - 1]) ? ' ' : ', ') + p;
-      } else out.push(p);
-    });
-    return out.length ? out : [full];
-  }
-  var _subs = [], _subIdx = 0;
-  function speakSub(i){
-    _subIdx = i;
-    if(_subs[i] == null) return Promise.resolve();
-    var n = window.cookView.currentNumber();
-    setVoiceStatus('speaking', 'Step ' + (n || '') + (_subs.length > 1 ? (' · part ' + (i + 1) + '/' + _subs.length) : ''));
-    return speak(_subs[i]);
-  }
-  // Spoken mise — the pre-step where every cluster is laid out + MEASURED ONCE, by
-  // name (so the steps can refer to clusters by name without repeating amounts).
-  // Spoken at a fresh hands-free start + on the "mise" command.
-  function speakMise(){
+  // ---- mise phase — per-cluster, check-to-advance ----------------------- //
+  // The mise is the pre-step: each ingredient CLUSTER laid out + measured once, by
+  // name, ONE cluster per "next" (a whole-mise dump is too long — research's
+  // transient-info limit, confirmed by first real cook 2026-06-16). Steps
+  // themselves read WHOLE (the flow-rewrite into model-authored sub-steps is v2;
+  // the heuristic client-side chop was tedious — removed).
+  function miseLines(){
     var lines = [];
     ((CK && CK.bundles) || []).forEach(function(b){
       var mem = (b.members || []).map(function(m){ var a = amtStr(m.amount); return (a ? a + ' ' : '') + (m.label || ''); }).filter(Boolean);
-      if(mem.length) lines.push((b.label || 'one group') + ': ' + mem.join(', '));
+      if(mem.length) lines.push(deAbbrev((b.label || 'one group') + ': ' + mem.join(', ') + '.'));
     });
-    if(!lines.length) return Promise.resolve();
-    return speak(deAbbrev("Here's your mise — set these out first. " + lines.join('. ') + '.'));
+    return lines;
   }
-  // "Where was I?" — place-keeping / resumption (cooks get interrupted). Re-orients
-  // to step N of M + the current sub-step.
+  var _miseQ = [], _miseIdx = -1;   // _miseIdx >= 0 ⇒ currently walking the mise
+  function speakMiseAt(i, intro){
+    _miseIdx = i;
+    setVoiceStatus('speaking', '🧺 mise · ' + (i + 1) + '/' + _miseQ.length);
+    return speak((intro ? "Let's set up your mise. " : '') + _miseQ[i]);
+  }
+  function enterMise(){   // returns true if a mise was started (so caller can defer step 1)
+    _miseQ = miseLines();
+    if(!_miseQ.length){ _miseIdx = -1; return false; }
+    speakMiseAt(0, true);
+    return true;
+  }
+  // "Where was I?" — place-keeping / resumption (cooks get interrupted).
   function whereWasI(){
+    if(_miseIdx >= 0){ setVoiceStatus('speaking', '🧺 mise · ' + (_miseIdx + 1) + '/' + _miseQ.length);
+      speak('Still on the mise, group ' + (_miseIdx + 1) + ' of ' + _miseQ.length + '. ' + _miseQ[_miseIdx]); return; }
     var n = window.cookView.currentNumber();
     var total = ((CK && CK.steps) || []).length;
     if(n == null){ speak('You have finished all ' + total + ' steps. Enjoy!'); return; }
-    var msg = "You're on step " + n + ' of ' + total +
-      (_subs.length > 1 ? (', part ' + (_subIdx + 1) + ' of ' + _subs.length) : '') + '.';
     setVoiceStatus('speaking', '📍 step ' + n + '/' + total);
-    speak(_subs[_subIdx] ? (msg + ' ' + _subs[_subIdx]) : msg);
+    speak("You're on step " + n + ' of ' + total + '. ' + window.cookView.spokenText());
   }
   window.cookView = {
     steps: function(){ return (CK&&CK.steps)||[]; },
@@ -731,31 +709,29 @@
     currentStep: function(){ var n=this.currentNumber(); return n==null?null:(CK.steps||[]).find(function(s){return s.number===n;}); },
     stepByNumber: function(n){ return (CK.steps||[]).find(function(s){return s.number===n;})||null; },
     spokenText: function(step){ step=step||this.currentStep(); return step?spokenText(step):''; },
+    inMise: function(){ return _miseIdx >= 0; },
+    startMise: function(){ return enterMise(); },          // fresh start + "mise" command
     go: function(step){ step=step||this.currentStep(); if(step){ markCurrent(step.number);   // move + scroll, SILENT
       var d=stepDiv(step.number); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); } return step; },
-    // read = ENTER a step: split into voice-sized sub-steps, speak the first.
-    read: function(step){ step=this.go(step);
-      if(step && talk){ _subs = splitSpoken(step); _subIdx = 0;
-        var _pr = speakSub(0); if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); }); }
-      else { _subs = []; _subIdx = 0; }
-      return step; },
-    // next = advance a sub-step (voice pacing) until the step's chunks are exhausted,
-    // THEN complete the step + move on. Silent/screen mode (talk off) = whole-step.
+    read: function(step){ step=this.go(step); if(step && talk){ var _pr=speak(spokenText(step));   // whole step, speaks only if Talk is on
+        if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); }); } return step; },   // offer the step's tip once it's read
     next: function(){
-      if(talk && _subIdx < _subs.length - 1){ speakSub(_subIdx + 1); return this.currentStep(); }
+      if(_miseIdx >= 0){   // walking the mise: one cluster per "next", then into step 1
+        if(_miseIdx < _miseQ.length - 1){ speakMiseAt(_miseIdx + 1); return null; }
+        _miseIdx = -1; return this.read(this.currentStep()); }
       var n=this.currentNumber(); if(n==null){ celebrateFinish(); return null; }   // past the last step
       var d=stepDiv(n); var s=this.stepByNumber(n);
       toggleStep(d, s); var cs=this.currentStep();
       if(cs){ this.read(cs); } else { celebrateFinish(); }   // completed the last step → sign off warmly
       return cs; },
     back: function(){
-      if(talk && _subIdx > 0){ speakSub(_subIdx - 1); return this.currentNumber(); }   // re-scan: prior sub-step
+      if(_miseIdx >= 0){ if(_miseIdx > 0) speakMiseAt(_miseIdx - 1); else speakMiseAt(0); return null; }   // earlier cluster
       var all=[].slice.call(document.querySelectorAll('.step.done')); var last=all[all.length-1];
       if(last){ var n=parseInt(last.getAttribute('data-step'),10); toggleStep(last, this.stepByNumber(n));
         last.scrollIntoView({behavior:'smooth',block:'start'}); this.read(this.stepByNumber(n)); return n; } return null; },
-    repeat: function(){ if(talk && _subs.length){ return speakSub(_subIdx); } return this.read(this.currentStep()); },
+    repeat: function(){ if(_miseIdx >= 0){ return speakMiseAt(_miseIdx); } return this.read(this.currentStep()); },
     reset: function(){ document.querySelectorAll('.step.done').forEach(function(el){ el.classList.remove('done'); });
-      markCurrent(firstUncheckedNumber()); window.scrollTo({top:0,behavior:'smooth'}); }
+      _miseIdx = -1; markCurrent(firstUncheckedNumber()); window.scrollTo({top:0,behavior:'smooth'}); }
   };
 
   // Smart Back (the pad's ◀), music-player "previous" pattern:
@@ -1045,15 +1021,10 @@
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
         ' · ' + (navigator.userAgent || '').slice(0, 64));
       setVoiceStatus('speaking', 'Starting…');
-      // Fresh start (nothing done yet) → set the stage with the spoken mise, THEN
-      // read step 1. The mise is where amounts are stated once, by cluster name.
-      if(talk && !document.querySelector('.step.done')){
-        var _mp = speakMise();
-        if(_mp && _mp.then) _mp.then(function(){ if(hf) window.cookView.read(); });
-        else window.cookView.read();
-      } else {
-        window.cookView.read();    // speak the current step; _onSpeakEnd → listening
-      }
+      // Start by reading the current step (like before). The mise is OPT-IN via the
+      // "mise" command — auto-playing it duplicated prep steps (e.g. "combine the
+      // spices") and confused the cook. The organic mise/step re-plan is v2.
+      window.cookView.read();      // speak the current step; _onSpeakEnd → listening
       prefetchAllSteps();          // warm TTS for every step so "next" plays instantly
     }catch(e){
       console.error('[voice] start failed', e);
@@ -1195,7 +1166,7 @@
   var _Q_BLOCK = /\b(how (much|long|many|do|does|should|hot|cold|big)|why|what (kind|sort|temp|temperature|else|happens)|when should|is it|are they|are these|can i|could i|should i|do i|do you|what if)\b/;
   var _CMD_RULES = [
     { name:'where',   re:/\b(where (was|am) i|where are we|what step (am i|are we) (on|at)|which step (am i|are we)|remind me where)\b/, act:function(){ whereWasI(); } },
-    { name:'mise',    re:/\b(mise|read the mise|the mise|what do i need|what's in the mise|set ?up|read the setup|what are the ingredients|list the ingredients)\b/, act:function(){ speakMise(); } },
+    { name:'mise',    re:/\b(mise|read the mise|the mise|what do i need|what's in the mise|set ?up|read the setup|what are the ingredients|list the ingredients)\b/, act:function(){ window.cookView.startMise(); } },
     { name:'tip',     re:/\b(read (the |me the |out the )?(tip|tips|hint)|what'?s the tip|is there a tip|any (tip|tips|hints)|the tip please|give me the tip)\b/, act:function(){ readCurrentTip(); } },
     { name:'repeat',  re:/\b(repeat|say (that|it) again|again please|one more time|come again|read (that|it) again|what did you say)\b|^again$/, act:function(){ window.cookView.repeat(); } },
     { name:'restart', re:/\b(start over|restart|from the top|begin again|start again|start from the beginning)\b/, act:function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); } },
