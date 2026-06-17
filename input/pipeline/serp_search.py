@@ -22,7 +22,6 @@ import requests
 SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 SCALESERP_ENDPOINT = "https://api.scaleserp.com/search"
 _PAGE_SIZE = 10  # Google organic results per page (protocol constant)
-_SCALESERP_MAX_PAGE = 10  # Scale SERP hard limit: max_page must be <= 10 (400 otherwise)
 
 _SCALESERP_ALIASES = {"scaleserp", "scale_serp", "scale-serp", "scale"}
 
@@ -92,38 +91,39 @@ def _serpapi(query, pages, want, gl, hl, timeout) -> list[dict]:
 
 
 def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
-    """Scale SERP (Traject Data). `max_page` server-side-paginates + concatenates in
-    ONE request (1 credit per page processed). So we size max_page to what we
-    actually need — `ceil(want/10)+1`, capped at `pages` — NOT the SerpApi loop cap:
-    asking for 10 pages to get 12 results would waste ~8 credits AND risk a timeout
-    (the silent-0 bug). Same verbatim `q`; response: organic_results[] link/title/position."""
-    import math
+    """Scale SERP (Traject Data). LOOP the 1-based `page` param (like SerpApi's
+    `start`), one page per request, with early-stop at `want`. We don't use
+    `max_page` — it's hard-capped at 10 (400 above) AND a 10-page server-side fetch
+    risks the request timeout (the silent-0 bug). Page-looping has no depth cap, is
+    uniform with the SerpApi path, and early-stops cheaply. Same verbatim `q`;
+    response: organic_results[] with link/title/position. 1 credit per page."""
     key = _scaleserp_key()
     if not key:
         return []
-    max_page = pages if want is None else min(pages, math.ceil(want / _PAGE_SIZE) + 1)
-    max_page = max(1, min(_SCALESERP_MAX_PAGE, max_page))  # Scale SERP rejects > 10
-    params = {"api_key": key, "q": query, "output": "json", "max_page": max_page}
-    if gl:
-        params["gl"] = gl
-    if hl:
-        params["hl"] = hl
-    try:
-        resp = requests.get(SCALESERP_ENDPOINT, params=params, timeout=max(timeout, 90))
-        data = resp.json()
-        org = data.get("organic_results") or []
-        if not org:  # surface WHY rather than a silent 0
-            ri = data.get("request_info") or {}
-            print(f"  [scaleserp] 0 results (http={resp.status_code} "
-                  f"success={ri.get('success')} msg={ri.get('message') or data.get('error')})")
-    except Exception as e:
-        print(f"  [scaleserp] request failed: {type(e).__name__}: {e}")
-        return []
     out: list[dict] = []
     seen: set[str] = set()
-    for it in org:
-        link = it.get("link") or it.get("url") or ""
-        if link and link not in seen:
-            seen.add(link)
-            out.append({"link": link, "title": it.get("title") or "", "rank": len(out) + 1})
+    for p in range(1, max(1, pages) + 1):
+        params = {"api_key": key, "q": query, "output": "json", "page": p}
+        if gl:
+            params["gl"] = gl
+        if hl:
+            params["hl"] = hl
+        try:
+            data = requests.get(SCALESERP_ENDPOINT, params=params, timeout=timeout).json()
+            org = data.get("organic_results") or []
+        except Exception as e:
+            print(f"  [scaleserp] page {p} failed: {type(e).__name__}: {e}")
+            break
+        if not org:
+            ri = data.get("request_info") or {}
+            if not ri.get("success"):  # surface a real error (e.g. out of credits), not a silent 0
+                print(f"  [scaleserp] page {p}: {ri.get('message') or data.get('error')}")
+            break
+        for it in org:
+            link = it.get("link") or it.get("url") or ""
+            if link and link not in seen:
+                seen.add(link)
+                out.append({"link": link, "title": it.get("title") or "", "rank": len(out) + 1})
+        if want is not None and len(out) >= want:
+            break
     return out[:want] if want is not None else out

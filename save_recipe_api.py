@@ -3466,7 +3466,12 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
         recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
         check_recipe = bool(payload.get("check_recipe", True))
-        pages = max(1, int(payload.get("pages") or row.get("search_pages") or 4))
+        # Depth = per-request → per-publisher (domains.search_pages) → system default
+        # (system_config 'serp_default_pages', admin-editable). No hard 10 cap now
+        # (Scale SERP page-loops); each page is 1 credit + (verify) 1 fetch.
+        from input.pipeline import system_config as _cfg
+        pages = max(1, int(payload.get("pages") or row.get("search_pages")
+                           or _cfg.get_setting("serp_default_pages", 6)))
         entity_ref = f"publisher:{host}"
         existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
         if existing:
