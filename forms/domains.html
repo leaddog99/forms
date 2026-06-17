@@ -11,7 +11,57 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260603a">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260617a">
+  <style>
+    /* Top-recipes list — lifted from dishes.html so the domains list reads the
+       SAME as the dishes list (reuse the component, don't drift). Tokens
+       (--ink/--accent/--line/--muted/--accent-soft) resolve from editor-shell :root. */
+    .top-recipes-list { display:flex; flex-direction:column; gap:6px; }
+    .top-recipe-row {
+      display:flex; gap:12px; padding:8px 12px;
+      border:1px solid var(--line); border-radius:8px;
+      background:var(--accent-soft, rgba(138,90,59,.05));
+      font-size:.92em; transition:background 120ms ease;
+    }
+    .top-recipe-row:hover { background:rgba(138,90,59,.10); }
+    .top-recipe-tile {
+      flex:0 0 auto; display:block; width:88px; height:66px;
+      border-radius:6px; overflow:hidden; background:var(--bg,#f8f4ef);
+      border:1px solid var(--line);
+    }
+    .top-recipe-tile img { width:100%; height:100%; object-fit:cover; display:block; }
+    .top-recipe-tile.empty {
+      background:repeating-linear-gradient(45deg, var(--bg,#f8f4ef) 0 8px, var(--line) 8px 9px);
+    }
+    .top-recipe-body { flex:1; min-width:0; }
+    .top-recipe-main { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .top-rank {
+      display:inline-block; min-width:28px; padding:2px 6px;
+      background:var(--accent); color:#fff; border-radius:4px;
+      font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+      font-size:.78em; font-weight:600; text-align:center;
+    }
+    .top-recipe-title { color:var(--ink); font-weight:600; font-family:Georgia,'Times New Roman',serif; }
+    .top-recipe-host { color:var(--muted,#74695f); font-size:.85em; font-style:italic; }
+    .top-badge {
+      font-size:.72em; font-weight:600; padding:1px 6px; border-radius:4px;
+      background:var(--accent-soft, rgba(138,90,59,.10)); color:var(--accent-dark,#6f4628);
+    }
+    .top-badge.sel { background:var(--accent); color:#fff; }
+    .top-recipe-meta {
+      display:flex; align-items:center; gap:10px; margin-top:4px;
+      font-size:.82em; color:var(--muted,#74695f);
+      font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+    }
+    .top-recipe-actions { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+    .top-action {
+      display:inline-flex; align-items:center; gap:4px; padding:4px 10px;
+      border-radius:4px; font-family:Georgia,'Times New Roman',serif;
+      font-size:.82em; font-weight:500; text-decoration:none; border:1px solid var(--line);
+    }
+    .top-action.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .top-action.secondary { background:#fff; color:var(--ink); }
+  </style>
 </head>
 <body>
   <header class="app-header">
@@ -161,6 +211,8 @@
           <span class="ed-pill ${isAllowed(d) ? 'ok' : 'warn'}"><i class="d"></i>${isAllowed(d) ? 'Allowed' : 'Blocked'}</span>
           ${d.root_domain ? `<span class="ed-pill"><i class="d"></i>root ${escapeHtml(d.root_domain)}</span>` : ''}
           ${d.domain_authority != null ? `<span class="ed-pill"><i class="d"></i>DA ${Math.round(d.domain_authority)}</span>` : ''}
+          ${d.da_last_scored ? `<span class="ed-pill"><i class="d"></i>DA scored ${escapeHtml(fmtDate(d.da_last_scored))}</span>` : ''}
+          ${d.failure_count ? `<span class="ed-pill warn"><i class="d"></i>${d.failure_count} fetch fails</span>` : ''}
         </div>
         <p class="ed-submeta">Updated ${fmtDate(d.updated_at)}${d.created_at ? ' · created ' + fmtDate(d.created_at) : ''}</p>
 
@@ -168,49 +220,19 @@
           <h3 class="ed-block-label">Editorial</h3>
           <div class="ed-form-grid">
             ${field('f_display_name', 'Display name', d.display_name, { ph: 'NYT Cooking' })}
-            ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://…' })}
             ${field('f_story', 'Story', d.story, { textarea: true, full: true, minh: 90, ph: 'A short editorial bio of this site…' })}
           </div>
         </section>
 
         <section class="ed-block">
-          <h3 class="ed-block-label">Provenance</h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">Where the publisher is based + its primary language (a default for non-English ingestion). <strong>cuisine_focus</strong> is a hint only — a Greek site can still post a taco; authoritative recipe ethnicity comes from the dish.</p>
+          <h3 class="ed-block-label">Provenance &amp; extraction</h3>
           <div class="ed-form-grid">
             ${field('f_country', 'Country', d.country, { ph: 'Greece' })}
             ${field('f_language', 'Language (ISO 639-1)', d.language, { ph: 'el' })}
-            ${field('f_cuisine_focus', 'Cuisine focus (hint)', d.cuisine_focus, { ph: 'Greek' })}
-          </div>
-        </section>
-
-        <section class="ed-block">
-          <h3 class="ed-block-label">Extraction</h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">How the batch fetcher should handle this site (the domain-quirks registry).</p>
-          <div class="ed-form-grid">
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
-            ${field('f_custom_extractor', 'Custom extractor (module path)', d.custom_extractor, { ph: 'intake.parsers.foo' })}
-            ${field('f_extract_notes', 'Extraction notes', d.extract_notes, { textarea: true, full: true, minh: 70, ph: 'JSON-LD reliable · needs www for Moz · paywalled — use screenshot…' })}
-          </div>
-        </section>
-
-        <section class="ed-block">
-          <h3 class="ed-block-label">Gatekeeping &amp; authority</h3>
-          <div class="ed-form-grid">
-            ${field('f_allowed', 'Allowed (ingest from this site)', isAllowed(d), { checkbox: true, full: true })}
+            ${field('f_allowed', 'Allowed (ingest from this site)', isAllowed(d), { checkbox: true })}
             ${field('f_domain_authority', 'Domain authority (DA)', d.domain_authority, { type: 'number' })}
-            ${field('f_da_last_scored', 'DA last scored', d.da_last_scored ? fmtDate(d.da_last_scored) : '', { readonly: true })}
-            ${field('f_failure_count', 'Failure count', d.failure_count, { type: 'number' })}
-          </div>
-        </section>
-
-        <section class="ed-block">
-          <h3 class="ed-block-label">Recipes from this domain</h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">Counts are stored on the row and refreshed each time this domain is opened; pick one to jump to it.</p>
-          <div class="ed-form-grid">
-            <div class="ed-field"><label for="masterPicker">Master recipes <span class="ed-count" id="masterCount"></span></label>
-              <select id="masterPicker"><option value="">Loading…</option></select></div>
-            <div class="ed-field"><label for="userPicker">User recipes <span class="ed-count" id="userCount"></span></label>
-              <select id="userPicker"><option value="">Loading…</option></select></div>
+            ${field('f_extract_notes', 'Extraction notes', d.extract_notes, { textarea: true, full: true, minh: 70, ph: 'JSON-LD reliable · needs www for Moz · paywalled — use screenshot…' })}
           </div>
         </section>
 
@@ -237,13 +259,29 @@
             <span class="ed-save-hint" id="topHint"></span>
           </div>
           <pre id="topLog" style="display:none;max-height:240px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;margin:0 0 10px;white-space:pre-wrap;"></pre>
-          <ol class="ed-t10" id="domainTopList"><li class="ed-empty-fit">Open or refresh to load the top recipes.</li></ol>
+          <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
         </section>
 
         <section class="ed-block">
           <h3 class="ed-block-label">Curator notes</h3>
           <textarea id="f_notes" class="ed-notes" placeholder="Anything else worth recording about this site…">${escapeHtml(d.notes || '')}</textarea>
         </section>
+
+        <details class="ed-block" style="border-top:1px solid var(--line);padding-top:10px">
+          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo, cuisine hint, custom extractor, recipe browse</summary>
+          <div class="ed-form-grid" style="margin-top:12px">
+            ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://… (Clearbit auto-fills)' })}
+            ${field('f_cuisine_focus', 'Cuisine focus (hint only)', d.cuisine_focus, { ph: 'Greek' })}
+            ${field('f_custom_extractor', 'Custom extractor (module path)', d.custom_extractor, { ph: 'intake.parsers.foo' })}
+          </div>
+          <p class="ed-notes-help" style="margin:12px 0 6px">Recipes from this domain — counts refresh on open; pick one to jump.</p>
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="masterPicker">Master recipes <span class="ed-count" id="masterCount"></span></label>
+              <select id="masterPicker"><option value="">Loading…</option></select></div>
+            <div class="ed-field"><label for="userPicker">User recipes <span class="ed-count" id="userCount"></span></label>
+              <select id="userPicker"><option value="">Loading…</option></select></div>
+          </div>
+        </details>
 
         <div class="ed-actions">
           <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
@@ -266,21 +304,37 @@
       loadDomainTop(d.domain);         // stored publisher top-N ledger
     }
 
-    // Render the publisher top-N ledger (rank · title · PA · in-corpus badge).
+    // Render the publisher top-N list — same component/look as the dishes
+    // top-recipes list (tile · rank · title · host · grade/corpus/★ · DA/PA/pwr ·
+    // actions). Reuses the .top-recipe-* classes lifted from dishes.html.
     function renderDomainTop(list){
       const el = $('#domainTopList'); if (!el) return;
-      if (!list || !list.length){ el.innerHTML = '<li class="ed-empty-fit">No top recipes yet — click “Refresh top recipes”.</li>'; return; }
+      if (!list || !list.length){ el.innerHTML = '<div class="ed-empty-fit">No top recipes yet — run a refresh.</div>'; return; }
       el.innerHTML = list.map((m, i) => {
-        const star = m.selected ? ' <span class="ed-t10-grade" title="kept (top-N)">★</span>' : '';
-        const grade = m.grade ? ` <span class="ed-t10-grade">${escapeHtml(m.grade)}</span>` : '';
-        const inCorpus = m.ingested ? ' <span class="ed-t10-grade" title="already in the corpus">in corpus</span>' : '';
-        const href = m.ingested && m.recipe_id ? `/r/${encodeURIComponent(m.recipe_id)}` : (m.url || '#');
-        const pa = (typeof m.pa === 'number') ? Math.round(m.pa) : '—';
-        return `<a class="ed-t10-row" href="${escapeHtml(href)}" target="_blank" rel="noopener">
-            <span class="ed-t10-rank">${m.rank || i + 1}</span>
-            <span class="ed-t10-main"><span class="ed-t10-name">${escapeHtml(m.title || m.url)}${star}${grade}${inCorpus}</span></span>
-            <span class="ed-t10-stats"><span class="ed-t10-stat score"><span class="v">${pa}</span><span class="l">PA</span></span></span>
-          </a>`;
+        const host = (() => { try { return new URL(m.url).hostname.replace(/^www\./, ''); } catch { return m.url || '—'; } })();
+        const title = escapeHtml(m.name || m.title || host);
+        const bccHref = m.ingested && m.recipe_id ? `/r/${encodeURIComponent(m.recipe_id)}` : '';
+        const tileHref = bccHref || m.url || '#';
+        const tile = m.preview_image
+          ? `<a class="top-recipe-tile" href="${escapeHtml(tileHref)}" target="_blank" rel="noopener"><img src="${escapeHtml(m.preview_image)}" alt="" loading="lazy"></a>`
+          : `<div class="top-recipe-tile empty"></div>`;
+        const badges =
+          (m.selected ? ' <span class="top-badge sel" title="kept (top-N)">★ kept</span>' : '') +
+          (m.grade ? ` <span class="top-badge">${escapeHtml(m.grade)}</span>` : '') +
+          (m.ingested ? ' <span class="top-badge" title="already in the corpus">in corpus</span>' : '');
+        const meta = [];
+        if (typeof m.da === 'number') meta.push(`DA ${Math.round(m.da)}`);
+        if (typeof m.pa === 'number') meta.push(`PA ${Math.round(m.pa)}`);
+        if (typeof m.da === 'number' && typeof m.pa === 'number') meta.push(`pwr ${Math.round(m.da + m.pa)}`);
+        const actions =
+          (bccHref ? `<a class="top-action primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener">Open in BCC</a>` : '') +
+          `<a class="top-action secondary" href="${escapeHtml(m.url || '#')}" target="_blank" rel="noopener" title="${escapeHtml(m.url || '')}">View source ↗</a>`;
+        return `<div class="top-recipe-row">${tile}<div class="top-recipe-body">` +
+          `<div class="top-recipe-main"><span class="top-rank">#${m.rank || i + 1}</span>` +
+          `<span class="top-recipe-title">${title}</span> <span class="top-recipe-host">${escapeHtml(host)}</span>${badges}</div>` +
+          `<div class="top-recipe-meta">${escapeHtml(meta.join(' · '))}</div>` +
+          `<div class="top-recipe-actions">${actions}</div>` +
+          `</div></div>`;
       }).join('');
     }
 
@@ -448,7 +502,6 @@
         extract_notes: $('#f_extract_notes').value.trim(),
         allowed: $('#f_allowed').checked ? 1 : 0,
         domain_authority: numOrNull($('#f_domain_authority').value),
-        failure_count: numOrNull($('#f_failure_count').value) || 0,
         notes: $('#f_notes').value.trim(),
         recipe_path: ($('#f_recipe_path')?.value || '').trim(),
         keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
