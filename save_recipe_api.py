@@ -2747,6 +2747,7 @@ def delete_dish_endpoint(name: str, request: Request):
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
+            _enable_vec_for_delete(conn)  # trg_dish_vec_cleanup deletes from dishes_vec (vec0)
             cascaded = dishes_lib.delete_master_rows_for_dish(conn, name, kind="top")
             dishes_lib.delete_dish(conn, name)
             return {
