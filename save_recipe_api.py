@@ -3429,13 +3429,15 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
             keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
             recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
             check_recipe = payload.get("check_recipe", True)  # is_recipe filter on by default
+            # Search depth in SERP pages (~10 results each) → discover_n candidates.
+            pages = max(1, int(payload.get("pages") or row.get("search_pages") or 4))
             res = collections_lib.harvest_publisher_top(
-                host, keep=keep, discover_n=int(payload.get("discover_n") or 40),
+                host, keep=keep, discover_n=pages * 10,
                 recipe_path=recipe_path, query=query, check_recipe=bool(check_recipe))
             collections_lib.replace_members(conn, "publisher", host, res["members"])
             conn.execute(
-                "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ? WHERE domain = ?",
-                (res.get("recipe_path") or "", keep, query or "", host))
+                "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ?, search_pages = ? WHERE domain = ?",
+                (res.get("recipe_path") or "", keep, query or "", pages, host))
             conn.commit()
             top = collections_lib.get_collection_top(conn, "publisher", host, limit=max(keep, 50))
         return {"domain": host, "recipe_path": res.get("recipe_path"), "query": query, "keep": keep,

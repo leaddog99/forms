@@ -58,6 +58,7 @@ EDITABLE_FIELDS = (
     "keep_top_n",     # publisher top-N to keep on refresh
     "recipe_path",    # publisher recipe URL path segment (detected, overridable)
     "serp_query",     # VERBATIM Google query for the harvest (overrides recipe_path)
+    "search_pages",   # how many SERP pages (~10 results each) to fetch on refresh
     "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
     "paywall",        # gated premium publisher (drives PA-remap)
 )
@@ -117,6 +118,10 @@ _PAYWALL_COLUMNS = {
     # 0 = no mechanical access (no clean index / JS-only / hard paywall) → refresh
     # skips it so it doesn't pollute the list. Curator-set.
     "harvestable": "INTEGER NOT NULL DEFAULT 1",
+    # SERP search depth on refresh: how many ~10-result pages to fetch (= discover_n
+    # /10). More pages = more candidates + (Scale SERP) more credits + slower when
+    # the recipe-check fetches each. Default 4 (~40 candidates).
+    "search_pages": "INTEGER NOT NULL DEFAULT 4",
 }
 
 

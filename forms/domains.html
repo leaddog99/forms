@@ -220,6 +220,7 @@
           <div class="ed-form-grid">
             ${field('f_serp_query', 'Google query (verbatim, incl. site:)', d.serp_query || '', { placeholder: 'e.g. site:bostonglobe.com recipe' })}
             ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { placeholder: 'auto-detect (e.g. recipes)' })}
+            ${field('f_search_pages', 'Search depth — pages (×10 results)', d.search_pages || 4, { type: 'number' })}
             ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
           </div>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px">
@@ -296,6 +297,7 @@
     async function doRefreshTop(domain){
       const btn = $('#refreshTopBtn'), hint = $('#topHint');
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
+      const pages = parseInt($('#f_search_pages')?.value, 10) || 4;
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
@@ -306,7 +308,7 @@
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, recipe_path, query, check_recipe }) });
+          body: JSON.stringify({ keep, pages, recipe_path, query, check_recipe }) });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
         renderDomainTop(data.top || []);
@@ -424,6 +426,7 @@
         recipe_path: ($('#f_recipe_path')?.value || '').trim(),
         keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
         serp_query: ($('#f_serp_query')?.value || '').trim(),
+        search_pages: numOrNull($('#f_search_pages')?.value) || 4,
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
       };
     }
