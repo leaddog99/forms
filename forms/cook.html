@@ -667,6 +667,26 @@
     if(talk) speak(line);
   }
 
+  // ---- sub-steps (v2) — MODEL-authored memory-sized voice chunks --------- //
+  // Each step may carry `substeps` (cook_rework v2, docs/procedural-instruction-
+  // research.md): one terse spoken action per chunk, split-on-independence /
+  // clustered-on-coupling. Talk-ON voice walks them one per "next"; back/repeat
+  // ARE the voice re-scan (a cook can re-hear, higher friction than a glance).
+  // Screen keeps the WHOLE step visible (it tolerates more) — sub-steps are the
+  // voice/place-keeping layer only. Talk-OFF (silent/screen) reads whole, untouched.
+  // Replaces the deleted client-side heuristic chopper (was tedious) with real data.
+  var _subs = [], _subIdx = 0;   // _subs = this step's spoken voice lines; [] ⇒ whole-step
+  function subsFor(step){
+    return (step && step.substeps || []).map(function(ss){ return deAbbrev(ss.voice || ''); })
+      .filter(Boolean);
+  }
+  function speakSub(i){
+    _subIdx = i;
+    var n = window.cookView.currentNumber();
+    setVoiceStatus('speaking', 'Step ' + (n || '') + (_subs.length > 1 ? (' · part ' + (i + 1) + '/' + _subs.length) : ''));
+    return speak(_subs[i]);
+  }
+
   // ---- mise phase — per-cluster, check-to-advance ----------------------- //
   // The mise is the pre-step: each ingredient CLUSTER laid out + measured once, by
   // name, ONE cluster per "next" (a whole-mise dump is too long — research's
@@ -700,8 +720,11 @@
     var n = window.cookView.currentNumber();
     var total = ((CK && CK.steps) || []).length;
     if(n == null){ speak('You have finished all ' + total + ' steps. Enjoy!'); return; }
-    setVoiceStatus('speaking', '📍 step ' + n + '/' + total);
-    speak("You're on step " + n + ' of ' + total + '. ' + window.cookView.spokenText());
+    var part = (_subs.length > 1 ? (', part ' + (_subIdx + 1) + ' of ' + _subs.length) : '');
+    setVoiceStatus('speaking', '📍 step ' + n + '/' + total + (_subs.length > 1 ? (' · ' + (_subIdx + 1) + '/' + _subs.length) : ''));
+    // Re-orient, then re-speak the CURRENT chunk (the cook's exact place), not the whole step.
+    var here = (_subs.length ? _subs[_subIdx] : window.cookView.spokenText());
+    speak("You're on step " + n + ' of ' + total + part + '. ' + here);
   }
   window.cookView = {
     steps: function(){ return (CK&&CK.steps)||[]; },
@@ -713,12 +736,22 @@
     startMise: function(){ return enterMise(); },          // fresh start + "mise" command
     go: function(step){ step=step||this.currentStep(); if(step){ markCurrent(step.number);   // move + scroll, SILENT
       var d=stepDiv(step.number); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); } return step; },
-    read: function(step){ step=this.go(step); if(step && talk){ var _pr=speak(spokenText(step));   // whole step, speaks only if Talk is on
-        if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); }); } return step; },   // offer the step's tip once it's read
+    // read = ENTER a step. Talk-ON: split into the model's voice sub-steps + speak
+    // the first; no substeps ⇒ whole step. Talk-OFF: silent move (screen reads whole).
+    read: function(step){ step=this.go(step);
+      if(step && talk){
+        _subs = subsFor(step); _subIdx = 0;
+        var _pr = _subs.length ? speakSub(0) : speak(spokenText(step));
+        if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); });
+      } else { _subs = []; _subIdx = 0; }
+      return step; },
     next: function(){
       if(_miseIdx >= 0){   // walking the mise: one cluster per "next", then into step 1
         if(_miseIdx < _miseQ.length - 1){ speakMiseAt(_miseIdx + 1); return null; }
         _miseIdx = -1; return this.read(this.currentStep()); }
+      // Voice pacing: advance a sub-step until the step's chunks are exhausted, THEN
+      // complete the step + move on. Silent/screen mode (Talk off) = whole-step.
+      if(talk && _subIdx < _subs.length - 1){ speakSub(_subIdx + 1); return this.currentStep(); }
       var n=this.currentNumber(); if(n==null){ celebrateFinish(); return null; }   // past the last step
       var d=stepDiv(n); var s=this.stepByNumber(n);
       toggleStep(d, s); var cs=this.currentStep();
@@ -726,12 +759,14 @@
       return cs; },
     back: function(){
       if(_miseIdx >= 0){ if(_miseIdx > 0) speakMiseAt(_miseIdx - 1); else speakMiseAt(0); return null; }   // earlier cluster
+      if(talk && _subIdx > 0){ speakSub(_subIdx - 1); return this.currentNumber(); }   // re-scan: prior sub-step
       var all=[].slice.call(document.querySelectorAll('.step.done')); var last=all[all.length-1];
       if(last){ var n=parseInt(last.getAttribute('data-step'),10); toggleStep(last, this.stepByNumber(n));
         last.scrollIntoView({behavior:'smooth',block:'start'}); this.read(this.stepByNumber(n)); return n; } return null; },
-    repeat: function(){ if(_miseIdx >= 0){ return speakMiseAt(_miseIdx); } return this.read(this.currentStep()); },
+    repeat: function(){ if(_miseIdx >= 0){ return speakMiseAt(_miseIdx); }
+      if(talk && _subs.length){ return speakSub(_subIdx); } return this.read(this.currentStep()); },
     reset: function(){ document.querySelectorAll('.step.done').forEach(function(el){ el.classList.remove('done'); });
-      _miseIdx = -1; markCurrent(firstUncheckedNumber()); window.scrollTo({top:0,behavior:'smooth'}); }
+      _miseIdx = -1; _subs = []; _subIdx = 0; markCurrent(firstUncheckedNumber()); window.scrollTo({top:0,behavior:'smooth'}); }
   };
 
   // Smart Back (the pad's ◀), music-player "previous" pattern:
@@ -905,7 +940,13 @@
     return pr;
   }
   function prefetchSpeak(text){ text = String(text || '').trim(); if(text) getSpeechUrl(text).catch(function(){}); }
-  function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){ prefetchSpeak(spokenText(s)); }); }
+  // Warm TTS for every spoken chunk: the model's sub-step voice lines (what "next"
+  // plays) when present, else the whole-step text — so playback is always instant.
+  function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){
+    var subs = subsFor(s);
+    if(subs.length) subs.forEach(function(t){ prefetchSpeak(t); });
+    else prefetchSpeak(spokenText(s));
+  }); }
   function _playUrl(url){
     return new Promise(function(res){
       var a = _ensureAudioEl(); a.src = url; _speaking = true; refreshMidIcon();
