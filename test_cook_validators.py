@@ -3,7 +3,7 @@ defect per gate provably fires it. Run: python test_cook_validators.py
 """
 from cook_model import (
     CookMetadata, CookIngredient, CookAmount, FormVariant, Bundle, BundleMember,
-    CookEquipment, CookStep, StepIngredient, StepEquipment, ReservedItem,
+    CookEquipment, CookStep, StepIngredient, StepEquipment, ReservedItem, CookSubStep,
 )
 from cook_validators import run_all
 
@@ -39,14 +39,22 @@ def make_good() -> CookMetadata:
             CookStep(number=1, name="Boil the pasta",
                      instruction="Boil the {ing1} to al dente; reserve the water.",
                      ingredients=[StepIngredient(ingredient_id="ing_pasta", amount=amt("8 oz", "225 g"), label="spaghetti", definiteness="the")],
-                     equipment=[StepEquipment(equipment_id="eq_pot")]),
+                     equipment=[StepEquipment(equipment_id="eq_pot")],
+                     substeps=[
+                         CookSubStep(voice="Boil the spaghetti to al dente.", ingredients=[1]),
+                         CookSubStep(voice="Scoop out and reserve a half cup of the water.", ingredients=[]),
+                     ]),
             CookStep(number=2, name="Steam the clams",
                      instruction="Add the {ing1} and the {ing2}; cover until they open.",
                      ingredients=[
                          StepIngredient(ingredient_id="ing_clams", amount=amt("1 lb", "450 g"), label="clams", definiteness="the"),
                          StepIngredient(ingredient_id="ing_garlic", amount=CookAmount.same("2 Tbsp minced"), label="garlic", definiteness="the"),
                      ],
-                     equipment=[StepEquipment(equipment_id="eq_pan")]),
+                     equipment=[StepEquipment(equipment_id="eq_pan")],
+                     substeps=[
+                         CookSubStep(voice="Add the clams and garlic.", ingredients=[1, 2]),
+                         CookSubStep(voice="Cover until they open.", ingredients=[]),
+                     ]),
         ],
     )
 
@@ -90,6 +98,10 @@ def main():
 
     g = make_good(); g.bundles[0].combine_note = None; g.bundles[0].excluded_reason = None
     cases.append(("bundling", g))
+
+    # substeps: drop ingredient 2 from step 2's coverage -> garlic left unspoken.
+    g = make_good(); g.steps[1].substeps[0].ingredients = [1]
+    cases.append(("substeps", g))
 
     for gate, cook in cases:
         rep = run_all(cook)

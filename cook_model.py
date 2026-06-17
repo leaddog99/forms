@@ -190,6 +190,31 @@ class Attachment(BaseModel):
     media: List[MediaRef] = Field(default_factory=list)
 
 
+class CookSubStep(BaseModel):
+    """One memory-sized chunk of a step, for VOICE pacing + place-keeping
+    (docs/procedural-instruction-research.md). The research: working memory ≈4
+    chunks, load = element interactivity, and SPEECH is transient (can't be
+    re-scanned) so the ear must get far less than the screen. So a sub-step is
+    split-on-independence / clustered-on-coupling (one action, or one tightly-
+    coupled action-cluster like 'whisk while pouring'), ≤~3 interacting elements,
+    DUAL-rendered: `voice` is the terse spoken action (the verb, not every number);
+    the screen keeps the whole step visible (it tolerates more) and may carry the
+    measurements. A step with no substeps reads WHOLE (back-compat) — substeps are
+    the voice/place-keeping layer over the step, never a replacement for it."""
+    voice: str = Field(..., description="Terse spoken action — the minimal verb+object, "
+                                        "amounts only when essential. The ear gets this.")
+    screen: Optional[str] = Field(
+        None, description="Optional fuller on-screen fragment carrying the measurements; "
+                          "may use the parent step's {ingN}/{amt}/{bundle} tokens. "
+                          "Absent => the whole step instruction stays on screen.")
+    # 1-based indices into the PARENT step's `ingredients` deployed in this sub-step.
+    # The union across a step's substeps must COVER every step ingredient (the
+    # substeps gate) so nothing the cook needs goes unspoken; powers mise highlight.
+    ingredients: List[int] = Field(default_factory=list,
+                                   description="1-based indices into the parent step's "
+                                               "`ingredients` that this sub-step deploys.")
+
+
 class CookStep(BaseModel):
     number: int
     name: str = Field(..., description="Short imperative title, e.g. 'Boil the spaghetti'.")
@@ -203,6 +228,9 @@ class CookStep(BaseModel):
                     "Pure ACTION: every ingredient amount is a back-reference, never introduced.")
     ingredients: List[StepIngredient] = Field(default_factory=list)
     equipment: List[StepEquipment] = Field(default_factory=list)
+    # Voice-pacing layer (v2): the step split into memory-sized sub-steps. Empty =>
+    # the step reads whole (back-compat; silent/Talk-off mode always reads whole).
+    substeps: List[CookSubStep] = Field(default_factory=list)
     # Schedule (handoff §2): three renders of one schedule (list / timeline /
     # backward 'start by <serve time>').
     duration_minutes: Optional[int] = None

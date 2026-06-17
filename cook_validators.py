@@ -243,6 +243,37 @@ def v_reuse_referenced(cook: CookMetadata) -> List[str]:
     return out
 
 
+def v_substeps(cook: CookMetadata) -> List[str]:
+    """The voice-pacing sub-step split (v2) is well-formed — fires ONLY for steps
+    that HAVE substeps, so steps/reworks without them are untouched (back-compat):
+      • every sub-step carries a non-empty `voice` line (the spoken action);
+      • every `ingredients` index points at a real parent step ingredient (1-based);
+      • COVERAGE — every parent step ingredient is deployed in some sub-step, so a
+        split never silently drops an ingredient the cook needs to hear.
+    Quality (split-on-independence, ≤3 elements) is the model's judgment; this gate
+    only guards mechanical integrity, matching the rest of the gauntlet."""
+    out = []
+    for s in cook.steps:
+        if not s.substeps:
+            continue
+        n_ing = len(s.ingredients)
+        covered = set()
+        for j, ss in enumerate(s.substeps, 1):
+            if not (ss.voice or "").strip():
+                out.append(f"step {s.number} sub-step {j}: empty voice line")
+            for idx in ss.ingredients:
+                if idx < 1 or idx > n_ing:
+                    out.append(f"step {s.number} sub-step {j}: ingredient index {idx} "
+                               f"out of range (step has {n_ing} ingredient(s))")
+                else:
+                    covered.add(idx)
+        missing = [k for k in range(1, n_ing + 1) if k not in covered]
+        if missing:
+            out.append(f"step {s.number}: ingredient(s) {missing} not deployed in any "
+                       f"sub-step — the split would leave them unspoken")
+    return out
+
+
 def v_bundling(cook: CookMetadata) -> List[str]:
     """Every bundle states WHY it's combined (combine_note) or why an item is kept
     separate (excluded_reason) — co-added groups are bundled or carry a reason."""
@@ -266,6 +297,7 @@ VALIDATORS = [
     ("appearance-order", v_appearance_order),
     ("reuse-referenced", v_reuse_referenced),
     ("bundling", v_bundling),
+    ("substeps", v_substeps),
 ]
 
 

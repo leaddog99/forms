@@ -36,7 +36,9 @@ _MAX_TOKENS = 8192
 # Bump when the prompt/schema changes so stale reworks are detectable + re-runnable.
 # v2: rework no longer invents tips/checks — the augment pass (cook_augment) attaches
 # them from the PUBLISHED KB with provenance (kb_id).
-REWORK_PROMPT_VERSION = "cook-rework-v2.1-2026-06-10"
+# v2.2: model-authored voice-pacing `substeps` (split-on-independence, terse-voice/
+# screen-numbers) per docs/procedural-instruction-research.md.
+REWORK_PROMPT_VERSION = "cook-rework-v2.2-2026-06-16"
 
 
 # --------------------------------------------------------------------------- #
@@ -226,6 +228,31 @@ _EMIT_COOK_TOOL = {
                                 "required": ["equipment_id"],
                             },
                         },
+                        "substeps": {
+                            "type": "array",
+                            "description": "Voice-pacing split of THIS step into memory-sized "
+                                           "chunks. Omit (or 1 item) for a single-action step; "
+                                           "split a step with >1 INDEPENDENT action.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "voice": {"type": "string",
+                                              "description": "Terse spoken action (the verb, not every "
+                                                             "number); ≤~14 words, ≤3 things to hold at once."},
+                                    "screen": {"type": ["string", "null"],
+                                               "description": "Optional fuller fragment carrying the "
+                                                              "measurements; may use this step's {ingN}/"
+                                                              "{amt}/{bundle} tokens."},
+                                    "ingredients": {
+                                        "type": "array", "items": {"type": "integer"},
+                                        "description": "1-based indices into THIS step's `ingredients` "
+                                                       "deployed in this sub-step. Every step ingredient "
+                                                       "must appear in some sub-step.",
+                                    },
+                                },
+                                "required": ["voice", "ingredients"],
+                            },
+                        },
                         "duration_minutes": {"type": ["integer", "null"]},
                         "attention": {"type": "string", "enum": ["active", "passive"]},
                         "depends_on": {"type": "array", "items": {"type": "integer"}},
@@ -280,6 +307,16 @@ points back via reused_from_step.
 order), {{amt:...}} for times/temps, {{bundle:ID}} for a bundle. One action per step. A step's \
 ingredient reference may be an ingredient id OR a bundle id (to deploy a pre-combined bundle as \
 one unit, with a label + combined amount) — both are in the mise.
+- Sub-steps (voice pacing): split each step into memory-sized `substeps` for hands-free cooking. \
+SPLIT on independence, CLUSTER on coupling: separate independent sequential actions ("dice the \
+onion" · "mince the garlic" · "heat the oil" = three sub-steps); keep one tightly-coupled action \
+as a single sub-step ("whisk constantly WHILE pouring in the hot stock" = one). Cap each sub-step \
+at ~3 things the cook must hold at once (a temp + a time + a doneness cue). Each sub-step: `voice` \
+= the TERSE spoken action (just the verb + object; speech vanishes, so keep it short and DON'T \
+recite every quantity — the screen shows the numbers); `screen` (optional) = a fuller fragment \
+with the measurements via {{ingN}}/{{amt}} tokens; `ingredients` = the 1-based indices into THIS \
+step's `ingredients` deployed in the sub-step. Every step ingredient MUST appear in some sub-step \
+(none left unspoken). A genuinely single-action step needs no substeps (or one).
 - Copy: plain, specific, no clichés. Headnote, a real finish (plate/vessel/temp/"serve at \
 once"/what NOT to add), one earned cook's note.
 
