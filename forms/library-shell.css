@@ -370,7 +370,7 @@ body.sidebar-open {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .field input::placeholder, .field textarea::placeholder {
-  color: #c4b8aa;
+  color: var(--placeholder, #cdc1b3);
   font-style: italic;
 }
 .field textarea { resize: vertical; min-height: 80px; }

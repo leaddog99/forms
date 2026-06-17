@@ -15,6 +15,7 @@
   --line:        #e2d6c8;   /* borders, dividers (warm tan) */
   --danger:      #c0392b;
   --danger-soft: #fdf2f2;
+  --placeholder: #cdc1b3;   /* example/hint text in inputs — clearly faded, reads as a suggestion not data */
   --border: var(--line);    /* aliases some older pages used */
   --text:   var(--ink);
   --font-body: Georgia, "Times New Roman", serif;
@@ -24,3 +25,15 @@
   --ed-hairline-soft: #eee6da;
 }
 body{ font-family: var(--font-body); }
+
+/* Placeholders read as EXAMPLES, not data: faded + italic everywhere. Editor-shell
+   forms (domains, chapters, users) had NO placeholder rule, so they fell back to the
+   browser's dark default — example text looked like a real value. This unifies them
+   with the dishes look. Global selector wins over editor-shell; library-shell's own
+   `.field …::placeholder` (higher specificity) now points at the same --placeholder
+   token, so every form matches. opacity:1 defeats Firefox's default dimming. */
+input::placeholder, textarea::placeholder {
+  color: var(--placeholder);
+  font-style: italic;
+  opacity: 1;
+}

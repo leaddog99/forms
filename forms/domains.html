@@ -12,7 +12,7 @@
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
   <link rel="stylesheet" href="/forms/editor-shell.css?v=20260617a">
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260617a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <link rel="stylesheet" href="/forms/components.css?v=20260617a">
 </head>
 <body>
@@ -125,9 +125,12 @@
     function field(id, label, value, opts = {}){
       const v = value == null ? '' : String(value);
       const full = opts.full ? ' full' : '';
+      // Placeholder convention: an EXAMPLE value gets an "ex: " prefix so it can't be
+      // mistaken for real data; a PROMPT/description (ends in "…") is left as-is.
+      const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : `ex: ${opts.ph}`) : '';
       if (opts.textarea){
         return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
-          `<textarea id="${id}" class="ed-notes"${opts.minh ? ` style="min-height:${opts.minh}px"` : ''} placeholder="${escapeHtml(opts.ph || '')}">${escapeHtml(v)}</textarea></div>`;
+          `<textarea id="${id}" class="ed-notes"${opts.minh ? ` style="min-height:${opts.minh}px"` : ''} placeholder="${escapeHtml(ph)}">${escapeHtml(v)}</textarea></div>`;
       }
       if (opts.select){
         const opts_html = opts.select.map(o => `<option value="${o}"${o === v ? ' selected' : ''}>${o}</option>`).join('');
@@ -138,7 +141,7 @@
       }
       const ro = opts.readonly ? ' readonly' : '';
       return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
-        `<input id="${id}" type="${opts.type || 'text'}" value="${escapeHtml(v)}"${ro} placeholder="${escapeHtml(opts.ph || '')}"${opts.readonly ? ' tabindex="-1"' : ''}></div>`;
+        `<input id="${id}" type="${opts.type || 'text'}" value="${escapeHtml(v)}"${ro} placeholder="${escapeHtml(ph)}"${opts.readonly ? ' tabindex="-1"' : ''}></div>`;
     }
 
     function renderDetail(){
@@ -472,10 +475,10 @@
         <p class="ed-notes-help" style="margin:0 0 20px;font-size:.95em">Creates a domain-master row, keyed on the full host (no scheme, no <code>www.</code>). Fill what you know now; the rest is editable later.</p>
         <section class="ed-block" style="border-top:none;padding-top:0">
           <div class="ed-form-grid">
-            <div class="ed-field full"><label for="newDomain">Domain (host)</label><input id="newDomain" type="text" placeholder="e.g. cooking.nytimes.com" autocomplete="off"></div>
-            <div class="ed-field full"><label for="newName">Display name</label><input id="newName" type="text" placeholder="e.g. NYT Cooking" autocomplete="off"></div>
-            <div class="ed-field"><label for="newCountry">Country</label><input id="newCountry" type="text" placeholder="Greece"></div>
-            <div class="ed-field"><label for="newLanguage">Language</label><input id="newLanguage" type="text" placeholder="el"></div>
+            <div class="ed-field full"><label for="newDomain">Domain (host)</label><input id="newDomain" type="text" placeholder="ex: cooking.nytimes.com" autocomplete="off"></div>
+            <div class="ed-field full"><label for="newName">Display name</label><input id="newName" type="text" placeholder="ex: NYT Cooking" autocomplete="off"></div>
+            <div class="ed-field"><label for="newCountry">Country</label><input id="newCountry" type="text" placeholder="ex: Greece"></div>
+            <div class="ed-field"><label for="newLanguage">Language</label><input id="newLanguage" type="text" placeholder="ex: el"></div>
           </div>
         </section>
         <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
