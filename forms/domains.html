@@ -13,7 +13,7 @@
        memory/feedback_editor_template_not_runtime.md. -->
   <link rel="stylesheet" href="/forms/editor-shell.css?v=20260617a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <link rel="stylesheet" href="/forms/components.css?v=20260617a">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
 </head>
 <body>
   <header class="app-header">
@@ -193,20 +193,30 @@
 
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes — publisher refresh</h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes (SerpAPI + Moz, ranked by page authority), verify each is a real recipe (is_recipe: JSON-LD or phrase score — drops index/listicle/section pages), and keep the top N. <b>Google query</b>: type the literal query incl. <code>site:</code> and it's run as-is (overrides the path). Leave blank to auto-detect a recipe path. ★ = kept; “in corpus” = already ingested. Content is NOT ingested into the corpus here — that's a separate step.</p>
-          <div class="ed-field full">
-            <label for="f_source">Discovery source</label>
-            <select id="f_source">
-              <option value="serp">Google — site: query (SerpAPI)</option>
-              <option value="backlinks_file">SEMrush backlinks file — input/${escapeHtml(d.domain)}-backlinks-pages.xlsx (or a _subdir export; ranked by referring domains)</option>
-            </select>
+          <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes, verify each is a real recipe (drops index / listicle / section pages), score by page authority, and keep the top N. Pick a <b>discovery source</b> below — each has its own settings. ★ = kept; “in corpus” = already ingested.</p>
+
+          <div class="src-groups" id="srcGroups">
+            <div class="src-group" data-src="serp">
+              <label class="src-head"><input type="radio" name="harvestSource" value="serp" checked>
+                Google — site: search <span class="src-sub">SerpAPI; depth set in pages of ~10 results</span></label>
+              <div class="ed-form-grid">
+                ${field('f_serp_query', 'Query (verbatim, incl. site:)', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
+                ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { ph: 'recipes (else auto-detect)…' })}
+                ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
+              </div>
+            </div>
+            <div class="src-group" data-src="backlinks_file">
+              <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file">
+                SEMrush backlinks file <span class="src-sub">local export, ranked by referring domains — best for big sites</span></label>
+              <div class="src-file" id="backlinksFileStatus">checking for file…</div>
+              <div class="ed-form-grid" style="margin-top:10px">
+                ${field('f_records', 'Records to pull from file', 100, { type: 'number' })}
+              </div>
+            </div>
           </div>
-          <div class="ed-form-grid">
-            ${field('f_serp_query', 'Google query (verbatim, incl. site:)', d.serp_query || '', { ph: 'site:bostonglobe.com recipe' })}
-            ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { ph: 'recipes (else auto-detect)…' })}
-            ${field('f_search_pages', 'Google depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
-            ${field('f_records', 'File — records to pull', 100, { type: 'number' })}
-            ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
+
+          <div class="ed-form-grid" style="margin:4px 0 2px">
+            ${field('f_keep_top_n', 'Keep top N (both sources)', d.keep_top_n || 10, { type: 'number' })}
           </div>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px">
             <input type="checkbox" id="f_check_recipe" checked>
@@ -214,7 +224,7 @@
           </label>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
             <input type="checkbox" id="f_harvestable_skip" ${Number(d.harvestable) === 0 ? 'checked' : ''}>
-            <span>Skip this publisher — no mechanical way to list recipes (refresh won't run)</span>
+            <span>Skip this publisher — no mechanical way to list recipes (Google refresh won't run)</span>
           </label>
           <div class="ed-actions" style="margin:10px 0 6px">
             <button type="button" class="ed-btn" id="refreshTopBtn" title="Run the query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
@@ -263,8 +273,47 @@
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
+      document.querySelectorAll('input[name=harvestSource]').forEach(r =>
+        r.addEventListener('change', applySrcSelection));
+      applySrcSelection();
+      loadBacklinksFile(d.domain);     // detect the SEMrush export → fills the file line
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
       loadDomainTop(d.domain);         // stored publisher top-N ledger
+    }
+
+    // Activate the chosen source group (highlight + enable its inputs); dim + disable
+    // the other, so each source clearly owns its own settings.
+    function applySrcSelection(){
+      const chosen = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp';
+      document.querySelectorAll('.src-group').forEach(g => {
+        const active = g.dataset.src === chosen;
+        g.classList.toggle('is-active', active);
+        g.classList.toggle('is-dim', !active);
+        // disable the inactive group's inputs (the radio itself stays enabled)
+        g.querySelectorAll('input:not([type=radio]), select, textarea').forEach(el => { el.disabled = !active; });
+      });
+    }
+
+    // Detect the local SEMrush export for this publisher and show it on the file line.
+    async function loadBacklinksFile(domain){
+      const el = $('#backlinksFileStatus'); if (!el) return;
+      const radio = document.querySelector('input[name=harvestSource][value=backlinks_file]');
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/backlinks-file`);
+        const d = await r.json();
+        if (d.present){
+          el.className = 'src-file ok';
+          el.textContent = `✓ input/${d.filename}`;
+          if (radio) radio.disabled = false;
+        } else {
+          el.className = 'src-file missing';
+          el.textContent = `no file — drop input/${d.expected} (a _subdir export also works)`;
+          if (radio) radio.disabled = true;   // can't pick a source with no file
+        }
+      } catch {
+        el.className = 'src-file missing'; el.textContent = 'could not check for file';
+      }
+      applySrcSelection();
     }
 
     // Render the publisher top-N list — same component/look as the dishes
@@ -317,7 +366,7 @@
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
       const pages = parseInt($('#f_search_pages')?.value, 10) || 10;
       const records = parseInt($('#f_records')?.value, 10) || 100;
-      const source = $('#f_source')?.value || 'serp';
+      const source = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp';
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;

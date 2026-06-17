@@ -3374,6 +3374,20 @@ def create_domain_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=f"Create error: {e}")
 
 
+@app.get("/domains/{domain}/backlinks-file")
+def domain_backlinks_file_endpoint(domain: str):
+    """Whether a local SEMrush page export exists for this publisher (drives the
+    'SEMrush backlinks file' source on the domain form). Returns the detected filename
+    or the expected name so the form can show it."""
+    from input.pipeline import domains_lib, collections_lib
+    import os
+    host = domains_lib._canon_host(domain)
+    path = collections_lib.backlinks_file_path(host)
+    return {"present": bool(path),
+            "filename": os.path.basename(path) if path else None,
+            "expected": f"{host}-backlinks-pages.xlsx"}
+
+
 @app.get("/domains/{domain}")
 def get_domain_endpoint(domain: str):
     try:
