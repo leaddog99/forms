@@ -26,6 +26,12 @@ _PAGE_SIZE = 10  # Google organic results per page (protocol constant)
 _SCALESERP_ALIASES = {"scaleserp", "scale_serp", "scale-serp", "scale"}
 
 
+def _scaleserp_key() -> str | None:
+    """Scale SERP key, accepting the common env-var spellings."""
+    return (os.getenv("SCALESERP_KEY") or os.getenv("SCALE_SERP_API_KEY")
+            or os.getenv("SCALESERP_API_KEY"))
+
+
 def active_provider() -> str:
     """Config-selected provider (default serpapi). system_config is optional —
     fall back to the SERP_PROVIDER env var, then serpapi."""
@@ -40,7 +46,7 @@ def active_provider() -> str:
 def has_key(provider: str | None = None) -> bool:
     prov = (provider or active_provider()).lower()
     if prov in _SCALESERP_ALIASES:
-        return bool(os.getenv("SCALE_SERP_API_KEY") or os.getenv("SCALESERP_API_KEY"))
+        return bool(_scaleserp_key())
     return bool(os.getenv("SERPAPI_KEY"))
 
 
@@ -88,7 +94,7 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
     """Scale SERP (Traject Data). `max_page` server-side-paginates + concatenates in
     one request (1 credit/page). Same verbatim `q` passthrough; response shape:
     organic_results[] with link/title/position."""
-    key = os.getenv("SCALE_SERP_API_KEY") or os.getenv("SCALESERP_API_KEY")
+    key = _scaleserp_key()
     if not key:
         return []
     params = {"api_key": key, "q": query, "output": "json", "max_page": max(1, pages)}
