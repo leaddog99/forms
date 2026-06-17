@@ -207,6 +207,11 @@ RULES:
 
 9. Preserve author names, brand names, and URLs in original form.
 
+10. Translate ONLY what is present. NEVER fabricate. If the input has no recipe body
+    (e.g. only a title, a navigation menu, a paywall stub, or near-empty text), do NOT
+    invent ingredients, steps, quantities, times, or sections to fill it in — translate
+    the few words that ARE there and stop. A short input yields a short output.
+
 Output ONLY the translated markdown. No preamble, no explanation, no code fences."""
 
 
@@ -336,10 +341,20 @@ def is_translation_plausible(original: str, translated: str, *, min_length_ratio
     # 1. Length ratio. Translated English of a recipe is usually within
     #    ±30% of the source; below 40% suggests truncation.
     orig_len = len(original or "")
-    if orig_len > 200:  # skip the check on tiny inputs (titles, snippets)
+    if orig_len > 200:
         ratio = len(translated) / orig_len
         if ratio < min_length_ratio:
             return False, f"length ratio {ratio:.2f} < {min_length_ratio}"
+    else:
+        # Tiny source — a near-empty fetch (paywall / JS-only / anti-bot stub) or a
+        # bare title. The recipe-aware translator INVENTS a full recipe body when
+        # handed almost nothing, and the resulting fabrication has quantities +
+        # structure, so checks 2 & 3 below would wave it through. A large translation
+        # from a tiny source is therefore the hallucination signal — drop it. (A
+        # genuinely short page translates to a short output.)
+        if len(translated) > max(300, orig_len * 4):
+            return False, (f"inflated {len(translated)}ch translation from {orig_len}ch "
+                           f"source — likely hallucinated")
 
     # 2. Numeric content. Real recipes contain quantities; a translation
     #    with zero quantity-like numeric content lost the recipe shape.
