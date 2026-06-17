@@ -267,37 +267,62 @@ _OG_IMAGE_RE = re.compile(
 _OG_IMAGE_RE2 = re.compile(
     r'<meta[^>]+\bcontent=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']'
     r'(?:og:image(?::secure_url|:url)?|twitter:image)["\']', re.I)
+_OG_TITLE_RE = re.compile(
+    r'<meta[^>]+(?:property|name)=["\'](?:og:title|twitter:title)["\']'
+    r'[^>]*\bcontent=["\']([^"\']+)["\']', re.I)
+_TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
 _FETCH_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
 
-def _fetch_og_image(url, timeout=8):
-    """Best-effort og:image (or twitter:image) for a recipe URL — a thumbnail for the
-    DISCOVERED (not-yet-ingested) members. Reads only the document <head> region, never
-    raises (anti-bot/timeouts are normal here); returns an absolute URL or None."""
+def _title_from_url(url):
+    """Cheap human title from a recipe URL slug, when the source has no title (e.g. a
+    SEMrush subdirectory export's empty title column). /recipe/21014/good-old-fashioned-
+    pancakes/ -> 'Good Old Fashioned Pancakes'. Best-effort fallback only."""
+    segs = [s for s in urlparse(url).path.strip("/").split("/") if s]
+    segs = [s for s in segs if not s.isdigit() and s.lower() not in ("recipe", "recipes")]
+    last = (segs[-1] if segs else "").split(".")[0]   # drop detail.aspx / .html
+    return last.replace("-", " ").replace("_", " ").strip().title()
+
+
+def _fetch_og_meta(url, timeout=8):
+    """Best-effort (og:image, title) for a recipe URL — thumbnail + display title for a
+    DISCOVERED (not-yet-ingested) member. Reads only the <head>, follows redirects (the
+    http→https 301s in a subdir export), never raises. title falls back to <title> then
+    the URL slug. Returns (image_url|None, title|'')."""
+    head = ""
     try:
         resp = requests.get(url, headers=_FETCH_UA, timeout=timeout,
                             stream=True, allow_redirects=True)
-        if resp.status_code != 200:
-            return None
-        head = ""
-        for chunk in resp.iter_content(chunk_size=16384, decode_unicode=True):
-            head += chunk if isinstance(chunk, str) else chunk.decode("utf-8", "ignore")
-            if "</head>" in head.lower() or len(head) > 200_000:
-                break
+        if resp.status_code == 200:
+            for chunk in resp.iter_content(chunk_size=16384, decode_unicode=True):
+                head += chunk if isinstance(chunk, str) else chunk.decode("utf-8", "ignore")
+                if "</head>" in head.lower() or len(head) > 200_000:
+                    break
         resp.close()
     except Exception:
-        return None
+        head = ""
+
+    img = None
     m = _OG_IMAGE_RE.search(head) or _OG_IMAGE_RE2.search(head)
-    if not m:
-        return None
-    img = m.group(1).strip()
-    if img.startswith("//"):
-        img = "https:" + img
-    elif img.startswith("/"):
-        p = urlparse(url)
-        img = f"{p.scheme}://{p.netloc}{img}"
-    return img if img.startswith("http") else None
+    if m:
+        img = m.group(1).strip()
+        if img.startswith("//"):
+            img = "https:" + img
+        elif img.startswith("/"):
+            p = urlparse(url)
+            img = f"{p.scheme}://{p.netloc}{img}"
+        if not img.startswith("http"):
+            img = None
+
+    title = ""
+    mt = _OG_TITLE_RE.search(head) or _TITLE_TAG_RE.search(head)
+    if mt:
+        import html as _html
+        title = _html.unescape(mt.group(1)).strip()
+    if not title:
+        title = _title_from_url(url)
+    return img, title
 
 
 def backlinks_file_path(domain):
@@ -314,6 +339,19 @@ def backlinks_file_path(domain):
     input_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # <project>/input
     hits = glob.glob(os.path.join(input_dir, f"{domain}*-backlinks*pages.xlsx"))
     return max(hits, key=os.path.getmtime) if hits else None
+
+
+def _recipe_path_key(url):
+    """A dedup key that collapses a publisher's URL ALIASES for the same recipe — the
+    numeric-id form (/recipe/21014/slug/), the bare slug (/recipe/slug/), and the legacy
+    /detail.aspx variant all map to one key. Drops numeric path segments + trailing
+    detail/index boilerplate; keeps the rest of the path so genuinely different recipes
+    that merely share a last segment (/breakfast/pancakes vs /brunch/pancakes) stay
+    distinct. Used by the backlinks-file reader, whose exports are full of these aliases."""
+    segs = [s for s in urlparse(url).path.strip("/").split("/") if s and not s.isdigit()]
+    while segs and segs[-1].split(".")[0].lower() in ("detail", "index", "amp", ""):
+        segs.pop()
+    return (root_domain(url), "/".join(s.lower() for s in segs))
 
 
 def _read_backlinks_file(domain, want):
@@ -347,14 +385,21 @@ def _read_backlinks_file(domain, want):
         url = str(r[ui] or "").strip()
         if not url:
             continue
-        if ci is not None and str(r[ci]) not in ("", "200"):   # drop 301/404 (the http→https rows)
+        # Keep 2xx AND 3xx: a 301 here is just the http://… form of a real recipe
+        # (pre-HTTPS backlinks, common in a subdirectory export) — the recipe check and
+        # Moz follow the redirect to the canonical page. Only drop dead 4xx/5xx. The
+        # downstream archive filter drops the bare homepage; the recipe check drops
+        # non-recipes.
+        code = str(r[ci]).strip() if ci is not None else ""
+        if code[:1] in ("4", "5"):
             continue
         rows.append((url, str(r[ti] if ti is not None else "") or "", int(r[di] or 0)))
     rows.sort(key=lambda x: -x[2])   # referring-domains desc
     out, seen = [], set()
     for url, title, _dom in rows:
-        if url not in seen:
-            seen.add(url); out.append((url, title))
+        key = _recipe_path_key(url)            # collapse id / slug / detail.aspx aliases
+        if key not in seen:
+            seen.add(key); out.append((url, title))   # keep the highest-domains variant
         if len(out) >= want:
             break
     print(f"  [harvest] backlinks file {os.path.basename(path)}: {len(out)} URLs (by referring domains)")
@@ -447,9 +492,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     n_img = 0
     for m in scored:
         if m["selected"]:
-            m["image_url"] = _fetch_og_image(m["url"])
-            if m["image_url"]:
+            img, title = _fetch_og_meta(m["url"])
+            m["image_url"] = img
+            if img:
                 n_img += 1
+            if title and not (m.get("title") or "").strip():
+                m["title"] = title    # source had no title (e.g. subdir export) → use page/slug
     print(f"  [harvest] captured {n_img} thumbnails for {keep} selected")
     return {"members": scored, "discovered": n_raw, "recipe_pass": len(recipe_pass),
             "scored": len(scored), "recipe_path": used_path, "query": query}
