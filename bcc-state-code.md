@@ -777,3 +777,31 @@ Model-authored sub-steps + cluster naming/amounts-once in `cook_rework`; sub-ste
 - **Sub-steps v2 in `cook_rework`** — model-authored whole-recipe re-plan: separate mise (gather/measure) from prep-action steps, cluster-name + measure-once, no duplication; emit sub-step structure as data so the renderer stops guessing. This is the real fix; v1 is the validated UX shell.
 - Verbosity/expertise-fade preference at cook-page gen (research: expertise reversal).
 - Still queued from 06-15: Voice P1 (barge-in/AEC, Murf streaming TTS, `voice-agent.js` extraction); authenticated Playwright ingest of gated recipes; promote publisher-refresh to a background job; re-run a dish with ATK to land the paid-PA selection half.
+
+---
+
+## Session log — 2026-06-16 (later) — sub-steps v2 SHIPPED: model-authored voice split (engine + gauntlet gate + renderer), proven end-to-end
+
+Picked up the v2 follow-up the same day. The morning's v1 was a client-side heuristic chopper (removed as tedious); v2 moves the intelligence into the rework engine where it has the whole recipe to reason over, emits the split as DATA, and the cook-view voice loop just walks it. Built + verified end-to-end on `split/enrichment-api` in two clean commits (`86bd215` engine, `4d7948b` renderer). Grounded in `docs/procedural-instruction-research.md`. [[project_recipe_anchor]] phase 4+, [[project_cook_voice]], [[project_cookview_feedback]].
+
+### The engine half — `cook_rework` v2.2 (`86bd215`)
+- **`cook_model.CookSubStep`** + `CookStep.substeps` (optional ⇒ old `_cook` reads whole, back-compat): `voice` = the TERSE spoken action (the ear gets the verb, not every number — research's transient-information effect); optional `screen` = a fuller fragment carrying the measurements via the parent step's `{ingN}`/`{amt}`/`{bundle}` tokens; `ingredients` = 1-based parent indices deployed in the sub-step (the coverage map).
+- **`cook_rework`**: `substeps` added to the emit schema + a prompt section encoding the research rules — SPLIT on independence ("dice · mince · heat oil" = 3), CLUSTER on coupling ("whisk WHILE pouring" = 1), ≤3 things held at once, voice-terse / screen-numbers, every step ingredient spoken. `REWORK_PROMPT_VERSION → cook-rework-v2.2-2026-06-16`.
+- **`cook_validators.v_substeps`** — a lenient 9th gate, fires ONLY when a step has substeps (zero regression on the 16 existing reworks): voice non-empty, indices in range, and COVERAGE — every step ingredient is deployed in some sub-step so the split never silently drops an ingredient the cook needs to hear. Quality (the actual split decisions) stays the model's judgment, matching the gauntlet's "mechanical integrity only" philosophy. 9-gate self-test green (good fixture passes WITH substeps; a planted coverage hole fires the gate).
+
+### The renderer half — voice walks the split (`4d7948b`, `forms/cook.html`)
+Re-applied v1's proven sub-step nav, but sourced from `step.substeps` (model data) instead of the deleted `splitSpoken()` heuristic — and kept the per-cluster mise. **Talk-ON**: `read` enters a step + speaks sub-step 1; **"next" advances one sub-step** (terse voice line) until the chunks are exhausted, THEN completes the step + moves on; **back/repeat re-speak the prior/current sub-step** (the voice re-scan); status shows **"Step N · part i/m"**. **Talk-OFF** (silent/screen) = whole step, untouched (the screen tolerates more). **where-was-I** now re-orients to *step N of M · part i/m* and re-speaks the CURRENT chunk (the place-keeping payoff). `prefetchAllSteps` warms each sub-step voice line so "next" plays instantly; `reset` clears the state. `node --check` clean.
+
+### Proven end-to-end (not just compiled)
+Ran a real Opus rework on Chicken Milanese: the model split **research-correctly** — Step 2 (cutlet) → slice / pound / season; Step 5 (fry) → heat / fry / drain; **clustered** the dredge ("flour, then egg, then press into the panko") as ONE sub-step; **dual-rendered** (`voice` "Pound each cutlet thin" / `screen` "Pound to {amt:1/3 inch} thick"). Gauntlet PASSED (after the normal 1 repair). Then **persisted** a v2 rework to the user's Chicken Milanese (recipe_id `38696773…`, user_id 5 — 7 steps / **15 sub-steps**) and confirmed the **live API serves every sub-step under `data._cook`** (the exact `GET /recipes/{id}?user_id=` the cook-view fetches). Open **`/cook/38696773-7f67-4684-ae33-177747a6e015`** to cook it — cook.html is no-cache so the renderer is live on reload; the out-of-process rework job picks up v2.2 with no server restart.
+
+### Ops / notes
+- `docs/procedural-instruction-research.md` build-status updated (v1 → **v2 SHIPPED**); v2 follow-ups listed.
+- Bare-script gotcha (recorded): `cook_rework` needs `ANTHROPIC_API_KEY` from `.env`; a script that doesn't import `save_recipe_api` must `load_dotenv(dotenv_path=".env")` (find_dotenv() can't introspect a stdin frame).
+- `recipes.db` changed (the persisted v2 `_cook`) → `recipes.sql` refreshed + ADAM backup re-run.
+
+### Follow-ups (priority)
+- **Sub-steps v2.1 (the deeper re-plan):** separate the mise (gather/measure) from prep-ACTION steps so the mise walk and the step sub-steps don't overlap; cluster-name + measure-once across the whole recipe. v2 splits each step well; the mise/step boundary is the remaining organic-re-plan piece.
+- **On-screen per-sub-step highlight** — the `screen` fragments are authored but the renderer still shows the whole step; a subtle active-fragment highlight would complete the dual-rendering for visual / No-look cooks.
+- **Verbosity / expertise-fade** preference at cook-page gen (research: expertise reversal) — verbose↔concise clusters more per sub-step for experienced cooks.
+- Carried from earlier: Voice P1 (barge-in/AEC, Murf streaming TTS, `voice-agent.js` extraction); authenticated Playwright ingest of gated recipes; promote publisher-refresh to a background job; ATK paid-PA selection re-run.
