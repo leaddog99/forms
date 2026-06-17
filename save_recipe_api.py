@@ -3471,7 +3471,9 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
             if not collections_lib.backlinks_file_path(host):
                 raise HTTPException(status_code=400,
                                     detail=f"No SEMrush export found: expected "
-                                           f"input/{host}-backlinks-pages.xlsx")
+                                           f"input/{host}-backlinks-pages.xlsx "
+                                           f"(a subdirectory export like "
+                                           f"{host}_recipe-backlinks_pages.xlsx also works)")
         else:
             harvestable = payload.get("harvestable")
             harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)

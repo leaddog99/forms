@@ -301,17 +301,19 @@ def _fetch_og_image(url, timeout=8):
 
 
 def backlinks_file_path(domain):
-    """Path to a publisher's SEMrush page export, if present in input/. Honors the
-    convention `{domain}-backlinks-pages.xlsx` and tolerates SEMrush's underscore
-    variant `{domain}-backlinks_pages.xlsx`. Returns the path or None."""
+    """Path to a publisher's SEMrush page export in input/, or None.
+
+    Tolerant of how SEMrush names the file:
+      - whole site:  {domain}-backlinks-pages.xlsx  (or the _pages underscore variant)
+      - a subdirectory export prepends the subpath:
+                     {domain}_recipe-backlinks_pages.xlsx  (allrecipes.com/recipe)
+    So we match `{domain}*-backlinks*pages.xlsx` — the `*` after the domain absorbs an
+    optional `_subpath`. If several match (whole-site AND a subdir export), prefer the
+    MOST RECENTLY MODIFIED — i.e. the one the curator just dropped in."""
     import os, glob
     input_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # <project>/input
-    for pat in (f"{domain}-backlinks-pages.xlsx", f"{domain}-backlinks_pages.xlsx",
-                f"{domain}-backlinks*pages.xlsx"):
-        hits = sorted(glob.glob(os.path.join(input_dir, pat)))
-        if hits:
-            return hits[0]
-    return None
+    hits = glob.glob(os.path.join(input_dir, f"{domain}*-backlinks*pages.xlsx"))
+    return max(hits, key=os.path.getmtime) if hits else None
 
 
 def _read_backlinks_file(domain, want):
