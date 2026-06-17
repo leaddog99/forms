@@ -92,19 +92,30 @@ def _serpapi(query, pages, want, gl, hl, timeout) -> list[dict]:
 
 def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
     """Scale SERP (Traject Data). `max_page` server-side-paginates + concatenates in
-    one request (1 credit/page). Same verbatim `q` passthrough; response shape:
-    organic_results[] with link/title/position."""
+    ONE request (1 credit per page processed). So we size max_page to what we
+    actually need — `ceil(want/10)+1`, capped at `pages` — NOT the SerpApi loop cap:
+    asking for 10 pages to get 12 results would waste ~8 credits AND risk a timeout
+    (the silent-0 bug). Same verbatim `q`; response: organic_results[] link/title/position."""
+    import math
     key = _scaleserp_key()
     if not key:
         return []
-    params = {"api_key": key, "q": query, "output": "json", "max_page": max(1, pages)}
+    max_page = pages if want is None else min(pages, math.ceil(want / _PAGE_SIZE) + 1)
+    params = {"api_key": key, "q": query, "output": "json", "max_page": max(1, max_page)}
     if gl:
         params["gl"] = gl
     if hl:
         params["hl"] = hl
     try:
-        org = requests.get(SCALESERP_ENDPOINT, params=params, timeout=timeout * 2).json().get("organic_results") or []
-    except Exception:
+        resp = requests.get(SCALESERP_ENDPOINT, params=params, timeout=max(timeout, 90))
+        data = resp.json()
+        org = data.get("organic_results") or []
+        if not org:  # surface WHY rather than a silent 0
+            ri = data.get("request_info") or {}
+            print(f"  [scaleserp] 0 results (http={resp.status_code} "
+                  f"success={ri.get('success')} msg={ri.get('message') or data.get('error')})")
+    except Exception as e:
+        print(f"  [scaleserp] request failed: {type(e).__name__}: {e}")
         return []
     out: list[dict] = []
     seen: set[str] = set()

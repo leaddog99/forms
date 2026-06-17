@@ -75,22 +75,16 @@ def serpapi_recipe_urls(domain, want=100, recipe_path="recipes"):
     Google's site: ranking surfaces the most-notable pages naturally. Restrict to
     the canonical host (domain / www.domain) so the calibration matches what the
     scorer remaps (archive.* / prod.* subdomains excluded)."""
-    if not SERPAPI_KEY:
-        print("  [skip] no SERPAPI_KEY"); return []
+    from input.pipeline.serp_search import serp_search, has_key
+    if not has_key():
+        print("  [skip] no SERP key (SERPAPI_KEY / SCALESERP_KEY)"); return []
     urls, seen = [], set()
-    for start in range(0, want + 20, 10):
-        try:
-            r = requests.get("https://serpapi.com/search.json", params={
-                "engine": "google", "q": f"site:{domain}/{recipe_path}",
-                "num": 10, "start": start, "filter": 0, "api_key": SERPAPI_KEY}, timeout=30)
-            res = r.json().get("organic_results") or []
-        except Exception as e:
-            print(f"  [serpapi err] {e}"); break
-        for it in res:
-            link = it.get("link") or ""
-            if _host(link) == domain and link not in seen and _is_recipe_url(link):
-                seen.add(link); urls.append(link)
-        if not res or len(urls) >= want:
+    pages = (want + 20) // 10 + 1
+    for r in serp_search(f"site:{domain}/{recipe_path}", pages=pages, want=want * 3):
+        link = r.get("link") or ""
+        if _host(link) == domain and link not in seen and _is_recipe_url(link):
+            seen.add(link); urls.append(link)
+        if len(urls) >= want:
             break
     return urls[:want]
 

@@ -131,8 +131,10 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
         and `filter=0` disables Google's automatic similar-page
         collapsing for more candidate variety.
     """
-    if not SERPAPI_KEY:
-        raise RuntimeError("SERPAPI_KEY not set in .env")
+    from input.pipeline.serp_search import has_key, active_provider as _ap
+    if not has_key():
+        raise RuntimeError(f"No SERP key for active provider '{_ap()}' "
+                           f"(set SERPAPI_KEY or SCALESERP_KEY in .env)")
 
     # Verbatim — with ONE normalization: smart/curly quotes → straight. An
     # editor/OS autocorrect turns "..." into "..." (“ ”), and Google
@@ -169,51 +171,23 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     except Exception as e:
         print(f"  [SERPAPI] query-exclusions skipped ({type(e).__name__}: {e})")
 
+    # Fetch via the provider-agnostic chokepoint (SerpApi or Scale SERP, by config).
+    # Query CONSTRUCTION (verbatim + curly-quote norm + exclusions, above) stays
+    # here; only the HTTP fetch + pagination delegate. gl/hl/filter=0 preserved.
+    from input.pipeline.serp_search import serp_search, active_provider
+    results = serp_search(full_query, pages=_SERPAPI_MAX_PAGES, want=target_n, gl="us", hl="en")
     out: list[dict] = []
-    seen_urls: set[str] = set()
-    for page in range(_SERPAPI_MAX_PAGES):
-        if len(out) >= target_n:
-            break
-        start = page * _SERPAPI_PAGE_SIZE
-        params = {
-            "engine": "google",
-            "q": full_query,
-            "api_key": SERPAPI_KEY,
-            "num": _SERPAPI_PAGE_SIZE,
-            "start": start,
-            "gl": "us",
-            "hl": "en",
-            "filter": "0",  # disable Google's auto-dedup
-        }
-        try:
-            resp = requests.get(SERPAPI_ENDPOINT, params=params, timeout=SERPAPI_TIMEOUT_S)
-            resp.raise_for_status()
-            organic = (resp.json() or {}).get("organic_results", []) or []
-        except Exception as e:
-            print(f"  [SERPAPI] page {page+1} failed ({type(e).__name__}: {e}); stopping pagination")
-            break
-
-        if not organic:
-            print(f"  [SERPAPI] page {page+1} returned 0 organic — stopping pagination")
-            break
-
-        added_this_page = 0
-        for r in organic:
-            url = r.get("link")
-            if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
-                continue
-            if url in seen_urls:
-                continue  # belt-and-suspenders against filter=0 surfacing dupes
-            seen_urls.add(url)
-            out.append({
-                "url": url,
-                "title": r.get("title") or "",
-                "google_rank": r.get("position"),
-                "domain": root_domain(url),
-            })
-            added_this_page += 1
-        print(f"  [SERPAPI] page {page+1}: +{added_this_page} URLs (running total: {len(out)})")
-
+    for r in results:
+        url = r.get("link")
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            continue
+        out.append({
+            "url": url,
+            "title": r.get("title") or "",
+            "google_rank": r.get("rank"),   # 1-based in returned order (dedup-stable)
+            "domain": root_domain(url),
+        })
+    print(f"  [SERP:{active_provider()}] {len(out)} URLs (target {target_n})")
     return out[:target_n]
 
 
