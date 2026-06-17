@@ -3479,7 +3479,7 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         # (Scale SERP page-loops); each page is 1 credit + (verify) 1 fetch.
         from input.pipeline import system_config as _cfg
         pages = max(1, int(payload.get("pages") or row.get("search_pages")
-                           or _cfg.get_setting("serp_default_pages", 6)))
+                           or _cfg.get_setting("serp_default_pages", 10)))
         entity_ref = f"publisher:{host}"
         existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
         if existing:
