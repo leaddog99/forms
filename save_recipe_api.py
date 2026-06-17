@@ -3465,7 +3465,14 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
                                        "Uncheck 'skip' to refresh.")
         keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
         recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
-        check_recipe = bool(payload.get("check_recipe", True))
+        # Trusted publishers: a paywall=1 (gated premium) publisher's recipe pages
+        # fetch as stubs with no recipe body / JSON-LD, so the fetch-VERIFY wrongly
+        # rejects them. Treat them as TRUSTED — keep by URL/path, skip the verify.
+        # The title-based archive + collection/listicle filters still run in the
+        # harvest pre-filter, and og:image still captures from the public gate page.
+        # An explicit payload check_recipe overrides (e.g. to spot-audit a paywall site).
+        paywalled = bool(int(row.get("paywall", 0) or 0))
+        check_recipe = bool(payload.get("check_recipe", not paywalled))
         # Depth = per-request → per-publisher (domains.search_pages) → system default
         # (system_config 'serp_default_pages', admin-editable). No hard 10 cap now
         # (Scale SERP page-loops); each page is 1 credit + (verify) 1 fetch.

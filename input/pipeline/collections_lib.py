@@ -336,13 +336,19 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         found = discover_publisher_recipe_urls(domain, want=discover_n, recipe_path=recipe_path)
         used_path = recipe_path
 
-    # Cheap pre-filter: drop archive/taxonomy/feed URLs (never a recipe) BEFORE the
-    # fetching recipe check — saves credits + time (a bare `site:` query is mostly
-    # these). Conservative patterns only.
+    # Cheap pre-filter: drop archive/taxonomy/feed URLs (never a recipe) + collection/
+    # listicle TITLES ("30 Greek Recipes", "10 Dinners") BEFORE the fetching recipe
+    # check — saves credits + time (a bare `site:` query is mostly these). Title-based,
+    # so it runs even when check_recipe is OFF (trusted/paywalled publishers): those
+    # skip the fetch-verify but must still shed index/roundup pages. English-title
+    # only here (no fetch ⇒ no lang/translation); non-English collection titles are
+    # caught downstream by _is_recipe_filter when check_recipe is ON.
+    from intake.build_query_batch import _looks_like_recipe_collection
     n_raw = len(found)
-    found = [(l, t) for l, t in found if not _looks_like_archive(l)]
+    found = [(l, t) for l, t in found
+             if not _looks_like_archive(l) and not _looks_like_recipe_collection(t)]
     if len(found) < n_raw:
-        print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy URLs "
+        print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy/collection URLs "
               f"({len(found)} candidates remain)")
 
     # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
