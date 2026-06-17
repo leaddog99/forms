@@ -371,16 +371,50 @@ _JSONLD_PASS_SCORE = 100
 _TITLE_SEP_RE = re.compile(r"\s+(?:[|–—:•·]|-)\s+")
 _PLURAL_RECIPES_RE = re.compile(r"\brecipes\b", re.IGNORECASE)
 
+# Listicle signature: a COUNT (number) followed — within a couple of adjective words —
+# by a plural noun ("10 Dinners", "30 Projects", "25 Easy Weeknight Pastas"). Serious
+# Eats and similar don't separate recipes from roundups, so this is the tell. Two
+# guards keep it off real recipes:
+#   • a plural that is a TIME / MEASURE / COUNT unit is NOT a listicle head — so
+#     "Tzatziki in 15 Minutes", "4 Ingredients Banana Bread", "Serves 4" survive.
+#   • a bare-number token only — "5-Ingredient Dinner" tokenizes as one hyphenated
+#     token, not a number, so it's never a listicle.
+_LISTICLE_NUM_RE = re.compile(r"^\d{1,3}$")
+_PLURAL_WORD_RE = re.compile(r"^[a-z][a-z'-]*[a-rt-z]s$", re.IGNORECASE)  # ends in s, not 'ss'/'us'-ish handled by stoplist
+_LISTICLE_UNIT_STOP = {
+    # time
+    "minutes", "mins", "seconds", "secs", "hours", "hrs", "days", "weeks", "months", "years",
+    # measure / serving / quantity
+    "servings", "calories", "grams", "kg", "cups", "tablespoons", "tbsps", "teaspoons",
+    "tsps", "ounces", "oz", "pounds", "lbs", "ml", "liters", "litres", "pieces", "slices",
+    "portions", "ingredients", "calorie", "carbs", "macros",
+}
+
+
+def _looks_like_listicle(text: str) -> bool:
+    """True if `text` has a `<number> … <plural-noun>` listicle head (not a unit/time)."""
+    toks = re.findall(r"[A-Za-z0-9'\-]+", text)
+    for i, t in enumerate(toks):
+        if _LISTICLE_NUM_RE.match(t):
+            for w in toks[i + 1:i + 4]:  # allow up to 2 adjectives between (10 Easy Dinners)
+                if _PLURAL_WORD_RE.match(w) and w.lower() not in _LISTICLE_UNIT_STOP:
+                    return True
+    return False
+
 
 def _looks_like_recipe_collection(title: str) -> bool:
-    """True if `title` (an ENGLISH title) reads as a collection/listicle/index page —
-    its leading segment contains the plural word 'recipes'. Non-English titles must be
-    translated to English first (see `_english_title`); the raw-source plural word
-    differs per language ('recetas', 'συνταγές', 'ricette')."""
+    """True if `title` (an ENGLISH title) reads as a collection / listicle / index page,
+    NOT a single dish. Two signals, both checked on the LEADING segment (before the
+    site-name separator) so a brand suffix can't trigger it:
+      1. the plural word 'recipes' ("30 Greek Recipes", "Greek Recipes"); and
+      2. a number-then-plural listicle head ("10 Dinners", "30 Projects").
+    Singular "recipe" ("Authentic Tzatziki Recipe") is welcomed. Non-English titles
+    must be translated first (see `_english_title`) — the plural word differs per
+    language ('recetas', 'συνταγές', 'ricette')."""
     if not title:
         return False
     lead = _TITLE_SEP_RE.split(title.strip(), 1)[0]
-    return bool(_PLURAL_RECIPES_RE.search(lead))
+    return bool(_PLURAL_RECIPES_RE.search(lead)) or _looks_like_listicle(lead)
 
 
 def _english_title(title: str, lang_code: str) -> str:
