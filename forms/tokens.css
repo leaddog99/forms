@@ -1,0 +1,26 @@
+/* tokens.css — THE single design-token source of truth for every BCC form.
+   Reference = the dishes / forms.css palette + Georgia serif. Loaded LAST on each
+   page so it overrides any page-local :root (editor-shell.css, forms.css, or inline
+   <style>), unifying the look across dishes, domains, chapters, users, … No page
+   should define these tokens itself anymore — add a <link> to this file instead.
+   See memory/feedback_reuse_layout_components. */
+:root{
+  --bg:          #f8f4ed;   /* page background — warm cream */
+  --card:        #fffaf2;   /* card / panel background */
+  --ink:         #2a211b;   /* primary text */
+  --muted:       #74695f;   /* secondary text, captions */
+  --accent:      #9b4a22;   /* primary action / focus / link (the BCC clay) */
+  --accent-dark: #7a3a1a;   /* hover */
+  --accent-soft: #ead3c6;   /* badge / soft hover fill */
+  --line:        #e2d6c8;   /* borders, dividers (warm tan) */
+  --danger:      #c0392b;
+  --danger-soft: #fdf2f2;
+  --border: var(--line);    /* aliases some older pages used */
+  --text:   var(--ink);
+  --font-body: Georgia, "Times New Roman", serif;
+  /* reconcile the editor shell's own hairline tokens onto the shared warm line so
+     editor borders match everywhere (editor-shell.css defined cooler greys). */
+  --ed-hairline:      #e2d6c8;
+  --ed-hairline-soft: #eee6da;
+}
+body{ font-family: var(--font-body); }

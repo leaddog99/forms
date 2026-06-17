@@ -12,56 +12,8 @@
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
   <link rel="stylesheet" href="/forms/editor-shell.css?v=20260617a">
-  <style>
-    /* Top-recipes list — lifted from dishes.html so the domains list reads the
-       SAME as the dishes list (reuse the component, don't drift). Tokens
-       (--ink/--accent/--line/--muted/--accent-soft) resolve from editor-shell :root. */
-    .top-recipes-list { display:flex; flex-direction:column; gap:6px; }
-    .top-recipe-row {
-      display:flex; gap:12px; padding:8px 12px;
-      border:1px solid var(--line); border-radius:8px;
-      background:var(--accent-soft, rgba(138,90,59,.05));
-      font-size:.92em; transition:background 120ms ease;
-    }
-    .top-recipe-row:hover { background:rgba(138,90,59,.10); }
-    .top-recipe-tile {
-      flex:0 0 auto; display:block; width:88px; height:66px;
-      border-radius:6px; overflow:hidden; background:var(--bg,#f8f4ef);
-      border:1px solid var(--line);
-    }
-    .top-recipe-tile img { width:100%; height:100%; object-fit:cover; display:block; }
-    .top-recipe-tile.empty {
-      background:repeating-linear-gradient(45deg, var(--bg,#f8f4ef) 0 8px, var(--line) 8px 9px);
-    }
-    .top-recipe-body { flex:1; min-width:0; }
-    .top-recipe-main { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .top-rank {
-      display:inline-block; min-width:28px; padding:2px 6px;
-      background:var(--accent); color:#fff; border-radius:4px;
-      font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
-      font-size:.78em; font-weight:600; text-align:center;
-    }
-    .top-recipe-title { color:var(--ink); font-weight:600; font-family:Georgia,'Times New Roman',serif; }
-    .top-recipe-host { color:var(--muted,#74695f); font-size:.85em; font-style:italic; }
-    .top-badge {
-      font-size:.72em; font-weight:600; padding:1px 6px; border-radius:4px;
-      background:var(--accent-soft, rgba(138,90,59,.10)); color:var(--accent-dark,#6f4628);
-    }
-    .top-badge.sel { background:var(--accent); color:#fff; }
-    .top-recipe-meta {
-      display:flex; align-items:center; gap:10px; margin-top:4px;
-      font-size:.82em; color:var(--muted,#74695f);
-      font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
-    }
-    .top-recipe-actions { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
-    .top-action {
-      display:inline-flex; align-items:center; gap:4px; padding:4px 10px;
-      border-radius:4px; font-family:Georgia,'Times New Roman',serif;
-      font-size:.82em; font-weight:500; text-decoration:none; border:1px solid var(--line);
-    }
-    .top-action.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-    .top-action.secondary { background:#fff; color:var(--ink); }
-  </style>
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617a">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617a">
 </head>
 <body>
   <header class="app-header">
@@ -327,8 +279,8 @@
         if (typeof m.pa === 'number') meta.push(`PA ${Math.round(m.pa)}`);
         if (typeof m.da === 'number' && typeof m.pa === 'number') meta.push(`pwr ${Math.round(m.da + m.pa)}`);
         const actions =
-          (bccHref ? `<a class="top-action primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener">Open in BCC</a>` : '') +
-          `<a class="top-action secondary" href="${escapeHtml(m.url || '#')}" target="_blank" rel="noopener" title="${escapeHtml(m.url || '')}">View source ↗</a>`;
+          (bccHref ? `<a class="top-action top-action-primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener">Open in BCC</a>` : '') +
+          `<a class="top-action top-action-secondary" href="${escapeHtml(m.url || '#')}" target="_blank" rel="noopener" title="${escapeHtml(m.url || '')}">View source <span class="top-action-arrow">↗</span></a>`;
         return `<div class="top-recipe-row">${tile}<div class="top-recipe-body">` +
           `<div class="top-recipe-main"><span class="top-rank">#${m.rank || i + 1}</span>` +
           `<span class="top-recipe-title">${title}</span> <span class="top-recipe-host">${escapeHtml(host)}</span>${badges}</div>` +
