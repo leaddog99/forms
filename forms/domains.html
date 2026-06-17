@@ -194,10 +194,18 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes — publisher refresh</h3>
           <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes (SerpAPI + Moz, ranked by page authority), verify each is a real recipe (is_recipe: JSON-LD or phrase score — drops index/listicle/section pages), and keep the top N. <b>Google query</b>: type the literal query incl. <code>site:</code> and it's run as-is (overrides the path). Leave blank to auto-detect a recipe path. ★ = kept; “in corpus” = already ingested. Content is NOT ingested into the corpus here — that's a separate step.</p>
+          <div class="ed-field full">
+            <label for="f_source">Discovery source</label>
+            <select id="f_source">
+              <option value="serp">Google — site: query (SerpAPI)</option>
+              <option value="backlinks_file">SEMrush backlinks file — input/${escapeHtml(d.domain)}-backlinks-pages.xlsx (ranked by referring domains)</option>
+            </select>
+          </div>
           <div class="ed-form-grid">
-            ${field('f_serp_query', 'Google query (verbatim, incl. site:)', d.serp_query || '', { placeholder: 'e.g. site:bostonglobe.com recipe' })}
-            ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { placeholder: 'auto-detect (e.g. recipes)' })}
-            ${field('f_search_pages', 'Search depth — pages (×10 results)', d.search_pages || 4, { type: 'number' })}
+            ${field('f_serp_query', 'Google query (verbatim, incl. site:)', d.serp_query || '', { ph: 'site:bostonglobe.com recipe' })}
+            ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { ph: 'recipes (else auto-detect)…' })}
+            ${field('f_search_pages', 'Google depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
+            ${field('f_records', 'File — records to pull', 100, { type: 'number' })}
             ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
           </div>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px">
@@ -307,7 +315,9 @@
     async function doRefreshTop(domain){
       const btn = $('#refreshTopBtn'), hint = $('#topHint');
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
-      const pages = parseInt($('#f_search_pages')?.value, 10) || 4;
+      const pages = parseInt($('#f_search_pages')?.value, 10) || 10;
+      const records = parseInt($('#f_records')?.value, 10) || 100;
+      const source = $('#f_source')?.value || 'serp';
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
@@ -317,7 +327,7 @@
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, recipe_path, query, check_recipe }) });
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, check_recipe }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);

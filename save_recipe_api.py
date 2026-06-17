@@ -3418,13 +3418,16 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     query = (p.get("query") or "").strip() or None
     recipe_path = (p.get("recipe_path") or "").strip() or None
     check_recipe = bool(p.get("check_recipe", True))
-    print(f"[PUBLISHER-REFRESH] {host} | query={query!r} pages={pages} keep={keep} "
-          f"check_recipe={check_recipe}")
+    source = (p.get("source") or "serp").strip() or "serp"
+    records = int(p.get("records") or 0) or None   # file-source extract count
+    print(f"[PUBLISHER-REFRESH] {host} | source={source} query={query!r} pages={pages} "
+          f"records={records} keep={keep} check_recipe={check_recipe}")
 
     def _work():
         res = collections_lib.harvest_publisher_top(
             host, keep=keep, discover_n=pages * 10,
-            recipe_path=recipe_path, query=query, check_recipe=check_recipe)
+            recipe_path=recipe_path, query=query, check_recipe=check_recipe,
+            source=source, records=records)
         with sqlite3.connect(DB_PATH) as conn:
             collections_lib.replace_members(conn, "publisher", host, res["members"])
             conn.execute(
@@ -3452,18 +3455,30 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
     check fetches each candidate → 1-2 min, too slow inline + survives a restart),
     returning the job id + SSE stream url. The form tails the log and re-loads the
     stored top list (GET /domains/{domain}/top) on completion."""
-    from input.pipeline import domains_lib
+    from input.pipeline import domains_lib, collections_lib
     host = domains_lib._canon_host(domain)
     with sqlite3.connect(DB_PATH) as conn:
         row = domains_lib.get_domain(conn, host) or {}
+        # Discovery source: 'serp' (Google, default) or 'backlinks_file' (local SEMrush
+        # export, input/{host}-backlinks-pages.xlsx). The file IS the mechanism, so it
+        # bypasses the harvestable/query gates; everything downstream (incl. the recipe
+        # filter) is identical to the SERP path.
+        source = (payload.get("source") or "serp").strip() or "serp"
+        records = int(payload.get("records") or 0) or None
         # VERBATIM Google query (payload or stored serp_query) runs as-is, overrides path.
         query = (payload.get("query") or row.get("serp_query") or "").strip() or None
-        harvestable = payload.get("harvestable")
-        harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)
-        if not harvestable:
-            raise HTTPException(status_code=400,
-                                detail="Publisher marked unharvestable (no mechanical recipe access). "
-                                       "Uncheck 'skip' to refresh.")
+        if source == "backlinks_file":
+            if not collections_lib.backlinks_file_path(host):
+                raise HTTPException(status_code=400,
+                                    detail=f"No SEMrush export found: expected "
+                                           f"input/{host}-backlinks-pages.xlsx")
+        else:
+            harvestable = payload.get("harvestable")
+            harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)
+            if not harvestable:
+                raise HTTPException(status_code=400,
+                                    detail="Publisher marked unharvestable (no mechanical recipe access). "
+                                           "Uncheck 'skip' to refresh.")
         keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
         recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
         # Trusted publishers: a paywall=1 (gated premium) publisher's recipe pages
@@ -3489,7 +3504,8 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         job_id = jobs_lib.enqueue_job(
             conn, type="publisher_refresh",
             params={"host": host, "keep": keep, "pages": pages, "query": query,
-                    "recipe_path": recipe_path, "check_recipe": check_recipe, "log_label": host},
+                    "recipe_path": recipe_path, "check_recipe": check_recipe,
+                    "source": source, "records": records, "log_label": host},
             entity_ref=entity_ref)
     import subprocess
     proj = os.path.dirname(os.path.abspath(__file__))

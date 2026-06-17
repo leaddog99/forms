@@ -300,10 +300,75 @@ def _fetch_og_image(url, timeout=8):
     return img if img.startswith("http") else None
 
 
+def backlinks_file_path(domain):
+    """Path to a publisher's SEMrush page export, if present in input/. Honors the
+    convention `{domain}-backlinks-pages.xlsx` and tolerates SEMrush's underscore
+    variant `{domain}-backlinks_pages.xlsx`. Returns the path or None."""
+    import os, glob
+    input_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # <project>/input
+    for pat in (f"{domain}-backlinks-pages.xlsx", f"{domain}-backlinks_pages.xlsx",
+                f"{domain}-backlinks*pages.xlsx"):
+        hits = sorted(glob.glob(os.path.join(input_dir, pat)))
+        if hits:
+            return hits[0]
+    return None
+
+
+def _read_backlinks_file(domain, want):
+    """Discovery from a local SEMrush page export, ranked by REFERRING DOMAINS desc
+    (distinct linking sites — a robust authority marker, harder to game than raw
+    backlink count). Returns [(url, title), …] for the top `want` response-200 content
+    URLs in domains order. The SAME downstream pipeline (archive/collection pre-filter,
+    recipe check, Moz scoring, rank, keep) then runs exactly as for Google results."""
+    import os, openpyxl
+    path = backlinks_file_path(domain)
+    if not path:
+        raise FileNotFoundError(
+            f"No SEMrush export for {domain}: expected input/{domain}-backlinks-pages.xlsx")
+    ws = openpyxl.load_workbook(path, read_only=True).active
+    it = ws.iter_rows(values_only=True)
+    header = [str(h or "") for h in next(it)]
+
+    def col(*names):
+        for n in names:
+            if n in header:
+                return header.index(n)
+        return None
+    ui = col("Source url", "Page URL", "Target url", "URL")
+    ti = col("Source title", "Title", "Page title")
+    ci = col("Response code", "Status code")
+    di = col("Domains", "Referring Domains", "Referring domains")
+    if ui is None or di is None:
+        raise ValueError(f"Unexpected SEMrush columns (need a URL + Domains): {header}")
+    rows = []
+    for r in it:
+        url = str(r[ui] or "").strip()
+        if not url:
+            continue
+        if ci is not None and str(r[ci]) not in ("", "200"):   # drop 301/404 (the http→https rows)
+            continue
+        rows.append((url, str(r[ti] if ti is not None else "") or "", int(r[di] or 0)))
+    rows.sort(key=lambda x: -x[2])   # referring-domains desc
+    out, seen = [], set()
+    for url, title, _dom in rows:
+        if url not in seen:
+            seen.add(url); out.append((url, title))
+        if len(out) >= want:
+            break
+    print(f"  [harvest] backlinks file {os.path.basename(path)}: {len(out)} URLs (by referring domains)")
+    return out
+
+
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
-                          query=None, check_recipe=True) -> dict:
+                          query=None, check_recipe=True, source="serp", records=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
+
+    `source` — 'serp' (Google, default) or 'backlinks_file' (local SEMrush export,
+    input/{domain}-backlinks-pages.xlsx, ranked by referring domains). `records` is the
+    file-source analog of SERP `discover_n` — how many top rows to pull from the file.
+    BOTH sources feed the IDENTICAL downstream pipeline (archive/collection filter →
+    recipe check → Moz → rank → keep), so a file URL is treated exactly like a Google one.
 
     `query` — a VERBATIM Google query (e.g. 'site:bostonglobe.com recipe'), run as-is
     via SerpAPI; OVERRIDES path detection. The curator owns the Google syntax (same
@@ -318,7 +383,10 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
 
     Returns {members, discovered, recipe_pass, scored, recipe_path, query}. Content
     extraction / ingestion into master is a SEPARATE step (not done here)."""
-    if query:
+    if source == "backlinks_file":
+        found = _read_backlinks_file(domain, want=int(records or discover_n or 100))
+        used_path = None
+    elif query:
         target = root_domain("https://" + domain)
         found, seen = [], set()
         for link, title in _serp_links(query, want=discover_n + 20):
