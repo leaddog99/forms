@@ -2,6 +2,8 @@
 
 Deep-research synthesis (2026-06-16, workflow wf_77ce16a2 · 23 sources, 25 claims, 3-vote adversarial verification). The science behind BCC's cook-view step-breakdown — and a general procedural-delivery engine (recipe = procedure: parts/tools/steps/tips). Lead application: cooking, often hands-free by voice. See [[project_paid_pa_calibration]] sibling memories; this backs the [[project_marketing_differentiation]] "cognitively-grounded instruction" pillar.
 
+> **This file is the terse design-rules synthesis.** For the *deeper* report — what each theory actually claims, how the experiments were run, effect-size meaning, strong-vs-thin evidence, and the full study→design mapping — see **[`procedural-instruction-research-deep.md`](procedural-instruction-research-deep.md)** (assembled from this verified run + established literature, no new spend).
+
 ## Verified findings (STRONG — primary sources, unanimous 3-0 unless noted)
 
 1. **Working memory ≈ 4 chunks (range 3-5), NOT Miller's 7±2.** Cowan (2001) "magical number 4"; the "7" was a rhetorical estimate. The measured number is method-dependent (brief presentation ≈4; longer inflates via chunking). The claim that "7±2 is the constraint to design around" was **REFUTED 0-3**. → Don't hardcode a magic number; design to a *low* ceiling, *fewer* under divided attention (a cook can't rehearse with hands busy).
