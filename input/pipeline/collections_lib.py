@@ -54,6 +54,11 @@ def ensure_collection_members_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_coll_members_url ON collection_members(url_normalized)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_coll_members_coll ON collection_members(collection_type, collection_key, rank)")
+    # image_url — the recipe's og:image, captured at harvest for the selected top-N so
+    # DISCOVERED (not-yet-ingested) members still show a thumbnail. Added idempotently.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(collection_members)")}
+    if "image_url" not in cols:
+        conn.execute("ALTER TABLE collection_members ADD COLUMN image_url TEXT")
     conn.commit()
 
 
@@ -71,13 +76,13 @@ def replace_members(conn, collection_type, collection_key, members, model_versio
         """
         INSERT INTO collection_members
             (collection_type, collection_key, url_normalized, title, da, pa,
-             adjusted_pa, rank_score, rank, selected, note, model_version, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             adjusted_pa, rank_score, rank, selected, note, image_url, model_version, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         [(collection_type, collection_key, normalize_url(m["url"]) or m["url"], m.get("title"),
           m.get("da"), m.get("pa"), m.get("adjusted_pa"), m.get("rank_score"),
           m.get("rank"), 1 if m.get("selected") else 0, m.get("note"),
-          model_version, now) for m in members],
+          m.get("image_url"), model_version, now) for m in members],
     )
     conn.commit()
     return len(members)
@@ -109,7 +114,8 @@ def get_collection_top(conn, collection_type, collection_key, limit=50) -> list:
                json_extract(m.data, '$.name'),
                json_extract(m.data, '$._master.exceptionalism.grade'),
                COALESCE(json_extract(m.data, '$._source.previewImage'),
-                        json_extract(m.data, '$.image[0]'))
+                        json_extract(m.data, '$.image[0]'),
+                        cm.image_url)
         FROM collection_members cm
         LEFT JOIN master_recipes m
           ON m.url_normalized = cm.url_normalized AND m.user_id = 0
@@ -237,6 +243,45 @@ def discover_publisher_recipe_urls(domain, want=80, recipe_path="recipes") -> li
     return out
 
 
+_OG_IMAGE_RE = re.compile(
+    r'<meta[^>]+(?:property|name)=["\'](?:og:image(?::secure_url|:url)?|twitter:image)["\']'
+    r'[^>]*\bcontent=["\']([^"\']+)["\']', re.I)
+_OG_IMAGE_RE2 = re.compile(
+    r'<meta[^>]+\bcontent=["\']([^"\']+)["\'][^>]*(?:property|name)=["\']'
+    r'(?:og:image(?::secure_url|:url)?|twitter:image)["\']', re.I)
+_FETCH_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
+
+
+def _fetch_og_image(url, timeout=8):
+    """Best-effort og:image (or twitter:image) for a recipe URL — a thumbnail for the
+    DISCOVERED (not-yet-ingested) members. Reads only the document <head> region, never
+    raises (anti-bot/timeouts are normal here); returns an absolute URL or None."""
+    try:
+        resp = requests.get(url, headers=_FETCH_UA, timeout=timeout,
+                            stream=True, allow_redirects=True)
+        if resp.status_code != 200:
+            return None
+        head = ""
+        for chunk in resp.iter_content(chunk_size=16384, decode_unicode=True):
+            head += chunk if isinstance(chunk, str) else chunk.decode("utf-8", "ignore")
+            if "</head>" in head.lower() or len(head) > 200_000:
+                break
+        resp.close()
+    except Exception:
+        return None
+    m = _OG_IMAGE_RE.search(head) or _OG_IMAGE_RE2.search(head)
+    if not m:
+        return None
+    img = m.group(1).strip()
+    if img.startswith("//"):
+        img = "https:" + img
+    elif img.startswith("/"):
+        p = urlparse(url)
+        img = f"{p.scheme}://{p.netloc}{img}"
+    return img if img.startswith("http") else None
+
+
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
@@ -303,5 +348,14 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         m["rank"] = i
         m["rank_score"] = m["pa"]          # within-publisher rank IS page authority
         m["selected"] = 1 if i <= keep else 0
+    # Thumbnail the SELECTED top-N only (bounded) — captures og:image so discovered
+    # members show a picture; ingested members override with the master's real image.
+    n_img = 0
+    for m in scored:
+        if m["selected"]:
+            m["image_url"] = _fetch_og_image(m["url"])
+            if m["image_url"]:
+                n_img += 1
+    print(f"  [harvest] captured {n_img} thumbnails for {keep} selected")
     return {"members": scored, "discovered": n_raw, "recipe_pass": len(recipe_pass),
             "scored": len(scored), "recipe_path": used_path, "query": query}
