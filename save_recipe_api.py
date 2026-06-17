@@ -3403,51 +3403,94 @@ def domain_recipes_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-@app.post("/domains/{domain}/refresh-top")
-def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
-    """Publisher refresh — the domains-page analog of a dish refresh. Detects the
-    recipe path (if not stored), harvests the publisher's recipe URLs (SerpAPI +
-    Moz, ranked by PA), keeps the top-N (`keep`, default domains.keep_top_n=10,
-    overridable), and stores them as publisher collection membership. Returns the
-    ranked top list. Runs inline (~30-45s of Moz lookups). Content extraction of
-    gated recipes is a separate step (authenticated fetch)."""
+async def _handle_publisher_refresh_job(job: dict) -> dict:
+    """Publisher refresh, OUT-OF-PROCESS: run the verbatim query, verify recipes,
+    Moz-score, keep top-N, store as publisher collection membership + persist the
+    publisher's harvest config. The fetch-each-candidate recipe check makes this a
+    1-2 min job (too slow inline), so it's the dish-refresh class of work. Logs each
+    candidate (KEEP/DROP) via print → the job log → the form's live stream."""
     from input.pipeline import domains_lib, collections_lib
-    try:
-        host = domains_lib._canon_host(domain)
+    p = job.get("params") or {}
+    host = p["host"]
+    keep = int(p.get("keep") or 10)
+    pages = max(1, int(p.get("pages") or 4))
+    query = (p.get("query") or "").strip() or None
+    recipe_path = (p.get("recipe_path") or "").strip() or None
+    check_recipe = bool(p.get("check_recipe", True))
+    print(f"[PUBLISHER-REFRESH] {host} | query={query!r} pages={pages} keep={keep} "
+          f"check_recipe={check_recipe}")
+
+    def _work():
+        res = collections_lib.harvest_publisher_top(
+            host, keep=keep, discover_n=pages * 10,
+            recipe_path=recipe_path, query=query, check_recipe=check_recipe)
         with sqlite3.connect(DB_PATH) as conn:
-            row = domains_lib.get_domain(conn, host) or {}
-            # A VERBATIM Google query (payload or stored serp_query) runs as-is and
-            # overrides path detection — the curator owns the site: syntax.
-            query = (payload.get("query") or row.get("serp_query") or "").strip() or None
-            # Curator can flag a publisher unharvestable (no mechanical recipe access).
-            harvestable = payload.get("harvestable")
-            harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)
-            if not harvestable:
-                raise HTTPException(status_code=400,
-                                    detail="Publisher marked unharvestable (no mechanical recipe access). "
-                                           "Uncheck 'skip' to refresh.")
-            keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
-            recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
-            check_recipe = payload.get("check_recipe", True)  # is_recipe filter on by default
-            # Search depth in SERP pages (~10 results each) → discover_n candidates.
-            pages = max(1, int(payload.get("pages") or row.get("search_pages") or 4))
-            res = collections_lib.harvest_publisher_top(
-                host, keep=keep, discover_n=pages * 10,
-                recipe_path=recipe_path, query=query, check_recipe=bool(check_recipe))
             collections_lib.replace_members(conn, "publisher", host, res["members"])
             conn.execute(
-                "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ?, search_pages = ? WHERE domain = ?",
+                "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ?, "
+                "search_pages = ? WHERE domain = ?",
                 (res.get("recipe_path") or "", keep, query or "", pages, host))
             conn.commit()
-            top = collections_lib.get_collection_top(conn, "publisher", host, limit=max(keep, 50))
-        return {"domain": host, "recipe_path": res.get("recipe_path"), "query": query, "keep": keep,
-                "discovered": res["discovered"], "recipe_pass": res["recipe_pass"],
-                "scored": res["scored"], "stored": len(res["members"]), "top": top}
-    except HTTPException:
-        raise
+        return res
+
+    res = await asyncio.to_thread(_work)
+    print(f"[PUBLISHER-REFRESH] done — discovered={res['discovered']} "
+          f"recipe_pass={res['recipe_pass']} scored={res['scored']} stored={len(res['members'])}")
+    return {"discovered": res["discovered"], "recipe_pass": res["recipe_pass"],
+            "scored": res["scored"], "stored": len(res["members"]),
+            "recipe_path": res.get("recipe_path")}
+
+
+jobs_lib.register_handler("publisher_refresh", _handle_publisher_refresh_job)
+
+
+@app.post("/domains/{domain}/refresh-top")
+def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
+    """Publisher refresh — the domains-page analog of a dish refresh. Validates +
+    enqueues a `publisher_refresh` job and spawns it OUT-OF-PROCESS (the recipe
+    check fetches each candidate → 1-2 min, too slow inline + survives a restart),
+    returning the job id + SSE stream url. The form tails the log and re-loads the
+    stored top list (GET /domains/{domain}/top) on completion."""
+    from input.pipeline import domains_lib
+    host = domains_lib._canon_host(domain)
+    with sqlite3.connect(DB_PATH) as conn:
+        row = domains_lib.get_domain(conn, host) or {}
+        # VERBATIM Google query (payload or stored serp_query) runs as-is, overrides path.
+        query = (payload.get("query") or row.get("serp_query") or "").strip() or None
+        harvestable = payload.get("harvestable")
+        harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)
+        if not harvestable:
+            raise HTTPException(status_code=400,
+                                detail="Publisher marked unharvestable (no mechanical recipe access). "
+                                       "Uncheck 'skip' to refresh.")
+        keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
+        recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
+        check_recipe = bool(payload.get("check_recipe", True))
+        pages = max(1, int(payload.get("pages") or row.get("search_pages") or 4))
+        entity_ref = f"publisher:{host}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "error": "already in flight", "job_id": existing["id"],
+                "status": existing["status"], "stream_url": f"/jobs/{existing['id']}/stream"})
+        job_id = jobs_lib.enqueue_job(
+            conn, type="publisher_refresh",
+            params={"host": host, "keep": keep, "pages": pages, "query": query,
+                    "recipe_path": recipe_path, "check_recipe": check_recipe, "log_label": host},
+            entity_ref=entity_ref)
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception as e:
-        print(f"[ERROR] refresh_domain_top({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn refresh job: {e}")
+    return JSONResponse(status_code=202, content={
+        "job_id": job_id, "status": "queued", "domain": host,
+        "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
 
 
 @app.delete("/domains/{domain}/top")

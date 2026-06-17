@@ -236,6 +236,7 @@
             <button type="button" class="ed-btn danger" id="clearTopBtn" title="Wipe the current stored list (start over)">🗑 Clear list</button>
             <span class="ed-save-hint" id="topHint"></span>
           </div>
+          <pre id="topLog" style="display:none;max-height:240px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;margin:0 0 10px;white-space:pre-wrap;"></pre>
           <ol class="ed-t10" id="domainTopList"><li class="ed-empty-fit">Open or refresh to load the top recipes.</li></ol>
         </section>
 
@@ -301,24 +302,46 @@
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
-      btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Harvesting…';
-      if (hint){ hint.style.color = ''; hint.textContent = check_recipe
-        ? 'Discovering + verifying recipes (fetches each — can take a minute)…'
-        : 'Discovering + scoring recipes (~30–45s)…'; }
+      btn.disabled = true; btn.textContent = '⏳ Harvesting…';
+      const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
+      if (hint){ hint.style.color = ''; hint.textContent = 'Queuing refresh job…'; }
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keep, pages, recipe_path, query, check_recipe }) });
         const data = await r.json().catch(() => ({}));
+        if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        renderDomainTop(data.top || []);
-        if ($('#f_recipe_path') && data.recipe_path) $('#f_recipe_path').value = data.recipe_path;
-        if (hint){ hint.textContent = data.scored
-          ? `Kept ${data.stored} of ${data.scored} scored — ${data.discovered} found, ${data.recipe_pass} passed the recipe check${query ? ', verbatim query' : `, path “${data.recipe_path || '—'}”`}.`
-          : `No recipes kept — ${data.discovered || 0} found, ${data.recipe_pass || 0} passed the recipe check. ${check_recipe ? 'Paywalled? Uncheck “verify”, or refine the query.' : 'Refine the query or set a recipe path.'}`; }
+        streamRefresh(data.stream_url, domain);
       } catch (e) {
         if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Refresh failed: ${e.message || e}`; }
-      } finally { btn.disabled = false; btn.textContent = label; }
+        btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
+      }
+    }
+
+    // Tail the refresh job's SSE log; on completion, re-load the stored top list.
+    function streamRefresh(streamUrl, domain){
+      const hint = $('#topHint'), log = $('#topLog'), btn = $('#refreshTopBtn');
+      const done = (txt, warn) => { btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
+        if (hint){ hint.style.color = warn ? 'var(--ed-warn)' : ''; if (txt) hint.textContent = txt; } };
+      let es;
+      try { es = new EventSource(streamUrl); }
+      catch (e){ done(`Stream error: ${e.message || e}`, true); return; }
+      es.addEventListener('log', (e) => {
+        try { const d = JSON.parse(e.data); if (log){ log.textContent += (d.line || '') + '\n'; log.scrollTop = log.scrollHeight; } } catch {}
+      });
+      es.addEventListener('status', (e) => {
+        try { const d = JSON.parse(e.data); if (hint && d.status) hint.textContent = `Job ${d.status}…`; } catch {}
+      });
+      es.addEventListener('done', (e) => {
+        es.close();
+        let res = {}; try { const d = JSON.parse(e.data || '{}'); res = typeof d.result === 'string' ? JSON.parse(d.result) : (d.result || {}); } catch {}
+        loadDomainTop(domain);  // re-render the freshly-stored top list
+        const ok = (res.stored || 0) > 0;
+        done(ok ? `Done — ${res.stored} stored (${res.discovered} found, ${res.recipe_pass} passed the recipe check).`
+                : `Done — 0 stored (${res.discovered || 0} found, ${res.recipe_pass || 0} passed). Paywalled? Uncheck “verify”, or refine the query.`, !ok && (res.discovered || 0) === 0);
+      });
+      es.onerror = () => { es.close(); done('Stream dropped — reload to see the result.', true); };
     }
 
     // Wipe the current stored list (botched harvest → start over).
