@@ -742,3 +742,38 @@ User wants the domain/publisher page to work like dishes_v2 (refresh a publisher
 - **Intelligent sub-steps (2.1/2.2 — user's "most important"):** break dense steps into memory-sized chunks for voice, cluster-but-split (not naive sentence split). Client-side auto-split first, model-authored later; then full-screen up/down No-look swipes become safe.
 - Voice P1 (barge-in/AEC — the real "interrupt Chef" fix, also re-enables the tip offer; Silero VAD, semantic turn-detector, Murf streaming TTS).
 - Voice P1 (when ready): Silero VAD + semantic turn-detector + sherpa-onnx wake + WebRTC-loopback AEC barge-in; wire Murf streaming TTS; extract the client loop to `voice-agent.js`.
+
+---
+
+## Session log — 2026-06-16 — intelligent sub-steps (2.1/2.2): research synthesis → v1 sub-step engine → stabilized back to whole-step (v2 belongs in cook_rework)
+
+Picked up the cook-view "most important" follow-up — **intelligent sub-steps** for voice memory load. Did it the research-before-design way: synthesized the cognitive science first, built a client-side v1 against the existing `_cook`, cooked a real recipe on it, and let that first cook tell us v1 was the wrong altitude — so it was stabilized back to whole-step reading with the genuinely-useful pieces kept, and the real fix re-aimed at model-authored v2 in `cook_rework`. All on `split/enrichment-api`, three commits. [[project_cookview_feedback]], [[project_recipe_anchor]], [[project_marketing_differentiation]].
+
+### Research synthesis first — `docs/procedural-instruction-research.md` (commit `08ff802`)
+Deep-research synthesis (workflow `wf_77ce16a2` · 23 sources, 25 claims, 3-vote adversarial verification): the cognitive science of presenting a procedure to a human *executing* it, distilled to concrete design rules for the sub-step engine. Strong/verified findings: working memory is **~4 chunks** (not the folk 7±2); cognitive load is driven by **element interactivity** (split INDEPENDENT actions apart, cluster COUPLED ones together); **segmenting + user-pacing is the top lever** (the science license for check-to-advance); the **transient-information effect** (spoken instructions must be far shorter than on-screen — voice is gone the instant it's said); **expertise reversal** (detail should fade as skill grows). Design rules: split-on-independence, ~3-4 interacting elements per step, dual rendering (voice terse / screen full-with-numbers), expertise fade. Open gaps flagged: interruption/place-keeping and applied-practice (checklists/TWI/mise) unverified. Doubles as the proof behind the marketing "cognitively-grounded instruction" pillar + the general procedure-engine generalization.
+
+### v1 — the "sub-step boogie" (client-side, on existing `_cook`) (commit `9c4eba0`)
+Built entirely in `forms/cook.html`, grounded in the research doc:
+- **`splitSpoken()`** — an element-interactivity splitter: break INDEPENDENT actions apart, keep COUPLED ones (`while`/`until`/`as`/`meanwhile`) together; only split long (>14-word) sentences on sequential markers; merge tiny fragments upward.
+- **Sub-step-granularity nav** — `read`/`next`/`back`/`repeat` operate at sub-step grain **when Talk is on**: each "next" speaks the next memory-sized chunk, then completes the step + advances. back/repeat re-speak the prior/current sub-step = the voice "re-scan" (per the user's correction: voice CAN re-scan, just higher-friction than a glance). Silent/screen mode stayed whole-step. On-screen "Step N · part i/m" cue; the whole step stays visible.
+- **`speakMise()`** — spoken pre-step mise at fresh hands-free start + a "mise" command: clusters laid out and **measured once by name** so steps can refer to clusters by name.
+- **`whereWasI()`** — a "where was I" command (step N of M + current sub-step) — place-keeping for interrupted cooks, the research-flagged open gap.
+
+### Stabilize — first real cook said v1 was too granular (commit `cbd9272`)
+First real cook of v1 (**Chicken Milanese**) exposed two problems: the client-side step-chopper was **tedious** (tiny fragments, step title split off its action) and the one-block mise was **too long + duplicated the prep steps** (it spoke "combine the spices" that a later step also covered). The fix:
+- **Removed `splitSpoken` step-chopping** → steps read **WHOLE** again (back to pre-v1 behavior).
+- **Mise is now per-cluster check-to-advance** (one cluster per "next") AND **opt-in** via the "mise" command — no longer auto-played at start.
+- **Kept** where-was-I (mise-aware) + the graceful ending.
+
+The lesson: naive client-side splitting can't tell gather/measure mise from prep-action steps, so it duplicates and fragments. The **real fix is an organic whole-recipe re-plan authored by the model** in `cook_rework` (distinguish mise from prep, cluster-name + measure-once, no duplication) — that's v2, WIP design.
+
+### v2 (planned — the real altitude)
+Model-authored sub-steps + cluster naming/amounts-once in `cook_rework`; sub-stepped mise that doesn't duplicate prep steps; a verbosity preference (expertise fade) chosen at cook-page generation. The client-side v1 proved the UX mechanics (sub-step nav, place-keeping, per-cluster mise pacing) cheaply; the intelligence moves server-side into the rework engine where it has the full recipe to reason over.
+
+### Verified / ops / housekeeping
+`forms/cook.html` inline JS `node --check` clean across all three commits; iterated live on the real cook. **Reverted a stray `let` typo** accidentally IDE-pasted onto line 1 of `docs/procedural-instruction-research.md` (uncommitted). `recipes.sql` shows uncommitted (a backup dump ran but wasn't committed — refresh/commit via `bcc_backup.bat` when convenient). Two `uvicorn_cookview_agent.{out,err}.log` files are untracked (gitignored class).
+
+### Follow-ups (priority)
+- **Sub-steps v2 in `cook_rework`** — model-authored whole-recipe re-plan: separate mise (gather/measure) from prep-action steps, cluster-name + measure-once, no duplication; emit sub-step structure as data so the renderer stops guessing. This is the real fix; v1 is the validated UX shell.
+- Verbosity/expertise-fade preference at cook-page gen (research: expertise reversal).
+- Still queued from 06-15: Voice P1 (barge-in/AEC, Murf streaming TTS, `voice-agent.js` extraction); authenticated Playwright ingest of gated recipes; promote publisher-refresh to a background job; re-run a dish with ATK to land the paid-PA selection half.
