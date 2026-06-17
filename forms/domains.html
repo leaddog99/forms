@@ -338,8 +338,12 @@
         let res = {}; try { const d = JSON.parse(e.data || '{}'); res = typeof d.result === 'string' ? JSON.parse(d.result) : (d.result || {}); } catch {}
         loadDomainTop(domain);  // re-render the freshly-stored top list
         const ok = (res.stored || 0) > 0;
-        done(ok ? `Done — ${res.stored} stored (${res.discovered} found, ${res.recipe_pass} passed the recipe check).`
-                : `Done — 0 stored (${res.discovered || 0} found, ${res.recipe_pass || 0} passed). Paywalled? Uncheck “verify”, or refine the query.`, !ok && (res.discovered || 0) === 0);
+        // The job already PERSISTED the list (replace_members) + the harvest config
+        // (recipe_path/keep/serp_query/pages), so Save is NOT needed here — leaving
+        // it disabled is correct. Only Skip/other field edits dirty the form (the
+        // existing #page input/change tracker handles that naturally).
+        done(ok ? `Done & saved — ${res.stored} stored (${res.discovered} found, ${res.recipe_pass} passed the recipe check).`
+                : `Done — 0 stored (${res.discovered || 0} found, ${res.recipe_pass || 0} passed). Paywalled? Uncheck “verify”, refine the query, or check Skip.`, !ok && (res.discovered || 0) === 0);
       });
       es.onerror = () => { es.close(); done('Stream dropped — reload to see the result.', true); };
     }
