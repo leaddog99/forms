@@ -22,6 +22,7 @@ import requests
 SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
 SCALESERP_ENDPOINT = "https://api.scaleserp.com/search"
 _PAGE_SIZE = 10  # Google organic results per page (protocol constant)
+_SCALESERP_MAX_PAGE = 10  # Scale SERP hard limit: max_page must be <= 10 (400 otherwise)
 
 _SCALESERP_ALIASES = {"scaleserp", "scale_serp", "scale-serp", "scale"}
 
@@ -101,7 +102,8 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
     if not key:
         return []
     max_page = pages if want is None else min(pages, math.ceil(want / _PAGE_SIZE) + 1)
-    params = {"api_key": key, "q": query, "output": "json", "max_page": max(1, max_page)}
+    max_page = max(1, min(_SCALESERP_MAX_PAGE, max_page))  # Scale SERP rejects > 10
+    params = {"api_key": key, "q": query, "output": "json", "max_page": max_page}
     if gl:
         params["gl"] = gl
     if hl:

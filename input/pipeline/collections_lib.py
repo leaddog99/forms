@@ -18,6 +18,7 @@ membership view unions both.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -159,6 +160,25 @@ def _under_path(u, seg):
     return len(segs) >= 2 and segs[0] == (seg or "").lower()
 
 
+# WordPress/CMS archive + taxonomy + feed URLs that are NEVER an individual recipe
+# (a bare `site:` query surfaces these heavily — aglaiakremezi.com returned mostly
+# /tag/, /category/, /page/N/, /links/). Dropping them BEFORE the recipe-check fetch
+# saves credits + time. Conservative: only patterns a recipe post never has.
+_ARCHIVE_RE = re.compile(
+    r"/(tag|tags|category|categories|author|page|archives?|topics?|search|feed|"
+    r"comments?|wp-json|wp-admin|wp-content|wp-includes|sitemap|amp)(/|$)"
+    r"|/page/\d+", re.IGNORECASE)
+
+
+def _looks_like_archive(url: str) -> bool:
+    """True for taxonomy/pagination/feed/admin URLs + the bare site root — never a
+    recipe page. Used to pre-filter discovery before the (fetching) recipe check."""
+    path = urlparse(url).path.strip("/")
+    if not path:  # bare host root / homepage
+        return True
+    return bool(_ARCHIVE_RE.search(urlparse(url).path))
+
+
 def _serp_links(query, want=50) -> list:
     """Raw organic links for a verbatim Google query (filter=0, paginated). Unfiltered
     — callers filter. Returns [(link, title), …]. Delegates to the provider-agnostic
@@ -253,6 +273,15 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         found = discover_publisher_recipe_urls(domain, want=discover_n, recipe_path=recipe_path)
         used_path = recipe_path
 
+    # Cheap pre-filter: drop archive/taxonomy/feed URLs (never a recipe) BEFORE the
+    # fetching recipe check — saves credits + time (a bare `site:` query is mostly
+    # these). Conservative patterns only.
+    n_raw = len(found)
+    found = [(l, t) for l, t in found if not _looks_like_archive(l)]
+    if len(found) < n_raw:
+        print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy URLs "
+              f"({len(found)} candidates remain)")
+
     # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
     # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else phrase score.
     recipe_pass = found
@@ -274,5 +303,5 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         m["rank"] = i
         m["rank_score"] = m["pa"]          # within-publisher rank IS page authority
         m["selected"] = 1 if i <= keep else 0
-    return {"members": scored, "discovered": len(found), "recipe_pass": len(recipe_pass),
+    return {"members": scored, "discovered": n_raw, "recipe_pass": len(recipe_pass),
             "scored": len(scored), "recipe_path": used_path, "query": query}
