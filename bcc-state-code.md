@@ -818,3 +818,47 @@ User ran a 14-instruction recipe through the rework; it "finished" but persisted
 - **On-screen sub-steps — SHIPPED** (same day, follow-up commit): the cook-view renders each step AS its sub-step checklist (the `screen` fragment, else the spoken action) and lights up the chunk being spoken (`.substep.active`, synced to `_subIdx` via `highlightSub`) — dual voice/screen rendering complete. `expandInstr(step, text)` now expands a fragment's tokens; steps without substeps still show the whole instruction. Verified the live no-cache static serves it (no restart). Generalization confirmed: ANY recipe re-reworked through v2.2 gets sub-steps — only Chicken Milanese is re-reworked so far; the ~16 pre-today reworks render whole until re-run.
 - **Verbosity / expertise-fade** preference at cook-page gen (research: expertise reversal) — verbose↔concise clusters more per sub-step for experienced cooks.
 - Carried from earlier: Voice P1 (barge-in/AEC, Murf streaming TTS, `voice-agent.js` extraction); authenticated Playwright ingest of gated recipes; promote publisher-refresh to a background job; ATK paid-PA selection re-run.
+
+---
+
+## Session log — 2026-06-17 — sub-step re-rework batch · deep cognitive-science report · THE SERP VENDOR SWITCH (SerpApi→Scale SERP) · domain-harvest overhaul + background job · system-wide domain scoring decided
+
+A long, wide session on `split/enrichment-api`. Three arcs: finish the cook sub-step rollout, switch the SERP vendor end-to-end, and rebuild the publisher/domain harvest into a real tool. Everything committed + the server kept live (now via a truly-detached `Start-Process`, not a session-bound process).
+
+### Cook sub-steps — re-rework batch (all recipes gained sub-steps)
+`scripts/rerework_cooks.py` (idempotent/resumable): re-ran every pre-v2.2 `_cook` through the engine so they all carry voice sub-steps. **28 re-reworked, 2 skipped** (gauntlet-correct: Best Chocolate Chip Cookies `reuse-referenced`, Singapore Noodles `mise-complete` — kept their old `_cook`, nothing lost). The pre-existing stepless "Traditional Greek Galaktoboureko" (0 steps) repaired. No stepless blocks remain.
+
+### Deeper cognitive-science report (no new spend)
+`docs/procedural-instruction-research-deep.md` (commit `a4b17f7`) — expanded the terse synthesis into a full explainer (Miller vs Cowan WM capacity, CLT + element interactivity, modality + its boundary, transient-information effect, segmenting, expertise reversal, TWI/checklist applied traditions) with study mechanisms + the study→design mapping. `[VERIFIED]` (our wf_77ce16a2 run) vs `[LITERATURE]` tags; bibliography flagged to-confirm; honest open-questions. Backs the marketing "cognitively-grounded instruction" pillar.
+
+### THE SERP SWITCH — SerpApi → Scale SERP (Traject Data) — LIVE
+Decision + rationale in [[project_serp_provider]]: ~55% cheaper at our future (20×) scale + **vendor consolidation** (Traject also makes Rainforest API, the planned product-data source) + trusted quality. NOT a cost-only call. Gated on fidelity, not price.
+- **`serp_search()` chokepoint** (`input/pipeline/serp_search.py`): one provider-agnostic fetch, config-selected (`serp_provider` → `SERP_PROVIDER` env → serpapi). SerpApi path verified **byte-for-byte** unchanged.
+- **Fidelity A/B** (`scripts/serp_ab.py`): same real queries through both → Spearman **+0.54 to +0.99**, top-10 overlap 6–9/10 (vs the rejected DataForSEO's **−0.41 / 0-overlap**). Same Google, normal scrape variance. PASS. (Banana-bread "miss" was Scale SERP returning *better* results — real recipes vs SerpApi's fruit junk — on an ambiguous unquoted query.)
+- **Flipped** all 3 call sites through `serp_search` (`_serp_links`, batch `_serpapi_lookup`, calibrate script); `serp_provider=scaleserp`.
+- **Two live bugs the error-logging caught instantly** (the silent-0 lesson paying off): (1) free trial **credits exhausted (HTTP 402)** mid-session → drop in a paid plan; (2) **`max_page` hard-capped at 10** (400 above) — switched `_scaleserp` to **page-loop the 1-based `page` param** (unlimited depth, early-stop, uniform with SerpApi). Pagination model: SerpApi loops `start`, Scale SERP loops `page`; both 1 credit/page.
+- **Catalog-scale path = Scale SERP Batches API** (studied, not built): one batch up to 15k searches, free API + per-search billing, webhook/poll collect; slots into the job system. We have zero real-time SERP needs → async is right. NEXT: a `serp_batch` module.
+
+### Domain / publisher harvest — overhauled into a real tool
+The publisher "Top recipes" panel was discovery+raw-PA only. Rebuilt (`collections_lib`, `domains_lib`, `save_recipe_api`, `domains.html`):
+- **Verbatim Google query** (`domains.serp_query`) run as-is, overrides path detection — fixes date-pathed/CMS publishers where `site:domain/recipes` finds nothing (Boston Globe detected path '2026'!). Curator owns the syntax.
+- **Recipe check** — reuse the dish batch's `_is_recipe_filter` (JSON-LD or phrase score) so "is this a recipe" is decided ONE way everywhere; drops index/listicle/`/recipe-database/` pages. UI toggle (off for paywalled). Proven: addapinch 50→48 kept; aglaiakremezi 99 found→55 passed.
+- **Archive pre-filter** (`_looks_like_archive`): drop `/tag/`, `/category/`, `/page/N/`, feed/admin, bare root BEFORE the fetching recipe check — saves credits/time (a bare `site:` on a WP blog is mostly these).
+- **Skip flag** (`domains.harvestable=0`) — refresh refuses (no mechanical recipe access; the Boston-Globe-paywall case).
+- **Clear list** (`DELETE /domains/{domain}/top` + `clear_members`).
+- **Search depth (pages)** field — `domains.search_pages`, default from `system_config.serp_default_pages` (admin-editable); no 10 cap now.
+- **Background job**: `POST /domains/{domain}/refresh-top` enqueues `publisher_refresh` (entity_ref `publisher:<host>`, in-flight dedup) + spawns `python -m jobs exec`, returns 202 + stream_url; `_handle_publisher_refresh_job` runs the harvest off the event loop, persists list + config; `domains.html` tails `/jobs/{id}/stream` into a live log panel and reloads the top list on done. Verified job #235 end-to-end.
+- **Save-button clarification**: the job auto-persists the survivors (`replace_members`) + harvest config, so the form Save correctly stays disabled post-refresh (reverted a premature enable). Only the Skip flag is Save-only (and toggling it dirties the form normally).
+
+### System-wide domain scoring — DECIDED (design)
+Raw PA ranks publisher recipes badly (ignores DA context). Decision ([[project_domain_scoring]]): score domain recipes by a **system-wide** OU/power blend (single global PA~DA fit, not per-cohort), batch-recomputed, reusing the dish math + calibrated PA. Replaces `rank_score = pa`. Design only — `docs/domain-scoring.md` + build to come.
+
+### Process note
+Layout drift called out → [[feedback_reuse_layout_components]]: lift the existing component instead of authoring new per-page styles. Open task: domains recipe list → match the dishes top-recipes layout.
+
+### Follow-ups (priority)
+- **Build system-wide domain scoring** (single global OU/power fit, scheduled batch) — design decided.
+- **Domain recipe list → dishes top-recipes layout** (reuse the component).
+- **`serp_batch`** — Scale SERP Batches API (catalog-scale fan-out).
+- **Sub-steps v2.1** (mise/method re-plan — design in `docs/cook-substeps-v2.1-design.md`).
+- Carried: Voice P1; authenticated Playwright ingest of gated recipes; verbosity/expertise-fade; the 2 batch-skipped reworks (definite-article/etc. nits).
