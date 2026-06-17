@@ -89,7 +89,7 @@ from to_markdown.html_to_markdown import (
     fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
 )
 from intake.translate import (
-    detect_language, translate_markdown, is_translation_plausible,
+    detect_language, translate_markdown, translate_title, is_translation_plausible,
     is_non_english, language_name,
 )
 
@@ -357,6 +357,46 @@ def _fetch_text(url: str) -> Optional[str]:
 # means JSON-LD bypass; score=NN means phrase-derived").
 _JSONLD_PASS_SCORE = 100
 
+# A title whose MAIN part (before the site-name separator) contains the PLURAL word
+# "recipes" is a collection / listicle / index page — "30 Greek Recipes", "Best
+# Dinner Recipes", "Greek Recipes" — NOT a single dish. Singular "recipe" ("Authentic
+# Tzatziki Recipe") is welcomed. Two deliberate scoping choices:
+#   • LEADING segment only — so a brand suffix ("… | Simply Recipes", "… - Allrecipes")
+#     doesn't trigger it. We split on the usual title separators.
+#   • TITLE only, never the URL — a real recipe very commonly lives under a /recipes/
+#     PATH prefix (Milk Street /recipes/hummus, Zimmern /recipes/popovers); a URL rule
+#     would nuke real recipes.
+# This is a HARD reject that overrides even a JSON-LD pass: a collection page can embed
+# Recipe JSON-LD (that's exactly the leak), so the title verdict wins.
+_TITLE_SEP_RE = re.compile(r"\s+(?:[|–—:•·]|-)\s+")
+_PLURAL_RECIPES_RE = re.compile(r"\brecipes\b", re.IGNORECASE)
+
+
+def _looks_like_recipe_collection(title: str) -> bool:
+    """True if `title` (an ENGLISH title) reads as a collection/listicle/index page —
+    its leading segment contains the plural word 'recipes'. Non-English titles must be
+    translated to English first (see `_english_title`); the raw-source plural word
+    differs per language ('recetas', 'συνταγές', 'ricette')."""
+    if not title:
+        return False
+    lead = _TITLE_SEP_RE.split(title.strip(), 1)[0]
+    return bool(_PLURAL_RECIPES_RE.search(lead))
+
+
+def _english_title(title: str, lang_code: str) -> str:
+    """The English form of a SERP title for the collection check. English titles pass
+    through; a non-English title is translated (small, cheap Haiku call — titles are a
+    few tokens). Best-effort: a translation failure returns '' so we don't false-drop."""
+    if not title:
+        return ""
+    if not is_non_english(lang_code):
+        return title
+    try:
+        return translate_title(title, lang_code)
+    except Exception as ex:
+        print(f"      [collection-title] title-translate failed ({type(ex).__name__}); skipping check")
+        return ""
+
 
 def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
@@ -385,6 +425,16 @@ def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     kept, dropped = [], []
     for i, e in enumerate(entries, start=1):
         url = e["url"]
+        # Collection/listicle guard (English fast-path) — a plural-"recipes" SERP title
+        # ("30 Greek Recipes") is an index page, not a dish. Drop BEFORE the fetch.
+        # Non-English titles don't match the English word here; they're caught
+        # post-fetch via the translated title (below).
+        if _looks_like_recipe_collection(e.get("title", "")):
+            e["recipe_score"] = 0
+            e["_dropped_reason"] = "collection-title"
+            dropped.append(e)
+            print(f"  [{i:>2}/{len(entries)}] DROP collection {url}  (title: {e.get('title','')!r})")
+            continue
         result = _fetch_for_filter(url)
         if result is None:
             e["recipe_score"] = 0
@@ -394,6 +444,19 @@ def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
             continue
         text, has_recipe_jsonld, lang_code = result
         e["_lang"] = lang_code
+
+        # Collection guard (non-English) — the SERP title was in the source language,
+        # so the English fast-path above couldn't see it. Translate the title now and
+        # re-check. Runs BEFORE the JSON-LD branch so it overrides a JSON-LD pass (a
+        # non-English listicle can carry Recipe JSON-LD too).
+        if is_non_english(lang_code):
+            title_en = _english_title(e.get("title", ""), lang_code)
+            if _looks_like_recipe_collection(title_en):
+                e["recipe_score"] = 0
+                e["_dropped_reason"] = "collection-title"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] DROP collection [{lang_code}] {url}  (en-title: {title_en!r})")
+                continue
 
         if has_recipe_jsonld:
             # Author declared this a recipe via structured data. Trust it.

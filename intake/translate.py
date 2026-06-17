@@ -276,6 +276,30 @@ def translate_markdown(markdown: str, src_lang: str) -> TranslationResult:
     )
 
 
+def translate_title(title: str, src_lang: str) -> str:
+    """Literal one-shot translation of a short page TITLE to English.
+
+    Unlike `translate_markdown` (recipe-aware — given only a bare title it will
+    HALLUCINATE a full recipe body, or return a chatty refusal), this asks for ONLY
+    the translated title string. For the collection/listicle title guard, where we
+    need the English form of a non-English SERP title. Raises on API error; caller
+    decides how to handle (the filter treats failure as 'skip the check')."""
+    if not title or not title.strip():
+        return ""
+    src_name = _LANG_NAMES.get(src_lang, src_lang.upper())
+    msg = _anthropic_client.messages.create(
+        model=_TRANSLATION_MODEL,
+        max_tokens=200,
+        system=(f"You are a translator. Translate the given web-page title from "
+                f"{src_name} to English. Output ONLY the translated title text — no "
+                f"surrounding quotes, no explanation, no added or invented words."),
+        messages=[{"role": "user", "content": title.strip()}],
+    )
+    return "".join(
+        b.text for b in msg.content if getattr(b, "type", None) == "text"
+    ).strip()
+
+
 # === Sanity check =================================================
 
 # Quantities we expect to survive translation intact. The translation
