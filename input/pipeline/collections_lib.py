@@ -160,27 +160,13 @@ def _under_path(u, seg):
 
 
 def _serp_links(query, want=50) -> list:
-    """Raw organic links for a SerpAPI query (filter=0, paginated). Unfiltered —
-    callers filter. Returns [(link, title), …]."""
-    if not _SERPAPI_KEY:
-        return []
-    out, seen = [], set()
-    for start in range(0, want + 20, 10):
-        try:
-            r = requests.get("https://serpapi.com/search.json", params={
-                "engine": "google", "q": query, "num": 10,
-                "start": start, "filter": 0, "api_key": _SERPAPI_KEY}, timeout=30)
-            res = r.json().get("organic_results") or []
-        except Exception:
-            break
-        for it in res:
-            link = it.get("link") or ""
-            if link and link not in seen:
-                seen.add(link)
-                out.append((link, it.get("title") or ""))
-        if not res or len(out) >= want:
-            break
-    return out[:want]
+    """Raw organic links for a verbatim Google query (filter=0, paginated). Unfiltered
+    — callers filter. Returns [(link, title), …]. Delegates to the provider-agnostic
+    serp_search chokepoint (default SerpApi = unchanged behavior; Scale SERP when the
+    `serp_provider` config flips). No gl/hl here — preserves prior behavior."""
+    from input.pipeline.serp_search import serp_search
+    pages = (want + 20) // 10 + 1
+    return [(r["link"], r["title"]) for r in serp_search(query, pages=pages, want=want)]
 
 
 def detect_recipe_path(domain) -> str:
