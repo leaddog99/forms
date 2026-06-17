@@ -136,6 +136,16 @@
   .need .body{color:#7a4a31;} .need .body b{color:var(--clay-deep);font-weight:600;} .need .spec{font-style:italic;opacity:.9;}
   .instr{margin:12px 0 0;font-size:18px;line-height:1.56;}
   .instr b{font-weight:600;color:var(--ink);}
+  /* Sub-steps (v2): the model's memory-sized action chunks, shown as a checklist.
+     The one being spoken (voice mode) lights up — the screen + the ear stay in sync. */
+  .substeps{list-style:none;margin:12px 0 0;padding:0;}
+  .substep{display:flex;gap:10px;align-items:flex-start;padding:7px 11px;border-radius:9px;font-size:17px;line-height:1.5;transition:background .2s;}
+  .substep + .substep{margin-top:3px;}
+  .substep .sub-n{flex:0 0 auto;width:21px;height:21px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;font-family:"Fraunces",serif;background:var(--clay-bg);color:var(--clay);margin-top:1px;}
+  .substep .sub-txt{flex:1;min-width:0;}
+  .substep .sub-txt b{font-weight:600;color:var(--ink);}
+  .substep.active{background:var(--clay-bg);box-shadow:inset 3px 0 0 var(--clay);}
+  .substep.active .sub-n{background:var(--clay);color:#fff;}
   .att{font-size:14.5px;margin:8px 0 0;line-height:1.45;}
   .att.tip{color:var(--sea-deep);} .att.check{color:var(--clay-deep);}
   .att .att-ic{font-weight:700;margin-right:5px;}
@@ -525,9 +535,11 @@
       return '<a class="media" href="'+E(href)+'" target="_blank" rel="noopener" title="'+E(m.source||'')+'">'+inner+'</a>';
     }).join('');
   }
-  // Expand {ingN}/{amt:..}/{bundle:ID} into DISPLAY html (bold).
-  function expandInstr(step){
-    var html=E(step.instruction||'');
+  // Expand {ingN}/{amt:..}/{bundle:ID} into DISPLAY html (bold). `text` defaults to
+  // the whole instruction; a sub-step passes its own `screen` fragment (same token
+  // space — {ingN} indexes the PARENT step's ingredients).
+  function expandInstr(step, text){
+    var html=E(text!=null ? text : (step.instruction||''));
     html=html.replace(/\{ing(\d+)\}/g, function(mm,n){
       var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return mm;
       var a=amtStr(si.amount); return '<b>'+E((a?a+' ':'')+(si.label||''))+'</b>'; });
@@ -597,12 +609,24 @@
       if(step.tip) attHtml+='<div class="att tip"><span class="att-ic">💡</span>'+E(step.tip)+'</div>';
       if(step.check) attHtml+='<div class="att check"><span class="att-ic">✓</span>'+E(step.check)+'</div>';
     }
+    // Body: the model's sub-steps as a checklist when present (each line = its
+    // `screen` fragment, else the spoken action), else the whole instruction.
+    var bodyHtml;
+    if((step.substeps||[]).length){
+      bodyHtml = '<ol class="substeps">' + step.substeps.map(function(ss, i){
+        var txt = (ss.screen!=null && ss.screen!=='') ? expandInstr(step, ss.screen) : E(ss.voice||'');
+        return '<li class="substep" data-sub="'+i+'"><span class="sub-n">'+(i+1)+'</span>'
+             + '<span class="sub-txt">'+txt+'</span></li>';
+      }).join('') + '</ol>';
+    } else {
+      bodyHtml = '<p class="instr">'+expandInstr(step)+'</p>';
+    }
     div.innerHTML='<span class="sbox" role="button" aria-label="Mark step '+step.number+' done"></span>'
       + '<div class="sbody">'
       + '<div class="num-row"><div class="num">'+step.number+'</div><div class="step-name">'+E(step.name)
       +   (sched?' <span class="step-sched">'+E(sched)+'</span>':'')+'</div></div>'
       + eqHtml
-      + '<p class="instr">'+expandInstr(step)+'</p>'
+      + bodyHtml
       + attHtml
       + '<button class="step-read" title="Read this step aloud">🔊 Read step</button>'
       + '</div>';
@@ -628,6 +652,7 @@
   var _curStepNum = null, _stepEnteredAt = 0;   // current step + when it became current (smart Back)
   function markCurrent(n){
     document.querySelectorAll('.step.current').forEach(function(el){ el.classList.remove('current'); });
+    document.querySelectorAll('.substep.active').forEach(function(el){ el.classList.remove('active'); });
     if(n!=null){ var d=stepDiv(n); if(d) d.classList.add('current'); }
     if(n !== _curStepNum){ _curStepNum = n; _stepEnteredAt = _now(); _backArmed = false; }   // arrival → reset smart-Back state
     updateProgress();
@@ -684,7 +709,15 @@
     _subIdx = i;
     var n = window.cookView.currentNumber();
     setVoiceStatus('speaking', 'Step ' + (n || '') + (_subs.length > 1 ? (' · part ' + (i + 1) + '/' + _subs.length) : ''));
+    highlightSub(i);
     return speak(_subs[i]);
+  }
+  // Light up the on-screen sub-step that's being spoken (screen + ear in sync).
+  function highlightSub(i){
+    var d = stepDiv(window.cookView.currentNumber()); if(!d) return;
+    d.querySelectorAll('.substep.active').forEach(function(el){ el.classList.remove('active'); });
+    var li = d.querySelector('.substep[data-sub="' + i + '"]');
+    if(li){ li.classList.add('active'); li.scrollIntoView({behavior:'smooth', block:'nearest'}); }
   }
 
   // ---- mise phase — per-cluster, check-to-advance ----------------------- //
