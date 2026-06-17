@@ -535,14 +535,34 @@
       return '<a class="media" href="'+E(href)+'" target="_blank" rel="noopener" title="'+E(m.source||'')+'">'+inner+'</a>';
     }).join('');
   }
+  // Deterministic text hygiene mirrored from cook_polish.py — runs at RENDER so
+  // recipes already saved (pre-polish reworks) clean up live without a re-rework:
+  // doubled words ("the the"), doubled/space-before punctuation, collapsed spaces,
+  // sentence-start caps. Token-safe ({ingN}/{amt}/{bundle} masked) + digit-safe
+  // ("1.5", "1,000" untouched); never changes wording or amounts.
+  function tidyText(s){
+    if(!s) return s;
+    var toks=[]; s=String(s).replace(/\{[^{}]*\}/g,function(m){ toks.push(m); return '\u0000'+(toks.length-1)+'\u0000'; });
+    s=s.replace(/\b(\w+)(\s+\1\b)+/gi,'$1');                       // "the the" -> "the"
+    s=s.replace(/[ \t]+/g,' ');                                     // collapse spaces
+    s=s.replace(/\s+([,.;:!?])/g,'$1');                             // no space before punct
+    s=s.replace(/([,.;:!?])\1+/g,'$1');                             // ".." -> "."
+    s=s.replace(/(^|[^0-9])([,.;:!?])(?=[A-Za-z])/g,'$1$2 ');       // space after punct (not between digits)
+    s=s.trim().replace(/^([^A-Za-z]*)([a-z])/,function(m,a,b){ return a+b.toUpperCase(); });
+    return s.replace(/\u0000(\d+)\u0000/g,function(m,i){ return toks[parseInt(i,10)]; });
+  }
+  // A use label should be a bare noun — the prose/definiteness supplies the article;
+  // stripping a leading the/a/an/your kills the "Add the the garlic" duplication.
+  function stripArticle(s){ return String(s||'').replace(/^(the|a|an|your)\s+/i,''); }
+
   // Expand {ingN}/{amt:..}/{bundle:ID} into DISPLAY html (bold). `text` defaults to
   // the whole instruction; a sub-step passes its own `screen` fragment (same token
   // space — {ingN} indexes the PARENT step's ingredients).
   function expandInstr(step, text){
-    var html=E(text!=null ? text : (step.instruction||''));
+    var html=E(tidyText(text!=null ? text : (step.instruction||'')));
     html=html.replace(/\{ing(\d+)\}/g, function(mm,n){
       var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return mm;
-      var a=amtStr(si.amount); return '<b>'+E((a?a+' ':'')+(si.label||''))+'</b>'; });
+      var a=amtStr(si.amount); return '<b>'+E((a?a+' ':'')+stripArticle(si.label||''))+'</b>'; });
     html=html.replace(/\{amt:([^}]*)\}/g, function(mm,x){
       var parts=x.split('|'); var val = (units==='met'&&parts[1])?parts[1]:parts[0]; return '<b>'+E(val.trim())+'</b>'; });
     html=html.replace(/\{bundle:([^}]*)\}/g, function(mm,id){
@@ -554,10 +574,10 @@
     var t=String(step.instruction||'');
     t=t.replace(/\{ing(\d+)\}/g, function(mm,n){
       var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return '';
-      var a=amtStr(si.amount); return (a?a+' ':'')+(si.label||''); });
+      var a=amtStr(si.amount); return (a?a+' ':'')+stripArticle(si.label||''); });
     t=t.replace(/\{amt:([^}]*)\}/g, function(mm,x){ var p=x.split('|'); return ((units==='met'&&p[1])?p[1]:p[0]).trim(); });
     t=t.replace(/\{bundle:([^}]*)\}/g, function(mm,id){ var b=IDX.bundle[id.trim()]; return b?b.label:id; });
-    return deAbbrev((step.name? step.name+'. ':'') + t);
+    return tidyText(deAbbrev((step.name? step.name+'. ':'') + t));
   }
   // de-abbreviate for the ear: units + common fractions spoken in full.
   function deAbbrev(s){
@@ -614,7 +634,7 @@
     var bodyHtml;
     if((step.substeps||[]).length){
       bodyHtml = '<ol class="substeps">' + step.substeps.map(function(ss, i){
-        var txt = (ss.screen!=null && ss.screen!=='') ? expandInstr(step, ss.screen) : E(ss.voice||'');
+        var txt = (ss.screen!=null && ss.screen!=='') ? expandInstr(step, ss.screen) : E(tidyText(ss.voice||''));
         return '<li class="substep" data-sub="'+i+'"><span class="sub-n">'+(i+1)+'</span>'
              + '<span class="sub-txt">'+txt+'</span></li>';
       }).join('') + '</ol>';
@@ -702,7 +722,7 @@
   // Replaces the deleted client-side heuristic chopper (was tedious) with real data.
   var _subs = [], _subIdx = 0;   // _subs = this step's spoken voice lines; [] ⇒ whole-step
   function subsFor(step){
-    return (step && step.substeps || []).map(function(ss){ return deAbbrev(ss.voice || ''); })
+    return (step && step.substeps || []).map(function(ss){ return tidyText(deAbbrev(ss.voice || '')); })
       .filter(Boolean);
   }
   function speakSub(i){

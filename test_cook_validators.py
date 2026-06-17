@@ -103,6 +103,10 @@ def main():
     g = make_good(); g.steps[1].substeps[0].ingredients = [1]
     cases.append(("substeps", g))
 
+    # has-steps: an empty method (the Gambas max_tokens-truncation bug).
+    g = make_good(); g.steps = []
+    cases.append(("has-steps", g))
+
     for gate, cook in cases:
         rep = run_all(cook)
         fired = any(f.startswith(f"[{gate}]") for f in rep.failures)

@@ -243,6 +243,17 @@ def v_reuse_referenced(cook: CookMetadata) -> List[str]:
     return out
 
 
+def v_has_steps(cook: CookMetadata) -> List[str]:
+    """A rework with ZERO steps is not a cook — it's a truncated or failed emit. All
+    the other gates iterate OVER steps, so they pass vacuously on an empty method and
+    a stepless `_cook` would persist (the José Andrés Gambas bug: max_tokens truncation
+    dropped the late-emitted `steps` array → 0 steps → gauntlet passed). This gate is
+    the floor: no steps ⇒ fail."""
+    if not cook.steps:
+        return ["no steps — empty method (truncated/failed emit); a cook must have steps"]
+    return []
+
+
 def v_substeps(cook: CookMetadata) -> List[str]:
     """The voice-pacing sub-step split (v2) is well-formed — fires ONLY for steps
     that HAVE substeps, so steps/reworks without them are untouched (back-compat):
@@ -289,6 +300,7 @@ def v_bundling(cook: CookMetadata) -> List[str]:
 # Runner
 # --------------------------------------------------------------------------- #
 VALIDATORS = [
+    ("has-steps", v_has_steps),
     ("unit-consistency", v_unit_consistency),
     ("definite-article", v_definite_article),
     ("every-measure-numeric", v_every_measure_numeric),

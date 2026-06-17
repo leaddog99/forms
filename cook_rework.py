@@ -27,11 +27,17 @@ import anthropic
 from cook_model import CookMetadata
 from cook_validators import run_all
 from cook_augment import augment_cook, dedupe_annotations
+from cook_polish import polish_cook
 
 _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
 OPUS = "claude-opus-4-8"
-_MAX_TOKENS = 8192
+# Opus 4.8 supports up to 128K output, but a non-streaming request is capped by the
+# SDK's ~10-min timeout guard (~16K). v2 substeps inflate the emit — at 8192 a 14-step
+# recipe (José Andrés Gambas) truncated BEFORE the `steps` array and persisted 0 steps.
+# 16000 ≈ 2x headroom + stays non-streaming. A still-too-large recipe now fails LOUDLY
+# (stop_reason == max_tokens → raise) rather than silently persisting a stepless cook.
+_MAX_TOKENS = 16000
 
 # Bump when the prompt/schema changes so stale reworks are detectable + re-runnable.
 # v2: rework no longer invents tips/checks — the augment pass (cook_augment) attaches
@@ -343,10 +349,18 @@ def _emit_cook(messages: list, log: Callable) -> Tuple[dict, object]:
         tool_choice={"type": "tool", "name": "emit_cook"},
         messages=messages,
     )
+    u = resp.usage
+    log(f"[cook-rework] opus: {u.input_tokens} in / {u.output_tokens} out"
+        + (" [TRUNCATED]" if resp.stop_reason == "max_tokens" else ""))
+    # A forced tool_use that hits the output cap returns PARTIAL JSON — the missing
+    # tail (often the whole `steps` array, which the schema emits late) silently
+    # defaults to empty and would pass the gauntlet vacuously. Refuse it.
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError(
+            f"emit_cook truncated at max_tokens ({_MAX_TOKENS}) — recipe too large for "
+            f"one pass; output incomplete, NOT persisting")
     for block in resp.content:
         if block.type == "tool_use":
-            u = resp.usage
-            log(f"[cook-rework] opus: {u.input_tokens} in / {u.output_tokens} out")
             return block.input, resp.usage
     raise RuntimeError("emit_cook tool was not called (tool_choice should have forced it)")
 
@@ -357,6 +371,7 @@ def _emit_cook(messages: list, log: Callable) -> Tuple[dict, object]:
 def _assemble(emitted: dict) -> CookMetadata:
     cook = CookMetadata(**emitted)  # pydantic validates the shape
     _stamp_first_step(cook)
+    polish_cook(cook)  # deterministic text hygiene (dedup/punct/spacing) before the gauntlet
     return cook
 
 
