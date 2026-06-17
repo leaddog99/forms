@@ -175,17 +175,30 @@ def _under_path(u, seg):
 # (a bare `site:` query surfaces these heavily — aglaiakremezi.com returned mostly
 # /tag/, /category/, /page/N/, /links/). Dropping them BEFORE the recipe-check fetch
 # saves credits + time. Conservative: only patterns a recipe post never has.
+# Segment-anchored — each alternative must be a WHOLE path segment ((/|$)), so a
+# recipe slug that merely CONTAINS one of these words (e.g. /shopska-salad,
+# /about-greek-food) is NOT caught. Only e.g. /shop/, /about, /category/… match.
 _ARCHIVE_RE = re.compile(
     r"/(tag|tags|category|categories|author|page|archives?|topics?|search|feed|"
-    r"comments?|wp-json|wp-admin|wp-content|wp-includes|sitemap|amp)(/|$)"
+    r"comments?|wp-json|wp-admin|wp-content|wp-includes|sitemap|amp|"
+    # utility / commerce / boilerplate pages — never a recipe
+    r"about|about-us|contact|contact-us|privacy|privacy-policy|terms|disclaimer|"
+    r"disclosure|faq|shop|store|cart|checkout|account|my-account|login|register|"
+    r"subscribe|newsletter|press|media-kit|advertise|sitemap\.xml)(/|$)"
     r"|/page/\d+", re.IGNORECASE)
+
+# Date-only archive: /2023, /2023/04, /2023/04/05 with NO slug after — a WP date
+# archive, not a post. A dated POST like /2023/04/tzatziki keeps (has the slug).
+_DATE_ARCHIVE_RE = re.compile(r"^\d{4}(/\d{1,2}){0,2}$")
 
 
 def _looks_like_archive(url: str) -> bool:
-    """True for taxonomy/pagination/feed/admin URLs + the bare site root — never a
-    recipe page. Used to pre-filter discovery before the (fetching) recipe check."""
+    """True for taxonomy/pagination/feed/admin/utility URLs, date-only archives, and
+    the bare site root — never a recipe page. Pre-filter before the recipe check."""
     path = urlparse(url).path.strip("/")
     if not path:  # bare host root / homepage
+        return True
+    if _DATE_ARCHIVE_RE.match(path):  # /2023, /2023/04 — date archive, no slug
         return True
     return bool(_ARCHIVE_RE.search(urlparse(url).path))
 
