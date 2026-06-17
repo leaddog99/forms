@@ -216,13 +216,23 @@
 
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes — publisher refresh</h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes (SerpAPI + Moz, ranked by page authority) and keep the top N. The recipe path is auto-detected per publisher — set it manually if blank (some sites use flat URLs). ★ = kept; “in corpus” = already ingested. Gated recipe content is fetched separately.</p>
+          <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes (SerpAPI + Moz, ranked by page authority), verify each is a real recipe (is_recipe: JSON-LD or phrase score — drops index/listicle/section pages), and keep the top N. <b>Google query</b>: type the literal query incl. <code>site:</code> and it's run as-is (overrides the path). Leave blank to auto-detect a recipe path. ★ = kept; “in corpus” = already ingested. Content is NOT ingested into the corpus here — that's a separate step.</p>
           <div class="ed-form-grid">
-            ${field('f_recipe_path', 'Recipe path', d.recipe_path || '', { placeholder: 'auto-detect (e.g. recipes)' })}
+            ${field('f_serp_query', 'Google query (verbatim, incl. site:)', d.serp_query || '', { placeholder: 'e.g. site:bostonglobe.com recipe' })}
+            ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { placeholder: 'auto-detect (e.g. recipes)' })}
             ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
           </div>
+          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px">
+            <input type="checkbox" id="f_check_recipe" checked>
+            <span>Verify each is a recipe (is_recipe) — <i>uncheck for paywalled publishers where a fetch can't see the recipe</i></span>
+          </label>
+          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
+            <input type="checkbox" id="f_harvestable_skip" ${Number(d.harvestable) === 0 ? 'checked' : ''}>
+            <span>Skip this publisher — no mechanical way to list recipes (refresh won't run)</span>
+          </label>
           <div class="ed-actions" style="margin:10px 0 6px">
-            <button type="button" class="ed-btn" id="refreshTopBtn" title="Discover + score this publisher's recipes and keep the top N">🔄 Refresh top recipes</button>
+            <button type="button" class="ed-btn" id="refreshTopBtn" title="Run the query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
+            <button type="button" class="ed-btn danger" id="clearTopBtn" title="Wipe the current stored list (start over)">🗑 Clear list</button>
             <span class="ed-save-hint" id="topHint"></span>
           </div>
           <ol class="ed-t10" id="domainTopList"><li class="ed-empty-fit">Open or refresh to load the top recipes.</li></ol>
@@ -249,6 +259,7 @@
       $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
+      $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
       loadDomainTop(d.domain);         // stored publisher top-N ledger
     }
@@ -280,27 +291,47 @@
       } catch (e) { el.innerHTML = `<li class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</li>`; }
     }
 
-    // Publisher refresh: discover + Moz-score + keep top-N (inline, ~30-45s).
+    // Publisher refresh: run the (verbatim) query → verify recipes → Moz-score →
+    // keep top-N (inline; slower when verify is on — it fetches each candidate).
     async function doRefreshTop(domain){
       const btn = $('#refreshTopBtn'), hint = $('#topHint');
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
+      const query = ($('#f_serp_query')?.value || '').trim();
+      const check_recipe = !!$('#f_check_recipe')?.checked;
       btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Harvesting…';
-      if (hint){ hint.style.color = ''; hint.textContent = 'Discovering + scoring recipes (~30–45s)…'; }
+      if (hint){ hint.style.color = ''; hint.textContent = check_recipe
+        ? 'Discovering + verifying recipes (fetches each — can take a minute)…'
+        : 'Discovering + scoring recipes (~30–45s)…'; }
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, recipe_path }) });
+          body: JSON.stringify({ keep, recipe_path, query, check_recipe }) });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
         renderDomainTop(data.top || []);
         if ($('#f_recipe_path') && data.recipe_path) $('#f_recipe_path').value = data.recipe_path;
         if (hint){ hint.textContent = data.scored
-          ? `Kept ${data.stored} of ${data.scored} scored (${data.discovered} found, path “${data.recipe_path || '—'}”).`
-          : `No recipes found — set the recipe path manually${data.recipe_path ? '' : ' (auto-detect blank)'}.`; }
+          ? `Kept ${data.stored} of ${data.scored} scored — ${data.discovered} found, ${data.recipe_pass} passed the recipe check${query ? ', verbatim query' : `, path “${data.recipe_path || '—'}”`}.`
+          : `No recipes kept — ${data.discovered || 0} found, ${data.recipe_pass || 0} passed the recipe check. ${check_recipe ? 'Paywalled? Uncheck “verify”, or refine the query.' : 'Refine the query or set a recipe path.'}`; }
       } catch (e) {
         if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Refresh failed: ${e.message || e}`; }
       } finally { btn.disabled = false; btn.textContent = label; }
+    }
+
+    // Wipe the current stored list (botched harvest → start over).
+    async function doClearTop(domain){
+      const hint = $('#topHint');
+      if (!confirm('Clear this publisher’s stored top list?')) return;
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`, { method: 'DELETE' });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        renderDomainTop([]);
+        if (hint){ hint.style.color = ''; hint.textContent = `Cleared ${data.cleared} row(s).`; }
+      } catch (e) {
+        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Clear failed: ${e.message || e}`; }
+      }
     }
 
     // Quick LLM profile of the site → fills story / language / country /
@@ -392,6 +423,8 @@
         notes: $('#f_notes').value.trim(),
         recipe_path: ($('#f_recipe_path')?.value || '').trim(),
         keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
+        serp_query: ($('#f_serp_query')?.value || '').trim(),
+        harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
       };
     }
 

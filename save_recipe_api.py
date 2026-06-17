@@ -3416,20 +3416,51 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         host = domains_lib._canon_host(domain)
         with sqlite3.connect(DB_PATH) as conn:
             row = domains_lib.get_domain(conn, host) or {}
+            # A VERBATIM Google query (payload or stored serp_query) runs as-is and
+            # overrides path detection — the curator owns the site: syntax.
+            query = (payload.get("query") or row.get("serp_query") or "").strip() or None
+            # Curator can flag a publisher unharvestable (no mechanical recipe access).
+            harvestable = payload.get("harvestable")
+            harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)
+            if not harvestable:
+                raise HTTPException(status_code=400,
+                                    detail="Publisher marked unharvestable (no mechanical recipe access). "
+                                           "Uncheck 'skip' to refresh.")
             keep = int(payload.get("keep") or row.get("keep_top_n") or 10)
             recipe_path = (payload.get("recipe_path") or row.get("recipe_path") or "").strip() or None
-            members, n_found, n_scored, used_path = collections_lib.harvest_publisher_top(
-                host, keep=keep, discover_n=50, recipe_path=recipe_path)
-            collections_lib.replace_members(conn, "publisher", host, members)
-            conn.execute("UPDATE domains SET recipe_path = ?, keep_top_n = ? WHERE domain = ?",
-                         (used_path or "", keep, host))
+            check_recipe = payload.get("check_recipe", True)  # is_recipe filter on by default
+            res = collections_lib.harvest_publisher_top(
+                host, keep=keep, discover_n=int(payload.get("discover_n") or 40),
+                recipe_path=recipe_path, query=query, check_recipe=bool(check_recipe))
+            collections_lib.replace_members(conn, "publisher", host, res["members"])
+            conn.execute(
+                "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ? WHERE domain = ?",
+                (res.get("recipe_path") or "", keep, query or "", host))
             conn.commit()
             top = collections_lib.get_collection_top(conn, "publisher", host, limit=max(keep, 50))
-        return {"domain": host, "recipe_path": used_path, "keep": keep,
-                "discovered": n_found, "scored": n_scored, "stored": len(members), "top": top}
+        return {"domain": host, "recipe_path": res.get("recipe_path"), "query": query, "keep": keep,
+                "discovered": res["discovered"], "recipe_pass": res["recipe_pass"],
+                "scored": res["scored"], "stored": len(res["members"]), "top": top}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[ERROR] refresh_domain_top({domain!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+
+
+@app.delete("/domains/{domain}/top")
+def clear_domain_top_endpoint(domain: str):
+    """Wipe a publisher's stored top-N list (the junction members only) — for a
+    botched harvest the curator wants to throw away and rebuild."""
+    from input.pipeline import domains_lib, collections_lib
+    try:
+        host = domains_lib._canon_host(domain)
+        with sqlite3.connect(DB_PATH) as conn:
+            n = collections_lib.clear_members(conn, "publisher", host)
+        return {"domain": host, "cleared": n}
+    except Exception as e:
+        print(f"[ERROR] clear_domain_top({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Clear error: {e}")
 
 
 @app.get("/domains/{domain}/top")

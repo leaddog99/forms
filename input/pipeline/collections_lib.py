@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import requests
 
 from input.pipeline.url_scoring import score_url_via_moz  # loads .env on import
-from input.pipeline.url_utils import normalize_url
+from input.pipeline.url_utils import normalize_url, root_domain
 
 _SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
@@ -80,6 +80,18 @@ def replace_members(conn, collection_type, collection_key, members, model_versio
     )
     conn.commit()
     return len(members)
+
+
+def clear_members(conn, collection_type, collection_key) -> int:
+    """Wipe ONE collection's members (the junction only) — for a botched harvest the
+    curator wants to throw away. Returns the row count deleted."""
+    ensure_collection_members_table(conn)
+    cur = conn.execute(
+        "DELETE FROM collection_members WHERE collection_type = ? AND collection_key = ?",
+        (collection_type, collection_key),
+    )
+    conn.commit()
+    return cur.rowcount
 
 
 def get_collection_top(conn, collection_type, collection_key, limit=50) -> list:
@@ -219,15 +231,52 @@ def discover_publisher_recipe_urls(domain, want=80, recipe_path="recipes") -> li
     return out
 
 
-def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None) -> tuple:
-    """Discover + Moz-score a publisher's recipe URLs, rank by PA, mark the top
-    `keep` as selected. `recipe_path` is detected if not supplied. Returns
-    (members, n_discovered, n_scored, recipe_path). Content extraction is separate."""
-    if not recipe_path:
-        recipe_path = detect_recipe_path(domain)
-    found = discover_publisher_recipe_urls(domain, want=discover_n, recipe_path=recipe_path)
+def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
+                          query=None, check_recipe=True) -> dict:
+    """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
+    Moz-score the survivors, rank by PA, mark the top `keep` selected.
+
+    `query` — a VERBATIM Google query (e.g. 'site:bostonglobe.com recipe'), run as-is
+    via SerpAPI; OVERRIDES path detection. The curator owns the Google syntax (same
+    as dish SERP queries); the code just executes it. Needed for publishers whose
+    recipes aren't under a clean path segment (Boston Globe lives under /YYYY/.../slug,
+    so `site:domain/recipes` finds nothing — the term form does).
+
+    `check_recipe` — fetch each candidate and keep only real recipes via the CANONICAL
+    dish-batch filter (`_is_recipe_filter`: schema.org/Recipe JSON-LD, else phrase
+    score). Drops the /recipes/ index, 'best-...-2025' listicles, /recipe-database/,
+    and section pages that merely contain the word 'recipe'.
+
+    Returns {members, discovered, recipe_pass, scored, recipe_path, query}. Content
+    extraction / ingestion into master is a SEPARATE step (not done here)."""
+    if query:
+        target = root_domain("https://" + domain)
+        found, seen = [], set()
+        for link, title in _serp_links(query, want=discover_n + 20):
+            if link in seen:
+                continue
+            if root_domain(link) == target:   # honor the query's site: scope; safety net vs strays
+                seen.add(link)
+                found.append((link, title))
+            if len(found) >= discover_n:
+                break
+        used_path = None
+    else:
+        if not recipe_path:
+            recipe_path = detect_recipe_path(domain)
+        found = discover_publisher_recipe_urls(domain, want=discover_n, recipe_path=recipe_path)
+        used_path = recipe_path
+
+    # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
+    # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else phrase score.
+    recipe_pass = found
+    if check_recipe and found:
+        from intake.build_query_batch import _is_recipe_filter
+        kept, _dropped = _is_recipe_filter([{"url": l, "title": t} for l, t in found])
+        recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
+
     scored = []
-    for url, title in found:
+    for url, title in recipe_pass:
         s = score_url_via_moz(url)
         if s and s.get("page_authority"):
             scored.append({"url": url, "title": title,
@@ -239,4 +288,5 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None) -> t
         m["rank"] = i
         m["rank_score"] = m["pa"]          # within-publisher rank IS page authority
         m["selected"] = 1 if i <= keep else 0
-    return scored, len(found), len(scored), recipe_path
+    return {"members": scored, "discovered": len(found), "recipe_pass": len(recipe_pass),
+            "scored": len(scored), "recipe_path": used_path, "query": query}

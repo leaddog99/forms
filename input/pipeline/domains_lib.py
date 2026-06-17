@@ -57,6 +57,8 @@ EDITABLE_FIELDS = (
     "failure_count",
     "keep_top_n",     # publisher top-N to keep on refresh
     "recipe_path",    # publisher recipe URL path segment (detected, overridable)
+    "serp_query",     # VERBATIM Google query for the harvest (overrides recipe_path)
+    "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
     "paywall",        # gated premium publisher (drives PA-remap)
 )
 
@@ -107,6 +109,14 @@ _PAYWALL_COLUMNS = {
     # NOT assumed — detected per publisher (collections_lib.detect_recipe_path) and
     # stored here, curator-overridable. '' = not yet detected.
     "recipe_path": "TEXT NOT NULL DEFAULT ''",
+    # VERBATIM Google query for the publisher harvest (e.g. 'site:bostonglobe.com
+    # recipe'). When set, it's run as-is via SerpAPI and OVERRIDES recipe_path — the
+    # curator owns the Google syntax. '' = fall back to recipe_path detection.
+    "serp_query": "TEXT NOT NULL DEFAULT ''",
+    # 1 = this publisher has a mechanical way to enumerate recipes (refresh runs).
+    # 0 = no mechanical access (no clean index / JS-only / hard paywall) → refresh
+    # skips it so it doesn't pollute the list. Curator-set.
+    "harvestable": "INTEGER NOT NULL DEFAULT 1",
 }
 
 
