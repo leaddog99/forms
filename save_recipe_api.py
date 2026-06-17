@@ -3520,7 +3520,8 @@ def domain_top_endpoint(domain: str):
     try:
         host = domains_lib._canon_host(domain)
         with sqlite3.connect(DB_PATH) as conn:
-            top = collections_lib.get_collection_top(conn, "publisher", host, limit=100)
+            top = collections_lib.get_collection_top(conn, "publisher", host, limit=100,
+                                                     selected_only=True)
         return {"domain": host, "count": len(top), "top": top}
     except Exception as e:
         print(f"[ERROR] domain_top({domain!r}) failed: {e}")

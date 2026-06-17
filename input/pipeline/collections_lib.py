@@ -100,14 +100,19 @@ def clear_members(conn, collection_type, collection_key) -> int:
     return cur.rowcount
 
 
-def get_collection_top(conn, collection_type, collection_key, limit=50) -> list:
+def get_collection_top(conn, collection_type, collection_key, limit=50,
+                       selected_only=False) -> list:
     """Top members of a collection, LEFT-JOINed to master_recipes on url_normalized
     (the url work): an already-ingested recipe shows its REAL name/grade/thumbnail
     and `ingested=True`; a discovered-but-not-yet-fetched one shows the SERP title +
-    `ingested=False`. The join is the canonical-URL link between ledger and content."""
+    `ingested=False`. The join is the canonical-URL link between ledger and content.
+
+    `selected_only` — return only the kept top-N (the curated winners), the way the
+    dishes top-recipes list shows winners only; the rest are ranked-but-not-kept."""
     ensure_collection_members_table(conn)
+    sel_clause = " AND cm.selected = 1" if selected_only else ""
     rows = conn.execute(
-        """
+        f"""
         SELECT cm.url_normalized, cm.title, cm.da, cm.pa, cm.adjusted_pa,
                cm.rank_score, cm.rank, cm.selected,
                m.recipe_id,
@@ -119,7 +124,7 @@ def get_collection_top(conn, collection_type, collection_key, limit=50) -> list:
         FROM collection_members cm
         LEFT JOIN master_recipes m
           ON m.url_normalized = cm.url_normalized AND m.user_id = 0
-        WHERE cm.collection_type = ? AND cm.collection_key = ?
+        WHERE cm.collection_type = ? AND cm.collection_key = ?{sel_clause}
         ORDER BY cm.rank IS NULL, cm.rank, cm.pa DESC
         LIMIT ?
         """,
