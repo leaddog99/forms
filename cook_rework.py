@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Callable, Optional, Tuple
 
 import anthropic
@@ -50,6 +51,32 @@ REWORK_PROMPT_VERSION = "cook-rework-v2.2-2026-06-16"
 # --------------------------------------------------------------------------- #
 # PRE (code): build the rework input from the recipe + _measurements
 # --------------------------------------------------------------------------- #
+
+# An IMPERIAL volume/weight/length approximation that some _measurements rows leave
+# stranded inside the METRIC string — the resolver swapped "1 pound" -> "454 g" but
+# left a trailing/parenthetical "about 2 cups". Carried into the model's metric face it
+# trips v_unit_consistency ("imperial unit in the METRIC face"). The gram/ml weight is
+# the authoritative metric; the imperial hint is redundant there, so strip it before
+# the model ever sees it. (Source data is wrong too — flagged separately.)
+_IMPERIAL_APPROX_RE = re.compile(
+    r"\s*[,(]?\s*(?:about|approx\.?|approximately|~|roughly)?\s*[\d./\s¼½¾⅓⅔⅛⅜⅝⅞-]+\s*"
+    r"(?:cups?|c\.|tbsps?|tablespoons?|tsps?|teaspoons?|fl\.?\s*oz|ounces?|oz|pounds?|lbs?|"
+    r"quarts?|qts?|pints?|pts?|gallons?|gal|inch(?:es)?|in\.)\b\.?\)?",
+    re.IGNORECASE)
+
+
+def _clean_metric_face(s):
+    """Strip stranded IMPERIAL approximations from a metric measurement string so the
+    metric face stays purely metric (g / ml / kg). '454 g grated beets, about 2 cups'
+    -> '454 g grated beets'. Only touches imperial-unit tails; leaves g/ml intact."""
+    if not s or not isinstance(s, str):
+        return s
+    out = _IMPERIAL_APPROX_RE.sub("", s)
+    out = re.sub(r"\(\s*\)", "", out)          # empty parens left behind
+    out = re.sub(r"\s*,\s*$", "", out.strip()) # trailing comma
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
 def build_rework_input(recipe: dict) -> dict:
     """Assemble exactly what the model needs to JUDGE: the source ingredients each
     paired with its measured conversion (so the model copies, never computes), the
@@ -63,7 +90,7 @@ def build_rework_input(recipe: dict) -> dict:
         rows.append({
             "source_line": raw if isinstance(raw, str) else str(raw),
             # The measured conversion reference — the model must USE these, not invent.
-            "metric": (m or {}).get("metric"),     # e.g. "454 g phyllo…"
+            "metric": _clean_metric_face((m or {}).get("metric")),  # e.g. "454 g phyllo…" (imperial tail stripped)
             "grams": (m or {}).get("grams"),
             "ml": (m or {}).get("ml"),
             "convertible": (m or {}).get("convertible", True),
