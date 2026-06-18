@@ -1365,7 +1365,7 @@
     { name:'cancel',  re:/\b(cancel|never ?mind|forget it|stop it|that's enough|drop it|stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough|cancel|nevermind)$/, act:function(){ stopSpeaking(); setAwaiting(false); setAsking(false); _tipOffer = null; if(hf) setVoiceStatus('listening', _listenHint()); } },
     { name:'pause',   re:/\b(pause|hold on|wait a (second|sec|minute|moment)|resume|un ?pause)\b|^(wait|hold)$/, act:function(){ togglePlayPause(); } },
     { name:'back',    re:/\b(go back|back up|previous step|previous one|last step|one step back|back one|back a step)\b|^(back|previous|backward)$/, act:function(){ window.cookView.back(); } },
-    { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along)\b|^(next|forward|skip)$/, act:function(){ window.cookView.next(); } },
+    { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along)\b|^(next|forward|skip|check|checked|check it|check it off|check this off|check that off)$/, act:function(){ window.cookView.next(); } },
     { name:'stop',    re:/\b(stop cooking|stop listening|end session|turn off|i'm done cooking|that's all|all done)\b|^(stop|halt|exit|quit)$/, act:function(){ stopHandsFree({spoken:true}); } }
   ];
   function matchCommand(cmd){
