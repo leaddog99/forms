@@ -30,6 +30,7 @@ from typing import Optional
 import anthropic
 
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
@@ -81,8 +82,8 @@ def _generate(user_prompt: str, *, usage_log: Optional[list] = None,
     the name+queries embedding for dishes; name+ingredients for
     recipes)."""
     try:
-        response = _anthropic_client.messages.create(
-            model=_MODEL,
+        response = llm.create(
+            operation=operation, model=_MODEL,
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
             system=_SYSTEM_PROMPT,
@@ -91,13 +92,7 @@ def _generate(user_prompt: str, *, usage_log: Optional[list] = None,
     except Exception as e:
         print(f"[WARN] dish_signal LLM call failed: {e}")
         return ""
-
-    if usage_log is not None:
-        try:
-            from input.pipeline.token_journal import build_usage_entry
-            usage_log.append(build_usage_entry(operation, _MODEL, response))
-        except Exception:
-            pass
+    # usage auto-journaled by the gateway (operation=operation).
 
     text_parts = [b.text for b in response.content if getattr(b, "type", "") == "text"]
     text = " ".join(text_parts).strip()

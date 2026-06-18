@@ -42,6 +42,7 @@ from typing import Optional
 import anthropic
 
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()
 
 # Haiku is the right tier here: recipe-aware translation needs context
@@ -255,8 +256,8 @@ def translate_markdown(markdown: str, src_lang: str) -> TranslationResult:
     src_name = _LANG_NAMES.get(src_lang, src_lang.upper())
     original_title = _extract_first_h1(markdown)
 
-    msg = _anthropic_client.messages.create(
-        model=_TRANSLATION_MODEL,
+    msg = llm.create(
+        operation="translate_markdown", model=_TRANSLATION_MODEL,
         max_tokens=_TRANSLATION_MAX_TOKENS,
         system=_TRANSLATION_SYSTEM.format(src_lang_name=src_name),
         messages=[{
@@ -292,8 +293,8 @@ def translate_title(title: str, src_lang: str) -> str:
     if not title or not title.strip():
         return ""
     src_name = _LANG_NAMES.get(src_lang, src_lang.upper())
-    msg = _anthropic_client.messages.create(
-        model=_TRANSLATION_MODEL,
+    msg = llm.create(
+        operation="translate_title", model=_TRANSLATION_MODEL,
         max_tokens=200,
         system=(f"You are a translator. Translate the given web-page title from "
                 f"{src_name} to English. Output ONLY the translated title text — no "

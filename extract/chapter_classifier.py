@@ -30,6 +30,7 @@ from typing import Optional
 import anthropic
 
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
@@ -466,8 +467,8 @@ def classify_chapter(
     user_prompt = "\n".join(user_lines)
 
     try:
-        response = _anthropic_client.messages.create(
-            model=model,
+        response = llm.create(
+            operation="chapter_classify", model=model,
             max_tokens=200,
             temperature=0,
             system=_SYSTEM_PROMPT,
@@ -478,13 +479,7 @@ def classify_chapter(
     except Exception as e:
         print(f"[WARN] chapter_classifier LLM call failed: {e}")
         return "Uncertain"
-
-    if usage_log is not None:
-        try:
-            from input.pipeline.token_journal import build_usage_entry
-            usage_log.append(build_usage_entry("chapter_classify", model, response))
-        except Exception:
-            pass  # journal failures never propagate
+    # usage auto-journaled by the gateway (operation="chapter_classify").
 
     tool_input = next(
         (b.input for b in response.content if b.type == "tool_use" and b.name == "submit_chapter"),
