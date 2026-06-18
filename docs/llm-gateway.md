@@ -126,6 +126,15 @@ with llm.context(recipe_id=new_recipe_id, user_id=user_id):
   (`tools=`, `tool_choice=`) passed through. Usage is on the response regardless of tool use.
 - **Streaming**: the `stream` context manager owns `get_final_message()` and journals its usage on
   exit; partial/aborted streams journal what the final message reports (or skip if none).
+- **SSE caveat (LEARNED IN TESTING):** a Server-Sent-Events response whose body is a generator is
+  driven by Starlette across *separate threadpool contexts per iteration*, so a `contextvar` set at
+  the top (`enter()`) is discarded before the stream's flush — the buffered entry is lost. So the
+  **streaming voice path (`voice_agent.stream_grounded` / `/cook/ask-stream`) journals via the plain
+  `usage_log` list** (shared by reference, immune to the context churn) + the endpoint's
+  `_journal_usage`, NOT the contextvar gateway. `voice_agent` stays on `usage_log` by design. Sync
+  handlers (extract/enrich/cook_ask-non-stream/cook-rework job) use the gateway context normally.
+  Verified live: sync `/cook/ask` → gateway row; `/cook/ask-stream` → usage_log row; both correctly
+  attributed (recipe_id + user_id).
 - **BYOK / per-tenant key**: `llm.create(..., api_key=...)` (and a context-level
   `llm.context(api_key=...)`) override the ambient env key. The gateway caches one client per
   distinct key. Keeps `enrich/measurement/estimate.py` and the portable BYOK story working.
