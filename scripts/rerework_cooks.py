@@ -35,6 +35,7 @@ load_dotenv(dotenv_path=".env")
 
 from save_recipe_api import DB_PATH
 from cook_rework import rework_recipe, REWORK_PROMPT_VERSION
+import llm  # central LLM gateway — journal batch rework usage too
 
 TABLES = {"master_recipes": "master_recipes", "recipes": "user recipes"}
 
@@ -70,7 +71,8 @@ def _rerework_one(tbl: str, rid: str, uid: int) -> dict:
     recipe = json.loads(row[0])
     recipe.pop("_cook", None)  # rework fresh
 
-    cook, report = rework_recipe(recipe, log=lambda m: print("     " + m, flush=True))
+    with llm.context(recipe_id=rid, user_id=uid):
+        cook, report = rework_recipe(recipe, log=lambda m: print("     " + m, flush=True))
     if not report.passed:
         return {"ok": False, "reason": "gauntlet failed", "failures": report.failures[:4]}
 

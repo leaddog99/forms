@@ -4178,7 +4178,12 @@ async def _handle_cook_rework_job(job: dict) -> dict:
     print(f"[COOK-REWORK] {recipe.get('name')!r} (user_id={user_id}, table={table})")
 
     from cook_rework import rework_recipe, REWORK_PROMPT_VERSION
-    cook, report = await asyncio.to_thread(rework_recipe, recipe, print)
+    import llm
+    # Stamp every LLM call inside the rework (opus emit + repair + sonnet augment) with
+    # this recipe/user so their token usage lands in bcc_token_journal. asyncio.to_thread
+    # propagates the contextvar to the worker; the buffer flushes on `with` exit.
+    with llm.context(recipe_id=recipe_id, user_id=user_id):
+        cook, report = await asyncio.to_thread(rework_recipe, recipe, print)
 
     if not report.passed:
         print(f"[COOK-REWORK] gauntlet FAILED ({len(report.failures)}) — NOT persisting. "

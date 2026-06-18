@@ -23,15 +23,12 @@ import json
 import re
 from typing import Callable, Optional, Tuple
 
-import anthropic
-
 import cook_costs
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 from cook_model import CookMetadata
 from cook_validators import run_all
 from cook_augment import augment_cook, dedupe_annotations
 from cook_polish import polish_cook
-
-_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
 OPUS = "claude-opus-4-8"
 # Opus 4.8 supports up to 128K output, but a non-streaming request is capped by the
@@ -371,8 +368,8 @@ recommendations are resolved from the equipment `category` downstream. Emit only
 # LLM call
 # --------------------------------------------------------------------------- #
 def _emit_cook(messages: list, log: Callable, usages: Optional[list] = None) -> Tuple[dict, object]:
-    resp = _client.messages.create(
-        model=OPUS, max_tokens=_MAX_TOKENS, system=_system_prompt(),
+    resp = llm.create(
+        operation="cook_rework", model=OPUS, max_tokens=_MAX_TOKENS, system=_system_prompt(),
         tools=[_EMIT_COOK_TOOL],
         tool_choice={"type": "tool", "name": "emit_cook"},
         messages=messages,

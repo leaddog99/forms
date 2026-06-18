@@ -20,11 +20,9 @@ import json
 import re
 from typing import Callable, Optional
 
-import anthropic
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 
 from cook_model import CookMetadata, Attachment
-
-_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
 SONNET = "claude-sonnet-4-6"     # select + contextualize — judgment-light, cheaper tier
 _MAX_TOKENS = 4096
@@ -137,8 +135,8 @@ def _call(kb: list, view: dict, log: Callable, usages: Optional[list] = None) ->
     # re-paying full freight. It's content-addressed: a KB edit changes the text and
     # auto-misses the next call (which re-writes the cache), so no invalidation code
     # is needed. Default ephemeral TTL is 5 min — the right window for a batch of runs.
-    resp = _client.messages.create(
-        model=SONNET, max_tokens=_MAX_TOKENS,
+    resp = llm.create(
+        operation="cook_augment", model=SONNET, max_tokens=_MAX_TOKENS,
         system=[{
             "type": "text",
             "text": _system_prompt(kb),
