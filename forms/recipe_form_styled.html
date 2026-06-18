@@ -1632,6 +1632,10 @@
        inline block runs first; library-shell.css uses lower-specificity
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260528b">
+  <!-- Shared design tokens (the dish/forms style guidelines) — loaded LAST so it is the
+       single source of truth for the palette + serif, aligning this form with the dish
+       and editor forms. The local :root above is now a fallback. See tokens.css. -->
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <script src="/forms/library-shell.js?v=20260611f"></script>
   <script src="/forms/image-well.js?v=20260608n"></script>
 </head>
@@ -2189,7 +2193,7 @@
               <!-- Identity card: structured fact view. Card-derived
                    dishSignal lives in the meta_dish_signal field below
                    for backward-compat with any other consumer. -->
-              <div id="identityCardPanel" style="display:none;margin-bottom:12px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:6px">
+              <div id="identityCardPanel" style="display:none;margin-bottom:12px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px">
                 <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
                   <strong style="font-size:0.95em;color:var(--accent)" id="meta_likely_dish"></strong>
                   <span style="font-size:0.78em;color:var(--muted)" id="meta_card_label">identity card</span>
