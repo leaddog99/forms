@@ -928,4 +928,7 @@ User flagged (correctly): command keyword regexes, wake words, and spoken phrase
 ### Follow-ups
 - **Externalize voice language to a voice-pack catalog** (above) — design note `docs/voice-pack.md` then refactor `cook.html`.
 - **Local command spotter** — user chose "measure first": read an `stt · Nms · …hang` line during a real cook before deciding (Web Speech API fast-path vs in-browser whisper vs cheap server tuning).
-- Commit pending: split into (1) recipe-form style sweep, (2) cook-voice changes.
+- Shipped + pushed: recipe-form style sweep (`fc2fd59`), cook-voice loop (`bf5dcac`), "check"→next (`a8135df`).
+
+### Voice component deep-dive doc
+**`docs/voice-architecture-deep-dive.md`** — formal maintenance/knowledge-transfer report for the whole voice loop (client `cook.html`, the 3 server endpoints, the `_cook` substrate + validator gauntlet + rework engine, the cognitive-science grounding with [VERIFIED]/[LITERATURE] discipline, portability + cross-domain generalization, and the catalogued moats). Built from 4 parallel code-reads; accurate at the code level (models pinned: Sonnet 4.6 Q&A, Opus 4.8 rework, faster-whisper base.en STT, gpt-4o-mini-tts/coral TTS). Start here to maintain/extend the cook voice.
