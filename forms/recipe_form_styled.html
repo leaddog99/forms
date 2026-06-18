@@ -2279,6 +2279,15 @@
           </div>
         </section>
 
+        <!-- Processing metadata — collapsible, COLLAPSED by default. A catch-all
+             home for derived/processing info (cook-rework cost today; more can be
+             moved/added here later). Populated by populateMetaPanel(); hidden when
+             there's nothing to show. -->
+        <details class="meta-panel" id="metaPanel" style="display:none;margin:18px 0 4px;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden">
+          <summary style="cursor:pointer;padding:12px 16px;font-weight:600;font-size:0.95rem;list-style:none;color:var(--ink)">⚙️ Metadata <span style="font-weight:400;font-size:.82rem;color:var(--muted)">processing &amp; cost</span></summary>
+          <div id="metaPanelBody" style="padding:4px 16px 16px;font-size:.88rem;line-height:1.5"></div>
+        </details>
+
         <!-- Save / Clear / Delete are in the fixed .action-footer at the
              bottom of the viewport (outside the <form>). The Save button
              uses form="recipeForm" so submit still flows here. -->
@@ -2596,6 +2605,54 @@
     // {ingN}/{amt}/{bundle} tokens so the anchored steps read naturally. Hidden
     // when the recipe hasn't been reworked. Phase 4 turns this into the full
     // interactive cook view (views toggle / checkboxes / timeline) via the cookbook.
+    // Collapsible processing-metadata panel (COLLAPSED by default) — a catch-all
+    // home for derived info. Today it surfaces the cook-rework cost (the same `est`
+    // printed in the rework stream log + stamped on _cook.rework_cost); future
+    // processing metadata can be moved/added here. Hidden when there's nothing.
+    function populateMetaPanel(recipe) {
+      const panel = document.getElementById('metaPanel');
+      const body = document.getElementById('metaPanelBody');
+      if (!panel || !body) return;
+      const E = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const num = (n) => (Number(n) || 0).toLocaleString();
+      const usd = (n) => '$' + (Number(n) || 0).toFixed(4);
+      const ck = recipe && recipe._cook;
+      const cost = ck && ck.rework_cost;
+      const rows = [];
+
+      // Rework provenance — prompt version + when (if the recipe has been reworked).
+      if (ck && (ck.reworked_at || ck.rework_prompt_version)) {
+        let when = '';
+        try { when = ck.reworked_at ? new Date(ck.reworked_at).toLocaleString() : ''; } catch (e) {}
+        rows.push(`<div style="margin:2px 0"><span style="color:var(--muted)">Cook rework</span> · `
+          + `<code>${E(ck.rework_prompt_version || '')}</code>${when ? ' · ' + E(when) : ''}</div>`);
+      }
+
+      // Cook-rework cost (the est attached to _cook.rework_cost).
+      if (cost && typeof cost === 'object') {
+        const calls = (cost.calls || []).map(c => {
+          const cache = (c.cache_write || c.cache_read)
+            ? ` <span style="color:var(--muted)">(+${num(c.cache_write)} cw / ${num(c.cache_read)} cr)</span>` : '';
+          return `<div style="margin:1px 0 1px 10px"><code>${E(c.model)}</code> — ${num(c.in)} in / ${num(c.out)} out${cache} = <b>${usd(c.cost)}</b></div>`;
+        }).join('');
+        const warm = (cost.warm_total != null) ? cost.warm_total : cost.total;
+        const vol = cost.volumes ? Object.keys(cost.volumes).map(v =>
+          `${num(v)}→$${Number(cost.volumes[v]).toLocaleString(undefined, {maximumFractionDigits: 2})}`).join(' · ') : '';
+        rows.push(
+          `<div style="margin:8px 0 2px;font-weight:600">Rework cost <span style="font-weight:400;color:var(--muted)">(est., latest token prices)</span></div>`
+          + calls
+          + `<div style="margin:4px 0 0 10px"><b>Total</b> (cold cache): <b>${usd(cost.total)}</b>`
+          + (Math.abs(warm - cost.total) > 1e-4 ? ` · warm-cache: ~${usd(warm)}/recipe` : '') + `</div>`
+          + (vol ? `<div style="margin:1px 0 0 10px;color:var(--muted)">at volume (warm): ${E(vol)}</div>` : ''));
+      }
+
+      if (!rows.length) { body.innerHTML = ''; panel.style.display = 'none'; panel.open = false; return; }
+      body.innerHTML = rows.join('');
+      panel.style.display = '';
+      panel.open = false;   // COLLAPSED by default on every load
+    }
+
     function populateCookPanel(recipe) {
       const panel = document.getElementById('cookPanel');
       const body = document.getElementById('cookPanelBody');
@@ -3874,6 +3931,7 @@
       loadMemberships(r.recipe_id);
       populateCohortMeta && populateCohortMeta(r);
       populateCookPanel && populateCookPanel(r);
+      populateMetaPanel && populateMetaPanel(r);
 
       // Stash the full loaded record so save-after-load preserves the rich
       // fields the form has no UI for (provenance, classification, nutrition,
@@ -4590,6 +4648,7 @@
               try { data = (await (await fetch(`${API}/recipes/${encodeURIComponent(rid)}?user_id=${uid}`)).json()).data; } catch (_) {}
               if (data) {
                 populateCookPanel(data);
+                populateMetaPanel(data);   // refresh the cost panel from the fresh rework_cost
                 if (lastExtractedRecipe) lastExtractedRecipe._cook = data._cook;  // so a later Save keeps it
                 const p = document.getElementById('cookPanel');
                 if (p) { p.classList.remove('hidden'); p.open = true; p.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -4670,6 +4729,7 @@
       feedback.textContent = "";
       feedback.className = "";
       clearScoringStrip();
+      populateMetaPanel(null);   // hide the processing-metadata panel on a fresh form
       updateButtonStates();
     };
 
@@ -6086,6 +6146,7 @@
       loadMemberships(r.recipe_id);
       populateCohortMeta && populateCohortMeta(r);
       populateCookPanel && populateCookPanel(r);
+      populateMetaPanel && populateMetaPanel(r);
 
       // Auto-grow textareas
       document.querySelectorAll('textarea.auto-grow').forEach(autoGrow);
