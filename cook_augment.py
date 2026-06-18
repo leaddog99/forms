@@ -128,7 +128,7 @@ def _recipe_view(cook: CookMetadata, recipe_name: Optional[str]) -> dict:
     }
 
 
-def _call(kb: list, view: dict, log: Callable) -> dict:
+def _call(kb: list, view: dict, log: Callable, usages: Optional[list] = None) -> dict:
     user = "Attach guidance to this reworked recipe:\n\n" + json.dumps(view, ensure_ascii=False, indent=2)
     # The system prompt (rules + the projected KB) carries NO per-recipe data — it's
     # identical across reworks until the KB is edited/published — so we mark it as a
@@ -152,6 +152,9 @@ def _call(kb: list, view: dict, log: Callable) -> dict:
             u = resp.usage
             cw = getattr(u, "cache_creation_input_tokens", 0) or 0
             cr = getattr(u, "cache_read_input_tokens", 0) or 0
+            if usages is not None:
+                import cook_costs
+                cook_costs.record(usages, SONNET, u)
             log(f"[augment] sonnet: {u.input_tokens} in / {u.output_tokens} out "
                 f"(cache: {cr} read / {cw} write)")
             return block.input
@@ -162,7 +165,7 @@ def _call(kb: list, view: dict, log: Callable) -> dict:
 # The pass
 # --------------------------------------------------------------------------- #
 def augment_cook(cook: CookMetadata, log: Callable = print,
-                 recipe_name: Optional[str] = None) -> CookMetadata:
+                 recipe_name: Optional[str] = None, usages: Optional[list] = None) -> CookMetadata:
     """Attach published-KB tips/checks to `cook` IN PLACE (and return it). Best-effort
     + additive — the caller treats a raise as non-fatal. Every attachment is validated:
     kb_id ∈ injected published set (provenance/anti-invention) AND step_index in range."""
@@ -180,7 +183,7 @@ def augment_cook(cook: CookMetadata, log: Callable = print,
     kind_by_id = {e["id"]: e["kind"] for e in kb}   # the moat set + kind source of truth
 
     view = _recipe_view(cook, recipe_name)
-    out = _call(kb, view, log)
+    out = _call(kb, view, log, usages)
 
     step_by_num = {s.number: s for s in cook.steps}
     attached = dropped = 0

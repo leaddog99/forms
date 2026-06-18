@@ -25,6 +25,7 @@ from typing import Callable, Optional, Tuple
 
 import anthropic
 
+import cook_costs
 from cook_model import CookMetadata
 from cook_validators import run_all
 from cook_augment import augment_cook, dedupe_annotations
@@ -369,7 +370,7 @@ recommendations are resolved from the equipment `category` downstream. Emit only
 # --------------------------------------------------------------------------- #
 # LLM call
 # --------------------------------------------------------------------------- #
-def _emit_cook(messages: list, log: Callable) -> Tuple[dict, object]:
+def _emit_cook(messages: list, log: Callable, usages: Optional[list] = None) -> Tuple[dict, object]:
     resp = _client.messages.create(
         model=OPUS, max_tokens=_MAX_TOKENS, system=_system_prompt(),
         tools=[_EMIT_COOK_TOOL],
@@ -377,6 +378,8 @@ def _emit_cook(messages: list, log: Callable) -> Tuple[dict, object]:
         messages=messages,
     )
     u = resp.usage
+    if usages is not None:           # accrue cost even for a truncated/failed call (it still bills)
+        cook_costs.record(usages, OPUS, u)
     log(f"[cook-rework] opus: {u.input_tokens} in / {u.output_tokens} out"
         + (" [TRUNCATED]" if resp.stop_reason == "max_tokens" else ""))
     # A forced tool_use that hits the output cap returns PARTIAL JSON — the missing
@@ -402,7 +405,7 @@ def _assemble(emitted: dict) -> CookMetadata:
     return cook
 
 
-def _assemble_with_repair(emitted: dict, log: Callable) -> CookMetadata:
+def _assemble_with_repair(emitted: dict, log: Callable, usages: Optional[list] = None) -> CookMetadata:
     """Assemble, and if the emitted object fails SCHEMA validation (the LLM dropped
     or mis-typed a field), do one repair pass feeding the exact pydantic errors
     back. This is distinct from the gauntlet repair (which runs AFTER a successful
@@ -416,7 +419,7 @@ def _assemble_with_repair(emitted: dict, log: Callable) -> CookMetadata:
             "Your emit_cook output failed SCHEMA validation. Fix EXACTLY these "
             "missing/invalid fields and re-emit the FULL corrected object via emit_cook:\n"
             + str(e) + "\n\nYour output was:\n" + json.dumps(emitted, ensure_ascii=False))
-        emitted2, _ = _emit_cook([{"role": "user", "content": repair_user}], log)
+        emitted2, _ = _emit_cook([{"role": "user", "content": repair_user}], log, usages)
         return _assemble(emitted2)  # if it still fails, let it raise (caller logs it)
 
 
@@ -471,8 +474,9 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
     user = ("Rework this recipe. Source ingredients (with measured metric conversions to USE) "
             "and steps:\n\n" + json.dumps(inp, ensure_ascii=False, indent=2))
 
-    emitted, _ = _emit_cook([{"role": "user", "content": user}], log)
-    cook = _assemble_with_repair(emitted, log)
+    usages: list = []   # per-call token usage → cost summary at the end
+    emitted, _ = _emit_cook([{"role": "user", "content": user}], log, usages)
+    cook = _assemble_with_repair(emitted, log, usages)
     report = run_all(cook)
     log(f"[cook-rework] gauntlet: passed={report.passed}"
         + (f" ({len(report.failures)} failures)" if not report.passed else ""))
@@ -484,7 +488,7 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
             "re-emit the full corrected recipe via emit_cook. Failures:\n- "
             + "\n- ".join(report.failures)
             + "\n\nThe recipe you produced:\n" + json.dumps(emitted, ensure_ascii=False))
-        emitted2, _ = _emit_cook([{"role": "user", "content": repair_user}], log)
+        emitted2, _ = _emit_cook([{"role": "user", "content": repair_user}], log, usages)
         cook = _assemble(emitted2)
         report = run_all(cook)
         log(f"[cook-rework] after repair: passed={report.passed}"
@@ -495,12 +499,20 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
     # every attached tip/check traces to a published KB entry by kb_id (validated).
     if report.passed:
         try:
-            augment_cook(cook, log, recipe_name=name)
+            augment_cook(cook, log, recipe_name=name, usages=usages)
         except Exception as e:  # noqa: BLE001 — augment is non-fatal
             log(f"[cook-rework] augment pass failed (non-fatal): {e}")
         # Redundancy check before persist — strips repeated guidance/technique_changes.
         # Runs even if augment raised (still de-dupes the rework's own output).
         dedupe_annotations(cook, log)
+
+    # Cost summary — what this rework cost at the latest token prices, + volume projection.
+    est = cook_costs.estimate(usages)
+    log(cook_costs.format_summary(est))
+    try:
+        cook.rework_cost = est        # carried into the persisted _cook + the job result
+    except Exception:                 # pragma: no cover — model may reject extra attrs
+        pass
 
     cook.validators = report
     cook.schema_version = 1
