@@ -134,14 +134,22 @@ with llm.context(recipe_id=new_recipe_id, user_id=user_id):
   - **Internal `ThreadPoolExecutor`** — `enrich_recipe` fans its blocks out across worker threads
     that DON'T inherit the contextvar (plain threads don't copy contextvars), so gateway calls there
     mis-attribute to the placeholder (observed live: `user_id=1`, `recipe_id=None`).
-  **Rule: sequential-sync paths use the gateway; internally-threaded or SSE-streamed paths journal
-  via the plain `usage_log` list** (shared by reference, immune to context churn) + the endpoint's
-  `_journal_usage`. So `voice_agent` (SSE) and `enrich_recipe` (ThreadPoolExecutor) STAY on
-  `usage_log` by design — do NOT migrate them. Verified live: extract (`markdown_to_recipe`/
-  `chapter_classify`/`identity_card`) → gateway, correct recipe_id+user_id; sync `/cook/ask` →
-  gateway; `/cook/ask-stream` + `enrich` → usage_log, correct attribution. Before migrating any
-  future module, check whether it (or its caller) crosses a thread/generator boundary before the
-  LLM call.
+  - **The SAVE path** (`_save_recipe_core`) is a third such case: it journals `save_usage_log` via
+    `write_usage_entries` directly and does NOT set a gateway context (`enter()`/`flush()`), partly
+    because it also runs `enrich_recipe` (threaded). So a module called from save must use
+    `usage_log` to attribute correctly there.
+  **Rule: sequential-sync paths behind a gateway-context-wired endpoint use the gateway;
+  internally-threaded, SSE-streamed, or save-path modules journal via the plain `usage_log` list**
+  (shared by reference, immune to context churn) + their endpoint's `_journal_usage`/
+  `write_usage_entries`. **STAY on `usage_log` by design — do NOT migrate:** `voice_agent` (SSE),
+  `enrich_recipe` (ThreadPoolExecutor), `identity_card` (called from the save path AND extract;
+  usage_log is correct on both). On the gateway: markdown_to_recipe, image/pdf_to_markdown,
+  dish_signal, chapter_classify, translate, domain_enrich, cook_ask (sync), cook_rework/augment.
+  Verified live: extract → gateway (correct recipe_id+user_id), sync `/cook/ask` → gateway,
+  `/cook/ask-stream` + enrich → usage_log, SAVE (identity_card) → usage_log (user_id correct), and
+  a full save regenerates `_identity`/`_match`/`_grade`/`_scoring`/`embedding`. Before migrating any
+  future module, check whether it (or its caller) crosses a thread/generator boundary, or is the
+  save path, before the LLM call.
 - **BYOK / per-tenant key**: `llm.create(..., api_key=...)` (and a context-level
   `llm.context(api_key=...)`) override the ambient env key. The gateway caches one client per
   distinct key. Keeps `enrich/measurement/estimate.py` and the portable BYOK story working.

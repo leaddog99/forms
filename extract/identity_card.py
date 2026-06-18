@@ -59,7 +59,6 @@ from typing import Optional
 import anthropic
 
 
-import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()
 
 
@@ -333,8 +332,8 @@ def _call_identity_tool(user_prompt: str, *,
     None on failure. Never raises — caller falls back to its prior
     composition path."""
     try:
-        response = llm.create(
-            operation=operation, model=_MODEL,
+        response = _anthropic_client.messages.create(
+            model=_MODEL,
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
             system=_SYSTEM_PROMPT,
@@ -345,7 +344,17 @@ def _call_identity_tool(user_prompt: str, *,
     except Exception as e:
         print(f"[IDENTITY] LLM call failed: {type(e).__name__}: {e}")
         return None
-    # usage auto-journaled by the gateway (operation=operation).
+
+    # NOT routed through the llm.py gateway: identity_card is called from the SAVE
+    # path (_save_recipe_core, which has no gateway context — it journals
+    # save_usage_log via write_usage_entries) as well as extract. Journaling via the
+    # usage_log list keeps attribution correct on BOTH paths. See docs/llm-gateway.md.
+    if usage_log is not None:
+        try:
+            from input.pipeline.token_journal import build_usage_entry
+            usage_log.append(build_usage_entry(operation, _MODEL, response))
+        except Exception:
+            pass
 
     tool_input = next(
         (b.input for b in response.content
