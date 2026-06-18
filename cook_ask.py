@@ -29,6 +29,7 @@ import anthropic
 
 from input.pipeline.token_journal import build_usage_entry
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
 MODEL = "claude-sonnet-4-6"      # warm, accurate cooking Q&A grounded by recipe context
@@ -212,17 +213,13 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
         f"{context}\n\n"
         f"My question: {question}"
     )
-    resp = _client.messages.create(
-        model=MODEL,
+    resp = llm.create(
+        operation="cook_ask", model=MODEL,
         max_tokens=_MAX_TOKENS,
         system=CHEF_SYSTEM,
         messages=[{"role": "user", "content": user}],
     )
-    if usage_log is not None:
-        try:
-            usage_log.append(build_usage_entry("cook_ask", MODEL, resp))
-        except Exception:
-            pass
+    # usage auto-journaled by the gateway (operation="cook_ask").
     parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
     return ("".join(parts)).strip() or "I'm not sure how to answer that — could you rephrase?"
 
@@ -247,18 +244,14 @@ def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = Non
         f"{context}\n\n"
         f"What I just said: {question}"
     )
-    resp = _client.messages.create(
-        model=MODEL,
+    resp = llm.create(
+        operation="cook_ask", model=MODEL,
         max_tokens=_MAX_TOKENS,
         system=CHEF_SYSTEM,
         tools=[_NAVIGATE_TOOL],
         messages=[{"role": "user", "content": user}],
     )
-    if usage_log is not None:
-        try:
-            usage_log.append(build_usage_entry("cook_ask", MODEL, resp))
-        except Exception:
-            pass
+    # usage auto-journaled by the gateway (operation="cook_ask").
 
     for b in resp.content:
         if getattr(b, "type", None) == "tool_use" and getattr(b, "name", None) == "navigate":

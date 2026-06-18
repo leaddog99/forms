@@ -32,6 +32,7 @@ import anthropic
 
 from input.pipeline.token_journal import build_usage_entry
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
 # Flush a sentence when a terminator is followed by whitespace. The lookbehind
@@ -79,7 +80,7 @@ def stream_grounded(
     saw_tool = False
     emitted_text = False   # any answer text seen? if so, ANSWER WINS — ignore a trailing tool call
     final = None
-    with _client.messages.stream(**kwargs) as stream:
+    with llm.stream(operation=operation, **kwargs) as stream:
         for event in stream:
             et = getattr(event, "type", None)
             if et == "content_block_start":
@@ -102,12 +103,7 @@ def stream_grounded(
                         if sentence:
                             yield {"type": "sentence", "text": sentence}
         final = stream.get_final_message()
-
-    if usage_log is not None and final is not None:
-        try:
-            usage_log.append(build_usage_entry(operation, model, final))
-        except Exception:
-            pass
+    # usage auto-journaled by the gateway (operation=operation) on stream exit.
 
     # Action ONLY when the model navigated WITHOUT answering. A tool call appended
     # after answer text is spurious (the model occasionally does both) — the spoken

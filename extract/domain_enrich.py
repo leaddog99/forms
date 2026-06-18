@@ -27,6 +27,7 @@ import anthropic
 
 from input.pipeline.url_utils import root_domain
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()
 
 _MODEL = "claude-haiku-4-5"
@@ -128,8 +129,8 @@ def enrich_domain(domain: str, *, display_name: str = "",
     user_prompt = "\n".join(lines)
 
     try:
-        response = _anthropic_client.messages.create(
-            model=_MODEL,
+        response = llm.create(
+            operation="domain_enrich", model=_MODEL,
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
             system=_SYSTEM_PROMPT,
@@ -140,13 +141,7 @@ def enrich_domain(domain: str, *, display_name: str = "",
     except Exception as e:
         print(f"[DOMAIN-ENRICH] LLM call failed: {type(e).__name__}: {e}")
         return None
-
-    if usage_log is not None:
-        try:
-            from input.pipeline.token_journal import build_usage_entry
-            usage_log.append(build_usage_entry("domain_enrich", _MODEL, response))
-        except Exception:
-            pass
+    # usage auto-journaled by the gateway (operation="domain_enrich").
 
     tool_input = next(
         (b.input for b in response.content

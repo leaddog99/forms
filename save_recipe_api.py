@@ -1109,6 +1109,8 @@ def cook_ask_endpoint(payload: dict = Body(...)):
     recipe = json.loads(row[0])
 
     usage_log: list = []
+    import llm  # gateway: attribute this Q&A's usage to the recipe/user
+    llm.enter(recipe_id=recipe_id, user_id=user_id)
     try:
         if allow_actions:
             from cook_ask import ask_or_act
@@ -1157,6 +1159,8 @@ def cook_ask_stream_endpoint(payload: dict = Body(...)):
 
     def events():
         try:
+            import llm  # gateway: attribute this stream's usage to the recipe/user
+            llm.enter(recipe_id=recipe_id, user_id=user_id)
             from cook_ask import ask_or_act_stream
             for ev in ask_or_act_stream(recipe, question, current_step=current_step, usage_log=usage_log):
                 yield ev
@@ -3591,6 +3595,8 @@ def enrich_domain_endpoint(domain: str):
             row = domains_lib.get_domain(conn, domain)
         display_name = (row or {}).get("display_name") or ""
         usage_log: list = []
+        import llm  # gateway: attribute migrated-module usage to this domain
+        llm.enter(recipe_id=f"domain:{domain.strip().lower()}", user_id=0)
         result = enrich_domain(domain, display_name=display_name, usage_log=usage_log)
         _journal_usage(usage_log, recipe_id=f"domain:{domain.strip().lower()}", user_id=0)
         if result is None:
