@@ -901,3 +901,31 @@ Root cause of "domains list ≠ dishes list": the forms had DIFFERENT design tok
 - **System-wide domain scoring** (decided, design — [[project_domain_scoring]]) + **`serp_batch`** (Scale SERP Batches) — carried.
 - Optional: surface `rework_cost` as a form panel line (not just the stream log).
 - Carried: sub-steps v2.1; Voice P1; authenticated Playwright gated ingest.
+
+## Session log — 2026-06-18 (later) — cook-voice latency/acks + restart-vs-reset semantics · recipe-form style sweep finished
+
+Short iterative session on `split/enrichment-api`, all in two front-end files (`forms/cook.html`, `forms/recipe_form_styled.html`) — static, so a browser reload picks them up (no restart). UNCOMMITTED at time of writing.
+
+### Cook-voice loop ([[project_cook_voice]], [[project_voice_redesign]]) — latency + acknowledgements
+- **Adaptive silence-hang** (the "delay between saying *next* and playback"): endpointing hang is now `SILENCE_HANG_SHORT_MS=420` for a crisp one-word command vs `SILENCE_HANG_MS=800` for longer utterances. Gate = `SHORT_CMD_MAX_VOICE_MS=360` (voiced ≤ this ⇒ short hang). The `stt` diagnostic line now prints `· Nms hang`. **Tuned to 360 specifically so "hey chef" (~450ms voiced) keeps the FULL hang** — at the first cut (600) it fast-endpointed, split "hey chef" off its question on the natural pause, and the ack's deaf window clipped the question's front (the bug the user hit). TTS premaking was already done (prefetch + media.db cache) → NOT the bottleneck; the win was the hang.
+- **Lead-in silence baked into clips**: `getSpeechUrl` decodes each MP3, prepends `LEAD_SILENCE_MS=180` of silence, re-encodes to WAV (reuses `encodeWAV`), caches that. Fixes the "first syllable clipped" cold-start (output device/decoder warm-up eats silence, not speech). Best-effort, falls back to raw MP3.
+- **Short spoken acks** (user: the "hey chef" reply was too long; stop was silent so "you don't know it stopped"): bare wake → `_WAKE_ACKS ["Yes?","Here!"]` (was "I'm here, what can I do for you?"); a VOICE stop → `_STOP_ACKS ["All done!","See you!","Stopping."]` via `stopHandsFree({spoken:true})` (button/tap stop stays silent — you see it reset). Both prefetched. Caveat surfaced: no AEC, so a spoken ack is deaf-while-speaking — real fix is barge-in (Voice P1).
+- **Tip keyword broadened** (`_CMD_RULES` tip): now matches bare `tip`, `play the tip`, `hear/say the tip`, etc. — plays deterministically (no Chef call), no wake word needed.
+- **Arm-then-"go" start** (`START_ON_GO=true`, default on): the hands-free button no longer launches into step 1 — it ARMS, gives a short "Ready when you are." cue, and waits for a spoken go-word ("go/start/begin/ready/let's cook/…", forgiving for base.en) before reading step 1; "stop/cancel" while armed aborts. `_armedWaiting` state + an early branch in `routeUtterance`; `_onSpeakEnd` keeps the "say go" hint visible. Flip `START_ON_GO=false` for the old instant-start.
+
+### Restart vs Reset — DECIDED semantics (record this)
+Two distinct "start over" actions, deliberately different scope:
+- **Reset BUTTON** → `fullReset()` = clears **step boxes AND ingredient boxes** (`checked={}` + every `.irow.done`) + back to step 1. Full wipe. (Original button behavior, refactored into a named shared fn.)
+- **Voice "restart"** (a watchword: "restart / start over / from the top / begin again") → `cookView.reset()` = clears **step boxes only**, lands on step 1, **keeps** the ingredient checks.
+- Rationale (user's mental model): *"I was interrupted — go back to the beginning to see what I did and where to restart."* Restart should rewind the steps like continuous "back" presses while preserving the ingredients you've already gathered/checked. The destructive full wipe stays on the deliberate Reset button.
+
+### Recipe-form dish-style sweep — FINISHED ([[feedback_reuse_layout_components]])
+Local `:root` retired (tokens.css already won, loaded last). url-row input focus → neutral bg + focus ring (matches every input). uid-toggle resting fill neutralized (accent-soft = selection-only). cook-panel / "similar recipes" button + results + their JS-rendered rows → token vars instead of off-palette browns. Remaining hardcoded colors are intentional (NYT-card greys, exc-badge grade ladder, semantic danger/success/amber).
+
+### Open design — externalize the voice LANGUAGE out of code ([[project_voice_pack]])
+User flagged (correctly): command keyword regexes, wake words, and spoken phrases are now a lot of literal English **in code** — changing language should be a config/record edit, not a code change (fits [[feedback_no_data_in_code]], [[feedback_i18n_as_we_go]], [[project_portable_package]], [[project_system_config]]). Direction: a per-language **voice pack** (JSON) of DATA (wake list, per-intent synonym lists, filler/q-block lists, spoken phrases); code keeps the LOGIC (regex assembly + matching + routing) and builds the regexes from the lists at load. Caveat: true non-English voice ALSO needs a multilingual STT model (base.en is English-only) + per-language TTS persona — so the pack is necessary-not-sufficient. Design note + implementation TBD.
+
+### Follow-ups
+- **Externalize voice language to a voice-pack catalog** (above) — design note `docs/voice-pack.md` then refactor `cook.html`.
+- **Local command spotter** — user chose "measure first": read an `stt · Nms · …hang` line during a real cook before deciding (Web Speech API fast-path vs in-browser whisper vs cheap server tuning).
+- Commit pending: split into (1) recipe-form style sweep, (2) cook-voice changes.
