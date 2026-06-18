@@ -535,7 +535,7 @@
     /* Portrait Image */
     .hero-section {
       position: relative;
-      background: linear-gradient(135deg, var(--accent-soft) 0%, var(--line) 100%);
+      background: linear-gradient(135deg, var(--bg) 0%, var(--line) 100%);  /* neutral placeholder */
       border-radius: 20px;
       overflow: hidden;
       min-height: 320px;
@@ -971,7 +971,7 @@
       font-family: Georgia, serif;
       font-size: 0.95em;
       color: var(--ink);
-      background: var(--accent-soft);
+      background: #fff;   /* neutral like other inputs — --accent-soft is reserved for selection */
       border: 1px solid var(--line);
       border-radius: 999px;
       cursor: pointer;
@@ -995,7 +995,7 @@
       flex-wrap: wrap;
       padding: 14px 18px;
       margin-bottom: 18px;
-      background: var(--accent-soft);
+      background: var(--card);   /* neutral card — --accent-soft is reserved for selection */
       border-radius: 12px;
       border: 1px solid var(--line);
     }
