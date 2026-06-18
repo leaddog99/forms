@@ -11,7 +11,7 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260617a">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <link rel="stylesheet" href="/forms/components.css?v=20260617c">
 </head>
@@ -60,7 +60,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260611f"></script>
+  <script src="/forms/library-shell.js?v=20260618c"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -197,7 +197,7 @@
 
           <div class="src-groups" id="srcGroups">
             <div class="src-group" data-src="serp">
-              <label class="src-head"><input type="radio" name="harvestSource" value="serp" checked>
+              <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${(d.harvest_source || 'serp') === 'serp' ? 'checked' : ''}>
                 Google — site: search <span class="src-sub">SerpAPI; depth set in pages of ~10 results</span></label>
               <div class="ed-form-grid">
                 ${field('f_serp_query', 'Query (verbatim, incl. site:)', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
@@ -206,7 +206,7 @@
               </div>
             </div>
             <div class="src-group" data-src="backlinks_file">
-              <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file">
+              <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source === 'backlinks_file' ? 'checked' : ''}>
                 SEMrush backlinks file <span class="src-sub">local export, ranked by referring domains — best for big sites</span></label>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
               <div class="ed-form-grid" style="margin-top:10px">
@@ -526,6 +526,7 @@
         keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
         serp_query: ($('#f_serp_query')?.value || '').trim(),
         search_pages: numOrNull($('#f_search_pages')?.value) || 4,
+        harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp',
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
       };
     }

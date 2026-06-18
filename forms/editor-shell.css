@@ -56,11 +56,10 @@ body{
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
 }
 .nav-toggle:hover{ background:var(--accent-soft); border-color:var(--ink); }
-/* The admin burger (initNav sets an inline dark "system" bg #4a4039) needs a LIGHT
-   icon — editor-shell's default .nav-toggle uses a dark (--ink) glyph, which on the
-   dark bg renders as barely-visible lines. White glyph + matching border fixes it. */
-.nav-toggle--admin{ color:#fff; border-color:rgba(255,255,255,.22); }
-.nav-toggle--admin:hover{ background:#5a4e44; border-color:rgba(255,255,255,.4); }
+/* The admin burger is a distinct surface from the plain user burger, but stays in
+   the warm palette — a soft-clay chip, NOT the old garish dark-brown fill. */
+.nav-toggle--admin{ background:var(--accent-soft); color:var(--accent-dark); border-color:var(--accent-soft); }
+.nav-toggle--admin:hover{ background:var(--accent); color:#fff; border-color:var(--accent); }
 .nav-menu{
   position:absolute; top:calc(var(--ed-header-h) + 6px);
   right:max(16px, calc((100vw - var(--ed-shell-w))/2 + 16px));

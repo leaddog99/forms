@@ -420,6 +420,7 @@
     { page: 'jobs',      label: 'Jobs/Scheduled', href: '/forms/jobs_admin.html', group: 'admin' },
     { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', group: 'admin' },
     { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', group: 'admin' },
+    { page: 'training',  label: 'Labeling', href: '/forms/training.html', group: 'admin' },
     { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
     { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', group: 'admin' },
   ];
@@ -739,11 +740,12 @@
     const userBurger = _buildBurger(userItems, currentPage, {
       ariaLabel: 'Open menu', title: 'Menu', cls: 'nav-toggle--user',
     });
-    // Admin burger — hidden until the role probe confirms admin. Distinct
-    // dark "system" color so the two burgers read as different surfaces.
+    // Admin burger — hidden until the role probe confirms admin. Styled as a
+    // distinct SOFT-CLAY chip (.nav-toggle--admin in each shell's CSS) so the two
+    // burgers read as different surfaces while staying in the warm palette — no
+    // more hardcoded dark "system" fill (which read as garish on the light pages).
     const adminBurger = _buildBurger(adminItems, currentPage, {
       ariaLabel: 'Open admin menu', title: 'Admin', cls: 'nav-toggle--admin',
-      bg: '#4a4039',
     });
     adminBurger.toggle.style.display = 'none';
 
