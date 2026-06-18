@@ -28,15 +28,9 @@
        and typography by linking this file. -->
   <link rel="stylesheet" href="/forms/forms.css">
   <style>
-    :root {
-      --bg: #f8f4ed;
-      --card: #fffaf2;
-      --ink: #2a211b;
-      --muted: #74695f;
-      --accent: #9b4a22;
-      --accent-soft: #ead3c6;
-      --line: #e2d6c8;
-    }
+    /* Palette/serif tokens now live in tokens.css (linked LAST in <head> so it
+       is the single source of truth). The page-local :root that used to sit here
+       was already overridden by tokens.css and has been retired. */
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -466,14 +460,15 @@
       text-transform: none;
       letter-spacing: 0;
       color: var(--accent);
-      background: var(--accent-soft);
-      border: 1px solid transparent;
+      background: var(--card);                 /* neutral at rest — --accent-soft is reserved for selection */
+      border: 1px solid var(--line);
       border-radius: 999px;
       cursor: pointer;
       white-space: nowrap;
       transition: all 0.15s ease;
     }
     .sidebar-controls .uid-row button.uid-toggle:hover {
+      background: var(--accent-soft);          /* soft hover, matching the dish secondary-action pattern */
       border-color: var(--accent);
     }
     /* TBOTB button "active" state — when the input shows user_id=0 the
@@ -1279,7 +1274,7 @@
     .url-row input[type="url"]:focus {
       outline: none;
       border-color: var(--accent);
-      background: var(--accent-soft);
+      box-shadow: 0 0 0 3px var(--accent-soft);   /* focus RING like every other input; bg stays neutral */
     }
     .url-row button {
       padding: 10px 18px;
@@ -1749,7 +1744,7 @@
              populateCookPanel() when recipe._cook exists; hidden otherwise. The
              full INTERACTIVE cook view (views toggle, checkboxes, timeline) is
              Phase 4, rendered via the cookbook. -->
-        <details class="cook-panel hidden" id="cookPanel" style="margin:14px 0;border:1px solid var(--line,#e2d6c3);border-radius:12px;background:#fffaf1;overflow:hidden">
+        <details class="cook-panel hidden" id="cookPanel" style="margin:14px 0;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden">
           <summary style="cursor:pointer;padding:12px 16px;font-weight:700;font-size:1rem;list-style:none">🍳 <span id="cookPanelTitle">Cook view (reworked)</span> <span id="cookPanelStatus" style="font-weight:400;font-size:.82rem;color:var(--muted,#6b5b4f)"></span></summary>
           <div id="cookPanelBody" style="padding:4px 16px 16px;font-size:.92rem;line-height:1.5"></div>
         </details>
@@ -1807,10 +1802,10 @@
              matching). POSTs current form state to /recipes/similar-master. -->
         <div class="similar-block" style="margin:0 0 16px">
           <button type="button" id="similarBtn"
-            style="font:inherit;font-size:.9em;padding:8px 14px;border:1px solid #d8c4b2;background:#fbf6f0;color:#8a5a3b;border-radius:8px;cursor:pointer">
+            style="font:inherit;font-size:.9em;padding:8px 14px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:8px;cursor:pointer">
             ✨ Show top recipes like this
           </button>
-          <div id="similarResults" hidden style="margin-top:10px;border:1px solid #eaddd0;border-radius:11px;padding:6px"></div>
+          <div id="similarResults" hidden style="margin-top:10px;border:1px solid var(--line);border-radius:11px;padding:6px"></div>
         </div>
 
         <!-- Header: Title/Desc Left, Image Right -->
@@ -4442,7 +4437,7 @@
       };
       btn.disabled = true; const lbl = btn.textContent; btn.textContent = "Finding…";
       out.hidden = false;
-      out.innerHTML = '<div style="color:#8a7a6a;font-size:.88em;padding:6px 8px">Searching our top recipes…</div>';
+      out.innerHTML = '<div style="color:var(--muted);font-size:.88em;padding:6px 8px">Searching our top recipes…</div>';
       try {
         const res = await fetch(`${API}/recipes/similar-master`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -4451,27 +4446,27 @@
         const data = await res.json();
         const rows = (data && data.results) || [];
         if (!rows.length) {
-          out.innerHTML = '<div style="color:#8a7a6a;font-size:.88em;padding:6px 8px">No close matches in our collection yet.</div>';
+          out.innerHTML = '<div style="color:var(--muted);font-size:.88em;padding:6px 8px">No close matches in our collection yet.</div>';
           return;
         }
         out.innerHTML = rows.map(r => {
           const thumb = r.preview_image
             ? `<img src="${esc(r.preview_image)}" alt="" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex:0 0 auto">`
-            : `<span style="width:46px;height:46px;border-radius:8px;background:#efe7df;flex:0 0 auto"></span>`;
+            : `<span style="width:46px;height:46px;border-radius:8px;background:var(--bg);flex:0 0 auto"></span>`;
           const meta = [r.dish, r.grade ? `grade ${r.grade}` : null, (r.rank_score != null ? `rank ${r.rank_score}` : null)]
             .filter(Boolean).join(' · ');
           return `<a href="${esc(r.bcc_url)}" target="_blank" rel="noopener"
               style="display:flex;align-items:center;gap:11px;padding:7px 8px;border-radius:9px;text-decoration:none;color:inherit">
               ${thumb}
               <span style="flex:1;min-width:0">
-                <span style="display:block;font-size:.95em;color:#3a2e25">${esc(r.name)}</span>
-                <span style="display:block;font-size:.76em;color:#8a7a6a">${esc(meta)}</span>
+                <span style="display:block;font-size:.95em;color:var(--ink)">${esc(r.name)}</span>
+                <span style="display:block;font-size:.76em;color:var(--muted)">${esc(meta)}</span>
               </span>
-              <span style="font-size:.72em;color:#a89684;font-variant-numeric:tabular-nums">d ${esc(r.distance)}</span>
+              <span style="font-size:.72em;color:var(--muted);font-variant-numeric:tabular-nums">d ${esc(r.distance)}</span>
             </a>`;
         }).join('');
       } catch (e) {
-        out.innerHTML = `<div style="color:#b4543a;font-size:.88em;padding:6px 8px">Couldn’t load similar recipes (${esc(e.message || e)}).</div>`;
+        out.innerHTML = `<div style="color:var(--danger);font-size:.88em;padding:6px 8px">Couldn’t load similar recipes (${esc(e.message || e)}).</div>`;
       } finally {
         btn.disabled = false; btn.textContent = lbl;
       }
