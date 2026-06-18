@@ -25,6 +25,7 @@ from typing import Any, Optional
 import anthropic
 
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
@@ -427,8 +428,8 @@ def _run_block(
     network/SDK errors — caller catches and isolates per-block failure.
     """
     t_start = time.perf_counter()
-    with _anthropic_client.messages.stream(
-        model=model,
+    with llm.stream(
+        operation=block.operation, model=model,
         max_tokens=block.max_tokens,
         temperature=0.4,
         system=block.system_prompt(),
@@ -547,9 +548,7 @@ def enrich_recipe(
             print(f"     ENRICH[{block.name}]: failed ({err}); leaving defaults")
             continue
 
-        if usage_log is not None and response is not None:
-            usage_log.append(build_usage_entry(block.operation, model, response))
-
+        # usage auto-journaled by the gateway (operation=block.operation).
         if not isinstance(parsed, dict):
             # tool_choice forced the tool, so missing it means an API
             # anomaly (e.g. max_tokens hit before the tool_use block

@@ -318,7 +318,17 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
     user_id defaults to the placeholder for back-compat with callers that
     haven't been updated to thread it. Batch flows pass user_id=0 so
     master-batch LLM costs are attributable separately from personal usage.
+
+    Also flushes any GATEWAY-buffered usage: modules migrated to llm.py journal via
+    the ambient context set by llm.enter() at the handler top, and this is the
+    handler's exit point. Best-effort. (Migrated modules no longer append to
+    usage_log, so the write below is a no-op for them — no double-count.)
     """
+    try:
+        import llm
+        llm.flush()
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] llm.flush failed: {e}")
     if not usage_log:
         return
     try:
@@ -5361,6 +5371,8 @@ async def extract_from_image_endpoint(
         timings: dict = {}
         prompts: dict = {}
         usage_log: list = []
+        import llm  # gateway: attribute migrated-module usage to this recipe/user (flushed by _journal_usage)
+        llm.enter(recipe_id=new_recipe_id, user_id=user_id)
         t_start = time.perf_counter()
 
         # Endpoint-level cache: when the bookmarklet supplies a source_url,
@@ -5480,6 +5492,8 @@ async def extract_from_pdf_endpoint(
         timings: dict = {}
         prompts: dict = {}
         usage_log: list = []
+        import llm  # gateway: attribute migrated-module usage to this recipe/user
+        llm.enter(recipe_id=new_recipe_id, user_id=user_id)
         t_start = time.perf_counter()
 
         # Endpoint-level cache: a previously-extracted recipe for this URL
@@ -5608,6 +5622,8 @@ async def extract_from_markdown_endpoint(
         timings: dict = {}
         prompts: dict = {}
         usage_log: list = []
+        import llm  # gateway: attribute migrated-module usage to this recipe/user
+        llm.enter(recipe_id=new_recipe_id, user_id=user_id)
         t_start = time.perf_counter()
 
         # Cache lookup FIRST — before the expensive translation. A non-English
@@ -5840,6 +5856,8 @@ def extract_recipe_from_url(
     timings: dict = {}
     prompts: dict = {}
     usage_log: list = []
+    import llm  # gateway: attribute migrated-module usage to this recipe/user
+    llm.enter(recipe_id=new_recipe_id, user_id=user_id)
     t_start = time.perf_counter()
 
     # === Speculative cache fast-path ===========================
@@ -6267,6 +6285,8 @@ async def enrich_recipe_endpoint(request: Request):
     timings: dict = {}
     prompts: dict = {}
     usage_log: list = []
+    import llm  # gateway: attribute migrated-module usage to this recipe/user
+    llm.enter(recipe_id=recipe_id, user_id=user_id)
     t_start = time.perf_counter()
     recipe_id = recipe.get("id") or recipe.get("recipe_id") or payload.get("recipe_id")
     # user_id can come from either the wrapping payload or the embedded recipe

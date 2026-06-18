@@ -34,6 +34,7 @@ import pypdfium2 as pdfium
 import requests
 
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
@@ -195,8 +196,8 @@ def pdf_bytes_to_markdown(
     })
 
     # Streamed to avoid SDK HTTP timeouts on multi-page vision calls.
-    with _anthropic_client.messages.stream(
-        model=model,
+    with llm.stream(
+        operation="pdf_to_markdown", model=model,
         max_tokens=4096,
         temperature=0.2,
         system=PDF_TO_MARKDOWN_PROMPT,
@@ -206,8 +207,7 @@ def pdf_bytes_to_markdown(
 
     if timings is not None:
         timings["vision_llm_ms"] = int((time.perf_counter() - t_render) * 1000)
-    if usage_log is not None:
-        usage_log.append(build_usage_entry("pdf_to_markdown", model, response))
+    # usage auto-journaled by the gateway (operation="pdf_to_markdown").
 
     content = next((b.text for b in response.content if b.type == "text"), "")
     return content.strip()

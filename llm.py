@@ -81,9 +81,31 @@ def context(*, recipe_id: Optional[str] = None, user_id: Optional[int] = None,
         _flush(ctx)
 
 
+def enter(*, recipe_id: Optional[str] = None, user_id: Optional[int] = None,
+          api_key: Optional[str] = None) -> None:
+    """Begin an ambient context WITHOUT a with-block — for large request handlers
+    where wrapping the whole body is impractical. Inherits unspecified fields from
+    any enclosing context. Pair with flush() at the handler's exit points (the
+    existing _journal_usage sites already are those). No explicit reset needed:
+    each request runs in its OWN copied contextvars context (Starlette task /
+    anyio threadpool copy), so the set is discarded when the request ends and never
+    leaks across requests. Calls inside still buffer + attribute correctly; the
+    contextvar is shared by reference into asyncio.to_thread workers, so usage from
+    a worker buffers onto the same context and flush() (back in the handler) writes
+    it with this attribution."""
+    parent = _current.get()
+    ctx = _Ctx(
+        recipe_id=recipe_id if recipe_id is not None else (parent.recipe_id if parent else None),
+        user_id=user_id if user_id is not None else (parent.user_id if parent else None),
+        api_key=api_key if api_key is not None else (parent.api_key if parent else None),
+    )
+    _current.set(ctx)
+
+
 def flush() -> None:
     """Flush the active context's buffered entries mid-run — for long batch loops
-    that would otherwise hold many entries until the outer context closes."""
+    that would otherwise hold many entries until the outer context closes, and for
+    enter()-style handlers that flush at their existing exit points."""
     ctx = _current.get()
     if ctx is not None:
         _flush(ctx)

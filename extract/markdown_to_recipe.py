@@ -23,6 +23,7 @@ from recipe_model import RecipeModel
 from input.pipeline.validators import is_recipe, stamp_validation_on_recipe
 from input.pipeline.url_utils import normalize_url, root_domain
 from input.pipeline.token_journal import build_usage_entry
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 
 
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
@@ -126,17 +127,15 @@ def markdown_to_recipe(
     # below give the same envelope. temperature stays at 0.2 (Haiku 4.5
     # still accepts sampling params; Opus 4.7 is the model that removed
     # them).
-    with _anthropic_client.messages.stream(
-        model=model,
+    with llm.stream(
+        operation="markdown_to_recipe", model=model,
         max_tokens=4096,
         temperature=0.2,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
         response = stream.get_final_message()
-
-    if usage_log is not None:
-        usage_log.append(build_usage_entry("markdown_to_recipe", model, response))
+    # usage is auto-journaled by the gateway (operation="markdown_to_recipe").
 
     # First text block; Anthropic responses can in principle have multiple
     # content blocks (e.g. thinking + text), but we don't enable thinking

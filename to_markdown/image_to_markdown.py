@@ -23,6 +23,7 @@ import anthropic
 from PIL import Image
 
 
+import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
@@ -168,8 +169,8 @@ def image_to_markdown(image_path: str, *, model: str = "claude-sonnet-4-6",
 
     # Streamed to avoid SDK HTTP timeouts on slow vision responses
     # (high-detail magazine pages can produce sizeable markdown).
-    with _anthropic_client.messages.stream(
-        model=model,
+    with llm.stream(
+        operation="image_to_markdown", model=model,
         max_tokens=4096,
         temperature=0.2,
         system=IMAGE_TO_MARKDOWN_PROMPT,
@@ -189,9 +190,7 @@ def image_to_markdown(image_path: str, *, model: str = "claude-sonnet-4-6",
 
     if timings is not None:
         timings["vision_llm_ms"] = int((time.perf_counter() - t_encode) * 1000)
-    if usage_log is not None:
-        usage_log.append(build_usage_entry("image_to_markdown", model, response))
-
+    # usage auto-journaled by the gateway (operation="image_to_markdown").
     content = next((b.text for b in response.content if b.type == "text"), "")
     return content.strip()
 
