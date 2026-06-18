@@ -1382,9 +1382,12 @@
   // look at the screen to learn a tip exists.
   function currentStepTips(){
     var s = window.cookView.currentStep(); if(!s) return [];
-    var tips = (s.attachments || []).filter(function(a){ return a.kind !== 'check'; })
-                                     .map(function(a){ return a.text; }).filter(Boolean);
-    if(!tips.length && s.tip) tips = [s.tip];
+    // Read ALL of a step's annotations — tips (💡) AND checks (✓). A cook says
+    // "tip" for any helpful note on the step and doesn't distinguish the two, and
+    // the grounded "what's the tip" path already reads both. Excluding checks made
+    // the command falsely claim "no tip" on steps that only carry a doneness check.
+    var tips = (s.attachments || []).map(function(a){ return a.text; }).filter(Boolean);
+    if(!tips.length){ if(s.tip) tips.push(s.tip); if(s.check) tips.push(s.check); }
     return tips;
   }
   function readCurrentTip(){
