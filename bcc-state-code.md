@@ -862,3 +862,42 @@ Layout drift called out → [[feedback_reuse_layout_components]]: lift the exist
 - **`serp_batch`** — Scale SERP Batches API (catalog-scale fan-out).
 - **Sub-steps v2.1** (mise/method re-plan — design in `docs/cook-substeps-v2.1-design.md`).
 - Carried: Voice P1; authenticated Playwright ingest of gated recipes; verbosity/expertise-fade; the 2 batch-skipped reworks (definite-article/etc. nits).
+
+## Session log — 2026-06-18 — shared CSS token system · domain-harvest recipe-filter quality (collection/listicle, paywalled-trusted) · SERP-depth findings → SEMrush backlinks-file source · cook-rework cost + metric fix
+
+Long session on `split/enrichment-api`. Themes: stand up a shared CSS style system and pull the domain + recipe forms onto it; harden the publisher harvest's recipe filtering; empirically settle "how deep is deep enough" and add a backlinks-file discovery source for big sites; harden translation + cook-rework; add rework cost reporting. All committed. **Restart gotcha (cost real confusion this session):** `bcc_restart.bat` HANGS when invoked non-interactively (abort path has `pause`, uvicorn runs foreground) → the OLD stale-code server keeps serving. I restart by killing the :8009 listener + `Start-Process` python -m uvicorn directly, and ALWAYS verify new code is live (curl the changed endpoint / listener StartTime) before trusting a screenshot. (Recorded in [[project_restart_zombie_port]].)
+
+### Shared CSS style system (dishes = reference)
+Root cause of "domains list ≠ dishes list": the forms had DIFFERENT design tokens (accent/line/font), so even a copied component rendered differently.
+- **`forms/tokens.css`** — THE single token source (warm palette + Georgia serif), loaded LAST so it overrides any page-local `:root`. **`forms/components.css`** — the top-recipes list defined ONCE + a reusable `.src-*` source-chooser. Wired into dishes/domains/chapters/users/dishes_v2 + the recipe form. (Editor labels are UPPERCASE — that's the standard, not drift.)
+- **Placeholders** read as examples: faded italic (`--placeholder`) + an "ex: " prefix convention in the domain `field()` helper (a prompt ending in "…" is left alone). Fixed 2 placeholders that passed `placeholder:` instead of `ph:` (never rendered).
+- **`--accent-soft` = SELECTION ONLY** (user rule). Neutralized resting pink fills: top-recipe rows → `--card`; recipe-form scoring-strip/chapter-pill/hero → neutral; cohort identity-card → `--card`.
+
+### Domain / publisher harvest — recipe-filter quality
+- **Collection/listicle filter** in the shared `_is_recipe_filter` (dish batch AND domain harvest both get it): drop a title whose LEADING segment (brand suffix ignored) has the plural word **"recipes"**, OR a **number+plural listicle** ("10 Dinners", "30 Projects" — unit/time stoplist so "15 Minutes"/"4 Ingredients" survive). Title-only (never URL — real recipes live under `/recipes/`). HARD reject (overrides JSON-LD — collections embed it). **Language-aware**: English titles pre-fetch; non-English post-fetch on the TRANSLATED title via new `translate.translate_title` (literal one-shot — `translate_markdown` HALLUCINATES a recipe from a bare title). Serious Eats: 50→26→10.
+- **Archive filter tightened** — utility/commerce/boilerplate segments (/about /shop /cart /privacy…) + date-only archives (/2023, /2023/04); segment-anchored so recipe slugs containing the word survive.
+- **Winners-only**: `/domains/{domain}/top` returns `selected_only` (kept top-N, like dishes) not all 48. **Thumbnails**: og:image captured at harvest for the selected (`collection_members.image_url`), existing ledgers backfilled.
+- **Paywalled → TRUSTED**: `paywall=1` now ALSO skips the fetch-verify (gated pages fetch as stubs → verify wrongly rejects); `check_recipe` defaults to `not paywall`; title filters + og:image still run. Milk Street 2→10. (paywall flag drives BOTH the PA-remap and trusted-harvest now — see [[project_paid_pa_calibration]].)
+- **Re-refreshed all 8 publishers** with the new filters; 30daysofgreekfood re-harvested with a `site:…recipe` query (was harvesting /category/ pages); **domains form redesigned** into radio-selected source groups; master/user recipe pickers moved above the top list.
+
+### SERP depth — experiments → findings → backlinks-file source ([[project_backlinks_source]])
+- **PA vs `site:` order uncorrelated** (ρ≈0 across 4 sites): a `site:` query isn't relevance-ranked, so high-PA recipes scatter (SE top recipe at SERP #16) → a shallow harvest = near-random top-10.
+- **Depth**: recall ~linear; need ~8–10 pages (~80 results) for ~9/10 of the true top-10. **`serp_default_pages` 6→10**. For big sites the `site:` ceiling (~100) is itself a non-representative sample.
+- **PA SATURATES on big authoritative sites** (allrecipes all DA92/PA 60-64); **referring DOMAINS** has the range → the real discriminator there.
+- **SEMrush backlinks-file source SHIPPED**: drop `input/{domain}-backlinks-pages.xlsx`, pick it on the domain form (records-to-pull), ranked by referring **Domains**; SAME downstream pipeline incl. recipe filter. Tolerates subdir exports (`{domain}_recipe-backlinks_pages.xlsx`) + their quirks — keep 3xx (http pre-HTTPS), backfill empty titles (og:title/`<title>`/slug), dedup `/id/`+`/detail.aspx` aliases. allrecipes /recipe → 20 unique canonical recipes w/ thumbnails. (`serp_batch` still NEXT.)
+
+### Translation + cook-rework hardening + cost
+- **Hallucination guard** ([[project_multilingual_extraction]]): `is_translation_plausible` now FAILS on inflation (large translation from a near-empty source) instead of skipping the check; prompt rule 10 "translate only what's present, never fabricate".
+- **cook-rework metric fix** ([[project_recipe_anchor]]): `_clean_metric_face` strips stranded IMPERIAL approximations ("454 g … about 2 cups") from the metric face before the model sees it — the resolver leaves them in `_measurements.metric`, tripping `v_unit_consistency` (Beet-Cured Salmon failed; re-run passes). Source `_measurements` still wrong — resolver fix is a follow-up.
+- **Rework cost summary** (`cook_costs.py`): after each rework, log per-call token cost at latest prices + cold vs warm-cache totals + volume projection, attached to `_cook.rework_cost`. Beet salmon ≈ $0.45 cold / $0.27 warm/recipe → 100k ≈ $26.5k.
+
+### Other
+- **Dish delete fix**: `DELETE /dishes/{name}` now loads sqlite-vec (the `trg_dish_vec_cleanup` trigger needs it; deletes were 500ing). Removed a URL-as-dish-name junk row. See [[project_vec_delete_triggers]].
+- **Recipe editing IS a feature** (user): the editor changes any quantity/ingredient/step → a cook customizes + re-reworks (user fixed the salmon rework by hand-editing, independent of the code fix).
+
+### Follow-ups (priority)
+- **Finish the recipe-form style sweep** — cohort card / scoring strip / chapter pill / hero done; remaining sections + retire the form's local `:root` once tokens.css is confirmed.
+- **Measurement-resolver fix at source** — stop writing imperial tails into `_measurements.metric` (+ re-resolve affected); the cook-rework sanitizer is the band-aid.
+- **System-wide domain scoring** (decided, design — [[project_domain_scoring]]) + **`serp_batch`** (Scale SERP Batches) — carried.
+- Optional: surface `rework_cost` as a form panel line (not just the stream log).
+- Carried: sub-steps v2.1; Voice P1; authenticated Playwright gated ingest.
