@@ -921,6 +921,7 @@
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
+  var _preRoll = [], PREROLL_FRAMES = 3;   // rolling ~250ms onset buffer — seeded into capture so a word's first phoneme isn't clipped
   var _hbFrames = 0, _hbPeak = 0;   // mic heartbeat: confirms the frame loop is alive + shows rms vs threshold + state
   function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
   // Set true for strict "Alexa mode": require "Chef" before commands too.
@@ -1190,7 +1191,7 @@
       procNode.onaudioprocess = onAudioFrame;
       sinkNode = AC.createGain(); sinkNode.gain.value = 0;          // mute: never route mic to speakers
       srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
-      capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
+      capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01; _preRoll = [];
       hf = true; btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
       var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
@@ -1282,7 +1283,16 @@
     if(!capturing){
       noiseFloor = 0.95 * noiseFloor + 0.05 * rms;                 // track ambient while quiet
       if(rms > onT){
-        capturing = true; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; onSpeechStart();
+        // Seed capture with the PRE-ROLL (the ~250ms of frames just before the trip)
+        // so a word's onset — which sits below the trip threshold — isn't clipped.
+        // This is the recurring "beginning gets cut off" on next / hey-chef.
+        capturing = true; voiceMs = 0; silenceMs = 0;
+        capBuf = _preRoll.slice(); capLen = capBuf.reduce(function(a, f){ return a + f.length; }, 0);
+        _preRoll = [];
+        onSpeechStart();
+      } else {
+        _preRoll.push(new Float32Array(input));                    // rolling onset buffer
+        if(_preRoll.length > PREROLL_FRAMES) _preRoll.shift();
       }
     }
     if(capturing){
@@ -1356,9 +1366,39 @@
   // not advances. Anything a keyword misses still routes to Chef (ask_or_act), which
   // can navigate conversationally — so a deliberate utterance never dead-ends.
   var _Q_BLOCK = /\b(how (much|long|many|do|does|should|hot|cold|big)|why|what (kind|sort|temp|temperature|else|happens)|when should|is it|are they|are these|can i|could i|should i|do i|do you|what if)\b/;
+
+  // "go to step N" — parse a digit or a spoken number word out of the utterance.
+  var _NUMWORDS = {one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+    eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,
+    eighteen:18,nineteen:19,twenty:20,'twenty one':21,'twenty two':22,'twenty three':23};
+  function parseStepNumber(cmd){
+    var m = cmd.match(/\bstep\s+(?:number\s+)?(\d{1,2})\b/) || cmd.match(/\b(\d{1,2})\b/);
+    if(m) return parseInt(m[1], 10);
+    var w = cmd.match(/\bstep\s+(?:number\s+)?([a-z]+(?:\s[a-z]+)?)\b/);
+    if(w && _NUMWORDS[w[1]] != null) return _NUMWORDS[w[1]];
+    for(var k in _NUMWORDS){ if(new RegExp('\\b' + k + '\\b').test(cmd)) return _NUMWORDS[k]; }
+    return null;
+  }
+  // Jump to step N: mark everything before it done, N-onward not-done, then read it
+  // (so next/back stay coherent). Useful after a restart — "go to step five".
+  function gotoStep(n){
+    var steps = (CK && CK.steps) || [];
+    if(!n || n < 1 || n > steps.length){
+      var msg = "There's no step " + n + (steps.length ? '. This recipe has ' + steps.length + ' steps.' : '.');
+      if(hf) setVoiceStatus('listening', msg); speak(msg); return;
+    }
+    document.querySelectorAll('.step').forEach(function(el){
+      var sn = parseInt(el.getAttribute('data-step'), 10);
+      el.classList.toggle('done', sn < n);
+    });
+    _miseIdx = -1;   // leave the mise walk if we were in it
+    window.cookView.read(window.cookView.stepByNumber(n));
+  }
+
   var _CMD_RULES = [
     { name:'where',   re:/\b(where (was|am) i|where are we|what step (am i|are we) (on|at)|which step (am i|are we)|remind me where)\b/, act:function(){ whereWasI(); } },
     { name:'mise',    re:/\b(mise|read the mise|the mise|what do i need|what's in the mise|set ?up|read the setup|what are the ingredients|list the ingredients)\b/, act:function(){ window.cookView.startMise(); } },
+    { name:'goto',    re:/\b(go to|jump to|skip to|take me to|goto)\s+(the\s+)?step\b|\bstep\s+(number\s+)?(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/, act:function(cmd){ var n = parseStepNumber(cmd); if(n) gotoStep(n); } },
     // base.en mangles the short plosive "tip" → "chip"/"hip"/"ship", so a bare "tip"
     // kept missing and the cook repeated it. Accept those mis-hears (anchored to the
     // WHOLE utterance so "chocolate chips" mid-step can't trigger), same trick as the
@@ -1468,7 +1508,7 @@
       // Commands STILL win while awaiting — so "stop" / "cancel" / "next" act instead
       // of being sent to Chef as a question (the "stop doesn't work" bug).
       var awRule = matchCommand(aq);
-      if(awRule){ setAwaiting(false); vlog('command', awRule.name + ' (while awaiting)'); awRule.act(); return; }
+      if(awRule){ setAwaiting(false); vlog('command', awRule.name + ' (while awaiting)'); awRule.act(aq); return; }
       setAwaiting(false); vlog('ask', aq); askChef(aq); return;
     }
 
@@ -1482,7 +1522,7 @@
     // 1. deterministic keyword command — INSTANT (no LLM). Wake optional.
     if(!REQUIRE_WAKE_FOR_COMMANDS || hadWake){
       var rule = matchCommand(cmd);
-      if(rule){ vlog('command', rule.name + ' ← “' + cmd + '”'); rule.act(); return; }
+      if(rule){ vlog('command', rule.name + ' ← “' + cmd + '”'); rule.act(cmd); return; }
     }
 
     // 2. wake word → deliberately addressed Chef. Could be a question OR conversational
