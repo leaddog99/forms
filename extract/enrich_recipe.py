@@ -25,7 +25,6 @@ from typing import Any, Optional
 import anthropic
 
 
-import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _anthropic_client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
@@ -428,8 +427,13 @@ def _run_block(
     network/SDK errors — caller catches and isolates per-block failure.
     """
     t_start = time.perf_counter()
-    with llm.stream(
-        operation=block.operation, model=model,
+    # NOTE: NOT routed through the llm.py gateway — enrich blocks fan out via a
+    # ThreadPoolExecutor (see ENRICHMENT_BLOCKS), and those worker threads don't
+    # inherit the gateway's contextvar, so gateway journaling would mis-attribute to
+    # the placeholder. Journals via the usage_log list (collected in the main thread
+    # below) + the endpoint's _journal_usage instead. See docs/llm-gateway.md.
+    with _anthropic_client.messages.stream(
+        model=model,
         max_tokens=block.max_tokens,
         temperature=0.4,
         system=block.system_prompt(),
@@ -548,7 +552,9 @@ def enrich_recipe(
             print(f"     ENRICH[{block.name}]: failed ({err}); leaving defaults")
             continue
 
-        # usage auto-journaled by the gateway (operation=block.operation).
+        if usage_log is not None and response is not None:
+            usage_log.append(build_usage_entry(block.operation, model, response))
+
         if not isinstance(parsed, dict):
             # tool_choice forced the tool, so missing it means an API
             # anomaly (e.g. max_tokens hit before the tool_use block

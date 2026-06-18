@@ -6293,8 +6293,6 @@ async def enrich_recipe_endpoint(request: Request):
     timings: dict = {}
     prompts: dict = {}
     usage_log: list = []
-    import llm  # gateway: attribute migrated-module usage to this recipe/user
-    llm.enter(recipe_id=recipe_id, user_id=user_id)
     t_start = time.perf_counter()
     recipe_id = recipe.get("id") or recipe.get("recipe_id") or payload.get("recipe_id")
     # user_id can come from either the wrapping payload or the embedded recipe
@@ -6304,6 +6302,9 @@ async def enrich_recipe_endpoint(request: Request):
         user_id = recipe.get("user_id")
     if user_id is None:
         user_id = PLACEHOLDER_USER_ID
+    # NOTE: no llm.enter() here — the enrich path journals via usage_log + _journal_usage
+    # (legacy enrich_recipe fans blocks across threads that don't inherit the gateway
+    # contextvar; the enrichment-API path has its own usage handling). See llm-gateway.md.
 
     # `blocks`: optional list of enrichment block names to run individually
     # (e.g. ["provenance"], ["editorial","classification"]). Omitted/None -> all

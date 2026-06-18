@@ -126,15 +126,22 @@ with llm.context(recipe_id=new_recipe_id, user_id=user_id):
   (`tools=`, `tool_choice=`) passed through. Usage is on the response regardless of tool use.
 - **Streaming**: the `stream` context manager owns `get_final_message()` and journals its usage on
   exit; partial/aborted streams journal what the final message reports (or skip if none).
-- **SSE caveat (LEARNED IN TESTING):** a Server-Sent-Events response whose body is a generator is
-  driven by Starlette across *separate threadpool contexts per iteration*, so a `contextvar` set at
-  the top (`enter()`) is discarded before the stream's flush — the buffered entry is lost. So the
-  **streaming voice path (`voice_agent.stream_grounded` / `/cook/ask-stream`) journals via the plain
-  `usage_log` list** (shared by reference, immune to the context churn) + the endpoint's
-  `_journal_usage`, NOT the contextvar gateway. `voice_agent` stays on `usage_log` by design. Sync
-  handlers (extract/enrich/cook_ask-non-stream/cook-rework job) use the gateway context normally.
-  Verified live: sync `/cook/ask` → gateway row; `/cook/ask-stream` → usage_log row; both correctly
-  attributed (recipe_id + user_id).
+- **CONCURRENCY caveat (LEARNED IN LIVE TESTING) — the load-bearing rule:** the contextvar gateway
+  only works when the LLM call runs in the SAME context (or a single `asyncio.to_thread`-copied one)
+  as `enter()`. It BREAKS for code that re-enters a fresh/foreign context before the call:
+  - **SSE streaming** — Starlette drives an SSE body generator across separate threadpool contexts
+    per iteration, so an `enter()` set at the top is gone before the stream's flush.
+  - **Internal `ThreadPoolExecutor`** — `enrich_recipe` fans its blocks out across worker threads
+    that DON'T inherit the contextvar (plain threads don't copy contextvars), so gateway calls there
+    mis-attribute to the placeholder (observed live: `user_id=1`, `recipe_id=None`).
+  **Rule: sequential-sync paths use the gateway; internally-threaded or SSE-streamed paths journal
+  via the plain `usage_log` list** (shared by reference, immune to context churn) + the endpoint's
+  `_journal_usage`. So `voice_agent` (SSE) and `enrich_recipe` (ThreadPoolExecutor) STAY on
+  `usage_log` by design — do NOT migrate them. Verified live: extract (`markdown_to_recipe`/
+  `chapter_classify`/`identity_card`) → gateway, correct recipe_id+user_id; sync `/cook/ask` →
+  gateway; `/cook/ask-stream` + `enrich` → usage_log, correct attribution. Before migrating any
+  future module, check whether it (or its caller) crosses a thread/generator boundary before the
+  LLM call.
 - **BYOK / per-tenant key**: `llm.create(..., api_key=...)` (and a context-level
   `llm.context(api_key=...)`) override the ambient env key. The gateway caches one client per
   distinct key. Keeps `enrich/measurement/estimate.py` and the portable BYOK story working.
