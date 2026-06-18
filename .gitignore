@@ -19,6 +19,12 @@ recipes.db-shm
 media.db
 media.db-wal
 media.db-shm
+# training.db: byproduct ML-training capture (is-recipe samples + future label
+# streams) accumulated as a free side effect of running the harvest/batch
+# pipeline. Regenerable-as-we-run, never source; see docs/corpus-ml-strategy.md.
+training.db
+training.db-wal
+training.db-shm
 # Enrich's own reference DB (enrich/data/enrich.db). Canonical at runtime, but
 # regenerable from the committed JSON seeds (KA chart + curated_liquids.json),
 # so the binary itself is never tracked.
@@ -103,3 +109,6 @@ jobs_schedule.log
 
 # Stray IDE-created empty SQLite (JetBrains data source)
 identifier.sqlite
+
+# user WIP page — kept local, not tracked (accidentally swept in once)
+forms/training.html
