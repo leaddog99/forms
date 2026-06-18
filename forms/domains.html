@@ -232,6 +232,18 @@
             <span class="ed-save-hint" id="topHint"></span>
           </div>
           <pre id="topLog" style="display:none;max-height:240px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;margin:0 0 10px;white-space:pre-wrap;"></pre>
+
+          <!-- Recipes already in the corpus from this domain (browse/jump). Lifted
+               above the harvested top list so the curator sees what's already ingested
+               first; counts refresh on open. -->
+          <p class="ed-notes-help" style="margin:14px 0 6px">Already in the corpus from this domain — pick one to jump:</p>
+          <div class="ed-form-grid" style="margin:0 0 16px">
+            <div class="ed-field"><label for="masterPicker">Master recipes <span class="ed-count" id="masterCount"></span></label>
+              <select id="masterPicker"><option value="">Loading…</option></select></div>
+            <div class="ed-field"><label for="userPicker">User recipes <span class="ed-count" id="userCount"></span></label>
+              <select id="userPicker"><option value="">Loading…</option></select></div>
+          </div>
+
           <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
         </section>
 
@@ -241,18 +253,11 @@
         </section>
 
         <details class="ed-block" style="border-top:1px solid var(--line);padding-top:10px">
-          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo, cuisine hint, custom extractor, recipe browse</summary>
+          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo, cuisine hint, custom extractor</summary>
           <div class="ed-form-grid" style="margin-top:12px">
             ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://… (Clearbit auto-fills)' })}
             ${field('f_cuisine_focus', 'Cuisine focus (hint only)', d.cuisine_focus, { ph: 'Greek' })}
             ${field('f_custom_extractor', 'Custom extractor (module path)', d.custom_extractor, { ph: 'intake.parsers.foo' })}
-          </div>
-          <p class="ed-notes-help" style="margin:12px 0 6px">Recipes from this domain — counts refresh on open; pick one to jump.</p>
-          <div class="ed-form-grid">
-            <div class="ed-field"><label for="masterPicker">Master recipes <span class="ed-count" id="masterCount"></span></label>
-              <select id="masterPicker"><option value="">Loading…</option></select></div>
-            <div class="ed-field"><label for="userPicker">User recipes <span class="ed-count" id="userCount"></span></label>
-              <select id="userPicker"><option value="">Loading…</option></select></div>
           </div>
         </details>
 
