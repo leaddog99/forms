@@ -74,7 +74,36 @@ def ensure_jobs_table(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_jobs_type_created "
         "ON jobs(type, created_at DESC)"
     )
+    # Cooperative cancel (migration for pre-existing tables): a long handler polls
+    # is_cancel_requested between work units and aborts gracefully → status 'cancelled'.
+    have = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+    if "cancel_requested" not in have:
+        conn.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
     conn.commit()
+
+
+class JobCancelled(Exception):
+    """Raised inside a handler when a cancel was requested mid-run, so _run_one_job
+    records the job as 'cancelled' rather than 'error'."""
+
+
+def request_cancel(conn: sqlite3.Connection, job_id: int) -> bool:
+    """Flag a queued/running job for COOPERATIVE cancellation (jobs run out-of-
+    process, so we can't kill them — the handler polls the flag and aborts between
+    work units). Returns True if a live job was flagged."""
+    ensure_jobs_table(conn)
+    cur = conn.execute(
+        "UPDATE jobs SET cancel_requested = 1 WHERE id = ? AND status IN ('queued','running')",
+        (job_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def is_cancel_requested(conn: sqlite3.Connection, job_id: int) -> bool:
+    """Has a cancel been requested? Polled by long handlers from their own process
+    (WAL makes the cross-process read see the server's flag)."""
+    row = conn.execute("SELECT cancel_requested FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    return bool(row and row[0])
 
 
 def reset_interrupted_jobs(conn: sqlite3.Connection) -> int:
@@ -335,6 +364,11 @@ async def _run_one_job(job: dict, db_path: str, log_dir: Path) -> None:
         with sqlite3.connect(db_path) as conn:
             mark_finished(conn, job["id"], status="success", result=result)
         print(f"=== Job #{job['id']} success ===")
+    except JobCancelled as e:
+        with sqlite3.connect(db_path) as conn:
+            mark_finished(conn, job["id"], status="cancelled",
+                          error_detail=str(e) or "cancelled by user")
+        print(f"=== Job #{job['id']} CANCELLED ===")
     except Exception as e:
         traceback.print_exc()
         with sqlite3.connect(db_path) as conn:

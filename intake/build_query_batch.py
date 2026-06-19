@@ -283,7 +283,7 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _fetch_for_filter(url: str) -> Optional[tuple[str, bool, str]]:
+def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[str, bool, str]]:
     """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld, lang_code).
     Returns None on any failure (HTTP error, timeout, parse error).
 
@@ -313,7 +313,7 @@ def _fetch_for_filter(url: str) -> Optional[tuple[str, bool, str]]:
     so step 3's filter sees the same response step 7's extract would.
     """
     try:
-        resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S)
+        resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S, unblocker=unblocker)
         # JSON-LD lives in <script type="application/ld+json"> blocks —
         # extract BEFORE we strip scripts for phrase-scoring text.
         try:
@@ -434,6 +434,7 @@ def _english_title(title: str, lang_code: str) -> str:
 
 def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       capture_provenance: dict | None = None,
+                      unblocker: bool = False, should_cancel=None,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -467,6 +468,12 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     """
     kept, dropped = [], []
     for i, e in enumerate(entries, start=1):
+        # Cooperative cancel: a long publisher harvest can be aborted between
+        # candidates (each is a fetch + score, the slow unit). Raises up to the job
+        # runner → status 'cancelled'.
+        if should_cancel and should_cancel():
+            from input.pipeline.jobs import JobCancelled
+            raise JobCancelled(f"cancelled after {i - 1}/{len(entries)} candidates")
         url = e["url"]
         # Collection/listicle guard (English fast-path) — a plural-"recipes" SERP title
         # ("30 Greek Recipes") is an index page, not a dish. Drop BEFORE the fetch.
@@ -478,7 +485,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             dropped.append(e)
             print(f"  [{i:>2}/{len(entries)}] DROP collection {url}  (title: {e.get('title','')!r})")
             continue
-        result = _fetch_for_filter(url)
+        result = _fetch_for_filter(url, unblocker=unblocker)
         if result is None:
             e["recipe_score"] = 0
             e["_dropped_reason"] = "fetch-failed"

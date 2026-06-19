@@ -3450,14 +3450,26 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     check_recipe = bool(p.get("check_recipe", True))
     source = (p.get("source") or "serp").strip() or "serp"
     records = int(p.get("records") or 0) or None   # file-source extract count
+    unblocker = bool(p.get("unblocker"))           # fetch_strategy='unblocker' → live paid fetch
+    job_id = job.get("id")
     print(f"[PUBLISHER-REFRESH] {host} | source={source} query={query!r} pages={pages} "
-          f"records={records} keep={keep} check_recipe={check_recipe}")
+          f"records={records} keep={keep} check_recipe={check_recipe} unblocker={unblocker}")
+
+    def _should_cancel():
+        # Cross-process poll: the server sets cancel_requested; we (the out-of-process
+        # job) see it via WAL between candidates and abort gracefully.
+        try:
+            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+                return jobs_lib.is_cancel_requested(conn, job_id)
+        except Exception:
+            return False
 
     def _work():
         res = collections_lib.harvest_publisher_top(
             host, keep=keep, discover_n=pages * 10,
             recipe_path=recipe_path, query=query, check_recipe=check_recipe,
-            source=source, records=records)
+            source=source, records=records, unblocker=unblocker,
+            should_cancel=_should_cancel)
         with sqlite3.connect(DB_PATH) as conn:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
@@ -3539,7 +3551,8 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
             conn, type="publisher_refresh",
             params={"host": host, "keep": keep, "pages": pages, "query": query,
                     "recipe_path": recipe_path, "check_recipe": check_recipe,
-                    "source": source, "records": records, "log_label": host},
+                    "source": source, "records": records, "log_label": host,
+                    "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
             entity_ref=entity_ref)
     import subprocess
     proj = os.path.dirname(os.path.abspath(__file__))
@@ -3631,6 +3644,19 @@ def refresh_semrush_ranks_endpoint(payload: dict = Body(default={})):
     return JSONResponse(status_code=202, content={
         "job_id": job_id, "status": "queued",
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
+
+
+@app.post("/jobs/{job_id}/cancel")
+def cancel_job_endpoint(job_id: int):
+    """Request COOPERATIVE cancellation of a queued/running job. Jobs run out-of-
+    process so we can't kill them — this sets a flag the handler polls between work
+    units (e.g. the publisher harvest checks between candidates) and aborts → status
+    'cancelled'. 409 if the job isn't live."""
+    with sqlite3.connect(DB_PATH) as conn:
+        ok = jobs_lib.request_cancel(conn, job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Job is not queued/running — nothing to cancel.")
+    return {"job_id": job_id, "cancel_requested": True}
 
 
 @app.post("/domains/{domain}/enrich")

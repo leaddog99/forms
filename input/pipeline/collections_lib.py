@@ -422,7 +422,8 @@ def _read_backlinks_file(domain, want):
 
 
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
-                          query=None, check_recipe=True, source="serp", records=None) -> dict:
+                          query=None, check_recipe=True, source="serp", records=None,
+                          unblocker=False, should_cancel=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -489,11 +490,16 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         kept, _dropped = _is_recipe_filter(
             [{"url": l, "title": t} for l, t in found],
             capture_source="domain_harvest",
-            capture_provenance={"domain": domain, "discover_source": source})
+            capture_provenance={"domain": domain, "discover_source": source},
+            unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
+            should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
 
     scored = []
     for url, title in recipe_pass:
+        if should_cancel and should_cancel():
+            from input.pipeline.jobs import JobCancelled
+            raise JobCancelled("cancelled during Moz scoring")
         s = score_url_via_moz(url)
         if s and s.get("page_authority"):
             scored.append({"url": url, "title": title,
