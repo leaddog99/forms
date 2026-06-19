@@ -921,7 +921,6 @@
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
   var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
-  var _preRoll = [], PREROLL_FRAMES = 3;   // rolling ~250ms onset buffer — seeded into capture so a word's first phoneme isn't clipped
   var _hbFrames = 0, _hbPeak = 0;   // mic heartbeat: confirms the frame loop is alive + shows rms vs threshold + state
   function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
   // Set true for strict "Alexa mode": require "Chef" before commands too.
@@ -1191,7 +1190,7 @@
       procNode.onaudioprocess = onAudioFrame;
       sinkNode = AC.createGain(); sinkNode.gain.value = 0;          // mute: never route mic to speakers
       srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
-      capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01; _preRoll = [];
+      capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
       hf = true; btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
       var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
@@ -1283,16 +1282,7 @@
     if(!capturing){
       noiseFloor = 0.95 * noiseFloor + 0.05 * rms;                 // track ambient while quiet
       if(rms > onT){
-        // Seed capture with the PRE-ROLL (the ~250ms of frames just before the trip)
-        // so a word's onset — which sits below the trip threshold — isn't clipped.
-        // This is the recurring "beginning gets cut off" on next / hey-chef.
-        capturing = true; voiceMs = 0; silenceMs = 0;
-        capBuf = _preRoll.slice(); capLen = capBuf.reduce(function(a, f){ return a + f.length; }, 0);
-        _preRoll = [];
-        onSpeechStart();
-      } else {
-        _preRoll.push(new Float32Array(input));                    // rolling onset buffer
-        if(_preRoll.length > PREROLL_FRAMES) _preRoll.shift();
+        capturing = true; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; onSpeechStart();
       }
     }
     if(capturing){
