@@ -290,17 +290,16 @@ def _fetch_og_meta(url, timeout=8):
     DISCOVERED (not-yet-ingested) member. Reads only the <head>, follows redirects (the
     http→https 301s in a subdir export), never raises. title falls back to <title> then
     the URL slug. Returns (image_url|None, title|'')."""
-    # Delegate to the CANONICAL url→OG routine — the SAME fetch
-    # (fetch_with_full_fallback: UA rotation → Wayback) AND extractor
-    # (extract_og_meta) the extract + coopt-backfill paths use. The harvest's old
-    # bespoke requests.get + regex got blocked by anti-bot publishers (thekitchn),
-    # losing thumbnails for pages that DID pass the recipe filter. One image-
-    # retrieval path everywhere now (no custom copies). title → URL slug fallback.
+    # Delegate to the CANONICAL extractor (extract_og_meta) — same path as
+    # extract/coopt-backfill, no bespoke regex. But fetch DIRECT only
+    # (try_wayback=False): a thumbnail is cosmetic and NOT worth hammering Wayback
+    # — on anti-bot sites the per-URL Wayback hits get us rate-limited (the
+    # thekitchn cascade). Blocked site → no thumbnail, no Wayback load.
     img, title = None, ""
     try:
         from to_markdown.html_to_markdown import fetch_with_full_fallback, extract_og_meta
         from bs4 import BeautifulSoup
-        resp, _meta = fetch_with_full_fallback(url, timeout=timeout)
+        resp, _meta = fetch_with_full_fallback(url, timeout=timeout, try_wayback=False)
         if resp is not None and getattr(resp, "status_code", 0) == 200:
             meta = extract_og_meta(BeautifulSoup(resp.text, "html.parser"), getattr(resp, "url", url))
             img = (meta.get("image") or "").strip() or None
