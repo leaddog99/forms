@@ -239,7 +239,7 @@
           </label>
           <div class="ed-actions" style="margin:10px 0 6px">
             <button type="button" class="ed-btn" id="refreshTopBtn" title="Run the query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
-            <button type="button" class="ed-btn danger" id="cancelTopBtn" title="Stop the running harvest (cooperative — aborts after the current candidate)" style="display:none">✋ Cancel</button>
+            <button type="button" class="ed-btn danger" id="cancelTopBtn" title="Stop a running harvest (active only while a refresh is running — aborts after the current candidate)" disabled>✋ Cancel</button>
             <button type="button" class="ed-btn danger" id="clearTopBtn" title="Wipe the current stored list (start over)">🗑 Clear list</button>
             <span class="ed-save-hint" id="topHint"></span>
           </div>
@@ -411,7 +411,7 @@
       // Show Cancel for the life of the stream → POST cooperative cancel (the job
       // aborts after the current candidate).
       if (cancelBtn){
-        cancelBtn.style.display = ''; cancelBtn.disabled = !jobId; cancelBtn.textContent = '✋ Cancel';
+        cancelBtn.disabled = !jobId; cancelBtn.textContent = '✋ Cancel';   // enabled while running
         cancelBtn.onclick = async () => {
           if (!jobId) return;
           cancelled = true; cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling…';
@@ -421,7 +421,7 @@
       }
       const done = (txt, warn) => { finished = true;
         btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
-        if (cancelBtn) cancelBtn.style.display = 'none';
+        if (cancelBtn){ cancelBtn.disabled = true; cancelBtn.textContent = '✋ Cancel'; }  // idle again
         if (hint){ hint.style.color = warn ? 'var(--ed-warn)' : ''; if (txt) hint.textContent = txt; } };
       // Render the TERMINAL outcome from a job result — shared by the SSE 'done'
       // event AND the safety net below. The job already persisted the list + config,
