@@ -21,7 +21,9 @@ The JSON-LD section is omitted when no Recipe block is found. Page chrome
 """
 import copy
 import json
+import random
 import re
+import threading
 import time
 from typing import Any, Optional
 
@@ -139,6 +141,46 @@ WAYBACK_AVAILABILITY_URL = "https://archive.org/wayback/available"
 WAYBACK_RAW_URL_FMT = "https://web.archive.org/web/{ts}id_/{url}"
 
 
+# --- Wayback politeness: jittered delay + global circuit-breaker ---------
+# archive.org rate-limits an IP that bursts requests (a publisher harvest fetches
+# ~87 blocked URLs, each falling to Wayback). The symptom: connect-timeouts /
+# "actively refused" (WinError 10061) that slow the run AND risk a longer ban on
+# our LEGIT Wayback use elsewhere. Two fixes:
+#   1. a small JITTERED delay before each Wayback hit so we don't burst, and
+#   2. a CIRCUIT-BREAKER — once archive.org refuses us N times in a row it's
+#      throttling our IP *globally* (not per-target), so we stop trying Wayback
+#      for a cooldown and fast-fail instead of timing out 80 more times.
+# Safe degradation: an open circuit only means "no Wayback this window" → fewer
+# blocked-page recoveries, never wrong data. Self-resets on the next success.
+_WB_JITTER_S = (0.4, 1.5)        # random pause before each Wayback request
+_WB_FAIL_THRESHOLD = 4           # consecutive connection failures → open the circuit
+_WB_COOLDOWN_S = 120.0           # how long to skip Wayback once open
+_wb_lock = threading.Lock()
+_wb_fails = 0
+_wb_open_until = 0.0             # monotonic deadline; 0 = closed
+
+
+def _wb_circuit_open() -> bool:
+    return time.monotonic() < _wb_open_until
+
+
+def _wb_record(ok: bool) -> None:
+    """Feed a Wayback outcome to the breaker. `ok` = archive.org answered (any HTTP
+    response, connection works); not-ok = a connection/timeout failure."""
+    global _wb_fails, _wb_open_until
+    with _wb_lock:
+        if ok:
+            _wb_fails = 0
+            _wb_open_until = 0.0
+        else:
+            _wb_fails += 1
+            if _wb_fails >= _WB_FAIL_THRESHOLD and not _wb_circuit_open():
+                _wb_open_until = time.monotonic() + _WB_COOLDOWN_S
+                print(f"[wayback] circuit OPEN — {_wb_fails} consecutive connection "
+                      f"failures; skipping Wayback for {int(_WB_COOLDOWN_S)}s "
+                      f"(archive.org is throttling us)")
+
+
 def fetch_via_wayback(url: str, *,
                       timeout: int = DEFAULT_TIMEOUT_SECONDS,
                       ) -> Optional[tuple[requests.Response, str]]:
@@ -166,6 +208,12 @@ def fetch_via_wayback(url: str, *,
     any rewriting Wayback does to inline assets, which the recipe
     JSON-LD survives cleanly).
     """
+    # Skip entirely while the breaker is open — archive.org is throttling us, so
+    # another attempt just times out + delays the run.
+    if _wb_circuit_open():
+        return None
+    # Polite jitter so a big harvest doesn't burst archive.org into rate-limiting.
+    time.sleep(random.uniform(*_WB_JITTER_S))
     try:
         avail = requests.get(
             WAYBACK_AVAILABILITY_URL,
@@ -173,9 +221,14 @@ def fetch_via_wayback(url: str, *,
             timeout=timeout,
             headers={"User-Agent": DEFAULT_USER_AGENT},
         )
+        _wb_record(True)   # got an HTTP response → the connection works
         if not (200 <= avail.status_code < 300):
             return None
         data = avail.json()
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        _wb_record(False)  # connection/timeout → feed the breaker
+        print(f"[wayback] availability check failed for {url!r}: {e}")
+        return None
     except Exception as e:
         print(f"[wayback] availability check failed for {url!r}: {e}")
         return None
@@ -193,8 +246,13 @@ def fetch_via_wayback(url: str, *,
             timeout=timeout,
             headers={"User-Agent": DEFAULT_USER_AGENT},
         )
+        _wb_record(True)
         if not (200 <= resp.status_code < 300):
             return None
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        _wb_record(False)
+        print(f"[wayback] fetch failed for {raw_url!r}: {e}")
+        return None
     except Exception as e:
         print(f"[wayback] fetch failed for {raw_url!r}: {e}")
         return None
@@ -203,35 +261,178 @@ def fetch_via_wayback(url: str, *,
     return resp, ts
 
 
+# --- PAID "web unblocker" tier (opt-in per domain) -----------------------
+# Some publishers (thekitchn = PerimeterX press-and-hold) block on the FIRST
+# request via browser-fingerprint + JS challenge — no UA rotation or delay beats
+# that, and Wayback only yields a stale snapshot. A managed "web unblocker"
+# (residential IPs + real-browser render + CAPTCHA/challenge solving) fetches the
+# LIVE page. It costs ~$1–5 / 1,000 requests, so it is NEVER a blanket fallback —
+# a domain opts in via fetch_strategy='unblocker' and the caller passes
+# unblocker=True. BYOK: key in the UNBLOCKER_API_KEY env, NEVER the DB (portable-
+# package secret discipline). See docs/unblocker-fetch-strategy.md.
+UNBLOCKER_TIMEOUT_SECONDS = 70   # a real-browser render is slow; give it room
+
+# GET-style unblockers: one request with key + target url (+ a render flag) → HTML.
+# (provider -> endpoint, key_param, url_param, render_param, render_value)
+_UNBLOCKER_GET_PROVIDERS = {
+    "scraperapi":  ("https://api.scraperapi.com/",         "api_key", "url", "render",     "true"),
+    "scrapingbee": ("https://app.scrapingbee.com/api/v1/",  "api_key", "url", "render_js",  "true"),
+    "zyte":        ("https://api.zyte.com/v1/extract",      "apikey",  "url", "browserHtml", "true"),
+}
+
+# PROXY-style unblockers (Oxylabs, Bright Data): route the request THROUGH their
+# proxy (creds = user:pass); the zone does the unblocking + JS render. We GET the
+# TARGET url directly, so response.url is already correct. They MITM TLS → verify=False.
+# (provider -> default host, default port, optional (render_header, value))
+_UNBLOCKER_PROXY_PROVIDERS = {
+    "oxylabs":    ("unblock.oxylabs.io", 60000, ("x-oxylabs-render", "html")),
+    "brightdata": ("brd.superproxy.io",  33335, None),   # Web Unlocker zone renders by default
+}
+
+
+def _unblocker_cfg() -> dict:
+    """BYOK + provider config. GET-style key in UNBLOCKER_API_KEY; proxy-style creds
+    in UNBLOCKER_PROXY_USER / UNBLOCKER_PROXY_PASS (all env, NEVER the DB). Provider +
+    optional host/port/endpoint overrides from system_config (no-data-in-code)."""
+    import os
+    cfg = {
+        "key": os.getenv("UNBLOCKER_API_KEY"),
+        "proxy_user": os.getenv("UNBLOCKER_PROXY_USER"),
+        "proxy_pass": os.getenv("UNBLOCKER_PROXY_PASS"),
+        "endpoint": None, "proxy_host": None, "proxy_port": None,
+    }
+    try:
+        from input.pipeline import system_config
+        cfg["provider"] = (system_config.get_setting("unblocker_provider", "")
+                           or os.getenv("UNBLOCKER_PROVIDER") or "scraperapi").lower()
+        cfg["endpoint"] = system_config.get_setting("unblocker_endpoint", "") or None
+        cfg["proxy_host"] = system_config.get_setting("unblocker_proxy_host", "") or None
+        cfg["proxy_port"] = system_config.get_setting("unblocker_proxy_port", 0) or None
+    except Exception:
+        cfg["provider"] = (os.getenv("UNBLOCKER_PROVIDER") or "scraperapi").lower()
+    return cfg
+
+
+def unblocker_available() -> bool:
+    """True only when THIS provider's BYOK credentials are present (else no-op):
+    proxy providers need user+pass, GET providers need the api key."""
+    cfg = _unblocker_cfg()
+    if cfg["provider"] in _UNBLOCKER_PROXY_PROVIDERS:
+        return bool(cfg["proxy_user"] and cfg["proxy_pass"])
+    return bool(cfg["key"])
+
+
+def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
+    """Oxylabs / Bright Data: GET the TARGET through their unblocking proxy. The
+    zone solves the challenge + renders; we just route through it. They intercept
+    TLS, so verify=False (and we silence the resulting warning)."""
+    from urllib.parse import quote
+    host, port, render_hdr = _UNBLOCKER_PROXY_PROVIDERS[provider]
+    host = cfg.get("proxy_host") or host
+    port = cfg.get("proxy_port") or port
+    user, pwd = cfg["proxy_user"], cfg["proxy_pass"]
+    proxy = f"http://{quote(user, safe='')}:{quote(pwd, safe='')}@{host}:{port}"
+    proxies = {"http": proxy, "https": proxy}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
+    if render and render_hdr:
+        headers[render_hdr[0]] = render_hdr[1]
+    try:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    except Exception:
+        pass
+    try:
+        resp = requests.get(url, proxies=proxies, headers=headers,
+                            timeout=timeout, verify=False)
+        if not (200 <= resp.status_code < 300):
+            print(f"[unblocker] {provider} returned {resp.status_code} for {url}")
+            return None
+    except Exception as e:
+        print(f"[unblocker] {provider} failed for {url}: {e}")
+        return None
+    _fix_response_encoding(resp)   # resp.url is already the target (we GET it directly)
+    print(f"[unblocker] {provider} fetched {url} LIVE")
+    return resp, {"source": "unblocker", "provider": provider}
+
+
+def _fetch_via_get_unblocker(url, provider, cfg, timeout, render):
+    """ScraperAPI / ScrapingBee / Zyte: one GET to the vendor API → page HTML."""
+    spec = _UNBLOCKER_GET_PROVIDERS.get(provider)
+    endpoint = cfg.get("endpoint")
+    if spec:
+        ep, key_param, url_param, render_param, render_val = spec
+        endpoint = endpoint or ep
+    elif endpoint:                          # custom endpoint → assume scraperapi shape
+        key_param, url_param, render_param, render_val = "api_key", "url", "render", "true"
+    else:
+        print(f"[unblocker] unknown provider {provider!r} and no unblocker_endpoint set")
+        return None
+    params = {key_param: cfg["key"], url_param: url}
+    if render:
+        params[render_param] = render_val
+    try:
+        resp = requests.get(endpoint, params=params, timeout=timeout)
+        if not (200 <= resp.status_code < 300):
+            print(f"[unblocker] {provider} returned {resp.status_code} for {url}")
+            return None
+    except Exception as e:
+        print(f"[unblocker] {provider} failed for {url}: {e}")
+        return None
+    resp.url = url                          # base-url must be the TARGET, not the API
+    _fix_response_encoding(resp)
+    print(f"[unblocker] {provider} fetched {url} LIVE")
+    return resp, {"source": "unblocker", "provider": provider}
+
+
+def fetch_via_unblocker(url: str, *, timeout: int = UNBLOCKER_TIMEOUT_SECONDS,
+                        render: bool = True) -> Optional[tuple[requests.Response, dict]]:
+    """Fetch `url` LIVE through the configured web-unblocker — PROXY-style (Oxylabs,
+    Bright Data) or GET-style (ScraperAPI, ScrapingBee, Zyte). Returns (response,
+    meta) with response.url = the TARGET, or None on no-creds / failure."""
+    if not unblocker_available():
+        return None
+    cfg = _unblocker_cfg()
+    provider = cfg["provider"]
+    if provider in _UNBLOCKER_PROXY_PROVIDERS:
+        return _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render)
+    return _fetch_via_get_unblocker(url, provider, cfg, timeout, render)
+
+
 def fetch_with_full_fallback(url: str, *,
                               timeout: int = DEFAULT_TIMEOUT_SECONDS,
                               try_wayback: bool = True,
+                              unblocker: bool = False,
                               ) -> tuple[requests.Response, dict]:
-    """Tiered fetch: direct UA chain → Wayback fallback.
+    """Tiered fetch: direct UA chain → [paid unblocker, opt-in] → Wayback.
 
-    Returns (response, meta) where meta is:
-      {"source": "direct", "ua_used": "<ua>"}
-      {"source": "wayback", "timestamp": "20260128152348"}
-
-    Wayback is consulted only when the live UA chain raised. 404/410
-    are terminal (page doesn't exist now and didn't exist either) —
-    we don't fall to Wayback for those.
+    Returns (response, meta) where meta["source"] is "direct" | "unblocker" |
+    "wayback". `unblocker=True` (set by the caller when the domain's
+    fetch_strategy='unblocker') inserts the PAID web-unblocker tier between direct
+    and Wayback — a LIVE page is preferred to a stale archive. 404/410 stay terminal
+    (gone is gone; no tier resurrects it).
     """
+    err: Optional[Exception] = None
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
         return resp, {"source": "direct", "ua_used": ua_used}
     except requests.HTTPError as e:
-        # 404/410 came from a real response.raise_for_status() above
-        # → terminal, don't try Wayback.
+        # 404/410 came from a real response.raise_for_status() → terminal.
         status = getattr(e.response, "status_code", None) if e.response is not None else None
         if status in (404, 410):
             raise
-        if not try_wayback:
-            raise
-    except Exception:
-        if not try_wayback:
-            raise
+        err = e
+    except Exception as e:
+        err = e
 
+    # PAID unblocker tier (per-domain opt-in) — before Wayback so we prefer a live
+    # page to a months-old snapshot. No-ops without a BYOK key.
+    if unblocker and unblocker_available():
+        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS))
+        if ub is not None:
+            return ub
+
+    if not try_wayback:
+        raise err if err is not None else requests.HTTPError(f"Direct fetch failed for {url}")
     wb = fetch_via_wayback(url, timeout=timeout)
     if wb is None:
         raise requests.HTTPError(

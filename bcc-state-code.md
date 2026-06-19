@@ -978,3 +978,44 @@ User: domains UI garish — bold white on really dark brown, want it stylish lik
 
 ### Voice component deep-dive doc
 **`docs/voice-architecture-deep-dive.md`** — formal maintenance/knowledge-transfer report for the whole voice loop (client `cook.html`, the 3 server endpoints, the `_cook` substrate + validator gauntlet + rework engine, the cognitive-science grounding with [VERIFIED]/[LITERATURE] discipline, portability + cross-domain generalization, and the catalogued moats). Built from 4 parallel code-reads; accurate at the code level (models pinned: Sonnet 4.6 Q&A, Opus 4.8 rework, faster-whisper base.en STT, gpt-4o-mini-tts/coral TTS). Start here to maintain/extend the cook voice.
+
+---
+
+## Session log — 2026-06-19 — SEMrush Rank table + BCC rank · domain-form ranks UI + monthly refresh job · SERP-image thumbnails for blocked sites · Wayback jitter+circuit-breaker · unblocker fetch_strategy (Oxylabs/Bright Data)
+
+A wide session on `split/enrichment-api`, driven by two threads: a new SEMrush-traffic-rank signal on the domain master, and last night's thekitchn anti-bot/Wayback trouble. Everything committed.
+
+### SEMrush Rank reference table + BCC rank
+- **`input/pipeline/semrush_ranks.py`** — `semrush_ranks(domain, region, rank, organic_*, adwords_*, file_date, imported_at)`, PK `(domain, region)` + a traffic index + a `(region, rank)` index. `import_ranks_file` (tolerant header map, parses region+date from the filename, **delete-and-replace per region**), `get_rank` (exact host → www-stripped → **subdomain→two-part root**), `find_newest_ranks_file` (input/ ∪ ~/Downloads), `region_stats`. Multi-region by design (US now). The bulk web export is **top-N + per-region** (the file = top 10,000 US domains), so small/paywalled/foreign domains are absent → null rank (normal).
+- **Imported the real file** (`ranks.semrushranks-us-20260618-…xlsx`): 10,000 rows; **132/272 of our domains matched** a US rank.
+- **`domains.semrush_rank` + `semrush_rank_at`** (managed, not hand-edited) — stamped at create (`stamp_semrush_rank`) + `refresh_all_semrush_ranks` (re-stamps the whole corpus by exact-host OR two-part-root match).
+- **`bcc_rank`** = the "rank the rank" — corpus-relative ordinal, **DERIVED on read** (never stored; adding/blocking a domain reshuffles it), computed over **ALLOWED domains only** (user's call — blocked giants keep their raw global rank but drop off the ladder). Surfaced in `list_domains` (whole-corpus pass) + `get_domain` (`_semrush_rank_local` count query). Decision (user): the *formula* is right; non-recipe-but-allowed domains (amazon=store w/ cookbook captures, healthline, Guardian/PBS = legit) sit on top by raw traffic and that's accepted — "leave it alone." Deleted `nytimes.com` (0 recipes).
+
+### Domain-form ranks UI + corpus-wide endpoints + MONTHLY refresh job
+- `domains.html`: **BCC rank + SEMrush # pills** on the detail, `BCC #N` in the list meta, a **"Sort: BCC rank"** option, and a **"↻ Refresh SEMrush ranks"** button (streams the job, reloads the list, shows `US · 10,000 · file 20260618`).
+- `save_recipe_api.py`: **`GET /semrush-ranks`** (region stats) + **`POST /semrush-ranks/refresh`** (enqueue+spawn out-of-process, in-flight-deduped) + the **`semrush_ranks_refresh` job handler** (find newest file → import → refresh_all; manual export, no API → re-imports whatever's dropped). Verified end-to-end: POST → job #266 → `imported 10,000, 132/272 matched, success`.
+- `scheduled_jobs.py`: seeded **`semrush_ranks_refresh` @ 720h (~monthly)**, enabled. Memory: [[project_domain_master]] gains a traffic-authority signal (complements DA/PA + referring domains; feeds [[project_domain_scoring]]).
+
+### SERP-image thumbnails for blocked sites (the thekitchn `0 thumbnails` fix)
+Root: a publisher harvest's og:image is **direct-only** (`try_wayback=False`), so anti-bot sites (thekitchn) get `captured 0 thumbnails for 10 selected`. Fix = **fetch-free SERP image lookup** ([[feedback_single_path]]):
+- **`serp_search.serp_image_search(query)`** — Google Images via the active vendor (SerpApi `engine=google_images` / Scale SERP `search_type=images`), normalized `[{image, thumbnail, title, source_link, source_domain, rank}]`, 1 credit.
+- **`collections_lib`** harvest thumbnail loop: when og:image is empty, fall back to `serp_image_search("site:{domain} {clean_title}")` rank-1 — bounded to the **selected top-N + only on a miss** (~10 credits/blocked publisher, zero otherwise). Eyeballed on thekitchn's top-10 (the `site:` query reliably returns the publisher's OWN hero from its CDN; plain-title drifts to other sites) before wiring. Log now reads `captured N thumbnails … (N via SERP image fallback)`.
+
+### Wayback jitter + circuit-breaker (`to_markdown/html_to_markdown.py`)
+The thekitchn FETCH-FAIL flood was the **recipe-verify** Wayback (not thumbnails — those were already de-Waybacked). archive.org rate-limits our ~87-URL burst → connect-timeouts / `WinError 10061`. Fixes: a **0.4–1.5s jittered delay** before each Wayback hit, and a **global circuit-breaker** — 4 consecutive connection failures opens it (skip Wayback for 120s, fast-fail), any success resets. Shared → the dish batch benefits too. Verified the breaker opens/resets. (Anti-bot reasoning settled: pauses help *rate-based* blocks like archive.org, NOT *fingerprint/challenge* blocks like thekitchn's PerimeterX — request #1 is already challenged regardless of timing.)
+
+### `unblocker` fetch_strategy — paid web-unblocker as a per-domain last resort (SKETCH)
+Conceded the earlier overreach: plain Playwright doesn't beat PerimeterX (fingerprint, not rate), and we already use a *managed unblocker* — the SERP vendor, pointed at Google. A **direct** unblocker earns its cost only for **live full-content ingest** of high-value blocked publishers.
+- `html_to_markdown.py`: **`fetch_via_unblocker`** dispatches **proxy-style** (Oxylabs `unblock.oxylabs.io:60000`, Bright Data `brd.superproxy.io:33335` — `requests.get(url, proxies=…, verify=False)`, `_fetch_via_proxy_unblocker`) vs **GET-style** (ScraperAPI/ScrapingBee/Zyte, `_fetch_via_get_unblocker`). BYOK env (`UNBLOCKER_API_KEY` or `UNBLOCKER_PROXY_USER`/`PASS`), provider/host/port via `system_config` (no-data-in-code). New `unblocker=False` tier in `fetch_with_full_fallback` (`direct → unblocker → Wayback`; 404/410 terminal). No-ops without creds (verified). `unblocker` added to the domain Fetch-strategy vocab. Doc: **`docs/unblocker-fetch-strategy.md`**.
+- **Remaining wire (not done):** make the harvest/`_is_recipe_filter` pass `unblocker=True` for a flagged domain — intentionally deferred until a key exists.
+
+### Vendor research (web-verified, 2026-06-19)
+- **Traject Data (Scale SERP's parent) has NO general unblocker** — only target-specific SERP + ecommerce APIs (Rainforest/Amazon, etc.). So consolidation doesn't cover arbitrary publisher fetches.
+- Best-in-class for hardest anti-bot: **Bright Data Web Unlocker** (most bulletproof) / **Oxylabs Web Unblocker** (top tier, cheapest). Zyte if bundling extraction; ScraperAPI/ScrapingBee = value tier (credit multiplier hurts on hard sites).
+- **Oxylabs plan rec:** per-GB billing → **free trial → Pay-As-You-Go (~$7/GB)**; skip monthly commits (our bounded use is <1 GB/mo = cents). Buy the **Web Unblocker** product, NOT the cheaper "Micro" datacenter-proxy tier. User getting Oxylabs + Bright Data keys.
+
+### Follow-ups
+- **Validate the Oxylabs trial** on a thekitchn URL, then **wire the harvest to pass `unblocker=True`** for `fetch_strategy='unblocker'` domains (+ optional per-run cost cap, `system_config` seed for `unblocker_provider`).
+- **`recipes.sql` refresh** — DB gained `semrush_ranks` + `domains.semrush_rank/_at` + data; run `bcc_backup.bat` once job #269 finishes (left out of this commit to avoid a mid-harvest dump).
+- Tidy the `.env` line-15 parse warning (dotenv).
+- Still queued (earlier): SEMrush **Keyword Magic** dish source (new parser) + the unified due/new human-workflow worklist; system-wide domain scoring; `serp_batch`.

@@ -129,6 +129,15 @@ _PAYWALL_COLUMNS = {
     # candidates are rejects). Curator-set; PERSISTED so the choice sticks across edits
     # / reloads (was previously read only at refresh time and lost). Default 'serp'.
     "harvest_source": "TEXT NOT NULL DEFAULT 'serp'",
+    # SEMrush Rank — global ordinal by organic search TRAFFIC (rank 1 = most
+    # traffic), looked up from the semrush_ranks reference table (see
+    # input/pipeline/semrush_ranks.py). An independent traffic-authority signal
+    # alongside DA/PA. NULL when the domain isn't in the (top-N, per-region) file.
+    # Stamped at create + by refresh_all_semrush_ranks; NOT hand-edited (managed,
+    # like the recipe counts) → kept out of EDITABLE_FIELDS. The corpus-relative
+    # "rank the rank" is DERIVED, never stored (adding one domain reshuffles all).
+    "semrush_rank": "INTEGER",
+    "semrush_rank_at": "TEXT",   # when the rank was last stamped (ISO)
 }
 
 
@@ -269,10 +278,22 @@ def seed_domains(conn: sqlite3.Connection) -> int:
 def list_domains(conn: sqlite3.Connection) -> list[dict]:
     ensure_domains_table(conn)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
+    rows = [dict(r) for r in conn.execute(
         "SELECT * FROM domains ORDER BY domain COLLATE NOCASE"
-    ).fetchall()
-    return [dict(r) for r in rows]
+    ).fetchall()]
+    # Derive bcc_rank = the corpus-relative ordinal ("rank the rank"): order the
+    # ALLOWED domains that HAVE a semrush_rank by it asc, assign 1..N. Blocked
+    # domains (allowed=0) and null-rank domains get None. Computed here (not
+    # stored) so adding/blocking a domain can't leave it stale.
+    ranked = sorted(
+        (d for d in rows if d.get("semrush_rank") is not None and d.get("allowed")),
+        key=lambda d: d["semrush_rank"],
+    )
+    for i, d in enumerate(ranked, 1):
+        d["bcc_rank"] = i
+    for d in rows:
+        d.setdefault("bcc_rank", None)
+    return rows
 
 
 def get_domain(conn: sqlite3.Connection, domain: str) -> Optional[dict]:
@@ -281,7 +302,11 @@ def get_domain(conn: sqlite3.Connection, domain: str) -> Optional[dict]:
     row = conn.execute(
         "SELECT * FROM domains WHERE domain = ?", (_canon_host(domain),)
     ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    d = dict(row)
+    d["bcc_rank"] = _semrush_rank_local(conn, d)
+    return d
 
 
 def domain_exists(conn: sqlite3.Connection, domain: str) -> bool:
@@ -311,6 +336,7 @@ def create_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
         vals,
     )
     conn.commit()
+    stamp_semrush_rank(conn, host)   # look up + persist the new domain's SEMrush rank
     invalidate_cache()
     return get_domain(conn, host)
 
@@ -341,6 +367,86 @@ def delete_domain(conn: sqlite3.Connection, domain: str) -> bool:
     conn.commit()
     invalidate_cache()
     return bool(cur.rowcount)
+
+
+# --- SEMrush traffic rank -----------------------------------------------
+# A domain's global SEMrush Rank (organic-traffic ordinal) is looked up from the
+# semrush_ranks reference table and STORED on the row (a snapshot, stable until a
+# refresh). The corpus-relative local rank ("rank the rank") is DERIVED on read.
+
+def stamp_semrush_rank(conn: sqlite3.Connection, domain: str,
+                       region: str = "us") -> Optional[int]:
+    """Look up `domain`'s SEMrush rank in the reference table and persist it on
+    its domains row. Returns the rank (or None when the domain isn't in the file).
+    Best-effort — never raises if the ranks table is empty/absent."""
+    from input.pipeline import semrush_ranks
+    host = _canon_host(domain)
+    try:
+        row = semrush_ranks.get_rank(conn, host, region=region)
+    except Exception:
+        return None
+    rank = row.get("rank") if row else None
+    try:
+        ensure_domains_table(conn)
+        conn.execute(
+            "UPDATE domains SET semrush_rank = ?, semrush_rank_at = ? WHERE domain = ?",
+            (rank, _now(), host),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    return rank
+
+
+def refresh_all_semrush_ranks(conn: sqlite3.Connection, region: str = "us") -> dict:
+    """Re-stamp every domain's semrush_rank from the current semrush_ranks table —
+    run after importing a fresh ranks file. Matched by the domain's exact host OR
+    its two-part root (so subdomains inherit their root's rank). Returns
+    {matched, total}. The two-part-root match is fiddly in pure SQL, so we build
+    the rank map once and match in Python via lookup_keys — ~270 rows, trivial."""
+    from input.pipeline import semrush_ranks
+    ensure_domains_table(conn)
+    semrush_ranks.ensure_semrush_ranks_table(conn)
+    now = _now()
+    rank_by_domain = {
+        r[0]: r[1]
+        for r in conn.execute(
+            "SELECT domain, rank FROM semrush_ranks WHERE region = ?", (region,)
+        ).fetchall()
+    }
+    matched = total = 0
+    for (host,) in conn.execute("SELECT domain FROM domains").fetchall():
+        total += 1
+        rank = None
+        for key in semrush_ranks.lookup_keys(host):
+            if key in rank_by_domain:
+                rank = rank_by_domain[key]
+                break
+        conn.execute(
+            "UPDATE domains SET semrush_rank = ?, semrush_rank_at = ? WHERE domain = ?",
+            (rank, now, host),
+        )
+        if rank is not None:
+            matched += 1
+    conn.commit()
+    invalidate_cache()
+    return {"matched": matched, "total": total, "region": region}
+
+
+def _semrush_rank_local(conn: sqlite3.Connection, row: dict) -> Optional[int]:
+    """BCC rank for a domain row: how it ranks among ONLY our ALLOWED domains
+    that carry a SEMrush rank (1 = most-traffic publisher). DERIVED, not stored.
+    Blocked domains (allowed=0) keep their raw semrush_rank but get no BCC rank —
+    they aren't sourcing targets, so they'd only skew the ladder."""
+    rank = row.get("semrush_rank")
+    if rank is None or not row.get("allowed"):
+        return None
+    n = conn.execute(
+        "SELECT COUNT(*) FROM domains "
+        "WHERE allowed = 1 AND semrush_rank IS NOT NULL AND semrush_rank < ?",
+        (rank,),
+    ).fetchone()[0]
+    return int(n) + 1
 
 
 def recipes_for_domain(conn: sqlite3.Connection, domain: str) -> dict:

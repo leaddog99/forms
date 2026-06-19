@@ -33,6 +33,17 @@ SCHEDULED_DEFAULTS: list[dict] = [
         "params": {},
         "enabled": 1,
     },
+    {
+        "name": "semrush_ranks_refresh",
+        "job_type": "semrush_ranks_refresh",
+        "purpose": "Re-import the newest SEMrush Rank export (input/ ∪ ~/Downloads) "
+                   "and re-stamp every domain's semrush_rank. The export is manual "
+                   "(no API), so this re-imports whatever fresh file the admin "
+                   "dropped; not time-critical — monthly.",
+        "interval_hours": 720,   # ~30 days = monthly
+        "params": {},
+        "enabled": 1,
+    },
 ]
 
 

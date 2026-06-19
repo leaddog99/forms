@@ -63,6 +63,90 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
     return _serpapi(query, pages, want, gl, hl, timeout)
 
 
+def serp_image_search(query: str, *, want: int = 5, gl: str | None = None,
+                      hl: str | None = None, provider: str | None = None,
+                      timeout: int = 30) -> list[dict]:
+    """Google Images via the active SERP vendor — FETCH-FREE, the vendor absorbs
+    the target site's anti-bot. For thumbnailing recipes on sites we can't fetch
+    (thekitchn etc.): the og:image direct fetch is blocked, but Google already has
+    the image. Returns up to `want` normalized
+    [{image, thumbnail, title, source_link, source_domain, rank}] in result order.
+    1 credit/call. Empty list if the active provider's key is absent."""
+    prov = (provider or active_provider()).lower()
+    if prov in _SCALESERP_ALIASES:
+        return _scaleserp_images(query, want, gl, hl, timeout)
+    return _serpapi_images(query, want, gl, hl, timeout)
+
+
+def _img_host(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        return (urlparse(url).hostname or "").replace("www.", "")
+    except Exception:
+        return ""
+
+
+def _serpapi_images(query, want, gl, hl, timeout) -> list[dict]:
+    key = os.getenv("SERPAPI_KEY")
+    if not key:
+        return []
+    params = {"engine": "google_images", "q": query, "api_key": key}
+    if gl:
+        params["gl"] = gl
+    if hl:
+        params["hl"] = hl
+    try:
+        res = requests.get(SERPAPI_ENDPOINT, params=params, timeout=timeout).json()
+        imgs = res.get("images_results") or []
+    except Exception as e:
+        print(f"  [serpapi-images] failed: {type(e).__name__}: {e}")
+        return []
+    out = []
+    for it in imgs[:want]:
+        image = it.get("original") or it.get("thumbnail") or ""
+        if not image:
+            continue
+        link = it.get("link") or ""
+        out.append({"image": image, "thumbnail": it.get("thumbnail") or image,
+                    "title": it.get("title") or "", "source_link": link,
+                    "source_domain": (it.get("source") or _img_host(link)),
+                    "rank": len(out) + 1})
+    return out
+
+
+def _scaleserp_images(query, want, gl, hl, timeout) -> list[dict]:
+    key = _scaleserp_key()
+    if not key:
+        return []
+    params = {"api_key": key, "q": query, "output": "json", "search_type": "images"}
+    if gl:
+        params["gl"] = gl
+    if hl:
+        params["hl"] = hl
+    try:
+        data = requests.get(SCALESERP_ENDPOINT, params=params, timeout=timeout).json()
+        imgs = data.get("image_results") or []
+    except Exception as e:
+        print(f"  [scaleserp-images] failed: {type(e).__name__}: {e}")
+        return []
+    if not imgs:
+        ri = data.get("request_info") or {}
+        if not ri.get("success"):
+            print(f"  [scaleserp-images] {ri.get('message') or data.get('error')}")
+        return []
+    out = []
+    for it in imgs[:want]:
+        image = it.get("image") or it.get("original") or ""
+        if not image:
+            continue
+        link = it.get("link") or it.get("source") or ""
+        out.append({"image": image, "thumbnail": it.get("thumbnail") or image,
+                    "title": it.get("title") or "", "source_link": link,
+                    "source_domain": (it.get("domain") or _img_host(link)),
+                    "rank": len(out) + 1})
+    return out
+
+
 def _serpapi(query, pages, want, gl, hl, timeout) -> list[dict]:
     key = os.getenv("SERPAPI_KEY")
     if not key:

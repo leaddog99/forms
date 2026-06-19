@@ -45,8 +45,13 @@
           <option value="domain">Sort: domain (A–Z)</option>
           <option value="name">Sort: display name</option>
           <option value="da">Sort: domain authority</option>
+          <option value="rank">Sort: BCC rank (SEMrush traffic)</option>
           <option value="blocked">Sort: blocked first</option>
         </select>
+        <div class="ed-rank-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button type="button" class="ed-btn" id="refreshRanksBtn" title="Re-import the newest SEMrush rank export (input/ or Downloads) and re-rank every domain">↻ Refresh SEMrush ranks</button>
+          <span class="ed-save-hint" id="rankStatus" style="font-size:.82em;color:var(--ed-ink-soft)"></span>
+        </div>
       </div>
 
       <div class="ed-legend">
@@ -71,7 +76,7 @@
     });
     const { escapeHtml, fmtDate, flash } = LibraryShell;
 
-    const STRATEGIES = ['plain', 'playwright', 'bookmarklet_only', 'skip'];
+    const STRATEGIES = ['plain', 'playwright', 'bookmarklet_only', 'unblocker', 'skip'];
 
     let domains = {};        // keyed by domain (host)
     let selected = null;     // host string, or '__new__'
@@ -84,6 +89,7 @@
       const bits = [];
       if (d.display_name) bits.push(d.display_name);
       if (d.country) bits.push(d.country);
+      if (d.bcc_rank != null) bits.push('BCC #' + d.bcc_rank);
       if (d.domain_authority != null) bits.push('DA ' + Math.round(d.domain_authority));
       const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
       if (m || u) bits.push(`${m}m · ${u}u`);
@@ -100,6 +106,9 @@
         domain:  (a, b) => a.domain.localeCompare(b.domain),
         name:    (a, b) => (a.display_name || '').localeCompare(b.display_name || '') || a.domain.localeCompare(b.domain),
         da:      (a, b) => (b.domain_authority || 0) - (a.domain_authority || 0) || a.domain.localeCompare(b.domain),
+        // BCC rank: allowed publishers carrying a SEMrush rank, best (1) first;
+        // unranked/blocked domains sort to the bottom, then A–Z.
+        rank:    (a, b) => ((a.bcc_rank ?? Infinity) - (b.bcc_rank ?? Infinity)) || a.domain.localeCompare(b.domain),
         blocked: (a, b) => (isAllowed(a) - isAllowed(b)) || a.domain.localeCompare(b.domain),
       };
       return rows.sort(sorters[sortKey] || sorters.domain);
@@ -166,6 +175,8 @@
           <span class="ed-pill ${isAllowed(d) ? 'ok' : 'warn'}"><i class="d"></i>${isAllowed(d) ? 'Allowed' : 'Blocked'}</span>
           ${d.root_domain ? `<span class="ed-pill"><i class="d"></i>root ${escapeHtml(d.root_domain)}</span>` : ''}
           ${d.domain_authority != null ? `<span class="ed-pill"><i class="d"></i>DA ${Math.round(d.domain_authority)}</span>` : ''}
+          ${d.bcc_rank != null ? `<span class="ed-pill" title="rank among our allowed publishers by SEMrush organic traffic">BCC rank #${d.bcc_rank}</span>` : ''}
+          ${d.semrush_rank != null ? `<span class="ed-pill" title="global SEMrush rank by organic traffic">SEMrush #${d.semrush_rank.toLocaleString()}</span>` : ''}
           ${d.da_last_scored ? `<span class="ed-pill"><i class="d"></i>DA scored ${escapeHtml(fmtDate(d.da_last_scored))}</span>` : ''}
           ${d.failure_count ? `<span class="ed-pill warn"><i class="d"></i>${d.failure_count} fetch fails</span>` : ''}
         </div>
@@ -627,6 +638,45 @@
       }
     }
 
+    /* --------------------- SEMrush ranks (corpus-wide) --------------------- */
+    // Show the imported ranks summary (region · rows · file date) on the tools line.
+    async function loadRankStatus(){
+      const el = $('#rankStatus'); if (!el) return;
+      try {
+        const r = await fetch('/semrush-ranks');
+        const regions = (await r.json()).regions || [];
+        if (!regions.length){ el.textContent = 'no ranks imported — drop a SEMrush export and refresh'; return; }
+        el.textContent = regions.map(g =>
+          `${(g.region || '').toUpperCase()} · ${(g.rows || 0).toLocaleString()} domains${g.file_date ? ' · file ' + g.file_date : ''}`).join('  |  ');
+      } catch { el.textContent = ''; }
+    }
+
+    // Re-import the newest SEMrush rank export + re-rank all domains (out-of-process).
+    // Streams the job; on completion reloads the domain list so ranks/BCC update.
+    async function refreshRanks(){
+      const btn = $('#refreshRanksBtn'), el = $('#rankStatus');
+      btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Refreshing…';
+      if (el) el.textContent = 'Queuing ranks refresh…';
+      const finish = (msg) => { btn.disabled = false; btn.textContent = label; if (el && msg) el.textContent = msg; };
+      try {
+        const r = await fetch('/semrush-ranks/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await r.json().catch(() => ({}));
+        if (r.status === 409 && data.stream_url){ /* reattach to the in-flight run */ }
+        else if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        let es; try { es = new EventSource(data.stream_url); } catch (e){ finish(`Stream error: ${e.message || e}`); return; }
+        es.addEventListener('status', (e) => { try { const d = JSON.parse(e.data); if (el && d.status) el.textContent = `Job ${d.status}…`; } catch {} });
+        es.addEventListener('done', async (e) => {
+          es.close();
+          let res = {}; try { const d = JSON.parse(e.data || '{}'); res = typeof d.result === 'string' ? JSON.parse(d.result) : (d.result || {}); } catch {}
+          await loadDomains();           // re-render with fresh semrush_rank/bcc_rank
+          if (res.imported === false){ finish(res.reason || 'No ranks file found.'); return; }
+          finish(`Done — ${(res.rows || 0).toLocaleString()} ${(res.region || '').toUpperCase()} ranks · ${res.matched || 0}/${res.total || 0} domains matched.`);
+          loadRankStatus();
+        });
+        es.onerror = () => { es.close(); finish('Stream dropped — reload to see the result.'); loadRankStatus(); };
+      } catch (e) { finish(`Refresh failed: ${e.message || e}`); }
+    }
+
     /* ----------------------------- wiring ----------------------------- */
     $('#searchToggle').addEventListener('click', () => {
       const c = $('#controls');
@@ -640,8 +690,10 @@
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
+    $('#refreshRanksBtn').addEventListener('click', refreshRanks);
 
     loadDomains();
+    loadRankStatus();
   </script>
 </body>
 </html>

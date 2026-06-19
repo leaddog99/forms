@@ -3586,6 +3586,53 @@ def domain_top_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/semrush-ranks")
+def semrush_ranks_status_endpoint():
+    """Per-region summary of the imported SEMrush Rank reference data (rows, file
+    date, last import) — for the domains-page ranks tools."""
+    from input.pipeline import semrush_ranks
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            return {"regions": semrush_ranks.region_stats(conn)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/semrush-ranks/refresh")
+def refresh_semrush_ranks_endpoint(payload: dict = Body(default={})):
+    """Re-import the newest SEMrush Rank export (input/ ∪ ~/Downloads) and re-stamp
+    every domain's semrush_rank — OUT-OF-PROCESS (mirrors the publisher refresh).
+    The export is MANUAL (no API), so this re-imports whatever fresh file the admin
+    dropped; it never downloads. Same job the monthly scheduler runs. Optional
+    payload: region (override the filename-detected region)."""
+    region = (payload.get("region") or "").strip() or None
+    with sqlite3.connect(DB_PATH) as conn:
+        entity_ref = "semrush_ranks_refresh"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "error": "already in flight", "job_id": existing["id"],
+                "status": existing["status"], "stream_url": f"/jobs/{existing['id']}/stream"})
+        params = {"log_label": "semrush_ranks"}
+        if region:
+            params["region"] = region
+        job_id = jobs_lib.enqueue_job(conn, type="semrush_ranks_refresh",
+                                      params=params, entity_ref=entity_ref)
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to spawn ranks refresh job: {e}")
+    return JSONResponse(status_code=202, content={
+        "job_id": job_id, "status": "queued",
+        "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
+
+
 @app.post("/domains/{domain}/enrich")
 def enrich_domain_endpoint(domain: str):
     """Quick Haiku profile of a domain — story, language, country, cuisine
@@ -4212,6 +4259,34 @@ async def _handle_chapter_rollups_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("chapter_rollups", _handle_chapter_rollups_job)
+
+
+async def _handle_semrush_ranks_refresh_job(job: dict) -> dict:
+    """Re-import the newest SEMrush Rank export (input/ ∪ ~/Downloads) and re-stamp
+    every domain's semrush_rank from it. The export is MANUAL (no SEMrush API at
+    our tier — see docs/semrush-harvest-scheduling.md), so this re-imports whatever
+    fresh file the admin dropped; it never downloads. Idempotent (import is delete-
+    and-replace per region). Schedulable weekly/monthly — not time-critical.
+    Optional params: region (override the filename-detected region)."""
+    params = job.get("params") or {}
+    region = params.get("region")
+
+    def _run():
+        from input.pipeline import semrush_ranks, domains_lib
+        path = semrush_ranks.find_newest_ranks_file()
+        if not path:
+            return {"imported": False, "reason": "no SEMrush ranks file in input/ or ~/Downloads"}
+        with sqlite3.connect(DB_PATH) as conn:
+            imp = semrush_ranks.import_ranks_file(conn, path, region=region)
+            ref = domains_lib.refresh_all_semrush_ranks(conn, region=imp["region"])
+        return {"imported": True, **imp, **ref}
+
+    summary = await asyncio.to_thread(_run)
+    print(f"[SEMRUSH-RANKS] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("semrush_ranks_refresh", _handle_semrush_ranks_refresh_job)
 
 
 async def _handle_cook_rework_job(job: dict) -> dict:

@@ -311,6 +311,35 @@ def _fetch_og_meta(url, timeout=8):
     return img, title
 
 
+def _clean_title_for_query(title: str) -> str:
+    """Strip the ' | Publisher' suffix + parentheticals so a Google-Images query is
+    just the dish name (e.g. 'Homemade Ricotta Cheese Recipe (Only 2 Ingredients!) |
+    The Kitchn' → 'Homemade Ricotta Cheese Recipe')."""
+    import re
+    t = (title or "").split("|")[0]
+    t = re.sub(r"\([^)]*\)", "", t)
+    return " ".join(t.split())
+
+
+def _serp_image_for(domain, title):
+    """Fetch-free thumbnail fallback for sites we can't fetch (anti-bot/blocked):
+    Google already has the image, so look it up via the SERP vendor. A
+    `site:{domain} {title}` query reliably returns the publisher's OWN hero at rank
+    1 (verified on thekitchn). ~1 credit; only called when the direct og:image is
+    empty. Returns an image URL or None."""
+    from input.pipeline import serp_search
+    if not serp_search.has_key():
+        return None
+    q = _clean_title_for_query(title)
+    if not q:
+        return None
+    try:
+        hits = serp_search.serp_image_search(f"site:{domain} {q}", want=1)
+    except Exception:
+        return None
+    return hits[0]["image"] if hits else None
+
+
 def backlinks_file_path(domain):
     """Path to a publisher's SEMrush page export in input/, or None.
 
@@ -478,15 +507,25 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         m["selected"] = 1 if i <= keep else 0
     # Thumbnail the SELECTED top-N only (bounded) — captures og:image so discovered
     # members show a picture; ingested members override with the master's real image.
-    n_img = 0
+    n_img = n_serp = 0
     for m in scored:
-        if m["selected"]:
-            img, title = _fetch_og_meta(m["url"])
-            m["image_url"] = img
+        if not m["selected"]:
+            continue
+        img, title = _fetch_og_meta(m["url"])
+        if title and not (m.get("title") or "").strip():
+            m["title"] = title    # source had no title (e.g. subdir export) → use page/slug
+        # Anti-bot/blocked publishers (thekitchn) return no og:image on a direct
+        # fetch → fall back to a FETCH-FREE SERP image lookup (Google has the image).
+        # Bounded to the selected top-N + only on an og:image miss, so ~1 credit per
+        # blocked pick and zero when the direct grab works.
+        if not img:
+            img = _serp_image_for(domain, m.get("title") or "")
             if img:
-                n_img += 1
-            if title and not (m.get("title") or "").strip():
-                m["title"] = title    # source had no title (e.g. subdir export) → use page/slug
-    print(f"  [harvest] captured {n_img} thumbnails for {keep} selected")
+                n_serp += 1
+        m["image_url"] = img
+        if img:
+            n_img += 1
+    extra = f" ({n_serp} via SERP image fallback)" if n_serp else ""
+    print(f"  [harvest] captured {n_img} thumbnails for {keep} selected{extra}")
     return {"members": scored, "discovered": n_raw, "recipe_pass": len(recipe_pass),
             "scored": len(scored), "recipe_path": used_path, "query": query}
