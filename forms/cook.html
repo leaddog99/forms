@@ -871,10 +871,10 @@
   var _awaitTimer = null, _askTimer = null;
   var AWAIT_MS = 12000, ASK_WATCHDOG_MS = 30000;
   function setAwaiting(on){
-    awaitingQ = !!on;
+    awaitingQ = !!on; _vadNotifyAwaiting(awaitingQ);   // worklet uses eager thresholds + full hang while awaiting
     if(_awaitTimer){ clearTimeout(_awaitTimer); _awaitTimer = null; }
     if(on){ _awaitTimer = setTimeout(function(){
-      if(awaitingQ){ awaitingQ = false; vlog('error', 'awaitingQ timed out — back to listening');
+      if(awaitingQ){ awaitingQ = false; _vadNotifyAwaiting(false); vlog('error', 'awaitingQ timed out — back to listening');
         if(hf) setVoiceStatus('listening', _listenHint()); } }, AWAIT_MS); }
   }
   function setAsking(on){
@@ -919,7 +919,38 @@
     _vadDropCount = 0; _vadDropMaxVoice = 0;
   }
   var talk = true, touchMode = false;   // talk = speak steps; touchMode = swipe/tap nav pad
-  var AC = null, srcNode = null, procNode = null, sinkNode = null;   // Web Audio VAD graph
+  var AC = null, srcNode = null, procNode = null, sinkNode = null, vadNode = null;   // Web Audio VAD graph
+  var USE_AUDIO_WORKLET = true;   // run the VAD off the main thread (vad-worklet.js) when available; ScriptProcessor is the fallback
+  // Tunables shipped to the worklet so cook.html stays the single source of truth.
+  function _vadCfg(){ return { hangFull:SILENCE_HANG_MS, hangShort:SILENCE_HANG_SHORT_MS,
+    shortCmdMax:SHORT_CMD_MAX_VOICE_MS, minVoice:MIN_VOICE_MS, guardMs:700,
+    bargeIn:BARGE_IN, bargeThresh:BARGE_THRESH, preRollMs:250, maxMs:15000 }; }
+  // _speaking is the single flag for "Chef is talking" — route every write through
+  // this so the worklet (which ignores input while she speaks) stays in sync.
+  function _setSpeaking(on){ _speaking = on; if(vadNode){ try{ vadNode.port.postMessage({ cmd:'speaking', on:on }); }catch(e){} } }
+  function _vadNotifyAwaiting(on){ if(vadNode){ try{ vadNode.port.postMessage({ cmd:'awaiting', on:!!on }); }catch(e){} } }
+  // Mic heartbeat from the worklet (or the fallback) → diagnostics + live on-screen level.
+  function _onHeartbeat(d){
+    vlog('mic', 'peak ' + d.peak.toFixed(3) + ' · floor ' + d.floor.toFixed(3) + ' · onT ' + d.onT.toFixed(3) +
+      ' · speaking=' + (_speaking ? 1 : 0) + ' cap=' + (d.capturing ? 1 : 0));
+    if(hf && !_speaking && !d.capturing && !awaitingQ){
+      setVoiceStatus('listening', '🎚 mic ' + d.peak.toFixed(3) + ' / trips at ' + d.onT.toFixed(3) +
+        (d.peak >= d.onT ? ' ✓ heard you' : ' — say next/back or “hey chef”'));
+    }
+  }
+  // Worklet → main events. The main thread also guards start/end with _speaking +
+  // _speakGuard (belt-and-suspenders against a capture posted just as Chef started).
+  function _onVadMessage(e){
+    var d = e.data; if(!d) return;
+    if(d.type === 'start'){ if(hf && !_speaking && _now() >= _speakGuard) onSpeechStart(); }
+    else if(d.type === 'end'){
+      if(hf && !_speaking && _now() >= _speakGuard){ onSpeechEnd(d.samples, d.hangMs); }
+      else if(hf){ setVoiceStatus('listening', _listenHint()); }
+    }
+    else if(d.type === 'drop'){ noteVadDrop(d.voiceMs, d.capMs); if(hf) setVoiceStatus('listening', _listenHint()); }
+    else if(d.type === 'hb'){ _onHeartbeat(d); }
+    else if(d.type === 'barge'){ stopSpeaking(); }
+  }
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
   var _hbFrames = 0, _hbPeak = 0;   // mic heartbeat: confirms the frame loop is alive + shows rms vs threshold + state
   function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
@@ -939,7 +970,7 @@
     var base = n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
                          : 'Listening — say “hey chef…” to ask a question';
     return _lastHeard ? (base + ' · heard: “' + _lastHeard + '”') : base; }
-  function _onSpeakEnd(){ _speaking = false; _speakGuard = _now() + 700;   // ignore the (louder) echo tail after she stops
+  function _onSpeakEnd(){ _setSpeaking(false); _speakGuard = _now() + 700;   // ignore the (louder) echo tail after she stops
     refreshMidIcon(); setAsking(false);
     if (hf && _armedWaiting){ setVoiceStatus('listening', '🎙️ Ready — say “go” to start'); return; }   // post "ready" cue: keep the go-hint
     if (_pendingFollowUp){ _pendingFollowUp = false; followUpUntil = _now() + FOLLOWUP_MS; }   // re-extend the window once the answer finishes
@@ -1067,7 +1098,7 @@
   _WAKE_ACKS.concat(_STOP_ACKS, _READY_PROMPTS).forEach(prefetchSpeak); }   // warm the spoken acks/prompts too
   function _playUrl(url){
     return new Promise(function(res){
-      var a = _ensureAudioEl(); a.src = url; _speaking = true; refreshMidIcon();
+      var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
       if (_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
       a.onended = function(){ _onSpeakEnd(); res(); };
       a.onerror = function(){ _onSpeakEnd(); res(); };
@@ -1088,7 +1119,7 @@
   function _browserSpeak(text){
     if (!('speechSynthesis' in window)) { _onSpeakEnd(); return Promise.resolve(); }
     return new Promise(function(res){ try{ speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text); u.rate = 0.97; _speaking = true; refreshMidIcon();
+      var u = new SpeechSynthesisUtterance(text); u.rate = 0.97; _setSpeaking(true); refreshMidIcon();
       u.onend = function(){ _onSpeakEnd(); res(); }; u.onerror = function(){ _onSpeakEnd(); res(); };
       speechSynthesis.speak(u); }catch(e){ _onSpeakEnd(); res(); } });
   }
@@ -1098,7 +1129,7 @@
     _pausedMid = false;                   // a hard stop clears any mid-step pause
     try{ if(_audioEl){ _audioEl.pause(); } }catch(e){}
     if('speechSynthesis' in window){ try{ speechSynthesis.cancel(); }catch(e){} }
-    _speaking = false;
+    _setSpeaking(false);
   }
   // Middle-zone icon reflects state: PAUSE glyph while speaking (tap to pause),
   // PLAY glyph while paused/idle (tap to play/resume) — standard transport convention.
@@ -1112,11 +1143,11 @@
     var a = _ensureAudioEl();
     if(_speaking && a && a.src && !a.paused){          // playing → pause (resume-able)
       try{ a.pause(); }catch(e){}
-      _pausedMid = true; _speaking = false; refreshMidIcon();
+      _pausedMid = true; _setSpeaking(false); refreshMidIcon();
       return;
     }
     if(_pausedMid && a && a.src && !a.ended){           // paused → resume from where it stopped
-      _pausedMid = false; _speaking = true; refreshMidIcon();
+      _pausedMid = false; _setSpeaking(true); refreshMidIcon();
       var p = a.play(); if(p && p.catch) p.catch(function(){ _onSpeakEnd(); });
       return;
     }
@@ -1186,15 +1217,31 @@
       if (AC.state === 'suspended') await AC.resume();
       capRate = AC.sampleRate;
       srcNode = AC.createMediaStreamSource(micStream);
-      procNode = AC.createScriptProcessor(4096, 1, 1);
-      procNode.onaudioprocess = onAudioFrame;
       sinkNode = AC.createGain(); sinkNode.gain.value = 0;          // mute: never route mic to speakers
-      srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
+      var _vadVia = 'ScriptProcessor';
+      if (USE_AUDIO_WORKLET && AC.audioWorklet) {
+        try {
+          await AC.audioWorklet.addModule('/forms/vad-worklet.js?v=20260618c');
+          vadNode = new AudioWorkletNode(AC, 'vad-processor', { numberOfInputs:1, numberOfOutputs:1, processorOptions:{ cfg:_vadCfg() } });
+          vadNode.port.onmessage = _onVadMessage;
+          srcNode.connect(vadNode); vadNode.connect(sinkNode); sinkNode.connect(AC.destination);
+          vadNode.port.postMessage({ cmd:'active', on:true });
+          _vadVia = 'AudioWorklet';
+        } catch(_we) {
+          console.warn('[voice] AudioWorklet unavailable — ScriptProcessor fallback', _we);
+          vadNode = null;
+        }
+      }
+      if (!vadNode) {   // fallback: the original main-thread ScriptProcessor VAD
+        procNode = AC.createScriptProcessor(4096, 1, 1);
+        procNode.onaudioprocess = onAudioFrame;
+        srcNode.connect(procNode); procNode.connect(sinkNode); sinkNode.connect(AC.destination);
+      }
       capturing = false; voiceMs = 0; silenceMs = 0; capBuf = []; capLen = 0; noiseFloor = 0.01;
       hf = true; btn.disabled = false; btn.textContent = '⏹ Stop hands-free'; btn.classList.add('on');
       var _coarse = false; try{ _coarse = window.matchMedia('(pointer: coarse)').matches; }catch(e){}
       vlog('session', 'START · ' + Math.round(capRate) + 'Hz · ' + (_coarse ? 'touch' : 'desktop') +
-        ' · ' + (navigator.userAgent || '').slice(0, 64));
+        ' · VAD:' + _vadVia + ' · ' + (navigator.userAgent || '').slice(0, 64));
       setVoiceStatus('speaking', 'Starting…');
       // The mise is OPT-IN via the "mise" command — auto-playing it duplicated prep
       // steps (e.g. "combine the spices") and confused the cook. Organic re-plan = v2.
@@ -1228,12 +1275,13 @@
     }
   }
   function _teardownAudio(){
+    try{ if(vadNode){ vadNode.port.postMessage({ cmd:'active', on:false }); vadNode.port.onmessage = null; vadNode.disconnect(); } }catch(e){}
     try{ if(procNode){ procNode.disconnect(); procNode.onaudioprocess = null; } }catch(e){}
     try{ if(srcNode) srcNode.disconnect(); }catch(e){}
     try{ if(sinkNode) sinkNode.disconnect(); }catch(e){}
     try{ if(AC) AC.close(); }catch(e){}
     if(micStream){ micStream.getTracks().forEach(function(t){ t.stop(); }); }
-    procNode = srcNode = sinkNode = AC = null; micStream = null;
+    procNode = srcNode = sinkNode = AC = vadNode = null; micStream = null;
   }
   function stopHandsFree(opts){
     flushVadDrops(); vlog('session', 'STOP');
@@ -1570,7 +1618,7 @@
     function alive(){ return mySeq === _streamSeq && hf; }
     function finish(){
       if(finished) return; finished = true;
-      _speaking = false; _speakGuard = _now() + 700; refreshMidIcon(); setAsking(false);
+      _setSpeaking(false); _speakGuard = _now() + 700; refreshMidIcon(); setAsking(false);
       followUpUntil = _now() + FOLLOWUP_MS;   // a follow-up needs no "hey chef"
       if(alive()) setVoiceStatus('listening', '🎧 Ask a follow-up — no “hey chef” needed (or say a command)');
     }
@@ -1580,12 +1628,12 @@
       playing = true;
       queue.shift().then(function(url){
         if(!alive()) return;
-        var a = _ensureAudioEl(); a.src = url; _speaking = true; refreshMidIcon();
+        var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
         if(_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
-        a.onended = function(){ _speaking = false; playNext(); };
-        a.onerror = function(){ _speaking = false; playNext(); };
+        a.onended = function(){ _setSpeaking(false); playNext(); };
+        a.onerror = function(){ _setSpeaking(false); playNext(); };
         if(alive()) setVoiceStatus('speaking', '…');
-        var p = a.play(); if(p && p.catch) p.catch(function(){ _speaking = false; playNext(); });
+        var p = a.play(); if(p && p.catch) p.catch(function(){ _setSpeaking(false); playNext(); });
       }).catch(function(){ if(alive()) playNext(); });
     }
     return {

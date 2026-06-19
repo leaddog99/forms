@@ -179,10 +179,18 @@ entry, never model-emitted** (a hallucinated URL can never reach a user). This i
 
 - `getUserMedia({echoCancellation:true, noiseSuppression:true, autoGainControl:true})` — AGC ON
   because a desktop mic at arm's length sat below threshold without it.
-- **Self-contained Web Audio RMS-energy VAD** via a `ScriptProcessor` (`onAudioFrame`). It computes
-  per-frame RMS against an **adaptive noise floor** (`noiseFloor = 0.95·floor + 0.05·rms` while
-  quiet). Thresholds: `onT = max(0.022, floor·3.5)`, `offT = max(0.015, floor·2.2)` (more eager when
-  `awaitingQ`). *We deliberately do NOT use Silero/`vad-web`* — it needed `window.ort`; the
+- **Self-contained Web Audio RMS-energy VAD.** Primary path is an **AudioWorklet**
+  (`forms/vad-worklet.js`, `vad-processor`) running on the dedicated audio-rendering thread, so
+  main-thread/GC jank can't stall capture (an earlier main-thread pre-roll allocating per-frame in
+  the callback tanked iPad hands-free — moving to the worklet + pre-allocated buffers is the fix).
+  The worklet posts only EVENTS to the main thread (`start`/`end`/`drop`/`hb`/`barge`); the main
+  thread tells it when Chef is `speaking`/`awaiting` (via `_setSpeaking`/`setAwaiting`). The old
+  main-thread **`ScriptProcessor` `onAudioFrame` is kept as a fallback** (no AudioWorklet support, or
+  any failure; force it with `USE_AUDIO_WORKLET=false`). Both compute per-frame RMS against an
+  **adaptive noise floor** (`noiseFloor = 0.95·floor + 0.05·rms` while quiet). Thresholds:
+  `onT = max(0.022, floor·3.5)`, `offT = max(0.015, floor·2.2)` (more eager when `awaitingQ`). The
+  worklet also does an **allocation-free onset pre-roll** (a pre-allocated ring) so word onsets
+  aren't clipped. Config (hang/threshold/pre-roll tunables) ships from cook.html via `_vadCfg()`. *We deliberately do NOT use Silero/`vad-web`* — it needed `window.ort`; the
   self-contained energy VAD works offline and always triggers the mic prompt (portability fit). A
   stale server comment still mentions vad-web; ignore it.
 - **Mic heartbeat** (every ~50 frames / ~4s): logs peak/floor/threshold/state and, when idle, shows
