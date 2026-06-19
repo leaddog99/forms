@@ -582,6 +582,11 @@
   // de-abbreviate for the ear: units + common fractions spoken in full.
   function deAbbrev(s){
     s=String(s);
+    // "in" → "inches" ONLY as a measurement (preceded by a number or fraction):
+    // "9 in" / "9-in" / "9in" / "½ in". A bare preposition ("fold in spices") is left
+    // alone — the blanket \bin\b rule used to read it as "inches". Run before the
+    // fraction expansion so "1/2 in" / "½ in" still have a number to anchor on.
+    s=s.replace(/(\d|[½⅓⅔¼¾⅛])(\s*-?\s*)in\b\.?/gi, '$1 inches');
     var FRAC={'½':'one half','⅓':'one third','⅔':'two thirds','¼':'one quarter','¾':'three quarters','⅛':'one eighth'};
     // "1½" -> "one and a half"; bare "½" -> "one half"
     s=s.replace(/(\d+)\s*([½⅓⅔¼¾⅛])/g, function(m,whole,fr){
@@ -603,7 +608,7 @@
       [/\bmin\b\.?/g,'minutes'],[/\bhr\b\.?/g,'hours'],[/\bsec\b\.?/g,'seconds'],
       [/°F\b/g,' degrees Fahrenheit'],[/°C\b/g,' degrees Celsius'],
       [/\bml\b/g,'milliliters'],[/\bmL\b/g,'milliliters'],[/\bL\b/g,'liters'],
-      [/\bg\b/g,'grams'],[/\bkg\b/g,'kilograms'],[/\bcm\b/g,'centimeters'],[/\bin\b\.?/g,'inches']];
+      [/\bg\b/g,'grams'],[/\bkg\b/g,'kilograms'],[/\bcm\b/g,'centimeters']];  // "in"→inches handled above (number-gated, so the preposition is safe)
     UNIT.forEach(function(p){ s=s.replace(p[0], p[1]); });
     return s.replace(/\s+/g,' ').trim();
   }
