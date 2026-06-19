@@ -3459,11 +3459,13 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             recipe_path=recipe_path, query=query, check_recipe=check_recipe,
             source=source, records=records)
         with sqlite3.connect(DB_PATH) as conn:
+            from input.pipeline import domains_lib
+            domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
             collections_lib.replace_members(conn, "publisher", host, res["members"])
             conn.execute(
                 "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ?, "
-                "search_pages = ? WHERE domain = ?",
-                (res.get("recipe_path") or "", keep, query or "", pages, host))
+                "search_pages = ?, harvest_source = ? WHERE domain = ?",
+                (res.get("recipe_path") or "", keep, query or "", pages, source, host))
             conn.commit()
         return res
 
@@ -3624,6 +3626,47 @@ def patch_domain_endpoint(domain: str, payload: dict = Body(...)):
     except Exception as e:
         print(f"[ERROR] patch_domain({domain!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Update error: {e}")
+
+
+# =========================================================================
+# Training-data correction UI (is-recipe classifier). Curators review the
+# samples captured as a byproduct of the harvest/batch is-recipe filter and
+# correct the heuristic where it's wrong (the `human_label` gold signal that
+# lets a classifier BEAT the heuristic). Reads the separate, git-ignored
+# training.db. See docs/corpus-ml-strategy.md + intake/training_capture.py +
+# forms/training.html.
+# =========================================================================
+@app.get("/training/is-recipe/stats")
+def training_is_recipe_stats_endpoint():
+    from intake import training_capture
+    return training_capture.stats()
+
+
+@app.get("/training/is-recipe/samples")
+def training_is_recipe_samples_endpoint(limit: int = 50, offset: int = 0,
+                                        search: str = "", decision: str = "",
+                                        source: str = "", label: str = "",
+                                        has_content: int = 0):
+    from intake import training_capture
+    return training_capture.list_samples(
+        limit=max(1, min(int(limit), 200)),
+        offset=max(0, int(offset)),
+        search=(search or "").strip() or None,
+        decision=(decision or "").strip() or None,
+        source=(source or "").strip() or None,
+        label=(label or "").strip() or None,
+        has_content=bool(has_content),
+    )
+
+
+@app.post("/training/is-recipe/samples/{sample_id}/label")
+def training_is_recipe_label_endpoint(sample_id: int, payload: dict = Body(...)):
+    from intake import training_capture
+    res = training_capture.set_human_label(
+        sample_id, payload.get("label"), (payload.get("note") or None))
+    if isinstance(res, dict) and res.get("error"):
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
 
 
 @app.delete("/domains/{domain}")

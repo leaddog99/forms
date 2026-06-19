@@ -290,36 +290,23 @@ def _fetch_og_meta(url, timeout=8):
     DISCOVERED (not-yet-ingested) member. Reads only the <head>, follows redirects (the
     http→https 301s in a subdir export), never raises. title falls back to <title> then
     the URL slug. Returns (image_url|None, title|'')."""
-    head = ""
+    # Delegate to the CANONICAL url→OG routine — the SAME fetch
+    # (fetch_with_full_fallback: UA rotation → Wayback) AND extractor
+    # (extract_og_meta) the extract + coopt-backfill paths use. The harvest's old
+    # bespoke requests.get + regex got blocked by anti-bot publishers (thekitchn),
+    # losing thumbnails for pages that DID pass the recipe filter. One image-
+    # retrieval path everywhere now (no custom copies). title → URL slug fallback.
+    img, title = None, ""
     try:
-        resp = requests.get(url, headers=_FETCH_UA, timeout=timeout,
-                            stream=True, allow_redirects=True)
-        if resp.status_code == 200:
-            for chunk in resp.iter_content(chunk_size=16384, decode_unicode=True):
-                head += chunk if isinstance(chunk, str) else chunk.decode("utf-8", "ignore")
-                if "</head>" in head.lower() or len(head) > 200_000:
-                    break
-        resp.close()
+        from to_markdown.html_to_markdown import fetch_with_full_fallback, extract_og_meta
+        from bs4 import BeautifulSoup
+        resp, _meta = fetch_with_full_fallback(url, timeout=timeout)
+        if resp is not None and getattr(resp, "status_code", 0) == 200:
+            meta = extract_og_meta(BeautifulSoup(resp.text, "html.parser"), getattr(resp, "url", url))
+            img = (meta.get("image") or "").strip() or None
+            title = (meta.get("title") or "").strip()
     except Exception:
-        head = ""
-
-    img = None
-    m = _OG_IMAGE_RE.search(head) or _OG_IMAGE_RE2.search(head)
-    if m:
-        img = m.group(1).strip()
-        if img.startswith("//"):
-            img = "https:" + img
-        elif img.startswith("/"):
-            p = urlparse(url)
-            img = f"{p.scheme}://{p.netloc}{img}"
-        if not img.startswith("http"):
-            img = None
-
-    title = ""
-    mt = _OG_TITLE_RE.search(head) or _TITLE_TAG_RE.search(head)
-    if mt:
-        import html as _html
-        title = _html.unescape(mt.group(1)).strip()
+        img, title = None, ""
     if not title:
         title = _title_from_url(url)
     return img, title
@@ -471,7 +458,10 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     recipe_pass = found
     if check_recipe and found:
         from intake.build_query_batch import _is_recipe_filter
-        kept, _dropped = _is_recipe_filter([{"url": l, "title": t} for l, t in found])
+        kept, _dropped = _is_recipe_filter(
+            [{"url": l, "title": t} for l, t in found],
+            capture_source="domain_harvest",
+            capture_provenance={"domain": domain, "discover_source": source})
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
 
     scored = []

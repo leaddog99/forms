@@ -7,7 +7,6 @@
 ## Provenance & honesty note (read first)
 
 This report was assembled **without a new research run** (deliberately — no new fetch/spend). It draws on two sources, and I mark which is which throughout:
-
 - **[VERIFIED]** — claims and effect sizes that came out of our own deep-research workflow `wf_77ce16a2` (2026-06-16: 23 sources, 25 claims, 3-vote adversarial verification), already recorded in the synthesis doc. These carry the vote outcome where it mattered (e.g. *refuted 0-3*, *medium 2-1*).
 - **[LITERATURE]** — my explanation of the underlying, foundational cognitive-science work (Miller, Cowan, Sweller, Mayer, Baddeley, Kalyuga, etc.). These are well-established, decades-old results I'm describing from general knowledge to give the *why* behind the verified headline.
 

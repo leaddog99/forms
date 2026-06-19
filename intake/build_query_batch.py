@@ -432,10 +432,19 @@ def _english_title(title: str, lang_code: str) -> str:
         return ""
 
 
-def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
+def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
+                      capture_provenance: dict | None = None,
+                      ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
     Stamps `recipe_score` and `_lang` on every entry.
+
+    Every decision is also logged as a labeled training sample (best-effort,
+    off the hot path, separate git-ignored training.db) via
+    `intake.training_capture` — input content + signals + score + decision +
+    reason — so we accumulate an is-recipe classifier dataset as a free
+    byproduct. `capture_source`/`capture_provenance` tag which surface called us
+    (dish_batch vs domain_harvest). See docs/corpus-ml-strategy.md.
 
     Decision tree:
       1. Fetch fails (HTTP / timeout / parse) -> DROP with reason 'fetch-failed'.
@@ -478,6 +487,7 @@ def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
             continue
         text, has_recipe_jsonld, lang_code = result
         e["_lang"] = lang_code
+        e["_cap_text"] = text  # transient: byproduct training capture (popped before return)
 
         # Collection guard (non-English) — the SERP title was in the source language,
         # so the English fast-path above couldn't see it. Translate the title now and
@@ -558,6 +568,21 @@ def _is_recipe_filter(entries: list[dict]) -> tuple[list[dict], list[dict]]:
             e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
             dropped.append(e)
             print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2}  {url}")
+
+    # Byproduct training-data capture (best-effort, off the hot path, separate
+    # git-ignored training.db). One labeled sample per decision; then pop the
+    # transient content so it never leaks into the downstream batch JSON.
+    try:
+        from intake.training_capture import capture_samples
+        capture_samples(kept, dropped, source=capture_source,
+                        provenance=capture_provenance,
+                        threshold=IS_RECIPE_THRESHOLD)
+    except Exception:
+        pass
+    for _e in kept:
+        _e.pop("_cap_text", None)
+    for _e in dropped:
+        _e.pop("_cap_text", None)
     return kept, dropped
 
 
@@ -1036,7 +1061,8 @@ def build_batch(
     print(f"      -> kept {len(entries)}, dropped {len(dropped_disallowed)}")
 
     print(f"\n[3/7] is_recipe fetch+score (threshold={IS_RECIPE_THRESHOLD})")
-    entries, dropped_not_recipe = _is_recipe_filter(entries)
+    entries, dropped_not_recipe = _is_recipe_filter(
+        entries, capture_source="dish_batch", capture_provenance={"dish": dish})
     print(f"      -> kept {len(entries)}, dropped {len(dropped_not_recipe)}")
 
     print(f"\n[4/7] Moz scoring on survivors")
