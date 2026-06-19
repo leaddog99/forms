@@ -904,6 +904,21 @@ Root cause of "domains list ≠ dishes list": the forms had DIFFERENT design tok
 
 ## Session log — 2026-06-18 (later) — cook-voice latency/acks + restart-vs-reset semantics · recipe-form style sweep finished
 
+> **CAPSTONE (evening wrap — read this first; detailed sub-sections below).** All committed + pushed on `split/enrichment-api` (head `47beeff`+). `recipes.sql` re-dumped + ADAM backup done. Server running new code; cook.html/forms are static (reload to get them).
+>
+> **Shipped today, verified:**
+> - **Cook-voice — the big arc.** VAD migrated to an **AudioWorklet** (`forms/vad-worklet.js`, off the main thread) — **iPad-confirmed: "VAD:AudioWorklet", next is snappy.** ScriptProcessor fallback kept (`USE_AUDIO_WORKLET=false` forces it). Plus: adaptive silence-hang (snappy one-word cmds; "hey chef" keeps full hang), 180ms lead-in silence (anti first-syllable clip), short wake/stop spoken acks, **arm-then-go** start, tip keyword + STT-mishear synonyms (chip/hip), **"go to step N"**, restart(steps-only)-vs-Reset-button(full-wipe), and **"in"→"inches" only as a measurement** (preposition was being read "inches"). The earlier main-thread pre-roll REGRESSED iPad (per-frame alloc in the callback) → reverted, then redone allocation-free inside the worklet.
+> - **LLM gateway (`llm.py`) — P1 SHIPPED + live-verified.** One choke point; auto-journals to `bcc_token_journal` via a `contextvars` context. RULE: **sequential-sync paths → gateway; internally-threaded / SSE / save-path → `usage_log`.** Gateway: markdown_to_recipe, image/pdf_to_markdown, dish_signal, chapter_classify, translate, domain_enrich, cook_ask(sync), cook_rework/augment. **usage_log camp** (do NOT migrate): `enrich_recipe` (ThreadPoolExecutor), `voice_agent` (SSE), `identity_card` (save path). Closed the cook-rework accounting gap. Design: `docs/llm-gateway.md`.
+> - **Save pipeline audited + live-verified** end-to-end (a throwaway save regenerated _identity/_match/_grade/_scoring/embedding; user recipes don't persist a vec row — `_match` is the embed artifact). Fixed an enrich 500 (UnboundLocalError) + identity-on-save attribution.
+> - **UI:** recipe-form **metadata panel** (collapsible, cook-rework cost), recipe-form **dish-style sweep finished**, **admin nav burger** de-garished (soft-clay chip, not dark brown).
+> - **Docs/memory:** `docs/voice-architecture-deep-dive.md` (knowledge-transfer), `docs/llm-gateway.md`; memories `project_llm_gateway`, `project_voice_pack`.
+>
+> **OPEN / NEXT (priority):**
+> 1. **Cook-voice features:** step-level **timers** (Alexa-collision fix; `duration_minutes` exists); **equipment-first + include prep tools** (rework prompt → v2.3 + re-rework); the **"okay okay"** voice-log mystery (need the log lines).
+> 2. **LLM gateway tail:** migrate **measurement** (`estimate` BYOK + `recipe_pass`) when live-testable (already journals, no gap); cleanup vestigial `usage_log` params + the duplicate `enrich/journal.py:build_usage_entry` + dead per-module `_anthropic_client`s; confirm `recipe_anchor/pipeline.py` live-vs-legacy.
+> 3. **Voice-pack i18n** (design parked, `project_voice_pack`); **sub-steps v2.1** (mise/method); the perf-safe pre-roll is now IN the worklet (done).
+> 4. **Carried (pre-voice):** system-wide domain scoring, `serp_batch`, measurement-resolver-at-source.
+
 Short iterative session on `split/enrichment-api`, all in two front-end files (`forms/cook.html`, `forms/recipe_form_styled.html`) — static, so a browser reload picks them up (no restart). UNCOMMITTED at time of writing.
 
 ### Cook-voice loop ([[project_cook_voice]], [[project_voice_redesign]]) — latency + acknowledgements
