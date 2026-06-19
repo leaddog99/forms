@@ -43,6 +43,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# We are a WORKER, not the server. Importing save_recipe_api runs its init_db,
+# which calls reset_interrupted_jobs — that would wipe the status of any job
+# currently running in ANOTHER process to 'error'. Only the uvicorn server should
+# do that cleanup (on its own startup, for jobs orphaned by a dead server). Flag it
+# off for the whole jobs CLI BEFORE the import below.
+import os  # noqa: E402
+os.environ["BCC_SKIP_JOB_RESET"] = "1"
+
 # Importing this registers the handlers and gives us the canonical paths the
 # server uses. No server is started (no uvicorn → no startup event).
 import save_recipe_api as api  # noqa: E402

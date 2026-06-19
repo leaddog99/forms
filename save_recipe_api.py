@@ -861,12 +861,16 @@ def init_db():
                 print("[VEC] sqlite-vec virtual tables ready")
             except Exception as e:
                 print(f"[WARN] sqlite-vec init failed (KNN disabled): {e}")
-            # Reset any jobs that were 'running' when the prior process
-            # died — they're not coming back, but they'd otherwise sit
-            # blocking new enqueues for the same entity.
-            interrupted = jobs_lib.reset_interrupted_jobs(conn)
-            if interrupted:
-                print(f"[JOBS] reset {interrupted} interrupted job(s) from prior run")
+            # Reset any jobs that were 'running' when the prior process died —
+            # they're not coming back, but they'd otherwise sit blocking new
+            # enqueues for the same entity. SKIP when imported by the jobs CLI
+            # (BCC_SKIP_JOB_RESET=1): a worker importing us must NOT wipe a job
+            # running concurrently in another process — only the server does this
+            # cleanup, on its own startup.
+            if not os.getenv("BCC_SKIP_JOB_RESET"):
+                interrupted = jobs_lib.reset_interrupted_jobs(conn)
+                if interrupted:
+                    print(f"[JOBS] reset {interrupted} interrupted job(s) from prior run")
             # Performance indexes (2026-06-15 query audit). Expression indexes on the
             # hot JSON fields the corpus filters/groups by — without them every such
             # query SCANs + parses all ~19KB master_recipes blobs (the recommender

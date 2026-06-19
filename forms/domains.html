@@ -407,7 +407,7 @@
     // Tail the refresh job's SSE log; on completion, re-load the stored top list.
     function streamRefresh(streamUrl, domain, jobId){
       const hint = $('#topHint'), log = $('#topLog'), btn = $('#refreshTopBtn'), cancelBtn = $('#cancelTopBtn');
-      let cancelled = false;
+      let cancelled = false, finished = false;
       // Show Cancel for the life of the stream → POST cooperative cancel (the job
       // aborts after the current candidate).
       if (cancelBtn){
@@ -419,32 +419,61 @@
           try { await fetch(`/jobs/${jobId}/cancel`, { method: 'POST' }); } catch {}
         };
       }
-      const done = (txt, warn) => { btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
+      const done = (txt, warn) => { finished = true;
+        btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
         if (cancelBtn) cancelBtn.style.display = 'none';
-        if (cancelled && txt) txt = 'Cancelled.';
         if (hint){ hint.style.color = warn ? 'var(--ed-warn)' : ''; if (txt) hint.textContent = txt; } };
-      let es;
-      try { es = new EventSource(streamUrl); }
-      catch (e){ done(`Stream error: ${e.message || e}`, true); return; }
-      es.addEventListener('log', (e) => {
-        try { const d = JSON.parse(e.data); if (log){ log.textContent += (d.line || '') + '\n'; log.scrollTop = log.scrollHeight; } } catch {}
-      });
-      es.addEventListener('status', (e) => {
-        try { const d = JSON.parse(e.data); if (hint && d.status) hint.textContent = `Job ${d.status}…`; } catch {}
-      });
-      es.addEventListener('done', (e) => {
-        es.close();
-        let res = {}; try { const d = JSON.parse(e.data || '{}'); res = typeof d.result === 'string' ? JSON.parse(d.result) : (d.result || {}); } catch {}
-        loadDomainTop(domain);  // re-render the freshly-stored top list
-        const ok = (res.stored || 0) > 0;
-        // The job already PERSISTED the list (replace_members) + the harvest config
-        // (recipe_path/keep/serp_query/pages), so Save is NOT needed here — leaving
-        // it disabled is correct. Only Skip/other field edits dirty the form (the
-        // existing #page input/change tracker handles that naturally).
+      // Render the TERMINAL outcome from a job result — shared by the SSE 'done'
+      // event AND the safety net below. The job already persisted the list + config,
+      // so Save stays disabled (correct); we just re-render and report.
+      const renderResult = (status, res, errorMsg) => {
+        loadDomainTop(domain);
+        if (status === 'cancelled' || cancelled){ done('Cancelled.', false); return; }
+        if (status === 'error'){ done(`Refresh errored — ${errorMsg || 'see the job log'}.`, true); return; }
+        const ok = ((res && res.stored) || 0) > 0;
         done(ok ? `Done & saved — ${res.stored} stored (${res.discovered} found, ${res.recipe_pass} passed the recipe check).`
-                : `Done — 0 stored (${res.discovered || 0} found, ${res.recipe_pass || 0} passed). Paywalled? Uncheck “verify”, refine the query, or check Skip.`, !ok && (res.discovered || 0) === 0);
+                : `Done — 0 stored (${(res && res.discovered) || 0} found, ${(res && res.recipe_pass) || 0} passed). Paywalled? Uncheck “verify”, refine the query, or check Skip.`,
+             !ok && ((res && res.discovered) || 0) === 0);
+      };
+      // Safety net: read the job's terminal state directly. Covers reattaching to a
+      // job that ALREADY finished (its SSE replays no 'done') + a dropped stream —
+      // the two ways the display used to hang forever.
+      const resolveFromJob = async () => {
+        if (!jobId || finished) return false;
+        try {
+          const j = await (await fetch(`/jobs/${jobId}`)).json();
+          if (['success', 'error', 'cancelled'].includes(j.status)){
+            renderResult(j.status, j.result || {}, j.error_detail);
+            return true;
+          }
+        } catch {}
+        return false;
+      };
+      // If the job is already done at attach time, resolve now — never open a stream
+      // that will never emit 'done'.
+      resolveFromJob().then(already => {
+        if (already) return;
+        let es;
+        try { es = new EventSource(streamUrl); }
+        catch (e){ done(`Stream error: ${e.message || e}`, true); return; }
+        es.addEventListener('log', (e) => {
+          try { const d = JSON.parse(e.data); if (log){ log.textContent += (d.line || '') + '\n'; log.scrollTop = log.scrollHeight; } } catch {}
+        });
+        es.addEventListener('status', (e) => {
+          try { const d = JSON.parse(e.data); if (hint && d.status) hint.textContent = `Job ${d.status}…`; } catch {}
+        });
+        es.addEventListener('done', (e) => {
+          es.close();
+          let res = {}; try { const d = JSON.parse(e.data || '{}'); res = typeof d.result === 'string' ? JSON.parse(d.result) : (d.result || {}); } catch {}
+          renderResult(cancelled ? 'cancelled' : 'success', res);
+        });
+        es.onerror = async () => {
+          es.close();
+          // Stream dropped — the job likely finished. Recover its result before
+          // falling back to the generic message.
+          if (!(await resolveFromJob())) done('Stream dropped — reload to see the result.', true);
+        };
       });
-      es.onerror = () => { es.close(); done('Stream dropped — reload to see the result.', true); };
     }
 
     // Wipe the current stored list (botched harvest → start over).
