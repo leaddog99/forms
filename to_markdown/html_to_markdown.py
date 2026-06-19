@@ -425,9 +425,13 @@ def fetch_with_full_fallback(url: str, *,
         err = e
 
     # PAID unblocker tier (per-domain opt-in) — before Wayback so we prefer a live
-    # page to a months-old snapshot. No-ops without a BYOK key.
+    # page to a months-old snapshot. No-ops without a BYOK key. render=False: the
+    # unblocker still solves the challenge (residential IP + session) but skips the
+    # slow real-browser JS render — recipe content/JSON-LD is in the static HTML, so
+    # this is ~3x faster (~5s vs ~17-30s) AND ~3x cheaper (smaller payload). A JS-only
+    # recipe site would need render=True (none seen yet; revisit per-domain if so).
     if unblocker and unblocker_available():
-        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS))
+        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
         if ub is not None:
             return ub
 
