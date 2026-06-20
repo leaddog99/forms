@@ -316,13 +316,21 @@ def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
-def _is_semrush_managed(d: dict) -> bool:
-    return (d.get("harvest_source") == "backlinks_file"
-            or bool((d.get("semrush_report_url") or "").strip()))
+def report_url_template(conn: Optional[sqlite3.Connection] = None) -> str:
+    """The SEMrush Indexed-Pages deep-link template (`{domain}` placeholder), from
+    system_config so a SEMrush URL re-skin is a config edit ([[feedback_no_data_in_code]])."""
+    from input.pipeline import system_config
+    return system_config.get_setting(
+        "semrush_indexed_pages_url_template",
+        "https://www.semrush.com/analytics/backlinks/pages/"
+        "?q={domain}&searchType=domain&sort_field=domainsnum")
 
 
-def _derive_schedule(d: dict) -> None:
+def _derive_schedule(d: dict, report_template: Optional[str] = None) -> None:
     """Stamp DERIVED harvest-schedule fields onto a domain dict in place:
+      - semrush_report_url : if the row has none stored, default it from the template
+                             with `{domain}` substituted (so the worklist link + form
+                             field just work; a stored value overrides).
       - next_harvest_at : last_harvested_at's date + harvest_ttl_days (None if the
                           domain isn't SEMrush-managed; '' last → never)
       - harvest_status  : 'new' (never harvested) | 'due' (next <= today) | 'ok'
@@ -330,10 +338,19 @@ def _derive_schedule(d: dict) -> None:
       - harvest_due     : bool — convenience for the worklist filter
     next_harvest is date-grain (the cadence is days); a missing/garbage timestamp
     reads as 'new' rather than raising."""
+    # Worklist membership = the SEMrush backlinks-file flow ONLY. Deliberately NOT
+    # keyed on semrush_report_url — that link is now auto-defaulted for every domain
+    # (below), so keying on it would put the whole corpus on the worklist.
+    managed = d.get("harvest_source") == "backlinks_file"
+    # Default the report deep-link from the template when the row has none stored.
+    if not (d.get("semrush_report_url") or "").strip() and d.get("domain"):
+        tmpl = report_template if report_template is not None else report_url_template()
+        if tmpl:
+            d["semrush_report_url"] = tmpl.replace("{domain}", d["domain"])
     d["next_harvest_at"] = None
     d["harvest_status"] = None
     d["harvest_due"] = False
-    if not _is_semrush_managed(d):
+    if not managed:
         return
     last = (d.get("last_harvested_at") or "").strip()
     if not last:
@@ -401,9 +418,10 @@ def list_domains(conn: sqlite3.Connection) -> list[dict]:
     )
     for i, d in enumerate(ranked, 1):
         d["bcc_rank"] = i
+    tmpl = report_url_template()   # read once, not per-row
     for d in rows:
         d.setdefault("bcc_rank", None)
-        _derive_schedule(d)
+        _derive_schedule(d, tmpl)
     return rows
 
 
@@ -459,6 +477,13 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     if not domain_exists(conn, host):
         raise ValueError(f"Domain '{host}' not found")
     sets = {k: fields[k] for k in EDITABLE_FIELDS if k in fields}
+    # The form pre-fills semrush_report_url with the auto-derived default; if the
+    # curator didn't customize it, store '' so the field keeps meaning "custom
+    # override only" and a template change still propagates. A real custom URL persists.
+    if "semrush_report_url" in sets:
+        derived = (report_url_template() or "").replace("{domain}", host)
+        if (sets["semrush_report_url"] or "").strip() == derived:
+            sets["semrush_report_url"] = ""
     if not sets:
         return get_domain(conn, host)
     sets["updated_at"] = _now()

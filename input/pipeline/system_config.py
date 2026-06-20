@@ -180,6 +180,29 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "terms like 'best'/'top' also appear in legit single-recipe "
                        "titles, so they can drop good results — use with care.",
     },
+    # --- Harvest: the SEMrush human-workflow loop (docs/semrush-harvest-scheduling.md) ---
+    {
+        "key": "semrush_indexed_pages_url_template",
+        "value": ("https://www.semrush.com/analytics/backlinks/pages/"
+                  "?q={domain}&searchType=domain&sort_field=domainsnum"),
+        "type": "string",
+        "category": "Harvest",
+        "label": "SEMrush Indexed-Pages URL template",
+        "description": "The deep-link the worklist opens to land you on a domain's "
+                       "SEMrush Indexed-Pages report (sorted by referring domains), "
+                       "ready to Export. `{domain}` is substituted per row. A domain's "
+                       "own `semrush_report_url` (if set) overrides this. Edit here if "
+                       "SEMrush re-skins its URLs.",
+    },
+    {
+        "key": "semrush_inbox_dir",
+        "value": "",
+        "type": "string",
+        "category": "Harvest",
+        "label": "SEMrush export inbox folder",
+        "description": "Folder the 'Scan inbox' button reads for saved SEMrush exports "
+                       "(`*-backlinks*pages*.xlsx`). Blank = the OS Downloads folder.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

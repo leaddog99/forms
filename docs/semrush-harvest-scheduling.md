@@ -101,10 +101,10 @@ Even *one* domain/mo via API ≈ `$500 + ~$6` vs flat **$250 unlimited**; ~200 d
 - `domains.html`: "Due today" worklist panel (status pill + `[Open in SEMrush]` deep-link + expected filename), the "⤵ Scan inbox" button, and the `harvest_ttl_days` + `semrush_report_url` fields on the backlinks source (with ↗ Open / ⧉ Copy via a reusable `urlField()`).
 - Glob tolerates the browser re-download suffix (`…pages (1).xlsx`); scan reads ONLY the inbox (not `input/`) so an ingested file isn't re-processed.
 - The `backlinks_file` source radio is **no longer gated on file presence** — selecting it is always allowed; the refresh errors cleanly if the file isn't there.
+- **SEMrush deep-link auto-defaults** — `semrush_report_url` is derived from `system_config.semrush_indexed_pages_url_template` (`…/analytics/backlinks/pages/?q={domain}&searchType=domain&sort_field=domainsnum`) with `{domain}` substituted, so the worklist link + form field just work with zero hand-pasting. A per-domain custom URL overrides; a Save that didn't customize stores `''` (the field means "override only", so a template change keeps propagating). Worklist membership is keyed on `harvest_source=='backlinks_file'` ONLY — NOT on the (now universal) link.
 
 **NEXT (not built):**
-1. **Capture the real SEMrush Indexed-Pages URL template** → seed `system_config.semrush_indexed_pages_url_template` so a per-domain `semrush_report_url` can be generated from `{domain}`+`{subfolder}` instead of hand-pasted ([[feedback_no_data_in_code]]).
-2. **System-wide `urlField()`** — roll the Open/Copy URL affordance out to every URL display (recipe sidebar, cohort cards, etc.) via the shared component layer.
-3. **Traffic/Trends ingestion** (§5) — the "What's Hot" surface + queue prioritization.
+1. **System-wide `urlField()`** — roll the Open/Copy URL affordance out to every URL display (recipe sidebar, cohort cards, etc.) via the shared component layer.
+2. **Traffic/Trends ingestion** (§5) — the "What's Hot" surface + queue prioritization.
 
 **NOT building:** a watcher / scheduled inbox poll (the curator kicks it off with the button), the SEMrush API path, any headless-browser automation of the export click.
