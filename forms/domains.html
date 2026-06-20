@@ -46,29 +46,23 @@
           <option value="name">Sort: display name</option>
           <option value="da">Sort: domain authority</option>
           <option value="rank">Sort: BCC rank (SEMrush traffic)</option>
+          <option value="harvest">Sort: SEMrush due first</option>
           <option value="blocked">Sort: blocked first</option>
         </select>
         <div class="ed-rank-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button type="button" class="ed-btn" id="refreshRanksBtn" title="Re-import the newest SEMrush rank export (input/ or Downloads) and re-rank every domain">↻ Refresh SEMrush ranks</button>
           <span class="ed-save-hint" id="rankStatus" style="font-size:.82em;color:var(--ed-ink-soft)"></span>
         </div>
+        <div class="ed-rank-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
+          <button type="button" class="ed-btn" id="scanInboxBtn" title="Scan the inbox (Downloads) for SEMrush exports you just saved, and ingest each into its domain">⤵ Scan SEMrush inbox</button>
+          <span class="ed-save-hint" id="harvestStatus" style="font-size:.82em;color:var(--ed-ink-soft)">sort “SEMrush due” to see what needs a refresh</span>
+        </div>
+        <pre id="scanLog" hidden style="max-height:160px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:11px;line-height:1.4;padding:8px 10px;margin:6px 0 0;border-radius:8px;white-space:pre-wrap"></pre>
       </div>
 
       <div class="ed-legend">
         <span><i class="d ok"></i>allowed</span>
         <span><i class="d none"></i>blocked</span>
-      </div>
-
-      <!-- SEMrush human-workflow worklist: NEW/DUE domains to harvest today. The
-           curator clicks a row's deep-link → runs the SEMrush export → saves it to
-           the watched inbox → presses Scan inbox. See docs/semrush-harvest-scheduling.md -->
-      <div id="worklistPanel" hidden style="margin:0 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--accent-soft)">
-          <strong style="font-size:.86em;color:var(--accent-dark)">SEMrush — due today <span id="worklistCount"></span></strong>
-          <button type="button" class="ed-btn" id="scanInboxBtn" style="font-size:.78em;padding:3px 8px" title="Scan the inbox (Downloads) for SEMrush exports you just saved, and ingest each into its domain">⤵ Scan inbox</button>
-        </div>
-        <ul id="worklist" style="list-style:none;margin:0;padding:0;max-height:230px;overflow:auto"></ul>
-        <pre id="scanLog" hidden style="max-height:160px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:11px;line-height:1.4;padding:8px 10px;margin:0;white-space:pre-wrap"></pre>
       </div>
 
       <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
@@ -105,6 +99,7 @@
       if (d.domain_authority != null) bits.push('DA ' + Math.round(d.domain_authority));
       const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
       if (m || u) bits.push(`${m}m · ${u}u`);
+      if (d.harvest_due) bits.push(d.harvest_status === 'new' ? '⏰ SEMrush: new' : '⏰ SEMrush: due');
       if (!isAllowed(d)) bits.push('blocked');
       return bits.join(' · ') || '—';
     }
@@ -121,6 +116,15 @@
         // BCC rank: allowed publishers carrying a SEMrush rank, best (1) first;
         // unranked/blocked domains sort to the bottom, then A–Z.
         rank:    (a, b) => ((a.bcc_rank ?? Infinity) - (b.bcc_rank ?? Infinity)) || a.domain.localeCompare(b.domain),
+        // SEMrush harvest worklist as a sort: due/new domains first (new before
+        // overdue, then most-overdue by oldest next_harvest_at), everyone else A–Z.
+        harvest: (a, b) => {
+          const ad = a.harvest_due ? 0 : 1, bd = b.harvest_due ? 0 : 1;
+          if (ad !== bd) return ad - bd;
+          const an = a.harvest_status === 'new' ? 0 : 1, bn = b.harvest_status === 'new' ? 0 : 1;
+          if (an !== bn) return an - bn;
+          return (a.next_harvest_at || '').localeCompare(b.next_harvest_at || '') || a.domain.localeCompare(b.domain);
+        },
         blocked: (a, b) => (isAllowed(a) - isAllowed(b)) || a.domain.localeCompare(b.domain),
       };
       return rows.sort(sorters[sortKey] || sorters.domain);
@@ -462,7 +466,10 @@
       // so Save stays disabled (correct); we just re-render and report.
       const renderResult = (status, res, errorMsg) => {
         loadDomainTop(domain);
-        loadWorklist();   // a backlinks harvest stamped last_harvested_at → drops off the worklist
+        // A backlinks harvest stamped last_harvested_at → refresh just this domain's
+        // list entry (due-status) without rebuilding the detail form / streamed log.
+        fetch(`/domains/${encodeURIComponent(domain)}`).then(r => r.json())
+          .then(fresh => { domains[domain] = fresh; renderList(); }).catch(() => {});
         if (status === 'cancelled' || cancelled){ done('Cancelled.', false); return; }
         if (status === 'error'){ done(`Refresh errored — ${errorMsg || 'see the job log'}.`, true); return; }
         const ok = ((res && res.stored) || 0) > 0;
@@ -695,8 +702,7 @@
         });
         if (!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${r.status}`); }
         domains[domain] = await r.json();
-        renderList();
-        loadWorklist();   // editing TTL / report-url / source can change due-status
+        renderList();   // domains[domain] is fresh (incl. derived due-status) → re-sorts
         btn.textContent = 'Saved ✓'; btn.classList.add('done');
         if (hint){ hint.style.color = ''; hint.textContent = 'Saved'; }
         setTimeout(() => { btn.textContent = 'Save'; btn.classList.remove('done'); }, 1900);
@@ -759,47 +765,8 @@
       } catch (e) { finish(`Refresh failed: ${e.message || e}`); }
     }
 
-    /* ------------------- SEMrush harvest worklist (due today) ------------------- */
-    // The human-workflow loop's visible half: list NEW/DUE domains, hand over the
-    // one-click SEMrush deep-link, then ingest whatever the curator saves to the inbox.
-    async function loadWorklist(){
-      const panel = $('#worklistPanel'), ul = $('#worklist'), cnt = $('#worklistCount');
-      if (!panel) return;
-      let data;
-      try { data = await (await fetch('/domains/harvest-worklist')).json(); }
-      catch { panel.hidden = true; return; }
-      const items = data.items || [];
-      if (!items.length){ panel.hidden = true; return; }
-      panel.hidden = false;
-      cnt.textContent = `(${items.length})`;
-      ul.innerHTML = '';
-      for (const it of items){
-        const li = document.createElement('li');
-        // Whole row selects the domain (cursor:pointer); the SEMrush link stops
-        // propagation so it opens externally without also selecting.
-        li.style.cssText = 'padding:7px 10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:3px;cursor:pointer';
-        const due = it.status === 'new'
-          ? '<span style="color:var(--accent-dark);font-weight:600">new</span>'
-          : `<span style="color:var(--ed-warn,#b4540a);font-weight:600">due</span>${it.next_harvest_at ? ' · ' + escapeHtml(it.next_harvest_at) : ''}`;
-        const link = it.semrush_report_url
-          ? `<a href="${escapeHtml(it.semrush_report_url)}" target="_blank" rel="noopener" class="wl-open" style="font-size:.8em">↗ Open in SEMrush</a>`
-          : `<span style="font-size:.78em;color:var(--ed-ink-soft)">no deep-link — add one on the domain</span>`;
-        li.innerHTML =
-          `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">` +
-            `<span style="font-weight:600;color:var(--accent-dark)">${escapeHtml(it.domain)}</span>` +
-            `<span style="font-size:.78em">${due}</span></div>` +
-          `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">${link}` +
-            `<span style="font-size:.72em;color:var(--ed-ink-soft)" title="expected export filename">${escapeHtml(it.expected_file)}</span></div>`;
-        li.addEventListener('click', () => {
-          selected = it.domain; renderList(); renderDetail(); nav.afterSelect();
-        });
-        const a = li.querySelector('.wl-open');
-        if (a) a.addEventListener('click', (e) => e.stopPropagation());
-        ul.appendChild(li);
-      }
-    }
-
-    // Scan the watched inbox for exports the curator just saved → route + ingest each.
+    /* ------------------- SEMrush harvest inbox scan ------------------- */
+    // Scan the inbox for exports the curator just saved → route + ingest each.
     async function scanInbox(){
       const btn = $('#scanInboxBtn'), log = $('#scanLog');
       btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Scanning…';
@@ -817,7 +784,7 @@
         if (!data.found) lines.push('  (nothing to ingest — save a SEMrush export to the inbox first)');
         log.textContent = lines.join('\n');
         // Harvests run out-of-process; give them a moment then refresh the worklist + list.
-        if (data.spawned) setTimeout(() => { loadWorklist(); loadDomains(); }, 4000);
+        if (data.spawned) setTimeout(() => { loadDomains(); }, 4000);
       } catch (e) {
         log.textContent = `Scan failed: ${e.message || e}`;
       } finally {
@@ -854,7 +821,6 @@
 
     loadDomains();
     loadRankStatus();
-    loadWorklist();
   </script>
 </body>
 </html>
