@@ -165,6 +165,25 @@
         `<input id="${id}" type="${opts.type || 'text'}" value="${escapeHtml(v)}"${ro} placeholder="${escapeHtml(ph)}"${opts.readonly ? ' tabindex="-1"' : ''}></div>`;
     }
 
+    // A URL input with Open-in-new-tab + Copy affordances to its right. Acts on the
+    // input's LIVE value (so an unsaved edit opens/copies correctly). Reusable — the
+    // intent is to bring this to every URL display across the system (delegated
+    // .url-ic handler below); for now the SEMrush report link is the only caller.
+    function urlField(id, label, value, opts = {}){
+      const v = value == null ? '' : String(value);
+      const full = opts.full ? ' full' : '';
+      const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : `ex: ${opts.ph}`) : '';
+      const ic = (act, glyph, title) =>
+        `<button type="button" class="url-ic" data-act="${act}" data-for="${id}" title="${title}" ` +
+        `style="flex:0 0 auto;width:30px;border:1px solid var(--line);background:var(--card);` +
+        `border-radius:6px;cursor:pointer;font-size:14px;color:var(--accent-dark)">${glyph}</button>`;
+      return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
+        `<div style="display:flex;gap:6px;align-items:stretch">` +
+          `<input id="${id}" type="url" value="${escapeHtml(v)}" placeholder="${escapeHtml(ph)}" style="flex:1 1 auto;min-width:0">` +
+          ic('open', '↗', 'Open in a new tab') + ic('copy', '⧉', 'Copy URL') +
+        `</div></div>`;
+    }
+
     function renderDetail(){
       const panel = $('#page');
       if (selected === '__new__') return renderCreate();
@@ -235,7 +254,7 @@
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
-                ${field('f_semrush_report_url', 'SEMrush report deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/backlinks/pages/?q=domain…', full: true })}
+                ${urlField('f_semrush_report_url', 'SEMrush report deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/backlinks/pages/?q=domain…', full: true })}
               </div>
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
             </div>
@@ -812,6 +831,17 @@
     const _markDirty = () => { const b = $('#saveBtn'); if (b) b.disabled = false; };
     $('#page').addEventListener('input', _markDirty);
     $('#page').addEventListener('change', _markDirty);
+    // Open / Copy affordances for any urlField() — acts on the input's live value.
+    $('#page').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.url-ic'); if (!btn) return;
+      const inp = document.getElementById(btn.dataset.for); const url = (inp?.value || '').trim();
+      if (!url){ flash('No URL yet', true); return; }
+      if (btn.dataset.act === 'open'){ window.open(url, '_blank', 'noopener'); return; }
+      try { await navigator.clipboard.writeText(url); }
+      catch { inp.select(); document.execCommand('copy'); }   // fallback for non-secure contexts
+      const g = btn.textContent; btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = g; }, 1100);
+    });
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
