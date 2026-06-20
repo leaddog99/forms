@@ -3408,6 +3408,108 @@ def domain_backlinks_file_endpoint(domain: str):
             "expected": f"{host}-backlinks-pages.xlsx"}
 
 
+def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
+                             records=None, label: str = "") -> Optional[int]:
+    """Enqueue + spawn an out-of-process publisher_refresh job for `host` (the same
+    job the manual refresh button uses), deduped on the in-flight entity. Returns the
+    job id, or None if one is already in flight. Shared by the manual refresh and the
+    SEMrush inbox scan so both routes harvest identically."""
+    from input.pipeline import domains_lib
+    row = domains_lib.get_domain(conn, host) or {}
+    entity_ref = f"publisher:{host}"
+    if jobs_lib.find_in_flight_for_entity(conn, entity_ref):
+        return None
+    keep = int(row.get("keep_top_n") or 10)
+    job_id = jobs_lib.enqueue_job(
+        conn, type="publisher_refresh",
+        params={"host": host, "keep": keep,
+                "pages": int(row.get("search_pages") or 10),
+                "query": (row.get("serp_query") or "").strip() or None,
+                "recipe_path": (row.get("recipe_path") or "").strip() or None,
+                "check_recipe": not bool(int(row.get("paywall", 0) or 0)),
+                "source": source, "records": records, "log_label": label or host,
+                "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
+        entity_ref=entity_ref)
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    subprocess.Popen(
+        [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+        cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return job_id
+
+
+@app.get("/domains/harvest-worklist")
+def harvest_worklist_endpoint():
+    """The SEMrush human-workflow "Due today" worklist: every SEMrush-managed,
+    allowed domain that is NEW or DUE/overdue, each with its deep-link + schedule
+    fields. A view over the domains rows — the curator clicks each link, runs the
+    SEMrush export, saves it to the watched inbox, then POSTs /semrush-inbox/scan.
+    See docs/semrush-harvest-scheduling.md."""
+    try:
+        from input.pipeline import domains_lib
+        with sqlite3.connect(DB_PATH) as conn:
+            domains_lib.ensure_domains_table(conn)
+            items = domains_lib.harvest_worklist(conn)
+        return {"count": len(items), "today": domains_lib._today(),
+                "items": [{
+                    "domain": d["domain"],
+                    "display_name": d.get("display_name") or d["domain"],
+                    "status": d.get("harvest_status"),
+                    "last_harvested_at": d.get("last_harvested_at"),
+                    "next_harvest_at": d.get("next_harvest_at"),
+                    "harvest_ttl_days": d.get("harvest_ttl_days"),
+                    "semrush_report_url": (d.get("semrush_report_url") or "").strip(),
+                    "expected_file": f"{d['domain']}-backlinks-pages.xlsx",
+                } for d in items]}
+    except Exception as e:
+        print(f"[ERROR] harvest_worklist failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.post("/semrush-inbox/scan")
+def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
+    """Scan the watched inbox for SEMrush exports the curator just saved, route each
+    to its domain by the `{domain}` filename prefix, move it into input/, and spawn
+    the existing backlinks_file harvest (which stamps last_harvested_at on success →
+    the domain rolls off the worklist). The semi-automated half of the loop: the
+    human does the SEMrush clicks, this does ingest + bookkeeping."""
+    from input.pipeline import domains_lib, collections_lib, system_config as _cfg
+    import os
+    inbox = (payload.get("inbox_dir") or _cfg.get_setting("semrush_inbox_dir", "")
+             or os.path.join(os.path.expanduser("~"), "Downloads"))
+    dirs = [inbox, collections_lib._input_dir()]
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            hosts = [d["domain"] for d in domains_lib.list_domains(conn)]
+            results = []
+            for f in collections_lib.scan_export_inbox(dirs):
+                prefix = (f["prefix"] or "").lower()
+                # Longest matching host wins (prefix == host, or host followed by a
+                # subpath separator) so allrecipes.com_recipe maps to allrecipes.com.
+                match = max((h for h in hosts
+                             if prefix == h or prefix.startswith(h + "_")
+                             or prefix.startswith(h + "-")),
+                            key=len, default=None)
+                if not match:
+                    results.append({"file": os.path.basename(f["path"]),
+                                    "matched": None, "skipped": "no domain match"})
+                    continue
+                dest = collections_lib.intake_export_file(f["path"])
+                job_id = _spawn_publisher_refresh(conn, match, source="backlinks_file",
+                                                  label=match)
+                results.append({"file": os.path.basename(dest), "matched": match,
+                                "job_id": job_id,
+                                "skipped": None if job_id else "already in flight"})
+        spawned = [r for r in results if r.get("job_id")]
+        return {"inbox": inbox, "found": len(results), "spawned": len(spawned),
+                "results": results}
+    except Exception as e:
+        print(f"[ERROR] semrush_inbox_scan failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Scan error: {e}")
+
+
 @app.get("/domains/{domain}")
 def get_domain_endpoint(domain: str):
     try:
@@ -3483,6 +3585,13 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
                 "search_pages = ?, harvest_source = ? WHERE domain = ?",
                 (res.get("recipe_path") or "", keep, query or "", pages, source, host))
             conn.commit()
+            # SEMrush human-workflow loop: a successful backlinks_file ingest is a
+            # completed harvest → stamp it so the derived next_harvest_at rolls
+            # forward and the domain drops off the "Due today" worklist. Only the
+            # file source counts as a scheduled harvest (the SERP refresh is a
+            # different, ad-hoc mechanism). See docs/semrush-harvest-scheduling.md.
+            if source == "backlinks_file":
+                domains_lib.mark_harvested(conn, host)
         return res
 
     res = await asyncio.to_thread(_work)

@@ -356,6 +356,57 @@ def backlinks_file_path(domain):
     return max(hits, key=os.path.getmtime) if hits else None
 
 
+def _input_dir():
+    """<project>/input — where the backlinks pipeline reads exports from."""
+    import os
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def export_prefix(path):
+    """The `{domain}[_subpath]` prefix of a SEMrush page-export filename — the part
+    before `-backlinks`. e.g. `allrecipes.com_recipe-backlinks_pages.xlsx` →
+    `allrecipes.com_recipe`; `addapinch.com-backlinks-pages.xlsx` → `addapinch.com`.
+    Returns '' if the name isn't an export."""
+    import os
+    base = os.path.basename(path)
+    low = base.lower()
+    i = low.find("-backlinks")
+    return base[:i] if i > 0 else ""
+
+
+def scan_export_inbox(dirs):
+    """Find SEMrush page-export files (`*-backlinks*pages.xlsx`) sitting in any of
+    `dirs` (the watched inbox — typically ~/Downloads). Returns
+    [{"path", "prefix"}] newest-first. Pure discovery — the caller matches each
+    prefix to a known domain and routes it (intake_export_file)."""
+    import os, glob
+    seen, out = set(), []
+    for d in dirs:
+        if not d or not os.path.isdir(d):
+            continue
+        for p in glob.glob(os.path.join(d, "*-backlinks*pages.xlsx")):
+            rp = os.path.realpath(p)
+            if rp in seen:
+                continue
+            seen.add(rp)
+            out.append({"path": p, "prefix": export_prefix(p)})
+    out.sort(key=lambda r: -os.path.getmtime(r["path"]))
+    return out
+
+
+def intake_export_file(path):
+    """Move a SEMrush export from the watched inbox into <project>/input/ so the
+    backlinks pipeline (backlinks_file_path) finds it. Returns the new path. A
+    same-named file already in input/ is overwritten (the freshest export wins)."""
+    import os, shutil
+    dest_dir = _input_dir()
+    dest = os.path.join(dest_dir, os.path.basename(path))
+    if os.path.realpath(path) == os.path.realpath(dest):
+        return dest                      # already in input/ — nothing to move
+    shutil.move(path, dest)              # replaces an existing same-named file
+    return dest
+
+
 def _recipe_path_key(url):
     """A dedup key that collapses a publisher's URL ALIASES for the same recipe — the
     numeric-id form (/recipe/21014/slug/), the bare slug (/recipe/slug/), and the legacy

@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from input.pipeline.url_utils import root_domain
@@ -62,6 +62,8 @@ EDITABLE_FIELDS = (
     "harvest_source", # discovery source: 'serp' (Google site:) or 'backlinks_file' (SEMrush export)
     "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
     "paywall",        # gated premium publisher (drives PA-remap)
+    "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
+    "semrush_report_url",  # editable one-click deep-link into SEMrush for this domain
 )
 
 
@@ -140,6 +142,31 @@ _PAYWALL_COLUMNS = {
     "semrush_rank_at": "TEXT",   # when the rank was last stamped (ISO)
 }
 
+# Harvest scheduling — the SEMrush human-workflow loop (docs/semrush-harvest-
+# scheduling.md). A "harvest" of a domain is the semi-automated SEMrush export:
+# the system tells the curator WHICH domains are due, hands them a one-click deep-
+# link into SEMrush, they press Run + Save the export, the watched inbox routes the
+# file back here by its `{domain}` filename prefix, the existing backlinks_file
+# pipeline ingests it, and on success we stamp `last_harvested_at` → the derived
+# `next_harvest_at` rolls forward → the row drops off the "Due today" worklist.
+# All on the domain row — NO separate task table (per the curator: "just a
+# different view of the data incl. the scheduling stuff in the domain record").
+_SCHEDULE_COLUMNS = {
+    # When this domain's recipes were last successfully (re)harvested (ISO). NULL =
+    # never harvested → "new" on the worklist. MANAGED (stamped by mark_harvested on
+    # a successful backlinks_file ingest), not hand-edited.
+    "last_harvested_at": "TEXT",
+    # Per-domain refresh cadence in days (default ~quarterly). next_harvest_at =
+    # last_harvested_at + this. Curator-overridable, like search_pages.
+    "harvest_ttl_days": "INTEGER NOT NULL DEFAULT 90",
+    # The editable one-click deep-link that opens SEMrush at THIS domain's Indexed-
+    # Pages report (subfolder filter pre-applied) — the hotlink the curator clicks
+    # from the worklist, then just presses Run + Export. '' = not captured yet (the
+    # worklist still lists the domain; the link is just absent). Curator-owned, like
+    # serp_query, so a SEMrush URL re-skin is a per-row field edit, not a code change.
+    "semrush_report_url": "TEXT NOT NULL DEFAULT ''",
+}
+
 
 def ensure_domains_table(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -181,6 +208,10 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
     # pa_cal_* are this publisher's own PA mean/std/n; pa_cal_free_* are the matched-
     # DA free reference at calibration time. See scripts/calibrate_paid_pa.py.
     for col, decl in _PAYWALL_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    # Harvest-scheduling columns (the SEMrush human-workflow loop).
+    for col, decl in _SCHEDULE_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     conn.execute(
@@ -275,6 +306,85 @@ def seed_domains(conn: sqlite3.Connection) -> int:
     return inserted
 
 
+# --- Harvest scheduling (the SEMrush human-workflow worklist) -----------------
+# A domain is part of the SEMrush manual flow when its discovery source is the
+# backlinks file OR it carries a captured SEMrush report URL. For those, we derive
+# the schedule on read (never stored — adding a domain or editing a TTL can't leave
+# it stale, exactly like bcc_rank and the dish next_run_at).
+
+def _today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _is_semrush_managed(d: dict) -> bool:
+    return (d.get("harvest_source") == "backlinks_file"
+            or bool((d.get("semrush_report_url") or "").strip()))
+
+
+def _derive_schedule(d: dict) -> None:
+    """Stamp DERIVED harvest-schedule fields onto a domain dict in place:
+      - next_harvest_at : last_harvested_at's date + harvest_ttl_days (None if the
+                          domain isn't SEMrush-managed; '' last → never)
+      - harvest_status  : 'new' (never harvested) | 'due' (next <= today) | 'ok'
+                          | None (not part of the SEMrush flow)
+      - harvest_due     : bool — convenience for the worklist filter
+    next_harvest is date-grain (the cadence is days); a missing/garbage timestamp
+    reads as 'new' rather than raising."""
+    d["next_harvest_at"] = None
+    d["harvest_status"] = None
+    d["harvest_due"] = False
+    if not _is_semrush_managed(d):
+        return
+    last = (d.get("last_harvested_at") or "").strip()
+    if not last:
+        d["harvest_status"] = "new"
+        d["harvest_due"] = True
+        return
+    try:
+        ttl = int(d.get("harvest_ttl_days") or 90)
+        nxt = (datetime.fromisoformat(last).date()
+               + timedelta(days=ttl)).isoformat()
+    except Exception:
+        d["harvest_status"] = "new"
+        d["harvest_due"] = True
+        return
+    d["next_harvest_at"] = nxt
+    if nxt <= _today():
+        d["harvest_status"] = "due"
+        d["harvest_due"] = True
+    else:
+        d["harvest_status"] = "ok"
+
+
+def mark_harvested(conn: sqlite3.Connection, domain: str,
+                   when: Optional[str] = None) -> None:
+    """Stamp a successful harvest → resets the derived next_harvest_at and drops the
+    domain off the worklist. Called by the publisher_refresh job on a successful
+    backlinks_file ingest (covers BOTH the manual refresh button and the watched-
+    inbox path). Best-effort; never raises into the job."""
+    host = _canon_host(domain)
+    try:
+        ensure_domains_table(conn)
+        conn.execute("UPDATE domains SET last_harvested_at = ? WHERE domain = ?",
+                     (when or _now(), host))
+        conn.commit()
+        invalidate_cache()
+    except Exception:
+        pass
+
+
+def harvest_worklist(conn: sqlite3.Connection) -> list[dict]:
+    """The "Due today" worklist: every SEMrush-managed, allowed domain that is NEW
+    (never harvested) or DUE/overdue, each carrying its deep-link + schedule fields.
+    Ordered new-first, then by oldest next_harvest_at (most overdue first). A plain
+    view over the domains rows — no separate table."""
+    out = [d for d in list_domains(conn)
+           if d.get("allowed") and d.get("harvest_due")]
+    out.sort(key=lambda d: (d.get("harvest_status") != "new",
+                            d.get("next_harvest_at") or ""))
+    return out
+
+
 def list_domains(conn: sqlite3.Connection) -> list[dict]:
     ensure_domains_table(conn)
     conn.row_factory = sqlite3.Row
@@ -293,6 +403,7 @@ def list_domains(conn: sqlite3.Connection) -> list[dict]:
         d["bcc_rank"] = i
     for d in rows:
         d.setdefault("bcc_rank", None)
+        _derive_schedule(d)
     return rows
 
 
@@ -306,6 +417,7 @@ def get_domain(conn: sqlite3.Connection, domain: str) -> Optional[dict]:
         return None
     d = dict(row)
     d["bcc_rank"] = _semrush_rank_local(conn, d)
+    _derive_schedule(d)
     return d
 
 
