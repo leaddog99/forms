@@ -352,7 +352,9 @@ def backlinks_file_path(domain):
     MOST RECENTLY MODIFIED — i.e. the one the curator just dropped in."""
     import os, glob
     input_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # <project>/input
-    hits = glob.glob(os.path.join(input_dir, f"{domain}*-backlinks*pages.xlsx"))
+    # Trailing `*` tolerates the browser's de-dup suffix on a re-download
+    # (`…pages (1).xlsx`) and any other tail before the extension.
+    hits = glob.glob(os.path.join(input_dir, f"{domain}*-backlinks*pages*.xlsx"))
     return max(hits, key=os.path.getmtime) if hits else None
 
 
@@ -384,7 +386,7 @@ def scan_export_inbox(dirs):
     for d in dirs:
         if not d or not os.path.isdir(d):
             continue
-        for p in glob.glob(os.path.join(d, "*-backlinks*pages.xlsx")):
+        for p in glob.glob(os.path.join(d, "*-backlinks*pages*.xlsx")):
             rp = os.path.realpath(p)
             if rp in seen:
                 continue

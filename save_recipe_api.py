@@ -3479,11 +3479,17 @@ def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
     import os
     inbox = (payload.get("inbox_dir") or _cfg.get_setting("semrush_inbox_dir", "")
              or os.path.join(os.path.expanduser("~"), "Downloads"))
-    dirs = [inbox, collections_lib._input_dir()]
+    # Scan ONLY the watched inbox — intake MOVES each matched file out to input/, so
+    # re-scanning input/ too would re-find and re-process the same export every time.
+    dirs = [inbox]
     try:
         with sqlite3.connect(DB_PATH) as conn:
             hosts = [d["domain"] for d in domains_lib.list_domains(conn)]
             results = []
+            # scan_export_inbox returns newest-first, so the FIRST file per domain is
+            # the latest — process that one, skip older duplicates (e.g. a re-download
+            # "…pages (1).xlsx" supersedes "…pages.xlsx") so we don't double-ingest.
+            handled = set()
             for f in collections_lib.scan_export_inbox(dirs):
                 prefix = (f["prefix"] or "").lower()
                 # Longest matching host wins (prefix == host, or host followed by a
@@ -3496,6 +3502,11 @@ def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
                     results.append({"file": os.path.basename(f["path"]),
                                     "matched": None, "skipped": "no domain match"})
                     continue
+                if match in handled:
+                    results.append({"file": os.path.basename(f["path"]), "matched": match,
+                                    "skipped": "superseded by a newer file"})
+                    continue
+                handled.add(match)
                 dest = collections_lib.intake_export_file(f["path"])
                 job_id = _spawn_publisher_refresh(conn, match, source="backlinks_file",
                                                   label=match)

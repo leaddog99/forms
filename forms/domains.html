@@ -65,7 +65,7 @@
       <div id="worklistPanel" hidden style="margin:0 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);overflow:hidden">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--accent-soft)">
           <strong style="font-size:.86em;color:var(--accent-dark)">SEMrush — due today <span id="worklistCount"></span></strong>
-          <button type="button" class="ed-btn" id="scanInboxBtn" style="font-size:.78em;padding:3px 8px" title="Scan the watched inbox (Downloads) for SEMrush exports you just saved, and ingest each into its domain">⤵ Scan inbox</button>
+          <button type="button" class="ed-btn" id="scanInboxBtn" style="font-size:.78em;padding:3px 8px" title="Scan the inbox (Downloads) for SEMrush exports you just saved, and ingest each into its domain">⤵ Scan inbox</button>
         </div>
         <ul id="worklist" style="list-style:none;margin:0;padding:0;max-height:230px;overflow:auto"></ul>
         <pre id="scanLog" hidden style="max-height:160px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:11px;line-height:1.4;padding:8px 10px;margin:0;white-space:pre-wrap"></pre>
@@ -352,14 +352,14 @@
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/backlinks-file`);
         const d = await r.json();
+        if (radio) radio.disabled = false;   // never gate the source on file presence —
+                                             // selecting it is fine; refresh errors if absent
         if (d.present){
           el.className = 'src-file ok';
           el.textContent = `✓ input/${d.filename}`;
-          if (radio) radio.disabled = false;
         } else {
           el.className = 'src-file missing';
-          el.textContent = `no file — drop input/${d.expected} (a _subdir export also works)`;
-          if (radio) radio.disabled = true;   // can't pick a source with no file
+          el.textContent = `no file yet — save input/${d.expected} (a _subdir export also works); refresh will error until it's there`;
         }
       } catch {
         el.className = 'src-file missing'; el.textContent = 'could not check for file';
@@ -775,7 +775,9 @@
       ul.innerHTML = '';
       for (const it of items){
         const li = document.createElement('li');
-        li.style.cssText = 'padding:7px 10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:3px';
+        // Whole row selects the domain (cursor:pointer); the SEMrush link stops
+        // propagation so it opens externally without also selecting.
+        li.style.cssText = 'padding:7px 10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:3px;cursor:pointer';
         const due = it.status === 'new'
           ? '<span style="color:var(--accent-dark);font-weight:600">new</span>'
           : `<span style="color:var(--ed-warn,#b4540a);font-weight:600">due</span>${it.next_harvest_at ? ' · ' + escapeHtml(it.next_harvest_at) : ''}`;
@@ -784,13 +786,15 @@
           : `<span style="font-size:.78em;color:var(--ed-ink-soft)">no deep-link — add one on the domain</span>`;
         li.innerHTML =
           `<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">` +
-            `<button type="button" class="wl-pick" style="all:unset;cursor:pointer;font-weight:600;color:var(--accent-dark)">${escapeHtml(it.domain)}</button>` +
+            `<span style="font-weight:600;color:var(--accent-dark)">${escapeHtml(it.domain)}</span>` +
             `<span style="font-size:.78em">${due}</span></div>` +
           `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">${link}` +
             `<span style="font-size:.72em;color:var(--ed-ink-soft)" title="expected export filename">${escapeHtml(it.expected_file)}</span></div>`;
-        li.querySelector('.wl-pick').addEventListener('click', () => {
+        li.addEventListener('click', () => {
           selected = it.domain; renderList(); renderDetail(); nav.afterSelect();
         });
+        const a = li.querySelector('.wl-open');
+        if (a) a.addEventListener('click', (e) => e.stopPropagation());
         ul.appendChild(li);
       }
     }

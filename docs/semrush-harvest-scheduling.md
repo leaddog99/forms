@@ -51,14 +51,14 @@ The UI (a "Due today" panel on `domains.html`, NOT YET BUILT) is just a render o
 
 ## 4. The watched inbox + file routing
 
-**Decision: a polled scan, not a FileSystemWatcher daemon.** A scan is stateless, has no debounce/partial-file race (only fully-written `*.xlsx` match the glob), and works whether triggered by a button or a schedule. The dedicated harvest machine makes a periodic poll feel automatic without an always-on watcher.
+**Decision: a manual button, no watcher (2026-06-20).** The curator is sitting right there when they save the export, so a **button kick-off** is all that's needed — no FileSystemWatcher daemon, no scheduled poll. A scan is stateless and has no debounce/partial-file race (only fully-written `*.xlsx` match the glob). (An automatic poll was considered and dropped: each scan spawns real harvest jobs, and the human is already active — let them press the button.)
 
-- **`POST /semrush-inbox/scan`** (manual "Scan inbox now") — scans the inbox dir (`system_config.semrush_inbox_dir`, default `~/Downloads`) ∪ `input/` for `*-backlinks*pages.xlsx`, routes each by the `{domain}` filename **prefix** to a known domain (longest-host match, so `allrecipes.com_recipe…` → `allrecipes.com`), moves it into `input/`, and spawns the `backlinks_file` harvest (deduped on the in-flight `publisher:<host>` entity). Returns a per-file `{file, matched, job_id, skipped}` report.
+- **`POST /semrush-inbox/scan`** (the "⤵ Scan inbox" button — the curator kicks it off) — scans ONLY the inbox dir (`system_config.semrush_inbox_dir`, default `~/Downloads`) for `*-backlinks*pages*.xlsx` (the trailing `*` tolerates the browser's `…pages (1).xlsx` re-download suffix), routes each by the `{domain}` filename **prefix** to a known domain (longest-host match, so `allrecipes.com_recipe…` → `allrecipes.com`), MOVES it into `input/`, and spawns the `backlinks_file` harvest (deduped on the in-flight `publisher:<host>` entity). Returns a per-file `{file, matched, job_id, skipped}` report. Scanning only the inbox (not `input/`) means an already-ingested file — moved out to `input/` — is never re-found and re-processed.
 - **Routing key** = the existing filename convention (`{domain}*-backlinks*pages.xlsx`) — no separate `file_pattern` column needed; the domain prefix *is* the key (`collections_lib.export_prefix` / `scan_export_inbox` / `intake_export_file`).
 - **Stamping** lives in the `publisher_refresh` job handler: a successful `source='backlinks_file'` ingest calls `domains_lib.mark_harvested(host)` — so BOTH the manual refresh button and the inbox scan reschedule identically.
 
-### Optional automatic poll (NEXT, not in V1)
-A `semrush_inbox_scan` scheduled job calling the same scan every N minutes = the fully hands-off "file arrives → processes" experience. Left **off by default** for V1 because each scan spawns real harvest jobs (network/credits); the manual button is the safe default. Flip it on per the dedicated-machine plan.
+### No watcher / no auto-poll (decided 2026-06-20)
+Deliberately NOT building a scheduled `semrush_inbox_scan` poll or a FileSystemWatcher. The curator is active at the moment they save the export → a button kick-off is the right ergonomics, and it avoids a background process spawning real harvest jobs unattended. Revisit only if the flow ever wants to run headless on the dedicated machine.
 
 ---
 
@@ -97,10 +97,14 @@ Even *one* domain/mo via API ≈ `$500 + ~$6` vs flat **$250 unlimited**; ~200 d
 - `save_recipe_api`: `GET /domains/harvest-worklist`, `POST /semrush-inbox/scan`, shared `_spawn_publisher_refresh`, `last_harvested_at` stamped in the `publisher_refresh` handler on a `backlinks_file` success.
 - Verified: migration applies on the real DB; worklist surfaces the 3 backlinks domains as "new"; filename→domain parsing + schedule derivation unit-tested; routes registered with the static path before `/domains/{domain}`.
 
-**NEXT (not built):**
-1. **"Due today" panel on `domains.html`** — render `GET /domains/harvest-worklist` (rows with `[Open in SEMrush]` + `[Scan inbox]`), wire the `semrush_report_url` field + `harvest_ttl_days` into the domain form. This is the visible half.
-2. **Capture the real SEMrush Indexed-Pages URL template** → seed `system_config.semrush_indexed_pages_url_template` so a per-domain `semrush_report_url` can be generated from `{domain}`+`{subfolder}` instead of hand-pasted ([[feedback_no_data_in_code]]).
-3. **Optional scheduled `semrush_inbox_scan` job** (§4) for hands-off polling.
-4. **Traffic/Trends ingestion** (§5) — the "What's Hot" surface + queue prioritization.
+**V1.1 SHIPPED (UI + fixes, 2026-06-20):**
+- `domains.html`: "Due today" worklist panel (status pill + `[Open in SEMrush]` deep-link + expected filename), the "⤵ Scan inbox" button, and the `harvest_ttl_days` + `semrush_report_url` fields on the backlinks source (with ↗ Open / ⧉ Copy via a reusable `urlField()`).
+- Glob tolerates the browser re-download suffix (`…pages (1).xlsx`); scan reads ONLY the inbox (not `input/`) so an ingested file isn't re-processed.
+- The `backlinks_file` source radio is **no longer gated on file presence** — selecting it is always allowed; the refresh errors cleanly if the file isn't there.
 
-**NOT building:** the SEMrush API path, a FileSystemWatcher daemon, any headless-browser automation of the export click.
+**NEXT (not built):**
+1. **Capture the real SEMrush Indexed-Pages URL template** → seed `system_config.semrush_indexed_pages_url_template` so a per-domain `semrush_report_url` can be generated from `{domain}`+`{subfolder}` instead of hand-pasted ([[feedback_no_data_in_code]]).
+2. **System-wide `urlField()`** — roll the Open/Copy URL affordance out to every URL display (recipe sidebar, cohort cards, etc.) via the shared component layer.
+3. **Traffic/Trends ingestion** (§5) — the "What's Hot" surface + queue prioritization.
+
+**NOT building:** a watcher / scheduled inbox poll (the curator kicks it off with the button), the SEMrush API path, any headless-browser automation of the export click.
