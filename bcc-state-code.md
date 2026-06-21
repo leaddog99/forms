@@ -1033,3 +1033,29 @@ Conceded the earlier overreach: plain Playwright doesn't beat PerimeterX (finger
 - **Reset-on-import bug FOUND + FIXED** (the real cause of #270/#272 dying mid-run as `error: interrupted by uvicorn restart`): `reset_interrupted_jobs` lives in `init_db`, which runs on EVERY `save_recipe_api` import — and `jobs exec`/any diagnostic import re-ran it, **wiping a concurrently-running job's status to error**. Fix: `jobs/__main__.py` sets `BCC_SKIP_JOB_RESET=1` before importing the app; `init_db` skips the reset when set. Only the uvicorn server resets on its own startup now; workers don't. (Also why my own diagnostic scripts kept killing live harvests.)
 - **Cancel VERIFIED live**: job #274 stayed `running` (no spurious reset) → `POST /jobs/274/cancel` → polled `running`→`cancelled`; the harvest aborted cleanly after candidate 4 (`=== Job #274 CANCELLED ===`). End-to-end: flag → cross-process WAL poll → graceful abort → status `cancelled`.
 - Committed `08508dc` (render-off); this batch (reattach + reset-fix) committing now. Server NOT restarted (worker picks up the reset-fix as a fresh process; cancel endpoint/handler already live from the earlier restart).
+
+---
+
+## Session log — 2026-06-20 — image upload downscale (ONE canonical spec for every image) + honest weak-network errors; diagnosed the spanakopita extract failures as upload-not-extractor
+
+> **CAPSTONE.** Reported bug: at a relative's house, on **weak network**, tried 3× to extract a recipe (spanakopita) from an iPhone photo — each ground for 3-4 min then errored. Diagnosis from the logs was unambiguous and **exonerates the extractor**: there is **zero server trace** for spanakopita (the uploads died on the weak link before ever reaching the server). The only image extract that got through that evening was a *different* recipe ("Banitsa", a cheese pie) at 19:27 — and it extracted server-side in **21 seconds**. So: the ~2 MB raw photo upload over a weak connection was the bottleneck; the client also **misreported** the failure ("Image extraction failed" for what was really a dropped upload) and had **no timeout** (hence the multi-minute silent grind). Also spotted (separate, now cleared): a 15:07 `MemoryError` in `list_recipes` from **multiple stale uvicorns** running at once.
+>
+> **Shipped (static `.html`/`.js` — no Python changed; a reload picks them up). Server restarted clean (single process, PID 7692). UNCOMMITTED → committing this batch.**
+
+### ONE canonical downscale for ANY image ([[feedback_single_path]])
+User's call: *every* image upload should be downscaled to the same spec — hero/dish photo included, not just the extract photo. So the canonical shrink lives in the reusable control:
+- **`forms/image-well.js` → `downscaleForUpload(file)`** (exported on `window.ImageWell`): long edge ≤ **1568px** (the vision model's effective ceiling — larger is resized down server-side anyway) @ **JPEG 0.88**, EXIF-orientation-aware (`createImageBitmap(..., {imageOrientation:'from-image'})` with a plain-`createImageBitmap` fallback). A 12MP/2-4MB iPhone photo → ~1.5MP / **~250-450KB (~8-10× lighter)**, text still OCR-legible. **Best-effort**: returns the ORIGINAL file unchanged on a non-image / decode-fail / already-small / no-size-win — never blocks an upload. Called at the top of `handleFile` (covers the dish/hero photo via drop, paste, file picker, **photo library**, camera).
+- **`forms/recipe_form_styled.html` → `extractFromImage`** now **delegates** to `window.ImageWell.downscaleForUpload` (no duplicate spec), with a fallback to the original file if the shared control isn't loaded. Every image-extract entry point (drop, camera, library, bookmarklet-staged, fallback input) funnels through `extractFromImage`, so all get it.
+- Cache-bust: `image-well.js?v=20260608n → 20260620a` in `recipe_form_styled.html` (only file that loads it today; the dish/master editors are its "later" consumers).
+
+### Honest weak-network errors + a real timeout (image AND pdf extract)
+Both `extractFromImage` and `extractFromPdf` previously did `fetch → res.json()` with one catch labeled "…extraction failed" and **no timeout** → a dropped/slow upload read as an extractor failure and hung for minutes.
+- **`uploadErrorMessage(err)`** classifies: `AbortError` → "upload timed out — connection too weak/dropped"; `TypeError` (Failed to fetch / Load failed) → "couldn't upload the photo — connection too weak/dropped"; `SyntaxError` (non-JSON, i.e. a timeout/proxy error page) → "server didn't return a valid result (often a timeout)". Falls through to the raw message otherwise.
+- **`UPLOAD_TIMEOUT_MS = 90000` + `AbortController`** on both paths → fails fast with the honest message instead of a silent 3-4 min grind. `clearTimeout` in `finally`.
+- Split the `try` so a network-level fetch reject and a JSON-parse failure each get their own honest dialog ("Couldn't upload the photo" / "Couldn't reach the extractor"); the generic outer catch stays as a safety net.
+
+### Ops
+- Server was **down** (no python, nothing on :8009) when the session started. Restarted via the canonical zombie-safe **`bcc_restart.bat`** (detached) → clean single process, startup complete, no errors. Verified the new assets are served (image-well.js 200 w/ `downscaleForUpload`; form 200 w/ the bumped `?v` + delegation + pdf signal).
+- Stray dead-process logs (`smoke_uvicorn*`, `uvicorn_cookview_agent*`, `uvicorn_claude*`) are untracked noise from earlier multi-process runs — safe to delete.
+- Verification: `node --check` clean on `image-well.js`; all inline `<script>` blocks of the form syntax-OK. Live browser/phone re-test of the spanakopita extract on weak signal still TODO (server + code ready).
+- NOTE: commits `b369f0e`→`418a5f5` (SEMrush human-workflow harvest scheduling, "Due today" worklist, inbox scan, report-URL deep-link) landed earlier on 06-20 and are **not yet written up** here — a separate session's work.

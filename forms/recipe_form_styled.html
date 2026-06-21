@@ -1632,7 +1632,7 @@
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <script src="/forms/library-shell.js?v=20260618c"></script>
-  <script src="/forms/image-well.js?v=20260608n"></script>
+  <script src="/forms/image-well.js?v=20260620a"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -5673,6 +5673,34 @@
       return ok;
     }
 
+    // Downscale a photo before upload via the CANONICAL shrink in image-well.js
+    // (single path — the hero/dish photo and this extract photo use the exact
+    // same spec: long edge <= 1568px @ JPEG ~0.88). Falls back to the original
+    // file if the shared control somehow isn't loaded — never blocks extraction.
+    async function downscaleImage(file) {
+      try {
+        if (window.ImageWell && typeof window.ImageWell.downscaleForUpload === 'function') {
+          return await window.ImageWell.downscaleForUpload(file);
+        }
+      } catch (_) {}
+      return file;
+    }
+
+    // Turn a fetch/parse failure into an HONEST, user-facing explanation. A
+    // weak-network upload death must NOT read as "extraction failed" — the
+    // extractor was never reached. AbortError = our timeout; TypeError =
+    // "Failed to fetch"/"Load failed" (connection dropped mid-upload);
+    // SyntaxError = a non-JSON response (a timeout/proxy error page).
+    function uploadErrorMessage(err) {
+      if (err && err.name === 'AbortError')
+        return 'The upload timed out — your connection looks too weak, or it dropped mid-upload. Try again on a stronger signal.';
+      if (err instanceof TypeError)
+        return 'Couldn’t upload the photo — your connection looks too weak, or it dropped mid-upload. Try again on a stronger signal.';
+      if (err instanceof SyntaxError)
+        return 'The server didn’t return a valid result (often a timeout on a slow connection). Try again on a stronger signal.';
+      return (err && err.message) || 'Unable to reach the extraction server.';
+    }
+
     // Image is OCR'd to markdown server-side and then run through the same
     // markdown extraction pipeline. source_url is taken ONLY from the
     // explicit `sourceUrl` arg — do NOT silently fall back to
@@ -5682,17 +5710,37 @@
     // vision on this image. Callers that genuinely want to tie the
     // image to a source URL (e.g. extractFromStagedImage in the
     // bookmarklet fallback) pass it explicitly.
+    const UPLOAD_TIMEOUT_MS = 90000; // fail fast with an honest message, not a silent 3-4 min grind
     async function extractFromImage(file, sourceUrl = '', title = '') {
       dropZone.classList.add('processing');
       const stopRotation = startStatusRotation('image');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
       try {
+        file = await downscaleImage(file); // best-effort shrink so weak networks can push it
         const formData = new FormData();
         formData.append('image', file);
         if (sourceUrl) formData.append('source_url', sourceUrl);
         if (title) formData.append('title', title);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
-        const res = await fetch(`${API}/extract-from-image`, { method: 'POST', body: formData });
-        const result = await res.json();
+        let res;
+        try {
+          res = await fetch(`${API}/extract-from-image`, { method: 'POST', body: formData, signal: controller.signal });
+        } catch (netErr) {
+          // Never reached the server (connection dropped / timed out / too weak).
+          console.error('Image upload error:', netErr);
+          showErrorDialog({ title: 'Couldn’t upload the photo', message: uploadErrorMessage(netErr), showImageButton: false });
+          return;
+        }
+        let result;
+        try {
+          result = await res.json();
+        } catch (parseErr) {
+          // Got a response but it isn't JSON — usually a timeout/proxy error page.
+          console.error('Image extraction parse error:', parseErr, 'status', res.status);
+          showErrorDialog({ title: 'Couldn’t reach the extractor', message: uploadErrorMessage(parseErr), showImageButton: false });
+          return;
+        }
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
@@ -5722,6 +5770,7 @@
           showImageButton: false,
         });
       } finally {
+        clearTimeout(timer);
         stopRotation();
         dropZone.classList.remove('processing');
       }
@@ -5737,6 +5786,8 @@
       const originalText = processingEl ? processingEl.textContent : '';
       // 'Rendering PDF pages…' replaced by a rotating 'pdf' message set.
       const stopRotation = startStatusRotation('pdf');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -5747,8 +5798,24 @@
         if (sourceUrl) formData.append('source_url', sourceUrl);
         if (effectiveTitle) formData.append('title', effectiveTitle);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
-        const res = await fetch(`${API}/extract-from-pdf`, { method: 'POST', body: formData });
-        const result = await res.json();
+        let res;
+        try {
+          res = await fetch(`${API}/extract-from-pdf`, { method: 'POST', body: formData, signal: controller.signal });
+        } catch (netErr) {
+          // Never reached the server (connection dropped / timed out / too weak).
+          console.error('PDF upload error:', netErr);
+          showErrorDialog({ title: 'Couldn’t upload the PDF', message: uploadErrorMessage(netErr), showImageButton: false });
+          return;
+        }
+        let result;
+        try {
+          result = await res.json();
+        } catch (parseErr) {
+          // Got a response but it isn't JSON — usually a timeout/proxy error page.
+          console.error('PDF extraction parse error:', parseErr, 'status', res.status);
+          showErrorDialog({ title: 'Couldn’t reach the extractor', message: uploadErrorMessage(parseErr), showImageButton: false });
+          return;
+        }
         if (res.ok && result.success) {
           populateFormFromRecipe(result.recipe);
           document.getElementById("recipe_id").value = result.recipe_id || result.recipe?.id || '';
@@ -5778,6 +5845,7 @@
           showImageButton: false,
         });
       } finally {
+        clearTimeout(timer);
         stopRotation();
         if (processingEl) processingEl.textContent = originalText || 'Extracting recipe...';
         dropZone.classList.remove('processing');

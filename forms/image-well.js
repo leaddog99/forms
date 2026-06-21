@@ -96,6 +96,43 @@
     '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>' +
     '<path d="M21 15l-5-5L5 21"/></svg>';
 
+  // Canonical client-side downscale for ANY image before upload (single path —
+  // hero/dish photo AND recipe-extract photo go through this). Shrinks a photo
+  // so a weak network can actually push it, while keeping enough resolution that
+  // recipe text stays OCR-legible: long edge <= 1568px (the vision model's
+  // effective ceiling — larger gets resized down server-side anyway) at JPEG
+  // ~0.88. A 12MP/2-4MB iPhone photo becomes ~1.5MP / ~250-450KB (~8-10x lighter).
+  // Best-effort: returns the ORIGINAL file unchanged on a non-image, a decode
+  // failure, an already-small image, or no size win — never blocks an upload.
+  const UPLOAD_MAX_EDGE = 1568;
+  const UPLOAD_JPEG_QUALITY = 0.88;
+  async function downscaleForUpload(file) {
+    try {
+      if (!file || !file.type || !file.type.startsWith('image/')) return file;
+      let bmp;
+      try {
+        // Apply EXIF orientation so a portrait photo isn't re-baked sideways.
+        bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch (_) {
+        bmp = await createImageBitmap(file); // older engines: option unsupported
+      }
+      const longEdge = Math.max(bmp.width, bmp.height);
+      if (longEdge <= UPLOAD_MAX_EDGE) { bmp.close && bmp.close(); return file; }
+      const scale = UPLOAD_MAX_EDGE / longEdge;
+      const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+      bmp.close && bmp.close();
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', UPLOAD_JPEG_QUALITY));
+      if (!blob || blob.size >= file.size) return file; // no win — keep original
+      const name = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+      return new File([blob], name, { type: 'image/jpeg', lastModified: file.lastModified || Date.now() });
+    } catch (_) {
+      return file;
+    }
+  }
+
   function mount(root, opts) {
     opts = opts || {};
     injectStyles();
@@ -180,6 +217,7 @@
       if (!file.type || !file.type.startsWith('image/')) {
         feedback(`Not an image (${file.type || 'unknown type'})`, 'error'); return;
       }
+      file = await downscaleForUpload(file); // shrink before upload (weak-network friendly)
       try { // optimistic preview
         const dataUrl = await new Promise((res, rej) => {
           const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error);
@@ -379,5 +417,5 @@
     return { getUrl: () => url, getMeta: () => meta, setUrl, clear: () => setUrl(''), root, frame };
   }
 
-  window.ImageWell = { mount };
+  window.ImageWell = { mount, downscaleForUpload };
 })();
