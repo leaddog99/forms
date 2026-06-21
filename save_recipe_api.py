@@ -3530,6 +3530,40 @@ def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
         raise HTTPException(status_code=500, detail=f"Scan error: {e}")
 
 
+@app.get("/url-words")
+def url_words_status_endpoint():
+    """Counts for the self-learning URL-word lists (the recipe-URL pre-filter vocab)."""
+    from input.pipeline import url_word_lists
+    with sqlite3.connect(DB_PATH) as conn:
+        url_word_lists.seed_if_empty(conn)
+        rows = conn.execute(
+            "SELECT kind, source, COUNT(*) FROM url_word_class GROUP BY kind, source"
+        ).fetchall()
+        recent = [r[0] for r in conn.execute(
+            "SELECT word FROM url_word_class WHERE source='ai' AND kind='food' "
+            "ORDER BY created_at DESC LIMIT 25")]
+    counts: dict = {}
+    for kind, source, n in rows:
+        counts.setdefault(kind, {})[source] = n
+    return {"counts": counts, "recent_food_learned": recent}
+
+
+@app.post("/url-words/sweep")
+def url_words_sweep_endpoint():
+    """Sweep the master corpus' URLs for unknown path tokens, classify the batch in ONE
+    Haiku call, and INSERT the results into the two word lists (incremental). The utility
+    behind the self-learning recipe-URL pre-filter. Synchronous (one model call)."""
+    from input.pipeline import url_word_lists
+    try:
+        llm.enter(recipe_id=None, user_id=0)   # journal the classify call
+        res = url_word_lists.sweep_master_urls(db_path=DB_PATH)
+        _journal_usage(None, user_id=0)
+        return res
+    except Exception as e:
+        print(f"[ERROR] url_words_sweep failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Sweep error: {e}")
+
+
 @app.get("/domains/{domain}")
 def get_domain_endpoint(domain: str):
     try:

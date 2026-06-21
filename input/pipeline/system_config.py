@@ -203,6 +203,17 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "Folder the 'Scan inbox' button reads for saved SEMrush exports "
                        "(`*-backlinks*pages*.xlsx`). Blank = the OS Downloads folder.",
     },
+    {
+        "key": "url_prefilter_dish_batch",
+        "value": True,
+        "type": "bool",
+        "category": "Harvest",
+        "label": "URL pre-filter on the dish SERP batch",
+        "description": "Skip SERP results whose URL path names no food/recipe word BEFORE "
+                       "fetching, using the self-learning word lists (url_word_class). "
+                       "Proven ~0.2% false-drop on the corpus (foreign-script slugs only). "
+                       "Publisher harvests use the per-domain `url_prefilter` flag instead.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

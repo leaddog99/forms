@@ -434,7 +434,8 @@ def _english_title(title: str, lang_code: str) -> str:
 
 def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       capture_provenance: dict | None = None,
-                      unblocker: bool = False, should_cancel=None,
+                      unblocker: bool = False, url_prefilter: bool = False,
+                      should_cancel=None,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -475,6 +476,18 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             from input.pipeline.jobs import JobCancelled
             raise JobCancelled(f"cancelled after {i - 1}/{len(entries)} candidates")
         url = e["url"]
+        # OPTIONAL URL-text skip (opt-in per caller) — drop URLs whose path names no
+        # food/recipe word BEFORE the (paid) fetch, using the shared self-learning word
+        # lists. The single canonical place for the pre-fetch skip, so the harvest AND
+        # the dish batch share it. See input.pipeline.url_word_lists.
+        if url_prefilter:
+            from input.pipeline.url_word_lists import url_lacks_recipe_signal
+            if url_lacks_recipe_signal(url):
+                e["recipe_score"] = 0
+                e["_dropped_reason"] = "url-prefilter"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] URL-SKIP    {url}")
+                continue
         # Collection/listicle guard (English fast-path) — a plural-"recipes" SERP title
         # ("30 Greek Recipes") is an index page, not a dish. Drop BEFORE the fetch.
         # Non-English titles don't match the English word here; they're caught
@@ -1068,8 +1081,17 @@ def build_batch(
     print(f"      -> kept {len(entries)}, dropped {len(dropped_disallowed)}")
 
     print(f"\n[3/7] is_recipe fetch+score (threshold={IS_RECIPE_THRESHOLD})")
+    # URL-text pre-skip (shared self-learning word lists) before the SERP fetch — opt-in
+    # via system_config 'url_prefilter_dish_batch'. Proven ~0.2% false-drop on the corpus
+    # (foreign-script slugs only), so it's safe to skip obvious non-recipe SERP hits.
+    try:
+        from input.pipeline.system_config import get_setting as _get_setting
+        _dish_url_prefilter = bool(_get_setting("url_prefilter_dish_batch", True))
+    except Exception:
+        _dish_url_prefilter = True
     entries, dropped_not_recipe = _is_recipe_filter(
-        entries, capture_source="dish_batch", capture_provenance={"dish": dish})
+        entries, capture_source="dish_batch", capture_provenance={"dish": dish},
+        url_prefilter=_dish_url_prefilter)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_not_recipe)}")
 
     print(f"\n[4/7] Moz scoring on survivors")

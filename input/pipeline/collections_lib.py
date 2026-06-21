@@ -203,115 +203,11 @@ def _looks_like_archive(url: str) -> bool:
     return bool(_ARCHIVE_RE.search(urlparse(url).path))
 
 
-# ── OPTIONAL URL-text pre-filter ────────────────────────────────────────────
-# "Probably not a recipe" judged from the URL PATH alone, BEFORE any (paid) fetch.
-# A recipe URL almost always says so — it contains the word 'recipe' or a food word
-# (chicken, lasagna, brioche…). A publisher's noise (/restaurant/, /chef/, /jobs/,
-# /holiday/, author/photography pages) usually contains neither. Dropping those up
-# front saves a fetch + an unblocker credit each. OPT-IN PER DOMAIN (domains.url_prefilter)
-# because some publishers TRUNCATE slugs (thepioneerwoman /the_best_lasagn/, /cobbl/)
-# which wouldn't match a food vocab — there it would false-drop, so leave it off.
-# A URL signals a RECIPE even without a specific food noun when it carries the word
-# 'recipe', a cooking METHOD, or a meal/course word — so these KEEP the candidate.
-_RECIPE_URL_WORDS = {
-    "recipe", "recipes", "homemade",
-    "baked", "grilled", "roasted", "fried", "braised", "stewed", "smoked",
-    "poached", "seared", "sauteed", "broiled", "steamed", "simmered", "roast",
-    "marinated", "glazed", "stuffed", "candied", "pickled", "caramelized",
-    "grill", "bake", "braise", "saute", "fry",
-    "breakfast", "brunch", "lunch", "dinner", "supper", "dessert", "desserts",
-    "appetizer", "snack", "snacks", "entree",
-}
-
-# Words that appear inside dish names but aren't themselves a food signal (cuisines,
-# recipe adjectives, connectives) — excluded so the vocab stays food-specific. NOTE:
-# cooking methods are NOT here — they're recipe signals (above), not noise.
-_FOOD_VOCAB_STOP = {
-    "and", "the", "with", "for", "from", "style", "homemade", "easy", "best",
-    "classic", "simple", "quick", "perfect", "ultimate", "creamy", "crispy",
-    "fresh", "spicy", "sweet", "savory",
-    "italian", "french", "greek", "mexican", "american", "asian", "chinese",
-    "indian", "thai", "spanish", "german", "japanese", "korean", "southern",
-    "mediterranean", "moroccan", "turkish", "vietnamese", "english", "irish",
-    "old", "fashioned", "made", "your", "own", "one", "pot", "pan", "sheet",
-    "day", "days", "new", "year", "years", "time", "week", "night", "game",
-}
-# Common single foods/ingredients/forms that may not surface as a dish-name token.
-_BASE_FOOD_WORDS = {
-    "chicken", "beef", "pork", "lamb", "turkey", "duck", "bacon", "ham", "sausage",
-    "fish", "salmon", "tuna", "shrimp", "crab", "lobster", "scallop", "clam", "oyster",
-    "egg", "eggs", "cheese", "butter", "cream", "milk", "yogurt", "buttermilk",
-    "chocolate", "vanilla", "caramel", "cinnamon", "honey", "maple",
-    "bread", "brioche", "toast", "bagel", "biscuit", "muffin", "scone", "roll",
-    "cake", "pie", "tart", "cookie", "brownie", "pudding", "custard", "cobbler",
-    "pasta", "spaghetti", "noodle", "risotto", "rice", "quinoa", "couscous", "gnocchi",
-    "pizza", "burger", "sandwich", "taco", "burrito", "wrap", "soup", "stew", "chili",
-    "salad", "slaw", "dip", "sauce", "salsa", "gravy", "dressing", "marinade",
-    "potato", "tomato", "onion", "garlic", "mushroom", "pepper", "spinach", "kale",
-    "broccoli", "carrot", "zucchini", "squash", "bean", "lentil", "chickpea", "corn",
-    "apple", "banana", "lemon", "lime", "orange", "berry", "strawberry", "blueberry",
-    "peach", "pumpkin", "coconut", "almond", "peanut", "walnut", "pecan",
-    "steak", "ribs", "roast", "meatball", "casserole", "curry", "stir", "fry",
-    "pancake", "waffle", "omelet", "frittata", "quiche", "pasty", "pastry", "dough",
-    "tea", "coffee", "smoothie", "cocktail", "lemonade", "punch", "latte",
-    # gaps surfaced by the corpus audit
-    "orzo", "wing", "wings", "scallop", "scallops", "oat", "oats", "oatcake", "oatcakes",
-    "pecorino", "parmesan", "parmigiano", "mozzarella", "feta", "ricotta", "gouda",
-    "rosemary", "thyme", "basil", "oregano", "sage", "cilantro", "parsley", "dill", "mint",
-    "cracker", "crackers", "ketchup", "mustard", "mayo", "pickle", "pickles", "jam", "jelly",
-    "pesto", "hummus", "falafel", "gyro", "kebab", "ramen", "dumpling", "dumplings", "tofu",
-}
-
-_FOOD_VOCAB_CACHE: Optional[set] = None
-
-
-def _food_vocab() -> set:
-    """The food/ingredient/dish vocabulary used by the URL pre-filter — the dish-catalog
-    names (chapter_shortcuts.json, ~1600) tokenized + a base ingredient set. Built once,
-    cached. Catalog is DATA (no-data-in-code); the base set covers single ingredients a
-    dish name may not surface. Falls back to the base set if the catalog is unreadable."""
-    global _FOOD_VOCAB_CACHE
-    if _FOOD_VOCAB_CACHE is not None:
-        return _FOOD_VOCAB_CACHE
-    import os, json, re
-    vocab = set(_BASE_FOOD_WORDS)
-    try:
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "..", "extract", "chapter_shortcuts.json")
-        if not os.path.exists(path):
-            path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                "extract", "chapter_shortcuts.json")
-        with open(path, encoding="utf-8") as f:
-            cat = json.load(f)
-        for name in cat:
-            if name.startswith("_"):           # _comment / _note meta keys
-                continue
-            for tok in re.split(r"[^a-z]+", name.lower()):
-                if len(tok) >= 3 and tok not in _FOOD_VOCAB_STOP:
-                    vocab.add(tok)
-    except Exception as e:
-        print(f"  [url-prefilter] dish catalog unavailable ({e}); using base food set")
-    _FOOD_VOCAB_CACHE = vocab
-    return vocab
-
-
-def _path_tokens(url: str) -> set:
-    """Lowercase alpha word tokens from a URL's path (split on non-letters, ≥3 chars)."""
-    import re
-    return {t for t in re.split(r"[^a-z]+", urlparse(url).path.lower()) if len(t) >= 3}
-
-
-def url_lacks_recipe_signal(url: str) -> bool:
-    """OPTIONAL pre-filter: True (→ drop, skip the fetch) when the URL path mentions
-    NEITHER 'recipe' NOR any food word — i.e. it's probably a /restaurant//chef//jobs/
-    page, not a recipe. Conservative: any recipe/food token keeps it (the fetch-verify
-    still runs on survivors). False-drops slug-truncating publishers, so it's opt-in."""
-    toks = _path_tokens(url)
-    if toks & _RECIPE_URL_WORDS:
-        return False
-    if toks & _food_vocab():
-        return False
-    return True
+# The URL-text pre-filter (food/recipe-word skip) + its self-learning two-list
+# vocabulary now live in the shared `url_word_lists` module so BOTH this harvest and
+# build_query_batch._is_recipe_filter use ONE implementation ([[single canonical path]]).
+# Re-exported here for back-compat with existing callers/tests.
+from input.pipeline.url_word_lists import url_lacks_recipe_signal  # noqa: E402,F401
 
 
 def _serp_links(query, want=50) -> list:
@@ -694,20 +590,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy/collection URLs "
               f"({len(found)} candidates remain)")
 
-    # OPTIONAL URL-text pre-filter (domains.url_prefilter): drop URLs whose PATH names no
-    # recipe/food word BEFORE the (paid) fetch — e.g. bostonchefs /restaurant/, /chef/,
-    # /jobs/ pages. Big credit saver for directory-style publishers; opt-in because it
-    # false-drops slug-truncating sites (thepioneerwoman /the_best_lasagn/). See
-    # url_lacks_recipe_signal.
-    if url_prefilter:
-        n_pre = len(found)
-        found = [(l, t) for l, t in found if not url_lacks_recipe_signal(l)]
-        if len(found) < n_pre:
-            print(f"  [harvest] url-prefilter dropped {n_pre - len(found)} non-recipe-looking URLs "
-                  f"({len(found)} candidates remain) — saved that many fetches")
-
     # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
     # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else phrase score.
+    # The OPTIONAL URL-text pre-filter (domains.url_prefilter) is applied INSIDE
+    # _is_recipe_filter — the fetch choke point — so the same skip serves every caller
+    # (it drops /restaurant//chef//jobs/ URLs before the paid fetch). When check_recipe
+    # is OFF (trusted/paywalled — no fetch), apply it inline so the option still bites.
     recipe_pass = found
     if check_recipe and found:
         from intake.build_query_batch import _is_recipe_filter
@@ -716,8 +604,15 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             capture_source="domain_harvest",
             capture_provenance={"domain": domain, "discover_source": source},
             unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
+            url_prefilter=url_prefilter,
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
+    elif url_prefilter and found:
+        n_pre = len(found)
+        recipe_pass = [(l, t) for l, t in found if not url_lacks_recipe_signal(l)]
+        if len(recipe_pass) < n_pre:
+            print(f"  [harvest] url-prefilter dropped {n_pre - len(recipe_pass)} "
+                  f"non-recipe-looking URLs (no fetch-verify on this publisher)")
 
     scored = []
     for url, title in recipe_pass:
