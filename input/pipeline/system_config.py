@@ -214,6 +214,18 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Proven ~0.2% false-drop on the corpus (foreign-script slugs only). "
                        "Publisher harvests use the per-domain `url_prefilter` flag instead.",
     },
+    {
+        "key": "url_prefilter_explore_rate",
+        "value": 0.08,
+        "type": "float",
+        "category": "Harvest",
+        "label": "URL pre-filter ε-exploration rate",
+        "description": "Fraction (0-1) of would-be url-prefilter SKIPS that are verified "
+                       "anyway (fetched + scored) to mint UNBIASED is-recipe training "
+                       "labels in the region the filter skips — without it the classifier "
+                       "trains only on survivors and re-learns the filter's blind spots. "
+                       "0 disables. Costs ~rate × (skipped count) extra fetches.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

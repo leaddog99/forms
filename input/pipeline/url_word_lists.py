@@ -188,10 +188,13 @@ def path_tokens(url: str) -> set:
 
 
 def url_lacks_recipe_signal(url: str, db_path: Optional[str] = None) -> bool:
-    """True (→ drop, skip the fetch) when the URL path mentions no food/recipe word —
-    probably a /restaurant//chef//jobs/ page, not a recipe. Any food-list token keeps
-    it; the fetch-verify still runs on survivors. The 'stop' list isn't consulted here
-    (a non-food token is simply no signal) — it only spares the SWEEP from re-asking."""
+    """True (→ drop, skip the fetch) when the URL path has NO food-list token. Food
+    presence is the ONLY gate — a non-food token (restaurant/chef/news) is just no
+    signal, NEVER exclusionary, so a real recipe can't be dropped over an incidental
+    word. The 'stop' list isn't consulted here (it only spares the SWEEP from re-asking).
+    The fetch-verify still runs on survivors, so a restaurant named after a real dish
+    (/restaurant/sarma/) is kept-then-dropped by verify — that's the accepted ceiling;
+    the cure for junk keeps is fixing mis-classified food tokens, not exclusion rules."""
     return not (path_tokens(url) & get_word_sets(db_path)["food"])
 
 
@@ -226,20 +229,32 @@ _CLASSIFY_SYS = (
     "buffet, cafe, diner, tavern, pub, grill-as-a-place), a DINING / HOSPITALITY / BUSINESS "
     "word (dining, restaurant, menu, reservation, catering, hours, location, event, party, "
     "special, specials, takeout, delivery, brunch-service), a MEAL word used as a time not "
-    "a dish (cena=dinner, lunch, supper), a person name, a place, a date, a number, a site "
-    "word (html/www/blog), a bare cuisine/nationality adjective (italian/cajun/haitian), or "
-    "generic filler (easy/best/delicious). A venue or a dining concept is NEVER food, even "
-    "when it sounds culinary. Put EVERY input token in exactly one of the two lists."
+    "a dish (cena=dinner, lunch, supper), a GENERIC CATEGORY word (food, meal, cuisine, "
+    "dish, ingredient, drink), a bare COLOR (red, white, green, black), a SEASON (summer, "
+    "winter, spring, fall), a TEMPERATURE (hot, cold, warm), a person name, a place, a "
+    "date, a number, a site word (html/www/blog), a bare cuisine/nationality adjective "
+    "(italian/cajun/haitian), or generic filler (easy/best/delicious). Only a SPECIFIC "
+    "edible item, ingredient, or named dish is 'food' — a category, color, season, venue, "
+    "or dining concept is NEVER food, even when it sounds culinary. Put EVERY input token "
+    "in exactly one of the two lists."
 )
 
 
-def classify_unknowns(tokens, batch: int = 400) -> dict:
+def classify_unknowns(tokens, batch: int = 400,
+                      food_examples=None, stop_examples=None) -> dict:
     """ONE Haiku call (batched if huge) splitting `tokens` into {'food': [...],
     'stop': [...]}. Routes through the LLM gateway (auto-journaled). Tokens the model
-    fails to place are left out (re-tried next sweep). Returns the two lists."""
+    fails to place are left out (re-tried next sweep). `food_examples`/`stop_examples`
+    are already-classified words shown to the model as few-shot guidance so it stays
+    consistent with our conventions (esp. curator corrections). Returns the two lists."""
     import llm
     toks = sorted({str(t).strip().lower() for t in tokens
                    if len(str(t).strip()) >= _MIN_TOKEN_LEN})
+    primer = ""
+    if food_examples or stop_examples:
+        primer = ("Stay consistent with these already-classified examples —\n"
+                  f"FOOD: {', '.join(food_examples or [])}\n"
+                  f"NOT_FOOD: {', '.join(stop_examples or [])}\n\n")
     food, stop = [], []
     for i in range(0, len(toks), batch):
         chunk = toks[i:i + batch]
@@ -248,7 +263,7 @@ def classify_unknowns(tokens, batch: int = 400) -> dict:
                 operation="url_word_classify", model=_MODEL,
                 max_tokens=8000, temperature=0, system=_CLASSIFY_SYS,
                 messages=[{"role": "user",
-                           "content": "Classify these tokens:\n" + ", ".join(chunk)}],
+                           "content": primer + "Classify these tokens:\n" + ", ".join(chunk)}],
                 tools=[_CLASSIFY_TOOL],
                 tool_choice={"type": "tool", "name": "split_tokens"})
         except Exception as e:
@@ -265,6 +280,23 @@ def classify_unknowns(tokens, batch: int = 400) -> dict:
     return {"food": sorted(foods), "stop": sorted(stops)}
 
 
+def _example_pool(conn: sqlite3.Connection, kind: str, n: int) -> list:
+    """Up to `n` few-shot examples of `kind` ('food'|'stop') for the classifier prompt:
+    the curator CORRECTIONS (source='manual') first — they're authoritative and the most
+    instructive (the words we had to fix) — then fill with a spread of the rest."""
+    manual = [w for (w,) in conn.execute(
+        "SELECT word FROM url_word_class WHERE kind=? AND source='manual'", (kind,))]
+    out = manual[:n]
+    if len(out) < n:
+        # deterministic spread across the rest (every k-th by rowid) — variety without RNG.
+        rest = [w for (w,) in conn.execute(
+            "SELECT word FROM url_word_class WHERE kind=? AND source!='manual' ORDER BY word",
+            (kind,)) if w not in set(out)]
+        step = max(1, len(rest) // max(1, (n - len(out))))
+        out += rest[::step][:n - len(out)]
+    return out
+
+
 def _learn_from(conn: sqlite3.Connection, urls, log) -> dict:
     """Shared core: tokenize `urls`, keep tokens in NEITHER list (the 'stop' list is the
     negative cache that keeps this set to genuinely-NEW words — without it we'd re-bill
@@ -279,7 +311,12 @@ def _learn_from(conn: sqlite3.Connection, urls, log) -> dict:
                 unknown.add(t)
     added_food = added_stop = 0
     if unknown:
-        split = classify_unknowns(unknown)
+        # Few-shot guidance for the classifier: the curator CORRECTIONS (source='manual',
+        # authoritative — e.g. food/tiki/summer demoted to stop) ALWAYS, plus a bounded
+        # sample of each list so the model classifies consistently with our conventions.
+        food_ex = _example_pool(conn, "food", 40)
+        stop_ex = _example_pool(conn, "stop", 50)
+        split = classify_unknowns(unknown, food_examples=food_ex, stop_examples=stop_ex)
         added_food = add_words(conn, split["food"], "food", source="ai")
         added_stop = add_words(conn, split["stop"], "stop", source="ai")
         conn.commit()

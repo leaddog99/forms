@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS is_recipe_samples (
     reason           TEXT,            -- json-ld | phrase-score | collection-title | fetch-failed | ...
     source           TEXT,            -- 'dish_batch' | 'domain_harvest' | ...
     provenance       TEXT,            -- JSON: {dish/domain, ...}
+    explore          INTEGER DEFAULT 0,-- 1 = ε-exploration: a would-be url-prefilter SKIP
+                                       -- that we verified anyway, so this row is an
+                                       -- UNBIASED label in the region the filter skips.
     human_label      TEXT,            -- NULLABLE gold correction: 'recipe' | 'not_recipe'
     human_labeled_at TEXT,
     human_note       TEXT
@@ -65,7 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_isr_source   ON is_recipe_samples(source);
 
 _COLUMNS = (
     "captured_at,url,title,content,content_chars,lang_code,has_jsonld,"
-    "translated,recipe_score,threshold,decision,reason,source,provenance,"
+    "translated,recipe_score,threshold,decision,reason,source,provenance,explore,"
     "human_label,human_labeled_at,human_note"
 )
 
@@ -73,6 +76,10 @@ _COLUMNS = (
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(TRAINING_DB_PATH, timeout=5.0)
     conn.executescript(_SCHEMA)  # idempotent self-install
+    try:                          # migrate pre-explore DBs (ALTER is a no-op if present)
+        conn.execute("ALTER TABLE is_recipe_samples ADD COLUMN explore INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     return conn
 
 
@@ -125,11 +132,12 @@ def capture_samples(kept, dropped, *, source="unknown", provenance=None,
                     _reason_for(e, decision),
                     source,
                     prov_json,
+                    1 if e.get("_explore") else 0,
                     None, None, None,   # human_label, human_labeled_at, human_note
                 ))
         if not rows:
             return 0
-        placeholders = ",".join("?" * 17)
+        placeholders = ",".join("?" * 18)
         conn = _connect()
         try:
             conn.executemany(
@@ -181,7 +189,7 @@ def stats() -> dict:
 
 _LIST_COLUMNS = (
     "sample_id, captured_at, url, title, content_chars, lang_code, has_jsonld, "
-    "translated, recipe_score, threshold, decision, reason, source, provenance, "
+    "translated, recipe_score, threshold, decision, reason, source, provenance, explore, "
     "human_label, human_labeled_at, human_note"
 )
 

@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -467,6 +468,18 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
 
     Returns (kept, dropped).
     """
+    # ε-EXPLORATION rate: a small random fraction of would-be url-prefilter SKIPS are let
+    # through the full fetch+verify anyway, to mint UNBIASED ground-truth labels in the
+    # region the filter skips (else the is-recipe classifier trains only on survivors and
+    # re-learns the filter's blind spots). See docs/corpus-ml-strategy.md.
+    explore_rate = 0.0
+    if url_prefilter:
+        try:
+            from input.pipeline.system_config import get_setting as _gs
+            explore_rate = float(_gs("url_prefilter_explore_rate", 0.08) or 0.0)
+        except Exception:
+            explore_rate = 0.08
+
     kept, dropped = [], []
     for i, e in enumerate(entries, start=1):
         # Cooperative cancel: a long publisher harvest can be aborted between
@@ -483,11 +496,17 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         if url_prefilter:
             from input.pipeline.url_word_lists import url_lacks_recipe_signal
             if url_lacks_recipe_signal(url):
-                e["recipe_score"] = 0
-                e["_dropped_reason"] = "url-prefilter"
-                dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] URL-SKIP    {url}")
-                continue
+                if random.random() < explore_rate:
+                    # ε-exploration: verify this would-be-skip anyway → unbiased label.
+                    e["_explore"] = True
+                    print(f"  [{i:>2}/{len(entries)}] URL-EXPLORE {url}  (would-skip; verifying for training)")
+                    # fall through to the normal fetch+verify+capture path below
+                else:
+                    e["recipe_score"] = 0
+                    e["_dropped_reason"] = "url-prefilter"
+                    dropped.append(e)
+                    print(f"  [{i:>2}/{len(entries)}] URL-SKIP    {url}")
+                    continue
         # Collection/listicle guard (English fast-path) — a plural-"recipes" SERP title
         # ("30 Greek Recipes") is an index page, not a dish. Drop BEFORE the fetch.
         # Non-English titles don't match the English word here; they're caught
