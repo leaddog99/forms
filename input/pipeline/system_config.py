@@ -215,6 +215,18 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Publisher harvests use the per-domain `url_prefilter` flag instead.",
     },
     {
+        "key": "semrush_export_patterns",
+        "value": ["{domain}*[Pp]ages*.xlsx"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "SEMrush export filename patterns",
+        "description": "Glob patterns (one per line, `{domain}` substituted) used to FIND a "
+                       "publisher's SEMrush page export in the inbox/Downloads folder. The "
+                       "reader auto-detects the FORMAT from the columns, so these can be "
+                       "broad. Edit here if SEMrush changes its export filenames — no code "
+                       "change. A per-domain exact file path overrides this entirely.",
+    },
+    {
         "key": "url_prefilter_explore_rate",
         "value": 0.08,
         "type": "float",

@@ -423,10 +423,31 @@ def backlinks_file_path(domain, extra_dir=None):
                 cand = os.path.join(d, os.path.basename(ex))
                 if os.path.isfile(cand):
                     return cand
+    # Filename match patterns are CONFIG, not code (no-data-in-code) — so a SEMrush rename
+    # is a system_config edit, not a code change. `{domain}` is substituted; the reader
+    # then auto-detects the format from the COLUMNS, so patterns can be broad.
     hits = []
     for d in backlinks_search_dirs(extra_dir):
-        hits += glob.glob(os.path.join(d, f"{domain}*[Pp]ages*.xlsx"))
+        for pat in semrush_export_patterns():
+            hits += glob.glob(os.path.join(d, pat.replace("{domain}", domain)))
+    hits = list({os.path.realpath(h): h for h in hits}.values())   # dedup across patterns
     return max(hits, key=os.path.getmtime) if hits else None
+
+
+def semrush_export_patterns() -> list:
+    """Glob patterns (with `{domain}`) used to FIND a publisher's SEMrush export — editable
+    via system_config `semrush_export_patterns` so a SEMrush filename change is a config
+    edit, not code. Default catches both shapes (backlinks_pages + organic.PagesV3, both
+    contain 'pages'/'Pages')."""
+    default = ["{domain}*[Pp]ages*.xlsx"]
+    try:
+        from input.pipeline import system_config as _cfg
+        val = _cfg.get_setting("semrush_export_patterns", default)
+        if isinstance(val, str):
+            val = [p.strip() for p in val.splitlines() if p.strip()]
+        return [p for p in (val or default) if "{domain}" in p] or default
+    except Exception:
+        return default
 
 
 def export_prefix(path):
