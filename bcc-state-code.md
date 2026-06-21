@@ -1058,7 +1058,7 @@ Both `extractFromImage` and `extractFromPdf` previously did `fetch → res.json(
 - Server was **down** (no python, nothing on :8009) when the session started. Restarted via the canonical zombie-safe **`bcc_restart.bat`** (detached) → clean single process, startup complete, no errors. Verified the new assets are served (image-well.js 200 w/ `downscaleForUpload`; form 200 w/ the bumped `?v` + delegation + pdf signal).
 - Stray dead-process logs (`smoke_uvicorn*`, `uvicorn_cookview_agent*`, `uvicorn_claude*`) are untracked noise from earlier multi-process runs — safe to delete.
 - Verification: `node --check` clean on `image-well.js`; all inline `<script>` blocks of the form syntax-OK. Live browser/phone re-test of the spanakopita extract on weak signal still TODO (server + code ready).
-- NOTE: commits `b369f0e`→`418a5f5` (SEMrush human-workflow harvest scheduling, "Due today" worklist, inbox scan, report-URL deep-link) landed earlier on 06-20 and are **not yet written up** here — a separate session's work.
+- NOTE: commits `b369f0e`→`418a5f5` (SEMrush human-workflow harvest scheduling, "Due today" worklist, inbox scan, report-URL deep-link) landed earlier on 06-20 — **now written up** in the 2026-06-21 session log below.
 
 ### HTML markup in recipe intro/prose — stripped at the model + backfilled ([[feedback_recipe_model_first]], [[feedback_single_path]])
 User flagged a master recipe (Spaghetti Vongole, `c58f3faa…`) showing literal `<p>…</p>` in the intro. Source JSON-LD `description` (and a `<i>The Tucci Table</i>` in an instruction) carried raw HTML that `recipe_model._as_str` passed through untouched (it short-circuited on `isinstance(v,str)`), and the form renders prose as TEXT (correctly — we must NOT innerHTML source markup, XSS). So the fix is server-side at the model boundary, not the client.
@@ -1088,8 +1088,36 @@ A long, productive bug-bash session, all on `split/enrichment-api`, all committe
   2. **PDF extract → set `sourceImage`** (render page 1 as the capture) for parity with the image path.
   3. **Multi-recipe UX** — "this page has 2 recipes — extract the other (Pilaf)?" instead of silently keeping only the first.
   4. Optional: re-shoot just the Pilaf half / capture the spanakopita margin notes as `notes`.
-- **Still carried from earlier (pre-today):** write up the `b369f0e`→`418a5f5` SEMrush human-workflow harvest commits here; validate the Oxylabs trial + wire `unblocker=True` harvest (+ cost cap); system-wide domain scoring; `serp_batch`; SEMrush Keyword-Magic dish source.
+- **Still carried from earlier (pre-today):** ~~write up the `b369f0e`→`418a5f5` SEMrush human-workflow harvest commits~~ (done 2026-06-21); validate the Oxylabs trial + wire `unblocker=True` harvest (+ cost cap); system-wide domain scoring; `serp_batch`; SEMrush Keyword-Magic dish source.
 - **Ops:** `bcc_backup.bat` run at wrap (DB had the HTML-strip cleanup + new `sourceImage` writes). `.env` line-15 dotenv warning still untidy.
 
 ### blob:/data: paste guard on the extract path (KEEP — user confirmed)
 While diagnosing the above (user pasted a `blob:https://outlook.office.com/…` link — an Outlook-internal image URL that no external app/server can fetch), found the recipe-form paste handler had no `blob:`/`data:` guard: such a URL fell through Pass-2 and was fed to the **markdown extractor as literal text**. Added a guard in `recipe_form_styled.html handlePaste` → an honest dialog ("That image link won't work here… right-click the image → Copy image, then paste; or download and drop the file"). The dish-photo image-well already guarded blob: in `handleUrlString`; this closes the extract path. (Static HTML — reload picks it up.)
+
+---
+
+## Session log — 2026-06-21 — sorted out the SEMrush harvest thread (wrote up the carried backend arc, shipped the V1.2 UX, cleaned the tree)
+
+Cleared the lingering SEMrush stuff in the working tree + the "not yet written up" carry-forward. Authoritative detail lives in **`docs/semrush-harvest-scheduling.md`** (§0 walkthrough + V1/V1.1/V1.2 history) — this is just the tracker pointer. All on `split/enrichment-api`.
+
+### The semi-automated publisher-harvest loop (the human-workflow arc — `b369f0e`→`418a5f5`, written up at last)
+The model is **system = dispatcher + bookkeeper, human = the free, ToS-safe SEMrush "press Export + Save" hands** (we deliberately don't automate the SEMrush click — §6). One harvest = one domain's SEMrush backlinks export through the existing `backlinks_file` pipeline (is-it-a-recipe → Moz-score → keep top-N), which stamps `last_harvested_at` on success so the domain rolls off "due."
+- **Schedule fields on the domain master** (`domains_lib._derive_schedule`, stamped onto every row in `list_domains`/`get_domain`): `harvest_ttl_days` + `last_harvested_at` → derived `next_harvest_at`, `harvest_status` (`new`/`due`/`ok`/None) and `harvest_due` (bool). Worklist membership = `harvest_source=='backlinks_file'` ONLY (NOT keyed on the link — that's now universal).
+- **SEMrush deep-link auto-defaults** from `system_config.semrush_indexed_pages_url_template` (`…/backlinks/pages/?q={domain}&…sort_field=domainsnum`) with `{domain}` substituted — zero hand-pasting; a per-domain `semrush_report_url` overrides.
+- **Endpoints:** `GET /domains/harvest-worklist` (the canonical due/new read API) + `POST /semrush-inbox/scan` (scans Downloads — or `system_config.semrush_inbox_dir` — for `*-backlinks*pages*.xlsx`, routes each to its domain by filename prefix, moves into `input/`, spawns the harvest job). Open/Copy icons on the report-URL field.
+
+### V1.2 UX legibility — SHIPPED today (`5e35856`)
+The loop worked but was illegible: its two primary actions (the "SEMrush due" sort + **Scan inbox**) were buried in the collapsible search panel, and nothing connected the per-domain deep-link to the inbox scan as one flow. Fix (all `domains.html`, no backend change):
+- **Always-visible "SEMrush harvest" sidebar strip** out of the search panel: a collapsible 3-step explainer (the in-product docs = doc §0), a live **"⏰ N due"** chip that sorts the list due-first on click (computed **client-side** from the already-loaded rows — the worklist endpoint stays as the canonical API but the UI no longer needs it), and the **⤵ Scan inbox** button + log.
+- **Per-domain step hint** in the backlinks source group spelling out Open → Export → Save → Scan inbox. The ↻ Refresh-ranks tool stays in the search panel (it's monthly corpus maintenance, not the per-domain loop).
+- Verified self-consistent: `isAllowed`/`harvest_due`/`harvest`-sort-key all resolve; inline scripts parse; backend supplies `harvest_due`/`harvest_status` per row via `_derive_schedule`.
+
+### Tree cleanup
+- **Deleted** two junk browser re-downloads (`input/allrecipes.com-backlinks_pages (1).xlsx`/`(2).xlsx` — duplicates of the already-tracked canonical file).
+- **Tracked** `input/bostonchefs.com-backlinks_pages.xlsx` (`85e7cb1`) — the actual source for job #288, matching the existing tracked exports; was on disk but never committed.
+- **Left unstaged on purpose:** `.idea/dataSources.xml` (IDE-local `training.db` datasource churn) + `recipes.sql` (incidental nightly-scheduler churn — job #290 chapter_rollups + ticks; refreshed properly at session wrap by `bcc_backup.bat`).
+
+### Still carried (SEMrush-adjacent, not done)
+- **Oxylabs `unblocker=True` harvest** validated live last session but still wants a per-run cost cap + `system_config` seed for `unblocker_provider`.
+- **SEMrush Keyword-Magic dish source** (new parser); system-wide domain scoring; `serp_batch` (Scale SERP Batches).
+- **Traffic/Trends ingestion** (doc §5) — the "What's Hot" surface + queue prioritization.
