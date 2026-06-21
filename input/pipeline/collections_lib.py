@@ -590,16 +590,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy/collection URLs "
               f"({len(found)} candidates remain)")
 
-    # TEE-UP LEARN (opt-in, before any filtering): classify THIS batch's unknown URL
-    # tokens in ONE call and add them to the word lists, so a new publisher's own dish
-    # words are known for THIS run — not just whatever the last master sweep learned.
-    # The filter (below) then reads the freshly-updated food list. See url_word_lists.
-    if url_prefilter and found:
-        try:
-            from input.pipeline.url_word_lists import learn_from_urls
-            learn_from_urls([l for l, _ in found])
-        except Exception as ex:
-            print(f"  [harvest] url-word tee-up learn skipped: {type(ex).__name__}: {ex}")
+    # NOTE: no per-harvest "tee-up learn" here — DELIBERATELY. Learning the food vocab
+    # from the INCOMING (unconfirmed) candidate URLs is unsound for a directory publisher:
+    # its restaurant/dining pages teach the filter the very words that mark non-recipes
+    # (bistro/cantina/buffet/dining got classified 'food', defeating the skip + paying for
+    # unblocker fetches). The vocab is learned ONLY from CONFIRMED recipes — the master
+    # sweep (url_word_lists.sweep_master_urls). See [[project_url_word_filter]].
 
     # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
     # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else phrase score.
