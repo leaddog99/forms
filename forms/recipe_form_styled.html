@@ -2347,6 +2347,10 @@
     // Set on every load, reset on Clear / new recipe, spread back in at
     // save time under the editable keys.
     let _loadedSource = {};
+    // The ORIGINAL captured image(s) (sourceImage) — immutable provenance, set
+    // at extract time, NOT user-editable. The form must carry it through the
+    // save rebuild or it would be dropped (it's separate from the editable hero).
+    let _loadedSourceImage = [];
 
     // "Who am I logged in as?" — read from localStorage.
     //
@@ -3855,6 +3859,8 @@
       // Source
       document.getElementById("template").value = r.template || "classic";
       _loadedSource = r._source ? { ...r._source } : {};
+      _loadedSourceImage = Array.isArray(r.sourceImage) ? [...r.sourceImage]
+                         : (r.sourceImage ? [r.sourceImage] : []);
       document.getElementById("sourceTitle").value = r._source?.origin || "";
       document.getElementById("siteName").value = r._source?.siteName || "";
       document.getElementById("author").value = r.author?.name || "";
@@ -4152,6 +4158,9 @@
         },
         author: { "@type": "Person", name: document.getElementById("author").value },
         image: (heroImageUrl.value || '').trim() ? [heroImageUrl.value.trim()] : [],
+        // Immutable original capture — carried straight through (not user-edited),
+        // so swapping the hero never loses the source we extracted from.
+        sourceImage: _loadedSourceImage,
         // Hero-image metadata (dims/format/bytes/orientation/localized) from the
         // last coopt/upload, plus the last generate `tweak` so it survives + re-
         // shows in the dialog; cleared when the hero is cleared. Persists per
@@ -4679,6 +4688,7 @@
       // Drop the preserved source snapshot so a fresh manual recipe
       // doesn't inherit the previous row's provenance keys.
       _loadedSource = {};
+      _loadedSourceImage = [];
       // form.reset() only resets controls with a `name` attribute.
       // The recipe form has MANY name-less inputs (URL, hero image,
       // affiliate URL, BCC permalink, source title, several

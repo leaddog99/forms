@@ -54,7 +54,7 @@ STATIC_TOP_LEVEL_FIELDS = frozenset({
     "recipeIngredient", "recipeInstructions",
     "notes", "video", "servingSuggestions", "cookingMethod",
     "equipment", "suitableForDiet",
-    "imageSource", "inputImage",
+    "imageSource", "inputImage", "sourceImage",
     # LLM enrichment — same dish, same provenance/classification regardless
     # of who owns this row.
     "provenance", "classification", "editorial",
@@ -556,6 +556,12 @@ class RecipeModel(BaseModel):
     provenance: Optional[Provenance] = None
     imageSource: Optional[str] = ""
     inputImage: Optional[str] = None
+    # The ORIGINAL captured image(s) the recipe was extracted from (served URL),
+    # SEPARATE from `image` (the hero). The hero is editable; this is immutable
+    # provenance — retained so we can validate our extraction against the source
+    # (e.g. handwritten margin notes) even after the hero is swapped. Set once at
+    # extract time; mirrors `image` as a list. (Completes the top-of-file TODO.)
+    sourceImage: Optional[List[str]] = []
     imported_from: Optional[str] = Field(default="", alias="_imported_from")
     editor_version: Optional[str] = Field(default="", alias="_editor_version")
     access: Optional[AccessControl] = Field(default=None, alias="_access")
@@ -610,7 +616,7 @@ class RecipeModel(BaseModel):
 
     # List-of-Text fields a source may deliver as a bare string / object / list
     # of objects (image as a URL string or ImageObject; a single diet; etc.).
-    @field_validator('image', 'recipeIngredient', 'suitableForDiet', 'tags', mode='before')
+    @field_validator('image', 'sourceImage', 'recipeIngredient', 'suitableForDiet', 'tags', mode='before')
     @classmethod
     def _coerce_str_lists(cls, v):
         return _as_str_list(v)

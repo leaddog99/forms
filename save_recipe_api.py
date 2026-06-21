@@ -5715,6 +5715,27 @@ async def extract_from_image_endpoint(
         _attach_identity_card(recipe, usage_log=usage_log)
         # Stamp the minted UUID onto the recipe so the form picks it up.
         recipe["id"] = new_recipe_id
+        # Retain the ORIGINAL captured image as the recipe's sourceImage
+        # (provenance + a reference to validate our extraction against — e.g.
+        # handwritten margin notes), and DEFAULT the hero to it when the recipe
+        # has none. Stored via the no-crop hero path so the whole page stays
+        # legible; the user can swap the hero later in the editor. Best-effort —
+        # a failure here must never fail the extraction.
+        try:
+            from input.pipeline.image_pipeline import standardize_and_meta
+            processed, _smeta = standardize_and_meta(content, source_url=None, localized=True)
+            if processed:
+                src_name = f"upload_{uuid.uuid4()}.jpg"
+                (GENERATED_DIR / src_name).write_bytes(processed)
+            else:
+                src_name = f"upload_{uuid.uuid4()}{file_ext}"
+                (GENERATED_DIR / src_name).write_bytes(content)
+            src_url = f"/generated/{src_name}"
+            recipe["sourceImage"] = [src_url]
+            if not recipe.get("image"):
+                recipe["image"] = [src_url]  # hero defaults to the original; editable later
+        except Exception as e:
+            print(f"[EXTRACT] sourceImage persist skipped: {e}")
         # Journal LLM token usage before returning (extract happened regardless
         # of whether the user later saves the recipe).
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
