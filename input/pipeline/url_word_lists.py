@@ -216,13 +216,20 @@ _CLASSIFY_TOOL = {
     },
 }
 _CLASSIFY_SYS = (
-    "You classify word tokens pulled from recipe-site URL paths. A token is 'food' if it "
-    "names a food, ingredient, a specific dish in ANY language or transliteration (e.g. "
-    "spanakorizo, coquilles, kleftiko, kartoffelpuffer), a drink, or a cooking method/"
-    "technique (baked, braised, cured). Otherwise it is 'not_food': person names, places, "
-    "dates, numbers, site words like html/www/blog, bare cuisine/nationality adjectives "
-    "like 'italian'/'cajun'/'haitian', and generic filler like 'easy'/'best'/'delicious'. "
-    "Put EVERY input token in exactly one of the two lists."
+    "You classify word tokens pulled from recipe-site URL paths into 'food' vs 'not_food'. "
+    "A token is 'food' ONLY if it names something you would COOK or EAT: a food, an "
+    "ingredient, a specific dish in ANY language or transliteration (e.g. spanakorizo, "
+    "coquilles, kleftiko, kartoffelpuffer), a drink, or a cooking method/technique (baked, "
+    "braised, cured). "
+    "It is 'not_food' if it is anything else, and IN PARTICULAR — be strict about these — a "
+    "RESTAURANT or VENUE type (bistro, cantina, trattoria, brasserie, osteria, eatery, "
+    "buffet, cafe, diner, tavern, pub, grill-as-a-place), a DINING / HOSPITALITY / BUSINESS "
+    "word (dining, restaurant, menu, reservation, catering, hours, location, event, party, "
+    "special, specials, takeout, delivery, brunch-service), a MEAL word used as a time not "
+    "a dish (cena=dinner, lunch, supper), a person name, a place, a date, a number, a site "
+    "word (html/www/blog), a bare cuisine/nationality adjective (italian/cajun/haitian), or "
+    "generic filler (easy/best/delicious). A venue or a dining concept is NEVER food, even "
+    "when it sounds culinary. Put EVERY input token in exactly one of the two lists."
 )
 
 
