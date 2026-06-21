@@ -436,7 +436,7 @@ def _english_title(title: str, lang_code: str) -> str:
 def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       capture_provenance: dict | None = None,
                       unblocker: bool = False, url_prefilter: bool = False,
-                      should_cancel=None,
+                      exclude_words=None, should_cancel=None,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -489,6 +489,19 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             from input.pipeline.jobs import JobCancelled
             raise JobCancelled(f"cancelled after {i - 1}/{len(entries)} candidates")
         url = e["url"]
+        # PER-DOMAIN EXCLUSION (admin-set, exclusionary): a URL whose path SECTION matches
+        # one of this publisher's exclude words (bostonchefs: restaurant/chef/news) is the
+        # site's own "not a recipe" taxonomy — skip outright, overriding any food word. No
+        # ε-exploration (admin is certain). Distinct from the global, non-exclusionary food
+        # gate below. See url_word_lists.url_excluded_by_domain.
+        if exclude_words:
+            from input.pipeline.url_word_lists import url_excluded_by_domain
+            if url_excluded_by_domain(url, exclude_words):
+                e["recipe_score"] = 0
+                e["_dropped_reason"] = "domain-exclude"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] EXCLUDE     {url}")
+                continue
         # OPTIONAL URL-text skip (opt-in per caller) — drop URLs whose path names no
         # food/recipe word BEFORE the (paid) fetch, using the shared self-learning word
         # lists. The single canonical place for the pre-fetch skip, so the harvest AND

@@ -187,6 +187,29 @@ def path_tokens(url: str) -> set:
             if len(t) >= _MIN_TOKEN_LEN}
 
 
+def parse_exclude_words(raw) -> set:
+    """Admin's per-domain exclude list (domains.exclude_words) → a set of lowercased
+    section words. Accepts a comma/space/newline-separated string or a list."""
+    if not raw:
+        return set()
+    if isinstance(raw, str):
+        raw = re.split(r"[,\s]+", raw)
+    return {w.strip().lower() for w in raw if w and str(w).strip()}
+
+
+def url_excluded_by_domain(url: str, exclude_words) -> bool:
+    """True (→ skip) when a PATH SECTION equals one of the domain's exclude words —
+    the site's own taxonomy says this isn't a recipe (bostonchefs /restaurant/, /chef/,
+    /news/). EXCLUSIONARY by design and PER-DOMAIN (admin opt-in), unlike the global
+    food list. Splits the path on '/' and '_' only (NOT '-'), so a real recipe slug like
+    /recipe/restaurant-style-chicken/ is NOT excluded by the word 'restaurant'."""
+    words = exclude_words if isinstance(exclude_words, set) else parse_exclude_words(exclude_words)
+    if not words:
+        return False
+    parts = [p for p in re.split(r"[/_]", unquote(urlparse(url).path).lower()) if p]
+    return any(p in words for p in parts)
+
+
 def url_lacks_recipe_signal(url: str, db_path: Optional[str] = None) -> bool:
     """True (→ drop, skip the fetch) when the URL path has NO food-list token. Food
     presence is the ONLY gate — a non-food token (restaurant/chef/news) is just no

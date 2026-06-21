@@ -310,6 +310,9 @@
             <input type="checkbox" id="f_url_prefilter" ${Number(d.url_prefilter) === 1 ? 'checked' : ''}>
             <span>Pre-filter by URL text — skip URLs with no food/recipe word <i>before</i> fetching (saves fetches/credits on directory sites like bostonchefs; leave OFF for sites with truncated slugs)</span>
           </label>
+          <div class="ed-form-grid" style="margin:4px 0 2px">
+            ${field('f_exclude_words', 'Exclude sections (skip these URL sections — e.g. restaurant chef news)', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
+          </div>
           <div class="ed-actions" style="margin:10px 0 6px">
             <button type="button" class="ed-btn" id="refreshTopBtn" title="Run the query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
             <button type="button" class="ed-btn danger" id="cancelTopBtn" title="Stop a running harvest (active only while a refresh is running — aborts after the current candidate)" disabled>✋ Cancel</button>
@@ -462,6 +465,7 @@
       const query = ($('#f_serp_query')?.value || '').trim();
       const backlinks_dir = ($('#f_backlinks_dir')?.value || '').trim();
       const url_prefilter = $('#f_url_prefilter')?.checked ? 1 : 0;
+      const exclude_words = ($('#f_exclude_words')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
       btn.disabled = true; btn.textContent = '⏳ Harvesting…';
       const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
@@ -469,7 +473,7 @@
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, url_prefilter, check_recipe }) });
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, url_prefilter, exclude_words, check_recipe }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain, data.job_id); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
@@ -667,6 +671,7 @@
         semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),
         url_prefilter: $('#f_url_prefilter')?.checked ? 1 : 0,
+        exclude_words: ($('#f_exclude_words')?.value || '').trim(),
       };
     }
 

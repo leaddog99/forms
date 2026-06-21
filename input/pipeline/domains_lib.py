@@ -66,6 +66,7 @@ EDITABLE_FIELDS = (
     "semrush_report_url",  # editable one-click deep-link into SEMrush for this domain
     "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
     "url_prefilter",       # OPTIONAL: drop URLs with no food/recipe word before fetch
+    "exclude_words",       # OPTIONAL per-domain EXCLUSIONARY sections (restaurant/chef/news)
 )
 
 
@@ -176,6 +177,12 @@ _SCHEDULE_COLUMNS = {
     # bostonchefs). Off by default — false-drops slug-truncating sites. See
     # collections_lib.url_lacks_recipe_signal.
     "url_prefilter": "INTEGER NOT NULL DEFAULT 0",
+    # OPTIONAL per-domain EXCLUSIONARY section words (comma/space-separated, e.g.
+    # "restaurant chef news holiday event jobs"). A URL whose path has a SECTION matching
+    # one is skipped outright — this site's taxonomy says it's not a recipe — overriding
+    # any incidental food word (/restaurant/coppa/). PER-DOMAIN, never global. See
+    # url_word_lists.url_excluded_by_domain.
+    "exclude_words": "TEXT NOT NULL DEFAULT ''",
 }
 
 

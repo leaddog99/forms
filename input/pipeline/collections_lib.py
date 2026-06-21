@@ -530,7 +530,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
                           unblocker=False, should_cancel=None, backlinks_dir=None,
-                          url_prefilter=False) -> dict:
+                          url_prefilter=False, exclude_words=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -618,12 +618,15 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             capture_source="domain_harvest",
             capture_provenance={"domain": domain, "discover_source": source},
             unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
-            url_prefilter=url_prefilter,
+            url_prefilter=url_prefilter, exclude_words=exclude_words,
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
-    elif url_prefilter and found:
+    elif (url_prefilter or exclude_words) and found:
+        from input.pipeline.url_word_lists import url_excluded_by_domain
         n_pre = len(found)
-        recipe_pass = [(l, t) for l, t in found if not url_lacks_recipe_signal(l)]
+        recipe_pass = [(l, t) for l, t in found
+                       if not url_excluded_by_domain(l, exclude_words)
+                       and not (url_prefilter and url_lacks_recipe_signal(l))]
         if len(recipe_pass) < n_pre:
             print(f"  [harvest] url-prefilter dropped {n_pre - len(recipe_pass)} "
                   f"non-recipe-looking URLs (no fetch-verify on this publisher)")
