@@ -203,6 +203,100 @@ def _looks_like_archive(url: str) -> bool:
     return bool(_ARCHIVE_RE.search(urlparse(url).path))
 
 
+# ── OPTIONAL URL-text pre-filter ────────────────────────────────────────────
+# "Probably not a recipe" judged from the URL PATH alone, BEFORE any (paid) fetch.
+# A recipe URL almost always says so — it contains the word 'recipe' or a food word
+# (chicken, lasagna, brioche…). A publisher's noise (/restaurant/, /chef/, /jobs/,
+# /holiday/, author/photography pages) usually contains neither. Dropping those up
+# front saves a fetch + an unblocker credit each. OPT-IN PER DOMAIN (domains.url_prefilter)
+# because some publishers TRUNCATE slugs (thepioneerwoman /the_best_lasagn/, /cobbl/)
+# which wouldn't match a food vocab — there it would false-drop, so leave it off.
+_RECIPE_URL_WORDS = {"recipe", "recipes"}
+
+# Words that appear inside dish names but aren't themselves a food signal (cuisines,
+# recipe adjectives, connectives) — excluded so the vocab stays food-specific.
+_FOOD_VOCAB_STOP = {
+    "and", "the", "with", "for", "from", "style", "homemade", "easy", "best",
+    "classic", "simple", "quick", "perfect", "ultimate", "creamy", "crispy",
+    "roasted", "baked", "grilled", "fried", "fresh", "spicy", "sweet", "savory",
+    "italian", "french", "greek", "mexican", "american", "asian", "chinese",
+    "indian", "thai", "spanish", "german", "japanese", "korean", "southern",
+    "mediterranean", "moroccan", "turkish", "vietnamese", "english", "irish",
+    "old", "fashioned", "made", "your", "own", "one", "pot", "pan", "sheet",
+    "day", "days", "new", "year", "years", "time", "week", "night", "game",
+}
+# Common single foods/ingredients/forms that may not surface as a dish-name token.
+_BASE_FOOD_WORDS = {
+    "chicken", "beef", "pork", "lamb", "turkey", "duck", "bacon", "ham", "sausage",
+    "fish", "salmon", "tuna", "shrimp", "crab", "lobster", "scallop", "clam", "oyster",
+    "egg", "eggs", "cheese", "butter", "cream", "milk", "yogurt", "buttermilk",
+    "chocolate", "vanilla", "caramel", "cinnamon", "honey", "maple",
+    "bread", "brioche", "toast", "bagel", "biscuit", "muffin", "scone", "roll",
+    "cake", "pie", "tart", "cookie", "brownie", "pudding", "custard", "cobbler",
+    "pasta", "spaghetti", "noodle", "risotto", "rice", "quinoa", "couscous", "gnocchi",
+    "pizza", "burger", "sandwich", "taco", "burrito", "wrap", "soup", "stew", "chili",
+    "salad", "slaw", "dip", "sauce", "salsa", "gravy", "dressing", "marinade",
+    "potato", "tomato", "onion", "garlic", "mushroom", "pepper", "spinach", "kale",
+    "broccoli", "carrot", "zucchini", "squash", "bean", "lentil", "chickpea", "corn",
+    "apple", "banana", "lemon", "lime", "orange", "berry", "strawberry", "blueberry",
+    "peach", "pumpkin", "coconut", "almond", "peanut", "walnut", "pecan",
+    "steak", "ribs", "roast", "meatball", "casserole", "curry", "stir", "fry",
+    "pancake", "waffle", "omelet", "frittata", "quiche", "pasty", "pastry", "dough",
+    "tea", "coffee", "smoothie", "cocktail", "lemonade", "punch", "latte",
+}
+
+_FOOD_VOCAB_CACHE: Optional[set] = None
+
+
+def _food_vocab() -> set:
+    """The food/ingredient/dish vocabulary used by the URL pre-filter — the dish-catalog
+    names (chapter_shortcuts.json, ~1600) tokenized + a base ingredient set. Built once,
+    cached. Catalog is DATA (no-data-in-code); the base set covers single ingredients a
+    dish name may not surface. Falls back to the base set if the catalog is unreadable."""
+    global _FOOD_VOCAB_CACHE
+    if _FOOD_VOCAB_CACHE is not None:
+        return _FOOD_VOCAB_CACHE
+    import os, json, re
+    vocab = set(_BASE_FOOD_WORDS)
+    try:
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "..", "extract", "chapter_shortcuts.json")
+        if not os.path.exists(path):
+            path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "extract", "chapter_shortcuts.json")
+        with open(path, encoding="utf-8") as f:
+            cat = json.load(f)
+        for name in cat:
+            if name.startswith("_"):           # _comment / _note meta keys
+                continue
+            for tok in re.split(r"[^a-z]+", name.lower()):
+                if len(tok) >= 3 and tok not in _FOOD_VOCAB_STOP:
+                    vocab.add(tok)
+    except Exception as e:
+        print(f"  [url-prefilter] dish catalog unavailable ({e}); using base food set")
+    _FOOD_VOCAB_CACHE = vocab
+    return vocab
+
+
+def _path_tokens(url: str) -> set:
+    """Lowercase alpha word tokens from a URL's path (split on non-letters, ≥3 chars)."""
+    import re
+    return {t for t in re.split(r"[^a-z]+", urlparse(url).path.lower()) if len(t) >= 3}
+
+
+def url_lacks_recipe_signal(url: str) -> bool:
+    """OPTIONAL pre-filter: True (→ drop, skip the fetch) when the URL path mentions
+    NEITHER 'recipe' NOR any food word — i.e. it's probably a /restaurant//chef//jobs/
+    page, not a recipe. Conservative: any recipe/food token keeps it (the fetch-verify
+    still runs on survivors). False-drops slug-truncating publishers, so it's opt-in."""
+    toks = _path_tokens(url)
+    if toks & _RECIPE_URL_WORDS:
+        return False
+    if toks & _food_vocab():
+        return False
+    return True
+
+
 def _serp_links(query, want=50) -> list:
     """Raw organic links for a verbatim Google query (filter=0, paginated). Unfiltered
     — callers filter. Returns [(link, title), …]. Delegates to the provider-agnostic
@@ -522,7 +616,8 @@ def _read_backlinks_file(domain, want, extra_dir=None):
 
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
-                          unblocker=False, should_cancel=None, backlinks_dir=None) -> dict:
+                          unblocker=False, should_cancel=None, backlinks_dir=None,
+                          url_prefilter=False) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -581,6 +676,18 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     if len(found) < n_raw:
         print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy/collection URLs "
               f"({len(found)} candidates remain)")
+
+    # OPTIONAL URL-text pre-filter (domains.url_prefilter): drop URLs whose PATH names no
+    # recipe/food word BEFORE the (paid) fetch — e.g. bostonchefs /restaurant/, /chef/,
+    # /jobs/ pages. Big credit saver for directory-style publishers; opt-in because it
+    # false-drops slug-truncating sites (thepioneerwoman /the_best_lasagn/). See
+    # url_lacks_recipe_signal.
+    if url_prefilter:
+        n_pre = len(found)
+        found = [(l, t) for l, t in found if not url_lacks_recipe_signal(l)]
+        if len(found) < n_pre:
+            print(f"  [harvest] url-prefilter dropped {n_pre - len(found)} non-recipe-looking URLs "
+                  f"({len(found)} candidates remain) — saved that many fetches")
 
     # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
     # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else phrase score.

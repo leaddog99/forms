@@ -3436,6 +3436,7 @@ def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
                 "check_recipe": not bool(int(row.get("paywall", 0) or 0)),
                 "source": source, "records": records, "log_label": label or host,
                 "backlinks_dir": (row.get("backlinks_dir") or "").strip() or None,
+                "url_prefilter": bool(int(row.get("url_prefilter", 0) or 0)),
                 "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
         entity_ref=entity_ref)
     import subprocess
@@ -3576,6 +3577,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     source = (p.get("source") or "serp").strip() or "serp"
     records = int(p.get("records") or 0) or None   # file-source extract count
     backlinks_dir = (p.get("backlinks_dir") or "").strip() or None  # per-domain export folder override
+    url_prefilter = bool(p.get("url_prefilter"))   # drop non-food/recipe URLs before fetch (opt-in)
     unblocker = bool(p.get("unblocker"))           # fetch_strategy='unblocker' → live paid fetch
     job_id = job.get("id")
     print(f"[PUBLISHER-REFRESH] {host} | source={source} query={query!r} pages={pages} "
@@ -3595,7 +3597,8 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             host, keep=keep, discover_n=pages * 10,
             recipe_path=recipe_path, query=query, check_recipe=check_recipe,
             source=source, records=records, unblocker=unblocker,
-            backlinks_dir=backlinks_dir, should_cancel=_should_cancel)
+            backlinks_dir=backlinks_dir, url_prefilter=url_prefilter,
+            should_cancel=_should_cancel)
         with sqlite3.connect(DB_PATH) as conn:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
@@ -3645,6 +3648,8 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         # VERBATIM Google query (payload or stored serp_query) runs as-is, overrides path.
         query = (payload.get("query") or row.get("serp_query") or "").strip() or None
         backlinks_dir = (payload.get("backlinks_dir") or row.get("backlinks_dir") or "").strip() or None
+        url_prefilter = payload.get("url_prefilter")
+        url_prefilter = bool(int(row.get("url_prefilter", 0) or 0)) if url_prefilter is None else bool(url_prefilter)
         if source == "backlinks_file":
             if not collections_lib.backlinks_file_path(host, extra_dir=backlinks_dir):
                 searched = collections_lib.backlinks_search_dirs(backlinks_dir)
@@ -3688,7 +3693,7 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
             params={"host": host, "keep": keep, "pages": pages, "query": query,
                     "recipe_path": recipe_path, "check_recipe": check_recipe,
                     "source": source, "records": records, "log_label": host,
-                    "backlinks_dir": backlinks_dir,
+                    "backlinks_dir": backlinks_dir, "url_prefilter": url_prefilter,
                     "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
             entity_ref=entity_ref)
     import subprocess
