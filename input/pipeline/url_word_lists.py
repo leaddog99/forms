@@ -258,37 +258,53 @@ def classify_unknowns(tokens, batch: int = 400) -> dict:
     return {"food": sorted(foods), "stop": sorted(stops)}
 
 
+def _learn_from(conn: sqlite3.Connection, urls, log) -> dict:
+    """Shared core: tokenize `urls`, keep tokens in NEITHER list (the 'stop' list is the
+    negative cache that keeps this set to genuinely-NEW words — without it we'd re-bill
+    the AI for the same junk every run), classify the unknown batch in ONE call, and
+    INSERT both kinds (incremental — never a rewrite). Returns counts."""
+    seed_if_empty(conn)
+    known = {w for (w,) in conn.execute("SELECT word FROM url_word_class")}
+    unknown = set()
+    for u in urls:
+        for t in path_tokens(u):
+            if t not in known:
+                unknown.add(t)
+    added_food = added_stop = 0
+    if unknown:
+        split = classify_unknowns(unknown)
+        added_food = add_words(conn, split["food"], "food", source="ai")
+        added_stop = add_words(conn, split["stop"], "stop", source="ai")
+        conn.commit()
+        log(f"[url-words] classified {len(unknown)} unknown -> +{added_food} food, "
+            f"+{added_stop} stop (food e.g. {', '.join(split['food'][:12])})")
+    return {"unknown": len(unknown), "added_food": added_food, "added_stop": added_stop}
+
+
+def learn_from_urls(urls, db_path: Optional[str] = None, log=print) -> dict:
+    """Per-harvest TEE-UP learn: classify THIS batch's unknown URL tokens (one AI call)
+    and add them BEFORE the filter judges them — so a new publisher's own dish words are
+    known for this very run, not just whatever the last master sweep learned. Cache is
+    invalidated so the immediately-following filter reads the updated food list."""
+    path = _resolve_db_path(db_path)
+    with sqlite3.connect(path) as conn:
+        res = _learn_from(conn, list(urls), log)
+    invalidate(path)
+    return res
+
+
 def sweep_master_urls(db_path: Optional[str] = None, log=print) -> dict:
-    """Collect every URL-path token in the master corpus that's in NEITHER list, send the
-    unknown batch through ONE classify call, and INSERT the results (incremental). Returns
-    {scanned, unknown, added_food, added_stop}. The only model-touching entry point."""
+    """Periodic backfill from CONFIRMED recipes: learn every still-unknown URL token in the
+    master corpus (one classify call). Complements the per-harvest learn (higher-trust
+    source). Returns {scanned, unknown, added_food, added_stop}."""
     path = _resolve_db_path(db_path)
     self_hosts = ("bestcooksclub.com", "tbotb.com", "recipes.tbotb.com",
                   "amazon.com", "share.google")
     with sqlite3.connect(path) as conn:
-        seed_if_empty(conn)
-        known = set()
-        for (w,) in conn.execute("SELECT word FROM url_word_class"):
-            known.add(w)
-        scanned, unknown = 0, set()
-        for (u,) in conn.execute(
-                "SELECT url_normalized FROM master_recipes WHERE url_normalized LIKE 'http%'"):
-            host = (urlparse(u).hostname or "").lower()
-            if any(s in host for s in self_hosts):
-                continue
-            scanned += 1
-            for t in path_tokens(u):
-                if t not in known:
-                    unknown.add(t)
-        log(f"[url-words] scanned {scanned} master urls; {len(unknown)} unknown tokens")
-        added_food = added_stop = 0
-        if unknown:
-            split = classify_unknowns(unknown)
-            added_food = add_words(conn, split["food"], "food", source="ai")
-            added_stop = add_words(conn, split["stop"], "stop", source="ai")
-            conn.commit()
-            log(f"[url-words] classified -> +{added_food} food, +{added_stop} stop "
-                f"(food e.g. {', '.join(split['food'][:12])})")
+        urls = [u for (u,) in conn.execute(
+                    "SELECT url_normalized FROM master_recipes WHERE url_normalized LIKE 'http%'")
+                if not any(s in (urlparse(u).hostname or "").lower() for s in self_hosts)]
+        log(f"[url-words] sweeping {len(urls)} master urls")
+        res = _learn_from(conn, urls, log)
     invalidate(path)
-    return {"scanned": scanned, "unknown": len(unknown),
-            "added_food": added_food, "added_stop": added_stop}
+    return {"scanned": len(urls), **res}
