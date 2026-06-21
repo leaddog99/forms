@@ -436,22 +436,28 @@ def fetch_with_full_fallback(url: str, *,
 
     Returns (response, meta) where meta["source"] is "direct" | "unblocker" |
     "wayback". `unblocker=True` (set by the caller when the domain's
-    fetch_strategy='unblocker') inserts the PAID web-unblocker tier between direct
-    and Wayback — a LIVE page is preferred to a stale archive. 404/410 stay terminal
-    (gone is gone; no tier resurrects it).
-
-    A SOFT-BLOCK (HTTP 200 + anti-bot challenge stub) is treated as a direct failure
-    ONLY for an unblocker-enabled domain, so it escalates to the paid tier instead of
-    returning the stub. For every other caller the 200 is returned as before.
+    fetch_strategy='unblocker') means the domain is KNOWN to block direct fetches, so we
+    go STRAIGHT to the PAID web-unblocker — skipping the wasted direct probe that would
+    only return a 200 challenge stub. Direct + Wayback remain as backstops if the
+    unblocker no-ops (no BYOK key) or fails. 404/410 stay terminal.
+    render=False: the unblocker still solves the challenge (residential IP + session) but
+    skips the slow real-browser JS render — recipe content/JSON-LD is in the static HTML,
+    so it's ~3x faster (~5s vs ~17-30s) AND ~3x cheaper. (A JS-only recipe site would need
+    render=True — none seen yet; revisit per-domain if so.)
     """
     err: Optional[Exception] = None
+    # Flagged domain → go straight to the unblocker (the direct fetch would only return a
+    # stub; the unblocker credit is spent either way on a blocking site, so this just
+    # saves the wasted round-trip + the direct→detect→escalate dance).
+    if unblocker and unblocker_available():
+        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
+        if ub is not None:
+            return ub
+        err = requests.HTTPError(f"Unblocker fetch failed for {url}")
+
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
-        if unblocker and unblocker_available() and _looks_blocked(resp):
-            print(f"[fetch] soft-block detected on direct 200 for {url} → escalating to unblocker")
-            err = requests.HTTPError(f"Soft-block challenge page for {url}")
-        else:
-            return resp, {"source": "direct", "ua_used": ua_used}
+        return resp, {"source": "direct", "ua_used": ua_used}
     except requests.HTTPError as e:
         # 404/410 came from a real response.raise_for_status() → terminal.
         status = getattr(e.response, "status_code", None) if e.response is not None else None
@@ -460,17 +466,6 @@ def fetch_with_full_fallback(url: str, *,
         err = e
     except Exception as e:
         err = e
-
-    # PAID unblocker tier (per-domain opt-in) — before Wayback so we prefer a live
-    # page to a months-old snapshot. No-ops without a BYOK key. render=False: the
-    # unblocker still solves the challenge (residential IP + session) but skips the
-    # slow real-browser JS render — recipe content/JSON-LD is in the static HTML, so
-    # this is ~3x faster (~5s vs ~17-30s) AND ~3x cheaper (smaller payload). A JS-only
-    # recipe site would need render=True (none seen yet; revisit per-domain if so).
-    if unblocker and unblocker_available():
-        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
-        if ub is not None:
-            return ub
 
     if not try_wayback:
         raise err if err is not None else requests.HTTPError(f"Direct fetch failed for {url}")
