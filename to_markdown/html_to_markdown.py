@@ -398,6 +398,35 @@ def fetch_via_unblocker(url: str, *, timeout: int = UNBLOCKER_TIMEOUT_SECONDS,
     return _fetch_via_get_unblocker(url, provider, cfg, timeout, render)
 
 
+# Anti-bot challenge / interstitial signatures. A site like a Hearst property
+# (thepioneerwoman.com) answers a bot with HTTP **200** carrying a tiny JS-challenge
+# stub instead of the page — so the fetch "succeeds" but has no content. These markers
+# (+ the small-body heuristic in _looks_blocked) detect that so an unblocker-enabled
+# domain escalates to the paid tier instead of returning the useless stub.
+_BLOCK_MARKERS = (
+    "px-captcha", "perimeterx", "_pxhd", "pardon our interruption",
+    "access to this page has been denied", "captcha-delivery", "datadome",
+    "just a moment...", "challenge-platform", "incapsula", "_incapsula_",
+    "enable javascript and cookies", "are you a robot", "verify you are human",
+)
+
+
+def _looks_blocked(resp: requests.Response) -> bool:
+    """Did a 200 actually return an anti-bot challenge/interstitial stub instead of the
+    page? Used ONLY to decide whether to escalate an unblocker-ENABLED domain to the paid
+    tier, so a slightly eager match merely spends one credit (never wrong for a domain we
+    already flagged as blocked). A known challenge marker OR a suspiciously small body
+    with no JSON-LD / <article> (a real recipe page is large + structured) counts."""
+    try:
+        body = resp.text or ""
+    except Exception:
+        return False
+    low = body.lower()
+    if any(m in low for m in _BLOCK_MARKERS):
+        return True
+    return len(body) < 15000 and "ld+json" not in low and "<article" not in low
+
+
 def fetch_with_full_fallback(url: str, *,
                               timeout: int = DEFAULT_TIMEOUT_SECONDS,
                               try_wayback: bool = True,
@@ -410,11 +439,19 @@ def fetch_with_full_fallback(url: str, *,
     fetch_strategy='unblocker') inserts the PAID web-unblocker tier between direct
     and Wayback — a LIVE page is preferred to a stale archive. 404/410 stay terminal
     (gone is gone; no tier resurrects it).
+
+    A SOFT-BLOCK (HTTP 200 + anti-bot challenge stub) is treated as a direct failure
+    ONLY for an unblocker-enabled domain, so it escalates to the paid tier instead of
+    returning the stub. For every other caller the 200 is returned as before.
     """
     err: Optional[Exception] = None
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
-        return resp, {"source": "direct", "ua_used": ua_used}
+        if unblocker and unblocker_available() and _looks_blocked(resp):
+            print(f"[fetch] soft-block detected on direct 200 for {url} → escalating to unblocker")
+            err = requests.HTTPError(f"Soft-block challenge page for {url}")
+        else:
+            return resp, {"source": "direct", "ua_used": ua_used}
     except requests.HTTPError as e:
         # 404/410 came from a real response.raise_for_status() → terminal.
         status = getattr(e.response, "status_code", None) if e.response is not None else None
