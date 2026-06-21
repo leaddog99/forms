@@ -3531,6 +3531,24 @@ def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
         raise HTTPException(status_code=500, detail=f"Scan error: {e}")
 
 
+@app.get("/dish-keywords")
+def dish_keywords_status_endpoint(limit: int = 50):
+    """The demand-side dish-keyword corpus captured from SEMrush Top-Pages exports —
+    traffic-ranked, self-classifying dish names (capture-now; normalize-to-catalog later)."""
+    from input.pipeline import dish_keywords
+    with sqlite3.connect(DB_PATH) as conn:
+        dish_keywords.ensure_table(conn)
+        total = conn.execute("SELECT COUNT(*) FROM dish_keywords").fetchone()[0]
+        by_domain = dict(conn.execute(
+            "SELECT domain, COUNT(*) FROM dish_keywords GROUP BY domain "
+            "ORDER BY COUNT(*) DESC").fetchall())
+        rows = [dict(zip(("keyword", "traffic", "intent", "domain", "url"), r))
+                for r in conn.execute(
+                    "SELECT keyword, traffic, intent, domain, url FROM dish_keywords "
+                    "ORDER BY traffic DESC LIMIT ?", (int(limit),))]
+    return {"total": total, "by_domain": by_domain, "top_by_traffic": rows}
+
+
 @app.get("/url-words")
 def url_words_status_endpoint():
     """Counts for the self-learning URL-word lists (the recipe-URL pre-filter vocab)."""

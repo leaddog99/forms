@@ -552,7 +552,13 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         rank_idx, rank_label = tri, "traffic"
     else:
         raise ValueError(f"Unexpected SEMrush columns (need Domains or Traffic): {header}")
-    rows = []
+    # DEMAND-SIDE capture (Top-Pages export only): the per-URL Top Keyword is a traffic-
+    # validated, self-classifying dish name — stash it while we're here (capture-now). See
+    # input.pipeline.dish_keywords.
+    ki = col("Top Keyword", "Keyword")
+    ii = col("Primary Intent", "Intent")
+    aei = col("Answer Engines")
+    rows, kw_rows = [], []
     for r in it:
         url = str(r[ui] or "").strip()
         if not url:
@@ -568,6 +574,20 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         except (TypeError, ValueError):
             rank = 0.0
         rows.append((url, str(r[ti] if ti is not None else "") or "", rank))
+        if ki is not None:
+            kw = str(r[ki] or "").strip()
+            if kw:
+                kw_rows.append({"url": url, "keyword": kw,
+                                "traffic": rank if rank_label == "traffic" else None,
+                                "intent": str(r[ii] or "").strip() if ii is not None else "",
+                                "answer_engines": str(r[aei] or "").strip() if aei is not None else ""})
+    if kw_rows:
+        try:
+            from input.pipeline import dish_keywords
+            n = dish_keywords.capture(kw_rows, domain)
+            print(f"  [dish-keywords] captured {n} demand keywords from {os.path.basename(path)}")
+        except Exception as e:
+            print(f"  [dish-keywords] capture skipped ({type(e).__name__}: {e})")
     rows.sort(key=lambda x: -x[2])   # rank desc (domains or traffic)
     out, seen = [], set()
     for url, title, _r in rows:
