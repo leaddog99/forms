@@ -57,6 +57,13 @@ Brief inference beats empty fields, but genuinely unknown should stay
 empty (or null for firstDocumented). `sources` should stay an empty
 list — the field exists for future curated citations, not for
 fabricated ones.
+
+FIELD SHAPES (match the schema exactly):
+- notableVariations and relatedDishes are ARRAYS of short strings — ONE
+  variation / ONE dish name per array item. Never a single sentence and
+  never a comma-joined string. Use an empty array [] if there are none.
+  e.g. relatedDishes: ["Vichyssoise", "potato-leek soup", "minestrone"]
+- ethnicity, originRegion, traditionalContext are plain strings.
 """.strip()
 
 
@@ -223,13 +230,13 @@ PROVENANCE_BLOCK = EnrichmentBlock(
             "relatedDishes", "sources",
         ],
         "properties": {
-            "ethnicity": {"type": "string"},
-            "originRegion": {"type": "string"},
-            "firstDocumented": {"type": ["string", "null"]},
-            "traditionalContext": {"type": "string"},
-            "notableVariations": {"type": "array", "items": {"type": "string"}},
-            "relatedDishes": {"type": "array", "items": {"type": "string"}},
-            "sources": {"type": "array", "items": {"type": "string"}},
+            "ethnicity": {"type": "string", "description": "Cuisine/culture as a single short phrase (e.g. 'French', 'Sichuan'). Plain string, not a list."},
+            "originRegion": {"type": "string", "description": "Geographic origin as a single short phrase (e.g. 'Provence'). Plain string."},
+            "firstDocumented": {"type": ["string", "null"], "description": "Approx. era first recorded (e.g. '19th century'), or null if unknown."},
+            "traditionalContext": {"type": "string", "description": "One-to-three sentence prose on traditional usage (occasion, season, who cooks it)."},
+            "notableVariations": {"type": "array", "items": {"type": "string"}, "description": "ARRAY of distinct variations, each a SHORT phrase as its own item (e.g. ['vegan with coconut milk', 'add chorizo']). Never one sentence, never a comma-joined string. Empty array [] if none."},
+            "relatedDishes": {"type": "array", "items": {"type": "string"}, "description": "ARRAY of related dish names, ONE dish per item (e.g. ['Vichyssoise', 'minestrone']). Never a comma-joined string. Empty array [] if none."},
+            "sources": {"type": "array", "items": {"type": "string"}, "description": "Leave as an empty array []."},
         },
     },
     job_prompt=_PROVENANCE_JOB,
