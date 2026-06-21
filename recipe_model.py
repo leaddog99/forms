@@ -203,6 +203,17 @@ def _strip_html(s):
     txt = re.sub(r"\s+([,.;:!?])", r"\1", txt)  # no space before punctuation
     return txt.strip()
 
+def _normalize_md_bullets(v):
+    """Put each `- **Name**…` markdown bullet on its OWN line. The enrich LLM
+    sometimes returns sourcingNotes as one run-together blob (no newlines between
+    bullets) → the form renders a wall of text. Split before each bold-bullet
+    marker so it's a real list. Idempotent; only acts when bold bullets are
+    present, so plain prose / paragraph notes are left untouched."""
+    if not isinstance(v, str) or "**" not in v:
+        return v
+    # Collapse whatever whitespace precedes a "- **"/"* **" marker into one newline.
+    return re.sub(r"\s*[-*]\s+\*\*", "\n- **", v).strip()
+
 def _as_str(v):
     """A schema.org Text-ish value → string (source HTML stripped from prose).
     number/bool→str, list→joined, dict→best key."""
@@ -500,6 +511,12 @@ class EditorialMetadata(BaseModel):
     # Stored as a single string; the LLM is free to bullet or paragraph.
     # No affiliate links yet — placeholders for product names only.
     sourcingNotes: str = ""
+
+    # Normalize a run-together bullet blob into one-bullet-per-line (the enrich
+    # LLM is inconsistent about newlines). Only touches bold-bullet text.
+    @field_validator('sourcingNotes', mode='before')
+    @classmethod
+    def _v_bullets(cls, v): return _normalize_md_bullets(v)
 
 class StatusField(BaseModel):
     value: Literal["accepted", "rejected"]

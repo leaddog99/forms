@@ -183,9 +183,11 @@ sourcingNotes: Markdown bullet list. Pick 2-5 ingredients where
 quality dominates outcome (raw oils, fresh herbs, aged cheeses,
 anchovies, vanilla, etc.). For each: '- **Ingredient name**: why
 quality matters here, what to look for, descriptive sourcing guidance
-(origin, style, hallmarks of the good stuff).' DO NOT invent brand
-names, shop names, or URLs — those will be layered in later from a
-curated affiliate database.
+(origin, style, hallmarks of the good stuff).' Put EACH bullet on its
+OWN line — separate bullets with a literal newline character (\\n) in
+the JSON string; never run them together on one line. DO NOT invent
+brand names, shop names, or URLs — those will be layered in later from
+a curated affiliate database.
 """.strip()
 
 
