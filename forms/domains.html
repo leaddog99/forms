@@ -53,11 +53,26 @@
           <button type="button" class="ed-btn" id="refreshRanksBtn" title="Re-import the newest SEMrush rank export (input/ or Downloads) and re-rank every domain">↻ Refresh SEMrush ranks</button>
           <span class="ed-save-hint" id="rankStatus" style="font-size:.82em;color:var(--ed-ink-soft)"></span>
         </div>
-        <div class="ed-rank-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
-          <button type="button" class="ed-btn" id="scanInboxBtn" title="Scan the inbox (Downloads) for SEMrush exports you just saved, and ingest each into its domain">⤵ Scan SEMrush inbox</button>
-          <span class="ed-save-hint" id="harvestStatus" style="font-size:.82em;color:var(--ed-ink-soft)">sort “SEMrush due” to see what needs a refresh</span>
+      </div>
+
+      <!-- SEMrush harvest loop — always visible (NOT hidden behind the search panel).
+           The whole semi-automated flow lives here: find what's due → open + export
+           in SEMrush → scan the inbox to ingest. The 3-step "how it works" is the
+           in-product documentation so the loop is self-explanatory. -->
+      <div class="harvest-strip" id="harvestStrip" style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--card)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <button type="button" id="hvToggle" title="How SEMrush harvesting works" style="background:none;border:none;padding:0;cursor:pointer;font:inherit;font-weight:600;color:var(--ink);font-size:.9em">SEMrush harvest <span id="hvArrow" style="color:var(--ed-ink-soft)">▾</span></button>
+          <button type="button" id="hvDue" title="Sort the list to show what needs a refresh" style="border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:2px 10px;cursor:pointer;font-size:.8em;color:var(--ed-ink-soft)">checking…</button>
         </div>
-        <pre id="scanLog" hidden style="max-height:160px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:11px;line-height:1.4;padding:8px 10px;margin:6px 0 0;border-radius:8px;white-space:pre-wrap"></pre>
+        <ol id="hvHow" hidden style="margin:8px 0 2px;padding-left:18px;font-size:.8em;line-height:1.5;color:var(--ed-ink-soft)">
+          <li>Click <b>“N due”</b> above to sort the list — due / never-harvested publishers float up, each tagged ⏰.</li>
+          <li>Open a due one → its <b>SEMrush backlinks file</b> source → <b>↗ Open</b> the report → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to Downloads.</li>
+          <li>Come back here, click <b>⤵ Scan inbox</b> — it routes each saved export to its domain, ingests it, and reschedules (drops off “due”).</li>
+        </ol>
+        <div style="margin-top:8px">
+          <button type="button" class="ed-btn" id="scanInboxBtn" title="Scan Downloads for the SEMrush exports you just saved, and ingest each into its domain">⤵ Scan inbox</button>
+        </div>
+        <pre id="scanLog" hidden style="max-height:160px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:11px;line-height:1.4;padding:8px 10px;margin:8px 0 0;border-radius:8px;white-space:pre-wrap"></pre>
       </div>
 
       <div class="ed-legend">
@@ -144,6 +159,20 @@
         li.addEventListener('click', () => { selected = d.domain; renderList(); renderDetail(); nav.afterSelect(); });
         ul.appendChild(li);
       }
+      updateDueCount();
+    }
+
+    // The "N due" chip on the harvest strip — counts allowed, SEMrush-managed
+    // domains that are new/overdue (the worklist, as a number). Clicking it sorts the
+    // list by "SEMrush due first" so the curator sees exactly what to harvest next.
+    function updateDueCount(){
+      const el = $('#hvDue'); if (!el) return;
+      const n = Object.values(domains).filter(d => isAllowed(d) && d.harvest_due).length;
+      el.textContent = n ? `⏰ ${n} due` : '✓ none due';
+      el.style.color = n ? 'var(--accent-dark)' : 'var(--ed-ink-soft)';
+      el.style.borderColor = n ? 'var(--accent)' : 'var(--line)';
+      el.disabled = !n;
+      el.style.cursor = n ? 'pointer' : 'default';
     }
 
     /* ----------------------------- detail ----------------------------- */
@@ -254,6 +283,7 @@
             <div class="src-group" data-src="backlinks_file">
               <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source === 'backlinks_file' ? 'checked' : ''}>
                 SEMrush backlinks file <span class="src-sub">local export, ranked by referring domains — best for big sites</span></label>
+              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to Downloads → then <b>⤵ Scan inbox</b> on the domains list ingests it and reschedules this domain. (Or harvest now with <b>🔄 Refresh top recipes</b> if the file is already in <code>input/</code>.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', 100, { type: 'number' })}
@@ -818,6 +848,17 @@
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
     $('#refreshRanksBtn').addEventListener('click', refreshRanks);
     $('#scanInboxBtn').addEventListener('click', scanInbox);
+    // Harvest strip: toggle the 3-step explainer; the due chip sorts by "SEMrush due".
+    $('#hvToggle').addEventListener('click', () => {
+      const h = $('#hvHow'), a = $('#hvArrow');
+      h.hidden = !h.hidden; if (a) a.textContent = h.hidden ? '▾' : '▴';
+    });
+    $('#hvDue').addEventListener('click', () => {
+      sortKey = 'harvest';
+      const sel = $('#sort'); if (sel) sel.value = 'harvest';
+      const c = $('#controls'); if (c && c.hidden){ c.hidden = false; $('#searchToggle').classList.add('active'); }
+      renderList();
+    });
 
     loadDomains();
     loadRankStatus();

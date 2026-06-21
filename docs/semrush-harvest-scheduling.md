@@ -6,6 +6,40 @@ Reuses the existing `jobs` runner ([[project_jobs_as_executables]]), the `domain
 
 ---
 
+## 0. Admin walkthrough — the actual clicks (read this first)
+
+This is what a curator literally does, in order, on the **Domains** admin page. The
+whole loop is now anchored by the always-visible **“SEMrush harvest”** strip in the
+left sidebar (its “▾” toggle holds these same 3 steps as in-product help).
+
+1. **See what's due.** The harvest strip shows a **“⏰ N due”** chip. Click it → the
+   domain list sorts **SEMrush-due-first**; new / overdue publishers float to the top,
+   each tagged `⏰ SEMrush: new` or `⏰ SEMrush: due` in its list meta. (“Due” = a
+   `backlinks_file` domain whose `last_harvested_at + harvest_ttl_days ≤ today`, or one
+   never harvested.) Zero due → the chip reads “✓ none due” and there's nothing to do.
+
+2. **Open + export, per due domain.** Click a due domain → scroll to **“Top recipes —
+   publisher refresh”** → the **“SEMrush backlinks file”** source. Its **deep-link**
+   field is pre-filled to that domain's SEMrush Indexed-Pages report (auto-derived from
+   a template — no hand-pasting). Hit **↗ Open** → SEMrush opens at the right report →
+   press **Export** → save the `.xlsx` to your Downloads. Repeat for each due domain.
+
+3. **Ingest the batch.** Back on the list, click **⤵ Scan inbox** (on the harvest
+   strip). It scans Downloads for `*-backlinks*pages*.xlsx`, routes each file to its
+   domain by the `{domain}` filename prefix, moves it into `input/`, and spawns the
+   `backlinks_file` harvest job (is-it-a-recipe → Moz-score → keep top-N). Each success
+   stamps `last_harvested_at` → that domain rolls off “due” and the chip count drops.
+
+That's the entire loop. The system is the dispatcher + bookkeeper (what's due, the
+links, the ingest, the reschedule); the human is just the free, ToS-safe SEMrush
+“press Export + Save” hands (§6 on why we don't automate the click).
+
+**Alternative (no SEMrush click):** if the export `.xlsx` is already sitting in
+`input/`, a domain's **🔄 Refresh top recipes** button harvests it directly — same
+pipeline, same stamping. The Scan-inbox button is just the batch convenience over it.
+
+---
+
 ## 1. The loop (one harvest = one domain's SEMrush export)
 
 1. **Every day the system generates a worklist** of domains that are **NEW** (never harvested) or **DUE/overdue** — derived from each domain's `last_harvested_at + harvest_ttl_days`.
@@ -102,6 +136,21 @@ Even *one* domain/mo via API ≈ `$500 + ~$6` vs flat **$250 unlimited**; ~200 d
 - Glob tolerates the browser re-download suffix (`…pages (1).xlsx`); scan reads ONLY the inbox (not `input/`) so an ingested file isn't re-processed.
 - The `backlinks_file` source radio is **no longer gated on file presence** — selecting it is always allowed; the refresh errors cleanly if the file isn't there.
 - **SEMrush deep-link auto-defaults** — `semrush_report_url` is derived from `system_config.semrush_indexed_pages_url_template` (`…/analytics/backlinks/pages/?q={domain}&searchType=domain&sort_field=domainsnum`) with `{domain}` substituted, so the worklist link + form field just work with zero hand-pasting. A per-domain custom URL overrides; a Save that didn't customize stores `''` (the field means "override only", so a template change keeps propagating). Worklist membership is keyed on `harvest_source=='backlinks_file'` ONLY — NOT on the (now universal) link.
+
+**V1.2 SHIPPED (UX legibility, 2026-06-20):** the loop was working but *illegible* —
+its two primary actions (the “SEMrush due” sort and the **Scan inbox** button) were
+buried inside the collapsible search/sort panel (hidden behind the 🔍 icon), and
+nothing on the page connected the per-domain deep-link to the inbox scan as one flow.
+Fix (all in `domains.html`, no backend change):
+- **Always-visible “SEMrush harvest” strip** in the sidebar (out of the search panel):
+  a collapsible 3-step explainer (= §0, the in-product docs), a live **“⏰ N due”** chip
+  that sorts the list by due-first on click (computed client-side from the loaded rows;
+  the `harvest-worklist` endpoint stays as the canonical read API but the UI no longer
+  needs it), and the **⤵ Scan inbox** button + its log.
+- **Per-domain step hint** in the backlinks source group spelling out Open → Export →
+  Save → Scan inbox, so the detail half points back at the loop.
+- The ↻ Refresh-ranks tool stays in the search panel (it's monthly corpus maintenance,
+  not part of the per-domain harvest loop).
 
 **NEXT (not built):**
 1. **System-wide `urlField()`** — roll the Open/Copy URL affordance out to every URL display (recipe sidebar, cohort cards, etc.) via the shared component layer.
