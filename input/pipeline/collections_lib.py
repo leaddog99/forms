@@ -211,14 +211,25 @@ def _looks_like_archive(url: str) -> bool:
 # front saves a fetch + an unblocker credit each. OPT-IN PER DOMAIN (domains.url_prefilter)
 # because some publishers TRUNCATE slugs (thepioneerwoman /the_best_lasagn/, /cobbl/)
 # which wouldn't match a food vocab — there it would false-drop, so leave it off.
-_RECIPE_URL_WORDS = {"recipe", "recipes"}
+# A URL signals a RECIPE even without a specific food noun when it carries the word
+# 'recipe', a cooking METHOD, or a meal/course word — so these KEEP the candidate.
+_RECIPE_URL_WORDS = {
+    "recipe", "recipes", "homemade",
+    "baked", "grilled", "roasted", "fried", "braised", "stewed", "smoked",
+    "poached", "seared", "sauteed", "broiled", "steamed", "simmered", "roast",
+    "marinated", "glazed", "stuffed", "candied", "pickled", "caramelized",
+    "grill", "bake", "braise", "saute", "fry",
+    "breakfast", "brunch", "lunch", "dinner", "supper", "dessert", "desserts",
+    "appetizer", "snack", "snacks", "entree",
+}
 
 # Words that appear inside dish names but aren't themselves a food signal (cuisines,
-# recipe adjectives, connectives) — excluded so the vocab stays food-specific.
+# recipe adjectives, connectives) — excluded so the vocab stays food-specific. NOTE:
+# cooking methods are NOT here — they're recipe signals (above), not noise.
 _FOOD_VOCAB_STOP = {
     "and", "the", "with", "for", "from", "style", "homemade", "easy", "best",
     "classic", "simple", "quick", "perfect", "ultimate", "creamy", "crispy",
-    "roasted", "baked", "grilled", "fried", "fresh", "spicy", "sweet", "savory",
+    "fresh", "spicy", "sweet", "savory",
     "italian", "french", "greek", "mexican", "american", "asian", "chinese",
     "indian", "thai", "spanish", "german", "japanese", "korean", "southern",
     "mediterranean", "moroccan", "turkish", "vietnamese", "english", "irish",
@@ -243,6 +254,12 @@ _BASE_FOOD_WORDS = {
     "steak", "ribs", "roast", "meatball", "casserole", "curry", "stir", "fry",
     "pancake", "waffle", "omelet", "frittata", "quiche", "pasty", "pastry", "dough",
     "tea", "coffee", "smoothie", "cocktail", "lemonade", "punch", "latte",
+    # gaps surfaced by the corpus audit
+    "orzo", "wing", "wings", "scallop", "scallops", "oat", "oats", "oatcake", "oatcakes",
+    "pecorino", "parmesan", "parmigiano", "mozzarella", "feta", "ricotta", "gouda",
+    "rosemary", "thyme", "basil", "oregano", "sage", "cilantro", "parsley", "dill", "mint",
+    "cracker", "crackers", "ketchup", "mustard", "mayo", "pickle", "pickles", "jam", "jelly",
+    "pesto", "hummus", "falafel", "gyro", "kebab", "ramen", "dumpling", "dumplings", "tofu",
 }
 
 _FOOD_VOCAB_CACHE: Optional[set] = None
