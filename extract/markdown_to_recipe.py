@@ -160,6 +160,16 @@ def markdown_to_recipe(
     if timings is not None:
         timings["extract_llm_ms"] = int((t_llm - t_prep) * 1000)
 
+    # A single page can hold MORE THAN ONE recipe (a cookbook page with two
+    # recipes, or a JSON-LD @graph) → the model returns a JSON array / graph.
+    # Everything downstream (sanitize, RecipeModel, sanitized["inputImage"]=…)
+    # expects ONE recipe dict, so collapse to the primary (first Recipe) here —
+    # otherwise a list hits "list indices must be integers or slices, not str".
+    json_data = _first_recipe(json_data)
+    if not isinstance(json_data, dict):
+        print("     ERROR: extraction returned no usable recipe object")
+        return None
+
     _attach_source_metadata(json_data, source_url=source_url, title=title)
 
     try:
@@ -175,6 +185,39 @@ def markdown_to_recipe(
         print("     ERROR: Failed to validate against RecipeModel:", e)
         print("     DEBUG: Sanitized payload:\n", json.dumps(json_data, indent=2)[:2000])
         return None
+
+
+def _is_recipe_typed(obj) -> bool:
+    """True if a JSON-LD object declares an @type of Recipe."""
+    t = obj.get("@type") or obj.get("type")
+    if isinstance(t, str):
+        return "recipe" in t.lower()
+    if isinstance(t, (list, tuple)):
+        return any("recipe" in str(i).lower() for i in t)
+    return False
+
+
+def _first_recipe(data):
+    """Collapse a multi-recipe extraction to a SINGLE recipe dict.
+
+    Handles a bare list of recipes and a JSON-LD `{"@graph": [...]}` envelope.
+    Prefers the first explicitly Recipe-typed object (so a page topped by the
+    target recipe wins), else the first dict. Returns None if nothing usable.
+    """
+    if isinstance(data, dict) and isinstance(data.get("@graph"), list):
+        data = data["@graph"]
+    if isinstance(data, list):
+        dicts = [x for x in data if isinstance(x, dict)]
+        if not dicts:
+            return None
+        chosen = next((x for x in dicts if _is_recipe_typed(x)), dicts[0])
+        n_recipes = sum(1 for x in dicts if _is_recipe_typed(x))
+        if n_recipes > 1:
+            print(f"     NOTE: extraction returned {n_recipes} recipes; "
+                  f"using '{chosen.get('name') or '(unnamed)'}' (the first). "
+                  f"Re-shoot a single recipe to capture the others.")
+        return chosen
+    return data
 
 
 def _attach_source_metadata(json_data: dict, *, source_url: str, title: str) -> None:
