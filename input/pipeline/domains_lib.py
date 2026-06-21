@@ -64,6 +64,7 @@ EDITABLE_FIELDS = (
     "paywall",        # gated premium publisher (drives PA-remap)
     "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
     "semrush_report_url",  # editable one-click deep-link into SEMrush for this domain
+    "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
 )
 
 
@@ -165,6 +166,10 @@ _SCHEDULE_COLUMNS = {
     # worklist still lists the domain; the link is just absent). Curator-owned, like
     # serp_query, so a SEMrush URL re-skin is a per-row field edit, not a code change.
     "semrush_report_url": "TEXT NOT NULL DEFAULT ''",
+    # OPTIONAL per-domain override folder for THIS domain's SEMrush export. Blank =
+    # use the configured inbox folder (system_config.semrush_inbox_dir → Downloads).
+    # The harvest reads the file DIRECTLY from here — no copy into input/.
+    "backlinks_dir": "TEXT NOT NULL DEFAULT ''",
 }
 
 

@@ -340,28 +340,70 @@ def _serp_image_for(domain, title):
     return hits[0]["image"] if hits else None
 
 
-def backlinks_file_path(domain):
-    """Path to a publisher's SEMrush page export in input/, or None.
+def _input_dir():
+    """<project>/input — a fallback search location (where the tracked sample exports
+    live + where the old Scan-inbox MOVED files). No longer the only/required place."""
+    import os
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def semrush_inbox_dir():
+    """The admin-configured folder SEMrush exports are saved to (read DIRECTLY — no
+    copy-into-input step). `system_config.semrush_inbox_dir` if set, else the OS
+    Downloads folder. This is the DEFAULT import location for the backlinks harvest."""
+    import os
+    try:
+        from input.pipeline import system_config as _cfg
+        d = (_cfg.get_setting("semrush_inbox_dir", "") or "").strip()
+    except Exception:
+        d = ""
+    return d or os.path.join(os.path.expanduser("~"), "Downloads")
+
+
+def backlinks_search_dirs(extra=None):
+    """Ordered, deduped list of EXISTING folders to look for a domain's SEMrush export
+    in — searched directly, newest match wins. Priority:
+      1. `extra` — a per-domain override folder (domains.backlinks_dir), if set
+      2. the configured inbox folder (semrush_inbox_dir → Downloads default)
+      3. <project>/input — fallback for the tracked sample exports
+    So an admin can just leave the export in Downloads (or point a domain at any folder)
+    and the harvest reads it in place — no need to move it into input/ first."""
+    import os
+    cand = []
+    if extra:
+        cand.extend(extra if isinstance(extra, (list, tuple)) else [extra])
+    cand.append(semrush_inbox_dir())
+    cand.append(_input_dir())
+    seen, out = set(), []
+    for d in cand:
+        d = (d or "").strip()
+        if not d:
+            continue
+        full = os.path.realpath(os.path.expanduser(d))
+        if full in seen or not os.path.isdir(full):
+            continue
+        seen.add(full)
+        out.append(full)
+    return out
+
+
+def backlinks_file_path(domain, extra_dir=None):
+    """Path to a publisher's SEMrush page export, searched DIRECTLY across
+    `backlinks_search_dirs` (configured inbox / Downloads / input / per-domain override),
+    or None. Reads in place — nothing is copied into input/.
 
     Tolerant of how SEMrush names the file:
       - whole site:  {domain}-backlinks-pages.xlsx  (or the _pages underscore variant)
       - a subdirectory export prepends the subpath:
                      {domain}_recipe-backlinks_pages.xlsx  (allrecipes.com/recipe)
-    So we match `{domain}*-backlinks*pages.xlsx` — the `*` after the domain absorbs an
-    optional `_subpath`. If several match (whole-site AND a subdir export), prefer the
-    MOST RECENTLY MODIFIED — i.e. the one the curator just dropped in."""
+    So we match `{domain}*-backlinks*pages*.xlsx` — the `*` after the domain absorbs an
+    optional `_subpath`; the trailing `*` tolerates the browser's de-dup suffix
+    (`…pages (1).xlsx`). Across ALL search dirs, the MOST RECENTLY MODIFIED match wins."""
     import os, glob
-    input_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # <project>/input
-    # Trailing `*` tolerates the browser's de-dup suffix on a re-download
-    # (`…pages (1).xlsx`) and any other tail before the extension.
-    hits = glob.glob(os.path.join(input_dir, f"{domain}*-backlinks*pages*.xlsx"))
+    hits = []
+    for d in backlinks_search_dirs(extra_dir):
+        hits += glob.glob(os.path.join(d, f"{domain}*-backlinks*pages*.xlsx"))
     return max(hits, key=os.path.getmtime) if hits else None
-
-
-def _input_dir():
-    """<project>/input — where the backlinks pipeline reads exports from."""
-    import os
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def export_prefix(path):
@@ -422,17 +464,21 @@ def _recipe_path_key(url):
     return (root_domain(url), "/".join(s.lower() for s in segs))
 
 
-def _read_backlinks_file(domain, want):
+def _read_backlinks_file(domain, want, extra_dir=None):
     """Discovery from a local SEMrush page export, ranked by REFERRING DOMAINS desc
     (distinct linking sites — a robust authority marker, harder to game than raw
     backlink count). Returns [(url, title), …] for the top `want` response-200 content
     URLs in domains order. The SAME downstream pipeline (archive/collection pre-filter,
     recipe check, Moz scoring, rank, keep) then runs exactly as for Google results."""
     import os, openpyxl
-    path = backlinks_file_path(domain)
+    path = backlinks_file_path(domain, extra_dir=extra_dir)
     if not path:
+        searched = backlinks_search_dirs(extra_dir)
         raise FileNotFoundError(
-            f"No SEMrush export for {domain}: expected input/{domain}-backlinks-pages.xlsx")
+            f"No SEMrush export found for {domain}. Expected a file named "
+            f"'{domain}-backlinks-pages.xlsx' (or '{domain}_<subpath>-backlinks_pages.xlsx') "
+            f"in one of: {', '.join(searched) or '(no existing folder configured)'}. "
+            f"Save the export there (no need to move it into input/) and run again.")
     ws = openpyxl.load_workbook(path, read_only=True).active
     it = ws.iter_rows(values_only=True)
     header = [str(h or "") for h in next(it)]
@@ -476,7 +522,7 @@ def _read_backlinks_file(domain, want):
 
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
-                          unblocker=False, should_cancel=None) -> dict:
+                          unblocker=False, should_cancel=None, backlinks_dir=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -500,7 +546,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     Returns {members, discovered, recipe_pass, scored, recipe_path, query}. Content
     extraction / ingestion into master is a SEPARATE step (not done here)."""
     if source == "backlinks_file":
-        found = _read_backlinks_file(domain, want=int(records or discover_n or 100))
+        found = _read_backlinks_file(domain, want=int(records or discover_n or 100),
+                                     extra_dir=backlinks_dir)
         used_path = None
     elif query:
         target = root_domain("https://" + domain)

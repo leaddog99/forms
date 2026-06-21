@@ -34,9 +34,12 @@ That's the entire loop. The system is the dispatcher + bookkeeper (what's due, t
 links, the ingest, the reschedule); the human is just the free, ToS-safe SEMrush
 “press Export + Save” hands (§6 on why we don't automate the click).
 
-**Alternative (no SEMrush click):** if the export `.xlsx` is already sitting in
-`input/`, a domain's **🔄 Refresh top recipes** button harvests it directly — same
-pipeline, same stamping. The Scan-inbox button is just the batch convenience over it.
+**Alternative (single domain, no inbox scan):** a domain's **🔄 Refresh top recipes**
+button reads that domain's export **directly** from the configured folder (System config
+`semrush_inbox_dir` → your Downloads, or a per-domain **Export folder override**) — no
+need to move it into `input/` first, and the most-recent `…(1).xlsx` re-download wins
+automatically. Same pipeline, same stamping. Scan-inbox is just the batch convenience
+that runs every export it finds at once (and moves each out so it isn't re-processed).
 
 ---
 
@@ -151,6 +154,36 @@ Fix (all in `domains.html`, no backend change):
   Save → Scan inbox, so the detail half points back at the loop.
 - The ↻ Refresh-ranks tool stays in the search panel (it's monthly corpus maintenance,
   not part of the per-domain harvest loop).
+
+**V1.3 SHIPPED (read the export DIRECTLY — no input/ requirement, 2026-06-21):** the
+per-domain **🔄 Refresh top recipes** was the real friction — `backlinks_file_path`
+globbed **only** `<project>/input`, so the `semrush_inbox_dir` setting (which the admin
+had pointed at their Downloads) was honored *only* by the Scan-inbox button (which
+*moves* a file into `input/`). A direct refresh therefore couldn't see a Downloads file
+at all, and there was no way to change where it looked. Fix (`collections_lib` +
+`save_recipe_api` + `domains.html` + `domains_lib`):
+- **`backlinks_search_dirs(extra)`** — the export is now searched DIRECTLY across an
+  ordered, deduped list of EXISTING folders: **(1)** a per-domain override
+  (`domains.backlinks_dir`), **(2)** the configured inbox folder
+  (`system_config.semrush_inbox_dir` → `~/Downloads` default), **(3)** `<project>/input`
+  (fallback for the tracked sample exports). Nothing is copied — it reads in place.
+- **Most-recent duplicate wins** — across ALL search folders, `backlinks_file_path`
+  returns the `max()` by mtime of every `{domain}*-backlinks*pages*.xlsx` match, so a
+  browser re-download (`…pages (1).xlsx` / ` (2)`) is preferred automatically over the
+  stale original; the admin never has to delete the old file.
+- **Per-domain override field** — `backlinks_dir` (new `EDITABLE_FIELDS` column, ALTER-
+  on-boot migration) surfaced as the **“Export folder override (blank = default/Downloads)”**
+  field in the backlinks source group. Threaded through the refresh-top endpoint → job
+  params → `harvest_publisher_top(backlinks_dir=)` → `_read_backlinks_file`, and the
+  Refresh button sends the LIVE field value so an admin can test a folder without saving.
+- **Clear not-found error** — the refresh-top gate + `_read_backlinks_file` both raise an
+  admin-readable message **listing every folder searched** ("Save the export there — no
+  need to move it into input/"). No file needs to pre-exist to select the source or save.
+- **Status line** now shows the actual file + folder it read from (`✓ <file> — <folder>`),
+  not a fabricated `input/` prefix, and lists the searched folders when absent.
+- Scan-inbox is deliberately UNCHANGED — it keeps MOVING files into `input/` because it's
+  a *consume-the-inbox* batch action (move-out = process-once); the re-runnable read-direct
+  path is the per-domain Refresh button.
 
 **NEXT (not built):**
 1. **System-wide `urlField()`** — roll the Open/Copy URL affordance out to every URL display (recipe sidebar, cohort cards, etc.) via the shared component layer.

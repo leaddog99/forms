@@ -283,11 +283,12 @@
             <div class="src-group" data-src="backlinks_file">
               <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source === 'backlinks_file' ? 'checked' : ''}>
                 SEMrush backlinks file <span class="src-sub">local export, ranked by referring domains — best for big sites</span></label>
-              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to Downloads → then <b>⤵ Scan inbox</b> on the domains list ingests it and reschedules this domain. (Or harvest now with <b>🔄 Refresh top recipes</b> if the file is already in <code>input/</code>.)</p>
+              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
+                ${field('f_backlinks_dir', 'Export folder override (blank = default/Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\you\\Downloads', full: true })}
                 ${urlField('f_semrush_report_url', 'SEMrush report deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/backlinks/pages/?q=domain…', full: true })}
               </div>
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
@@ -390,10 +391,11 @@
                                              // selecting it is fine; refresh errors if absent
         if (d.present){
           el.className = 'src-file ok';
-          el.textContent = `✓ input/${d.filename}`;
+          el.textContent = `✓ ${d.filename}  —  ${d.folder}`;
         } else {
           el.className = 'src-file missing';
-          el.textContent = `no file yet — save input/${d.expected} (a _subdir export also works); refresh will error until it's there`;
+          const where = (d.searched || []).join('  ·  ') || '(no existing folder configured)';
+          el.textContent = `no file yet — save ${d.expected} (a _subdir export also works) in one of: ${where}. Refresh will error until it's there.`;
         }
       } catch {
         el.className = 'src-file missing'; el.textContent = 'could not check for file';
@@ -454,6 +456,7 @@
       const source = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp';
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
+      const backlinks_dir = ($('#f_backlinks_dir')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
       btn.disabled = true; btn.textContent = '⏳ Harvesting…';
       const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
@@ -461,7 +464,7 @@
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, check_recipe }) });
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, check_recipe }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain, data.job_id); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
@@ -657,6 +660,7 @@
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
         harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
         semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),
+        backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),
       };
     }
 
