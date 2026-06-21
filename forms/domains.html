@@ -282,7 +282,7 @@
             </div>
             <div class="src-group" data-src="backlinks_file">
               <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source === 'backlinks_file' ? 'checked' : ''}>
-                SEMrush backlinks file <span class="src-sub">local export, ranked by referring domains — best for big sites</span></label>
+                SEMrush page export <span class="src-sub">backlinks (by referring domains) OR Top-Pages (by traffic) — auto-detected; a Top-Pages /recipe subfolder export is cleanest</span></label>
               <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
               <div class="ed-form-grid" style="margin-top:10px">
