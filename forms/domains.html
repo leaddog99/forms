@@ -288,7 +288,7 @@
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
-                ${field('f_backlinks_dir', 'Export folder override (blank = default/Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\you\\Downloads', full: true })}
+                ${field('f_backlinks_dir', 'Export folder OR exact file path (blank = auto-detect newest in Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\john\\Downloads\\bostonchefs.com_recipe-organic.PagesV3-us-….xlsx', full: true })}
                 ${urlField('f_semrush_report_url', 'SEMrush report deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/backlinks/pages/?q=domain…', full: true })}
               </div>
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}

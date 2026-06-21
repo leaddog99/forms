@@ -406,8 +406,23 @@ def backlinks_file_path(domain, extra_dir=None):
     So we match `{domain}*[Pp]ages*.xlsx` — the `*` after the domain absorbs the subpath +
     export type; the trailing `*` tolerates the browser's de-dup suffix (`…(1).xlsx`).
     Across ALL search dirs, the MOST RECENTLY MODIFIED match wins (so a fresh Top-Pages
-    export supersedes an old backlinks one)."""
+    export supersedes an old backlinks one).
+
+    `extra_dir` (domains.backlinks_dir) may be EITHER a folder OR an EXACT FILE PATH — if it
+    points at an existing file (or a folder + filename), that file is used DIRECTLY, no
+    auto-detect. This is the explicit per-domain "use THIS file" override."""
     import os, glob
+    # Explicit file override: a full path to an .xlsx (handles quotes + ~).
+    if extra_dir:
+        ex = os.path.expanduser(str(extra_dir).strip().strip('"').strip("'"))
+        if os.path.isfile(ex):
+            return ex
+        # also allow a folder set elsewhere + a bare filename pasted here
+        if ex.lower().endswith(".xlsx"):
+            for d in backlinks_search_dirs(None):
+                cand = os.path.join(d, os.path.basename(ex))
+                if os.path.isfile(cand):
+                    return cand
     hits = []
     for d in backlinks_search_dirs(extra_dir):
         hits += glob.glob(os.path.join(d, f"{domain}*[Pp]ages*.xlsx"))
