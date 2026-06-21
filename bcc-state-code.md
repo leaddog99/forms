@@ -1080,5 +1080,16 @@ Decision (user): the photo we extract FROM should ride along on the recipe as **
 - **Verified**: re-ran the real spanakopita image → `sourceImage` + hero both set to a served `/generated/upload_*.jpg`, **1176×1568 portrait, uncropped** (whole page legible); served 200; model dump+reparse round-trips; form JS clean. Server PID 9456.
 - **NOT yet done — step (b)**: the editor VALIDATION VIEW (show the original capture beside our extracted version so the user can eyeball it). Also: PDF extract doesn't set sourceImage yet (photos were the use case); "extract the 2nd recipe" UX.
 
+### END OF SESSION 2026-06-20 — carry-forward (pick up here tomorrow)
+A long, productive bug-bash session, all on `split/enrichment-api`, all committed + pushed (head `d26c870`). Server live on the latest code (single clean process via `bcc_restart.bat`; stray multi-process logs deleted). The whole spanakopita-from-a-photo flow now works end-to-end.
+- **Shipped today (in order):** (1) downscale EVERY image before upload (canonical `image-well.downscaleForUpload`, ≤1568px) + honest weak-network errors + 90s timeout on image & pdf extract; (2) strip source HTML from recipe prose at the model boundary + backfill (12 rows); (3) tolerant `Provenance` coercion (save 500) + tightened enrich prompt to emit arrays; (4) `blob:` paste guard; (5) multi-recipe page handling (`_first_recipe`); (6) one-bullet-per-line `sourcingNotes`; (7) `sourceImage` retain-the-original plumbing (hero defaults to it).
+- **NEXT (priority):**
+  1. **`sourceImage` step (b) — the validation/compare view** in the editor (read-only "Original (as captured)" panel beside the extracted fields; collapsible-panel vs split-view is the open design choice). This is what actually delivers "validate our version against the original."
+  2. **PDF extract → set `sourceImage`** (render page 1 as the capture) for parity with the image path.
+  3. **Multi-recipe UX** — "this page has 2 recipes — extract the other (Pilaf)?" instead of silently keeping only the first.
+  4. Optional: re-shoot just the Pilaf half / capture the spanakopita margin notes as `notes`.
+- **Still carried from earlier (pre-today):** write up the `b369f0e`→`418a5f5` SEMrush human-workflow harvest commits here; validate the Oxylabs trial + wire `unblocker=True` harvest (+ cost cap); system-wide domain scoring; `serp_batch`; SEMrush Keyword-Magic dish source.
+- **Ops:** `bcc_backup.bat` run at wrap (DB had the HTML-strip cleanup + new `sourceImage` writes). `.env` line-15 dotenv warning still untidy.
+
 ### blob:/data: paste guard on the extract path (KEEP — user confirmed)
 While diagnosing the above (user pasted a `blob:https://outlook.office.com/…` link — an Outlook-internal image URL that no external app/server can fetch), found the recipe-form paste handler had no `blob:`/`data:` guard: such a URL fell through Pass-2 and was fed to the **markdown extractor as literal text**. Added a guard in `recipe_form_styled.html handlePaste` → an honest dialog ("That image link won't work here… right-click the image → Copy image, then paste; or download and drop the file"). The dish-photo image-well already guarded blob: in `handleUrlString`; this closes the extract path. (Static HTML — reload picks it up.)
