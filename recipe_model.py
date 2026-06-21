@@ -353,6 +353,20 @@ class Provenance(BaseModel):
     relatedDishes: Optional[List[str]] = []
     sources: Optional[List[dict]] = []
 
+    # Tolerant coercion (same philosophy as the rest of the model: an off-type
+    # value must never drop the whole recipe). The enrich/provenance LLM block
+    # sometimes emits a bare STRING where a list is declared — wrap it as a
+    # single-element list rather than 500 the save. notableVariations is often a
+    # prose sentence and relatedDishes a parenthetical comma list, so do NOT
+    # split (a naive comma split would shred "Vichyssoise (French leek…)").
+    @field_validator('ethnicity', 'originRegion', 'firstDocumented', 'traditionalContext', mode='before')
+    @classmethod
+    def _v_text(cls, v): return _as_str(v)
+
+    @field_validator('notableVariations', 'relatedDishes', mode='before')
+    @classmethod
+    def _v_list(cls, v): return _as_str_list(v)
+
 class AccessControl(BaseModel):
     visibility: Optional[str] = ""
     sharedWith: Optional[List[str]] = []

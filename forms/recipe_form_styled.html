@@ -5433,6 +5433,18 @@
       const trimmed = (text || '').trim();
       if (!trimmed) return;
       if (!inDropZone) e.preventDefault();
+      // A blob:/data: URL is browser-internal — it only works inside the page
+      // that made it (e.g. an inline image dragged from an Outlook/Gmail email),
+      // so neither we nor the server can fetch it. Without this guard it would
+      // fall through and be sent to the markdown extractor as literal text.
+      if (/^(blob|data):/i.test(trimmed)) {
+        showErrorDialog({
+          title: 'That image link won’t work here',
+          message: 'That’s a browser-internal (blob:/data:) link from another app or email — it only works inside the page that created it, so it can’t be imported. To bring in an image from an email: right-click the image → Copy image, then paste here (Ctrl+V); or download/save it and drop the file.',
+          showImageButton: false,
+        });
+        return;
+      }
       if (/^https?:\/\/\S+$/.test(trimmed)) {
         console.log('[paste] -> extractFromUrl');
         const urlInput = document.getElementById('extractUrlInput');
