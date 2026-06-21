@@ -5,6 +5,8 @@
 # Decide: single field vs. list (re-extractions / multi-page sources), URL vs.
 # stored path, and back-fill strategy for existing records.
 
+import re
+import html as _html
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Union, Literal
 from datetime import datetime
@@ -181,10 +183,33 @@ def static_subset(recipe_data: dict) -> dict:
 # normalize at the MODEL boundary so every ingest path (extract / save /
 # bookmarklet / API) is covered once. (feedback_single_path + recipe_model_first.)
 
+# Source recipe prose (JSON-LD description, HowToStep.text…) frequently
+# carries raw HTML — <p>, <i>, <a>, &amp;, &#39; — which then renders as
+# literal markup in the form's plain-text intro/steps. Strip it at the
+# model boundary so the stored value is clean for EVERY field that coerces
+# through _as_str (description, instruction text, name, headline…) and for
+# every recipe (master AND personal user recipes share this model).
+_HTML_TAG_RE = re.compile(r"<[a-zA-Z/][^>]*>")
+# Only act on strings that ACTUALLY look like markup, so we never touch a
+# legitimate lone "<" ("cook < 5 min") or "&" ("salt & pepper") in plain prose.
+_LOOKS_HTML_RE = re.compile(r"<[a-zA-Z/][^>]*>|&[a-zA-Z][a-zA-Z0-9]+;|&#\d+;")
+
+def _strip_html(s):
+    if not isinstance(s, str) or not _LOOKS_HTML_RE.search(s):
+        return s
+    txt = _html.unescape(s)            # &amp;->&, &#39;->', &lt;->< (then re-stripped)
+    txt = _HTML_TAG_RE.sub(" ", txt)   # drop tags (space so "a<br>b" -> "a b")
+    txt = re.sub(r"\s+", " ", txt)
+    txt = re.sub(r"\s+([,.;:!?])", r"\1", txt)  # no space before punctuation
+    return txt.strip()
+
 def _as_str(v):
-    """A schema.org Text-ish value → string. number/bool→str, list→joined, dict→best key."""
-    if v is None or isinstance(v, str):
+    """A schema.org Text-ish value → string (source HTML stripped from prose).
+    number/bool→str, list→joined, dict→best key."""
+    if v is None:
         return v
+    if isinstance(v, str):
+        return _strip_html(v)
     if isinstance(v, bool):
         return str(v)
     if isinstance(v, (int, float)):
@@ -192,7 +217,7 @@ def _as_str(v):
     if isinstance(v, dict):
         for k in ("@value", "value", "name", "text", "url", "@id"):
             if v.get(k):
-                return str(v[k])
+                return _strip_html(str(v[k]))
         return ""
     if isinstance(v, (list, tuple)):
         return ", ".join(s for s in (_as_str(x) for x in v) if s)
