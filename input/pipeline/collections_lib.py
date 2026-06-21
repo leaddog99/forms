@@ -399,48 +399,51 @@ def backlinks_file_path(domain, extra_dir=None):
     `backlinks_search_dirs` (configured inbox / Downloads / input / per-domain override),
     or None. Reads in place — nothing is copied into input/.
 
-    Tolerant of how SEMrush names the file:
-      - whole site:  {domain}-backlinks-pages.xlsx  (or the _pages underscore variant)
-      - a subdirectory export prepends the subpath:
-                     {domain}_recipe-backlinks_pages.xlsx  (allrecipes.com/recipe)
-    So we match `{domain}*-backlinks*pages*.xlsx` — the `*` after the domain absorbs an
-    optional `_subpath`; the trailing `*` tolerates the browser's de-dup suffix
-    (`…pages (1).xlsx`). Across ALL search dirs, the MOST RECENTLY MODIFIED match wins."""
+    Tolerant of BOTH SEMrush page-export shapes (the reader auto-detects which):
+      - BACKLINKS pages:  {domain}-backlinks-pages.xlsx / {domain}_recipe-backlinks_pages.xlsx
+      - organic TOP-PAGES: {domain}_recipe-organic.PagesV3-us-…xlsx (traffic-ranked, and for
+        a /recipe subfolder a clean current list of just recipe URLs)
+    So we match `{domain}*[Pp]ages*.xlsx` — the `*` after the domain absorbs the subpath +
+    export type; the trailing `*` tolerates the browser's de-dup suffix (`…(1).xlsx`).
+    Across ALL search dirs, the MOST RECENTLY MODIFIED match wins (so a fresh Top-Pages
+    export supersedes an old backlinks one)."""
     import os, glob
     hits = []
     for d in backlinks_search_dirs(extra_dir):
-        hits += glob.glob(os.path.join(d, f"{domain}*-backlinks*pages*.xlsx"))
+        hits += glob.glob(os.path.join(d, f"{domain}*[Pp]ages*.xlsx"))
     return max(hits, key=os.path.getmtime) if hits else None
 
 
 def export_prefix(path):
-    """The `{domain}[_subpath]` prefix of a SEMrush page-export filename — the part
-    before `-backlinks`. e.g. `allrecipes.com_recipe-backlinks_pages.xlsx` →
-    `allrecipes.com_recipe`; `addapinch.com-backlinks-pages.xlsx` → `addapinch.com`.
+    """The `{domain}[_subpath]` prefix of a SEMrush page-export filename — the part before
+    the export-type marker (`-backlinks` OR `-organic`). e.g.
+    `allrecipes.com_recipe-backlinks_pages.xlsx` → `allrecipes.com_recipe`;
+    `bostonchefs.com_recipe-organic.PagesV3-us-….xlsx` → `bostonchefs.com_recipe`.
     Returns '' if the name isn't an export."""
     import os
     base = os.path.basename(path)
     low = base.lower()
-    i = low.find("-backlinks")
-    return base[:i] if i > 0 else ""
+    cuts = [low.find(m) for m in ("-backlinks", "-organic") if low.find(m) > 0]
+    return base[:min(cuts)] if cuts else ""
 
 
 def scan_export_inbox(dirs):
-    """Find SEMrush page-export files (`*-backlinks*pages.xlsx`) sitting in any of
-    `dirs` (the watched inbox — typically ~/Downloads). Returns
-    [{"path", "prefix"}] newest-first. Pure discovery — the caller matches each
-    prefix to a known domain and routes it (intake_export_file)."""
+    """Find SEMrush page-export files (backlinks-pages OR organic Top-Pages) sitting in any
+    of `dirs` (the watched inbox — typically ~/Downloads). Returns [{"path", "prefix"}]
+    newest-first. Pure discovery — the caller matches each prefix to a known domain and
+    routes it (intake_export_file)."""
     import os, glob
     seen, out = set(), []
     for d in dirs:
         if not d or not os.path.isdir(d):
             continue
-        for p in glob.glob(os.path.join(d, "*-backlinks*pages*.xlsx")):
-            rp = os.path.realpath(p)
-            if rp in seen:
-                continue
-            seen.add(rp)
-            out.append({"path": p, "prefix": export_prefix(p)})
+        for pat in ("*-backlinks*pages*.xlsx", "*-organic.[Pp]ages*.xlsx"):
+            for p in glob.glob(os.path.join(d, pat)):
+                rp = os.path.realpath(p)
+                if rp in seen:
+                    continue
+                seen.add(rp)
+                out.append({"path": p, "prefix": export_prefix(p)})
     out.sort(key=lambda r: -os.path.getmtime(r["path"]))
     return out
 
@@ -496,11 +499,23 @@ def _read_backlinks_file(domain, want, extra_dir=None):
                 return header.index(n)
         return None
     ui = col("Source url", "Page URL", "Target url", "URL")
+    if ui is None:
+        raise ValueError(f"Unexpected SEMrush columns (no URL column): {header}")
     ti = col("Source title", "Title", "Page title")
     ci = col("Response code", "Status code")
+    # SEMrush ships two page-export shapes; auto-detect by the ranking column present:
+    #   - BACKLINKS pages export → rank by referring DOMAINS (link authority).
+    #   - organic TOP-PAGES export (…-organic.PagesV3…) → rank by TRAFFIC. For a subfolder
+    #     filter (…/recipe) this is a CLEAN, CURRENT list of just recipe URLs (no
+    #     /restaurant/ noise) and the traffic order is its own relevance signal.
     di = col("Domains", "Referring Domains", "Referring domains")
-    if ui is None or di is None:
-        raise ValueError(f"Unexpected SEMrush columns (need a URL + Domains): {header}")
+    tri = col("Traffic")
+    if di is not None:
+        rank_idx, rank_label = di, "referring domains"
+    elif tri is not None:
+        rank_idx, rank_label = tri, "traffic"
+    else:
+        raise ValueError(f"Unexpected SEMrush columns (need Domains or Traffic): {header}")
     rows = []
     for r in it:
         url = str(r[ui] or "").strip()
@@ -508,22 +523,24 @@ def _read_backlinks_file(domain, want, extra_dir=None):
             continue
         # Keep 2xx AND 3xx: a 301 here is just the http://… form of a real recipe
         # (pre-HTTPS backlinks, common in a subdirectory export) — the recipe check and
-        # Moz follow the redirect to the canonical page. Only drop dead 4xx/5xx. The
-        # downstream archive filter drops the bare homepage; the recipe check drops
-        # non-recipes.
+        # Moz follow the redirect to the canonical page. Only drop dead 4xx/5xx.
         code = str(r[ci]).strip() if ci is not None else ""
         if code[:1] in ("4", "5"):
             continue
-        rows.append((url, str(r[ti] if ti is not None else "") or "", int(r[di] or 0)))
-    rows.sort(key=lambda x: -x[2])   # referring-domains desc
+        try:
+            rank = float(r[rank_idx] or 0)
+        except (TypeError, ValueError):
+            rank = 0.0
+        rows.append((url, str(r[ti] if ti is not None else "") or "", rank))
+    rows.sort(key=lambda x: -x[2])   # rank desc (domains or traffic)
     out, seen = [], set()
-    for url, title, _dom in rows:
+    for url, title, _r in rows:
         key = _recipe_path_key(url)            # collapse id / slug / detail.aspx aliases
         if key not in seen:
-            seen.add(key); out.append((url, title))   # keep the highest-domains variant
+            seen.add(key); out.append((url, title))   # keep the highest-ranked variant
         if len(out) >= want:
             break
-    print(f"  [harvest] backlinks file {os.path.basename(path)}: {len(out)} URLs (by referring domains)")
+    print(f"  [harvest] SEMrush file {os.path.basename(path)}: {len(out)} URLs (by {rank_label})")
     return out
 
 
