@@ -700,6 +700,17 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             url_prefilter=url_prefilter, exclude_words=exclude_words,
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
+        # Auto-learn the JS-rendered hint: if any kept recipe was only recoverable
+        # via a full-browser render escalation, flag the domain so the form shows it
+        # (and future runs can fetch render-first). Idempotent + best-effort.
+        if any(e.get("_render_escalated") for e in kept):
+            try:
+                from input.pipeline import domains_lib
+                domains_lib.mark_render_required(domain)
+                print(f"  [harvest] learned render_required for {domain} "
+                      f"(a recipe was only recoverable with full-browser render)")
+            except Exception:
+                pass
     elif (url_prefilter or exclude_words) and found:
         from input.pipeline.url_word_lists import url_excluded_by_domain
         n_pre = len(found)

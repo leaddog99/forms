@@ -48,6 +48,7 @@ EDITABLE_FIELDS = (
     "language",
     "cuisine_focus",
     "fetch_strategy",
+    "render_required",   # JS-rendered site → fetch with a real browser (unblocker render=True)
     "extract_notes",
     "custom_extractor",
     "allowed",
@@ -185,6 +186,19 @@ _SCHEDULE_COLUMNS = {
     "exclude_words": "TEXT NOT NULL DEFAULT ''",
 }
 
+_RENDER_COLUMNS = {
+    # JS-rendered publisher hint. 1 = the article body is injected client-side, so a
+    # static (render=False) fetch sees only the nav shell and the is-recipe verify
+    # under-scores real recipes (Boston Globe). When set, the harvest fetches this
+    # domain with a real browser (unblocker render=True) up front instead of paying a
+    # wasted plain pass first. AUTO-LEARNED: the harvest sets it the first time a
+    # render-escalation rescues a recipe here; also curator-editable. Needs an
+    # unblocker-capable fetch_strategy + BYOK creds to take effect.
+    "render_required": "INTEGER NOT NULL DEFAULT 0",
+    # When render_required was last auto-learned by a render-escalation (ISO). MANAGED.
+    "render_learned_at": "TEXT",
+}
+
 
 def ensure_domains_table(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -230,6 +244,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     # Harvest-scheduling columns (the SEMrush human-workflow loop).
     for col, decl in _SCHEDULE_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _RENDER_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     conn.execute(
@@ -406,6 +423,34 @@ def mark_harvested(conn: sqlite3.Connection, domain: str,
         invalidate_cache()
     except Exception:
         pass
+
+
+def mark_render_required(domain: str, conn: Optional[sqlite3.Connection] = None,
+                         db_path: str = _DEFAULT_DB) -> None:
+    """Auto-learn the JS-rendered hint: the first time a render-escalation rescues a
+    recipe on this domain, flag it so future harvests fetch it with a real browser up
+    front (skipping the wasted plain pass). Idempotent — only writes if not already
+    set. Best-effort; never raises into a job. Pass a `conn`, or omit to open
+    `db_path` (lets the out-of-process harvest call it connection-free)."""
+    own = conn is None
+    if own:
+        conn = sqlite3.connect(db_path)
+    try:
+        ensure_domains_table(conn)
+        host = _canon_host(domain)
+        row = conn.execute("SELECT render_required FROM domains WHERE domain = ?",
+                           (host,)).fetchone()
+        if row is None or row[0]:           # absent row, or already flagged → nothing to do
+            return
+        conn.execute("UPDATE domains SET render_required = 1, render_learned_at = ?, "
+                     "updated_at = ? WHERE domain = ?", (_now(), _now(), host))
+        conn.commit()
+        invalidate_cache()
+    except Exception:
+        pass
+    finally:
+        if own:
+            conn.close()
 
 
 def harvest_worklist(conn: sqlite3.Connection) -> list[dict]:
@@ -693,12 +738,14 @@ def recipes_for_domain(conn: sqlite3.Connection, domain: str) -> dict:
 
 _DISPLAY_CACHE: Optional[dict] = None
 _BLOCKED_CACHE: Optional[set] = None
+_RENDER_CACHE: Optional[set] = None
 
 
 def invalidate_cache() -> None:
-    global _DISPLAY_CACHE, _BLOCKED_CACHE
+    global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE
     _DISPLAY_CACHE = None
     _BLOCKED_CACHE = None
+    _RENDER_CACHE = None
 
 
 def parse_serp_exclusions(db_path: str = _DEFAULT_DB) -> tuple[set, list]:
@@ -729,6 +776,33 @@ def parse_serp_exclusions(db_path: str = _DEFAULT_DB) -> tuple[set, list]:
         else:
             terms.append(s)
     return domains, terms
+
+
+def get_render_eligible_hosts(db_path: str = _DEFAULT_DB) -> set:
+    """Set of hosts+roots whose pages may use the full-browser render escalation:
+    domains flagged ``render_required = 1`` (learned/curated JS-rendered sites) OR
+    carrying an unblocker fetch_strategy. Used by the DISH batch to mark per-result
+    entries `_allow_render`, so a multi-domain batch escalates only these (a publisher
+    refresh of a single flagged domain escalates the whole run without this). Cached;
+    CRUD writers + mark_render_required invalidate it."""
+    global _RENDER_CACHE
+    if _RENDER_CACHE is None:
+        hosts: set = set()
+        try:
+            with sqlite3.connect(db_path) as conn:
+                ensure_domains_table(conn)
+                for dom, root in conn.execute(
+                    "SELECT domain, root_domain FROM domains "
+                    "WHERE render_required = 1 OR fetch_strategy = 'unblocker'"
+                ):
+                    if dom:
+                        hosts.add(dom.lower())
+                    if root:
+                        hosts.add(root.lower())
+        except Exception:
+            pass
+        _RENDER_CACHE = hosts
+    return _RENDER_CACHE
 
 
 def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:

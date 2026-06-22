@@ -88,6 +88,7 @@ FETCH_TIMEOUT_S = 10
 # more silent drops from UA mismatch. See [[single-path]].
 from to_markdown.html_to_markdown import (
     fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
+    fetch_via_unblocker, unblocker_available,
 )
 from intake.translate import (
     detect_language, translate_markdown, translate_title, is_translation_plausible,
@@ -315,31 +316,35 @@ def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[st
     """
     try:
         resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S, unblocker=unblocker)
-        # JSON-LD lives in <script type="application/ld+json"> blocks —
-        # extract BEFORE we strip scripts for phrase-scoring text.
-        try:
-            jsonld_recipes = extract_recipe_jsonld(resp.text, resp.url)
-            has_recipe_jsonld = bool(jsonld_recipes)
-        except Exception as e:
-            print(f"      JSON-LD parse error for {url!r}: {e}")
-            has_recipe_jsonld = False
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup(["script", "style", "noscript"]):
-            tag.decompose()
-        visible_text = soup.get_text(separator=" ")
-        normalized_text = " ".join(visible_text.split())
-        # Language detection runs on the visible text BEFORE we
-        # lower-case it; fasttext is mixed-case aware. Header dict is
-        # passed in case the server set Content-Language (some CDNs do).
-        lang_code = detect_language(
-            resp.text, headers=dict(resp.headers), visible_text=normalized_text,
-        )
-        # Phrase matching expects lower-cased text (RECIPE_PHRASES is
-        # all-lower); preserve that contract.
-        return normalized_text.lower(), has_recipe_jsonld, lang_code
+        return _response_to_filter_signals(resp)
     except Exception:
         return None
+
+
+def _response_to_filter_signals(resp) -> tuple[str, bool, str]:
+    """Derive the three filter signals (lower-cased visible text, has_recipe_jsonld,
+    lang_code) from an already-fetched response. Shared by `_fetch_for_filter` and
+    the render-escalation path so both score the page exactly the same way."""
+    # JSON-LD lives in <script type="application/ld+json"> blocks —
+    # extract BEFORE we strip scripts for phrase-scoring text.
+    try:
+        has_recipe_jsonld = bool(extract_recipe_jsonld(resp.text, resp.url))
+    except Exception as e:
+        print(f"      JSON-LD parse error for {getattr(resp, 'url', '?')!r}: {e}")
+        has_recipe_jsonld = False
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    normalized_text = " ".join(soup.get_text(separator=" ").split())
+    # Language detection runs on the visible text BEFORE we lower-case it;
+    # fasttext is mixed-case aware. Header dict is passed in case the server set
+    # Content-Language (some CDNs do).
+    lang_code = detect_language(
+        resp.text, headers=dict(resp.headers), visible_text=normalized_text,
+    )
+    # Phrase matching expects lower-cased text (RECIPE_PHRASES is all-lower).
+    return normalized_text.lower(), has_recipe_jsonld, lang_code
 
 
 # Backward-compat alias — keeps any caller that imports _fetch_text by
@@ -437,6 +442,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       capture_provenance: dict | None = None,
                       unblocker: bool = False, url_prefilter: bool = False,
                       exclude_words=None, should_cancel=None,
+                      render_escalate: bool = True,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -481,6 +487,88 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             explore_rate = 0.08
 
     kept, dropped = [], []
+
+    # Bounded render-escalation prerequisites for this run: the feature is on and
+    # BYOK unblocker creds exist. WHICH entries may escalate is decided per-entry
+    # (below) so a multi-domain dish batch can escalate only its render-flagged
+    # domains, while a single-domain publisher harvest escalates the whole run.
+    _render_ready = bool(render_escalate and unblocker_available())
+    # Only escalate a page whose PLAIN fetch came back SUSPICIOUSLY THIN — the
+    # signature of a JS shell (nav only, body injected client-side, e.g. Boston
+    # Globe's ~2.2k-char shell). A page that returned its FULL text but simply
+    # isn't a recipe (a news/restaurant feature) is NOT a shell — rendering it
+    # again would only burn a credit to confirm what we already know. Configurable.
+    _render_thin_chars = 3500
+    try:
+        from input.pipeline.system_config import get_setting as _gs2
+        _render_thin_chars = int(_gs2("render_escalate_thin_chars", 3500) or 3500)
+    except Exception:
+        pass
+
+    def _render_rescue(e: dict, url: str, i: int) -> bool:
+        """LAST RESORT for a JS-rendered publisher (e.g. Boston Globe) whose article
+        body is injected client-side: the cheap render=False verify scored only the
+        nav shell and would DROP a real recipe. Re-fetch this ONE page with a real
+        browser (unblocker render=True) and re-evaluate. Bounded: fires only on a
+        would-be drop, once per URL, only when the entry is render-eligible (the
+        harvest is unblocker-flagged OR the caller marked it `_allow_render`), AND
+        only when the plain fetch looked like a THIN JS shell (a full non-recipe
+        page is dropped without paying for a render). Returns True iff it now
+        qualifies; on failure it leaves the caller's original verdict/score intact."""
+        if not _render_ready:
+            return False
+        if not (unblocker or e.get("_allow_render")):
+            return False
+        # Skip pages that already returned their full text — they're genuinely not a
+        # recipe, not a JS shell, so a render won't change the answer (saves a credit).
+        if len(e.get("_cap_text") or "") >= _render_thin_chars:
+            return False
+        try:
+            res = fetch_via_unblocker(url, render=True)
+        except Exception as ex:
+            print(f"      [render-escalate] {type(ex).__name__}: {ex}")
+            return False
+        if not res:
+            return False
+        try:
+            text2, jsonld2, lang2 = _response_to_filter_signals(res[0])
+        except Exception as ex:
+            print(f"      [render-escalate] parse failed: {type(ex).__name__}: {ex}")
+            return False
+        n = len(entries)
+        # Score the rendered page WITHOUT mutating e yet — only adopt it on success.
+        used_translation = False
+        if jsonld2:
+            score = _JSONLD_PASS_SCORE
+        else:
+            scored = text2
+            if is_non_english(lang2):
+                try:
+                    tr = translate_markdown(text2, lang2)
+                    if is_translation_plausible(text2, tr.translated_markdown)[0]:
+                        scored = tr.translated_markdown.lower()
+                        used_translation = True
+                except Exception:
+                    pass
+            score = score_recipe_text(scored)
+        if jsonld2 or score >= IS_RECIPE_THRESHOLD:
+            # SUCCESS — adopt the rendered signals (better content + training label).
+            e["_cap_text"] = text2
+            e["_lang"] = lang2
+            e["_render_escalated"] = True
+            e["recipe_score"] = score
+            e["jsonld_recipe"] = bool(jsonld2)
+            if used_translation:
+                e["_translated_for_filter"] = True
+            kept.append(e)
+            tag = "json-ld" if jsonld2 else f"score={score:>2}"
+            print(f"  [{i:>2}/{n}] KEEP {tag}* {url}  (render-escalated)")
+            return True
+        # FAILURE — quiet sub-note (NOT a decision line); the caller logs the drop
+        # and keeps the original plain score. No mutation of e.
+        print(f"      [render-escalate] {url} still scores {score} rendered — not a recipe")
+        return False
+
     for i, e in enumerate(entries, start=1):
         # Cooperative cancel: a long publisher harvest can be aborted between
         # candidates (each is a fetch + score, the slow unit). Raises up to the job
@@ -587,6 +675,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 if score >= IS_RECIPE_THRESHOLD:
                     kept.append(e)
                     print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{lang_code}]  {url}")
+                elif _render_rescue(e, url, i):
+                    continue
                 else:
                     e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
                     dropped.append(e)
@@ -603,6 +693,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 if score >= IS_RECIPE_THRESHOLD:
                     kept.append(e)
                     print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{lang_code}, xlate-fail]  {url}")
+                elif _render_rescue(e, url, i):
+                    continue
                 else:
                     e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
                     dropped.append(e)
@@ -616,6 +708,8 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         if score >= IS_RECIPE_THRESHOLD:
             kept.append(e)
             print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2}  {url}")
+        elif _render_rescue(e, url, i):
+            continue
         else:
             e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
             dropped.append(e)
@@ -1121,9 +1215,41 @@ def build_batch(
         _dish_url_prefilter = bool(_get_setting("url_prefilter_dish_batch", True))
     except Exception:
         _dish_url_prefilter = True
+    # Dish batches span many domains, so render-escalation is gated PER ENTRY: mark
+    # results whose publisher is render-eligible (render_required or unblocker) so the
+    # filter may rescue a JS-rendered recipe (e.g. a Boston Globe result for "coq au
+    # vin"). Bounded — escalation still fires only on a would-be drop. Best-effort.
+    try:
+        from input.pipeline.domains_lib import get_render_eligible_hosts
+        from input.pipeline.url_utils import root_domain as _root_domain
+        _render_hosts = get_render_eligible_hosts()
+        if _render_hosts:
+            for _e in entries:
+                _u = (_e.get("url") or "").lower()
+                try:
+                    _host = _u.split("//", 1)[1].split("/", 1)[0] if "//" in _u else ""
+                except Exception:
+                    _host = ""
+                if _host in _render_hosts or (_root_domain(_e.get("url") or "") or "").lower() in _render_hosts:
+                    _e["_allow_render"] = True
+    except Exception:
+        pass
     entries, dropped_not_recipe = _is_recipe_filter(
         entries, capture_source="dish_batch", capture_provenance={"dish": dish},
         url_prefilter=_dish_url_prefilter)
+    # Auto-learn the JS-rendered hint from a dish batch too (symmetry with the
+    # publisher harvest): any kept result that needed a render escalation flags its
+    # domain so the form shows it + future runs escalate up front.
+    try:
+        from input.pipeline import domains_lib
+        from input.pipeline.url_utils import root_domain as _rd
+        for _e in entries:
+            if _e.get("_render_escalated"):
+                _h = (_rd(_e.get("url") or "") or "")
+                if _h:
+                    domains_lib.mark_render_required(_h)
+    except Exception:
+        pass
     print(f"      -> kept {len(entries)}, dropped {len(dropped_not_recipe)}")
 
     print(f"\n[4/7] Moz scoring on survivors")

@@ -86,7 +86,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260618c"></script>
+  <script src="/forms/library-shell.js?v=20260622a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -260,6 +260,7 @@
             ${field('f_country', 'Country', d.country, { ph: 'Greece' })}
             ${field('f_language', 'Language (ISO 639-1)', d.language, { ph: 'el' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
+            ${field('f_render_required', d.render_learned_at ? ('JS-rendered — render with full browser · auto-learned ' + escapeHtml(fmtDate(d.render_learned_at))) : 'JS-rendered — render with full browser (unblocker render=True)', Number(d.render_required) === 1, { checkbox: true })}
             ${field('f_allowed', 'Allowed (ingest from this site)', isAllowed(d), { checkbox: true })}
             ${field('f_domain_authority', 'Domain authority (DA)', d.domain_authority, { type: 'number' })}
             ${field('f_extract_notes', 'Extraction notes', d.extract_notes, { textarea: true, full: true, minh: 70, ph: 'JSON-LD reliable · needs www for Moz · paywalled — use screenshot…' })}
@@ -665,6 +666,7 @@
         language: $('#f_language').value.trim(),
         cuisine_focus: $('#f_cuisine_focus').value.trim(),
         fetch_strategy: $('#f_fetch_strategy').value,
+        render_required: $('#f_render_required').checked ? 1 : 0,
         custom_extractor: $('#f_custom_extractor').value.trim(),
         extract_notes: $('#f_extract_notes').value.trim(),
         allowed: $('#f_allowed').checked ? 1 : 0,
