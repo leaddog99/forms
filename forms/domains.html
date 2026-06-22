@@ -332,6 +332,10 @@
               <select id="userPicker"><option value="">Loading…</option></select></div>
           </div>
 
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 6px">
+            <p class="ed-notes-help" id="topListLabel" style="margin:0">Kept top recipes:</p>
+            <button type="button" class="ed-btn" id="cohortToggle" data-on="0" style="font-size:.8em" title="Show EVERY scored candidate — winners ★ plus the ranked-but-not-kept also-rans, with DA/PA — like the dishes scored cohort">☰ Scored cohort</button>
+          </div>
           <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
         </section>
 
@@ -371,7 +375,7 @@
       applySrcSelection();
       loadBacklinksFile(d.domain);     // detect the SEMrush export → fills the file line
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
-      loadDomainTop(d.domain);         // stored publisher top-N ledger
+      loadDomainTop(d.domain, $('#cohortToggle')?.dataset.on === '1');  // stored publisher ledger
     }
 
     // Activate the chosen source group (highlight + enable its inputs); dim + disable
@@ -435,7 +439,7 @@
         const actions =
           (bccHref ? `<a class="top-action top-action-primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener">Open in BCC</a>` : '') +
           `<a class="top-action top-action-secondary" href="${escapeHtml(m.url || '#')}" target="_blank" rel="noopener" title="${escapeHtml(m.url || '')}">View source <span class="top-action-arrow">↗</span></a>`;
-        return `<div class="top-recipe-row">${tile}<div class="top-recipe-body">` +
+        return `<div class="top-recipe-row"${m.selected ? '' : ' style="opacity:.56"'}>${tile}<div class="top-recipe-body">` +
           `<div class="top-recipe-main"><span class="top-rank">#${m.rank || i + 1}</span>` +
           `<span class="top-recipe-title">${title}</span> <span class="top-recipe-host">${escapeHtml(host)}</span>${badges}</div>` +
           `<div class="top-recipe-meta">${escapeHtml(meta.join(' · '))}</div>` +
@@ -444,12 +448,17 @@
       }).join('');
     }
 
-    async function loadDomainTop(domain){
+    async function loadDomainTop(domain, all){
       const el = $('#domainTopList'); if (!el) return;
       try {
-        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`);
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top${all ? '?all=1' : ''}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        renderDomainTop((await r.json()).top || []);
+        const d = await r.json();
+        renderDomainTop(d.top || []);
+        const lbl = $('#topListLabel');
+        if (lbl) lbl.textContent = all
+          ? `Scored cohort — ${d.count} candidates (${d.selected_count || 0} kept ★, rest are also-rans)`
+          : 'Kept top recipes:';
       } catch (e) { el.innerHTML = `<li class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</li>`; }
     }
 
@@ -507,7 +516,7 @@
       // event AND the safety net below. The job already persisted the list + config,
       // so Save stays disabled (correct); we just re-render and report.
       const renderResult = (status, res, errorMsg) => {
-        loadDomainTop(domain);
+        loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1');
         // A backlinks harvest stamped last_harvested_at → refresh just this domain's
         // list entry (due-status) without rebuilding the detail form / streamed log.
         fetch(`/domains/${encodeURIComponent(domain)}`).then(r => r.json())
@@ -861,6 +870,16 @@
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
+    // Scored-cohort toggle: flip between kept winners only and the FULL scored cohort
+    // (winners ★ + dimmed also-rans) — mirrors the dishes scored-cohort panel.
+    $('#cohortToggle')?.addEventListener('click', () => {
+      const btn = $('#cohortToggle');
+      const on = btn.dataset.on === '1';
+      btn.dataset.on = on ? '0' : '1';
+      btn.classList.toggle('active', !on);
+      btn.textContent = on ? '☰ Scored cohort' : '★ Winners only';
+      if (selected && selected !== '__new__') loadDomainTop(selected, !on);
+    });
     $('#refreshRanksBtn').addEventListener('click', refreshRanks);
     $('#scanInboxBtn').addEventListener('click', scanInbox);
     // Harvest strip: toggle the 3-step explainer; the due chip sorts by "SEMrush due".

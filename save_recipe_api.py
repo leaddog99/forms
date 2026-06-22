@@ -3832,15 +3832,20 @@ def clear_domain_top_endpoint(domain: str):
 
 
 @app.get("/domains/{domain}/top")
-def domain_top_endpoint(domain: str):
-    """Stored publisher top-N ledger (collection_members) for the domains page."""
+def domain_top_endpoint(domain: str, all: int = 0):
+    """Stored publisher ledger (collection_members) for the domains page. Default =
+    selected winners only; `?all=1` returns the FULL scored cohort (winners + also-rans,
+    each with rank/score/selected) for the cohort panel — like the dishes scored cohort."""
     from input.pipeline import domains_lib, collections_lib
     try:
         host = domains_lib._canon_host(domain)
+        want_all = bool(int(all or 0))
         with sqlite3.connect(DB_PATH) as conn:
-            top = collections_lib.get_collection_top(conn, "publisher", host, limit=100,
-                                                     selected_only=True)
-        return {"domain": host, "count": len(top), "top": top}
+            top = collections_lib.get_collection_top(
+                conn, "publisher", host,
+                limit=400 if want_all else 100, selected_only=not want_all)
+        return {"domain": host, "count": len(top),
+                "selected_count": sum(1 for r in top if r.get("selected")), "top": top}
     except Exception as e:
         print(f"[ERROR] domain_top({domain!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
