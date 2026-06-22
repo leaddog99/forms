@@ -1121,3 +1121,40 @@ The loop worked but was illegible: its two primary actions (the "SEMrush due" so
 - **Oxylabs `unblocker=True` harvest** validated live last session but still wants a per-run cost cap + `system_config` seed for `unblocker_provider`.
 - **SEMrush Keyword-Magic dish source** (new parser); system-wide domain scoring; `serp_batch` (Scale SERP Batches).
 - **Traffic/Trends ingestion** (doc §5) — the "What's Hot" surface + queue prioritization.
+
+---
+
+## Session log — 2026-06-21 — publisher harvest hardening: self-learning URL filter, per-domain exclude, SEMrush Top-Pages source, dish-keyword demand corpus, domains scored-cohort
+
+A long iterative session on `split/enrichment-api`, all committed + pushed (head `~`). Drove from the SEMrush direct-import friction into a whole publisher-harvest overhaul + two new corpora. **Server live; `bostonchefs`/`thepioneerwoman`/`funwithoutfodmaps` exercised; recipes.sql refreshed at wrap.**
+
+### SEMrush import: direct-read + configurable, no more `/input` dance
+- **Read the export DIRECTLY** from a configurable folder (was: only globbed `<project>/input`; the `semrush_inbox_dir` setting was ignored by the per-domain refresh). `backlinks_search_dirs` = per-domain override → configured inbox (→ Downloads) → input/. Newest match wins; most-recent duplicate (`…(1).xlsx`) preferred.
+- **Per-domain override accepts an EXACT FILE PATH** (or folder, or bare filename; quotes/`~` tolerated) — the long-asked "use THIS file" escape hatch.
+- **Filename match patterns are CONFIG** (`system_config.semrush_export_patterns`, `{domain}` substituted) — a SEMrush rename is a config edit, not code. The reader still auto-detects FORMAT from COLUMNS.
+- **SEMrush format auto-detection** (`_read_backlinks_file`): backlinks-pages (`Domains` col → rank by referring domains) OR **organic Top-Pages** (`…-organic.PagesV3…`, `Traffic` col → rank by traffic). **A Top-Pages `/recipe` subfolder export is the FAR better source** — clean, current, traffic-ranked recipe URLs: bostonchefs **28 recipes from 30** vs **3 from 80** via backlinks.
+
+### Self-learning URL recipe pre-filter (NEW subsystem — [[project_url_word_filter]])
+- Two-list table `url_word_class(word, kind food|stop, source seed|ai|manual)`. Filter = **food-presence is the ONLY gate; non-food words are NEVER exclusionary** (`/julia-child-beef-stew/` is safe; `stop` is just a negative cache). Retrieval = cached frozensets, O(1), model never on the hot path.
+- **AI classification** (one Haiku call via the gateway) of a deduped unknown-token batch into food/not_food. **STRICT prompt** (venue/dining/category/color/season words → not_food, after a loose first cut poisoned `food` with `bistro`/`dining`). **References the existing lists** (curator corrections first) as few-shot.
+- **Two learning moments:** master **sweep** (`POST /url-words/sweep`, confirmed recipes) + per-harvest **tee-up learn** (incoming batch). Corpus false-drop **2.8%→0.2%** (residual = foreign-script slugs). Demoted generic mis-classifications (food/tiki/summer/colors/seasons → stop, `manual`).
+- **`GET /url-words`** (counts + recently-learned).
+
+### Per-domain EXCLUSIONARY sections — the directory-site fix
+`domains.exclude_words` (e.g. `restaurant chef news holiday event jobs`): a URL whose path SECTION matches is skipped outright (the site's taxonomy), overriding any incidental food word (`/restaurant/coppa/`). Matches whole path components (splits on `/`+`_`, NOT `-`, so `/recipe/restaurant-style-chicken/` is safe). PER-DOMAIN, never global. Checked in `_is_recipe_filter` before the food gate. bostonchefs: 80 → 66 EXCLUDE / 4 skip / **5 fetched**.
+
+### ε-exploration capture (is-recipe ML hygiene — [[project_corpus_ml]])
+The url-prefilter skips before fetch → the classifier would never see/​correct the skipped region. `system_config.url_prefilter_explore_rate` (default 0.08): a random fraction of would-be-skips are verified anyway and captured as UNBIASED labels (`training_capture.explore` column); a verified explore-keep is also recovered into the harvest.
+
+### Fetch: plain-first, escalate to unblocker only when blocked (credit-conscious)
+A flagged domain tries the FREE direct fetch first; escalates to the PAID unblocker ONLY when `_looks_blocked` (a 200 anti-bot stub) or the fetch fails — so plain-loadable pages cost zero credits. (Iterated: plain+escalate → unblocker-first → back to plain-first per user.) Pioneer-woman soft-block fix proven earlier (recipe_pass 2→40).
+
+### Dish-keyword demand corpus (NEW — capture-now/normalize-later)
+SEMrush Top-Pages carries a traffic-validated **Top Keyword** (+ traffic, traffic%, intent, answer-engines) per recipe URL — a self-classifying dish name. `dish_keywords` table + `dish_keywords.py` capture from the Top-Pages reader (upsert on normalized URL). **`forms/dish-keywords.html`** searchable/sortable browse view + `GET /dish-keywords[/list]` + `POST /dish-keywords/delete`. bostonchefs → 129 captured (milk cookies 140/22.91%). Feeds (later, deliberate): dish catalog/library (demand-ranked), per-recipe dish-identity hint, prioritization. Whole-domain exports add noise (filter at promote time).
+
+### Domains scored-cohort panel ([[feedback_reuse_layout_components]])
+Harvest stores ALL scored candidates (`selected=1` on kept top-N); `/top` filtered to winners. New **`?all=1`** returns the full cohort; a **"☰ Scored cohort"** toggle on the Domains form flips winners-only ↔ full cohort (winners ★, also-rans dimmed) — the domains analog of the dishes scored cohort. funwithoutfodmaps: 10 ↔ 86.
+
+### Ops / follow-ups
+- 529s mid-session = Anthropic "Overloaded" (transient, cleared).
+- Open: dish-keyword **normalize-to-canonical-dishes** pass; **promote-to-dish** action on the browse view; url-words **curate UI** + a few junk food words (bakery/market/restaurant-names) to demote; a **"↻ Sweep URL words"** admin button + scheduled sweep; relabel still-pending items carried.
