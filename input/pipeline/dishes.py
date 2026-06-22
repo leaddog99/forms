@@ -915,49 +915,59 @@ def find_due_dishes(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def delete_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
-                                kind: str = "top") -> int:
-    """Delete every row in master_recipes whose `_master.dish` matches
-    `dish_name` AND `_master.kind` matches `kind`. Returns the
-    deletion count. Used by the refresh-dish path to clear the prior
-    top-N before re-populating; editors_choice and legacy rows are
-    untouched because the kind filter excludes them.
+def retire_master_membership(conn: sqlite3.Connection, *, marker: str, value: str,
+                             other_marker: str, remove_fields: list,
+                             also_match: tuple = None) -> tuple:
+    """TYPED-BLOCK lifecycle on the single master (the shared inline reference count).
+    A recipe row carries up to two membership blocks — a dish block (`_master.dish`)
+    and a domain block (`_master.publisher`). To retire one owner's claim, CLEAR that
+    owner's block and drop the row ONLY when no other block remains. One copy of this
+    logic, called by BOTH the dish refresh and the publisher refresh.
 
-    The trg_master_vec_cleanup AFTER DELETE trigger drops each row's
-    recipes_master_vec vector automatically, so we load sqlite-vec first
-    (the trigger deletes from a vec0 table and needs the module).
-
-    TYPED-BLOCK lifecycle: a row may ALSO carry a domain block
-    (`_master.publisher`). We clear only the DISH block and drop the row solely
-    when no domain block remains (the inline reference count — never delete a
-    recipe that another owner still claims). Returns the count of rows actually
-    deleted (rows kept-but-cleared aren't counted).
-    """
-    _enable_vec_best_effort(conn)
+    For every master row whose `_master.<marker>` == value (optionally also matching
+    `also_match`=(field, val), e.g. ('kind','top') to spare pinned rows): remove
+    `remove_fields` from `_master`; if `_master.<other_marker>` is still set, KEEP the
+    row (now owned by the other type); else DELETE it. The trg_master_vec_cleanup
+    AFTER DELETE trigger drops each deleted row's vector, so we load sqlite-vec first.
+    `marker`/`other_marker`/`also_match[0]` are code-literals; values are bound.
+    Returns (cleared, deleted)."""
     import json as _json
-    rows = conn.execute(
-        "SELECT id, data FROM master_recipes "
-        "WHERE json_extract(data, '$._master.dish') = ? "
-        "AND json_extract(data, '$._master.kind') = ?",
-        (dish_name, kind),
-    ).fetchall()
-    deleted = 0
+    _enable_vec_best_effort(conn)
+    where = f"json_extract(data, '$._master.{marker}') = ?"
+    params = [value]
+    if also_match:
+        where += f" AND json_extract(data, '$._master.{also_match[0]}') = ?"
+        params.append(also_match[1])
+    rows = conn.execute(f"SELECT id, data FROM master_recipes WHERE {where}", params).fetchall()
+    cleared = deleted = 0
     for rid, data in rows:
         try:
             d = _json.loads(data)
         except Exception:
             continue
         m = d.get("_master") or {}
-        if m.get("publisher"):           # also a publisher winner → keep, clear dish block only
-            m.pop("dish", None)
-            m.pop("exceptionalism", None)
+        if m.get(other_marker):          # other block present → keep, clear ours
+            for f in remove_fields:
+                m.pop(f, None)
             d["_master"] = m
             conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
                          (_json.dumps(d, indent=2), rid))
+            cleared += 1
         else:                            # last block → drop the row (vec trigger cleans)
             conn.execute("DELETE FROM master_recipes WHERE id = ?", (rid,))
             deleted += 1
     conn.commit()
+    return cleared, deleted
+
+
+def delete_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
+                                kind: str = "top") -> int:
+    """Retire a dish's master rows (clear the dish block; drop the row only if no
+    domain block remains). Spares editors_choice/legacy via the kind filter. Thin
+    wrapper over the shared retire_master_membership; returns rows actually deleted."""
+    _cleared, deleted = retire_master_membership(
+        conn, marker="dish", value=dish_name, other_marker="publisher",
+        remove_fields=["dish", "exceptionalism"], also_match=("kind", kind))
     return deleted
 
 
