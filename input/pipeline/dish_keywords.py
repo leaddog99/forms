@@ -34,12 +34,17 @@ def ensure_table(conn: sqlite3.Connection) -> None:
             url            TEXT,
             domain         TEXT,
             traffic        REAL,              -- monthly organic traffic to the page (demand weight)
+            traffic_pct    REAL,              -- Traffic (%) — share of the publisher's traffic
             intent         TEXT,              -- Primary Intent (Informational/Commercial/…)
             answer_engines TEXT,              -- which AI engines surface it (search-gpt, gemini…)
             captured_at    TEXT
         )
         """
     )
+    try:   # migrate pre-traffic_pct tables (ALTER is a no-op if present)
+        conn.execute("ALTER TABLE dish_keywords ADD COLUMN traffic_pct REAL")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dishkw_kw ON dish_keywords(keyword)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dishkw_traffic ON dish_keywords(traffic)")
 
@@ -64,7 +69,7 @@ def capture(rows, domain, db_path: Optional[str] = None) -> int:
             except Exception:
                 un = url
             recs.append((un, (r.get("keyword") or "").strip(), url, domain,
-                         r.get("traffic"), (r.get("intent") or "").strip(),
+                         r.get("traffic"), r.get("traffic_pct"), (r.get("intent") or "").strip(),
                          (r.get("answer_engines") or "").strip(), now))
         if not recs:
             return 0
@@ -72,8 +77,8 @@ def capture(rows, domain, db_path: Optional[str] = None) -> int:
             ensure_table(conn)
             conn.executemany(
                 "INSERT OR REPLACE INTO dish_keywords"
-                "(url_normalized,keyword,url,domain,traffic,intent,answer_engines,captured_at)"
-                " VALUES (?,?,?,?,?,?,?,?)", recs)
+                "(url_normalized,keyword,url,domain,traffic,traffic_pct,intent,answer_engines,captured_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?)", recs)
             conn.commit()
         return len(recs)
     except Exception as e:   # capture must never break a harvest

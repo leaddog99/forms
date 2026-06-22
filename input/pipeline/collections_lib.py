@@ -558,6 +558,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
     ki = col("Top Keyword", "Keyword")
     ii = col("Primary Intent", "Intent")
     aei = col("Answer Engines")
+    tpi = col("Traffic (%)", "Traffic %")
     rows, kw_rows = [], []
     for r in it:
         url = str(r[ui] or "").strip()
@@ -577,8 +578,13 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         if ki is not None:
             kw = str(r[ki] or "").strip()
             if kw:
+                try:
+                    tpct = float(r[tpi]) if tpi is not None and r[tpi] not in (None, "") else None
+                except (TypeError, ValueError):
+                    tpct = None
                 kw_rows.append({"url": url, "keyword": kw,
                                 "traffic": rank if rank_label == "traffic" else None,
+                                "traffic_pct": tpct,
                                 "intent": str(r[ii] or "").strip() if ii is not None else "",
                                 "answer_engines": str(r[aei] or "").strip() if aei is not None else ""})
     if kw_rows:

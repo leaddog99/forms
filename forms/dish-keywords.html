@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Dish Keywords</title>
+  <!-- Searchable BROWSE view over the dish_keywords corpus (demand-side dish names
+       captured from SEMrush Top-Pages exports). Capture-now / normalize-later: this is
+       a read+search+prune surface, not a hand-add editor. See input/pipeline/dish_keywords.py
+       + memory/project_url_word_filter.md (sibling capture pattern). -->
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    .dk-wrap { max-width: 1180px; margin: 0 auto; padding: 16px 18px 60px; }
+    .dk-wrap h1 { font-size: 1.3rem; margin: 6px 0 2px; }
+    .dk-sub { color: var(--ink-soft, #6b6258); font-size: .86rem; margin: 0 0 14px; }
+    .dk-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 0 0 12px;
+      position: sticky; top: 0; background: var(--bg, #faf7f2); padding: 8px 0; z-index: 2; }
+    .dk-controls input, .dk-controls select {
+      font: inherit; padding: 7px 10px; border: 1px solid var(--line, #e2dccf);
+      border-radius: 8px; background: var(--card, #fff); color: var(--ink, #2b2620); }
+    .dk-controls input#search { flex: 1; min-width: 220px; }
+    table.dk { width: 100%; border-collapse: collapse; font-size: .86rem; }
+    table.dk th, table.dk td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line, #eee); vertical-align: top; }
+    table.dk th { position: sticky; top: 54px; background: var(--card, #fff); color: var(--ink-soft, #6b6258);
+      font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; cursor: pointer; }
+    table.dk td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .dk-kw { font-weight: 600; color: var(--ink, #2b2620); }
+    .dk-url { color: var(--ink-soft, #8a8276); font-size: .74rem; text-decoration: none; word-break: break-all; }
+    .dk-url:hover { text-decoration: underline; }
+    .dk-intent { font-size: .72rem; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft, #f0e9dc); color: var(--accent-dark, #7a5b3a); white-space: nowrap; }
+    .dk-eng { font-size: .72rem; color: var(--accent-dark, #7a5b3a); }
+    .dk-del { border: 1px solid var(--line, #e2dccf); background: var(--card, #fff); color: var(--danger, #b3503a);
+      border-radius: 7px; padding: 3px 9px; cursor: pointer; font-size: .76rem; }
+    .dk-del:hover { background: var(--danger, #b3503a); color: #fff; }
+    .dk-empty { padding: 40px; text-align: center; color: var(--ink-soft, #8a8276); }
+    .dk-count { color: var(--ink-soft, #8a8276); font-weight: 400; font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+
+  <main class="dk-wrap">
+    <h1>Dish keywords <span class="dk-count" id="total"></span></h1>
+    <p class="dk-sub">Demand-side dish corpus — the highest-traffic search query for each recipe URL, captured from SEMrush Top-Pages exports. Capture-now; normalize to canonical dishes later.</p>
+    <div class="dk-controls">
+      <input id="search" type="search" placeholder="search keyword or URL…" autocomplete="off">
+      <select id="domain"><option value="">All domains</option></select>
+      <select id="intent"><option value="">All intents</option></select>
+      <select id="sort">
+        <option value="traffic">Sort: traffic</option>
+        <option value="traffic_pct">Sort: traffic %</option>
+        <option value="keyword">Sort: keyword (A–Z)</option>
+        <option value="domain">Sort: domain</option>
+        <option value="recent">Sort: recently captured</option>
+      </select>
+    </div>
+    <table class="dk">
+      <thead><tr>
+        <th data-sort="keyword">Keyword</th>
+        <th data-sort="traffic" class="num">Traffic</th>
+        <th data-sort="traffic_pct" class="num">Traffic %</th>
+        <th>Intent</th>
+        <th>Answer engines</th>
+        <th data-sort="domain">Domain</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="dk-empty" id="empty" hidden>No keywords match.</div>
+  </main>
+
+  <script src="/forms/library-shell.js?v=20260618c"></script>
+  <script>
+    try { LibraryShell.initNav && LibraryShell.initNav({ currentPage: 'dish-keywords' }); } catch (e) {}
+    const esc = (window.LibraryShell && LibraryShell.escapeHtml) || (s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+    const $ = s => document.querySelector(s);
+    const state = { search: '', domain: '', intent: '', sort: 'traffic' };
+
+    function fmt(n) { return (n == null || n === '') ? '—' : (Math.round(Number(n) * 100) / 100).toLocaleString(); }
+
+    async function load() {
+      const qs = new URLSearchParams({ search: state.search, domain: state.domain, intent: state.intent, sort: state.sort, limit: 500 });
+      let d;
+      try { d = await (await fetch('/dish-keywords/list?' + qs)).json(); }
+      catch (e) { $('#rows').innerHTML = ''; $('#empty').hidden = false; $('#empty').textContent = 'Could not load.'; return; }
+      $('#total').textContent = `(${d.total})`;
+      // populate filters once
+      if (!$('#domain').dataset.filled) {
+        $('#domain').dataset.filled = '1';
+        (d.domains || []).forEach(x => $('#domain').insertAdjacentHTML('beforeend', `<option value="${esc(x)}">${esc(x)}</option>`));
+        (d.intents || []).forEach(x => $('#intent').insertAdjacentHTML('beforeend', `<option value="${esc(x)}">${esc(x)}</option>`));
+      }
+      const rows = d.rows || [];
+      $('#empty').hidden = rows.length > 0;
+      $('#rows').innerHTML = rows.map(r => `
+        <tr data-key="${esc(r.url_normalized)}">
+          <td><span class="dk-kw">${esc(r.keyword)}</span></td>
+          <td class="num">${fmt(r.traffic)}</td>
+          <td class="num">${fmt(r.traffic_pct)}</td>
+          <td>${r.intent ? `<span class="dk-intent">${esc(r.intent)}</span>` : '—'}</td>
+          <td class="dk-eng">${esc(r.answer_engines || '')}</td>
+          <td>${esc(r.domain)}<br><a class="dk-url" href="${esc(r.url)}" target="_blank" rel="noopener">${esc((r.url || '').replace(/^https?:\/\//, ''))}</a></td>
+          <td><button class="dk-del" title="Remove from corpus">✕</button></td>
+        </tr>`).join('');
+    }
+
+    let t;
+    $('#search').addEventListener('input', e => { state.search = e.target.value.trim(); clearTimeout(t); t = setTimeout(load, 250); });
+    $('#domain').addEventListener('change', e => { state.domain = e.target.value; load(); });
+    $('#intent').addEventListener('change', e => { state.intent = e.target.value; load(); });
+    $('#sort').addEventListener('change', e => { state.sort = e.target.value; load(); });
+    document.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => { state.sort = th.dataset.sort; $('#sort').value = th.dataset.sort; load(); }));
+
+    $('#rows').addEventListener('click', async e => {
+      const btn = e.target.closest('.dk-del'); if (!btn) return;
+      const tr = btn.closest('tr'); const key = tr.dataset.key;
+      if (!confirm('Remove this keyword from the corpus?')) return;
+      try {
+        const r = await fetch('/dish-keywords/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url_normalized: key }) });
+        if (r.ok) { tr.remove(); const el = $('#total'); el.textContent = `(${Math.max(0, (parseInt(el.textContent.replace(/\D/g, '')) || 1) - 1)})`; }
+      } catch (e) {}
+    });
+
+    load();
+  </script>
+</body>
+</html>

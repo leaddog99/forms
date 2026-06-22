@@ -3549,6 +3549,53 @@ def dish_keywords_status_endpoint(limit: int = 50):
     return {"total": total, "by_domain": by_domain, "top_by_traffic": rows}
 
 
+@app.get("/dish-keywords/list")
+def dish_keywords_list_endpoint(search: str = "", domain: str = "", intent: str = "",
+                                sort: str = "traffic", limit: int = 100, offset: int = 0):
+    """Searchable/sortable page of the dish-keyword corpus for the browse UI."""
+    from input.pipeline import dish_keywords
+    where, params = [], []
+    if search:
+        where.append("(keyword LIKE ? OR url LIKE ?)"); like = f"%{search}%"; params += [like, like]
+    if domain:
+        where.append("domain = ?"); params.append(domain)
+    if intent:
+        where.append("intent = ?"); params.append(intent)
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    order = {"traffic": "traffic DESC", "traffic_pct": "traffic_pct DESC",
+             "keyword": "keyword ASC", "domain": "domain ASC, traffic DESC",
+             "recent": "captured_at DESC"}.get(sort, "traffic DESC")
+    cols = ("url_normalized", "keyword", "traffic", "traffic_pct", "intent",
+            "answer_engines", "domain", "url", "captured_at")
+    with sqlite3.connect(DB_PATH) as conn:
+        dish_keywords.ensure_table(conn)
+        total = conn.execute(f"SELECT COUNT(*) FROM dish_keywords {clause}", params).fetchone()[0]
+        rows = [dict(zip(cols, r)) for r in conn.execute(
+            f"SELECT {','.join(cols)} FROM dish_keywords {clause} "
+            f"ORDER BY {order} LIMIT ? OFFSET ?", [*params, int(limit), int(offset)])]
+        domains = [d for (d,) in conn.execute(
+            "SELECT DISTINCT domain FROM dish_keywords ORDER BY domain")]
+        intents = [i for (i,) in conn.execute(
+            "SELECT DISTINCT intent FROM dish_keywords WHERE intent != '' ORDER BY intent")]
+    return {"total": total, "rows": rows, "domains": domains, "intents": intents}
+
+
+@app.post("/dish-keywords/delete")
+def dish_keywords_delete_endpoint(payload: dict = Body(...)):
+    """Prune row(s) from the dish-keyword corpus by url_normalized (string or list)."""
+    from input.pipeline import dish_keywords
+    keys = payload.get("url_normalized")
+    keys = [keys] if isinstance(keys, str) else (keys or [])
+    keys = [k for k in keys if k]
+    if not keys:
+        raise HTTPException(status_code=400, detail="url_normalized required")
+    with sqlite3.connect(DB_PATH) as conn:
+        dish_keywords.ensure_table(conn)
+        conn.executemany("DELETE FROM dish_keywords WHERE url_normalized = ?", [(k,) for k in keys])
+        conn.commit()
+    return {"deleted": len(keys)}
+
+
 @app.get("/url-words")
 def url_words_status_endpoint():
     """Counts for the self-learning URL-word lists (the recipe-URL pre-filter vocab)."""
