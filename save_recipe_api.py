@@ -3721,9 +3721,106 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     res = await asyncio.to_thread(_work)
     print(f"[PUBLISHER-REFRESH] done — discovered={res['discovered']} "
           f"recipe_pass={res['recipe_pass']} scored={res['scored']} stored={len(res['members'])}")
+
+    # ---- ledger -> master: AUTO-EXTRACT the selected winners (mirrors dish refresh) ----
+    # The harvest above only built the ranked LEDGER (collection_members). This is the
+    # step the dish batch has but the publisher harvest lacked: extract the top-N winners
+    # into master_recipes (+ the extract cache, as a byproduct), backfilling from the
+    # next-ranked also-rans when a winner fails extract/save-gate ("ensure keep if
+    # available"). The 73 also-rans stay index-only in the ledger. The extract fetch is
+    # now domain-fetch-policy-aware, so JS-rendered/anti-bot winners render correctly.
+    members = res.get("members") or []
+    winners = sorted([m for m in members if m.get("selected")], key=lambda m: m.get("rank") or 9999)
+    reserve = sorted([m for m in members if not m.get("selected")], key=lambda m: m.get("rank") or 9999)
+    pool = winners + reserve
+    now_iso = datetime.now(timezone.utc).isoformat()
+    extracted = 0
+    saved_urls: list[str] = []
+    for m in pool:
+        if extracted >= keep:
+            break
+        if _should_cancel():
+            print("[PUBLISHER-REFRESH] cancel requested — stopping winner extraction")
+            break
+        url = m.get("url")
+        if not url:
+            continue
+        try:
+            extract_result = await asyncio.to_thread(
+                extract_recipe_from_url, url, user_id=0, force_refresh=True)
+        except Exception as e:
+            print(f"[PUBLISHER-REFRESH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
+            continue
+        recipe_dict = (extract_result or {}).get("recipe") or {}
+        ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                                   min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
+        # RENDER-RETRY-ON-THIN: a JS publisher can render PARTIALLY (the recipe card
+        # loads late → empty/thin extract). Retry ONCE forcing a full-browser render
+        # before giving up. Cheap insurance; roundup/listicle pages stay thin and are
+        # still (correctly) skipped after the retry.
+        if not ok:
+            print(f"[PUBLISHER-REFRESH] THIN ({reason}) — render-retry {url}")
+            try:
+                extract_result = await asyncio.to_thread(
+                    extract_recipe_from_url, url, user_id=0, force_refresh=True, fetch_render=True)
+                recipe_dict = (extract_result or {}).get("recipe") or {}
+                ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                                           min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
+            except Exception as e:
+                print(f"[PUBLISHER-REFRESH] render-retry failed {url}: {type(e).__name__}: {e}")
+        if not ok:
+            print(f"[PUBLISHER-REFRESH] SKIP-THIN {reason}  {url}")
+            continue
+        payload = dict(recipe_dict)
+        payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
+        payload["user_id"] = 0
+        # Membership is the collection_members ledger (joined on url_normalized); the
+        # _master block records provenance + the re-sequenced rank over actually-saved
+        # winners. publisher recipes carry no _master.dish, so they never leak into a
+        # dish's top-N. Auto-enrich stays off — fast/cheap harvest; enrich later.
+        payload["_master"] = {
+            "kind": "top",
+            "publisher": host,
+            "refreshed_at": now_iso,
+            "rank": extracted + 1,
+            "batch_source": "/domains/refresh-top",
+        }
+        payload["_skip_auto_enrich"] = True
+        try:
+            await asyncio.to_thread(_save_recipe_core, payload)
+            extracted += 1
+            saved_urls.append(url)
+            print(f"[PUBLISHER-REFRESH] SAVED master #{extracted} {url}")
+        except HTTPException as e:
+            print(f"[PUBLISHER-REFRESH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
+        except Exception as e:
+            print(f"[PUBLISHER-REFRESH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
+    print(f"[PUBLISHER-REFRESH] extracted {extracted} winner(s) into master (+cache)")
+
+    # Re-flag the ledger so selected=1 matches the ACTUALLY-saved winners: backfill
+    # may have swapped a failed top-N winner (roundup / thin / paywalled) for a
+    # lower-ranked reserve, so the pre-extract selection can be stale. Mirrors the
+    # dish refresh re-flagging dish_run_data_points after backfill — keeps the form's
+    # ★ winners ⟺ the recipes actually in master.
+    if saved_urls:
+        try:
+            from input.pipeline.url_utils import normalize_url as _norm
+            keys = {(_norm(u) or u) for u in saved_urls}
+            with sqlite3.connect(DB_PATH) as _rc:
+                _rc.execute("UPDATE collection_members SET selected = 0 "
+                            "WHERE collection_type='publisher' AND collection_key = ?", (host,))
+                for k in keys:
+                    _rc.execute("UPDATE collection_members SET selected = 1 "
+                                "WHERE collection_type='publisher' AND collection_key = ? "
+                                "AND url_normalized = ?", (host, k))
+                _rc.commit()
+            print(f"[PUBLISHER-REFRESH] re-flagged {len(keys)} ledger winner(s) to match master")
+        except Exception as e:
+            print(f"[PUBLISHER-REFRESH] re-flag selected failed: {type(e).__name__}: {e}")
+
     return {"discovered": res["discovered"], "recipe_pass": res["recipe_pass"],
             "scored": res["scored"], "stored": len(res["members"]),
-            "recipe_path": res.get("recipe_path")}
+            "extracted": extracted, "recipe_path": res.get("recipe_path")}
 
 
 jobs_lib.register_handler("publisher_refresh", _handle_publisher_refresh_job)
@@ -6246,6 +6343,7 @@ def extract_recipe_from_url(
     batch_overrides: dict | None = None,
     user_id: int = PLACEHOLDER_USER_ID,
     force_refresh: bool = False,
+    fetch_render: bool | None = None,
 ) -> dict:
     """Sync orchestrator: fetch URL → markdown → JSON-LD-or-LLM → enrich
     hooks → attached scoring. Same pipeline as the /extract-from-url
@@ -6339,11 +6437,38 @@ def extract_recipe_from_url(
     except Exception as e:
         print(f"[WARN] Content-Type probe failed (assuming HTML): {e}")
 
+    # Resolve THIS domain's fetch policy so the extract uses the same unblocker/
+    # render tiers as the harvest filter — otherwise a JS-rendered / anti-bot
+    # publisher (Boston Globe) extracts only the static nav shell. Flags default
+    # off, so normal domains are byte-for-byte unchanged. Best-effort, one DB read.
+    _fetch_unblocker = False
+    _fetch_render = False
+    try:
+        from urllib.parse import urlparse as _urlparse
+        from input.pipeline import domains_lib
+        from input.pipeline.url_utils import root_domain as _rootd
+        _host = (_urlparse(url).hostname or "").lower()
+        with sqlite3.connect(DB_PATH) as _dc:
+            _drow = domains_lib.get_domain(_dc, _host) or domains_lib.get_domain(_dc, _rootd(url) or "")
+        if _drow:
+            _fetch_unblocker = (_drow.get("fetch_strategy") or "") == "unblocker"
+            _fetch_render = bool(_drow.get("render_required"))
+    except Exception as e:
+        print(f"[WARN] domain fetch-policy lookup failed (using plain): {e}")
+    # Caller override (render-retry-on-thin): force a full-browser render — and the
+    # unblocker it rides on — regardless of the domain's stored policy.
+    if fetch_render is not None:
+        _fetch_render = bool(fetch_render)
+        if _fetch_render:
+            _fetch_unblocker = True
+    if _fetch_unblocker or _fetch_render:
+        print(f"[EXTRACT] domain fetch policy: unblocker={_fetch_unblocker} render={_fetch_render}")
+
     try:
         if is_pdf:
             md_result = pdf_url_to_markdown(url, timings, usage_log)
         else:
-            md_result = html_to_markdown(url, timings)
+            md_result = html_to_markdown(url, timings, unblocker=_fetch_unblocker, render=_fetch_render)
     except Exception as e:
         print(f"[ERROR] Fetch/convert failed for {url!r}: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")

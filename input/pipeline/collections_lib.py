@@ -722,15 +722,23 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                   f"non-recipe-looking URLs (no fetch-verify on this publisher)")
 
     scored = []
-    for url, title in recipe_pass:
+    n_rp = len(recipe_pass)
+    print(f"  [harvest] Moz scoring {n_rp} recipe candidate(s)…")
+    for i, (url, title) in enumerate(recipe_pass, 1):
         if should_cancel and should_cancel():
             from input.pipeline.jobs import JobCancelled
             raise JobCancelled("cancelled during Moz scoring")
         s = score_url_via_moz(url)
         if s and s.get("page_authority"):
+            pa, da = s.get("page_authority"), s.get("domain_authority")
             scored.append({"url": url, "title": title,
-                           "da": float(s["domain_authority"]),
-                           "pa": float(s["page_authority"])})
+                           "da": float(da), "pa": float(pa)})
+            # Per-URL Moz line, mirroring the dish batch's _moz_score log. No OU —
+            # publishers have no per-publisher fit; within-publisher rank IS pa.
+            _fp = lambda v: ("?" if v is None else f"{v:>3}")
+            print(f"  [{i:>2}/{n_rp}] MOZ-OK   pa={_fp(pa)} da={_fp(da)}  {url}")
+        else:
+            print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
     scored.sort(key=lambda m: -m["pa"])
     keep = max(1, int(keep or 10))
     for i, m in enumerate(scored, 1):

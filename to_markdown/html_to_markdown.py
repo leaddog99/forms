@@ -431,6 +431,7 @@ def fetch_with_full_fallback(url: str, *,
                               timeout: int = DEFAULT_TIMEOUT_SECONDS,
                               try_wayback: bool = True,
                               unblocker: bool = False,
+                              render: bool = False,
                               ) -> tuple[requests.Response, dict]:
     """Tiered fetch: direct UA chain → [paid unblocker, opt-in] → Wayback.
 
@@ -446,6 +447,15 @@ def fetch_with_full_fallback(url: str, *,
     render=True — none seen yet; revisit per-domain if so.)
     """
     err: Optional[Exception] = None
+    # RENDER-FIRST for known JS-rendered domains (render_required): the static HTML is
+    # only a nav shell — the article body is injected client-side — so the plain probe
+    # would return useless chrome (and _looks_blocked can't catch a big, structurally-
+    # normal-but-empty page). Go STRAIGHT to a real-browser render via the unblocker.
+    # Falls through to plain/Wayback backstops if the render attempt no-ops/fails.
+    if render and unblocker and unblocker_available():
+        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=True)
+        if ub is not None:
+            return ub
     # PLAIN FIRST (credit-conscious): try the free direct fetch; only escalate to the PAID
     # unblocker if the page comes back as an anti-bot stub (or the fetch fails). So a page
     # that loads fine plain costs ZERO unblocker credits — the unblocker is paid only when
@@ -485,6 +495,8 @@ def fetch_with_full_fallback(url: str, *,
 def fetch_html(url: str, *, timeout: int = DEFAULT_TIMEOUT_SECONDS,
                user_agent: Optional[str] = None,
                try_wayback: bool = True,
+               unblocker: bool = False,
+               render: bool = False,
                ) -> tuple[str, str, dict]:
     """Return (html_text, final_url, meta) after redirects + fallbacks.
 
@@ -508,7 +520,8 @@ def fetch_html(url: str, *, timeout: int = DEFAULT_TIMEOUT_SECONDS,
         resp = requests.get(url, timeout=timeout, headers={"User-Agent": user_agent})
         resp.raise_for_status()
         return resp.text, resp.url, {"source": "direct", "ua_used": user_agent}
-    resp, meta = fetch_with_full_fallback(url, timeout=timeout, try_wayback=try_wayback)
+    resp, meta = fetch_with_full_fallback(url, timeout=timeout, try_wayback=try_wayback,
+                                          unblocker=unblocker, render=render)
     return resp.text, resp.url, meta
 
 
@@ -768,7 +781,8 @@ def extract_og_image(soup: BeautifulSoup, base_url: str) -> str:
     return extract_og_meta(soup, base_url).get("image", "")
 
 
-def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
+def html_to_markdown(url: str, timings: Optional[dict] = None, *,
+                     unblocker: bool = False, render: bool = False) -> dict:
     """Fetch a URL and produce canonical markdown for recipe extraction.
 
     Returns dict with:
@@ -786,7 +800,7 @@ def html_to_markdown(url: str, timings: Optional[dict] = None) -> dict:
         html_parse_ms   bs4 + extruct + markdownify combined
     """
     t0 = time.perf_counter()
-    html, final_url, fetch_meta = fetch_html(url)
+    html, final_url, fetch_meta = fetch_html(url, unblocker=unblocker, render=render)
     t_fetch = time.perf_counter()
     if timings is not None:
         timings["fetch_ms"] = int((t_fetch - t0) * 1000)
