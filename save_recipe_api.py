@@ -783,14 +783,16 @@ def init_db():
             # AND this site" (both non-null), "all dish winners", and "all domain
             # winners" index scans instead of json_extract table scans. VIRTUAL (not
             # STORED) is the only kind addable via ALTER, and it's fully indexable.
-            if "dish_key" not in master_cols:
-                conn.execute("ALTER TABLE master_recipes ADD COLUMN dish_key TEXT "
-                             "GENERATED ALWAYS AS (json_extract(data,'$._master.dish')) VIRTUAL")
-                print("[MIGRATE] added master_recipes.dish_key generated column")
-            if "publisher_key" not in master_cols:
-                conn.execute("ALTER TABLE master_recipes ADD COLUMN publisher_key TEXT "
-                             "GENERATED ALWAYS AS (json_extract(data,'$._master.publisher')) VIRTUAL")
-                print("[MIGRATE] added master_recipes.publisher_key generated column")
+            # NOTE: generated columns appear in PRAGMA table_xinfo but NOT table_info,
+            # so guard with try/except (idempotent) rather than the master_cols set.
+            for _gc, _expr in (("dish_key", "$._master.dish"),
+                               ("publisher_key", "$._master.publisher")):
+                try:
+                    conn.execute(f"ALTER TABLE master_recipes ADD COLUMN {_gc} TEXT "
+                                 f"GENERATED ALWAYS AS (json_extract(data,'{_expr}')) VIRTUAL")
+                    print(f"[MIGRATE] added master_recipes.{_gc} generated column")
+                except sqlite3.OperationalError:
+                    pass  # already present
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_key ON master_recipes(dish_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_publisher_key ON master_recipes(publisher_key)")
             # Same source-of-truth embedding on USER recipes: every save embeds
