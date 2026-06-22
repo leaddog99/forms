@@ -778,6 +778,21 @@ def init_db():
             if "embedding" not in master_cols:
                 conn.execute("ALTER TABLE master_recipes ADD COLUMN embedding BLOB")
                 print("[MIGRATE] added master_recipes.embedding BLOB column")
+            # Typed-membership-block fast paths: VIRTUAL generated columns that surface
+            # the dish / domain block markers, each indexed. Makes "best for this dish
+            # AND this site" (both non-null), "all dish winners", and "all domain
+            # winners" index scans instead of json_extract table scans. VIRTUAL (not
+            # STORED) is the only kind addable via ALTER, and it's fully indexable.
+            if "dish_key" not in master_cols:
+                conn.execute("ALTER TABLE master_recipes ADD COLUMN dish_key TEXT "
+                             "GENERATED ALWAYS AS (json_extract(data,'$._master.dish')) VIRTUAL")
+                print("[MIGRATE] added master_recipes.dish_key generated column")
+            if "publisher_key" not in master_cols:
+                conn.execute("ALTER TABLE master_recipes ADD COLUMN publisher_key TEXT "
+                             "GENERATED ALWAYS AS (json_extract(data,'$._master.publisher')) VIRTUAL")
+                print("[MIGRATE] added master_recipes.publisher_key generated column")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_key ON master_recipes(dish_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_publisher_key ON master_recipes(publisher_key)")
             # Same source-of-truth embedding on USER recipes: every save embeds
             # the recipe so its vector is available for dish-matching, "find
             # similar", dedup, and recommendations (not single-use). 2026-06-02.
