@@ -926,16 +926,39 @@ def delete_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
     The trg_master_vec_cleanup AFTER DELETE trigger drops each row's
     recipes_master_vec vector automatically, so we load sqlite-vec first
     (the trigger deletes from a vec0 table and needs the module).
+
+    TYPED-BLOCK lifecycle: a row may ALSO carry a domain block
+    (`_master.publisher`). We clear only the DISH block and drop the row solely
+    when no domain block remains (the inline reference count — never delete a
+    recipe that another owner still claims). Returns the count of rows actually
+    deleted (rows kept-but-cleared aren't counted).
     """
     _enable_vec_best_effort(conn)
-    cur = conn.execute(
-        "DELETE FROM master_recipes "
+    import json as _json
+    rows = conn.execute(
+        "SELECT id, data FROM master_recipes "
         "WHERE json_extract(data, '$._master.dish') = ? "
         "AND json_extract(data, '$._master.kind') = ?",
         (dish_name, kind),
-    )
+    ).fetchall()
+    deleted = 0
+    for rid, data in rows:
+        try:
+            d = _json.loads(data)
+        except Exception:
+            continue
+        m = d.get("_master") or {}
+        if m.get("publisher"):           # also a publisher winner → keep, clear dish block only
+            m.pop("dish", None)
+            m.pop("exceptionalism", None)
+            d["_master"] = m
+            conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
+                         (_json.dumps(d, indent=2), rid))
+        else:                            # last block → drop the row (vec trigger cleans)
+            conn.execute("DELETE FROM master_recipes WHERE id = ?", (rid,))
+            deleted += 1
     conn.commit()
-    return cur.rowcount
+    return deleted
 
 
 def record_run_result(conn: sqlite3.Connection, name: str, *,

@@ -3660,6 +3660,45 @@ def domain_recipes_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+def _retire_master_membership(conn, *, marker: str, value: str, other_marker: str,
+                              remove_fields: list) -> tuple:
+    """TYPED-BLOCK lifecycle on the single master: a recipe row carries up to two
+    membership blocks — a dish block (`_master.dish`) and a domain block
+    (`_master.publisher`). To "delete" one owner's claim we CLEAR that owner's block
+    and drop the row ONLY when no other block remains (the inline reference count —
+    no junction, no separate GC, no duplicate content row).
+
+    For every master row whose `_master.<marker>` == value: remove `remove_fields`
+    from `_master`; if `_master.<other_marker>` is still set, KEEP the row (now owned
+    by the other type); else DELETE it (the AFTER DELETE trigger cleans its vector).
+    `marker`/`other_marker` are code-literals ('dish'|'publisher'), value is bound.
+    Returns (cleared, deleted)."""
+    rows = conn.execute(
+        f"SELECT id, data FROM master_recipes WHERE user_id = 0 "
+        f"AND json_extract(data, '$._master.{marker}') = ?", (value,)
+    ).fetchall()
+    cleared = deleted = 0
+    now = datetime.now(timezone.utc).isoformat()
+    for rid, data in rows:
+        try:
+            d = json.loads(data)
+        except Exception:
+            continue
+        m = d.get("_master") or {}
+        if m.get(other_marker):                      # other block present → keep, clear ours
+            for f in remove_fields:
+                m.pop(f, None)
+            d["_master"] = m
+            conn.execute("UPDATE master_recipes SET data = ?, updated_at = ? WHERE id = ?",
+                         (json.dumps(d, indent=2), now, rid))
+            cleared += 1
+        else:                                        # last block → drop the row (vec trigger cleans)
+            conn.execute("DELETE FROM master_recipes WHERE id = ?", (rid,))
+            deleted += 1
+    conn.commit()
+    return cleared, deleted
+
+
 async def _handle_publisher_refresh_job(job: dict) -> dict:
     """Publisher refresh, OUT-OF-PROCESS: run the verbatim query, verify recipes,
     Moz-score, keep top-N, store as publisher collection membership + persist the
@@ -3734,6 +3773,24 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     reserve = sorted([m for m in members if not m.get("selected")], key=lambda m: m.get("rank") or 9999)
     pool = winners + reserve
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Typed-block delete-and-replace: clear THIS publisher's domain block up front
+    # (drop the row only if it has no dish block — the inline refcount). The extract
+    # loop below re-adds the block for the current winners; a dropped-out winner that
+    # is ALSO a dish winner is kept (dish-only). No orphans, no GC.
+    try:
+        with sqlite3.connect(DB_PATH) as _pc:
+            try:
+                from input.pipeline import vector_store as _vs
+                _vs.enable_vec(_pc)   # so the AFTER DELETE trigger can clean vectors
+            except Exception:
+                pass
+            cl, dl = _retire_master_membership(
+                _pc, marker="publisher", value=host, other_marker="dish",
+                remove_fields=["publisher", "refreshed_at"])
+        if cl or dl:
+            print(f"[PUBLISHER-REFRESH] retired prior domain block: cleared {cl} (kept as dish), deleted {dl}")
+    except Exception as e:
+        print(f"[PUBLISHER-REFRESH] domain-block retire failed: {type(e).__name__}: {e}")
     extracted = 0
     saved_urls: list[str] = []
     for m in pool:
