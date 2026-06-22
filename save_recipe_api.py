@@ -282,12 +282,12 @@ def _find_recipe_owner(recipe_id: str) -> int | None:
     """
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            row = conn.execute(
-                "SELECT user_id FROM master_recipes WHERE recipe_id = ?",
-                (recipe_id,),
-            ).fetchone()
-            if row:
-                return row[0]
+            for _t in ("master_recipes", "domain_master"):
+                row = conn.execute(
+                    f"SELECT user_id FROM {_t} WHERE recipe_id = ?", (recipe_id,)
+                ).fetchone()
+                if row:
+                    return row[0]
             row = conn.execute(
                 "SELECT user_id FROM recipes WHERE recipe_id = ?",
                 (recipe_id,),
@@ -778,6 +778,32 @@ def init_db():
             if "embedding" not in master_cols:
                 conn.execute("ALTER TABLE master_recipes ADD COLUMN embedding BLOB")
                 print("[MIGRATE] added master_recipes.embedding BLOB column")
+            # Two-master split: domain_master is the PUBLISHER store, IDENTICAL DDL to
+            # master_recipes (the dish store) so the SAME save/read code targets either
+            # by table name. Each table is owned by exactly one pipeline (dish batch vs
+            # publisher harvest), so delete-and-replace per owner is trivially safe —
+            # no cross-table reference-counting / orphan GC. A URL that's both a dish
+            # winner AND a publisher winner gets a row in each (join on url if needed).
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS domain_master (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recipe_id TEXT NOT NULL UNIQUE,
+                    user_id INTEGER,
+                    data TEXT,
+                    url_normalized TEXT NOT NULL DEFAULT '',
+                    source_changed_at TEXT,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    embedding BLOB
+                );
+            """)
+            try:
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uniq_domain_master_url_user "
+                    "ON domain_master(url_normalized, user_id) WHERE url_normalized != ''"
+                )
+            except sqlite3.IntegrityError as e:
+                print(f"[WARN] could not add domain_master unique index: {e}")
             # Same source-of-truth embedding on USER recipes: every save embeds
             # the recipe so its vector is available for dish-matching, "find
             # similar", dedup, and recommendations (not single-use). 2026-06-02.
@@ -1293,11 +1319,14 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
     table = _recipes_table_for(user_id)
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            row = conn.execute(
-                f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
-                f"FROM {table} WHERE recipe_id = ?",
-                (recipe_id,),
-            ).fetchone()
+            q = ("SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
+                 "FROM {t} WHERE recipe_id = ?")
+            row = conn.execute(q.format(t=table), (recipe_id,)).fetchone()
+            # Two-master split: a user_id=0 recipe may live in the publisher store
+            # (domain_master) rather than the dish store (master_recipes). Probe it
+            # before giving up, so "Open in BCC" on a publisher winner resolves.
+            if not row and user_id == 0:
+                row = conn.execute(q.format(t="domain_master"), (recipe_id,)).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Recipe not found")
             # user_id is returned at the top level (it's a column, not part of
@@ -3734,6 +3763,20 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     reserve = sorted([m for m in members if not m.get("selected")], key=lambda m: m.get("rank") or 9999)
     pool = winners + reserve
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Two-master split: domain_master is owned SOLELY by this harvest, so DELETE-AND-
+    # REPLACE this publisher's rows up front (mirrors the dish refresh's
+    # delete_master_rows_for_dish). No orphan GC / reference-counting needed — nothing
+    # outside this pipeline points at these rows.
+    try:
+        with sqlite3.connect(DB_PATH) as _pc:
+            n_del = _pc.execute(
+                "DELETE FROM domain_master WHERE user_id = 0 AND "
+                "json_extract(data, '$._master.publisher') = ?", (host,)).rowcount
+            _pc.commit()
+        if n_del:
+            print(f"[PUBLISHER-REFRESH] delete-and-replace: cleared {n_del} prior domain_master row(s)")
+    except Exception as e:
+        print(f"[PUBLISHER-REFRESH] domain_master clear failed: {e}")
     extracted = 0
     saved_urls: list[str] = []
     for m in pool:
@@ -3774,6 +3817,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         payload = dict(recipe_dict)
         payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
         payload["user_id"] = 0
+        payload["_master_table"] = "domain_master"   # two-master split: publisher store
         # Membership is the collection_members ledger (joined on url_normalized); the
         # _master block records provenance + the re-sequenced rank over actually-saved
         # winners. publisher recipes carry no _master.dish, so they never leak into a
@@ -5368,6 +5412,14 @@ def _save_recipe_core(payload: dict) -> dict:
     if user_id is None:
         user_id = PLACEHOLDER_USER_ID
     table = _recipes_table_for(user_id)
+    # Two-master split: a master save (user_id=0) may target the publisher store
+    # (domain_master) instead of the dish store (master_recipes). Same DDL → same
+    # code; only the table name differs. Allowlisted so f-string interpolation into
+    # SQL stays injection-safe by construction.
+    _mt = (payload.get("_master_table") or "").strip()
+    if user_id == 0 and _mt in ("master_recipes", "domain_master"):
+        table = _mt
+    recipe_dict.pop("_master_table", None)  # control flag, never persist on the row
     source = recipe_dict.get("_source") or {}
     raw_source_url = source.get("originalUrl") or ""
     normalized_source_url = normalize_url(raw_source_url) if raw_source_url else ""
@@ -5640,19 +5692,23 @@ def _save_recipe_core(payload: dict) -> dict:
                     if txt.strip():
                         rec_vec = embed_text(txt)
                         if user_id == 0:
-                            # Master: store the source-of-truth vector + the
-                            # derived KNN index the recommender reads.
+                            # Master: store the source-of-truth vector on the row.
                             conn.execute(
-                                "UPDATE master_recipes SET embedding = ? WHERE id = ?",
+                                f"UPDATE {table} SET embedding = ? WHERE id = ?",
                                 (vec_to_bytes(rec_vec), seq_id),
                             )
-                            vector_store.enable_vec(conn)
-                            ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
-                            dish_for_vec = (recipe_dict.get("_master") or {}).get("dish") or None
-                            vector_store.upsert_recipe_vector(
-                                conn, seq_id, rec_vec, chapter=ch, dish=dish_for_vec,
-                            )
-                            print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
+                            # The KNN index (recipes_master_vec) is the DISH store's
+                            # recommender. domain_master keeps only the BLOB (publisher
+                            # cohort is PA-ranked, not vector-ranked) — and its ids are a
+                            # separate sequence, so it must NOT write recipes_master_vec.
+                            if table == "master_recipes":
+                                vector_store.enable_vec(conn)
+                                ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
+                                dish_for_vec = (recipe_dict.get("_master") or {}).get("dish") or None
+                                vector_store.upsert_recipe_vector(
+                                    conn, seq_id, rec_vec, chapter=ch, dish=dish_for_vec,
+                                )
+                                print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
                         else:
                             # User recipe: store the vector AND match it to a dish
                             # (master rows already carry _master.dish). Reuse the
