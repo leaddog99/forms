@@ -109,6 +109,3 @@ jobs_schedule.log
 
 # Stray IDE-created empty SQLite (JetBrains data source)
 identifier.sqlite
-
-# user WIP page — kept local, not tracked (accidentally swept in once)
-forms/training.html

@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Labeling</title>
+  <!-- Human-correction UI for the is-recipe classifier training set. Each row is
+       a sample captured (as a byproduct) by the harvest/batch is_recipe filter:
+       the content the filter scored + its heuristic verdict. The curator corrects
+       the heuristic where it's WRONG (human_label) — the gold signal that lets a
+       trained classifier beat the heuristic. Reads the separate training.db via
+       /training/is-recipe/*. See docs/corpus-ml-strategy.md. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260618a">
+  <link rel="stylesheet" href="/forms/components.css?v=20260618a">
+  <style>
+    .lab-wrap { max-width: 1000px; margin: 0 auto; padding: 16px 18px 80px; }
+    .lab-intro { color: var(--muted, #6b6258); font-size: .92rem; margin: 0 0 14px; line-height: 1.5; }
+    .lab-toolbar {
+      position: sticky; top: 0; z-index: 5; background: var(--bg, #f4f1ea);
+      padding: 10px 0 12px; border-bottom: 1px solid var(--line, #e3ddd2);
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    .lab-toolbar input[type=search] {
+      flex: 1 1 220px; min-width: 180px; padding: 8px 11px;
+      border: 1px solid var(--line, #d9d2c6); border-radius: 8px;
+      background: var(--card, #fff); font-size: .92rem;
+    }
+    .lab-toolbar select {
+      padding: 7px 9px; border: 1px solid var(--line, #d9d2c6); border-radius: 8px;
+      background: var(--card, #fff); font-size: .88rem;
+    }
+    .lab-check { display: inline-flex; align-items: center; gap: 5px; font-size: .84rem; color: var(--ink, #3a352e); cursor: pointer; white-space: nowrap; }
+    .lab-stats { width: 100%; color: var(--muted, #6b6258); font-size: .82rem; margin-top: 2px; }
+    .lab-stats b { color: var(--ink, #2a2622); }
+    .lab-list { margin: 14px 0 0; display: flex; flex-direction: column; gap: 10px; }
+    .lab-card {
+      border: 1px solid var(--line, #e3ddd2); border-radius: 10px;
+      background: var(--card, #fff); padding: 12px 14px;
+    }
+    .lab-card.disagree { border-color: #d98a2b; box-shadow: 0 0 0 1px #d98a2b33; }
+    .lab-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+    .lab-verdict {
+      font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .lab-verdict.kept { background: #2e7d3222; color: #2e7d32; }
+    .lab-verdict.dropped { background: #b03a3a22; color: #b03a3a; }
+    .lab-reason { font-size: .8rem; color: var(--muted, #6b6258); }
+    .lab-flags { font-size: .74rem; color: var(--muted, #8a8175); margin-left: auto; }
+    .lab-title { font-size: 1.02rem; margin: 7px 0 1px; line-height: 1.3; }
+    .lab-title a { color: var(--ink, #2a2622); text-decoration: none; }
+    .lab-title a:hover { text-decoration: underline; }
+    .lab-url { font-size: .76rem; word-break: break-all; }
+    .lab-url a { color: var(--muted, #8a8175); text-decoration: none; }
+    .lab-url a:hover { color: var(--accent-dark, #8a5a2b); text-decoration: underline; }
+    .lab-snippet {
+      margin: 8px 0 0; font-size: .84rem; line-height: 1.5; color: var(--ink, #3a352e);
+      max-height: 5.2em; overflow: hidden; position: relative;
+      white-space: pre-wrap; background: var(--bg, #faf8f3);
+      border-radius: 6px; padding: 7px 9px;
+    }
+    .lab-snippet.empty { color: var(--muted, #a59c8f); font-style: italic; }
+    .lab-phrases { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .lab-phrases-lbl { font-size: .72rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted, #8a8175); margin-right: 2px; }
+    .lab-chip {
+      font-size: .76rem; padding: 2px 8px; border-radius: 999px;
+      background: #2e7d3218; color: #2e7d32; border: 1px solid #2e7d3233; white-space: nowrap;
+    }
+    .lab-phrases.none .lab-phrases-lbl { color: #b03a3a; }
+    .lab-phrases.none .lab-none { font-size: .8rem; color: #b03a3a; font-style: italic; }
+    .lab-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+    .lab-btn {
+      border: 1px solid var(--line, #d9d2c6); background: var(--card, #fff);
+      border-radius: 7px; padding: 5px 11px; font-size: .82rem; cursor: pointer;
+      color: var(--ink, #3a352e);
+    }
+    .lab-btn:hover { border-color: #b9b1a3; }
+    .lab-btn.on-recipe { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+    .lab-btn.on-not { background: #b03a3a; border-color: #b03a3a; color: #fff; }
+    .lab-meta { font-size: .74rem; color: var(--muted, #8a8175); margin-left: auto; }
+    .lab-sentinel { height: 40px; }
+    .lab-end { text-align: center; color: var(--muted, #8a8175); font-size: .82rem; padding: 16px 0; }
+    .lab-empty { text-align: center; color: var(--muted, #8a8175); padding: 40px 0; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="ed-brand">Best Cooks Club</div>
+      <!-- LibraryShell.initNav appends nav-spacer, identity badge, ⋮ menu -->
+    </div>
+  </header>
+
+  <div class="lab-wrap">
+    <h1 class="ed-title" style="margin:14px 0 6px">Labeling · is-recipe</h1>
+    <p class="lab-intro">
+      Each row is a page the harvest/batch <b>is_recipe filter</b> judged, captured for training.
+      The pill is the <b>heuristic's call</b> (KEPT = it thinks recipe · DROPPED = not) with its score.
+      Click <b>✓ Recipe</b> / <b>✗ Not a recipe</b> to record the <b>correct</b> answer — you only need to
+      bother where the heuristic looks <i>wrong</i> (those rows are flagged). Corrections are the gold
+      signal that lets a trained classifier beat the heuristic.
+      Rows are sorted <b>borderline-first</b> by default — nearest the score threshold, where the
+      heuristic is least certain and your correction is worth the most (the score-100 JSON-LD
+      certainties sink to the bottom).
+    </p>
+
+    <div class="lab-toolbar">
+      <input type="search" id="q" placeholder="Search url / title / content…" autocomplete="off">
+      <select id="fLabel" aria-label="Label filter">
+        <option value="unlabeled" selected>Unlabeled</option>
+        <option value="">All</option>
+        <option value="labeled">Labeled</option>
+        <option value="recipe">Marked recipe</option>
+        <option value="not_recipe">Marked not-recipe</option>
+      </select>
+      <select id="fDecision" aria-label="Heuristic decision">
+        <option value="">Any verdict</option>
+        <option value="kept">Heuristic: kept</option>
+        <option value="dropped">Heuristic: dropped</option>
+      </select>
+      <select id="fSource" aria-label="Source">
+        <option value="">Any source</option>
+        <option value="domain_harvest">Domain harvest</option>
+        <option value="dish_batch">Dish batch</option>
+      </select>
+      <select id="fSort" aria-label="Sort" title="Borderline first = the rows nearest the score threshold, where the heuristic is most likely wrong (highest labeling value)">
+        <option value="borderline">Sort: Borderline first</option>
+        <option value="recent">Sort: Newest</option>
+      </select>
+      <label class="lab-check" title="Hide rows with no captured content (fetch-failed pages and pre-fetch collection-title drops) — they aren't worth correcting">
+        <input type="checkbox" id="hideEmpty" checked> Hide fetch-failed / empty
+      </label>
+      <div class="lab-stats" id="stats">Loading…</div>
+    </div>
+
+    <div class="lab-list" id="list"></div>
+    <div class="lab-sentinel" id="sentinel"></div>
+    <div class="lab-end" id="end" hidden></div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260618c"></script>
+  <script>
+    LibraryShell.initNav && LibraryShell.initNav({ currentPage: 'training' });
+
+    const PAGE = 50;
+    let offset = 0, total = 0, loading = false, done = false;
+    const $ = s => document.querySelector(s);
+    const list = $('#list'), endEl = $('#end'), statsEl = $('#stats');
+
+    const esc = s => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+    function filters() {
+      return {
+        search: $('#q').value.trim(),
+        label: $('#fLabel').value,
+        decision: $('#fDecision').value,
+        source: $('#fSource').value,
+        sort: $('#fSort').value,
+        has_content: $('#hideEmpty').checked ? '1' : '0',
+      };
+    }
+
+    function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u || '—'; } }
+
+    function disagrees(r) {
+      if (!r.human_label) return false;
+      return (r.decision === 'kept' && r.human_label === 'not_recipe')
+          || (r.decision === 'dropped' && r.human_label === 'recipe');
+    }
+
+    // Plain-English for the captured reason codes (raw code kept as a tooltip).
+    function reasonLabel(code) {
+      if (!code) return '';
+      if (code.indexOf('translation-suspect') === 0) return 'translation looked unreliable';
+      return ({
+        'recipe-score<7': 'too few recipe phrases',
+        'url-prefilter': 'URL named no food word (skipped pre-fetch)',
+        'domain-exclude': 'in an excluded site section',
+        'collection-title': 'looks like a list / index page',
+        'fetch-failed': 'page could not be fetched',
+        'dropped': 'dropped',
+        'json-ld': 'schema.org Recipe present',
+        'phrase-score': 'passed the recipe-phrase score',
+      })[code] || code;
+    }
+
+    // Does a row with this human_label still belong in the active Label filter?
+    // When it doesn't (e.g. you labeled a row while working the "Unlabeled"
+    // queue), the card is removed so the queue drains as you vote.
+    function matchesLabelFilter(human) {
+      const lf = $('#fLabel').value;
+      if (lf === 'unlabeled') return human == null;
+      if (lf === 'labeled') return human != null;
+      if (lf === 'recipe') return human === 'recipe';
+      if (lf === 'not_recipe') return human === 'not_recipe';
+      return true; // All
+    }
+
+    function refillIfShort() {
+      if (!done && list.children.length < PAGE / 2) loadMore();
+    }
+
+    function provLabel(r) {
+      try { const p = JSON.parse(r.provenance || '{}'); return p.dish || p.domain || ''; }
+      catch { return ''; }
+    }
+
+    function cardHtml(r) {
+      const v = r.decision === 'kept' ? 'kept' : 'dropped';
+      const flags = [
+        r.lang_code && r.lang_code !== 'en' ? `lang:${esc(r.lang_code)}` : '',
+        r.has_jsonld ? 'json-ld' : '',
+        r.translated ? 'translated' : '',
+      ].filter(Boolean).join(' · ');
+      const snip = (r.snippet || '').trim();
+      const phrases = r.matched_phrases || [];
+      const phrasesHtml = phrases.length
+        ? `<div class="lab-phrases"><span class="lab-phrases-lbl">recipe phrases (${phrases.length})</span>${phrases.map(p => `<span class="lab-chip">${esc(p)}</span>`).join('')}</div>`
+        : `<div class="lab-phrases none"><span class="lab-phrases-lbl">recipe phrases</span><span class="lab-none">none matched</span></div>`;
+      const prov = provLabel(r);
+      const labeledMeta = r.human_label
+        ? `you: ${r.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}`
+        : '';
+      return `<div class="lab-card${disagrees(r) ? ' disagree' : ''}" data-id="${r.sample_id}">
+        <div class="lab-head">
+          <span class="lab-verdict ${v}">${v}</span>
+          <span class="lab-reason" title="${esc(r.reason)}">${v === 'dropped' ? 'dropped: ' : ''}${esc(reasonLabel(r.reason))} · score ${r.recipe_score ?? '—'}${r.threshold != null ? `/thr ${r.threshold}` : ''}</span>
+          <span class="lab-flags">${esc(flags)}${prov ? ` · ${esc(prov)}` : ''} · ${esc(r.source)}</span>
+        </div>
+        <div class="lab-title"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || host(r.url))}</a></div>
+        <div class="lab-url"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></div>
+        <div class="lab-snippet${snip ? '' : ' empty'}">${snip ? esc(snip) : '(no content captured — dropped before fetch)'}</div>
+        ${snip ? phrasesHtml : ''}
+        <div class="lab-actions">
+          <button class="lab-btn ${r.human_label === 'recipe' ? 'on-recipe' : ''}" data-set="recipe">✓ Recipe</button>
+          <button class="lab-btn ${r.human_label === 'not_recipe' ? 'on-not' : ''}" data-set="not_recipe">✗ Not a recipe</button>
+          <button class="lab-btn" data-set="">↺ clear</button>
+          <span class="lab-meta">${esc(labeledMeta)}</span>
+        </div>
+      </div>`;
+    }
+
+    async function setLabel(id, value, card) {
+      try {
+        const r = await fetch(`/training/is-recipe/samples/${id}/label`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: value || null }) });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        // Update the card's button state + disagreement flag in place.
+        card.querySelectorAll('.lab-btn').forEach(b => b.classList.remove('on-recipe', 'on-not'));
+        if (data.human_label === 'recipe') card.querySelector('[data-set=recipe]').classList.add('on-recipe');
+        if (data.human_label === 'not_recipe') card.querySelector('[data-set=not_recipe]').classList.add('on-not');
+        const decision = card.querySelector('.lab-verdict').classList.contains('kept') ? 'kept' : 'dropped';
+        const dis = data.human_label && ((decision === 'kept' && data.human_label === 'not_recipe') || (decision === 'dropped' && data.human_label === 'recipe'));
+        card.classList.toggle('disagree', !!dis);
+        card.querySelector('.lab-meta').textContent = data.human_label
+          ? `you: ${data.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}` : '';
+        // Drain the queue: if this row no longer matches the active filter, drop it.
+        if (!matchesLabelFilter(data.human_label)) {
+          card.style.transition = 'opacity .2s';
+          card.style.opacity = '0';
+          setTimeout(() => {
+            card.remove();
+            if (offset > 0) offset--;   // filtered result set shrank by one — keep paging aligned
+            if (total > 0) total--;
+            if (!list.children.length && done) {
+              list.innerHTML = '<div class="lab-empty">Queue clear — nothing left to label with these filters. 🎉</div>';
+            }
+            refillIfShort();
+          }, 200);
+        }
+        loadStats();
+      } catch (e) {
+        alert('Could not save label: ' + (e.message || e));
+      }
+    }
+
+    list.addEventListener('click', ev => {
+      const btn = ev.target.closest('.lab-btn'); if (!btn) return;
+      const card = btn.closest('.lab-card');
+      setLabel(card.dataset.id, btn.dataset.set, card);
+    });
+
+    async function loadStats() {
+      try {
+        const s = await (await fetch('/training/is-recipe/stats')).json();
+        const d = s.by_decision || {};
+        statsEl.innerHTML = `<b>${s.total ?? 0}</b> samples · `
+          + `<b>${d.kept || 0}</b> kept / <b>${d.dropped || 0}</b> dropped · `
+          + `<b>${s.human_labeled || 0}</b> corrected by you`;
+      } catch { statsEl.textContent = ''; }
+    }
+
+    async function loadMore() {
+      if (loading || done) return;
+      loading = true;
+      const f = filters();
+      const qs = new URLSearchParams({ limit: PAGE, offset, ...f });
+      try {
+        const data = await (await fetch('/training/is-recipe/samples?' + qs)).json();
+        total = data.total || 0;
+        const rows = data.rows || [];
+        if (offset === 0 && !rows.length) {
+          list.innerHTML = '<div class="lab-empty">No samples match — run a harvest or batch, or relax the filters.</div>';
+        } else {
+          list.insertAdjacentHTML('beforeend', rows.map(cardHtml).join(''));
+        }
+        offset += rows.length;
+        if (offset >= total || !rows.length) { done = true; endEl.hidden = false; endEl.textContent = `${total} sample(s) — end of list.`; }
+        else endEl.hidden = true;
+      } catch (e) {
+        endEl.hidden = false; endEl.textContent = 'Could not load (' + (e.message || e) + '). Restart the server if the endpoints are 404 — they were just added.';
+        done = true;
+      } finally { loading = false; }
+    }
+
+    function reset() { offset = 0; total = 0; done = false; list.innerHTML = ''; endEl.hidden = true; loadMore(); }
+
+    let t; $('#q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(reset, 250); });
+    ['fLabel', 'fDecision', 'fSource', 'fSort', 'hideEmpty'].forEach(id => $('#' + id).addEventListener('change', reset));
+
+    new IntersectionObserver(es => { if (es[0].isIntersecting) loadMore(); }, { rootMargin: '300px' })
+      .observe($('#sentinel'));
+
+    loadStats();
+    loadMore();
+  </script>
+</body>
+</html>

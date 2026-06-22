@@ -193,15 +193,80 @@ _LIST_COLUMNS = (
     "human_label, human_labeled_at, human_note"
 )
 
+# Structural markers that LOCATE the recipe body inside a full-page text dump so
+# the snippet can skip the site chrome (nav / cookie banner / subscribe / byline)
+# that otherwise fills the first few hundred chars of every page. Deliberately
+# includes terms PRUNED from RECIPE_PHRASES (e.g. "ingredients") — here they're
+# snippet ANCHORS for legibility, not scoring signals. Captured content is
+# lowercased, so these are lowercase.
+_SNIPPET_ANCHORS = (
+    "ingredients", "instructions", "directions", "method:", "method ",
+    "prep time", "cook time", "total time", "yield", "servings", "serves",
+    "preheat",
+)
+
+
+def _smart_snippet(content: str, max_chars: int = 400) -> str:
+    """A RECIPE-RELEVANT window of the captured (lowercased) page text. Anchors
+    on the earliest structural recipe marker so the curator sees the ingredient/
+    step region instead of the page header; falls back to the head when no marker
+    is present (which is itself a weak "probably not a recipe" tell)."""
+    if not content:
+        return ""
+    pos = -1
+    for a in _SNIPPET_ANCHORS:
+        i = content.find(a)
+        if i != -1 and (pos == -1 or i < pos):
+            pos = i
+    if pos == -1:
+        return content[:max_chars]
+    start = max(0, pos - 40)
+    if start > 0:  # snap to a word boundary so we don't cut mid-word
+        sp = content.find(" ", start)
+        start = sp + 1 if (sp != -1 and sp < pos) else start
+    snip = content[start:start + max_chars]
+    return ("…" + snip) if start > 0 else snip
+
+
+def _matched_phrases(content: str, limit: int = 30) -> list:
+    """The RECIPE_PHRASES actually present in the captured text — the exact
+    evidence the heuristic score is built from. A page dense with these
+    ("prep time", "1/2 cup", "preheat the", "bake for") is obviously a recipe;
+    an empty list is the strongest "not a recipe" tell. Ordered by RECIPE_PHRASES
+    so the high-signal structural markers come first. Best-effort: never raises."""
+    if not content:
+        return []
+    try:
+        from input.pipeline.config import RECIPE_PHRASES
+    except Exception:
+        return []
+    seen, out = set(), []
+    for p in RECIPE_PHRASES:
+        if p in content:
+            t = p.strip()
+            if t and t not in seen:
+                seen.add(t)
+                out.append(t)
+                if len(out) >= limit:
+                    break
+    return out
+
 
 def list_samples(*, limit=50, offset=0, search=None, decision=None,
-                 source=None, label=None, has_content=False, snippet_chars=400) -> dict:
-    """Page of samples for the correction UI (newest first) + a short content
-    snippet. Filters: ``search`` (url/title/content substring), ``decision``
-    ('kept'|'dropped'), ``source``, ``label``
-    ('unlabeled'|'labeled'|'recipe'|'not_recipe'), and ``has_content`` (True =
-    only rows the filter actually scored text for — hides fetch-failed and the
-    pre-fetch collection-title drops, i.e. the rows not worth correcting).
+                 source=None, label=None, has_content=False, snippet_chars=400,
+                 sort="recent") -> dict:
+    """Page of samples for the correction UI + a short content snippet. Filters:
+    ``search`` (url/title/content substring), ``decision`` ('kept'|'dropped'),
+    ``source``, ``label`` ('unlabeled'|'labeled'|'recipe'|'not_recipe'), and
+    ``has_content`` (True = only rows the filter actually scored text for — hides
+    fetch-failed and the pre-fetch collection-title drops, i.e. the rows not
+    worth correcting).
+
+    ``sort``: 'recent' (default, newest first) or 'borderline' — orders by
+    distance from the decision threshold (``ABS(recipe_score - threshold)``
+    ascending) so the most UNCERTAIN rows (score ≈ threshold) come first and the
+    JSON-LD certainties (score 100) sink. This is uncertainty sampling: the rows
+    where the heuristic is most likely WRONG are the highest-value to label.
     Returns ``{total, rows}`` (``total`` = rows matching the filter).
     """
     try:
@@ -226,6 +291,14 @@ def list_samples(*, limit=50, offset=0, search=None, decision=None,
             where.append("human_label = ?")
             params.append(label)
         clause = ("WHERE " + " AND ".join(where)) if where else ""
+        # 'borderline' = uncertainty sampling: nearest the threshold first. Rows
+        # with no score/threshold (pre-fetch drops, legacy) go last; recency
+        # breaks ties.
+        if sort == "borderline":
+            order_by = ("ORDER BY (recipe_score IS NULL OR threshold IS NULL) ASC, "
+                        "ABS(recipe_score - threshold) ASC, sample_id DESC")
+        else:
+            order_by = "ORDER BY sample_id DESC"
         conn = _connect()
         conn.row_factory = sqlite3.Row
         try:
@@ -233,14 +306,23 @@ def list_samples(*, limit=50, offset=0, search=None, decision=None,
                 f"SELECT COUNT(*) FROM is_recipe_samples {clause}", params
             ).fetchone()[0]
             rows = conn.execute(
-                f"SELECT {_LIST_COLUMNS}, substr(content, 1, ?) AS snippet "
+                f"SELECT {_LIST_COLUMNS}, content AS _content "
                 f"FROM is_recipe_samples {clause} "
-                f"ORDER BY sample_id DESC LIMIT ? OFFSET ?",
-                [int(snippet_chars), *params, int(limit), int(offset)],
+                f"{order_by} LIMIT ? OFFSET ?",
+                [*params, int(limit), int(offset)],
             ).fetchall()
         finally:
             conn.close()
-        return {"total": total, "rows": [dict(r) for r in rows]}
+        out = []
+        for r in rows:
+            d = dict(r)
+            content = d.pop("_content", "") or ""
+            # Surface the recipe EVIDENCE, not the page chrome: a recipe-anchored
+            # snippet + the matched recipe phrases the score is built from.
+            d["snippet"] = _smart_snippet(content, int(snippet_chars))
+            d["matched_phrases"] = _matched_phrases(content)
+            out.append(d)
+        return {"total": total, "rows": out}
     except Exception as ex:
         return {"total": 0, "rows": [], "error": f"{type(ex).__name__}: {ex}"}
 
