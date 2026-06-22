@@ -446,18 +446,16 @@ def fetch_with_full_fallback(url: str, *,
     render=True — none seen yet; revisit per-domain if so.)
     """
     err: Optional[Exception] = None
-    # Flagged domain → go straight to the unblocker (the direct fetch would only return a
-    # stub; the unblocker credit is spent either way on a blocking site, so this just
-    # saves the wasted round-trip + the direct→detect→escalate dance).
-    if unblocker and unblocker_available():
-        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
-        if ub is not None:
-            return ub
-        err = requests.HTTPError(f"Unblocker fetch failed for {url}")
-
+    # PLAIN FIRST (credit-conscious): try the free direct fetch; only escalate to the PAID
+    # unblocker if the page comes back as an anti-bot stub (or the fetch fails). So a page
+    # that loads fine plain costs ZERO unblocker credits — the unblocker is paid only when
+    # actually needed. (unblocker=True just ENABLES the escalation tier for this domain.)
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
-        return resp, {"source": "direct", "ua_used": ua_used}
+        if unblocker and unblocker_available() and _looks_blocked(resp):
+            err = requests.HTTPError(f"Soft-block challenge for {url} — escalating to unblocker")
+        else:
+            return resp, {"source": "direct", "ua_used": ua_used}
     except requests.HTTPError as e:
         # 404/410 came from a real response.raise_for_status() → terminal.
         status = getattr(e.response, "status_code", None) if e.response is not None else None
@@ -466,6 +464,12 @@ def fetch_with_full_fallback(url: str, *,
         err = e
     except Exception as e:
         err = e
+
+    # PAID unblocker tier — only reached when the plain fetch was blocked or failed.
+    if unblocker and unblocker_available():
+        ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
+        if ub is not None:
+            return ub
 
     if not try_wayback:
         raise err if err is not None else requests.HTTPError(f"Direct fetch failed for {url}")
