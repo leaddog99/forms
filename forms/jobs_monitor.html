@@ -60,13 +60,19 @@
     .jactions button.danger:hover{ border-color:var(--warn); color:var(--warn); }
     .empty{ color:var(--muted); text-align:center; padding:36px 0; }
 
-    .logpanel{ position:fixed; right:0; top:0; bottom:0; width:min(620px,92vw);
-      background:#1d1f23; color:#cdd3da; box-shadow:-4px 0 24px #0006; transform:translateX(100%);
-      transition:transform .18s ease; display:flex; flex-direction:column; z-index:50; }
-    .logpanel.open{ transform:translateX(0); }
-    .logpanel-head{ display:flex; align-items:center; gap:10px; padding:12px 14px;
-      border-bottom:1px solid #333a42; font-size:.9rem; }
-    .logpanel-head .x{ margin-left:auto; cursor:pointer; background:none; border:none; color:#cdd3da; font-size:1.3rem; line-height:1; }
+    .logpanel{ position:fixed; z-index:300; left:50%; top:84px; transform:translateX(-50%);
+      width:min(640px,94vw); height:min(68vh,620px); min-width:340px; min-height:200px;
+      background:#1d1f23; color:#cdd3da; border:1px solid #3a424c; border-radius:10px;
+      box-shadow:0 16px 48px #0009; display:none; flex-direction:column; overflow:hidden; resize:both; }
+    .logpanel.open{ display:flex; }
+    /* visible resize grip hint in the bottom-right (over the native handle) */
+    .logpanel::after{ content:''; position:absolute; right:3px; bottom:3px; width:11px; height:11px;
+      border-right:2px solid #6a727c; border-bottom:2px solid #6a727c; pointer-events:none; }
+    .logpanel-head{ display:flex; align-items:center; gap:10px; padding:10px 12px;
+      border-bottom:1px solid #333a42; font-size:.9rem; cursor:move; user-select:none; touch-action:none; }
+    .logpanel-head .x{ margin-left:auto; cursor:pointer; background:#333a42; border:1px solid #4a525c;
+      color:#e6eaee; font-size:.82rem; font-weight:600; line-height:1; padding:6px 12px; border-radius:7px; }
+    .logpanel-head .x:hover{ background:#454e58; border-color:#5a636e; }
     .logpanel-head .lstat{ font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:999px; background:#2a6db233; }
     .logbody{ flex:1; overflow:auto; padding:10px 14px; font-size:12px; line-height:1.5;
       white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
@@ -102,7 +108,7 @@
     <div class="logpanel-head">
       <span id="logTitle">Log</span>
       <span class="lstat" id="logStat"></span>
-      <button class="x" id="logClose" title="Close">×</button>
+      <button class="x" id="logClose" title="Close (Esc)">✕ Close</button>
     </div>
     <div class="logbody" id="logBody"></div>
   </div>
@@ -228,6 +234,33 @@
     let es = null;
     function closeLog(){ if (es){ es.close(); es = null; } panel.classList.remove('open'); }
     $('#logClose').addEventListener('click', closeLog);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && panel.classList.contains('open')) closeLog(); });
+
+    // Drag the window by its header (ignore the Close button). Resizing is native
+    // (CSS resize:both). Once dragged, it keeps its last position across re-opens.
+    (function makeDraggable(){
+      const handle = $('.logpanel-head');
+      let sx=0, sy=0, ox=0, oy=0, dragging=false;
+      handle.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('#logClose')) return;       // let the close button work
+        const r = panel.getBoundingClientRect();
+        panel.style.transform = 'none';                  // drop the centering transform
+        panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px';
+        ox = r.left; oy = r.top; sx = e.clientX; sy = e.clientY; dragging = true;
+        try { handle.setPointerCapture(e.pointerId); } catch(_){}
+        e.preventDefault();
+      });
+      handle.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        let nx = ox + (e.clientX - sx), ny = oy + (e.clientY - sy);
+        nx = Math.max(0, Math.min(nx, window.innerWidth - 80));   // keep a grab-edge on-screen
+        ny = Math.max(0, Math.min(ny, window.innerHeight - 40));
+        panel.style.left = nx + 'px'; panel.style.top = ny + 'px';
+      });
+      const end = (e) => { dragging = false; try { handle.releasePointerCapture(e.pointerId); } catch(_){} };
+      handle.addEventListener('pointerup', end);
+      handle.addEventListener('pointercancel', end);
+    })();
 
     function setLogStat(s){ logStat.textContent = s || ''; }
     function appendLog(line){
