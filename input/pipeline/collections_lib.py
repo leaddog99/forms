@@ -612,7 +612,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
                           unblocker=False, should_cancel=None, backlinks_dir=None,
-                          url_prefilter=False, exclude_words=None) -> dict:
+                          url_prefilter=False, exclude_words=None, score_only=False) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -639,6 +639,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     save_recipe_api._handle_publisher_refresh_job, which extracts the selected
     winners (with backfill) right after persisting these members. (So a publisher
     refresh DOES populate master_recipes; this library fn just doesn't.)"""
+    # SCORE-ONLY mode (anti-bot / expensive publishers, docs/score-only-curation.md):
+    # rank by Moz (URL-only, zero renders) WITHOUT the per-candidate fetch-verify, and
+    # mark NO winners — the human selects which to process from the scored list. So force
+    # the verify OFF here regardless of what the caller passed.
+    if score_only:
+        check_recipe = False
     if source == "backlinks_file":
         found = _read_backlinks_file(domain, want=int(records or discover_n or 100),
                                      extra_dir=backlinks_dir)
@@ -758,7 +764,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     keep = max(1, int(keep or 10))
     for i, m in enumerate(scored, 1):
         m["rank"] = i
-        m["selected"] = 1 if i <= keep else 0
+        # score_only: mark NOTHING selected — the human picks winners from the scored list.
+        m["selected"] = 0 if score_only else (1 if i <= keep else 0)
     # Thumbnail the SELECTED top-N only (bounded) — captures og:image so discovered
     # members show a picture; ingested members override with the master's real image.
     n_img = n_serp = 0

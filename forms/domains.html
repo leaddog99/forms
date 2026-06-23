@@ -329,6 +329,10 @@
             <button type="button" class="ed-btn danger" id="clearTopBtn" title="Wipe the current stored list (start over)">🗑 Clear list</button>
             <span class="ed-save-hint" id="topHint"></span>
           </div>
+          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;font-size:.86em">
+            <input type="checkbox" id="f_score_only">
+            <span><b>Score only</b> — rank the URLs by Moz (zero fetches/renders) and ingest <i>nothing</i>. Then open the <b>☰ Scored cohort</b> below, check the worthy ones, and <b>⚙ Process selected</b> to ingest just those via the unblocker. For anti-bot / expensive sites where fetch-to-verify is the costly mistake.</span>
+          </label>
           <pre id="topLog" style="display:none;max-height:240px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;margin:0 0 10px;white-space:pre-wrap;"></pre>
 
           <!-- Recipes already in the corpus from this domain (browse/jump). Lifted
@@ -344,7 +348,10 @@
 
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 6px">
             <p class="ed-notes-help" id="topListLabel" style="margin:0">Kept top recipes:</p>
-            <button type="button" class="ed-btn" id="cohortToggle" data-on="0" style="font-size:.8em" title="Show EVERY scored candidate — winners ★ plus the ranked-but-not-kept also-rans, with DA/PA — like the dishes scored cohort">☰ Scored cohort</button>
+            <div style="display:flex;gap:6px;align-items:center">
+              <button type="button" class="ed-btn" id="processSelBtn" style="font-size:.8em;display:none" title="Extract the CHECKED rows into master via the unblocker (1 render each)">⚙ Process selected</button>
+              <button type="button" class="ed-btn" id="cohortToggle" data-on="0" style="font-size:.8em" title="Show EVERY scored candidate — winners ★ plus the ranked-but-not-kept also-rans, with DA/PA — like the dishes scored cohort">☰ Scored cohort</button>
+            </div>
           </div>
           <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
         </section>
@@ -378,6 +385,7 @@
       $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
+      $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
       $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
       document.querySelectorAll('input[name=harvestSource]').forEach(r =>
         r.addEventListener('change', applySrcSelection));
@@ -459,8 +467,12 @@
         const actions =
           (bccHref ? `<a class="top-action top-action-primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener">Open in BCC</a>` : '') +
           `<a class="top-action top-action-secondary" href="${escapeHtml(m.url || '#')}" target="_blank" rel="noopener" title="${escapeHtml(m.url || '')}">View source <span class="top-action-arrow">↗</span></a>`;
+        // Curation checkbox (non-ingested rows only): check the worthy ones → ⚙ Process
+        // selected ingests just those via the unblocker. Already-in-corpus rows have none.
+        const pick = m.ingested ? '' :
+          `<input type="checkbox" class="ms-pick" data-url="${escapeHtml(m.url || '')}" title="select to process into master" style="margin-right:8px;width:16px;height:16px;vertical-align:middle;accent-color:var(--accent)">`;
         return `<div class="top-recipe-row"${m.selected ? '' : ' style="opacity:.56"'}>${tile}<div class="top-recipe-body">` +
-          `<div class="top-recipe-main"><span class="top-rank">#${m.rank || i + 1}</span>` +
+          `<div class="top-recipe-main">${pick}<span class="top-rank">#${m.rank || i + 1}</span>` +
           `<span class="top-recipe-title">${title}</span> <span class="top-recipe-host">${escapeHtml(host)}</span>${badges}</div>` +
           `<div class="top-recipe-meta">${escapeHtml(meta.join(' · '))}</div>` +
           `<div class="top-recipe-actions">${actions}</div>` +
@@ -475,6 +487,9 @@
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
         renderDomainTop(d.top || [], !!all);
+        // ⚙ Process selected is for the cohort/worklist (where you check candidates);
+        // hidden in the winners-only view (those are already ingested).
+        const psb = $('#processSelBtn'); if (psb) psb.style.display = all ? 'inline-flex' : 'none';
         const lbl = $('#topListLabel');
         if (lbl) lbl.textContent = all
           ? `Scored cohort — ${d.count} candidates (${d.selected_count || 0} kept ★, rest are also-rans)`
@@ -484,6 +499,29 @@
 
     // Publisher refresh: run the (verbatim) query → verify recipes → Moz-score →
     // keep top-N (inline; slower when verify is on — it fetches each candidate).
+    // Score-only path #1: ingest the CHECKED cohort rows into master via the unblocker
+    // (out-of-process; 1 render each). Reuses streamRefresh for the live log + reload +
+    // cancel; renderResult shows the "ingested N of M" summary.
+    async function processSelected(domain){
+      const picks = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
+        .map(c => c.dataset.url).filter(Boolean);
+      const hint = $('#topHint'), btn = $('#processSelBtn');
+      if (!picks.length){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Check at least one row to process.'; } return; }
+      if (!confirm(`Process ${picks.length} selected recipe(s) through the unblocker into master? (1 fetch/render each)`)) return;
+      if (btn){ btn.disabled = true; btn.textContent = '⏳ Processing…'; }
+      const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
+      if (hint){ hint.style.color = ''; hint.textContent = `Queuing ${picks.length} for processing…`; }
+      const restore = () => { if (btn){ btn.disabled = false; btn.textContent = '⚙ Process selected'; } };
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/process-selected`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: picks }) });
+        const data = await r.json().catch(() => ({}));
+        if (r.status !== 409 && !r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        streamRefresh(data.stream_url, domain, data.job_id);   // live log + reload-on-done + cancel
+        restore();
+      } catch (e){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Process failed: ' + (e.message || e); } restore(); }
+    }
+
     async function doRefreshTop(domain){
       const btn = $('#refreshTopBtn'), hint = $('#topHint');
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
@@ -496,13 +534,14 @@
       const url_prefilter = $('#f_url_prefilter')?.checked ? 1 : 0;
       const exclude_words = ($('#f_exclude_words')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
-      btn.disabled = true; btn.textContent = '⏳ Harvesting…';
+      const score_only = $('#f_score_only')?.checked ? 1 : 0;
+      btn.disabled = true; btn.textContent = score_only ? '⏳ Scoring…' : '⏳ Harvesting…';
       const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
       if (hint){ hint.style.color = ''; hint.textContent = 'Queuing refresh job…'; }
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, url_prefilter, exclude_words, check_recipe }) });
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, url_prefilter, exclude_words, check_recipe, score_only }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain, data.job_id); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
@@ -547,6 +586,14 @@
           .then(fresh => { domains[domain] = fresh; renderList(); }).catch(() => {});
         if (status === 'cancelled' || cancelled){ done('Cancelled.', false); return; }
         if (status === 'error'){ done(`Refresh errored — ${errorMsg || 'see the job log'}.`, true); return; }
+        if (res && res.score_only){
+          done(`Scored ${res.stored || 0} candidates (no fetch/ingest). Open ☰ Scored cohort, check the worthy ones, then ⚙ Process selected.`);
+          return;
+        }
+        if (res && res.ingested !== undefined){   // process-selected job
+          done(`Done — ingested ${res.ingested} of ${res.requested || 0} selected into master.`);
+          return;
+        }
         const ok = ((res && res.stored) || 0) > 0;
         done(ok ? `Done & saved — ${res.stored} stored (${res.discovered} found, ${res.recipe_pass} passed the recipe check).`
                 : `Done — 0 stored (${(res && res.discovered) || 0} found, ${(res && res.recipe_pass) || 0} passed). Paywalled? Uncheck “verify”, refine the query, or check Skip.`,

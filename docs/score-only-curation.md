@@ -23,27 +23,41 @@ out of a 180-URL SEMrush export costs **~180 paid renders**. That's the wrong tr
   the human picks**, one render per chosen recipe. Human labor (review + click) replaces
   automated render-verify; the only standing cost is the cheap Moz ranking.
 
-## The model
+## The model — one scored list, a human in the middle, two processing paths
 
-1. **Score-only harvest.** Take the SEMrush URLs → run the free pre-filters
-   (archive/collection/url-word) → **Moz-score all** → compute `rank_score` → store **all**
-   in `collection_members` (ranked; top-N marked `selected`). **No fetch, no render, no
-   unblocker.** This is the existing harvest with the **render-verify step skipped**
-   (`check_recipe=False`) and **no auto-ingest**.
-2. **The cohort view is the worklist.** The existing "☰ Scored cohort" panel already
-   renders the ledger ranked with DA/PA + a source link. Each row gets one action:
-   **Open in editor** (deep-links the URL into the recipe form's extract-from-URL).
-3. **Click = curate + pay.** Opening a row in the editor fires extract-from-URL, which
-   **already routes a `fetch_strategy='unblocker'` domain through the unblocker** (render
-   per `render_required`) → the real recipe populates the editor → the human reviews/edits
-   → **Save → master**. "As if it came from the browser page" — identical editor flow to a
-   paste/bookmarklet, just originated from the worklist.
-4. **Status self-updates.** The cohort view LEFT-JOINs `master_recipes` on `url_normalized`,
-   so a saved recipe's row flips to **"in corpus"** automatically — the worklist shows
-   what's done with no extra plumbing.
+**Shared front (identical for both paths).** SEMrush/SerpApi *supplies the URL list*;
+**Moz scores them all** (URL-only → DA/PA → `rank_score`). Run the free pre-filters
+(archive/collection/url-word) first; **no fetch, no render, no unblocker.** Store **all**
+candidates in `collection_members`, ranked, **none auto-selected**. Render the list in a
+form **sorted by `rank_score` desc, with a checkbox per row**. The human is now the man in
+the middle of *selection*. The real structural change vs today's harvest: **Moz runs
+BEFORE any fetch** (today it fetch-verifies first, then Moz the survivors).
 
-**Cost:** Moz ranking (cheap, metered, no renders) + **1 unblocker render per recipe the
-human actually clicks**. Unclicked rows cost nothing.
+Then the human checks the worthy rows (judging from the **slug** + score + the SEMrush
+keyword/traffic) and picks a destination:
+
+### Path #1 — "Process selected" (automated · paid · hands-off)  ← BUILD FIRST
+The checked URLs go through the **existing batch ingest** — `extract_recipe_from_url`
+(which already routes a `fetch_strategy='unblocker'` domain through the unblocker, render
+per `render_required`) → save to `master_recipes` (`_master.kind='top'`). Everything
+downstream is the *current* harvest code; we've only (a) gated it to the **checked** URLs
+and (b) moved Moz earlier. **Cost: 1 unblocker render per *checked* URL** (vs one per
+candidate today). Unchecked rows cost nothing but their Moz score.
+
+### Path #2 — "Queue for manual capture" (manual · free · beats the bot)
+The checked URLs form a **queue the human works in their own browser, one at a time**:
+open the page (a real browser loads it fine — *not* blocked), the **bookmarklet** grabs the
+live JSON-LD → editor → save to master. **Zero unblocker cost** — human labor replaces the
+paid render. Honest limit: the capture is genuinely per-page manual (we can't auto-inject
+the bookmarklet into a third-party page — cross-origin), but the app smooths it: present the
+queue, "open next", and **auto-tick done** as each saves.
+
+**Status self-updates (both paths).** The cohort/worklist view LEFT-JOINs `master_recipes`
+on `url_normalized`, so a saved recipe's row flips to **"in corpus"** automatically.
+
+**Pick per situation:** a big batch you trust → #1 (paid, hands-off); a handful of gems →
+#2 (free, hands-on). Both start from the same scored, checkboxed list — the only divergence
+is the button.
 
 ## What already exists (reuse, don't build)
 
@@ -57,20 +71,36 @@ human actually clicks**. Unclicked rows cost nothing.
   worthiness signal to show on each worklist row.
 - The **"in corpus" URL-join** gives free done/not-done status.
 
-## To build (small)
+## To build
 
-- **(a) `score_only` harvest mode** — `harvest_publisher_top` / the `publisher_refresh`
-  job: when set, skip the recipe-verify fetch loop and the auto-extract; just pre-filter →
-  Moz-score all → `rank_score` → `replace_members` (all, top-N `selected`). Essentially
-  `check_recipe=False` + `ingest=False`.
-- **(b) Worklist surfacing** — make the scored-cohort view first-class for these domains
-  (default to it; sortable by score) and add the per-row **Open in editor** deep-link
-  (recipe form with `?url=…` auto-running extract).
-- **(c) Editor extract → unblocker** — *already wired.* Only caveat: a JS-blocked site
-  needs `render_required=1` (auto-learned from a prior harvest, or one manual tick) or the
-  click extracts the stub. Optional hardening: give the editor extract the same
-  thin-shell→render=True escalation the harvest filter has, so a never-harvested score-only
-  domain self-heals on the first click.
+### Shared (both paths)
+- **`score_only` harvest mode** — `harvest_publisher_top` + the `publisher_refresh` job:
+  when set, force `check_recipe=False`, mark **no** members `selected`, and the job **skips
+  the auto-extract** block. Net: pre-filter → Moz-score all → `rank_score` →
+  `replace_members` (all candidates, `selected=0`). No fetch/render.
+- **Worklist UI** — the scored-cohort panel in `domains.html` gets a **checkbox per row**
+  (non-ingested rows) + a sticky action bar: **"Process selected (unblocker)"** [#1] and
+  later **"Queue for manual capture"** [#2]. Sorted by `rank_score` desc; shows
+  slug/score/DA-PA/keyword. "in corpus" rows are disabled (already done).
+
+### Path #1 (BUILD NOW)
+- **`POST /domains/{domain}/process-selected`** `{urls:[…]}` → enqueue a `process_selected`
+  job + spawn out-of-process; in-flight-deduped; returns job id + stream url.
+- **`process_selected` job handler** — loop the given URLs through the **shared per-URL
+  extract→master helper** (`extract_recipe_from_url` force-refresh → save-gate →
+  render-retry → `_save_recipe_core` with `_master.kind='top'`, `publisher=host`), **append**
+  (don't retire the publisher's existing master block), and **mark `selected=1`** in the
+  ledger for each saved URL so the worklist reflects it.
+- **Factor the per-URL extract+save** out of `_handle_publisher_refresh_job`'s existing
+  auto-extract block into that shared helper (single-path — the harvest winner-extract and
+  process-selected must not drift).
+- **Editor extract → unblocker is already wired** (`extract_recipe_from_url` ~6597 resolves
+  `fetch_strategy`/`render_required`). A JS-blocked site needs `render_required=1`
+  (auto-learned by a prior harvest, or one tick).
+
+### Path #2 (LATER)
+- A **manual-capture queue** view (steps the human through open-page → bookmarklet) +
+  done-tracking via the URL-join. No server fetch; reuses the existing bookmarklet/editor.
 
 ## Open decisions
 

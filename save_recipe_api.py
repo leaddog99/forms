@@ -3700,6 +3700,59 @@ def domain_recipes_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
+                                           batch_source: str, log_prefix: str = "[INGEST]") -> bool:
+    """Extract ONE publisher URL and save it to master_recipes as a kind='top' member.
+    SHARED by the harvest's winner auto-extract AND the score-only 'process selected' path
+    so the two never drift: extract (force-refresh) → save-gate → render-retry-on-thin →
+    `_save_recipe_core` with the `_master` top/publisher block. Honors the domain's
+    fetch policy (unblocker/render) via extract_recipe_from_url. Returns True iff saved.
+    Ledger lifecycle (retire / re-flag selected) stays with the caller."""
+    try:
+        extract_result = await asyncio.to_thread(
+            extract_recipe_from_url, url, user_id=0, force_refresh=True)
+    except Exception as e:
+        print(f"{log_prefix} EXTRACT-MISS {url}: {type(e).__name__}: {e}")
+        return False
+    recipe_dict = (extract_result or {}).get("recipe") or {}
+    ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                               min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
+    # RENDER-RETRY-ON-THIN: a JS publisher can render PARTIALLY (the recipe card loads
+    # late → empty/thin extract). Retry ONCE forcing a full-browser render before giving up.
+    if not ok:
+        print(f"{log_prefix} THIN ({reason}) — render-retry {url}")
+        try:
+            extract_result = await asyncio.to_thread(
+                extract_recipe_from_url, url, user_id=0, force_refresh=True, fetch_render=True)
+            recipe_dict = (extract_result or {}).get("recipe") or {}
+            ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                                       min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
+        except Exception as e:
+            print(f"{log_prefix} render-retry failed {url}: {type(e).__name__}: {e}")
+    if not ok:
+        print(f"{log_prefix} SKIP-THIN {reason}  {url}")
+        return False
+    payload = dict(recipe_dict)
+    payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
+    payload["user_id"] = 0
+    # publisher recipes carry no _master.dish, so they never leak into a dish's top-N.
+    payload["_master"] = {
+        "kind": "top", "publisher": host,
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "rank": rank, "batch_source": batch_source,
+    }
+    payload["_skip_auto_enrich"] = True   # fast/cheap; enrich later
+    try:
+        await asyncio.to_thread(_save_recipe_core, payload)
+        print(f"{log_prefix} SAVED master {url}")
+        return True
+    except HTTPException as e:
+        print(f"{log_prefix} SAVE-FAIL {url}: {e.status_code} {e.detail}")
+    except Exception as e:
+        print(f"{log_prefix} SAVE-FAIL {url}: {type(e).__name__}: {e}")
+    return False
+
+
 async def _handle_publisher_refresh_job(job: dict) -> dict:
     """Publisher refresh, OUT-OF-PROCESS: run the verbatim query, verify recipes,
     Moz-score, keep top-N, store as publisher collection membership + persist the
@@ -3720,9 +3773,11 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     url_prefilter = bool(p.get("url_prefilter"))   # drop non-food/recipe URLs before fetch (opt-in)
     exclude_words = p.get("exclude_words") or ""   # per-domain exclusionary section words
     unblocker = bool(p.get("unblocker"))           # fetch_strategy='unblocker' → live paid fetch
+    score_only = bool(p.get("score_only"))         # Moz-rank only, no fetch/verify/ingest (curation)
     job_id = job.get("id")
     print(f"[PUBLISHER-REFRESH] {host} | source={source} query={query!r} pages={pages} "
-          f"records={records} keep={keep} check_recipe={check_recipe} unblocker={unblocker}")
+          f"records={records} keep={keep} check_recipe={check_recipe} unblocker={unblocker} "
+          f"score_only={score_only}")
 
     def _should_cancel():
         # Cross-process poll: the server sets cancel_requested; we (the out-of-process
@@ -3739,7 +3794,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             recipe_path=recipe_path, query=query, check_recipe=check_recipe,
             source=source, records=records, unblocker=unblocker,
             backlinks_dir=backlinks_dir, url_prefilter=url_prefilter,
-            exclude_words=exclude_words, should_cancel=_should_cancel)
+            exclude_words=exclude_words, should_cancel=_should_cancel, score_only=score_only)
         with _db() as conn:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
@@ -3761,6 +3816,16 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     res = await asyncio.to_thread(_work)
     print(f"[PUBLISHER-REFRESH] done — discovered={res['discovered']} "
           f"recipe_pass={res['recipe_pass']} scored={res['scored']} stored={len(res['members'])}")
+
+    # SCORE-ONLY: stop here — no fetch-verify happened and we deliberately ingest NOTHING.
+    # The scored candidates are now in the ledger (selected=0); the curator picks winners
+    # in the cohort view and ingests just those via POST /domains/{host}/process-selected.
+    if score_only:
+        print(f"[PUBLISHER-REFRESH] score-only — {len(res['members'])} candidates scored & "
+              f"stored, 0 fetched/ingested. Select winners → Process selected.")
+        return {"discovered": res["discovered"], "recipe_pass": res["recipe_pass"],
+                "scored": res["scored"], "stored": len(res["members"]),
+                "extracted": 0, "score_only": True, "recipe_path": res.get("recipe_path")}
 
     # ---- ledger -> master: AUTO-EXTRACT the selected winners (mirrors dish refresh) ----
     # The harvest above only built the ranked LEDGER (collection_members). This is the
@@ -3804,56 +3869,10 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         url = m.get("url")
         if not url:
             continue
-        try:
-            extract_result = await asyncio.to_thread(
-                extract_recipe_from_url, url, user_id=0, force_refresh=True)
-        except Exception as e:
-            print(f"[PUBLISHER-REFRESH] EXTRACT-MISS {url}: {type(e).__name__}: {e}")
-            continue
-        recipe_dict = (extract_result or {}).get("recipe") or {}
-        ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
-                                   min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
-        # RENDER-RETRY-ON-THIN: a JS publisher can render PARTIALLY (the recipe card
-        # loads late → empty/thin extract). Retry ONCE forcing a full-browser render
-        # before giving up. Cheap insurance; roundup/listicle pages stay thin and are
-        # still (correctly) skipped after the retry.
-        if not ok:
-            print(f"[PUBLISHER-REFRESH] THIN ({reason}) — render-retry {url}")
-            try:
-                extract_result = await asyncio.to_thread(
-                    extract_recipe_from_url, url, user_id=0, force_refresh=True, fetch_render=True)
-                recipe_dict = (extract_result or {}).get("recipe") or {}
-                ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
-                                           min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
-            except Exception as e:
-                print(f"[PUBLISHER-REFRESH] render-retry failed {url}: {type(e).__name__}: {e}")
-        if not ok:
-            print(f"[PUBLISHER-REFRESH] SKIP-THIN {reason}  {url}")
-            continue
-        payload = dict(recipe_dict)
-        payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
-        payload["user_id"] = 0
-        # Membership is the collection_members ledger (joined on url_normalized); the
-        # _master block records provenance + the re-sequenced rank over actually-saved
-        # winners. publisher recipes carry no _master.dish, so they never leak into a
-        # dish's top-N. Auto-enrich stays off — fast/cheap harvest; enrich later.
-        payload["_master"] = {
-            "kind": "top",
-            "publisher": host,
-            "refreshed_at": now_iso,
-            "rank": extracted + 1,
-            "batch_source": "/domains/refresh-top",
-        }
-        payload["_skip_auto_enrich"] = True
-        try:
-            await asyncio.to_thread(_save_recipe_core, payload)
+        if await _extract_publisher_url_to_master(
+                url, host, extracted + 1, "/domains/refresh-top", "[PUBLISHER-REFRESH]"):
             extracted += 1
             saved_urls.append(url)
-            print(f"[PUBLISHER-REFRESH] SAVED master #{extracted} {url}")
-        except HTTPException as e:
-            print(f"[PUBLISHER-REFRESH] SAVE-FAIL {url}: {e.status_code} {e.detail}")
-        except Exception as e:
-            print(f"[PUBLISHER-REFRESH] SAVE-FAIL {url}: {type(e).__name__}: {e}")
     print(f"[PUBLISHER-REFRESH] extracted {extracted} winner(s) into master (+cache)")
 
     # Re-flag the ledger so selected=1 matches the ACTUALLY-saved winners: backfill
@@ -3883,6 +3902,95 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("publisher_refresh", _handle_publisher_refresh_job)
+
+
+async def _handle_process_selected_job(job: dict) -> dict:
+    """Score-only path #1: ingest a curator-SELECTED set of this publisher's URLs into
+    master (via the unblocker, per the domain's fetch policy), OUT-OF-PROCESS. Uses the
+    SHARED per-URL extract→master helper (same as the harvest winner-extract), APPENDS
+    (does NOT retire the publisher's existing block — this is incremental curation), and
+    marks each saved URL selected=1 in the ledger so the worklist reflects it. The cheap
+    half (Moz ranking) already ran in the score-only harvest; this pays a render only for
+    the URLs the human chose. See docs/score-only-curation.md."""
+    p = job.get("params") or {}
+    host = (p.get("host") or "").strip()
+    urls = [u for u in (p.get("urls") or []) if u]
+    job_id = job.get("id")
+    if not host or not urls:
+        raise ValueError("process_selected requires params.host + non-empty params.urls")
+    print(f"[PROCESS-SELECTED] {host} | {len(urls)} selected URL(s)")
+
+    def _should_cancel():
+        try:
+            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+                return jobs_lib.is_cancel_requested(conn, job_id)
+        except Exception:
+            return False
+
+    from input.pipeline.url_utils import normalize_url as _norm
+    saved_urls: list[str] = []
+    for i, url in enumerate(urls, 1):
+        if _should_cancel():
+            print("[PROCESS-SELECTED] cancel requested — stopping")
+            break
+        print(f"[PROCESS-SELECTED] [{i}/{len(urls)}] {url}")
+        if await _extract_publisher_url_to_master(
+                url, host, i, "/domains/process-selected", "[PROCESS-SELECTED]"):
+            saved_urls.append(url)
+    # Mark the ACTUALLY-saved URLs selected=1 (append; leave the rest of the ledger as-is).
+    if saved_urls:
+        try:
+            with _db() as conn:
+                for u in saved_urls:
+                    conn.execute(
+                        "UPDATE collection_members SET selected = 1 WHERE "
+                        "collection_type='publisher' AND collection_key=? AND url_normalized=?",
+                        (host, _norm(u) or u))
+                conn.commit()
+        except Exception as e:
+            print(f"[PROCESS-SELECTED] ledger re-flag failed: {type(e).__name__}: {e}")
+    print(f"[PROCESS-SELECTED] done — ingested {len(saved_urls)}/{len(urls)} into master")
+    return {"host": host, "requested": len(urls), "ingested": len(saved_urls)}
+
+
+jobs_lib.register_handler("process_selected", _handle_process_selected_job)
+
+
+@app.post("/domains/{domain}/process-selected")
+def process_selected_endpoint(domain: str, payload: dict = Body(...)):
+    """Score-only path #1 — ingest a curator-selected set of this publisher's URLs into
+    master (via the unblocker), OUT-OF-PROCESS (renders are slow). payload {urls:[...]}.
+    Returns job id + stream url; in-flight-deduped. See docs/score-only-curation.md."""
+    from input.pipeline import domains_lib
+    host = domains_lib._canon_host(domain)
+    raw = payload.get("urls") or []
+    urls = [u for u in (raw if isinstance(raw, list) else [raw]) if u]
+    if not urls:
+        raise HTTPException(status_code=400, detail="No URLs selected to process.")
+    with _db() as conn:
+        entity_ref = f"process-selected:{host}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "error": "already in flight", "job_id": existing["id"],
+                "status": existing["status"], "stream_url": f"/jobs/{existing['id']}/stream"})
+        job_id = jobs_lib.enqueue_job(
+            conn, type="process_selected",
+            params={"host": host, "urls": urls, "log_label": f"{host} (selected ×{len(urls)})"},
+            entity_ref=entity_ref)
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=_detached_flags())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to spawn process-selected job: {e}")
+    return JSONResponse(status_code=202, content={
+        "job_id": job_id, "status": "queued", "domain": host, "count": len(urls),
+        "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
 
 
 @app.post("/domains/{domain}/refresh-top")
@@ -3936,6 +4044,10 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         # An explicit payload check_recipe overrides (e.g. to spot-audit a paywall site).
         paywalled = bool(int(row.get("paywall", 0) or 0))
         check_recipe = bool(payload.get("check_recipe", not paywalled))
+        # Score-only: Moz-rank the URLs (zero renders) and ingest NOTHING — the curator
+        # selects winners from the scored list and processes just those. See
+        # docs/score-only-curation.md.
+        score_only = bool(payload.get("score_only"))
         # Depth = per-request → per-publisher (domains.search_pages) → system default
         # (system_config 'serp_default_pages', admin-editable). No hard 10 cap now
         # (Scale SERP page-loops); each page is 1 credit + (verify) 1 fetch.
@@ -3954,7 +4066,7 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
                     "recipe_path": recipe_path, "check_recipe": check_recipe,
                     "source": source, "records": records, "log_label": host,
                     "backlinks_dir": backlinks_dir, "url_prefilter": url_prefilter,
-                    "exclude_words": exclude_words,
+                    "exclude_words": exclude_words, "score_only": score_only,
                     "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
             entity_ref=entity_ref)
     import subprocess
