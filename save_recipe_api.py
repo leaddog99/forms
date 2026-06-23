@@ -281,7 +281,7 @@ def _find_recipe_owner(recipe_id: str) -> int | None:
     indexed lookups by recipe_id (UUID column).
     """
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 "SELECT user_id FROM master_recipes WHERE recipe_id = ?",
                 (recipe_id,),
@@ -332,7 +332,7 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
     if not usage_log:
         return
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             write_usage_entries(
                 conn,
                 user_id=user_id,
@@ -599,7 +599,7 @@ def _attach_moz_scoring(recipe, url_normalized):
     if not url_normalized or not recipe:
         return
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ensure_metabase_url_table(conn)
             fallback_title = (
                 (recipe.get("_scoring") or {}).get("rawTitle")
@@ -656,7 +656,7 @@ def _maybe_stamp_source_drift(timings, *, user_id):
     table = _recipes_table_for(user_id)
     try:
         now = datetime.utcnow().isoformat()
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cursor = conn.execute(
                 f"UPDATE {table} SET source_changed_at = ? "
                 f"WHERE url_normalized = ? AND user_id = ?",
@@ -674,7 +674,7 @@ def _maybe_stamp_source_drift(timings, *, user_id):
 def init_db():
     print("[SETUP] Creating database tables if needed...")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             # WAL is a hard prerequisite for running batch jobs as their own
             # out-of-process executable (docs/jobs-as-executables.md §6): a job
             # process and the server both writing recipes.db under the default
@@ -934,7 +934,7 @@ init_db()
 # Load the ingredient synonym map (cached) so embeddings.normalize() canonicalizes
 # ingredient phrasing during embed composition. Seeds the table on first run.
 try:
-    with sqlite3.connect(DB_PATH) as _c:
+    with sqlite3.connect(DB_PATH, timeout=30) as _c:
         from input.pipeline import ingredients_lib
         ingredients_lib.load_map(_c)
         print(f"[SETUP] ingredient synonym map loaded ({len(ingredients_lib._MAP or {})} terms)")
@@ -1121,7 +1121,7 @@ def cook_ask_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="recipe_id and question are required.")
 
     table = _recipes_table_for(user_id)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = conn.execute(
             f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
         ).fetchone()
@@ -1168,7 +1168,7 @@ def cook_ask_stream_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="recipe_id and question are required.")
 
     table = _recipes_table_for(user_id)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = conn.execute(
             f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
         ).fetchone()
@@ -1282,7 +1282,7 @@ def recipe_memberships_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
     from input.pipeline import collections_lib
     table = _recipes_table_for(user_id)
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 f"SELECT url_normalized FROM {table} WHERE recipe_id = ?", (recipe_id,)
             ).fetchone()
@@ -1309,7 +1309,7 @@ def recipe_memberships_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
 def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
     table = _recipes_table_for(user_id)
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
                 f"FROM {table} WHERE recipe_id = ?",
@@ -1413,7 +1413,7 @@ def similar_master_recipes(payload: dict = Body(...)):
         similar_max = 0.95
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             vector_store.enable_vec(conn)
 
             # --- Tier 1: dish-anchored -------------------------------------
@@ -1484,7 +1484,7 @@ def similar_master_recipes(payload: dict = Body(...)):
 def list_ingredient_synonyms():
     """All synonym groups for the a/c/d editor, plus the alias-type vocab."""
     from input.pipeline import ingredients_lib
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         ingredients_lib.ensure_ingredient_synonyms_table(conn)
         return {"groups": ingredients_lib.list_groups(conn),
                 "alias_types": list(ingredients_lib.ALIAS_TYPES)}
@@ -1498,7 +1498,7 @@ def upsert_ingredient_synonym(payload: dict = Body(...)):
     canon = (payload or {}).get("canonical")
     if not canon or not str(canon).strip():
         raise HTTPException(status_code=400, detail="canonical is required")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         ingredients_lib.ensure_ingredient_synonyms_table(conn)
         try:
             g = ingredients_lib.upsert_group(
@@ -1513,7 +1513,7 @@ def upsert_ingredient_synonym(payload: dict = Body(...)):
 @app.delete("/ingredient-synonyms/{canonical}")
 def delete_ingredient_synonym(canonical: str):
     from input.pipeline import ingredients_lib
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         ingredients_lib.ensure_ingredient_synonyms_table(conn)
         ok = ingredients_lib.delete_group(conn, canonical)
         ingredients_lib.load_map(conn)
@@ -1559,7 +1559,7 @@ def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
     new_recipe_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 f"SELECT data, url_normalized FROM {source_table} WHERE recipe_id = ?",
                 (recipe_id,),
@@ -1672,7 +1672,7 @@ def promote_to_master(recipe_id: str, request: Request):
     now = datetime.utcnow().isoformat()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 f"SELECT data FROM {source_table} WHERE recipe_id = ?",
                 (recipe_id,),
@@ -1938,7 +1938,7 @@ async def generate_recipe_image_endpoint(
     if owner is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
     table = _recipes_table_for(owner)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = conn.execute(
             f"SELECT data FROM {table} WHERE recipe_id = ?",
             (recipe_id,),
@@ -2012,7 +2012,7 @@ async def generate_recipe_image_endpoint(
 @app.get("/users")
 def list_users():
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             rows = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
                 "subscription_tier, role, created_at, updated_at "
@@ -2051,7 +2051,7 @@ def _resolve_caller(request: Request) -> Optional[dict]:
     self-user-id header. Helper for endpoints that need to know who's
     calling."""
     header = request.headers.get("x-self-user-id")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         return auth_lib.resolve_user(conn, header)
 
 
@@ -2118,7 +2118,7 @@ async def create_user(request: Request):
                                    f"{sorted(auth_lib.ROLE_PERMISSIONS.keys())}")
     now = datetime.utcnow().isoformat()
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cur = conn.execute(
                 "INSERT INTO users (email, name, status, subscription_tier, role, "
                 "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -2190,7 +2190,7 @@ async def update_user(user_id: int, request: Request):
     params.append(now)
     params.append(user_id)
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cur = conn.execute(
                 f"UPDATE users SET {', '.join(sets)} WHERE user_id = ?",
                 params,
@@ -2228,7 +2228,7 @@ def delete_user(user_id: int):
         raise HTTPException(status_code=403,
                             detail="user_id 0 is reserved for master_recipes")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM recipes WHERE user_id = ?", (user_id,)
             ).fetchone()[0]
@@ -2270,7 +2270,7 @@ def delete_user(user_id: int):
 @app.get("/dishes")
 def list_dishes_endpoint():
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return dishes_lib.list_dishes(conn)
     except Exception as e:
         print(f"[ERROR] list_dishes failed: {e}")
@@ -2301,7 +2301,7 @@ def suggested_dishes_endpoint(min_count: int = 3):
     completes (the timing the user suggested 2026-05-28).
     """
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             sql = """
                 WITH carded AS (
                     SELECT
@@ -2354,7 +2354,7 @@ def suggested_dishes_endpoint(min_count: int = 3):
 @app.get("/dishes/{name}")
 def get_dish_endpoint(name: str):
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             d = dishes_lib.get_dish(conn, name)
             if d is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2390,7 +2390,7 @@ async def create_dish_endpoint(request: Request):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             created = dishes_lib.create_dish(
                 conn,
                 name=name, queries=queries,
@@ -2439,7 +2439,7 @@ async def update_dish_endpoint(name: str, request: Request):
                    "Delete + recreate to rename.",
         )
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             try:
                 updated = dishes_lib.update_dish(conn, name, patch)
             except ValueError as e:
@@ -2483,7 +2483,7 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
     if notes == "":
         notes = None
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             updated = dishes_lib.update_reject_status(
                 conn, reject_id, status=status, notes=notes,
             )
@@ -2526,7 +2526,7 @@ def list_dish_top_recipes(name: str):
     predates the `selected` column. Cheap — a single JOIN, ~10-25 rows.
     """
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2627,7 +2627,7 @@ def list_dish_top_recipes(name: str):
 def list_dish_editors_choice(name: str):
     """Curator pins for a dish (newest first)."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2650,7 +2650,7 @@ def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(..
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2672,7 +2672,7 @@ def remove_dish_editors_choice(name: str, request: Request, url_normalized: str 
     if not url_normalized:
         raise HTTPException(status_code=400, detail="url_normalized is required")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2699,7 +2699,7 @@ def list_dish_cohort(name: str):
     SQL the selector). Distinct from /top-recipes (winners-only, full
     presentation). Direct read of the ledger; no per-row recompute."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2757,7 +2757,7 @@ def list_dish_rejects(name: str):
     Returns [] when the dish hasn't been refreshed yet or had no
     rejects on its last run. No staff gate — read-only diagnostic."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2780,7 +2780,7 @@ def delete_dish_endpoint(name: str, request: Request):
     """Delete a dish AND its top-kind master_recipes rows. editors_choice
     and legacy rows for this dish are untouched (kind filter)."""
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
@@ -2815,7 +2815,7 @@ def get_dish_fit_data_endpoint(name: str):
     table below the OU fit panel.
     """
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail=f"Dish not found: {name}")
@@ -2899,7 +2899,7 @@ def list_chapters_endpoint():
     try:
         from input.pipeline.chapters import list_chapters_with_status
         from extract.chapter_classifier import CHAPTERS
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             rows = list_chapters_with_status(conn, CHAPTERS)
         # Flag built-in taxonomy chapters so the editor hides Delete on them
         # (only curator-created chapters can be deleted — see delete endpoint).
@@ -2920,7 +2920,7 @@ def _chapter_known(name: str) -> bool:
     if name in CHAPTERS:
         return True
     from input.pipeline.chapters import ensure_chapters_table, chapter_exists
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         ensure_chapters_table(conn)
         return chapter_exists(conn, name)
 
@@ -2939,7 +2939,7 @@ def create_chapter_endpoint(payload: dict = Body(...)):
     if notes is not None and not isinstance(notes, str):
         raise HTTPException(status_code=400, detail="notes must be a string")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ensure_chapters_table(conn)
             create_chapter(conn, name, (notes or "").strip() or None)
             return get_chapter_detail(conn, name)
@@ -2963,7 +2963,7 @@ def delete_chapter_endpoint(name: str):
                                    "here (it's defined in code, not curator-created).")
     from input.pipeline.chapters import ensure_chapters_table, delete_chapter
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ensure_chapters_table(conn)
             delete_chapter(conn, name)
         return {"ok": True, "deleted": name}
@@ -2982,7 +2982,7 @@ def get_chapter_endpoint(name: str):
         from extract.chapter_classifier import CHAPTERS
         if not _chapter_known(name):
             raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             detail = get_chapter_detail(conn, name)
             # The chapter's dishes ranked by competitiveness (nightly rollup) —
             # which dishes in this chapter are hotly-covered vs niche.
@@ -3018,7 +3018,7 @@ def chapter_recipes_endpoint(name: str):
     if not _chapter_known(name):
         raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             rows = conn.execute(
                 "SELECT dp.url, dp.da, dp.pa "
                 "FROM dish_run_data_points dp "
@@ -3045,7 +3045,7 @@ def chapter_top_recipes_endpoint(name: str):
         raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
     try:
         from input.pipeline.chapters import get_chapter_top_recipes
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             recs = get_chapter_top_recipes(conn, name)
         for r in recs:
             if r.get("recipe_id"):
@@ -3067,7 +3067,7 @@ def refresh_chapter_endpoint(name: str):
         from extract.chapter_classifier import CHAPTERS
         if not _chapter_known(name):
             raise HTTPException(status_code=404, detail=f"Unknown chapter: {name}")
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             fit = compute_and_store_chapter_fit(conn, name)
             detail = get_chapter_detail(conn, name)
         print(f"[CHAPTER-FIT] {name!r}: n={fit.get('n')} used={fit.get('used')} model={fit.get('model')}")
@@ -3086,7 +3086,7 @@ def refresh_all_chapters_endpoint():
     try:
         from input.pipeline.chapters import backfill_all_chapters
         from extract.chapter_classifier import CHAPTERS
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return backfill_all_chapters(
                 conn, [c for c in CHAPTERS if c != "Uncertain"],
             )
@@ -3108,9 +3108,9 @@ def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
             if notes is not None and not isinstance(notes, str):
                 raise HTTPException(status_code=400, detail="notes must be a string or null")
             notes = (notes.strip() or None) if isinstance(notes, str) else None
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 update_chapter_notes(conn, name, notes)
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return get_chapter_detail(conn, name)
     except HTTPException:
         raise
@@ -3136,7 +3136,7 @@ def list_system_config_endpoint():
     """All settings, decoded + grouped-ready (ordered by category, key)."""
     from input.pipeline.system_config import ensure_system_config_table, list_settings
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ensure_system_config_table(conn)
             return list_settings(conn)
     except Exception as e:
@@ -3161,7 +3161,7 @@ def update_system_config_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=400,
                             detail="Body must be {key, value} or {updates: {...}}")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ensure_system_config_table(conn)
             known = {r["key"] for r in list_settings(conn)}
             for key, value in updates.items():
@@ -3191,7 +3191,7 @@ def list_scheduled_jobs_endpoint():
     handler types so the editor can offer a job_type picker."""
     from input.pipeline import scheduled_jobs as sched
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             sched.ensure_scheduled_jobs_table(conn)
             jobs = sched.list_scheduled_jobs(conn)
             # attach the last run's log url for each row
@@ -3214,7 +3214,7 @@ def upsert_scheduled_job_endpoint(name: str, payload: dict = Body(...)):
     handler that doesn't exist."""
     from input.pipeline import scheduled_jobs as sched
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             sched.ensure_scheduled_jobs_table(conn)
             jt = payload.get("job_type")
             if jt and jt not in jobs_lib.list_handler_types():
@@ -3234,7 +3234,7 @@ def upsert_scheduled_job_endpoint(name: str, payload: dict = Body(...)):
 def delete_scheduled_job_endpoint(name: str):
     from input.pipeline import scheduled_jobs as sched
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             sched.ensure_scheduled_jobs_table(conn)
             if not sched.delete_scheduled_job(conn, name):
                 raise HTTPException(status_code=404, detail="Scheduled job not found")
@@ -3252,7 +3252,7 @@ def run_scheduled_job_now_endpoint(name: str, request: Request):
     the admin can trigger it on demand from the editor. Returns the spawned job."""
     _require_perm(request, "refresh_dishes")
     from input.pipeline import scheduled_jobs as sched
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         sched.ensure_scheduled_jobs_table(conn)
         row = sched.get_scheduled_job(conn, name)
         if not row:
@@ -3287,7 +3287,7 @@ def list_cook_kb_endpoint(status: Optional[str] = None):
     technique vocab for the editor's tag picker."""
     from input.pipeline import cook_kb
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cook_kb.ensure_cook_kb_table(conn)
             return {"entries": cook_kb.list_kb(conn, status=status),
                     "vocab": cook_kb.TECHNIQUE_VOCAB,
@@ -3311,7 +3311,7 @@ def import_cook_kb_endpoint(payload: dict = Body(...), overwrite: bool = False):
     if not isinstance(entries, list):
         raise HTTPException(status_code=400, detail="Body must be {entries:[...]} or a JSON list")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cook_kb.ensure_cook_kb_table(conn)
             return cook_kb.import_drafts(conn, entries, overwrite=ow)
     except Exception as e:
@@ -3324,7 +3324,7 @@ def upsert_cook_kb_endpoint(kb_id: str, payload: dict = Body(...)):
     """Create or update a KB entry (curate). New entries default to draft."""
     from input.pipeline import cook_kb
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cook_kb.ensure_cook_kb_table(conn)
             return cook_kb.upsert_kb(conn, kb_id, payload)
     except ValueError as e:
@@ -3340,7 +3340,7 @@ def set_cook_kb_status_endpoint(kb_id: str, payload: dict = Body(...)):
     gate — only published entries reach the augment pass."""
     from input.pipeline import cook_kb
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cook_kb.ensure_cook_kb_table(conn)
             updated = cook_kb.set_status(conn, kb_id, payload.get("status", ""))
             if not updated:
@@ -3359,7 +3359,7 @@ def set_cook_kb_status_endpoint(kb_id: str, payload: dict = Body(...)):
 def delete_cook_kb_endpoint(kb_id: str):
     from input.pipeline import cook_kb
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cook_kb.ensure_cook_kb_table(conn)
             if not cook_kb.delete_kb(conn, kb_id):
                 raise HTTPException(status_code=404, detail="Entry not found")
@@ -3382,7 +3382,7 @@ def list_domains_endpoint():
     """All domain-master rows, seeded from the JSON bootstrap on first call."""
     try:
         from input.pipeline import domains_lib
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             domains_lib.ensure_domains_table(conn)
             if conn.execute("SELECT COUNT(*) FROM domains").fetchone()[0] == 0:
                 domains_lib.seed_domains(conn)
@@ -3402,7 +3402,7 @@ def create_domain_endpoint(payload: dict = Body(...)):
     if not host:
         raise HTTPException(status_code=400, detail="domain (host) is required")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return domains_lib.create_domain(conn, host, payload)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -3419,7 +3419,7 @@ def domain_backlinks_file_endpoint(domain: str):
     from input.pipeline import domains_lib, collections_lib
     import os
     host = domains_lib._canon_host(domain)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = domains_lib.get_domain(conn, host) or {}
     override = (row.get("backlinks_dir") or "").strip() or None
     path = collections_lib.backlinks_file_path(host, extra_dir=override)
@@ -3476,7 +3476,7 @@ def harvest_worklist_endpoint():
     See docs/semrush-harvest-scheduling.md."""
     try:
         from input.pipeline import domains_lib
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             domains_lib.ensure_domains_table(conn)
             items = domains_lib.harvest_worklist(conn)
         return {"count": len(items), "today": domains_lib._today(),
@@ -3510,7 +3510,7 @@ def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
     # re-scanning input/ too would re-find and re-process the same export every time.
     dirs = [inbox]
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             hosts = [d["domain"] for d in domains_lib.list_domains(conn)]
             results = []
             # scan_export_inbox returns newest-first, so the FIRST file per domain is
@@ -3553,7 +3553,7 @@ def dish_keywords_status_endpoint(limit: int = 50):
     """The demand-side dish-keyword corpus captured from SEMrush Top-Pages exports —
     traffic-ranked, self-classifying dish names (capture-now; normalize-to-catalog later)."""
     from input.pipeline import dish_keywords
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         dish_keywords.ensure_table(conn)
         total = conn.execute("SELECT COUNT(*) FROM dish_keywords").fetchone()[0]
         by_domain = dict(conn.execute(
@@ -3584,7 +3584,7 @@ def dish_keywords_list_endpoint(search: str = "", domain: str = "", intent: str 
              "recent": "captured_at DESC"}.get(sort, "traffic DESC")
     cols = ("url_normalized", "keyword", "traffic", "traffic_pct", "intent",
             "answer_engines", "domain", "url", "captured_at")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         dish_keywords.ensure_table(conn)
         total = conn.execute(f"SELECT COUNT(*) FROM dish_keywords {clause}", params).fetchone()[0]
         rows = [dict(zip(cols, r)) for r in conn.execute(
@@ -3606,7 +3606,7 @@ def dish_keywords_delete_endpoint(payload: dict = Body(...)):
     keys = [k for k in keys if k]
     if not keys:
         raise HTTPException(status_code=400, detail="url_normalized required")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         dish_keywords.ensure_table(conn)
         conn.executemany("DELETE FROM dish_keywords WHERE url_normalized = ?", [(k,) for k in keys])
         conn.commit()
@@ -3617,7 +3617,7 @@ def dish_keywords_delete_endpoint(payload: dict = Body(...)):
 def url_words_status_endpoint():
     """Counts for the self-learning URL-word lists (the recipe-URL pre-filter vocab)."""
     from input.pipeline import url_word_lists
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         url_word_lists.seed_if_empty(conn)
         rows = conn.execute(
             "SELECT kind, source, COUNT(*) FROM url_word_class GROUP BY kind, source"
@@ -3651,7 +3651,7 @@ def url_words_sweep_endpoint():
 def get_domain_endpoint(domain: str):
     try:
         from input.pipeline import domains_lib
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = domains_lib.get_domain(conn, domain)
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
@@ -3670,7 +3670,7 @@ def domain_recipes_endpoint(domain: str):
     on the domain row (refresh-on-open); the lists themselves are not stored."""
     try:
         from input.pipeline import domains_lib
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return domains_lib.recipes_for_domain(conn, domain)
     except Exception as e:
         print(f"[ERROR] domain_recipes({domain!r}) failed: {e}")
@@ -3717,7 +3717,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             source=source, records=records, unblocker=unblocker,
             backlinks_dir=backlinks_dir, url_prefilter=url_prefilter,
             exclude_words=exclude_words, should_cancel=_should_cancel)
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
             collections_lib.replace_members(conn, "publisher", host, res["members"])
@@ -3756,7 +3756,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     # loop below re-adds the block for the current winners; a dropped-out winner that
     # is ALSO a dish winner is kept (dish-only). No orphans, no GC.
     try:
-        with sqlite3.connect(DB_PATH) as _pc:
+        with sqlite3.connect(DB_PATH, timeout=30) as _pc:
             try:
                 from input.pipeline import vector_store as _vs
                 _vs.enable_vec(_pc)   # so the AFTER DELETE trigger can clean vectors
@@ -3842,7 +3842,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         try:
             from input.pipeline.url_utils import normalize_url as _norm
             keys = {(_norm(u) or u) for u in saved_urls}
-            with sqlite3.connect(DB_PATH) as _rc:
+            with sqlite3.connect(DB_PATH, timeout=30) as _rc:
                 _rc.execute("UPDATE collection_members SET selected = 0 "
                             "WHERE collection_type='publisher' AND collection_key = ?", (host,))
                 for k in keys:
@@ -3871,7 +3871,7 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
     stored top list (GET /domains/{domain}/top) on completion."""
     from input.pipeline import domains_lib, collections_lib
     host = domains_lib._canon_host(domain)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = domains_lib.get_domain(conn, host) or {}
         # Discovery source: 'serp' (Google, default) or 'backlinks_file' (local SEMrush
         # export, input/{host}-backlinks-pages.xlsx). The file IS the mechanism, so it
@@ -3956,7 +3956,7 @@ def clear_domain_top_endpoint(domain: str):
     from input.pipeline import domains_lib, collections_lib
     try:
         host = domains_lib._canon_host(domain)
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             n = collections_lib.clear_members(conn, "publisher", host)
         return {"domain": host, "cleared": n}
     except Exception as e:
@@ -3973,7 +3973,7 @@ def domain_top_endpoint(domain: str, all: int = 0):
     try:
         host = domains_lib._canon_host(domain)
         want_all = bool(int(all or 0))
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             top = collections_lib.get_collection_top(
                 conn, "publisher", host,
                 limit=400 if want_all else 100, selected_only=not want_all)
@@ -3990,7 +3990,7 @@ def semrush_ranks_status_endpoint():
     date, last import) — for the domains-page ranks tools."""
     from input.pipeline import semrush_ranks
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return {"regions": semrush_ranks.region_stats(conn)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
@@ -4004,7 +4004,7 @@ def refresh_semrush_ranks_endpoint(payload: dict = Body(default={})):
     dropped; it never downloads. Same job the monthly scheduler runs. Optional
     payload: region (override the filename-detected region)."""
     region = (payload.get("region") or "").strip() or None
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         entity_ref = "semrush_ranks_refresh"
         existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
         if existing:
@@ -4038,7 +4038,7 @@ def rescore_domains_endpoint(payload: dict = Body(default={})):
     and rescores every publisher member's rank_score against it (cross-publisher-
     comparable authority, not raw PA). Same job the weekly scheduler runs. No payload
     needed."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         entity_ref = "domain_scoring"
         existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
         if existing:
@@ -4071,7 +4071,7 @@ def collections_leaderboard_endpoint(limit: int = 50, selected_only: bool = True
     master_recipes so an ingested recipe shows its real name/grade/thumbnail."""
     limit = max(1, min(int(limit or 50), 500))
     sel = " AND cm.selected = 1" if selected_only else ""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         from input.pipeline import domain_scoring
         fit = domain_scoring.get_global_fit(conn)
         rows = conn.execute(
@@ -4110,7 +4110,7 @@ def cancel_job_endpoint(job_id: int):
     process so we can't kill them — this sets a flag the handler polls between work
     units (e.g. the publisher harvest checks between candidates) and aborts → status
     'cancelled'. 409 if the job isn't live."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         ok = jobs_lib.request_cancel(conn, job_id)
     if not ok:
         raise HTTPException(status_code=409, detail="Job is not queued/running — nothing to cancel.")
@@ -4126,7 +4126,7 @@ def enrich_domain_endpoint(domain: str):
     from input.pipeline import domains_lib
     from extract.domain_enrich import enrich_domain
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = domains_lib.get_domain(conn, domain)
         display_name = (row or {}).get("display_name") or ""
         usage_log: list = []
@@ -4150,7 +4150,7 @@ def patch_domain_endpoint(domain: str, payload: dict = Body(...)):
     # TODO: gate with _require_perm when exposed publicly (see POST /domains).
     try:
         from input.pipeline import domains_lib
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return domains_lib.update_domain(conn, domain, payload)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -4206,7 +4206,7 @@ def delete_domain_endpoint(domain: str):
     # TODO: gate with _require_perm when exposed publicly (see POST /domains).
     try:
         from input.pipeline import domains_lib
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ok = domains_lib.delete_domain(conn, domain)
             if not ok:
                 raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
@@ -4254,7 +4254,7 @@ def admin_list_rows(model: str):
     m = _admin_model_or_404(model)
     cols = [f.name for f in m.fields]
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             rows = conn.execute(
                 f"SELECT {', '.join(cols)} FROM {m.table} ORDER BY {m.order_by}"
             ).fetchall()
@@ -4287,7 +4287,7 @@ def admin_create_row(model: str, payload: dict = Body(...)):
         if m.has_col("updated_at"):
             cols.append("updated_at"); vals.append(ts)
         ph = ", ".join("?" for _ in cols)
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cur = conn.execute(
                 f"INSERT INTO {m.table} ({', '.join(cols)}) VALUES ({ph})", vals
             )
@@ -4317,7 +4317,7 @@ def admin_update_row(model: str, row_id: int, payload: dict = Body(...)):
             sets.append("updated_at = ?")
             vals.append(datetime.now(timezone.utc).isoformat())
         vals.append(row_id)
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cur = conn.execute(
                 f"UPDATE {m.table} SET {', '.join(sets)} WHERE {m.pk} = ?", vals
             )
@@ -4337,7 +4337,7 @@ def admin_update_row(model: str, row_id: int, payload: dict = Body(...)):
 def admin_delete_row(model: str, row_id: int):
     m = _admin_model_or_404(model)
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             _enable_vec_for_delete(conn)  # vec-cleanup triggers need the module
             cur = conn.execute(
                 f"DELETE FROM {m.table} WHERE {m.pk} = ?", (row_id,)
@@ -4358,7 +4358,7 @@ def status_messages_active():
     rotating-wait-message helper. Lean payload: ordered strings per category."""
     try:
         out: dict[str, list] = {}
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             rows = conn.execute(
                 "SELECT category, message FROM status_messages "
                 "WHERE enabled = 1 ORDER BY category, sort_order, id"
@@ -4397,7 +4397,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 
     # Re-fetch dish at run-time (could have been edited/deleted between
     # enqueue and run).
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         dish = dishes_lib.get_dish(conn, name)
     if dish is None:
         raise RuntimeError(f"Dish {name!r} not found at run time (deleted?)")
@@ -4421,7 +4421,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 
     # Editor's Choice pins for this dish — added to the candidate pool so they're
     # scored alongside the SerpAPI results and surface in the top-N if they rank.
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         pinned_urls = dishes_lib.editors_choice_urls(conn, canonical_name)
     if pinned_urls:
         print(f"[REFRESH-DISH] {len(pinned_urls)} Editor's Choice pin(s) to include")
@@ -4437,7 +4437,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         )
     except Exception as e:
         print(f"[REFRESH-DISH] build_batch failed: {e}")
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             # Pass rejects=[] (not None) so the per-run wipe still
             # fires — semantically: "this refresh produced zero
             # rejects because it failed before any URL was processed."
@@ -4469,7 +4469,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             job_id = job.get("id")
             ou_fit = batch_result.get("ou_fit") or {}
             winner_urls = [e["url"] for e in entries if e.get("url")]
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 n_written = replace_data_points_for_dish(
                     conn, canonical_name, fit_points, model_version=job_id)
                 # SQL scorer: fills ou/power/percentiles/rank_score over the
@@ -4490,7 +4490,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     if dish_chapter and dish_chapter != "Uncertain":
         try:
             from input.pipeline.chapters import compute_and_store_chapter_fit
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 cf = compute_and_store_chapter_fit(conn, dish_chapter)
             print(f"[REFRESH-DISH] recomputed chapter fit {dish_chapter!r}: "
                   f"n={cf.get('n')} used={cf.get('used')} model={cf.get('model')}")
@@ -4505,7 +4505,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # Delete prior top-kind rows for this dish — editors_choice and
     # legacy survive. Done BEFORE saves so the (url_normalized,
     # user_id=0) unique index can't collide between old + new.
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         deleted = dishes_lib.delete_master_rows_for_dish(conn, canonical_name, kind="top")
     print(f"[REFRESH-DISH] deleted {deleted} prior kind=top rows for {canonical_name!r}")
 
@@ -4672,7 +4672,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             # high-authority also-ran isn't a winner (too thin / extract-fail / …).
             reject_map = {r["url"]: r.get("reason", "rejected")
                           for r in rejects if r.get("url")}
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 score_data_points_for_dish(conn, canonical_name,
                                            batch_result.get("ou_fit") or {},
                                            POWER_BLEND_WEIGHT, saved_urls,
@@ -4700,7 +4700,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             bottom_ou = float(last["ou"])
 
     dish_status = "success" if saved_count > 0 else "error:no_saves"
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         dishes_lib.record_run_result(
             conn, canonical_name, status=dish_status, count=saved_count,
             log_filename=log_filename,
@@ -4736,7 +4736,7 @@ async def _handle_chapter_rollups_job(job: dict) -> dict:
     Off the hot refresh path (it drifts whenever any sibling refreshes), so it
     runs on a schedule instead. See dishes_lib.recompute_competitiveness."""
     def _run():
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return dishes_lib.recompute_competitiveness(conn)
     summary = await asyncio.to_thread(_run)
     print(f"[ROLLUPS] chapter competitiveness: {summary}")
@@ -4761,7 +4761,7 @@ async def _handle_semrush_ranks_refresh_job(job: dict) -> dict:
         path = semrush_ranks.find_newest_ranks_file()
         if not path:
             return {"imported": False, "reason": "no SEMrush ranks file in input/ or ~/Downloads"}
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             imp = semrush_ranks.import_ranks_file(conn, path, region=region)
             ref = domains_lib.refresh_all_semrush_ranks(conn, region=imp["region"])
         return {"imported": True, **imp, **ref}
@@ -4784,7 +4784,7 @@ async def _handle_domain_scoring_job(job: dict) -> dict:
     def _run():
         from input.pipeline import domain_scoring
         from input.pipeline.config import POWER_BLEND_WEIGHT
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             return domain_scoring.recompute_and_rescore(conn, weight=POWER_BLEND_WEIGHT)
 
     summary = await asyncio.to_thread(_run)
@@ -4812,7 +4812,7 @@ async def _handle_cook_rework_job(job: dict) -> dict:
     table = _recipes_table_for(user_id)
 
     def _load():
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
                 (recipe_id, user_id)).fetchone()
@@ -4840,7 +4840,7 @@ async def _handle_cook_rework_job(job: dict) -> dict:
     cook.reworked_at = datetime.now(timezone.utc).isoformat()
 
     def _save():
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cur = json.loads(conn.execute(
                 f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
                 (recipe_id, user_id)).fetchone()[0])
@@ -4871,7 +4871,7 @@ def cook_rework_endpoint(recipe_id: str, request: Request, user_id: int = PLACEH
     if user_id == 0:
         _require_perm(request, "edit_master")
     table = _recipes_table_for(user_id)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         row = conn.execute(
             f"SELECT json_extract(data, '$.name') FROM {table} "
             f"WHERE recipe_id = ? AND user_id = ?", (recipe_id, user_id)).fetchone()
@@ -4908,7 +4908,7 @@ def _inject_dish_competitiveness(recipe: dict) -> None:
         dish = ((recipe.get("_master") or {}).get("dish") or "").strip()
         if not dish:
             return
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             row = conn.execute(
                 "SELECT competitiveness_pct FROM dishes WHERE name = ?", (dish,)
             ).fetchone()
@@ -4929,7 +4929,7 @@ async def refresh_dish_endpoint(name: str, request: Request):
     Refuses if a job for this dish is already queued or running (409,
     with the existing job_id in the response so the UI can attach to
     that stream instead)."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         dish = dishes_lib.get_dish(conn, name)
     if dish is None:
         raise HTTPException(status_code=404, detail="Dish not found")
@@ -4938,7 +4938,7 @@ async def refresh_dish_endpoint(name: str, request: Request):
                             detail=f"Dish {name!r} has no queries")
 
     entity_ref = f"dish:{dish['name']}"
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
         if existing:
             return JSONResponse(
@@ -4980,7 +4980,7 @@ def list_jobs_endpoint(type: Optional[str] = None,
                        status: Optional[str] = None,
                        limit: int = 100):
     """List jobs, optionally filtered. Newest first."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         return jobs_lib.list_jobs(
             conn, type=type, entity_ref=entity_ref,
             status=status, limit=limit,
@@ -4990,7 +4990,7 @@ def list_jobs_endpoint(type: Optional[str] = None,
 @app.get("/jobs/{job_id}")
 def get_job_endpoint(job_id: int):
     """Single-job status. Polled by UIs that don't use the SSE stream."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         job = jobs_lib.get_job(conn, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -5007,7 +5007,7 @@ def spawn_job_endpoint(job_id: int, request: Request):
     GET /jobs/{id}/stream — the SSE reads the DB + the log file, which is fully
     cross-process. This is the phase-4 UI path (docs/jobs-as-executables.md)."""
     _require_perm(request, "refresh_dishes")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         job = jobs_lib.get_job(conn, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -5053,7 +5053,7 @@ async def job_stream_endpoint(job_id: int):
         consecutive_missing = 0
         while True:
             try:
-                with sqlite3.connect(DB_PATH) as conn:
+                with sqlite3.connect(DB_PATH, timeout=30) as conn:
                     job = jobs_lib.get_job(conn, job_id)
             except Exception as e:
                 yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
@@ -5146,7 +5146,7 @@ async def _drain_queued_jobs(job_ids: list) -> None:
     global _drain_task
     try:
         for jid in job_ids:
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 job = jobs_lib.get_job(conn, jid)
             if job is None or job["status"] != "queued":
                 continue
@@ -5165,14 +5165,14 @@ async def run_queued_jobs_endpoint(request: Request):
     _require_perm(request, "refresh_dishes")
     global _drain_task
     if _drain_task is not None and not _drain_task.done():
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             running = jobs_lib.list_jobs(conn, status="running", limit=10)
         return JSONResponse(
             status_code=409,
             content={"error": "drain already running",
                      "running": [j["id"] for j in running]},
         )
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
         queued = jobs_lib.list_jobs(conn, status="queued", limit=100)
     queued.sort(key=lambda j: j["created_at"])  # oldest first
     job_ids = [j["id"] for j in queued]
@@ -5260,7 +5260,7 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID, summary: int = 0,
     table = _recipes_table_for(user_id)
     print(f"[LIST] List recipes user_id={user_id} table={table} summary={summary} limit={limit}")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             sql = (f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
                    f"FROM {table} WHERE user_id = ? ORDER BY updated_at DESC")
             params: list = [user_id]
@@ -5334,7 +5334,7 @@ def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
     grade: Optional[dict] = None
     if explicit_dish:
         try:
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 dish_row = dishes_lib.get_dish(conn, explicit_dish)
             if dish_row and dish_row.get("last_ou_fit"):
                 grade = compute_exceptionalism(
@@ -5349,7 +5349,7 @@ def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
     # explicit-path failed)
     if grade is None:
         try:
-            with sqlite3.connect(DB_PATH) as conn:
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
                 match = find_best_dish_match(conn, recipe_dict)
             if match and match.get("ou_fit"):
                 grade = compute_exceptionalism(
@@ -5373,7 +5373,7 @@ def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
         if chapter:
             try:
                 from input.pipeline.chapters import get_chapter_fit
-                with sqlite3.connect(DB_PATH) as conn:
+                with sqlite3.connect(DB_PATH, timeout=30) as conn:
                     ch_fit = get_chapter_fit(conn, chapter)
                 if ch_fit and ch_fit.get("used"):
                     grade = compute_exceptionalism(
@@ -5584,7 +5584,7 @@ def _save_recipe_core(payload: dict) -> dict:
     # enforces this server-side too.
     adopted = False
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             if normalized_source_url:
                 existing = conn.execute(
                     f"SELECT recipe_id FROM {table} WHERE url_normalized = ? AND user_id = ? LIMIT 1",
@@ -5699,7 +5699,7 @@ def _save_recipe_core(payload: dict) -> dict:
         print(f"[GRADE] FAILED (continuing save): {e}")
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             # Save clears source_changed_at: the user reviewing and saving is
             # the acknowledgement of any prior drift signal.
             conn.execute(f"""
@@ -5899,7 +5899,7 @@ def get_url_metadata(url: str):
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             ensure_metabase_url_table(conn)
             row = get_metabase_url(conn, url)
             # Self-heal: if a row exists but Moz scoring never landed (null
@@ -5952,7 +5952,7 @@ def delete_recipe(recipe_id: str, request: Request, user_id: int = PLACEHOLDER_U
     table = _recipes_table_for(user_id)
     print(f"[DELETE] Delete recipe endpoint called for: {recipe_id} user_id={user_id} table={table}")
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
             _enable_vec_for_delete(conn)  # trg_master_vec_cleanup needs the module
             cursor = conn.cursor()
             cursor.execute(f"DELETE FROM {table} WHERE recipe_id = ? AND user_id = ?",
@@ -6582,7 +6582,7 @@ def extract_recipe_from_url(
         from input.pipeline import domains_lib
         from input.pipeline.url_utils import root_domain as _rootd
         _host = (_urlparse(url).hostname or "").lower()
-        with sqlite3.connect(DB_PATH) as _dc:
+        with sqlite3.connect(DB_PATH, timeout=30) as _dc:
             _drow = domains_lib.get_domain(_dc, _host) or domains_lib.get_domain(_dc, _rootd(url) or "")
         if _drow:
             _fetch_unblocker = (_drow.get("fetch_strategy") or "") == "unblocker"
