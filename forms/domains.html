@@ -431,9 +431,16 @@
         const title = escapeHtml(m.name || m.title || host);
         const bccHref = m.ingested && m.recipe_id ? `/r/${encodeURIComponent(m.recipe_id)}` : '';
         const tileHref = bccHref || m.url || '#';
+        // Also-rans are never thumbnailed at harvest (only the kept top-N are), so
+        // their tile has no image. Still make the empty tile a LINK to the source when
+        // there's a destination — otherwise it renders as a dead <div> in the same spot
+        // as the winners' clickable tiles and "does nothing" when clicked.
+        const hasDest = tileHref && tileHref !== '#';
         const tile = m.preview_image
           ? `<a class="top-recipe-tile" href="${escapeHtml(tileHref)}" target="_blank" rel="noopener"><img src="${escapeHtml(m.preview_image)}" alt="" loading="lazy"></a>`
-          : `<div class="top-recipe-tile empty"></div>`;
+          : (hasDest
+              ? `<a class="top-recipe-tile empty" href="${escapeHtml(tileHref)}" target="_blank" rel="noopener" title="${m.ingested ? 'Open in BCC' : 'View source'}"></a>`
+              : `<div class="top-recipe-tile empty"></div>`);
         const badges =
           // ★ only in the scored-cohort view (where it distinguishes winners from
           // also-rans). In the default "Kept top recipes" list every row is a winner,
@@ -526,6 +533,10 @@
       // so Save stays disabled (correct); we just re-render and report.
       const renderResult = (status, res, errorMsg) => {
         loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1');
+        // The harvest AUTO-EXTRACTS the selected winners into master_recipes, so the
+        // master/user browse dropdowns are now stale — reload them (and their counts)
+        // so the just-ingested recipes appear without reopening the form.
+        loadDomainRecipes(domain);
         // A backlinks harvest stamped last_harvested_at → refresh just this domain's
         // list entry (due-status) without rebuilding the detail form / streamed log.
         fetch(`/domains/${encodeURIComponent(domain)}`).then(r => r.json())
