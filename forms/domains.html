@@ -111,6 +111,7 @@
       const bits = [];
       if (d.display_name) bits.push(d.display_name);
       if (d.country) bits.push(d.country);
+      if (d.cuisine_focus) bits.push(d.cuisine_focus);
       if (d.bcc_rank != null) bits.push('BCC #' + d.bcc_rank);
       if (d.domain_authority != null) bits.push('DA ' + Math.round(d.domain_authority));
       const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
@@ -124,7 +125,8 @@
     function sortedRows(){
       const t = term.toLowerCase();
       const rows = Object.values(domains).filter(d =>
-        !t || d.domain.toLowerCase().includes(t) || (d.display_name || '').toLowerCase().includes(t));
+        !t || d.domain.toLowerCase().includes(t) || (d.display_name || '').toLowerCase().includes(t)
+        || (d.cuisine_focus || '').toLowerCase().includes(t));
       const sorters = {
         domain:  (a, b) => a.domain.localeCompare(b.domain),
         name:    (a, b) => (a.display_name || '').localeCompare(b.display_name || '') || a.domain.localeCompare(b.domain),
@@ -231,7 +233,7 @@
         <div class="ed-kicker">
           <button type="button" class="ed-purpose-toggle" id="purposeToggle">Admin · Edit Domain <span id="purposeArrow">▾</span></button>
           <div class="ed-purpose-pop" id="purposePop" hidden>
-            <strong>Purpose:</strong> the canonical per-publisher record. Friendly name flows onto every recipe’s source attribution; country/language seed the multilingual pipeline; extraction tips + allow/deny steer the batch fetcher; DA is the domain-grain authority (per-URL PA lives on metabase_url). Recipe ethnicity/cuisine stays dish-derived — <code>cuisine_focus</code> here is only a hint.
+            <strong>Purpose:</strong> the canonical per-publisher record. Friendly name flows onto every recipe’s source attribution; country/language seed the multilingual pipeline; extraction tips + allow/deny steer the batch fetcher; DA is the domain-grain authority (per-URL PA lives on metabase_url). Cuisine/ethnicity here describe the publisher (Cuisine is searchable); authoritative recipe-level ethnicity stays dish-derived.
           </div>
         </div>
 
@@ -260,6 +262,8 @@
           <div class="ed-form-grid">
             ${field('f_country', 'Country', d.country, { ph: 'Greece' })}
             ${field('f_language', 'Language (ISO 639-1)', d.language, { ph: 'el' })}
+            ${field('f_cuisine_focus', 'Cuisine (searchable)', d.cuisine_focus, { ph: 'Greek' })}
+            ${field('f_ethnicity', 'Ethnicity', d.ethnicity, { ph: 'Greek' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
             ${field('f_render_required', d.render_learned_at ? ('JS-rendered — render with full browser · auto-learned ' + escapeHtml(fmtDate(d.render_learned_at))) : 'JS-rendered — render with full browser (unblocker render=True)', Number(d.render_required) === 1, { checkbox: true })}
             ${field('f_allowed', 'Allowed (ingest from this site)', isAllowed(d), { checkbox: true })}
@@ -351,10 +355,9 @@
         </section>
 
         <details class="ed-block" style="border-top:1px solid var(--line);padding-top:10px">
-          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo, cuisine hint, custom extractor</summary>
+          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo, custom extractor</summary>
           <div class="ed-form-grid" style="margin-top:12px">
             ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://… (Clearbit auto-fills)' })}
-            ${field('f_cuisine_focus', 'Cuisine focus (hint only)', d.cuisine_focus, { ph: 'Greek' })}
             ${field('f_custom_extractor', 'Custom extractor (module path)', d.custom_extractor, { ph: 'intake.parsers.foo' })}
           </div>
         </details>
@@ -685,6 +688,7 @@
         country: $('#f_country').value.trim(),
         language: $('#f_language').value.trim(),
         cuisine_focus: $('#f_cuisine_focus').value.trim(),
+        ethnicity: ($('#f_ethnicity')?.value || '').trim(),
         fetch_strategy: $('#f_fetch_strategy').value,
         render_required: $('#f_render_required').checked ? 1 : 0,
         custom_extractor: $('#f_custom_extractor').value.trim(),
@@ -720,6 +724,8 @@
             <div class="ed-field full"><label for="newName">Display name</label><input id="newName" type="text" placeholder="ex: NYT Cooking" autocomplete="off"></div>
             <div class="ed-field"><label for="newCountry">Country</label><input id="newCountry" type="text" placeholder="ex: Greece"></div>
             <div class="ed-field"><label for="newLanguage">Language</label><input id="newLanguage" type="text" placeholder="ex: el"></div>
+            <div class="ed-field"><label for="newCuisine">Cuisine</label><input id="newCuisine" type="text" placeholder="ex: Greek"></div>
+            <div class="ed-field"><label for="newEthnicity">Ethnicity</label><input id="newEthnicity" type="text" placeholder="ex: Greek"></div>
           </div>
         </section>
         <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
@@ -741,6 +747,8 @@
         display_name: $('#newName').value.trim(),
         country: $('#newCountry').value.trim(),
         language: $('#newLanguage').value.trim(),
+        cuisine_focus: $('#newCuisine').value.trim(),
+        ethnicity: $('#newEthnicity').value.trim(),
       };
       btn.disabled = true; btn.textContent = 'Creating…';
       try {

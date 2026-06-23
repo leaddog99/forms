@@ -47,7 +47,8 @@ EDITABLE_FIELDS = (
     "logo_url",
     "country",
     "language",
-    "cuisine_focus",
+    "cuisine_focus",     # the publisher's cuisine (searchable; was a "hint", now a real field)
+    "ethnicity",         # the publisher's cultural origin (optional; not searched yet)
     "fetch_strategy",
     "render_required",   # JS-rendered site → fetch with a real browser (unblocker render=True)
     "extract_notes",
@@ -200,6 +201,12 @@ _RENDER_COLUMNS = {
     "render_learned_at": "TEXT",
 }
 
+# Editorial provenance the curator can set (optional). cuisine_focus already lives in
+# the base CREATE; ethnicity (cultural origin) is added here so PRE-EXISTING DBs migrate.
+_EDITORIAL_COLUMNS = {
+    "ethnicity": "TEXT",
+}
+
 
 def ensure_domains_table(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -213,6 +220,7 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
             country             TEXT,
             language            TEXT,
             cuisine_focus       TEXT,
+            ethnicity           TEXT,
             fetch_strategy      TEXT NOT NULL DEFAULT 'plain',
             extract_notes       TEXT,
             custom_extractor    TEXT,
@@ -248,6 +256,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _RENDER_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _EDITORIAL_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     conn.execute(
