@@ -9,8 +9,11 @@ First consumer: PUBLISHER collections (the domains page, dishes-page-style). A
 publisher refresh discovers the publisher's recipe URLs (SERP `site:domain/recipes`
 + filter=0), Moz-scores them, ranks by PA (most-notable), and keeps the top-N
 (`keep`, default 10, per-publisher overridable — the analog of a dish's
-top_n_final). Content extraction is SEPARATE (authenticated fetch) — this is the
-discovery + ranking ledger. See docs/collections.md / project_collections.
+top_n_final). This module builds the discovery + ranking LEDGER; the publisher
+refresh JOB then auto-extracts the selected winners into master_recipes (the
+"ledger -> master" step in save_recipe_api._handle_publisher_refresh_job, added
+2026-06-22 / f306d80, mirroring the dish batch). See docs/collections.md /
+project_collections.
 
 Dishes keep their own ledger (dish_run_data_points) for now; a recipe's full
 membership view unions both.
@@ -630,8 +633,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     score). Drops the /recipes/ index, 'best-...-2025' listicles, /recipe-database/,
     and section pages that merely contain the word 'recipe'.
 
-    Returns {members, discovered, recipe_pass, scored, recipe_path, query}. Content
-    extraction / ingestion into master is a SEPARATE step (not done here)."""
+    Returns {members, discovered, recipe_pass, scored, recipe_path, query}. This
+    function builds the discovery/ranking LEDGER only; the actual content extraction
+    into master_recipes is done by the CALLER — see the "ledger -> master" block in
+    save_recipe_api._handle_publisher_refresh_job, which extracts the selected
+    winners (with backfill) right after persisting these members. (So a publisher
+    refresh DOES populate master_recipes; this library fn just doesn't.)"""
     if source == "backlinks_file":
         found = _read_backlinks_file(domain, want=int(records or discover_n or 100),
                                      extra_dir=backlinks_dir)
