@@ -44,6 +44,17 @@ SCHEDULED_DEFAULTS: list[dict] = [
         "params": {},
         "enabled": 1,
     },
+    {
+        "name": "domain_scoring",
+        "job_type": "domain_scoring",
+        "purpose": "Refit the single system-wide PA~DA quadratic over the whole "
+                   "corpus and rescore every publisher member's rank_score against "
+                   "it (cross-publisher-comparable authority, paywall-remapped PA). "
+                   "The corpus drifts slowly, so weekly is plenty.",
+        "interval_hours": 168,   # weekly
+        "params": {"log_label": "domain_scoring"},
+        "enabled": 1,
+    },
 ]
 
 

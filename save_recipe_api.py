@@ -4031,6 +4031,79 @@ def refresh_semrush_ranks_endpoint(payload: dict = Body(default={})):
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
 
 
+@app.post("/domains/rescore")
+def rescore_domains_endpoint(payload: dict = Body(default={})):
+    """Recompute the SYSTEM-WIDE domain score — OUT-OF-PROCESS (mirrors the publisher
+    refresh / ranks refresh). Refits one global PA~DA quadratic over the whole corpus
+    and rescores every publisher member's rank_score against it (cross-publisher-
+    comparable authority, not raw PA). Same job the weekly scheduler runs. No payload
+    needed."""
+    with sqlite3.connect(DB_PATH) as conn:
+        entity_ref = "domain_scoring"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "error": "already in flight", "job_id": existing["id"],
+                "status": existing["status"], "stream_url": f"/jobs/{existing['id']}/stream"})
+        job_id = jobs_lib.enqueue_job(conn, type="domain_scoring",
+                                      params={"log_label": "domain_scoring"},
+                                      entity_ref=entity_ref)
+    import subprocess
+    proj = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
+            cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to spawn domain scoring job: {e}")
+    return JSONResponse(status_code=202, content={
+        "job_id": job_id, "status": "queued",
+        "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
+
+
+@app.get("/collections/leaderboard")
+def collections_leaderboard_endpoint(limit: int = 50, selected_only: bool = True):
+    """The 'best recipes anywhere' payoff of system-wide scoring: publisher members
+    across ALL collections, ordered by the cross-publisher-comparable rank_score.
+    `selected_only` (default) restricts to each publisher's kept top-N. LEFT-JOINs
+    master_recipes so an ingested recipe shows its real name/grade/thumbnail."""
+    limit = max(1, min(int(limit or 50), 500))
+    sel = " AND cm.selected = 1" if selected_only else ""
+    with sqlite3.connect(DB_PATH) as conn:
+        from input.pipeline import domain_scoring
+        fit = domain_scoring.get_global_fit(conn)
+        rows = conn.execute(
+            f"""
+            SELECT cm.collection_key, cm.url_normalized, cm.title, cm.da, cm.pa,
+                   cm.adjusted_pa, cm.rank_score, cm.rank, cm.selected,
+                   m.recipe_id, json_extract(m.data, '$.name'),
+                   json_extract(m.data, '$._master.exceptionalism.grade'),
+                   COALESCE(json_extract(m.data, '$._source.previewImage'),
+                            json_extract(m.data, '$.image[0]'), cm.image_url)
+            FROM collection_members cm
+            LEFT JOIN master_recipes m
+              ON m.url_normalized = cm.url_normalized AND m.user_id = 0
+            WHERE cm.collection_type = 'publisher' AND cm.rank_score IS NOT NULL{sel}
+            ORDER BY cm.rank_score DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    cols = ["publisher", "url", "ledger_title", "da", "pa", "adjusted_pa",
+            "rank_score", "rank", "selected", "recipe_id", "name", "grade", "preview_image"]
+    items = []
+    for r in rows:
+        d = dict(zip(cols, r))
+        d["ingested"] = d["recipe_id"] is not None
+        d["title"] = d.get("name") or d.get("ledger_title") or d["url"]
+        items.append(d)
+    return {"items": items, "count": len(items),
+            "fit_computed_at": (fit or {}).get("computed_at"),
+            "fit_used": bool(fit and fit.get("used"))}
+
+
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job_endpoint(job_id: int):
     """Request COOPERATIVE cancellation of a queued/running job. Jobs run out-of-
@@ -4699,6 +4772,31 @@ async def _handle_semrush_ranks_refresh_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("semrush_ranks_refresh", _handle_semrush_ranks_refresh_job)
+
+
+async def _handle_domain_scoring_job(job: dict) -> dict:
+    """System-wide domain scoring: refit ONE global PA~DA quadratic over the whole
+    corpus (every dish cohort point + every publisher member), then rescore every
+    publisher member's rank_score against it (paywall-remapped PA → OU/power blend,
+    percentiled system-wide). Replaces raw-PA ranking with a cross-publisher-
+    comparable authority score. Schedulable (the corpus drifts slowly — weekly).
+    See input/pipeline/domain_scoring.py + docs/domain-scoring.md."""
+    def _run():
+        from input.pipeline import domain_scoring
+        from input.pipeline.config import POWER_BLEND_WEIGHT
+        with sqlite3.connect(DB_PATH) as conn:
+            return domain_scoring.recompute_and_rescore(conn, weight=POWER_BLEND_WEIGHT)
+
+    summary = await asyncio.to_thread(_run)
+    fit = summary.get("fit") or {}
+    print(f"[DOMAIN-SCORING] fit used={fit.get('used')} n={fit.get('n')} "
+          f"coeffs={fit.get('coefficients')} paywall_cal={fit.get('n_paywall_calibrated')} "
+          f"| rescored {summary.get('members_rescored')} members "
+          f"across {summary.get('collections')} collections")
+    return summary
+
+
+jobs_lib.register_handler("domain_scoring", _handle_domain_scoring_job)
 
 
 async def _handle_cook_rework_job(job: dict) -> dict:

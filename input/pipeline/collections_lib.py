@@ -739,11 +739,18 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             print(f"  [{i:>2}/{n_rp}] MOZ-OK   pa={_fp(pa)} da={_fp(da)}  {url}")
         else:
             print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
-    scored.sort(key=lambda m: -m["pa"])
+    # System-wide authority score: replace raw-PA ranking with the corpus-grain
+    # OU/power blend (one global PA~DA fit, paywall-remapped PA), so rank_score is
+    # comparable ACROSS publishers, not just within one. Within a publisher DA is
+    # ~constant → the score is monotonic in PA → the kept top-N is unchanged; only
+    # the number becomes a "best recipes anywhere" value. Falls back to raw PA when
+    # no global fit has been computed yet. See input/pipeline/domain_scoring.py.
+    from input.pipeline import domain_scoring
+    domain_scoring.score_members(scored)   # stamps adjusted_pa / rank_score / ou / power
+    scored.sort(key=lambda m: ((m.get("rank_score") is None), -(m.get("rank_score") or 0.0)))
     keep = max(1, int(keep or 10))
     for i, m in enumerate(scored, 1):
         m["rank"] = i
-        m["rank_score"] = m["pa"]          # within-publisher rank IS page authority
         m["selected"] = 1 if i <= keep else 0
     # Thumbnail the SELECTED top-N only (bounded) — captures og:image so discovered
     # members show a picture; ingested members override with the master's real image.

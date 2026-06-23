@@ -51,6 +51,7 @@
         </select>
         <div class="ed-rank-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button type="button" class="ed-btn" id="refreshRanksBtn" title="Re-import the newest SEMrush rank export (input/ or Downloads) and re-rank every domain">↻ Refresh SEMrush ranks</button>
+          <button type="button" class="ed-btn" id="rescoreBtn" title="Refit the system-wide PA~DA curve over the whole corpus and rescore every publisher recipe (cross-publisher-comparable authority, not raw PA)">↻ Rescore recipes (system-wide)</button>
           <span class="ed-save-hint" id="rankStatus" style="font-size:.82em;color:var(--ed-ink-soft)"></span>
         </div>
       </div>
@@ -821,6 +822,34 @@
       } catch (e) { finish(`Refresh failed: ${e.message || e}`); }
     }
 
+    // System-wide domain scoring: refit ONE global PA~DA quadratic over the whole
+    // corpus + rescore every publisher recipe's rank_score against it (out-of-process).
+    // Makes rank_score comparable ACROSS publishers, not just within one. Streams the
+    // job; reloads the open domain's top list on completion so new scores show.
+    async function rescoreDomains(){
+      const btn = $('#rescoreBtn'), el = $('#rankStatus');
+      btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Rescoring…';
+      if (el) el.textContent = 'Queuing system-wide rescore…';
+      const finish = (msg) => { btn.disabled = false; btn.textContent = label; if (el && msg) el.textContent = msg; };
+      try {
+        const r = await fetch('/domains/rescore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await r.json().catch(() => ({}));
+        if (r.status !== 409 && !r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        let es; try { es = new EventSource(data.stream_url); } catch (e){ finish(`Stream error: ${e.message || e}`); return; }
+        es.addEventListener('status', (e) => { try { const d = JSON.parse(e.data); if (el && d.status) el.textContent = `Job ${d.status}…`; } catch {} });
+        es.addEventListener('done', async (e) => {
+          es.close();
+          let res = {}; try { const d = JSON.parse(e.data || '{}'); res = typeof d.result === 'string' ? JSON.parse(d.result) : (d.result || {}); } catch {}
+          const f = res.fit || {};
+          finish(f.used === false
+            ? `Rescored, but the global fit needs ≥25 scored pages (had ${f.n || 0}).`
+            : `Done — refit on ${(f.n || 0).toLocaleString()} pages, rescored ${(res.members_rescored || 0).toLocaleString()} recipes across ${res.collections || 0} publishers.`);
+          if (typeof loadDomains === 'function') loadDomains();   // refresh list/top scores
+        });
+        es.onerror = () => { es.close(); finish('Stream dropped — reload to see the result.'); };
+      } catch (e) { finish(`Rescore failed: ${e.message || e}`); }
+    }
+
     /* ------------------- SEMrush harvest inbox scan ------------------- */
     // Scan the inbox for exports the curator just saved → route + ingest each.
     async function scanInbox(){
@@ -883,6 +912,7 @@
       if (selected && selected !== '__new__') loadDomainTop(selected, !on);
     });
     $('#refreshRanksBtn').addEventListener('click', refreshRanks);
+    $('#rescoreBtn').addEventListener('click', rescoreDomains);
     $('#scanInboxBtn').addEventListener('click', scanInbox);
     // Harvest strip: toggle the 3-step explainer; the due chip sorts by "SEMrush due".
     $('#hvToggle').addEventListener('click', () => {
