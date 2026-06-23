@@ -134,17 +134,17 @@ def _db() -> sqlite3.Connection:
 
 
 def _detached_flags() -> int:
-    """creationflags to spawn a job FULLY DETACHED so a server restart can't take a
-    running job down with it. DETACHED_PROCESS gives it its own (no) console,
-    independent of the server's; CREATE_NEW_PROCESS_GROUP means a Ctrl-C to the
-    server's group doesn't reach it. DETACHED_PROCESS and CREATE_NO_WINDOW are
-    mutually exclusive (combining them makes CreateProcess fail), so we use
-    DETACHED_PROCESS — it already implies no window. NB: the child's PARENT pid still
-    points at the server, so bcc_restart.bat ALSO skips 'python -m jobs' PIDs when it
-    kills the listener's child tree — both halves are needed for jobs to survive."""
+    """creationflags for a spawned job: CREATE_NO_WINDOW = a HIDDEN console, inherited
+    by any console child the job spawns (so nothing pops a window).
+
+    We deliberately do NOT use DETACHED_PROCESS: it gives the job NO console, so the
+    first console CHILD it spawns (an extract/render helper, git, etc.) makes Windows
+    allocate a fresh VISIBLE console — an empty DOS window. Restart-survival does NOT
+    come from the spawn flags regardless (the child's PARENT pid still points at the
+    server); it comes from bcc_restart.bat SKIPPING 'python -m jobs' processes when it
+    kills the listener's child tree. That's the half that actually keeps jobs alive."""
     import subprocess
-    return (getattr(subprocess, "DETACHED_PROCESS", 0)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 # Binary media (page screenshots) live in a SEPARATE, git-ignored DB so the
