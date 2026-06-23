@@ -386,6 +386,16 @@
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
+      // Wire the cohort toggle HERE (renderDetail re-creates the button each render) —
+      // not in the global section, where it'd attach once to a button that no longer exists.
+      $('#cohortToggle')?.addEventListener('click', () => {
+        const btn = $('#cohortToggle');
+        const on = btn.dataset.on === '1';
+        btn.dataset.on = on ? '0' : '1';
+        btn.classList.toggle('active', !on);
+        btn.textContent = on ? '☰ Scored cohort' : '★ Winners only';
+        loadDomainTop(d.domain, !on);
+      });
       $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
       document.querySelectorAll('input[name=harvestSource]').forEach(r =>
         r.addEventListener('change', applySrcSelection));
@@ -978,14 +988,7 @@
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
     // Scored-cohort toggle: flip between kept winners only and the FULL scored cohort
     // (winners ★ + dimmed also-rans) — mirrors the dishes scored-cohort panel.
-    $('#cohortToggle')?.addEventListener('click', () => {
-      const btn = $('#cohortToggle');
-      const on = btn.dataset.on === '1';
-      btn.dataset.on = on ? '0' : '1';
-      btn.classList.toggle('active', !on);
-      btn.textContent = on ? '☰ Scored cohort' : '★ Winners only';
-      if (selected && selected !== '__new__') loadDomainTop(selected, !on);
-    });
+    // (cohortToggle is wired inside renderDetail — it's re-created per domain render.)
     $('#refreshRanksBtn').addEventListener('click', refreshRanks);
     $('#rescoreBtn').addEventListener('click', rescoreDomains);
     $('#scanInboxBtn').addEventListener('click', scanInbox);
