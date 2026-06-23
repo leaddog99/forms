@@ -410,9 +410,10 @@
           el.className = 'src-file ok';
           el.textContent = `✓ ${d.filename}  —  ${d.folder}`;
         } else {
-          el.className = 'src-file missing';
-          const where = (d.searched || []).join('  ·  ') || '(no existing folder configured)';
-          el.textContent = `no file yet — save ${d.expected} (a _subdir export also works) in one of: ${where}. Refresh will error until it's there.`;
+          // No export found — stay quiet (the how-to-get-the-file steps live above);
+          // don't show the old alarming "Refresh will error…" line.
+          el.className = 'src-file';
+          el.textContent = '';
         }
       } catch {
         el.className = 'src-file missing'; el.textContent = 'could not check for file';
