@@ -98,9 +98,35 @@ is the button.
   `fetch_strategy`/`render_required`). A JS-blocked site needs `render_required=1`
   (auto-learned by a prior harvest, or one tick).
 
-### Path #2 (LATER)
-- A **manual-capture queue** view (steps the human through open-page → bookmarklet) +
-  done-tracking via the URL-join. No server fetch; reuses the existing bookmarklet/editor.
+### Path #2 — manual capture queue (free)
+
+**The automation ceiling (thought through 2026-06-23).** Reading a rendered, anti-bot page
+needs code running in the page's *own origin*. A plain web app **cannot inject script into
+a third-party tab it opens** (cross-origin) — so a bookmarklet's click is irreducible *in a
+web app*. The ways to run code automatically on the page, best-first for a self-hoster:
+
+| Approach | Clicks/page | Free | Install | Robust |
+|---|---|---|---|---|
+| **Userscript (Tampermonkey)** | **0** | ✅ | TM + 1 script (once) | ✅ real browser |
+| **Browser extension** | **0** | ✅ | our extension (once) | ✅ |
+| **Self-advancing bookmarklet** | 1 (auto-advances) | ✅ | none | ✅ |
+| **App-driven queue + current bookmarklet** | 1 | ✅ | none | ✅ |
+| **Local Playwright "free unblocker"** | 0 | ✅ | — | ❌ **trap** |
+
+- **Recommended zero-click: a userscript** — it's the existing bookmarklet **plus**
+  "fetch next from the queue → extract → POST to master → navigate to next". Tampermonkey
+  auto-runs it on `publisher/*`, so after "Go" it's hands-off, free, and undetectable (it's
+  the user's real Chrome). One-time TM install. This is the real "automate the bookmarklet".
+- **Local Playwright is a trap:** it's *detectable* automation (`navigator.webdriver`/CDP) —
+  the exact thing the paid Oxylabs unblocker (Path #1) exists to defeat. If it beat these
+  blocks we wouldn't need Path #1. #2's whole value is the *genuine human browser*.
+
+**Shipped tonight (ROUGH PROTOTYPE — UI redesign pending):** the no-install version — a
+client-side **capture queue** (`captureQueue()` in `domains.html`): check rows → **📋 Queue
+(manual)** → a floating panel **opens each page** ("Open next"), the human clicks their
+bookmarklet, and it **auto-advances by polling `/top`** (a URL flips to `ingested` once the
+bookmarklet saves it to master). No server/fetch; reuses the existing bookmarklet + the
+URL-join for done-tracking. NEXT: promote to a **userscript** for true zero-click.
 
 ## Open decisions
 

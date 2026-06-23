@@ -350,6 +350,7 @@
             <p class="ed-notes-help" id="topListLabel" style="margin:0">Kept top recipes:</p>
             <div style="display:flex;gap:6px;align-items:center">
               <button type="button" class="ed-btn" id="processSelBtn" style="font-size:.8em;display:none" title="Extract the CHECKED rows into master via the unblocker (1 render each)">⚙ Process selected</button>
+              <button type="button" class="ed-btn" id="queueCapBtn" style="font-size:.8em;display:none" title="FREE manual queue: opens each CHECKED page so you click your bookmarklet — no unblocker cost. (ROUGH prototype — UI redesign tomorrow.)">📋 Queue (manual)</button>
               <button type="button" class="ed-btn" id="cohortToggle" data-on="0" style="font-size:.8em" title="Show EVERY scored candidate — winners ★ plus the ranked-but-not-kept also-rans, with DA/PA — like the dishes scored cohort">☰ Scored cohort</button>
             </div>
           </div>
@@ -386,6 +387,7 @@
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
+      $('#queueCapBtn')?.addEventListener('click', () => captureQueue(d.domain));
       // Wire the cohort toggle HERE (renderDetail re-creates the button each render) —
       // not in the global section, where it'd attach once to a button that no longer exists.
       $('#cohortToggle')?.addEventListener('click', () => {
@@ -500,6 +502,7 @@
         // ⚙ Process selected is for the cohort/worklist (where you check candidates);
         // hidden in the winners-only view (those are already ingested).
         const psb = $('#processSelBtn'); if (psb) psb.style.display = all ? 'inline-flex' : 'none';
+        const qcb = $('#queueCapBtn'); if (qcb) qcb.style.display = all ? 'inline-flex' : 'none';
         const lbl = $('#topListLabel');
         if (lbl) lbl.textContent = all
           ? `Scored cohort — ${d.count} candidates (${d.selected_count || 0} kept ★, rest are also-rans)`
@@ -530,6 +533,56 @@
         streamRefresh(data.stream_url, domain, data.job_id);   // live log + reload-on-done + cancel
         restore();
       } catch (e){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Process failed: ' + (e.message || e); } restore(); }
+    }
+
+    // Score-only path #2 (ROUGH PROTOTYPE — UI redesign tomorrow): FREE manual capture
+    // queue. The app drives the OPENING of each checked page; the human clicks their
+    // bookmarklet to save it (the real browser beats the anti-bot — no unblocker cost).
+    // We auto-advance by polling /top: a URL flips to ingested once the bookmarklet saves
+    // it to master. The per-page bookmarklet click is irreducible WITHOUT a userscript/
+    // extension (a web app can't inject into a third-party tab) — see docs.
+    function captureQueue(domain){
+      const queue = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
+        .map(c => c.dataset.url).filter(Boolean);
+      if (!queue.length){ const h = $('#topHint'); if (h){ h.style.color = 'var(--ed-warn)'; h.textContent = 'Check at least one row to queue.'; } return; }
+      const norm = u => (u || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
+      let idx = 0, done = 0, poll = null;
+      document.getElementById('captureQueueOverlay')?.remove();
+      const ov = document.createElement('div');
+      ov.id = 'captureQueueOverlay';
+      ov.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:500;width:340px;background:var(--card,#fff);color:var(--ink,#222);border:1px solid var(--line,#ccc);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:14px 16px;font-family:Georgia,serif';
+      document.body.appendChild(ov);
+      const stop = () => { if (poll){ clearInterval(poll); poll = null; } };
+      const render = (msg) => {
+        ov.innerHTML =
+          `<div style="font-weight:700;margin-bottom:4px">📋 Manual capture queue</div>` +
+          `<div style="font-size:.8em;color:var(--muted,#666);margin-bottom:8px">Open each page → click your <b>bookmarklet</b> to save it. Auto-advances when it lands in the corpus. (Free — no unblocker.)</div>` +
+          `<div style="margin-bottom:6px;font-size:.9em">Saved <b>${done}</b> / ${queue.length} · ${Math.max(0, queue.length - idx)} left</div>` +
+          (msg ? `<div style="font-size:.82em;color:var(--muted,#666);margin-bottom:8px">${escapeHtml(msg)}</div>` : '') +
+          `<div style="display:flex;gap:6px;flex-wrap:wrap">` +
+          `<button class="ed-btn" id="cqNext" style="font-size:.82em">▶ Open next</button>` +
+          `<button class="ed-btn" id="cqSkip" style="font-size:.82em">Skip</button>` +
+          `<button class="ed-btn danger" id="cqClose" style="font-size:.82em">Close</button></div>`;
+        ov.querySelector('#cqNext').onclick = openNext;
+        ov.querySelector('#cqSkip').onclick = () => { stop(); idx++; render(idx < queue.length ? 'Skipped — open the next one.' : 'Queue finished.'); };
+        ov.querySelector('#cqClose').onclick = () => { stop(); ov.remove(); loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1'); loadDomainRecipes(domain); };
+      };
+      const openNext = () => {
+        stop();
+        if (idx >= queue.length){ render('Queue finished — all opened.'); return; }
+        const url = queue[idx];
+        window.open(url, '_blank', 'noopener');
+        render(`Opened #${idx + 1}/${queue.length}. Click your bookmarklet on that tab → waiting for it to land…`);
+        poll = setInterval(async () => {
+          try {
+            const r = await fetch(`/domains/${encodeURIComponent(domain)}/top?all=1`);
+            const d = await r.json();
+            const hit = (d.top || []).find(m => norm(m.url) === norm(url) && m.ingested);
+            if (hit){ stop(); done++; idx++; render(idx < queue.length ? 'Saved ✓ — open the next one.' : 'All done ✓ — queue complete.'); }
+          } catch {}
+        }, 4000);
+      };
+      render('Ready — click "Open next" to start. (Each page costs nothing; you click your bookmarklet.)');
     }
 
     async function doRefreshTop(domain){
