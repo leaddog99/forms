@@ -309,6 +309,10 @@
             <span>Skip this publisher — no mechanical way to list recipes (Google refresh won't run)</span>
           </label>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
+            <input type="checkbox" id="f_paywall" ${Number(d.paywall) === 1 ? 'checked' : ''}>
+            <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify) <i>and</i> a system rescore PA-calibrates it to free-equivalent so its link-starved pages aren't penalized${d.pa_cal_at ? ` · <b>calibrated</b> ${escapeHtml(fmtDate(d.pa_cal_at))} (n=${Number(d.pa_cal_n) || 0})` : ' · <i>not yet calibrated — runs on the next Rescore</i>'}</span>
+          </label>
+          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
             <input type="checkbox" id="f_url_prefilter" ${Number(d.url_prefilter) === 1 ? 'checked' : ''}>
             <span>Pre-filter by URL text — skip URLs with no food/recipe word <i>before</i> fetching (saves fetches/credits on directory sites like bostonchefs; leave OFF for sites with truncated slugs)</span>
           </label>
@@ -679,6 +683,7 @@
         search_pages: numOrNull($('#f_search_pages')?.value) || 4,
         harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp',
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
+        paywall: $('#f_paywall')?.checked ? 1 : 0,
         harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
         semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),
