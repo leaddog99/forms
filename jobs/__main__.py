@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 import sys
 from pathlib import Path
 
@@ -80,7 +81,7 @@ def _exit_code_for(job: dict | None) -> int:
 def _run_job_id(job_id: int) -> int:
     """Run one already-enqueued job through the canonical path and return its
     exit code. Re-fetches the row so the handler sees current params."""
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         job = jobs_lib.get_job(conn, job_id)
     if job is None:
         print(f"Job #{job_id} not found.")
@@ -92,7 +93,7 @@ def _run_job_id(job_id: int) -> int:
 
     asyncio.run(jobs_lib._run_one_job(job, api.DB_PATH, api.LOGS_DIR))
 
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         final = jobs_lib.get_job(conn, job_id)
     if final:
         tail = ""
@@ -111,7 +112,7 @@ def _enqueue_dish_refresh(name: str) -> tuple[int | None, str | None]:
     """Resolve a dish to its canonical name, guard against a double-run, and
     enqueue a dish_refresh. Returns (job_id, None) on success, or
     (None, reason) when not found / already in flight."""
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         dish = dishes_lib.get_dish(conn, name)
         if dish is None:
             return None, f"Dish {name!r} not found."
@@ -161,7 +162,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         k, v = kv.split("=", 1)
         params[k] = v
     entity_ref = args.entity_ref
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         if entity_ref:
             existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
             if existing:
@@ -209,11 +210,11 @@ def cmd_schedule(args: argparse.Namespace) -> int:
     # even while this pass is still running. Not for a dry-run preview.
     if not args.dry_run:
         from datetime import datetime, timezone
-        with sqlite3.connect(api.DB_PATH) as conn:
+        with _connect(api.DB_PATH) as conn:
             cfg.set_setting(conn, "scheduler_last_tick_at",
                             datetime.now(timezone.utc).isoformat())
 
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         due = dishes_lib.find_due_dishes(conn)
 
     worst = 0
@@ -251,12 +252,12 @@ def _run_due_scheduled_jobs() -> int:
     overlapping heartbeat honors the interval) then the status is recorded after.
     Returns the worst exit code."""
     from input.pipeline import scheduled_jobs as sched
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         due = sched.find_due_scheduled_jobs(conn)
     worst = 0
     for j in due:
         name = j["name"]
-        with sqlite3.connect(api.DB_PATH) as conn:
+        with _connect(api.DB_PATH) as conn:
             job_id = jobs_lib.enqueue_job(
                 conn, type=j["job_type"], params=j.get("params") or {},
                 entity_ref=f"scheduled:{name}")
@@ -264,7 +265,7 @@ def _run_due_scheduled_jobs() -> int:
         print(f"Running scheduled job {name!r} (#{job_id}, type={j['job_type']})...")
         rc = _run_job_id(job_id)
         worst = max(worst, rc)
-        with sqlite3.connect(api.DB_PATH) as conn:
+        with _connect(api.DB_PATH) as conn:
             run = jobs_lib.get_job(conn, job_id) or {}
             sched.record_run(conn, name,
                              status=run.get("status") or ("error" if rc else "success"),
@@ -281,7 +282,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
 
 def cmd_next(args: argparse.Namespace) -> int:
     """Run the single oldest ready queued job (does not enqueue)."""
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         nxt = jobs_lib.find_next_ready(conn)
     if nxt is None:
         print("No queued jobs ready. Nothing to do.")
@@ -293,7 +294,7 @@ def cmd_next(args: argparse.Namespace) -> int:
 
 def cmd_drain(args: argparse.Namespace) -> int:
     """Run every queued job, oldest first. Exit 1 if any errored."""
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         queued = jobs_lib.list_jobs(conn, status="queued", limit=1000)
     queued.sort(key=lambda j: j["created_at"])
     if not queued:
@@ -311,7 +312,7 @@ def cmd_drain(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     """List jobs and exit. Default filters to queued; --status '' for all."""
     status = None if args.status == "" else (args.status or "queued")
-    with sqlite3.connect(api.DB_PATH) as conn:
+    with _connect(api.DB_PATH) as conn:
         rows = jobs_lib.list_jobs(conn, status=status, type=args.type, limit=args.limit)
     label = status or "all"
     print(f"{label} jobs ({len(rows)}):")

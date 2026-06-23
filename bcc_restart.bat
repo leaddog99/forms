@@ -13,6 +13,7 @@ REM   dead PARENT pid, so `taskkill /PID <parent>` no-ops and every new
 REM   start dies with WinError 10048 (port in use) while the zombie keeps
 REM   serving STALE code. That's the "I restarted but nothing changed".
 REM
+
 REM   The fix: kill the socket owner AND its child processes (the child
 REM   is the one actually holding the handle), via PowerShell which can
 REM   walk the parent/child tree. Then VERIFY the port is free and abort
@@ -34,7 +35,12 @@ REM        -socket zombie that taskkill cannot. (No double-quotes inside
 REM        the -Command string: WMI filters are built with single-quoted
 REM        concatenation so cmd quoting stays sane.) ---
 echo Freeing port %PORT% (killing server + any orphaned workers)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=@((Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue).OwningProcess)|Where-Object{$_ -and $_ -ne 0}|Sort-Object -Unique; $k=@(); foreach($p in $o){$k+=$p; $k+=(Get-CimInstance Win32_Process -Filter ('ParentProcessId='+$p) -ErrorAction SilentlyContinue).ProcessId}; $k=$k|Where-Object{$_ -and $_ -ne 0}|Sort-Object -Unique; if($k){Write-Host ('  killing PIDs: '+($k -join ', '))}else{Write-Host '  none found'}; foreach($q in $k){Stop-Process -Id $q -Force -ErrorAction SilentlyContinue}; Start-Sleep -Seconds 2"
+REM   SPARE out-of-process job runners: a `python -m jobs exec` is a CHILD of the
+REM   server (Popen ppid), so a naive child-kill would take a running harvest/cook
+REM   job down with the server (it does NOT hold :8009). We filter those out by
+REM   CommandLine so the listener + any real socket-inheriting worker still die, but
+REM   live jobs survive the restart (they're WAL-safe and finish on their own).
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=@((Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue).OwningProcess)|Where-Object{$_ -and $_ -ne 0}|Sort-Object -Unique; $k=@(); foreach($p in $o){$k+=$p; $k+=(Get-CimInstance Win32_Process -Filter ('ParentProcessId='+$p) -ErrorAction SilentlyContinue | Where-Object{$_.CommandLine -notmatch '-m jobs'}).ProcessId}; $k=$k|Where-Object{$_ -and $_ -ne 0}|Sort-Object -Unique; if($k){Write-Host ('  killing PIDs: '+($k -join ', '))}else{Write-Host '  none found'}; foreach($q in $k){Stop-Process -Id $q -Force -ErrorAction SilentlyContinue}; Start-Sleep -Seconds 2"
 
 REM --- 2. Verify the port is actually free. If a process still holds it
 REM        (e.g. it refused to die), STOP here with a clear message so we

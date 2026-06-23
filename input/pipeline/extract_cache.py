@@ -36,6 +36,7 @@ per-user usage queries can total tokens saved alongside actual spend.
 import hashlib
 import json
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -156,7 +157,7 @@ def get_cached_extract(
     if not url_normalized:
         return None
     try:
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             ensure_llm_extract_cache_table(conn)
             row = conn.execute(
                 """SELECT model, prompt_version, recipe_json,
@@ -209,7 +210,7 @@ def set_cached_extract(
     if not url_normalized:
         return
     try:
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             ensure_llm_extract_cache_table(conn)
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(

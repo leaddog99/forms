@@ -10,6 +10,7 @@ the is-recipe corpus + the url word-lists: capture raw now, promote later
 ([[project_corpus_ml]]). Best-effort — a failure here never breaks a harvest.
 """
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -73,7 +74,7 @@ def capture(rows, domain, db_path: Optional[str] = None) -> int:
                          (r.get("answer_engines") or "").strip(), now))
         if not recs:
             return 0
-        with sqlite3.connect(_resolve_db_path(db_path), timeout=5.0) as conn:
+        with _connect(_resolve_db_path(db_path), timeout=5.0) as conn:
             ensure_table(conn)
             conn.executemany(
                 "INSERT OR REPLACE INTO dish_keywords"
@@ -91,7 +92,7 @@ def capture(rows, domain, db_path: Optional[str] = None) -> int:
 
 def stats(db_path: Optional[str] = None) -> dict:
     try:
-        with sqlite3.connect(_resolve_db_path(db_path), timeout=5.0) as conn:
+        with _connect(_resolve_db_path(db_path), timeout=5.0) as conn:
             ensure_table(conn)
             total = conn.execute("SELECT COUNT(*) FROM dish_keywords").fetchone()[0]
             top = conn.execute(

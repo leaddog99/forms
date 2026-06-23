@@ -244,7 +244,7 @@ def store_screenshot_blob(db_path: str, url_normalized: str, jpeg_bytes: bytes) 
     sid = screenshot_id_for(url_normalized)
     try:
         import sqlite3 as _sqlite3
-        with _sqlite3.connect(db_path) as conn:
+        with _sqlite3.connect(db_path, timeout=30) as conn:
             ensure_page_screenshots_table(conn)
             conn.execute(
                 """INSERT INTO page_screenshots
@@ -269,7 +269,7 @@ def read_screenshot_blob(db_path: str, screenshot_id: str) -> Optional[bytes]:
         return None
     try:
         import sqlite3 as _sqlite3
-        with _sqlite3.connect(db_path) as conn:
+        with _sqlite3.connect(db_path, timeout=30) as conn:
             ensure_page_screenshots_table(conn)
             row = conn.execute(
                 "SELECT jpeg FROM page_screenshots WHERE screenshot_id = ?",

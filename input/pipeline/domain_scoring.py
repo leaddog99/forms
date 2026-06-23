@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -79,7 +80,7 @@ def get_global_fit(conn: Optional[sqlite3.Connection] = None,
     or omit it to open `db_path` (lets the connection-free harvest read it)."""
     own = conn is None
     if own:
-        conn = sqlite3.connect(db_path)
+        conn = _connect(db_path)
     try:
         ensure_fit_table(conn)
         row = conn.execute("SELECT fit FROM domain_score_fit WHERE id = 1").fetchone()
@@ -275,7 +276,7 @@ def score_members(members: list[dict], *,
 
     own = conn is None
     if own:
-        conn = sqlite3.connect(db_path)
+        conn = _connect(db_path)
     try:
         if fit is None:
             fit = get_global_fit(conn)

@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -286,7 +287,7 @@ def get_paywall_calibrations(conn=None, db_path: str = _DEFAULT_DB) -> list:
     `db_path` (lets build_query_batch read it connection-free)."""
     own = conn is None
     if own:
-        conn = sqlite3.connect(db_path)
+        conn = _connect(db_path)
     try:
         if own:
             ensure_domains_table(conn)
@@ -434,7 +435,7 @@ def mark_render_required(domain: str, conn: Optional[sqlite3.Connection] = None,
     `db_path` (lets the out-of-process harvest call it connection-free)."""
     own = conn is None
     if own:
-        conn = sqlite3.connect(db_path)
+        conn = _connect(db_path)
     try:
         ensure_domains_table(conn)
         host = _canon_host(domain)
@@ -789,7 +790,7 @@ def get_render_eligible_hosts(db_path: str = _DEFAULT_DB) -> set:
     if _RENDER_CACHE is None:
         hosts: set = set()
         try:
-            with sqlite3.connect(db_path) as conn:
+            with _connect(db_path) as conn:
                 ensure_domains_table(conn)
                 for dom, root in conn.execute(
                     "SELECT domain, root_domain FROM domains "
@@ -816,7 +817,7 @@ def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:
     if _BLOCKED_CACHE is None:
         blocked: set = set()
         try:
-            with sqlite3.connect(db_path) as conn:
+            with _connect(db_path) as conn:
                 ensure_domains_table(conn)
                 for dom, root in conn.execute(
                     "SELECT domain, root_domain FROM domains WHERE allowed = 0"
@@ -875,7 +876,7 @@ def get_display_map(db_path: str = _DEFAULT_DB) -> dict:
     if _DISPLAY_CACHE is not None:
         return _DISPLAY_CACHE
     try:
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             ensure_domains_table(conn)
             row = conn.execute("SELECT COUNT(*) FROM domains").fetchone()
             if not row or row[0] == 0:

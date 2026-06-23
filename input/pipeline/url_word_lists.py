@@ -16,6 +16,7 @@ BOOTSTRAP SEED only ([[no data in code]] — the table is canonical once seeded)
 import os
 import re
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse, unquote
@@ -159,7 +160,7 @@ def get_word_sets(db_path: Optional[str] = None) -> dict:
         return _CACHE[path]
     food, stop = set(), set()
     try:
-        with sqlite3.connect(path) as conn:
+        with _connect(path) as conn:
             seed_if_empty(conn)
             for w, k in conn.execute("SELECT word, kind FROM url_word_class"):
                 (food if k == "food" else stop).add(w)
@@ -354,7 +355,7 @@ def learn_from_urls(urls, db_path: Optional[str] = None, log=print) -> dict:
     known for this very run, not just whatever the last master sweep learned. Cache is
     invalidated so the immediately-following filter reads the updated food list."""
     path = _resolve_db_path(db_path)
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         res = _learn_from(conn, list(urls), log)
     invalidate(path)
     return res
@@ -367,7 +368,7 @@ def sweep_master_urls(db_path: Optional[str] = None, log=print) -> dict:
     path = _resolve_db_path(db_path)
     self_hosts = ("bestcooksclub.com", "tbotb.com", "recipes.tbotb.com",
                   "amazon.com", "share.google")
-    with sqlite3.connect(path) as conn:
+    with _connect(path) as conn:
         urls = [u for (u,) in conn.execute(
                     "SELECT url_normalized FROM master_recipes WHERE url_normalized LIKE 'http%'")
                 if not any(s in (urlparse(u).hostname or "").lower() for s in self_hosts)]

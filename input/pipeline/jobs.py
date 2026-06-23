@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 import sys
 import time
 import traceback
@@ -347,7 +348,7 @@ async def _run_one_job(job: dict, db_path: str, log_dir: Path) -> None:
     print(f"params: {job.get('params')}")
 
     try:
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             mark_running(conn, job["id"], log_filename)
 
         handler = JOB_HANDLERS.get(job["type"])
@@ -361,17 +362,17 @@ async def _run_one_job(job: dict, db_path: str, log_dir: Path) -> None:
         job_with_log["log_filename"] = log_filename
         result = await handler(job_with_log)
 
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             mark_finished(conn, job["id"], status="success", result=result)
         print(f"=== Job #{job['id']} success ===")
     except JobCancelled as e:
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             mark_finished(conn, job["id"], status="cancelled",
                           error_detail=str(e) or "cancelled by user")
         print(f"=== Job #{job['id']} CANCELLED ===")
     except Exception as e:
         traceback.print_exc()
-        with sqlite3.connect(db_path) as conn:
+        with _connect(db_path) as conn:
             mark_finished(
                 conn, job["id"],
                 status="error",
@@ -399,7 +400,7 @@ async def runner_loop(db_path: str, log_dir: Path, *,
             print("[JOB-RUNNER] stop_event set; exiting loop")
             return
         try:
-            with sqlite3.connect(db_path) as conn:
+            with _connect(db_path) as conn:
                 job = find_next_ready(conn)
             if job is None:
                 await asyncio.sleep(poll_interval)
