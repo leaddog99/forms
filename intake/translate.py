@@ -226,6 +226,35 @@ _H1_ATX_RE = re.compile(r'^\s*#\s+(.+?)\s*$', re.MULTILINE)
 _H1_SETEXT_RE = re.compile(r'^\s*(.+?)\s*\n=+\s*$', re.MULTILINE)
 
 
+import os as _os
+import json as _json
+
+_GLOSSARY_DIR = _os.path.join(_os.path.dirname(__file__), "glossary")
+
+
+def _glossary_block(src_lang: str) -> str:
+    """Build a culinary-glossary instruction block from intake/glossary/<lang>.json
+    (a SEED file — promote to a DB table only when it grows / needs curator UI). Returns
+    '' when there's no glossary for the language. The notes DISAMBIGUATE near-homographs
+    (κολοκύθι/κολοκύθα) and savory-vs-sweet dishes (κολοκυθόπιτα is a savory phyllo pie,
+    never sweet 'pumpkin pie'); the model applies them IN CONTEXT, not as a find-replace."""
+    try:
+        with open(_os.path.join(_GLOSSARY_DIR, f"{src_lang}.json"), encoding="utf-8") as f:
+            g = _json.load(f)
+    except Exception:
+        return ""
+    lines = []
+    for t in g.get("terms", []):
+        s, tgt, note = t.get("source"), t.get("target"), t.get("note")
+        if s and tgt:
+            lines.append(f"  - {s} -> {tgt}" + (f"  ({note})" if note else ""))
+    if not lines:
+        return ""
+    return ("\n\nCULINARY GLOSSARY — honor these source-language terms, applying them IN "
+            "CONTEXT (they disambiguate look-alike words and savory-vs-sweet dishes; NEVER "
+            "render a savory phyllo pie as a sweet dessert):\n" + "\n".join(lines))
+
+
 def _extract_first_h1(markdown: str) -> Optional[str]:
     """Pull the first h1 from markdown as the original-language title.
     We want this BEFORE translation, so the byline-in-original-language
@@ -259,7 +288,7 @@ def translate_markdown(markdown: str, src_lang: str) -> TranslationResult:
     msg = llm.create(
         operation="translate_markdown", model=_TRANSLATION_MODEL,
         max_tokens=_TRANSLATION_MAX_TOKENS,
-        system=_TRANSLATION_SYSTEM.format(src_lang_name=src_name),
+        system=_TRANSLATION_SYSTEM.format(src_lang_name=src_name) + _glossary_block(src_lang),
         messages=[{
             "role": "user",
             "content": _TRANSLATION_USER.format(
@@ -298,7 +327,8 @@ def translate_title(title: str, src_lang: str) -> str:
         max_tokens=200,
         system=(f"You are a translator. Translate the given web-page title from "
                 f"{src_name} to English. Output ONLY the translated title text — no "
-                f"surrounding quotes, no explanation, no added or invented words."),
+                f"surrounding quotes, no explanation, no added or invented words."
+                + _glossary_block(src_lang)),
         messages=[{"role": "user", "content": title.strip()}],
     )
     return "".join(

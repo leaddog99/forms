@@ -1,0 +1,18 @@
+{
+  "language": "el",
+  "language_name": "Greek",
+  "_note": "Culinary translation traps for Greek -> English, injected into the translate prompt (intake/translate.py). SEED FILE — no DB table yet; add terms as mistranslations surface, promote to a `translation_glossary` table only when it needs curator UI / multi-language scale. Notes DISAMBIGUATE; the model applies them in context, not as a blind find-replace. NB: most 'pumpkin pie' rows in the corpus come from ENGLISH sources (no translation) — those need dish-alias normalization (kolokithopita), separate from this file.",
+  "terms": [
+    {"source": "κολοκύθι",          "target": "zucchini (courgette)",            "note": "green summer squash — NOT pumpkin"},
+    {"source": "κολοκύθα",          "target": "pumpkin / winter squash",         "note": "the orange/winter gourd — NOT zucchini"},
+    {"source": "κολοκυθόπιτα",       "target": "zucchini phyllo pie (savory)",    "note": "a SAVORY Greek phyllo pie (usually zucchini, sometimes winter squash) — NEVER the sweet American 'pumpkin pie' dessert"},
+    {"source": "κολοκυθοκεφτέδες",   "target": "zucchini fritters",               "note": "savory; NOT pumpkin"},
+    {"source": "πίτα",               "target": "pita / savory phyllo pie",        "note": "a flatbread OR a savory phyllo pie by context — NOT a sweet dessert pie"},
+    {"source": "σπανακόπιτα",        "target": "spanakopita (spinach phyllo pie)","note": "savory; keep the loanword"},
+    {"source": "τυρόπιτα",           "target": "tyropita (cheese phyllo pie)",    "note": "savory; keep the loanword"},
+    {"source": "χορτόπιτα",          "target": "hortopita (wild-greens phyllo pie)","note": "savory"},
+    {"source": "κρεατόπιτα",         "target": "kreatopita (meat phyllo pie)",    "note": "savory"},
+    {"source": "γαλακτομπούρεκο",    "target": "galaktoboureko",                  "note": "semolina custard baked in phyllo; keep the loanword"},
+    {"source": "μπουγάτσα",          "target": "bougatsa",                        "note": "custard or cheese phyllo pastry; keep the loanword"}
+  ]
+}
