@@ -40,7 +40,11 @@
     input[type=text], input[type=number], textarea, select{
       width:100%; border:1px solid var(--hairline); border-radius:6px; background:var(--surface);
       color:var(--ink); font:inherit; font-size:.92em; padding:8px 10px; }
-    textarea{ min-height:38px; resize:vertical; line-height:1.4; }
+    textarea{ min-height:180px; resize:vertical; line-height:1.5; }
+    /* the messages box wants room in BOTH dimensions (one line per message) */
+    textarea[data-field="messages"]{ min-width:480px; min-height:240px; }
+    /* short-option selects (category, order) don't need full width */
+    select{ max-width:220px; }
     input:focus, textarea:focus, select:focus{ outline:none; border-color:var(--ink); }
     input[type=checkbox]{ width:18px; height:18px; accent-color:var(--accent); }
     button{ font:inherit; font-size:.86em; font-weight:400; cursor:pointer; border-radius:6px;
@@ -160,6 +164,8 @@
       const grid = $('addGrid'); grid.innerHTML = '';
       schema.fields.filter(f => f.editable).forEach(f => {
         const wrap = document.createElement('div');
+        // a textarea (e.g. the messages list) spans the whole add-form row so it's wide.
+        if (f.type === 'textarea') wrap.style.gridColumn = '1 / -1';
         const lab = document.createElement('label');
         lab.textContent = f.label + (f.required ? ' *' : '');
         wrap.appendChild(lab);
