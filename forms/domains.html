@@ -351,6 +351,8 @@
             <div style="display:flex;gap:6px;align-items:center">
               <button type="button" class="ed-btn" id="processSelBtn" style="font-size:.8em;display:none" title="Extract the CHECKED rows into master via the unblocker (1 render each)">⚙ Process selected</button>
               <button type="button" class="ed-btn" id="queueCapBtn" style="font-size:.8em;display:none" title="FREE manual queue: opens each CHECKED page so you click your bookmarklet — no unblocker cost. (ROUGH prototype — UI redesign tomorrow.)">📋 Queue (manual)</button>
+              <button type="button" class="ed-btn" id="userscriptBtn" style="font-size:.8em;display:none" title="ZERO-CLICK FREE: the BCC capture userscript (Tampermonkey) walks the CHECKED pages in your real browser, beating anti-bot, saving each to master, paced 8–25s. Tracked as a job. Install once from /forms/bcc-capture.user.js">⚡ Run userscript</button>
+              <label id="slowWrap" class="ed-check" style="display:none;font-size:.76em;gap:4px;align-items:center" title="Slower delays (30–60s) for touchy / rate-limiting sites"><input type="checkbox" id="usSlow"> slow</label>
               <button type="button" class="ed-btn" id="cohortToggle" data-on="0" style="font-size:.8em" title="Show EVERY scored candidate — winners ★ plus the ranked-but-not-kept also-rans, with DA/PA — like the dishes scored cohort">☰ Scored cohort</button>
             </div>
           </div>
@@ -388,6 +390,7 @@
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
       $('#queueCapBtn')?.addEventListener('click', () => captureQueue(d.domain));
+      $('#userscriptBtn')?.addEventListener('click', () => runUserscriptQueue(d.domain));
       // Wire the cohort toggle HERE (renderDetail re-creates the button each render) —
       // not in the global section, where it'd attach once to a button that no longer exists.
       $('#cohortToggle')?.addEventListener('click', () => {
@@ -503,6 +506,8 @@
         // hidden in the winners-only view (those are already ingested).
         const psb = $('#processSelBtn'); if (psb) psb.style.display = all ? 'inline-flex' : 'none';
         const qcb = $('#queueCapBtn'); if (qcb) qcb.style.display = all ? 'inline-flex' : 'none';
+        const usb = $('#userscriptBtn'); if (usb) usb.style.display = all ? 'inline-flex' : 'none';
+        const sw = $('#slowWrap'); if (sw) sw.style.display = all ? 'inline-flex' : 'none';
         const lbl = $('#topListLabel');
         if (lbl) lbl.textContent = all
           ? `Scored cohort — ${d.count} candidates (${d.selected_count || 0} kept ★, rest are also-rans)`
@@ -585,6 +590,34 @@
       render('Ready — click "Open next" to start. (Each page costs nothing; you click your bookmarklet.)');
     }
 
+    // Score-only path #2 ZERO-CLICK: hand the checked URLs to the Tampermonkey userscript.
+    // Server opens a tracked `userscript_capture` job + returns the first URL; we open it
+    // with the #bcc-capture hash, and the installed userscript walks the rest in the real
+    // browser (free, beats anti-bot), paced 8–25s (or slow 30–60s).
+    async function runUserscriptQueue(domain){
+      const picks = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
+        .map(c => c.dataset.url).filter(Boolean);
+      const hint = $('#topHint');
+      if (!picks.length){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Check at least one row to queue.'; } return; }
+      const slow = $('#usSlow')?.checked || false;
+      if (!confirm(`Run the userscript over ${picks.length} page(s)? It opens a tab and walks them in your real browser (free), pausing ${slow ? '30–60' : '8–25'}s between each.\n\nRequires the BCC capture userscript installed in Tampermonkey (install once from /forms/bcc-capture.user.js).`)) return;
+      const btn = $('#userscriptBtn'); const restore = () => { if (btn){ btn.disabled = false; btn.textContent = '⚡ Run userscript'; } };
+      if (btn){ btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/userscript/start`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: picks, slow }) });
+        const data = await r.json().catch(() => ({}));
+        if (r.status === 409){ if (hint) hint.textContent = 'A userscript run is already in flight for this domain.'; if (data.stream_url) streamRefresh(data.stream_url, domain, data.job_id); restore(); return; }
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        // Open page 1 WITH the capture hash → the installed userscript takes over from there.
+        const hash = '#bcc-capture=' + encodeURIComponent(location.origin + '|' + data.job_id + '|' + data.host);
+        window.open(data.next_url + hash, '_blank');
+        if (hint){ hint.style.color = ''; hint.textContent = `Userscript launched (job #${data.job_id}) — watch the opened tab; ${data.total} queued.`; }
+        streamRefresh(data.stream_url, domain, data.job_id);   // job log + reload-on-done
+        restore();
+      } catch (e){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Userscript start failed: ' + (e.message || e); } restore(); }
+    }
+
     async function doRefreshTop(domain){
       const btn = $('#refreshTopBtn'), hint = $('#topHint');
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
@@ -649,6 +682,10 @@
           .then(fresh => { domains[domain] = fresh; renderList(); }).catch(() => {});
         if (status === 'cancelled' || cancelled){ done('Cancelled.', false); return; }
         if (status === 'error'){ done(`Refresh errored — ${errorMsg || 'see the job log'}.`, true); return; }
+        if (res && Array.isArray(res.saved)){   // userscript_capture job
+          done(`Userscript run finished — saved ${res.saved.length} of ${res.total || 0} into master.`);
+          return;
+        }
         if (res && res.score_only){
           done(`Scored ${res.stored || 0} candidates (no fetch/ingest). Open ☰ Scored cohort, check the worthy ones, then ⚙ Process selected.`);
           return;

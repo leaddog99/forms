@@ -3993,6 +3993,178 @@ def process_selected_endpoint(domain: str, payload: dict = Body(...)):
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
 
 
+# --------------------------------------------------------------------------- #
+# Score-only path #2 (zero-click): the USERSCRIPT capture queue. A Tampermonkey
+# userscript runs in the curator's REAL browser on each queued publisher page
+# (beating the anti-bot for free), harvests the page's JSON-LD, POSTs it here to
+# save to master, and self-advances with human-paced delays. The run is a tracked
+# `userscript_capture` job so it shows in the Job Monitor with a live log.
+# See docs/score-only-curation.md.
+# --------------------------------------------------------------------------- #
+_LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+
+
+def _userscript_log(log_filename: str, line: str) -> None:
+    """Append a timestamped line to the job's log file so it streams in the Monitor."""
+    if not log_filename:
+        return
+    try:
+        with open(os.path.join(_LOGS_DIR, log_filename), "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}] {line}\n")
+    except Exception:
+        pass
+
+
+def _capture_jsonld_to_master(host: str, url: str, jsonld: list, rank: int = 0) -> dict:
+    """Build a recipe from BROWSER-captured JSON-LD (NO server fetch — the userscript's
+    real browser already bypassed the anti-bot) and save it to master as a kind='top'
+    publisher member. Free jsonld-direct lane, falls back to the markdown LLM. Returns
+    {saved, name?, reason?}."""
+    recipe = None
+    if jsonld:
+        try:
+            recipe = jsonld_to_recipe(jsonld[0], source_url=url, title="")
+        except Exception as e:
+            print(f"[USERSCRIPT] jsonld_to_recipe raised: {type(e).__name__}: {e}")
+    if recipe is None and jsonld:
+        try:
+            blob = f"*Source: {url}*\n\n```json\n{json.dumps(jsonld, indent=2)}\n```\n"
+            recipe = markdown_to_recipe(blob, source_name=host, source_url=url, title="")
+        except Exception as e:
+            print(f"[USERSCRIPT] markdown fallback raised: {type(e).__name__}: {e}")
+    if not recipe:
+        return {"saved": False, "reason": "no recipe JSON-LD on page (stub/blocked?)"}
+    ok, reason = _is_cacheable(recipe, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                               min_steps=SAVE_GATE_MIN_INSTRUCTIONS)
+    if not ok:
+        return {"saved": False, "reason": f"thin ({reason})"}
+    payload = dict(recipe)
+    payload["user_id"] = 0
+    payload["_master"] = {"kind": "top", "publisher": host,
+                          "refreshed_at": datetime.now(timezone.utc).isoformat(),
+                          "rank": rank, "batch_source": "/userscript-capture"}
+    payload["_skip_auto_enrich"] = True
+    try:
+        _save_recipe_core(payload)
+        return {"saved": True, "name": recipe.get("name") or url}
+    except Exception as e:
+        return {"saved": False, "reason": f"save-fail: {type(e).__name__}: {e}"}
+
+
+@app.post("/domains/{domain}/userscript/start")
+def userscript_start_endpoint(domain: str, payload: dict = Body(...)):
+    """Begin a userscript capture run: stores the queue + opens a tracked
+    `userscript_capture` job (running). Returns the first URL + the delay range the
+    userscript paces with. `slow` widens the delays for touchy sites."""
+    from input.pipeline import domains_lib
+    host = domains_lib._canon_host(domain)
+    raw = payload.get("urls") or []
+    urls = [u for u in (raw if isinstance(raw, list) else [raw]) if u]
+    if not urls:
+        raise HTTPException(status_code=400, detail="No URLs to queue.")
+    slow = bool(payload.get("slow"))
+    mn, mx = (30, 60) if slow else (8, 25)
+    with _db() as conn:
+        entity_ref = f"userscript:{host}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "error": "already in flight", "job_id": existing["id"],
+                "stream_url": f"/jobs/{existing['id']}/stream"})
+        job_id = jobs_lib.enqueue_job(
+            conn, type="userscript_capture",
+            params={"host": host, "urls": urls, "slow": slow, "min_delay": mn,
+                    "max_delay": mx, "log_label": f"{host} userscript ×{len(urls)}"},
+            entity_ref=entity_ref)
+        job = jobs_lib.get_job(conn, job_id)
+        log_filename = jobs_lib._build_log_filename(job)
+        jobs_lib.mark_running(conn, job_id, log_filename)
+        conn.execute("UPDATE jobs SET result=? WHERE id=?",
+                     (json.dumps({"total": len(urls), "attempted": [], "saved": []}), job_id))
+        conn.commit()
+    _userscript_log(log_filename, f"=== Userscript capture {host} — {len(urls)} URL(s), "
+                                  f"delay {mn}-{mx}s{' [SLOW]' if slow else ''} ===")
+    return {"job_id": job_id, "host": host, "next_url": urls[0], "total": len(urls),
+            "min_delay": mn, "max_delay": mx, "stream_url": f"/jobs/{job_id}/stream"}
+
+
+@app.post("/domains/{domain}/userscript/capture")
+def userscript_capture_endpoint(domain: str, payload: dict = Body(...)):
+    """Save ONE browser-captured page (jsonld) to master, log it on the job, and return
+    the NEXT queued URL (or null when done). The userscript calls this per page."""
+    from input.pipeline import domains_lib
+    from input.pipeline.url_utils import normalize_url as _norm
+    host = domains_lib._canon_host(domain)
+    job_id = payload.get("job_id")
+    url = (payload.get("url") or "").strip()
+    jsonld = payload.get("jsonld") or []
+    if not job_id or not url:
+        raise HTTPException(status_code=400, detail="job_id + url required")
+    with _db() as conn:
+        job = jobs_lib.get_job(conn, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    params = job.get("params") or {}
+    result = job.get("result") or {}
+    if isinstance(result, str):
+        try: result = json.loads(result or "{}")
+        except Exception: result = {}
+    log_filename = job.get("log_filename")
+    queue = params.get("urls") or []
+    attempted = set(result.get("attempted") or [])
+    saved = list(result.get("saved") or [])
+
+    res = _capture_jsonld_to_master(host, url, jsonld, rank=len(saved) + 1)
+    attempted.add(url)
+    if res.get("saved"):
+        saved.append(url)
+        _userscript_log(log_filename, f"SAVED  {res.get('name')}  {url}")
+        with _db() as conn:
+            conn.execute("UPDATE collection_members SET selected=1 WHERE "
+                         "collection_type='publisher' AND collection_key=? AND url_normalized=?",
+                         (host, _norm(url) or url))
+            conn.commit()
+    else:
+        _userscript_log(log_filename, f"SKIP ({res.get('reason')})  {url}")
+
+    nxt = next((u for u in queue if u not in attempted), None)
+    new_result = {"total": len(queue), "attempted": list(attempted), "saved": saved}
+    with _db() as conn:
+        if nxt is None:
+            jobs_lib.mark_finished(conn, job_id, status="success", result=new_result)
+            _userscript_log(log_filename, f"=== done — saved {len(saved)}/{len(queue)} ===")
+        else:
+            conn.execute("UPDATE jobs SET result=? WHERE id=?", (json.dumps(new_result), job_id))
+            conn.commit()
+    return {"saved": bool(res.get("saved")), "name": res.get("name"), "reason": res.get("reason"),
+            "next_url": nxt, "remaining": len(queue) - len(attempted),
+            "saved_count": len(saved), "total": len(queue),
+            "min_delay": params.get("min_delay", 8), "max_delay": params.get("max_delay", 25)}
+
+
+@app.post("/domains/{domain}/userscript/finish")
+def userscript_finish_endpoint(domain: str, payload: dict = Body(...)):
+    """Finalize a userscript run early (e.g. the userscript hit a block-stub and backed
+    off, or the user stopped). reason: complete | blocked | stopped."""
+    job_id = payload.get("job_id")
+    reason = (payload.get("reason") or "stopped").strip()
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id required")
+    with _db() as conn:
+        job = jobs_lib.get_job(conn, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="job not found")
+        result = job.get("result") or {}
+        if isinstance(result, str):
+            try: result = json.loads(result or "{}")
+            except Exception: result = {}
+        result["finish_reason"] = reason
+        status = "success" if reason == "complete" else "cancelled"
+        jobs_lib.mark_finished(conn, job_id, status=status, result=result)
+    _userscript_log(job.get("log_filename"), f"=== finished: {reason} ===")
+    return {"ok": True, "status": status}
+
+
 @app.post("/domains/{domain}/refresh-top")
 def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
     """Publisher refresh — the domains-page analog of a dish refresh. Validates +
