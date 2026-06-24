@@ -1,0 +1,20 @@
+{
+  "_note": "Canonical-dish alias map (#2, docs/dish-alias-normalization.md). Keyed on the UNAMBIGUOUS native/transliterated anchor — NEVER loose English like 'pumpkin pie' (that would grab the real American dessert). The transliterated name is present even in English sources (e.g. 'Greek Pumpkin Pie ... Kolokithopita'), so this normalizes dish IDENTITY + CHAPTER across languages while leaving the author's title untouched. SEED FILE — fold into the dish catalog when that lands; promote to a table only if curators need UI. Each dish: canonical (the _master.dish key), native, chapter (authoritative), aliases (anchors to match in name/originalTitle/dish), note.",
+  "dishes": [
+    {"canonical": "Kolokithopita", "native": "κολοκυθόπιτα", "chapter": "Sandwiches, Pizza & Savory Pastry",
+     "aliases": ["κολοκυθόπιτα", "kolokithopita", "kolokythopita", "kolokythopita", "kolokithópita"],
+     "note": "savory zucchini/squash phyllo pie — NOT the sweet American pumpkin pie"},
+    {"canonical": "Spanakopita", "native": "σπανακόπιτα", "chapter": "Sandwiches, Pizza & Savory Pastry",
+     "aliases": ["σπανακόπιτα", "spanakopita", "spanakópita"],
+     "note": "savory spinach phyllo pie"},
+    {"canonical": "Tyropita", "native": "τυρόπιτα", "chapter": "Sandwiches, Pizza & Savory Pastry",
+     "aliases": ["τυρόπιτα", "tyropita", "tiropita", "tyrópita"],
+     "note": "savory cheese phyllo pie"},
+    {"canonical": "Hortopita", "native": "χορτόπιτα", "chapter": "Sandwiches, Pizza & Savory Pastry",
+     "aliases": ["χορτόπιτα", "hortopita", "hortópita"],
+     "note": "savory wild-greens phyllo pie"},
+    {"canonical": "Kreatopita", "native": "κρεατόπιτα", "chapter": "Sandwiches, Pizza & Savory Pastry",
+     "aliases": ["κρεατόπιτα", "kreatopita", "kreatópita"],
+     "note": "savory meat phyllo pie"}
+  ]
+}

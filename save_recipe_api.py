@@ -569,6 +569,22 @@ def _attach_chapter(recipe, *, usage_log=None):
     name = recipe.get("name") or ""
     if not name.strip():
         return
+    # Canonical-dish chapter override (#2): a native-anchored dish (Kolokithopita,
+    # Spanakopita…) has ONE authoritative chapter regardless of how the English title
+    # wobbles (pumpkin/squash/zucchini) — pin it so the whole family stays together and
+    # doesn't re-scatter. Matched off the unambiguous transliterated/native anchor in the
+    # name / _source.originalTitle / _master.dish. See docs/dish-alias-normalization.md.
+    try:
+        from intake import dish_alias
+        alias_ch = dish_alias.canonical_chapter(
+            name, (recipe.get("_source") or {}).get("originalTitle") or "",
+            (recipe.get("_master") or {}).get("dish") or "")
+    except Exception:
+        alias_ch = None
+    if alias_ch:
+        cls["chapter"] = alias_ch
+        recipe["classification"] = cls
+        return
     ingredients = recipe.get("recipeIngredient") or []
     chapter = classify_chapter(name, ingredients, usage_log=usage_log)
     cls["chapter"] = chapter
