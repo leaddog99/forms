@@ -4678,20 +4678,35 @@ def admin_delete_row(model: str, row_id: int):
 
 @app.get("/status-messages/active")
 def status_messages_active():
-    """Enabled status messages grouped by category, for the recipe form's
-    rotating-wait-message helper. Lean payload: ordered strings per category."""
+    """All categories, each PRESORTED per its order_mode — the recipe form fetches this
+    once and rotates. Lean payload: ready strings per category (the new message_categories
+    model: one record/category, order mode + a CRLF textarea)."""
     try:
+        from admin_models import get_messages, STATUS_MESSAGE_CATEGORIES
         out: dict[str, list] = {}
         with _db() as conn:
-            rows = conn.execute(
-                "SELECT category, message FROM status_messages "
-                "WHERE enabled = 1 ORDER BY category, sort_order, id"
-            ).fetchall()
-        for cat, msg in rows:
-            out.setdefault(cat, []).append(msg)
+            for cat in STATUS_MESSAGE_CATEGORIES:
+                msgs = get_messages(conn, cat, fallback=None)
+                if msgs:
+                    out[cat] = msgs
         return out
     except Exception as e:
         print(f"[ERROR] status_messages_active failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@app.get("/messages")
+def messages_endpoint(category: str, order: str = "", count: int = 0):
+    """The 'messages' subroutine as an endpoint: a READY, presorted message list for ONE
+    category. `order` overrides the stored order_mode (top|alpha|random); `count` caps the
+    list. Falls back to the 'general' bucket when the category is empty/disabled."""
+    try:
+        from admin_models import get_messages
+        with _db() as conn:
+            msgs = get_messages(conn, category, order=(order or None), count=(count or None))
+        return {"category": category, "order": order or None, "messages": msgs}
+    except Exception as e:
+        print(f"[ERROR] messages({category!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 

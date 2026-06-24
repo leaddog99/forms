@@ -155,44 +155,114 @@ _STATUS_SEED = [
     ("general", "Almost plated…"),
 ]
 
-STATUS_MESSAGES_MODEL = AdminModel(
-    name="status_messages",
+# ONE RECORD PER CATEGORY (the redesign): order mode + a single CRLF textarea of
+# messages, instead of N fiddly per-message rows. Edited through the same generic admin
+# editor — it just renders this model's fields. id PK + category UNIQUE so the editor
+# (which keys on id) is unchanged while a category stays a single record.
+_MSG_ORDER_MODES = ["top", "alpha", "random"]
+
+_grouped_seed: dict[str, list] = {}
+for _c, _m in _STATUS_SEED:
+    _grouped_seed.setdefault(_c, []).append(_m)
+
+MESSAGE_CATEGORIES_MODEL = AdminModel(
+    name="message_categories",
     label="Status Messages",
-    order_by="category, sort_order, id",
+    order_by="category",
     create_sql="""
-        CREATE TABLE IF NOT EXISTS status_messages (
+        CREATE TABLE IF NOT EXISTS message_categories (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            category    TEXT NOT NULL DEFAULT 'general',
-            message     TEXT NOT NULL,
+            category    TEXT NOT NULL UNIQUE,
+            order_mode  TEXT NOT NULL DEFAULT 'top',
+            messages    TEXT NOT NULL DEFAULT '',
             enabled     INTEGER NOT NULL DEFAULT 1,
-            sort_order  INTEGER NOT NULL DEFAULT 0,
             created_at  TEXT NOT NULL,
             updated_at  TEXT NOT NULL
         );
     """,
     fields=[
-        AdminField("id", "ID", type="number", editable=False),
+        AdminField("id", "ID", type="number", editable=False, in_list=False),
         AdminField("category", "Category", type="select",
-                   options=STATUS_MESSAGE_CATEGORIES, required=True,
-                   default="general",
-                   help="Which operation's wait this message rotates through."),
-        AdminField("message", "Message", type="textarea", required=True,
-                   help="Shown while the user waits. Keep it short and fun."),
+                   options=STATUS_MESSAGE_CATEGORIES, required=True, default="general",
+                   help="Which operation's wait this set of messages rotates through."),
+        AdminField("order_mode", "Order", type="select", options=_MSG_ORDER_MODES,
+                   default="top",
+                   help="top = as listed · alpha = alphabetical · random = shuffled each time."),
+        AdminField("messages", "Messages (one per line)", type="textarea", required=True,
+                   help="One message per line. Blank lines are ignored. Keep them short and fun."),
         AdminField("enabled", "Enabled", type="bool", default=1),
-        AdminField("sort_order", "Order", type="number", default=0,
-                   help="Lower shows first within a category."),
         AdminField("created_at", "Created", type="text", editable=False, in_list=False),
         AdminField("updated_at", "Updated", type="text", editable=False, in_list=False),
     ],
     seed=[
-        {"category": c, "message": m, "enabled": 1, "sort_order": i}
-        for i, (c, m) in enumerate(_STATUS_SEED)
+        {"category": c, "order_mode": "top", "messages": "\n".join(ms), "enabled": 1}
+        for c, ms in _grouped_seed.items()
     ],
 )
 
 ADMIN_MODELS: dict[str, AdminModel] = {
-    STATUS_MESSAGES_MODEL.name: STATUS_MESSAGES_MODEL,
+    MESSAGE_CATEGORIES_MODEL.name: MESSAGE_CATEGORIES_MODEL,
 }
+
+
+def _migrate_status_messages(conn: sqlite3.Connection) -> None:
+    """One-shot: collapse the OLD per-message `status_messages` rows into one
+    `message_categories` row per category (messages newline-joined, kept in sort order).
+    Runs only when message_categories is empty AND the old table has rows — so any curator
+    edits to the old table carry over before the seed would fire. Old table left dormant."""
+    try:
+        if conn.execute("SELECT COUNT(*) FROM message_categories").fetchone()[0]:
+            return
+        if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                            "AND name='status_messages'").fetchone():
+            return
+        rows = conn.execute("SELECT category, message FROM status_messages WHERE enabled = 1 "
+                            "ORDER BY category, sort_order, id").fetchall()
+        if not rows:
+            return
+        grouped: dict[str, list] = {}
+        for cat, msg in rows:
+            grouped.setdefault(cat, []).append(msg)
+        now = _now()
+        for cat, msgs in grouped.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO message_categories "
+                "(category, order_mode, messages, enabled, created_at, updated_at) "
+                "VALUES (?, 'top', ?, 1, ?, ?)", (cat, "\n".join(msgs), now, now))
+        conn.commit()
+        print(f"[ADMIN] migrated status_messages -> message_categories ({len(grouped)} categories)")
+    except Exception as e:
+        print(f"[ADMIN] status_messages migration skipped: {type(e).__name__}: {e}")
+
+
+def get_messages(conn: sqlite3.Connection, category: str, order: Optional[str] = None,
+                 count: Optional[int] = None, *, fallback: Optional[str] = "general") -> list[str]:
+    """The 'messages' subroutine: a READY, presorted message list for `category`.
+    Splits the category's textarea into lines (blanks skipped), applies `order` (or the
+    row's stored order_mode if not overridden) — top = as authored, alpha = alphabetical,
+    random = shuffled — and caps to `count`. Falls back to `fallback` when the requested
+    category is empty/disabled. The server owns ordering so callers just rotate."""
+    import random as _random
+
+    def _load(cat: str):
+        row = conn.execute("SELECT order_mode, messages FROM message_categories "
+                           "WHERE category = ? AND enabled = 1", (cat,)).fetchone()
+        if not row:
+            return None, []
+        om, raw = row
+        return om, [ln.strip() for ln in (raw or "").splitlines() if ln.strip()]
+
+    om, msgs = _load(category)
+    if not msgs and fallback and category != fallback:
+        om, msgs = _load(fallback)
+    mode = (order or om or "top").lower()
+    if mode == "alpha":
+        msgs = sorted(msgs, key=str.lower)
+    elif mode == "random":
+        msgs = list(msgs); _random.shuffle(msgs)
+    if count and int(count) > 0:
+        msgs = msgs[:int(count)]
+    return msgs
 
 
 def get_model(name: str) -> Optional[AdminModel]:
@@ -205,6 +275,8 @@ def ensure_admin_tables(conn: sqlite3.Connection) -> None:
     for m in ADMIN_MODELS.values():
         if m.create_sql:
             conn.execute(m.create_sql)
+        if m.name == "message_categories":
+            _migrate_status_messages(conn)   # collapse old per-message rows first
         if m.seed:
             count = conn.execute(f"SELECT COUNT(*) FROM {m.table}").fetchone()[0]
             if count == 0:

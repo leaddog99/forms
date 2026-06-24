@@ -2437,8 +2437,10 @@
     }
 
     // === Rotating wait messages ==========================================
-    // Owner-editable via /forms/admin.html?model=status_messages. Messages
-    // live in the DB (status_messages); fetched once + cached here. If the
+    // Owner-editable via /forms/admin.html?model=message_categories — ONE record per
+    // category: an order mode (top/alpha/random) + a CRLF textarea of messages. The
+    // server returns each category PRESORTED (/status-messages/active); fetched once +
+    // cached here. If the
     // fetch hasn't landed or fails, a tiny built-in set keeps the overlay
     // from going blank. A category with no enabled messages falls back to
     // 'general'. This is what turns the up-to-45s screenshot poll from dead
