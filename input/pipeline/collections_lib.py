@@ -121,9 +121,13 @@ def get_collection_top(conn, collection_type, collection_key, limit=50,
                m.recipe_id,
                json_extract(m.data, '$.name'),
                json_extract(m.data, '$._master.exceptionalism.grade'),
-               COALESCE(json_extract(m.data, '$._source.previewImage'),
-                        json_extract(m.data, '$.image[0]'),
-                        cm.image_url)
+               -- NULLIF: a failed co-opt can leave previewImage='' (29 corpus rows);
+               -- COALESCE treats '' as a real value and returns a blank <img src> →
+               -- a "missing image". NULLIF('','')→NULL so it falls through to the
+               -- recipe's own image / the harvested og:image, which DO load.
+               COALESCE(NULLIF(json_extract(m.data, '$._source.previewImage'), ''),
+                        NULLIF(json_extract(m.data, '$.image[0]'), ''),
+                        NULLIF(cm.image_url, ''))
         FROM collection_members cm
         LEFT JOIN master_recipes m
           ON m.url_normalized = cm.url_normalized AND m.user_id = 0

@@ -4387,8 +4387,9 @@ def collections_leaderboard_endpoint(limit: int = 50, selected_only: bool = True
                    cm.adjusted_pa, cm.rank_score, cm.rank, cm.selected,
                    m.recipe_id, json_extract(m.data, '$.name'),
                    json_extract(m.data, '$._master.exceptionalism.grade'),
-                   COALESCE(json_extract(m.data, '$._source.previewImage'),
-                            json_extract(m.data, '$.image[0]'), cm.image_url)
+                   COALESCE(NULLIF(json_extract(m.data, '$._source.previewImage'), ''),
+                            NULLIF(json_extract(m.data, '$.image[0]'), ''),
+                            NULLIF(cm.image_url, ''))
             FROM collection_members cm
             LEFT JOIN master_recipes m
               ON m.url_normalized = cm.url_normalized AND m.user_id = 0
