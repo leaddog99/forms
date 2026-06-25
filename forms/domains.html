@@ -274,7 +274,15 @@
 
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes — publisher refresh</h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">Harvest this publisher's most-notable recipes, verify each is a real recipe (drops index / listicle / section pages), score by page authority, and keep the top N. Pick a <b>discovery source</b> below — each has its own settings. ★ = kept; “in corpus” = already ingested.</p>
+          <p class="ed-notes-help" style="margin:0 0 10px">Harvest this publisher's most-notable recipes. <b>Pick a mode</b> (it sets the fetch / verify / score options for you), choose a <b>discovery source</b>, then <b>🔄 Refresh</b>. ★ = kept; “in corpus” = already ingested.</p>
+          <div id="harvestModes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:0 0 6px">
+            ${[
+              ['open','🟢 Auto · open site','Fetch → verify → keep top-N → ingest. Normal, reachable sites.'],
+              ['blocked','🔴 Auto · blocked site','Unblocker + full render, verify, keep top-N, ingest. Anti-bot — hands-off but paid (1 render each).'],
+              ['curate','✋ Curate · score & pick','Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or ⚡ userscript (free). Best for anti-bot / junk-heavy exports.'],
+            ].map(([v,t,s]) => `<label class="hm-card" style="cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:9px 11px;display:block;transition:background .12s"><input type="radio" name="harvestMode" value="${v}" style="margin-right:6px"><b style="font-size:.9em">${t}</b><span style="display:block;margin-top:3px;font-size:.76em;color:var(--muted);line-height:1.35">${s}</span></label>`).join('')}
+          </div>
+          <p class="ed-notes-help" style="margin:0 0 12px;font-size:.78em">Mode sets the <b>fetch strategy · render · verify · score-only</b> options for you — fine-tune any of them below if needed.</p>
 
           <div class="src-groups" id="srcGroups">
             <div class="src-group" data-src="serp">
@@ -405,6 +413,9 @@
       document.querySelectorAll('input[name=harvestSource]').forEach(r =>
         r.addEventListener('change', applySrcSelection));
       applySrcSelection();
+      document.querySelectorAll('input[name=harvestMode]').forEach(r =>
+        r.addEventListener('change', () => applyHarvestMode(r.value)));
+      applyHarvestMode(inferHarvestMode(d), { dirty: false });   // initial — don't dirty on load
       loadBacklinksFile(d.domain);     // detect the SEMrush export → fills the file line
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
       loadDomainTop(d.domain, $('#cohortToggle')?.dataset.on === '1');  // stored publisher ledger
@@ -618,6 +629,35 @@
       } catch (e){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Userscript start failed: ' + (e.message || e); } restore(); }
     }
 
+    // Harvest MODE — one intent picker that sets the scattered low-level flags. The raw
+    // controls (fetch strategy / render / verify / score-only) stay editable below as the
+    // source of truth; the mode just presets them. fetch_strategy + render_required are
+    // domain fields, so doRefreshTop PATCHes them before the run.
+    const HARVEST_MODES = {
+      open:    { fetch_strategy: 'plain',     render_required: 0, check_recipe: 1, score_only: 0 },
+      blocked: { fetch_strategy: 'unblocker', render_required: 1, check_recipe: 1, score_only: 0 },
+      curate:  { fetch_strategy: 'unblocker', render_required: 1, check_recipe: 0, score_only: 1 },
+    };
+    function applyHarvestMode(mode, { dirty = true } = {}){
+      const m = HARVEST_MODES[mode]; if (!m) return;
+      const fs = $('#f_fetch_strategy'); if (fs) fs.value = m.fetch_strategy;
+      const rr = $('#f_render_required'); if (rr) rr.checked = !!m.render_required;
+      const cr = $('#f_check_recipe'); if (cr) cr.checked = !!m.check_recipe;
+      const so = $('#f_score_only'); if (so) so.checked = !!m.score_only;
+      document.querySelectorAll('#harvestModes .hm-card').forEach(c => {
+        const i = c.querySelector('input'); const on = i && i.value === mode;
+        if (i) i.checked = on;
+        c.style.background = on ? 'var(--accent-soft)' : 'transparent';
+        c.style.borderColor = on ? 'var(--accent)' : 'var(--line)';
+      });
+      if (dirty){ const b = $('#saveBtn'); if (b) b.disabled = false; }
+    }
+    function inferHarvestMode(d){
+      // score_only isn't a persisted field, so we infer open vs blocked from the saved
+      // fetch policy; an unblocker domain defaults to 'blocked' (curator can switch to curate).
+      return ((d.fetch_strategy || '') === 'unblocker') ? 'blocked' : 'open';
+    }
+
     async function doRefreshTop(domain){
       const btn = $('#refreshTopBtn'), hint = $('#topHint');
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
@@ -635,6 +675,15 @@
       const log = $('#topLog'); if (log){ log.style.display = 'block'; log.textContent = ''; }
       if (hint){ hint.style.color = ''; hint.textContent = 'Queuing refresh job…'; }
       try {
+        // Persist the fetch policy the mode (or manual override) implies, so the harvest
+        // job — which reads fetch_strategy/render_required from the saved domain row —
+        // uses it without a separate Save.
+        try {
+          await fetch(`/domains/${encodeURIComponent(domain)}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fetch_strategy: ($('#f_fetch_strategy')?.value || 'plain'),
+                                   render_required: ($('#f_render_required')?.checked ? 1 : 0) }) });
+        } catch {}
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, url_prefilter, exclude_words, check_recipe, score_only }) });
