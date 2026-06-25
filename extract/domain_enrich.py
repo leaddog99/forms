@@ -45,10 +45,12 @@ DOMAIN_PROFILE_TOOL = {
             "story": {
                 "type": "string",
                 "description": (
-                    "A 1-2 sentence editorial bio of this site/publisher: what "
-                    "it is, who is behind it, and what it is known for. Factual "
-                    "and brand-neutral. Empty string if you do not actually "
-                    "recognize the site — do NOT invent a backstory."
+                    "A 1-2 sentence editorial bio of this site/publisher: what it is, "
+                    "its focus/cuisine, and who is behind it. When homepage content is "
+                    "provided, GROUND the bio in it (paraphrase — don't quote the tagline "
+                    "verbatim). Factual and brand-neutral. Don't invent specific people, "
+                    "awards, or history the content doesn't support. Only empty if there "
+                    "is NO homepage content AND you don't recognize the site."
                 ),
             },
             "language": {
@@ -89,11 +91,14 @@ DOMAIN_PROFILE_TOOL = {
 }
 
 _SYSTEM_PROMPT = (
-    "You are a culinary-web librarian. Given a food/recipe website's domain, "
-    "produce a short, factual profile. State only what you are reasonably "
-    "confident about — prefer empty strings over invented facts, and set "
-    "`recognized` to false when you are guessing from the name alone. Output "
-    "ONLY through the submit_domain_profile tool — no narration, no preamble."
+    "You are a culinary-web librarian. Profile a food/recipe website. When the user "
+    "supplies the site's HOMEPAGE CONTENT, GROUND your profile in it — describe the "
+    "ACTUAL site (its focus, cuisine, who runs it) from that content rather than from "
+    "memory; that is the common case and you should produce a real `story` for it. "
+    "Without content, fall back to what you reliably know and prefer empty strings over "
+    "invented facts. Set `recognized` true only when you genuinely know the brand from "
+    "training (not merely from the supplied content). Don't invent people/awards/history "
+    "the content doesn't support. Output ONLY through the submit_domain_profile tool."
 )
 
 DOMAIN_ENRICH_PROMPT_VERSION = hashlib.sha256(
@@ -107,6 +112,50 @@ def _logo_url_for(host: str) -> str:
     brands, 404 otherwise (the curator clears it if it doesn't load)."""
     root = root_domain("http://" + host) or host
     return f"https://logo.clearbit.com/{root}" if root else ""
+
+
+def _homepage_snippet(host: str, max_chars: int = 1500) -> str:
+    """Fetch the site's HOMEPAGE and pull a grounding snippet (title + site name + meta/
+    og description) so the LLM profiles the REAL site instead of guessing from the name
+    (Haiku doesn't know small blogs → empty 'story'). Honors the domain's fetch policy
+    (unblocker/render) so blocked sites still resolve. Best-effort: '' on failure → the
+    LLM falls back to name-only profiling."""
+    import re
+    try:
+        from to_markdown.html_to_markdown import fetch_with_full_fallback
+        from input.pipeline import domains_lib
+        import sqlite3
+        unblock = render = False
+        try:
+            with sqlite3.connect("recipes.db", timeout=10) as c:
+                row = domains_lib.get_domain(c, host) or {}
+            unblock = (row.get("fetch_strategy") or "") == "unblocker"
+            render = bool(row.get("render_required"))
+        except Exception:
+            pass
+        res = fetch_with_full_fallback("https://" + host + "/", unblocker=unblock,
+                                       render=render, try_wayback=False)
+        resp = res[0] if isinstance(res, tuple) else res
+        html = getattr(resp, "text", "") or ""
+        if not html:
+            return ""
+
+        def _m(pat):
+            m = re.search(pat, html, re.I | re.S)
+            return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+        title = _m(r"<title[^>]*>(.*?)</title>")
+        site = _m(r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\'](.*?)["\']')
+        desc = (_m(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'](.*?)["\']')
+                or _m(r'<meta[^>]+content=["\'](.*?)["\'][^>]+name=["\']description["\']')
+                or _m(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']'))
+        parts = []
+        if title: parts.append("Page title: " + title)
+        if site:  parts.append("Site name: " + site)
+        if desc:  parts.append("Meta description: " + desc)
+        return ("\n".join(parts))[:max_chars]
+    except Exception as e:
+        print(f"[DOMAIN-ENRICH] homepage snippet failed: {type(e).__name__}: {e}")
+        return ""
 
 
 def enrich_domain(domain: str, *, display_name: str = "",
@@ -125,6 +174,10 @@ def enrich_domain(domain: str, *, display_name: str = "",
         lines.append(f"Registrable domain: {root}")
     if display_name:
         lines.append(f"Known display name: {display_name}")
+    snippet = _homepage_snippet(host)
+    if snippet:
+        lines.append("\n--- Homepage content (GROUND your profile in THIS, not memory) ---")
+        lines.append(snippet)
     lines.append("Profile this food/recipe website.")
     user_prompt = "\n".join(lines)
 
