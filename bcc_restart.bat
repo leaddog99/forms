@@ -2,85 +2,42 @@
 setlocal
 
 REM ====================================================================
-REM bcc_restart.bat — reliable "stop the old server, start a fresh one".
+REM bcc_restart.bat — restart the BCC FastAPI server.
 REM
-REM Why this exists / why the naive version failed:
-REM   uvicorn runs WITHOUT --reload (flaky on Windows), so code edits do
-REM   NOT go live until the process is restarted. WORSE: old --reload
-REM   sessions left an orphaned multiprocessing worker that INHERITED the
-REM   :8009 listening socket. netstat/Get-NetTCPConnection then blame the
-REM   dead PARENT pid, so `taskkill /PID <parent>` no-ops and every new
-REM   start dies with WinError 10048 (port in use) while the zombie keeps
-REM   serving STALE code. That's the "I restarted but nothing changed".
+REM The server now runs as the Windows SERVICE "BCC" (NSSM wrapper:
+REM   nssm.exe -> python -m uvicorn save_recipe_api:app --port 8009).
+REM Restarting the SERVICE is the correct way now. Do NOT kill the python
+REM PID: NSSM/the Service Control Manager immediately respawns it, so a
+REM Stop-Process no-ops and you keep serving the same (stale) code.
 REM
-
-REM   The fix: kill the socket owner AND its child processes (the child
-REM   is the one actually holding the handle), via PowerShell which can
-REM   walk the parent/child tree. Then VERIFY the port is free and abort
-REM   loudly if it isn't, instead of silently failing to bind.
+REM Controlling a service needs administrator rights, so this self-elevates
+REM via UAC if you didn't start it from an elevated prompt.
 REM
-REM Safe to run when nothing is running. Run it in a NEW terminal (the
-REM old one is blocked by the running uvicorn); this kills that one.
+REM (NSSM also auto-restarts the worker on crash; this is only for picking
+REM up code changes — uvicorn runs WITHOUT --reload, so edits aren't live
+REM until the service is bounced.)
 REM ====================================================================
 
-set "VENV=C:\Users\john\PyCharm\venv"
-set "PROJECT=C:\Users\john\PycharmProjects\forms"
+set "SVC=BCC"
 set "PORT=8009"
 
-cd /d "%PROJECT%"
-
-REM --- 1. Kill the listen-socket owner AND its children, then wait for
-REM        the OS to release the socket. PowerShell handles the inherited
-REM        -socket zombie that taskkill cannot. (No double-quotes inside
-REM        the -Command string: WMI filters are built with single-quoted
-REM        concatenation so cmd quoting stays sane.) ---
-echo Freeing port %PORT% (killing server + any orphaned workers)...
-REM   SPARE out-of-process job runners: a `python -m jobs exec` is a CHILD of the
-REM   server (Popen ppid), so a naive child-kill would take a running harvest/cook
-REM   job down with the server (it does NOT hold :8009). We filter those out by
-REM   CommandLine so the listener + any real socket-inheriting worker still die, but
-REM   live jobs survive the restart (they're WAL-safe and finish on their own).
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$o=@((Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue).OwningProcess)|Where-Object{$_ -and $_ -ne 0}|Sort-Object -Unique; $k=@(); foreach($p in $o){$k+=$p; $k+=(Get-CimInstance Win32_Process -Filter ('ParentProcessId='+$p) -ErrorAction SilentlyContinue | Where-Object{$_.CommandLine -notmatch '-m jobs'}).ProcessId}; $k=$k|Where-Object{$_ -and $_ -ne 0}|Sort-Object -Unique; if($k){Write-Host ('  killing PIDs: '+($k -join ', '))}else{Write-Host '  none found'}; foreach($q in $k){Stop-Process -Id $q -Force -ErrorAction SilentlyContinue}; Start-Sleep -Seconds 2"
-
-REM --- 2. Verify the port is actually free. If a process still holds it
-REM        (e.g. it refused to die), STOP here with a clear message so we
-REM        never silently start a process that fails to bind. ---
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"
+REM --- ensure admin (SCM stop/start needs it); re-launch elevated if not ---
+net session >nul 2>&1
 if errorlevel 1 (
-    echo.
-    echo ******************************************************************
-    echo  PORT %PORT% IS STILL IN USE — did NOT start a new server.
-    echo  Inspect the holder manually:
-    echo     Get-NetTCPConnection -LocalPort %PORT% -State Listen
-    echo     Get-CimInstance Win32_Process -Filter "ParentProcessId=<owner>"
-    echo  then Stop-Process -Id <pid> -Force, and re-run this script.
-    echo ******************************************************************
-    echo.
-    pause
-    exit /b 1
+    echo Requesting administrator elevation...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
 )
-echo Port %PORT% is free.
 
-REM --- 3. Activate venv + force UTF-8 / unbuffered stdio (matches
-REM        bcc_start.bat so prints don't crash and logs tail live). ---
-call "%VENV%\Scripts\activate.bat"
-set PYTHONIOENCODING=utf-8
-set PYTHONUNBUFFERED=1
+echo Restarting service %SVC% ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Restart-Service -Name '%SVC%' -Force; Start-Sleep -Seconds 3"
+
+REM --- verify the listener came back on %PORT% ---
+echo Waiting for http://localhost:%PORT% to listen ...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "for($i=0;$i -lt 25;$i++){ $c=Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue; if($c){ $p=($c.OwningProcess|Select-Object -First 1); $pi=Get-CimInstance Win32_Process -Filter ('ProcessId='+$p); Write-Host ('  listening: pid='+$p+' started '+$pi.CreationDate); exit 0 }; Start-Sleep -Seconds 1 }; Write-Host '  ***** PORT %PORT% DID NOT COME UP — check: nssm status %SVC% / Get-Service %SVC% *****'; exit 1"
 
 echo.
-echo Starting fresh uvicorn on http://localhost:%PORT%
-echo Open: http://localhost:%PORT%/forms/recipe_form_styled.html
-echo Logs: uvicorn_stdout.log + uvicorn_stderr.log (tail with `Get-Content -Wait`)
-echo.
-
-REM --- 4. Start. Append (not truncate) so logs persist across restarts;
-REM        a banner marks where this session begins. Single-process
-REM        serving (no --reload) means NO orphan workers are created,
-REM        so this zombie situation won't recur from here on. ---
-echo. >> uvicorn_stdout.log
-echo ==================== uvicorn restart %DATE% %TIME% ==================== >> uvicorn_stdout.log
-echo. >> uvicorn_stderr.log
-echo ==================== uvicorn restart %DATE% %TIME% ==================== >> uvicorn_stderr.log
-uvicorn save_recipe_api:app --host 127.0.0.1 --port %PORT% --log-config log_config.json >> uvicorn_stdout.log 2>> uvicorn_stderr.log
-
+echo Service %SVC% restarted. Manage it with:  nssm status %SVC%  ^|  nssm edit %SVC%  (logs/cmdline)
+echo                                          Get-Service %SVC%  ^|  Restart-Service %SVC%
+pause
 endlocal
