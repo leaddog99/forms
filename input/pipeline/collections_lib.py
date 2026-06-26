@@ -214,7 +214,6 @@ def _looks_like_archive(url: str) -> bool:
 # vocabulary now live in the shared `url_word_lists` module so BOTH this harvest and
 # build_query_batch._is_recipe_filter use ONE implementation ([[single canonical path]]).
 # Re-exported here for back-compat with existing callers/tests.
-from input.pipeline.url_word_lists import url_lacks_recipe_signal  # noqa: E402,F401
 
 
 def _serp_links(query, want=50) -> list:
@@ -616,7 +615,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
                           unblocker=False, should_cancel=None, backlinks_dir=None,
-                          url_prefilter=False, exclude_words=None, score_only=False,
+                          exclude_words=None, score_only=False,
                           keyword_prescreen=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
@@ -709,26 +708,13 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy/collection URLs "
               f"({len(found)} candidates remain)")
 
-    # TEE-UP LEARN (before filtering): tokenize THIS batch's URLs, drop tokens already in
-    # either list, classify the unknown remainder in ONE call, update both lists — so a new
-    # publisher's own dish words are known for THIS run. Learning from the INCOMING
-    # (unconfirmed) batch is SAFE because the classifier prompt is strict: venue/dining/
-    # business words (bistro/cantina/buffet/dining) go to 'stop', only true foods/dishes to
-    # 'food'. (A first cut with a loose prompt poisoned 'food' with venue words — fixed.)
-    # See [[project_url_word_filter]].
-    if url_prefilter and found:
-        try:
-            from input.pipeline.url_word_lists import learn_from_urls
-            learn_from_urls([l for l, _ in found])
-        except Exception as ex:
-            print(f"  [harvest] url-word tee-up learn skipped: {type(ex).__name__}: {ex}")
-
     # Recipe check — reuse the dish batch's filter so "is this a recipe" is decided
-    # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else phrase score.
-    # The OPTIONAL URL-text pre-filter (domains.url_prefilter) is applied INSIDE
-    # _is_recipe_filter — the fetch choke point — so the same skip serves every caller
-    # (it drops /restaurant//chef//jobs/ URLs before the paid fetch). When check_recipe
-    # is OFF (trusted/paywalled — no fetch), apply it inline so the option still bites.
+    # ONE way everywhere ([[single-path]]): JSON-LD Recipe → keep; else the free per-language
+    # phrase scoring + structural is-recipe gate (ingredients + method). The per-domain
+    # food-word URL pre-filter was removed (2026-06-26) — the structural gate makes the keep
+    # call reliably after a now-cheap fetch, so the food-word skip was redundant + useless on
+    # foreign slugs. exclude_words (the curator's own taxonomy) is still honored. When
+    # check_recipe is OFF (trusted/paywalled — no fetch), exclude_words is applied inline.
     recipe_pass = found
     if check_recipe and found:
         from intake.build_query_batch import _is_recipe_filter
@@ -737,7 +723,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             capture_source="domain_harvest",
             capture_provenance={"domain": domain, "discover_source": source},
             unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
-            url_prefilter=url_prefilter, exclude_words=exclude_words,
+            exclude_words=exclude_words,
             keyword_prescreen=keyword_prescreen, prescreen_domain=domain,
             domain_lang=domain_lang,
             should_cancel=should_cancel)
@@ -753,15 +739,14 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                       f"(a recipe was only recoverable with full-browser render)")
             except Exception:
                 pass
-    elif (url_prefilter or exclude_words) and found:
+    elif exclude_words and found:
         from input.pipeline.url_word_lists import url_excluded_by_domain
         n_pre = len(found)
         recipe_pass = [(l, t) for l, t in found
-                       if not url_excluded_by_domain(l, exclude_words)
-                       and not (url_prefilter and url_lacks_recipe_signal(l))]
+                       if not url_excluded_by_domain(l, exclude_words)]
         if len(recipe_pass) < n_pre:
-            print(f"  [harvest] url-prefilter dropped {n_pre - len(recipe_pass)} "
-                  f"non-recipe-looking URLs (no fetch-verify on this publisher)")
+            print(f"  [harvest] exclude-words dropped {n_pre - len(recipe_pass)} "
+                  f"URLs (no fetch-verify on this publisher)")
 
     scored = []
     n_rp = len(recipe_pass)
@@ -795,9 +780,18 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         m["rank"] = i
         # score_only: mark NOTHING selected — the human picks winners from the scored list.
         m["selected"] = 0 if score_only else (1 if i <= keep else 0)
+    # Translate the SELECTED members' titles to the instance base language for a READABLE
+    # ledger: the harvested og:title is in the publisher's language (e.g. Greek 'Μπουγάτσα με
+    # κρέμα'), and while the ingested master copy is translated, the discovery list shows this
+    # ledger title. Bounded to the top-N; only when the domain's language differs from base.
+    from input.pipeline.validators import instance_base_language, normalize_lang
+    _base_l = instance_base_language()
+    _dom_l = normalize_lang(domain_lang)
+    _xlate_titles = bool(_dom_l and _dom_l != _base_l)
+
     # Thumbnail the SELECTED top-N only (bounded) — captures og:image so discovered
     # members show a picture; ingested members override with the master's real image.
-    n_img = n_serp = 0
+    n_img = n_serp = n_xt = 0
     for m in scored:
         if not m["selected"]:
             continue
@@ -807,7 +801,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         # Anti-bot/blocked publishers (thekitchn) return no og:image on a direct
         # fetch → fall back to a FETCH-FREE SERP image lookup (Google has the image).
         # Bounded to the selected top-N + only on an og:image miss, so ~1 credit per
-        # blocked pick and zero when the direct grab works.
+        # blocked pick and zero when the direct grab works. (Uses the ORIGINAL-language
+        # title — it matches the publisher's own page best — BEFORE we translate below.)
         if not img:
             img = _serp_image_for(domain, m.get("title") or "")
             if img:
@@ -815,7 +810,17 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         m["image_url"] = img
         if img:
             n_img += 1
+        # Translate the ledger title to base language (display readability). After the image
+        # lookup so that used the native title. translate_title is a cheap one-shot.
+        if _xlate_titles and (m.get("title") or "").strip():
+            try:
+                from intake.translate import translate_title
+                m["title"] = translate_title(m["title"], _dom_l)
+                n_xt += 1
+            except Exception as ex:
+                print(f"  [harvest] title translate skipped ({type(ex).__name__})")
     extra = f" ({n_serp} via SERP image fallback)" if n_serp else ""
-    print(f"  [harvest] captured {n_img} thumbnails for {keep} selected{extra}")
+    xt = f" · translated {n_xt} titles → {_base_l}" if n_xt else ""
+    print(f"  [harvest] captured {n_img} thumbnails for {keep} selected{extra}{xt}")
     return {"members": scored, "discovered": n_raw, "recipe_pass": len(recipe_pass),
             "scored": len(scored), "recipe_path": used_path, "query": query}

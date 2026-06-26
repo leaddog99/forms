@@ -3492,7 +3492,6 @@ def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
                 "check_recipe": not bool(int(row.get("paywall", 0) or 0)),
                 "source": source, "records": records, "log_label": label or host,
                 "backlinks_dir": (row.get("backlinks_dir") or "").strip() or None,
-                "url_prefilter": bool(int(row.get("url_prefilter", 0) or 0)),
                 "exclude_words": row.get("exclude_words") or "",
                 "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
         entity_ref=entity_ref)
@@ -3786,7 +3785,6 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     source = (p.get("source") or "serp").strip() or "serp"
     records = int(p.get("records") or 0) or None   # file-source extract count
     backlinks_dir = (p.get("backlinks_dir") or "").strip() or None  # per-domain export folder override
-    url_prefilter = bool(p.get("url_prefilter"))   # drop non-food/recipe URLs before fetch (opt-in)
     exclude_words = p.get("exclude_words") or ""   # per-domain exclusionary section words
     unblocker = bool(p.get("unblocker"))           # fetch_strategy='unblocker' → live paid fetch
     score_only = bool(p.get("score_only"))         # Moz-rank only, no fetch/verify/ingest (curation)
@@ -3809,7 +3807,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             host, keep=keep, discover_n=pages * 10,
             recipe_path=recipe_path, query=query, check_recipe=check_recipe,
             source=source, records=records, unblocker=unblocker,
-            backlinks_dir=backlinks_dir, url_prefilter=url_prefilter,
+            backlinks_dir=backlinks_dir,
             exclude_words=exclude_words, should_cancel=_should_cancel, score_only=score_only)
         with _db() as conn:
             from input.pipeline import domains_lib
@@ -4201,8 +4199,6 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         # VERBATIM Google query (payload or stored serp_query) runs as-is, overrides path.
         query = (payload.get("query") or row.get("serp_query") or "").strip() or None
         backlinks_dir = (payload.get("backlinks_dir") or row.get("backlinks_dir") or "").strip() or None
-        url_prefilter = payload.get("url_prefilter")
-        url_prefilter = bool(int(row.get("url_prefilter", 0) or 0)) if url_prefilter is None else bool(url_prefilter)
         exclude_words = payload.get("exclude_words")
         if exclude_words is None:
             exclude_words = row.get("exclude_words") or ""
@@ -4253,7 +4249,7 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
             params={"host": host, "keep": keep, "pages": pages, "query": query,
                     "recipe_path": recipe_path, "check_recipe": check_recipe,
                     "source": source, "records": records, "log_label": host,
-                    "backlinks_dir": backlinks_dir, "url_prefilter": url_prefilter,
+                    "backlinks_dir": backlinks_dir,
                     "exclude_words": exclude_words, "score_only": score_only,
                     "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
             entity_ref=entity_ref)

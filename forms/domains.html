@@ -353,10 +353,6 @@
             <input type="checkbox" id="f_paywall" ${Number(d.paywall) === 1 ? 'checked' : ''}>
             <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify) <i>and</i> a system rescore PA-calibrates it to free-equivalent so its link-starved pages aren't penalized${d.pa_cal_at ? ` · <b>calibrated</b> ${escapeHtml(fmtDate(d.pa_cal_at))} (n=${Number(d.pa_cal_n) || 0})` : ' · <i>not yet calibrated — runs on the next Rescore</i>'}</span>
           </label>
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
-            <input type="checkbox" id="f_url_prefilter" ${Number(d.url_prefilter) === 1 ? 'checked' : ''}>
-            <span>Pre-filter by URL text — skip URLs with no food/recipe word <i>before</i> fetching (saves fetches/credits on directory sites like bostonchefs; leave OFF for sites with truncated slugs)</span>
-          </label>
           <div class="ed-form-grid" style="margin:4px 0 2px">
             ${field('f_exclude_words', 'Exclude sections (skip these URL sections — e.g. restaurant chef news)', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
           </div>
@@ -696,7 +692,6 @@
       const recipe_path = ($('#f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
       const backlinks_dir = ($('#f_backlinks_dir')?.value || '').trim();
-      const url_prefilter = $('#f_url_prefilter')?.checked ? 1 : 0;
       const exclude_words = ($('#f_exclude_words')?.value || '').trim();
       const check_recipe = !!$('#f_check_recipe')?.checked;
       const score_only = $('#f_score_only')?.checked ? 1 : 0;
@@ -715,7 +710,7 @@
         } catch {}
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, url_prefilter, exclude_words, check_recipe, score_only }) });
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, exclude_words, check_recipe, score_only }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain, data.job_id); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
@@ -931,7 +926,6 @@
         harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
         semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),
-        url_prefilter: $('#f_url_prefilter')?.checked ? 1 : 0,
         exclude_words: ($('#f_exclude_words')?.value || '').trim(),
       };
     }

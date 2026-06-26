@@ -474,7 +474,11 @@ End-to-end on `meatandgrillstories.com` (8 URLs): 3 real recipes KEPT, 4 guides 
 - `docs/keyword-prescreen.md` updated with the final LLM-free design.
 - New languages: `python -m scripts.translate_recipe_phrases <lang>` mints a pack (phrases + section headers) in one offline call.
 
+### Addendum (later 06-26)
+- **`url_prefilter` REMOVED from the publisher harvest + domain form** (UI checkbox, both JS sends, endpoint/job/lib wiring, `domains` column + EDITABLE_FIELDS). The structural gate makes the keep call reliably after a now-cheap fetch, so the food-word skip was redundant + useless on foreign slugs. **The DISH BATCH keeps it** (config `url_prefilter_dish_batch`, default on — still useful on English food-word slugs); `_is_recipe_filter` keeps the param.
+- **Ledger titles now translated to the base language.** Diagnosis: extracted MASTER recipes are correctly translated (English `name`, original `el` preserved) — but the harvested LEDGER (`collection_members`) shown in the form's top-recipes list stored the raw Greek og:title (`Μπουγάτσα με κρέμα`) → unreadable. Fix: (a) going-forward, `harvest_publisher_top` translates each SELECTED member's title to base via `translate_title` (bounded to top-N; only when domain lang ≠ base; image lookup still uses the native title first); (b) backfilled 50 existing non-Latin selected titles (akispetretzikis 20, argiro 20, meatandgrillstories 10) → readable English.
+
 ### Follow-ups / open
-- **Domain form simplification:** the `url_prefilter` (food-word) checkbox is now marginal (structural gate + cheap fetches + useless on foreign slugs) — flagged for removal/demotion, **awaiting the user's call** (working capability, not removed silently). The LLM keyword pre-screen has no form control (global flag, off).
+- The LLM keyword pre-screen has no form control (global flag, off).
 - Stand up packs for the other languages actually harvested (es/it/fr…) as they come up.
 - Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
