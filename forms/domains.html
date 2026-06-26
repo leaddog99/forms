@@ -179,6 +179,31 @@
     }
 
     /* ----------------------------- detail ----------------------------- */
+    // Language is stored as the ISO 639-1 two-letter code (the recipe-filter phrase packs are
+    // keyed on it). Blank = use the instance's system default language. Curator picks from a
+    // dropdown so the stored value is always clean (no more 'gr' vs 'el' / free-text drift).
+    const LANG_OPTIONS = [
+      { v: '', l: '(default — system language)' },
+      { v: 'en', l: 'en — English' }, { v: 'el', l: 'el — Greek' },
+      { v: 'es', l: 'es — Spanish' }, { v: 'it', l: 'it — Italian' },
+      { v: 'fr', l: 'fr — French' }, { v: 'de', l: 'de — German' },
+      { v: 'pt', l: 'pt — Portuguese' }, { v: 'tr', l: 'tr — Turkish' },
+      { v: 'nl', l: 'nl — Dutch' },
+    ];
+    function langOptions(sel){
+      return LANG_OPTIONS.map(o => `<option value="${o.v}"${o.v === (sel || '') ? ' selected' : ''}>${o.l}</option>`).join('');
+    }
+    // Normalize a messy language value (code/country/name) to its ISO 639-1 two-letter form so
+    // it matches a dropdown option. Mirrors validators.normalize_lang (server side).
+    const LANG_ALIAS = { gr:'el', greek:'el', ell:'el', grc:'el', english:'en', eng:'en',
+      french:'fr', 'français':'fr', francais:'fr', spanish:'es', 'español':'es', espanol:'es',
+      italian:'it', italiano:'it', german:'de', deutsch:'de', portuguese:'pt', turkish:'tr', dutch:'nl' };
+    function normLang(raw){
+      if (!raw) return '';
+      const k = String(raw).trim().toLowerCase();
+      return LANG_ALIAS[k] || LANG_ALIAS[k.slice(0,2)] || k.slice(0,2);
+    }
+
     function field(id, label, value, opts = {}){
       const v = value == null ? '' : String(value);
       const full = opts.full ? ' full' : '';
@@ -190,7 +215,11 @@
           `<textarea id="${id}" class="ed-notes"${opts.minh ? ` style="min-height:${opts.minh}px"` : ''} placeholder="${escapeHtml(ph)}">${escapeHtml(v)}</textarea></div>`;
       }
       if (opts.select){
-        const opts_html = opts.select.map(o => `<option value="${o}"${o === v ? ' selected' : ''}>${o}</option>`).join('');
+        const opts_html = opts.select.map(o => {
+          const ov = (o && typeof o === 'object') ? o.v : o;
+          const ol = (o && typeof o === 'object') ? o.l : o;
+          return `<option value="${ov}"${ov === v ? ' selected' : ''}>${ol}</option>`;
+        }).join('');
         return `<div class="ed-field${full}"><label for="${id}">${label}</label><select id="${id}">${opts_html}</select></div>`;
       }
       if (opts.checkbox){
@@ -261,7 +290,7 @@
           <h3 class="ed-block-label">Provenance &amp; extraction</h3>
           <div class="ed-form-grid">
             ${field('f_country', 'Country', d.country, { ph: 'Greece' })}
-            ${field('f_language', 'Language (ISO 639-1)', d.language, { ph: 'el' })}
+            ${field('f_language', 'Language (ISO 639-1)', d.language, { select: LANG_OPTIONS })}
             ${field('f_cuisine_focus', 'Cuisine (searchable)', d.cuisine_focus, { ph: 'Greek' })}
             ${field('f_ethnicity', 'Ethnicity', d.ethnicity, { ph: 'Greek' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
@@ -819,7 +848,7 @@
         // values for fields the model left blank.
         const set = (id, v) => { if (v){ const el = $('#' + id); if (el) el.value = v; } };
         set('f_story', data.story);
-        set('f_language', data.language);
+        set('f_language', normLang(data.language));
         set('f_country', data.country);
         set('f_cuisine_focus', data.cuisine_focus);
         set('f_logo_url', data.logo_url);
@@ -919,7 +948,7 @@
             <div class="ed-field full"><label for="newDomain">Domain (host)</label><input id="newDomain" type="text" placeholder="ex: cooking.nytimes.com" autocomplete="off"></div>
             <div class="ed-field full"><label for="newName">Display name</label><input id="newName" type="text" placeholder="ex: NYT Cooking" autocomplete="off"></div>
             <div class="ed-field"><label for="newCountry">Country</label><input id="newCountry" type="text" placeholder="ex: Greece"></div>
-            <div class="ed-field"><label for="newLanguage">Language</label><input id="newLanguage" type="text" placeholder="ex: el"></div>
+            <div class="ed-field"><label for="newLanguage">Language</label><select id="newLanguage">${langOptions('')}</select></div>
             <div class="ed-field"><label for="newCuisine">Cuisine</label><input id="newCuisine" type="text" placeholder="ex: Greek"></div>
             <div class="ed-field"><label for="newEthnicity">Ethnicity</label><input id="newEthnicity" type="text" placeholder="ex: Greek"></div>
           </div>

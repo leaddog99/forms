@@ -616,7 +616,8 @@ def _read_backlinks_file(domain, want, extra_dir=None):
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                           query=None, check_recipe=True, source="serp", records=None,
                           unblocker=False, should_cancel=None, backlinks_dir=None,
-                          url_prefilter=False, exclude_words=None, score_only=False) -> dict:
+                          url_prefilter=False, exclude_words=None, score_only=False,
+                          keyword_prescreen=None) -> dict:
     """Discover a publisher's recipe URLs, (optionally) VERIFY each is a real recipe,
     Moz-score the survivors, rank by PA, mark the top `keep` selected.
 
@@ -649,6 +650,26 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # the verify OFF here regardless of what the caller passed.
     if score_only:
         check_recipe = False
+    # Keyword pre-screen: explicit arg wins; else fall back to the global system_config
+    # default (off). One cheap Haiku pass drops confident non-recipes before the fetch +
+    # whole-page translate on mixed/non-English publishers. See docs/keyword-prescreen.md.
+    if keyword_prescreen is None:
+        try:
+            from input.pipeline.system_config import get_setting as _gs
+            keyword_prescreen = bool(_gs("keyword_prescreen_default", False))
+        except Exception:
+            keyword_prescreen = False
+    # Curator-set domain language (authoritative for the recipe-filter's scoring language;
+    # unspecified → the filter defaults to the instance base language). Best-effort lookup.
+    domain_lang = None
+    try:
+        from input.pipeline import domains_lib
+        from input.pipeline.db import connect as _connect
+        with _connect() as _c:
+            _drow = domains_lib.get_domain(_c, domain)
+        domain_lang = (_drow or {}).get("language") or None
+    except Exception:
+        domain_lang = None
     if source == "backlinks_file":
         found = _read_backlinks_file(domain, want=int(records or discover_n or 100),
                                      extra_dir=backlinks_dir)
@@ -715,6 +736,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             capture_provenance={"domain": domain, "discover_source": source},
             unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
             url_prefilter=url_prefilter, exclude_words=exclude_words,
+            keyword_prescreen=keyword_prescreen, prescreen_domain=domain,
+            domain_lang=domain_lang,
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
         # Auto-learn the JS-rendered hint: if any kept recipe was only recoverable

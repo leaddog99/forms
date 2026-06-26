@@ -50,6 +50,20 @@ def ensure_table(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dishkw_traffic ON dish_keywords(traffic)")
 
 
+def keywords_for_domain(domain, db_path: Optional[str] = None) -> dict:
+    """{raw url -> Top Keyword} for one domain, for the harvest's URL keyword pre-screen
+    (intake.url_prescreen). Best-effort: returns {} on any error (pre-screen then runs on
+    slugs alone)."""
+    try:
+        with _connect(_resolve_db_path(db_path), timeout=5.0) as conn:
+            ensure_table(conn)
+            return {u: k for (u, k) in conn.execute(
+                "SELECT url, keyword FROM dish_keywords "
+                "WHERE domain=? AND keyword IS NOT NULL AND keyword!=''", (domain,))}
+    except Exception:
+        return {}
+
+
 def capture(rows, domain, db_path: Optional[str] = None) -> int:
     """Upsert keyword rows keyed on NORMALIZED url (latest snapshot wins, so a re-harvest
     refreshes traffic rather than duplicating). `rows` = [{url, keyword, traffic, intent,

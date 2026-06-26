@@ -238,6 +238,33 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "trains only on survivors and re-learns the filter's blind spots. "
                        "0 disables. Costs ~rate × (skipped count) extra fetches.",
     },
+    {
+        "key": "keyword_prescreen_default",
+        "value": False,
+        "type": "bool",
+        "category": "Harvest",
+        "label": "Keyword pre-screen (LLM) on publisher harvests",
+        "description": "Before the per-URL fetch+translate, run ONE batched Haiku pass that "
+                       "judges each candidate recipe-vs-not from its URL slug + SEMrush Top "
+                       "Keyword, and drop the confident non-recipes pre-fetch. Big win on "
+                       "non-English MIXED publishers (tips/guides interleaved with recipes) "
+                       "where the post-fetch path is a full-page translation (~40s/URL). "
+                       "Negative-only + conservative → minimal false drops; ε-exploration "
+                       "reuses the url-prefilter rate. See docs/keyword-prescreen.md.",
+    },
+    {
+        "key": "filter_translate_max_chars",
+        "value": 6000,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Filter-stage translation cap (chars)",
+        "description": "Max characters of a non-English page sent to the FILTER's translate "
+                       "(keep-vs-drop phrase score). Extraction re-translates the FULL page, so "
+                       "this never affects final recipe quality — it only bounds the per-URL "
+                       "filter cost (translation latency ≈ output tokens). Lower = faster but "
+                       "risks dropping a recipe whose ingredients/method sit past the cut "
+                       "(long-intro blogs). 0 = no cap (translate the whole page).",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

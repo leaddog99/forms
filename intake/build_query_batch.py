@@ -75,7 +75,10 @@ from input.pipeline.config import (  # noqa: E402
 from input.pipeline.blend import rank_by_blend                              # noqa: E402
 from input.pipeline.url_scoring import score_url_via_moz                    # noqa: E402
 from input.pipeline.url_utils import normalize_url, root_domain             # noqa: E402
-from input.pipeline.validators import is_recipe, score_recipe_text          # noqa: E402
+from input.pipeline.validators import (is_recipe, score_recipe_text,          # noqa: E402
+                                       score_recipe_text_lang, recipe_phrase_lang_available,
+                                       lang_recipe_threshold, score_recipe_bilingual,
+                                       normalize_lang, instance_base_language)
 
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
@@ -441,6 +444,8 @@ def _english_title(title: str, lang_code: str) -> str:
 def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       capture_provenance: dict | None = None,
                       unblocker: bool = False, url_prefilter: bool = False,
+                      keyword_prescreen: bool = False, prescreen_domain: str | None = None,
+                      domain_lang: str | None = None,
                       exclude_words=None, should_cancel=None,
                       render_escalate: bool = True,
                       ) -> tuple[list[dict], list[dict]]:
@@ -479,12 +484,45 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     # region the filter skips (else the is-recipe classifier trains only on survivors and
     # re-learns the filter's blind spots). See docs/corpus-ml-strategy.md.
     explore_rate = 0.0
-    if url_prefilter:
+    if url_prefilter or keyword_prescreen:
         try:
             from input.pipeline.system_config import get_setting as _gs
             explore_rate = float(_gs("url_prefilter_explore_rate", 0.08) or 0.0)
         except Exception:
             explore_rate = 0.08
+
+    # KEYWORD PRE-SCREEN (opt-in): one batched Haiku call up front classifies every
+    # candidate recipe-vs-not from its URL slug + SEMrush Top Keyword, so confident
+    # non-recipes are dropped BEFORE the (expensive) fetch + whole-page translation. Used
+    # on non-English mixed publishers where the post-fetch path is a full-page translate
+    # (~40 s/URL). Negative-only: only a 'not' verdict drops (in the loop below). Best-
+    # effort — any failure leaves verdicts empty → nothing dropped. See docs/keyword-prescreen.md.
+    _prescreen: dict = {}
+    if keyword_prescreen and entries:
+        try:
+            from intake.url_prescreen import prescreen as _kw_prescreen
+            kw_map = {}
+            dom = prescreen_domain or (
+                (capture_provenance or {}).get("domain") if capture_provenance else None)
+            if dom:
+                try:
+                    from input.pipeline.dish_keywords import keywords_for_domain
+                    kw_map = keywords_for_domain(dom)
+                except Exception:
+                    kw_map = {}
+            _prescreen = _kw_prescreen([e["url"] for e in entries], keyword_map=kw_map)
+            if _prescreen:
+                _n_not = sum(1 for v in _prescreen.values() if v == "not")
+                print(f"  [kw-prescreen] {len(_prescreen)} classified, {_n_not} 'not' "
+                      f"(dropped pre-fetch){' + keywords' if kw_map else ' (slugs only)'}")
+        except Exception as ex:
+            print(f"  [kw-prescreen] skipped: {type(ex).__name__}: {ex}")
+
+    # Scoring language is decided by the DOMAIN, not per-page auto-detect: the curator-set
+    # domains.language (normalized — 'gr'→'el') is authoritative; when unspecified it defaults
+    # to the instance's admin base language. Constant for the whole harvest (one domain).
+    _base_lang = instance_base_language()
+    _page_lang = normalize_lang(domain_lang) or _base_lang
 
     kept, dropped = [], []
 
@@ -502,6 +540,19 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     try:
         from input.pipeline.system_config import get_setting as _gs2
         _render_thin_chars = int(_gs2("render_escalate_thin_chars", 3500) or 3500)
+    except Exception:
+        pass
+
+    # FILTER-STAGE translation cap: for a non-English page with no JSON-LD we translate the
+    # visible text only to phrase-score keep-vs-drop — the EXTRACTION stage re-translates the
+    # FULL page for the canonical recipe, so a cap here never degrades final quality; the only
+    # risk is a false DROP of a recipe whose ingredients/method sit past the cut (long-intro
+    # blogs). Translation latency is dominated by OUTPUT tokens, so capping the input ≈ caps the
+    # cost. 0 = no cap (translate whole page). Configurable. See docs/keyword-prescreen.md.
+    _xlate_max = 6000
+    try:
+        from input.pipeline.system_config import get_setting as _gs3
+        _xlate_max = int(_gs3("filter_translate_max_chars", 6000) or 0)
     except Exception:
         pass
 
@@ -618,6 +669,19 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             dropped.append(e)
             print(f"  [{i:>2}/{len(entries)}] DROP collection {url}  (title: {e.get('title','')!r})")
             continue
+        # KEYWORD PRE-SCREEN drop (negative-only): the up-front Haiku pass judged this URL a
+        # clear non-recipe from its slug/keyword — skip the fetch + full-page translate. Same
+        # ε-exploration as url_prefilter so we still mint unbiased labels in the skipped region.
+        if keyword_prescreen and _prescreen.get(url) == "not":
+            if random.random() < explore_rate:
+                e["_explore"] = True
+                print(f"  [{i:>2}/{len(entries)}] KW-EXPLORE  {url}  (would-skip; verifying for training)")
+            else:
+                e["recipe_score"] = 0
+                e["_dropped_reason"] = "kw-prescreen"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] KW-SKIP     {url}")
+                continue
         result = _fetch_for_filter(url, unblocker=unblocker)
         if result is None:
             e["recipe_score"] = 0
@@ -652,68 +716,70 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             print(f"  [{i:>2}/{len(entries)}] KEEP json-ld   {url}{lang_tag}")
             continue
 
-        # No JSON-LD. If the page is non-English, translate visible
-        # text before phrase-scoring; otherwise score the raw text.
-        # Translation here is filter-stage only (~$0.0005/page) — the
-        # downstream extraction stage handles its own translation for
-        # the canonical English recipe body.
-        if is_non_english(lang_code):
-            try:
-                tr = translate_markdown(text, lang_code)
-                ok, why = is_translation_plausible(text, tr.translated_markdown)
-                if not ok:
-                    e["_dropped_reason"] = f"translation-suspect:{why}"
-                    dropped.append(e)
-                    print(f"  [{i:>2}/{len(entries)}] DROP xlate-bad {url} [{lang_code}: {why}]")
-                    continue
-                # Phrase scorer expects lower-cased English.
-                scored_text = tr.translated_markdown.lower()
-                score = score_recipe_text(scored_text)
-                e["recipe_score"] = score
-                e["jsonld_recipe"] = False
-                e["_translated_for_filter"] = True
-                if score >= IS_RECIPE_THRESHOLD:
-                    kept.append(e)
-                    print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{lang_code}]  {url}")
-                elif _render_rescue(e, url, i):
-                    continue
-                else:
-                    e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
-                    dropped.append(e)
-                    print(f"  [{i:>2}/{len(entries)}] DROP xlate={score:>2} [{lang_code}]  {url}")
-            except Exception as ex:
-                # Translation API failure -> fall through to raw phrase
-                # check rather than dropping the URL. Logged loudly so
-                # we notice if Anthropic is flaking.
-                print(f"      [translate] {type(ex).__name__}: {ex} -- falling back to raw phrase check")
-                score = score_recipe_text(text)
-                e["recipe_score"] = score
-                e["jsonld_recipe"] = False
-                e["_translation_failed"] = True
-                if score >= IS_RECIPE_THRESHOLD:
-                    kept.append(e)
-                    print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{lang_code}, xlate-fail]  {url}")
-                elif _render_rescue(e, url, i):
-                    continue
-                else:
-                    e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
-                    dropped.append(e)
-                    print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{lang_code}, xlate-fail]  {url}")
+        # No JSON-LD. Score by the DOMAIN's language (authoritative; defaults to the instance
+        # base language when the domain is unspecified) — NOT per-page auto-detect. Three cases:
+        #  (a) page lang has a phrase pack (or == base) → score RAW text against base+page lists
+        #      (no per-page translation, the ~40s cost). A site MIXES base + its own language in
+        #      the recipe body/headers, so score_recipe_bilingual sums both disjoint vocabularies
+        #      (cross hits ~0; when page==base it's just the base list once).
+        #  (b) page lang ≠ base AND no pack → translate (capped) then phrase-score (legacy path).
+        if recipe_phrase_lang_available(_page_lang) or _page_lang == _base_lang:
+            score, thr = score_recipe_bilingual(text, _page_lang)
+            e["recipe_score"] = score
+            e["jsonld_recipe"] = False
+            e["_lang_phrase_scored"] = True
+            tag = "" if _page_lang == _base_lang else f" [{_page_lang}]"
+            if score >= thr:
+                kept.append(e)
+                print(f"  [{i:>2}/{len(entries)}] KEEP phrase={score:>2}{tag}  {url}")
+            elif _render_rescue(e, url, i):
+                continue
+            else:
+                e["_dropped_reason"] = f"recipe-score<{thr}"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] DROP phrase={score:>2}{tag}  {url}")
             continue
 
-        # English page, no JSON-LD. Phrase-score the raw text.
-        score = score_recipe_text(text)
-        e["recipe_score"] = score
-        e["jsonld_recipe"] = False
-        if score >= IS_RECIPE_THRESHOLD:
-            kept.append(e)
-            print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2}  {url}")
-        elif _render_rescue(e, url, i):
-            continue
-        else:
-            e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
-            dropped.append(e)
-            print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2}  {url}")
+        # page lang ≠ base AND no phrase pack for it: translate the page's text (in its own
+        # language), capped to _xlate_max for the filter only (extraction re-translates in full).
+        xtext = text[:_xlate_max] if (_xlate_max and len(text) > _xlate_max) else text
+        try:
+            tr = translate_markdown(xtext, _page_lang)
+            ok, why = is_translation_plausible(xtext, tr.translated_markdown)
+            if not ok:
+                e["_dropped_reason"] = f"translation-suspect:{why}"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] DROP xlate-bad {url} [{_page_lang}: {why}]")
+                continue
+            score = score_recipe_text(tr.translated_markdown.lower())
+            e["recipe_score"] = score
+            e["jsonld_recipe"] = False
+            e["_translated_for_filter"] = True
+            if score >= IS_RECIPE_THRESHOLD:
+                kept.append(e)
+                print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{_page_lang}]  {url}")
+            elif _render_rescue(e, url, i):
+                continue
+            else:
+                e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] DROP xlate={score:>2} [{_page_lang}]  {url}")
+        except Exception as ex:
+            # Translation API failure -> raw phrase check rather than dropping. Logged loudly.
+            print(f"      [translate] {type(ex).__name__}: {ex} -- falling back to raw phrase check")
+            score = score_recipe_text(text)
+            e["recipe_score"] = score
+            e["jsonld_recipe"] = False
+            e["_translation_failed"] = True
+            if score >= IS_RECIPE_THRESHOLD:
+                kept.append(e)
+                print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{_page_lang}, xlate-fail]  {url}")
+            elif _render_rescue(e, url, i):
+                continue
+            else:
+                e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
+                dropped.append(e)
+                print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{_page_lang}, xlate-fail]  {url}")
 
     # Byproduct training-data capture (best-effort, off the hot path, separate
     # git-ignored training.db). One labeled sample per decision; then pop the
