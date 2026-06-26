@@ -42,9 +42,20 @@ _TOOL = {
                                "their common abbreviations, conjugated cooking verbs. "
                                "Include multiple natural variants; omit anything with no "
                                "real recipe form.",
-            }
+            },
+            "ingredients_headers": {
+                "type": "array", "items": {"type": "string"},
+                "description": "the word(s) that head an INGREDIENTS list in real recipes of "
+                               "this language (e.g. Greek 'υλικά', 'συστατικά'). lowercase.",
+            },
+            "method_headers": {
+                "type": "array", "items": {"type": "string"},
+                "description": "the word(s) that head the METHOD / preparation steps in real "
+                               "recipes of this language (e.g. Greek 'εκτέλεση', 'οδηγίες', "
+                               "'παρασκευή'). lowercase. NOT prep-TIME labels.",
+            },
         },
-        "required": ["phrases"],
+        "required": ["phrases", "ingredients_headers", "method_headers"],
     },
 }
 
@@ -68,7 +79,19 @@ def _sys_prompt(lang_name: str) -> str:
     )
 
 
-def translate_phrases(lang: str) -> list:
+def _dedup_lower(items) -> list:
+    out, seen = [], set()
+    for p in items or []:
+        p = str(p).strip().lower()
+        if len(p) >= 2 and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def translate_phrases(lang: str):
+    """Returns (phrases, sections) — the detection phrase list plus the structural
+    section-header markers {'ingredients':[...], 'method':[...]}."""
     import llm
     lang_name = _LANG_NAMES.get(lang, lang.upper())
     resp = llm.create(
@@ -78,14 +101,11 @@ def translate_phrases(lang: str) -> list:
                    "content": "English detection phrases:\n" + ", ".join(RECIPE_PHRASES)}],
         tools=[_TOOL], tool_choice={"type": "tool", "name": "phrase_translations"})
     ti = next((b.input for b in resp.content if getattr(b, "type", "") == "tool_use"), None)
-    raw = (ti or {}).get("phrases", []) if isinstance(ti, dict) else []
-    out, seen = [], set()
-    for p in raw:
-        p = str(p).strip().lower()
-        if len(p) >= 2 and p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
+    ti = ti if isinstance(ti, dict) else {}
+    phrases = _dedup_lower(ti.get("phrases", []))
+    sections = {"ingredients": _dedup_lower(ti.get("ingredients_headers", [])),
+                "method": _dedup_lower(ti.get("method_headers", []))}
+    return phrases, sections
 
 
 def main() -> int:
@@ -94,16 +114,21 @@ def main() -> int:
     ap.add_argument("--threshold", type=int, default=IS_RECIPE_THRESHOLD,
                     help=f"keep-vs-drop phrase count for this language (default {IS_RECIPE_THRESHOLD})")
     args = ap.parse_args()
-    phrases = translate_phrases(args.lang)
+    phrases, sections = translate_phrases(args.lang)
     if not phrases:
         print("ERROR: no phrases returned", file=sys.stderr)
         return 1
     os.makedirs(_OUT_DIR, exist_ok=True)
     path = os.path.join(_OUT_DIR, f"{args.lang}.json")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump({"lang": args.lang, "threshold": args.threshold, "phrases": phrases},
+        json.dump({"lang": args.lang, "threshold": args.threshold,
+                   "sections": sections, "phrases": phrases},
                   f, ensure_ascii=False, indent=2)
     print(f"wrote {len(phrases)} phrases -> {path} (threshold {args.threshold})")
+    print(f"sections: ingredients={sections['ingredients']}  method={sections['method']}")
+    if not sections["ingredients"] or not sections["method"]:
+        print("WARNING: missing ingredients/method section headers — the structural is-recipe "
+              "gate needs BOTH; add them by hand if the model omitted them.")
     print("sample:", ", ".join(phrases[:25]))
     return 0
 

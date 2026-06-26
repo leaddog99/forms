@@ -1,4 +1,28 @@
-# URL keyword pre-screen — cut the per-URL translation cost on non-English mixed sites
+# Non-English recipe filtering — free per-language phrase scoring + structural is-recipe gate
+
+> **FINAL DESIGN (2026-06-26): fully LLM-FREE for languages with a phrase pack.**
+> The recipe filter, for a non-English page with no JSON-LD, no longer translates the page.
+> It scores the RAW text against the language's phrase pack (`intake/recipe_phrases/<lang>.json`,
+> built once) and decides keep/drop with a **structural gate**: a real recipe has BOTH an
+> **ingredients section** AND a **method section** (`validators.has_recipe_structure`,
+> accent-insensitive so `ΥΛΙΚΑ`/`υλικά` both match), in the instance BASE language OR the page
+> language. Vocabulary-rich guides/tips/roundups have at most one section → dropped (they used
+> to false-keep on a raw phrase COUNT, e.g. a Greek pork-tenderloin guide scored 17). The raw
+> count (`recipe_score`) is still stamped for ranking/training, but it is NOT the keep decision.
+>
+> The **LLM keyword pre-screen below is now OPTIONAL and OFF by default** (`keyword_prescreen_default`).
+> It only ever saved the *fetch* on junk; the fetch is cheap now that translation is gone, and the
+> free structural gate makes the same recipe-vs-guide call after fetching. Turn it back on only for
+> big/blocked harvests where skipping fetches is worth one batched Haiku call.
+>
+> Scoring language = curator-set `domains.language` (normalized, `gr`→`el`), defaulting to the
+> instance base language; the base list is always scored and the page-language list is added when
+> different (scored once when the same). Per-language packs are made by
+> `scripts/translate_recipe_phrases.py <lang>` (one offline call → phrases + section headers).
+
+---
+
+## (Original) URL keyword pre-screen — cut the per-URL translation cost on non-English mixed sites
 
 ## Problem (observed on `meatandgrillstories.com`, a Greek grill site)
 

@@ -78,7 +78,8 @@ from input.pipeline.url_utils import normalize_url, root_domain             # no
 from input.pipeline.validators import (is_recipe, score_recipe_text,          # noqa: E402
                                        score_recipe_text_lang, recipe_phrase_lang_available,
                                        lang_recipe_threshold, score_recipe_bilingual,
-                                       normalize_lang, instance_base_language)
+                                       normalize_lang, instance_base_language,
+                                       has_recipe_structure)
 
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
@@ -724,20 +725,25 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         #      (cross hits ~0; when page==base it's just the base list once).
         #  (b) page lang ≠ base AND no pack → translate (capped) then phrase-score (legacy path).
         if recipe_phrase_lang_available(_page_lang) or _page_lang == _base_lang:
+            # FREE structural gate: a real recipe has BOTH an ingredients section AND a method
+            # section (bilingual, accent-insensitive). A vocabulary-rich GUIDE/tips article has
+            # at most one → dropped. This replaces the raw phrase-COUNT threshold, which
+            # false-kept verbose guides. recipe_score (the count) is still stamped for the
+            # training record + ranking signal, but it's not the keep decision.
             score, thr = score_recipe_bilingual(text, _page_lang)
             e["recipe_score"] = score
             e["jsonld_recipe"] = False
             e["_lang_phrase_scored"] = True
             tag = "" if _page_lang == _base_lang else f" [{_page_lang}]"
-            if score >= thr:
+            if has_recipe_structure(text, _base_lang, _page_lang):
                 kept.append(e)
-                print(f"  [{i:>2}/{len(entries)}] KEEP phrase={score:>2}{tag}  {url}")
+                print(f"  [{i:>2}/{len(entries)}] KEEP struct phrase={score:>2}{tag}  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
-                e["_dropped_reason"] = f"recipe-score<{thr}"
+                e["_dropped_reason"] = "no-recipe-structure"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP phrase={score:>2}{tag}  {url}")
+                print(f"  [{i:>2}/{len(entries)}] DROP no-struct phrase={score:>2}{tag}  {url}")
             continue
 
         # page lang ≠ base AND no phrase pack for it: translate the page's text (in its own

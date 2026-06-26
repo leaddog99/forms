@@ -2,6 +2,7 @@
 
 import json
 import os
+import unicodedata
 from datetime import datetime, timezone
 
 from input.pipeline.config import RECIPE_PHRASES, IS_RECIPE_THRESHOLD
@@ -39,7 +40,8 @@ def _load_lang_phrases(lang: str):
             phrases = [str(p).lower() for p in raw.get("phrases", []) if str(p).strip()]
             if phrases:
                 data = {"phrases": phrases,
-                        "threshold": int(raw.get("threshold", IS_RECIPE_THRESHOLD))}
+                        "threshold": int(raw.get("threshold", IS_RECIPE_THRESHOLD)),
+                        "sections": raw.get("sections") or {}}
         except Exception:
             data = None
     _LANG_PHRASES[lang] = data
@@ -124,6 +126,56 @@ def score_recipe_for_lang(text: str, lang: str):
         return 0
     lowered = text.lower()
     return sum(1 for phrase in phrases if phrase in lowered)
+
+
+# Section markers for the BASE/English instance (the non-English packs carry their own
+# "sections" block in <lang>.json). A real recipe has BOTH an ingredients section AND a
+# method section — a vocabulary-rich GUIDE/tips article has at most one. This structural
+# AND is the free is-recipe gate (no LLM, no per-page translation).
+_BASE_SECTIONS_EN = {
+    "ingredients": ["ingredients"],
+    "method": ["instructions", "directions", "method", "preparation", "steps"],
+}
+
+
+def _strip_accents(s: str) -> str:
+    """Lowercase + drop combining accents. Greek section HEADERS are often UPPERCASE
+    (ΥΛΙΚΑ/ΕΚΤΕΛΕΣΗ) and uppercase Greek has NO accents, so 'υλικά' wouldn't match a
+    lowercased 'υλικα' without this — match accent-insensitively."""
+    return "".join(c for c in unicodedata.normalize("NFD", (s or "").lower())
+                   if unicodedata.category(c) != "Mn")
+
+
+def recipe_sections(lang: str) -> dict:
+    """{'ingredients':[...], 'method':[...]} section markers for `lang`. English from the
+    base constant; other languages from their pack's 'sections' block. {} if unknown."""
+    lang = (lang or "en").lower()[:2]
+    if lang == "en":
+        return _BASE_SECTIONS_EN
+    data = _load_lang_phrases(lang)
+    return (data.get("sections") if data else {}) or {}
+
+
+def has_recipe_structure(text: str, base_lang: str, page_lang: str = None) -> bool:
+    """True when `text` has BOTH an ingredients-section marker AND a method-section marker,
+    in the base language OR the page language, matched accent-insensitively. This is the
+    free structural is-recipe gate: real recipes have both sections; guides/tips/roundups
+    rarely do. Bilingual so a site mixing base + its own language is covered."""
+    if not text:
+        return False
+    t = _strip_accents(text)
+    ing, meth, seen = [], [], set()
+    for L in (base_lang, page_lang):
+        L = (L or "").lower()[:2]
+        if not L or L in seen:
+            continue
+        seen.add(L)
+        s = recipe_sections(L)
+        ing += s.get("ingredients", [])
+        meth += s.get("method", [])
+    has_ing = any(_strip_accents(m) in t for m in ing)
+    has_meth = any(_strip_accents(m) in t for m in meth)
+    return has_ing and has_meth
 
 
 def score_recipe_bilingual(text: str, page_lang: str):
