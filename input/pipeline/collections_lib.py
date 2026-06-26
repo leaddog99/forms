@@ -660,16 +660,18 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         except Exception:
             keyword_prescreen = False
     # Curator-set domain language (authoritative for the recipe-filter's scoring language;
-    # unspecified → the filter defaults to the instance base language). Best-effort lookup.
-    domain_lang = None
+    # '' = domain context but unspecified → the filter defaults to the instance base language).
+    # A publisher harvest ALWAYS has a domain, so we pass a string (never None — None means
+    # "no domain context", which routes the filter to per-page detection for the dish batch).
+    domain_lang = ""
     try:
         from input.pipeline import domains_lib
         from input.pipeline.db import connect as _connect
         with _connect() as _c:
             _drow = domains_lib.get_domain(_c, domain)
-        domain_lang = (_drow or {}).get("language") or None
+        domain_lang = (_drow or {}).get("language") or ""
     except Exception:
-        domain_lang = None
+        domain_lang = ""
     if source == "backlinks_file":
         found = _read_backlinks_file(domain, want=int(records or discover_n or 100),
                                      extra_dir=backlinks_dir)

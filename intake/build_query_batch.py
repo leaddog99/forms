@@ -519,11 +519,15 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         except Exception as ex:
             print(f"  [kw-prescreen] skipped: {type(ex).__name__}: {ex}")
 
-    # Scoring language is decided by the DOMAIN, not per-page auto-detect: the curator-set
-    # domains.language (normalized — 'gr'→'el') is authoritative; when unspecified it defaults
-    # to the instance's admin base language. Constant for the whole harvest (one domain).
+    # Scoring language:
+    #  - DOMAIN-context call (publisher harvest, domain_lang is a string incl. '') → the
+    #    curator-set domains.language (normalized, 'gr'→'el') is AUTHORITATIVE; '' (unspecified)
+    #    defaults to the instance base language. Per-page auto-detect is NOT trusted here.
+    #  - No-domain call (the multi-domain dish batch passes domain_lang=None) → there's no one
+    #    domain, so fall back to each result's PER-PAGE detected language (computed in the loop).
     _base_lang = instance_base_language()
-    _page_lang = normalize_lang(domain_lang) or _base_lang
+    _has_domain_ctx = domain_lang is not None
+    _fixed_page_lang = (normalize_lang(domain_lang) or _base_lang) if _has_domain_ctx else None
 
     kept, dropped = [], []
 
@@ -693,6 +697,9 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         text, has_recipe_jsonld, lang_code = result
         e["_lang"] = lang_code
         e["_cap_text"] = text  # transient: byproduct training capture (popped before return)
+        # Effective scoring language for THIS page: the fixed domain language (publisher
+        # harvest), else the per-page detected language (dish batch / no domain), else base.
+        _eff_lang = _fixed_page_lang or normalize_lang(lang_code) or _base_lang
 
         # Collection guard (non-English) — the SERP title was in the source language,
         # so the English fast-path above couldn't see it. Translate the title now and
@@ -717,25 +724,25 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             print(f"  [{i:>2}/{len(entries)}] KEEP json-ld   {url}{lang_tag}")
             continue
 
-        # No JSON-LD. Score by the DOMAIN's language (authoritative; defaults to the instance
-        # base language when the domain is unspecified) — NOT per-page auto-detect. Three cases:
-        #  (a) page lang has a phrase pack (or == base) → score RAW text against base+page lists
-        #      (no per-page translation, the ~40s cost). A site MIXES base + its own language in
-        #      the recipe body/headers, so score_recipe_bilingual sums both disjoint vocabularies
+        # No JSON-LD. Score by the EFFECTIVE language (_eff_lang: domain language for a
+        # publisher harvest, else the page's detected language for a dish batch). Two cases:
+        #  (a) that language has a phrase pack (or == base) → score RAW text against base+page
+        #      lists (no per-page translation). A site MIXES base + its own language in the
+        #      recipe body/headers, so score_recipe_bilingual sums both disjoint vocabularies
         #      (cross hits ~0; when page==base it's just the base list once).
-        #  (b) page lang ≠ base AND no pack → translate (capped) then phrase-score (legacy path).
-        if recipe_phrase_lang_available(_page_lang) or _page_lang == _base_lang:
+        #  (b) language ≠ base AND no pack → translate (capped) then phrase-score (legacy path).
+        if recipe_phrase_lang_available(_eff_lang) or _eff_lang == _base_lang:
             # FREE structural gate: a real recipe has BOTH an ingredients section AND a method
             # section (bilingual, accent-insensitive). A vocabulary-rich GUIDE/tips article has
             # at most one → dropped. This replaces the raw phrase-COUNT threshold, which
             # false-kept verbose guides. recipe_score (the count) is still stamped for the
             # training record + ranking signal, but it's not the keep decision.
-            score, thr = score_recipe_bilingual(text, _page_lang)
+            score, thr = score_recipe_bilingual(text, _eff_lang)
             e["recipe_score"] = score
             e["jsonld_recipe"] = False
             e["_lang_phrase_scored"] = True
-            tag = "" if _page_lang == _base_lang else f" [{_page_lang}]"
-            if has_recipe_structure(text, _base_lang, _page_lang):
+            tag = "" if _eff_lang == _base_lang else f" [{_eff_lang}]"
+            if has_recipe_structure(text, _base_lang, _eff_lang):
                 kept.append(e)
                 print(f"  [{i:>2}/{len(entries)}] KEEP struct phrase={score:>2}{tag}  {url}")
             elif _render_rescue(e, url, i):
@@ -746,16 +753,16 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 print(f"  [{i:>2}/{len(entries)}] DROP no-struct phrase={score:>2}{tag}  {url}")
             continue
 
-        # page lang ≠ base AND no phrase pack for it: translate the page's text (in its own
+        # language ≠ base AND no phrase pack for it: translate the page's text (in its own
         # language), capped to _xlate_max for the filter only (extraction re-translates in full).
         xtext = text[:_xlate_max] if (_xlate_max and len(text) > _xlate_max) else text
         try:
-            tr = translate_markdown(xtext, _page_lang)
+            tr = translate_markdown(xtext, _eff_lang)
             ok, why = is_translation_plausible(xtext, tr.translated_markdown)
             if not ok:
                 e["_dropped_reason"] = f"translation-suspect:{why}"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP xlate-bad {url} [{_page_lang}: {why}]")
+                print(f"  [{i:>2}/{len(entries)}] DROP xlate-bad {url} [{_eff_lang}: {why}]")
                 continue
             score = score_recipe_text(tr.translated_markdown.lower())
             e["recipe_score"] = score
@@ -763,13 +770,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             e["_translated_for_filter"] = True
             if score >= IS_RECIPE_THRESHOLD:
                 kept.append(e)
-                print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{_page_lang}]  {url}")
+                print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{_eff_lang}]  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
                 e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP xlate={score:>2} [{_page_lang}]  {url}")
+                print(f"  [{i:>2}/{len(entries)}] DROP xlate={score:>2} [{_eff_lang}]  {url}")
         except Exception as ex:
             # Translation API failure -> raw phrase check rather than dropping. Logged loudly.
             print(f"      [translate] {type(ex).__name__}: {ex} -- falling back to raw phrase check")
@@ -779,13 +786,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             e["_translation_failed"] = True
             if score >= IS_RECIPE_THRESHOLD:
                 kept.append(e)
-                print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{_page_lang}, xlate-fail]  {url}")
+                print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
                 e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{_page_lang}, xlate-fail]  {url}")
+                print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
 
     # Byproduct training-data capture (best-effort, off the hot path, separate
     # git-ignored training.db). One labeled sample per decision; then pop the

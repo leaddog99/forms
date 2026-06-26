@@ -446,3 +446,35 @@ The harvest controls were scattered (fetch/render up in Extraction; verify/score
 - **Pending wrap (do at next stable point):** `recipes.sql` shows uncommitted changes — re-dump + `bcc_backup.bat` + commit (captures the dish-alias chapter backfill + url-word demotions + any data since `dc50f1f`). Untracked `input/*.xlsx` are SEMrush exports (harvest inputs); `uvicorn_stderr_new.log` is a stray log.
 - **Restarts needed to go live:** `ethnicity` persist-on-save, the `/messages` endpoints + `message_categories` model, dish-alias `_attach_chapter` override, and translate-glossary on the server extract endpoints (harvest jobs pick it up on next spawn). Verify new code is live before trusting a screenshot ([[project_restart_zombie_port]]).
 - **Carried:** score-only path #2 LIVE Tampermonkey test (kalofagas); canonical dish DISPLAY name (the pumpkin-title open question); partial-shift paywall calibration (BG #1); `/collections/leaderboard` as a page; `serp_batch`; sub-steps v2.1; Voice P1.
+
+## Session log — 2026-06-26 — post-restart recovery + ops · the NON-ENGLISH HARVEST rework (LLM-free recipe filtering for Greek/foreign sites) · full pipeline documented
+
+Long session on `split/enrichment-api`. Opened with recovery (a restart lost live history), then a deep, iterative rework of how the publisher harvest decides "is this a recipe" on non-English sites — ending at a **fully LLM-free** filter for any language we have a phrase pack for. All committed + pushed.
+
+### Recovery + ops (early)
+- **State reconstruction:** the 06-23(later)/06-24/06-25 sessions had shipped without log entries; reconstructed all three from git (`2324ae0`), re-dumped `recipes.sql`, committed/pushed. ([[feedback_update_state_log]] reinforced.)
+- **Server is now a Windows SERVICE:** the FastAPI app runs as the NSSM service **`BCC`** (`nssm.exe`→`python -m uvicorn :8009`). Killing the PID no-ops (SCM respawns it). Rewrote `bcc_restart.bat` to self-elevate + `Restart-Service BCC` + verify the port (`1d9bd44`). **The agent's shell is non-elevated → it CANNOT restart the service**; the user runs the bat. Memory updated ([[project_restart_zombie_port]]).
+
+### The problem
+A Greek/mixed publisher harvest paid **~40s/URL**: with `check_recipe` on and no Recipe JSON-LD, every candidate got a full fetch **+ a whole-page Haiku translate** just to run the English phrase count. Diagnosed on `meatandgrillstories.com` (job #374).
+
+### What shipped (the arc, in order it evolved)
+1. **Keyword pre-screen** (`intake/url_prescreen.py`, `fa8ac5d`) — one batched Haiku call classifies candidates recipe/not/unsure from slug + SEMrush Top Keyword BEFORE fetch; negative-only drop. Built, wired, validated… then **demoted to OFF by default** (see #5).
+2. **Per-language phrase packs** (`scripts/translate_recipe_phrases.py` → `intake/recipe_phrases/<lang>.json`) — translate the English `RECIPE_PHRASES` list ONCE into a language's natural recipe phrasing (incl. abbreviations κ.σ/κ.γ/γρ. + conjugations); then score the **RAW** page text against it — **no per-page translation**. `el.json` calibrated on real pages.
+3. **Bilingual, domain-driven scoring** (`validators.score_recipe_bilingual`) — scoring language = curator-set `domains.language` (normalized, `gr`→`el`), defaulting to the **instance base language** (`BCC_TARGET_LANGUAGE`) when unspecified; per-page auto-detect no longer trusted for the keep/drop call. The **base list is always scored; the page-language pack is ADDED** when different (a site mixes languages), scored **once** when the same. `domains.language` migrated to 2-letter ISO + form is now a **dropdown** + enrich normalizes.
+4. **Phrase-list calibration via an audit** — fully translated each test page + LLM-audited recipe-truth and missing phrases. All rejects confirmed non-recipes; the audit exposed the machine-translation's misses: the headers **`υλικά`/`εκτέλεση`** (one pruned from the English master, one rendered as a dictionary word) + imperative-verb **grammar**. Added → real recipes 10→15-27 vs junk 2.
+5. **FREE STRUCTURAL is-recipe gate** (`validators.has_recipe_structure`, `962d265`) — the keep decision is no longer a phrase COUNT (which false-kept vocabulary-rich guides — a Greek pork guide scored 17) but a **structural** test: a real recipe has BOTH an **ingredients section** AND a **method section**, matched **accent-insensitively** (Greek headers are often UPPERCASE → no accents: `ΥΛΙΚΑ`==`υλικά`), across base + page language. Section markers live in each pack's `sections` block. This is what let us **drop the LLM keyword pre-screen** from the default path (`keyword_prescreen_default=False`) → the Greek backlinks harvest now runs with **ZERO LLM calls**. `recipe_score` (the count) is still stamped for ranking/training, just not the gate.
+6. **Regression caught + fixed** (`docs` step): the **dish batch is also a Google path** and calls the filter with NO domain → the domain-language refactor had defaulted every no-domain page to base `en`, which would **wrongly drop non-English dish-batch results**. Fixed: domain-context calls use the domain language; no-domain calls fall back to **per-page detection** (`_eff_lang`). Verified both modes.
+
+### Verified
+End-to-end on `meatandgrillstories.com` (8 URLs): 3 real recipes KEPT, 4 guides + 1 restaurant-review DROPPED — including the phrase=17 guide the old count would have kept — **no LLM calls**, no per-page translation. Dish-batch mode re-tested: detects `el` per page, keeps recipe / drops guide.
+
+### Docs / decisions
+- **`docs/recipe-candidate-pipeline.md`** — the whole pipeline in plain language, every flow-changing `if`, 3 entry points, and the explicit "Google harvest == SEMrush-file harvest from Stage 1 on" answer.
+- `docs/keyword-prescreen.md` updated with the final LLM-free design.
+- New languages: `python -m scripts.translate_recipe_phrases <lang>` mints a pack (phrases + section headers) in one offline call.
+
+### Follow-ups / open
+- **Domain form simplification:** the `url_prefilter` (food-word) checkbox is now marginal (structural gate + cheap fetches + useless on foreign slugs) — flagged for removal/demotion, **awaiting the user's call** (working capability, not removed silently). The LLM keyword pre-screen has no form control (global flag, off).
+- Stand up packs for the other languages actually harvested (es/it/fr…) as they come up.
+- Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
