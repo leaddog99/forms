@@ -57,11 +57,17 @@ def ensure_collection_members_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_coll_members_url ON collection_members(url_normalized)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_coll_members_coll ON collection_members(collection_type, collection_key, rank)")
-    # image_url — the recipe's og:image, captured at harvest for the selected top-N so
-    # DISCOVERED (not-yet-ingested) members still show a thumbnail. Added idempotently.
+    # Idempotent column adds:
+    #  image_url   — the recipe's og:image (selected top-N) so discovered members show a thumb.
+    #  traffic     — SEMrush per-page monthly organic traffic (the meaningful tiebreaker when
+    #                PA saturates to near-identical values across a publisher's pages).
+    #  traffic_pct — SEMrush "Traffic (%)" — the page's share of the publisher's traffic.
+    #  file_seq    — 1-based position in the SEMrush export as delivered (provenance/future use).
     cols = {r[1] for r in conn.execute("PRAGMA table_info(collection_members)")}
-    if "image_url" not in cols:
-        conn.execute("ALTER TABLE collection_members ADD COLUMN image_url TEXT")
+    for _c, _t in (("image_url", "TEXT"), ("traffic", "REAL"),
+                   ("traffic_pct", "REAL"), ("file_seq", "INTEGER")):
+        if _c not in cols:
+            conn.execute(f"ALTER TABLE collection_members ADD COLUMN {_c} {_t}")
     conn.commit()
 
 
@@ -79,13 +85,15 @@ def replace_members(conn, collection_type, collection_key, members, model_versio
         """
         INSERT INTO collection_members
             (collection_type, collection_key, url_normalized, title, da, pa,
-             adjusted_pa, rank_score, rank, selected, note, image_url, model_version, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             adjusted_pa, rank_score, rank, selected, note, image_url,
+             traffic, traffic_pct, file_seq, model_version, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         [(collection_type, collection_key, normalize_url(m["url"]) or m["url"], m.get("title"),
           m.get("da"), m.get("pa"), m.get("adjusted_pa"), m.get("rank_score"),
           m.get("rank"), 1 if m.get("selected") else 0, m.get("note"),
-          m.get("image_url"), model_version, now) for m in members],
+          m.get("image_url"), m.get("traffic"), m.get("traffic_pct"), m.get("file_seq"),
+          model_version, now) for m in members],
     )
     conn.commit()
     return len(members)
@@ -117,7 +125,7 @@ def get_collection_top(conn, collection_type, collection_key, limit=50,
     rows = conn.execute(
         f"""
         SELECT cm.url_normalized, cm.title, cm.da, cm.pa, cm.adjusted_pa,
-               cm.rank_score, cm.rank, cm.selected,
+               cm.rank_score, cm.rank, cm.selected, cm.traffic, cm.traffic_pct,
                m.recipe_id,
                json_extract(m.data, '$.name'),
                json_extract(m.data, '$._master.exceptionalism.grade'),
@@ -138,7 +146,7 @@ def get_collection_top(conn, collection_type, collection_key, limit=50,
         (collection_type, collection_key, limit),
     ).fetchall()
     cols = ["url", "ledger_title", "da", "pa", "adjusted_pa", "rank_score", "rank",
-            "selected", "recipe_id", "name", "grade", "preview_image"]
+            "selected", "traffic", "traffic_pct", "recipe_id", "name", "grade", "preview_image"]
     out = []
     for r in rows:
         d = dict(zip(cols, r))
@@ -566,7 +574,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
     aei = col("Answer Engines")
     tpi = col("Traffic (%)", "Traffic %")
     rows, kw_rows = [], []
-    for r in it:
+    for seq, r in enumerate(it, 1):   # seq = 1-based position in the export AS DELIVERED
         url = str(r[ui] or "").strip()
         if not url:
             continue
@@ -580,17 +588,23 @@ def _read_backlinks_file(domain, want, extra_dir=None):
             rank = float(r[rank_idx] or 0)
         except (TypeError, ValueError):
             rank = 0.0
-        rows.append((url, str(r[ti] if ti is not None else "") or "", rank))
+        # Per-page TRAFFIC numbers — present on a Top-Pages export, absent (None) on a pure
+        # backlinks export. Read independently of `rank` (which may be referring-domains).
+        # Stored on the member as the meaningful PA tiebreaker + kept for future weighting.
+        try:
+            traffic = float(r[tri]) if tri is not None and r[tri] not in (None, "") else None
+        except (TypeError, ValueError):
+            traffic = None
+        try:
+            tpct = float(r[tpi]) if tpi is not None and r[tpi] not in (None, "") else None
+        except (TypeError, ValueError):
+            tpct = None
+        rows.append((url, str(r[ti] if ti is not None else "") or "", rank, traffic, tpct, seq))
         if ki is not None:
             kw = str(r[ki] or "").strip()
             if kw:
-                try:
-                    tpct = float(r[tpi]) if tpi is not None and r[tpi] not in (None, "") else None
-                except (TypeError, ValueError):
-                    tpct = None
                 kw_rows.append({"url": url, "keyword": kw,
-                                "traffic": rank if rank_label == "traffic" else None,
-                                "traffic_pct": tpct,
+                                "traffic": traffic, "traffic_pct": tpct,
                                 "intent": str(r[ii] or "").strip() if ii is not None else "",
                                 "answer_engines": str(r[aei] or "").strip() if aei is not None else ""})
     if kw_rows:
@@ -601,15 +615,17 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         except Exception as e:
             print(f"  [dish-keywords] capture skipped ({type(e).__name__}: {e})")
     rows.sort(key=lambda x: -x[2])   # rank desc (domains or traffic)
-    out, seen = [], set()
-    for url, title, _r in rows:
+    out, seen, meta = [], set(), {}
+    for url, title, _r, traffic, tpct, seq in rows:
         key = _recipe_path_key(url)            # collapse id / slug / detail.aspx aliases
         if key not in seen:
-            seen.add(key); out.append((url, title))   # keep the highest-ranked variant
+            seen.add(key)
+            out.append((url, title))           # keep the highest-ranked variant
+            meta[url] = {"traffic": traffic, "traffic_pct": tpct, "file_seq": seq}
         if len(out) >= want:
             break
     print(f"  [harvest] SEMrush file {os.path.basename(path)}: {len(out)} URLs (by {rank_label})")
-    return out
+    return out, meta
 
 
 def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
@@ -671,9 +687,13 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         domain_lang = (_drow or {}).get("language") or ""
     except Exception:
         domain_lang = ""
+    # file_meta: {url -> {traffic, traffic_pct, file_seq}} from a SEMrush export; {} for the
+    # SERP/path sources (no per-page traffic available without the SEMrush API — see scoping
+    # in docs/recipe-candidate-pipeline.md). Stamped onto members below; traffic tiebreaks.
+    file_meta = {}
     if source == "backlinks_file":
-        found = _read_backlinks_file(domain, want=int(records or discover_n or 100),
-                                     extra_dir=backlinks_dir)
+        found, file_meta = _read_backlinks_file(domain, want=int(records or discover_n or 100),
+                                                extra_dir=backlinks_dir)
         used_path = None
     elif query:
         target = root_domain("https://" + domain)
@@ -758,8 +778,12 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         s = score_url_via_moz(url)
         if s and s.get("page_authority"):
             pa, da = s.get("page_authority"), s.get("domain_authority")
+            _fm = file_meta.get(url) or {}
             scored.append({"url": url, "title": title,
-                           "da": float(da), "pa": float(pa)})
+                           "da": float(da), "pa": float(pa),
+                           "traffic": _fm.get("traffic"),
+                           "traffic_pct": _fm.get("traffic_pct"),
+                           "file_seq": _fm.get("file_seq")})
             # Per-URL Moz line, mirroring the dish batch's _moz_score log. No OU —
             # publishers have no per-publisher fit; within-publisher rank IS pa.
             _fp = lambda v: ("?" if v is None else f"{v:>3}")
@@ -774,7 +798,11 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # no global fit has been computed yet. See input/pipeline/domain_scoring.py.
     from input.pipeline import domain_scoring
     domain_scoring.score_members(scored)   # stamps adjusted_pa / rank_score / ou / power
-    scored.sort(key=lambda m: ((m.get("rank_score") is None), -(m.get("rank_score") or 0.0)))
+    # Order by the authority score DESC, then TRAFFIC DESC as the tiebreaker. Foreign sites
+    # often have near-identical PA across all pages (PA saturates) → near-identical rank_score
+    # → traffic is what actually distinguishes their hero recipes. None traffic sorts last.
+    scored.sort(key=lambda m: ((m.get("rank_score") is None), -(m.get("rank_score") or 0.0),
+                               -(m.get("traffic") or 0.0)))
     keep = max(1, int(keep or 10))
     for i, m in enumerate(scored, 1):
         m["rank"] = i

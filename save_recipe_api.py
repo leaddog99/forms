@@ -3716,7 +3716,8 @@ def domain_recipes_endpoint(domain: str):
 
 
 async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
-                                           batch_source: str, log_prefix: str = "[INGEST]") -> bool:
+                                           batch_source: str, log_prefix: str = "[INGEST]",
+                                           *, traffic=None, traffic_pct=None) -> bool:
     """Extract ONE publisher URL and save it to master_recipes as a kind='top' member.
     SHARED by the harvest's winner auto-extract AND the score-only 'process selected' path
     so the two never drift: extract (force-refresh) → save-gate → render-retry-on-thin →
@@ -3757,6 +3758,28 @@ async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
         "rank": rank, "batch_source": batch_source,
     }
     payload["_skip_auto_enrich"] = True   # fast/cheap; enrich later
+    # Stamp SEMrush per-page traffic into _scoring so the recipe editor's scoring strip shows
+    # it alongside PA/DA/OU. Passed by the harvest (the scored member carries it); for the
+    # process-selected path it's looked up from the just-persisted ledger.
+    if traffic is None and traffic_pct is None:
+        try:
+            from input.pipeline.url_utils import normalize_url as _norm
+            with _db() as _c:
+                _row = _c.execute(
+                    "SELECT traffic, traffic_pct FROM collection_members WHERE "
+                    "collection_type='publisher' AND collection_key=? AND url_normalized=?",
+                    (host, _norm(url) or url)).fetchone()
+            if _row:
+                traffic, traffic_pct = _row[0], _row[1]
+        except Exception:
+            pass
+    if traffic is not None or traffic_pct is not None:
+        _sc = dict(payload.get("_scoring") or {})
+        if traffic is not None:
+            _sc["traffic"] = traffic
+        if traffic_pct is not None:
+            _sc["trafficPct"] = traffic_pct
+        payload["_scoring"] = _sc
     try:
         await asyncio.to_thread(_save_recipe_core, payload)
         print(f"{log_prefix} SAVED master {url}")
@@ -3884,7 +3907,8 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         if not url:
             continue
         if await _extract_publisher_url_to_master(
-                url, host, extracted + 1, "/domains/refresh-top", "[PUBLISHER-REFRESH]"):
+                url, host, extracted + 1, "/domains/refresh-top", "[PUBLISHER-REFRESH]",
+                traffic=m.get("traffic"), traffic_pct=m.get("traffic_pct")):
             extracted += 1
             saved_urls.append(url)
     print(f"[PUBLISHER-REFRESH] extracted {extracted} winner(s) into master (+cache)")

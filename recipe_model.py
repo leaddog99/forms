@@ -481,6 +481,12 @@ class ScoringMetadata(BaseModel):
     iconUrl: str = ""
     recipeScore: int = 0
     recipeScoreThreshold: int = 0
+    # SEMrush per-page demand (publisher harvest, from the Top-Pages export): monthly
+    # organic traffic + the page's share of the publisher's traffic. The meaningful
+    # tiebreaker when PA saturates across a publisher's pages; shown in the editor's
+    # scoring strip. None/0 when unknown (SERP-discovered or no SEMrush data).
+    traffic: Optional[float] = None
+    trafficPct: Optional[float] = None
 
 class ClassificationMetadata(BaseModel):
     confidence: int = 0

@@ -1770,6 +1770,14 @@
             <span class="score-label">Recipe-text</span>
             <span class="score-value empty" id="score_text">—</span>
           </div>
+          <!-- SEMrush per-page monthly organic traffic + share-of-site (the meaningful
+               tiebreaker when PA saturates across a publisher's pages). Em-dash when
+               unknown (SERP-discovered or no SEMrush data). -->
+          <div class="score-chip" id="score_traffic_chip">
+            <span class="score-label">Traffic / mo</span>
+            <span class="score-value empty" id="score_traffic">—</span>
+            <span class="exc-chip-basis" id="score_traffic_basis"></span>
+          </div>
           <!-- Exceptionalism is the headline grade for batch-saved master
                recipes. Letter badge + numeric T-score side by side, with
                the cohort basis (n, σ, model) underneath. Empty / em-dash
@@ -2895,6 +2903,22 @@
       setScoreChip('score_da', sc.domainAuthority);
       setScoreChip('score_ou', sc.ouScore);
       setScoreChip('score_text', sc.recipeScore);
+
+      // SEMrush per-page traffic — comma-formatted, with share-of-site in the basis line.
+      const tEl = document.getElementById('score_traffic');
+      const tBasis = document.getElementById('score_traffic_basis');
+      if (tEl) {
+        const tv = sc.traffic;
+        if (tv === null || tv === undefined || tv === '' || Number(tv) === 0) {
+          tEl.textContent = '—'; tEl.classList.add('empty');
+          if (tBasis) tBasis.textContent = '';
+        } else {
+          tEl.textContent = Math.round(Number(tv)).toLocaleString();
+          tEl.classList.remove('empty');
+          if (tBasis) tBasis.textContent = (sc.trafficPct != null && sc.trafficPct !== '')
+            ? Number(sc.trafficPct).toFixed(1) + '% of site' : '';
+        }
+      }
 
       // Exceptionalism — letter badge + score + basis line. Master
       // rows carry _master.exceptionalism (batch path stamps it
