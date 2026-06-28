@@ -587,43 +587,59 @@
         .map(c => c.dataset.url).filter(Boolean);
       if (!queue.length){ const h = $('#topHint'); if (h){ h.style.color = 'var(--ed-warn)'; h.textContent = 'Check at least one row to queue.'; } return; }
       const norm = u => (u || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
+      const slug = u => { try { return decodeURIComponent(new URL(u).pathname).replace(/^\/|\/$/g, '') || u; } catch { return u; } };
       let idx = 0, done = 0, poll = null;
       document.getElementById('captureQueueOverlay')?.remove();
       const ov = document.createElement('div');
       ov.id = 'captureQueueOverlay';
-      ov.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:500;width:340px;background:var(--card,#fff);color:var(--ink,#222);border:1px solid var(--line,#ccc);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:14px 16px;font-family:Georgia,serif';
+      ov.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:500;width:360px;background:var(--card,#fff);color:var(--ink,#222);border:1px solid var(--line,#ccc);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:14px 16px;font-family:Georgia,serif';
       document.body.appendChild(ov);
       const stop = () => { if (poll){ clearInterval(poll); poll = null; } };
+      // Advance is EXPLICIT (Skip / Saved buttons) — never dependent on the auto-detect poll,
+      // which can miss a save (lag, or the bookmarklet saving where /top's master-join can't
+      // see it). The poll is a bonus: if it detects the save it advances for you.
+      const advance = (saved) => { stop(); if (saved) done++; idx++; render(saved ? '✓ Saved — next up:' : 'Skipped — next up:'); };
       const render = (msg) => {
+        const finished = idx >= queue.length;
+        const cur = finished ? '' : queue[idx];
         ov.innerHTML =
           `<div style="font-weight:700;margin-bottom:4px">📋 Manual capture queue</div>` +
-          `<div style="font-size:.8em;color:var(--muted,#666);margin-bottom:8px">Open each page → click your <b>bookmarklet</b> to save it. Auto-advances when it lands in the corpus. (Free — no unblocker.)</div>` +
-          `<div style="margin-bottom:6px;font-size:.9em">Saved <b>${done}</b> / ${queue.length} · ${Math.max(0, queue.length - idx)} left</div>` +
+          `<div style="font-size:.78em;color:var(--muted,#666);margin-bottom:8px">Review the URL → <b>Open & capture</b> (click your bookmarklet in the new tab) or <b>Skip</b>. Free — your real browser beats the anti-bot/paywall.</div>` +
+          `<div style="margin-bottom:6px;font-size:.9em">Saved <b>${done}</b> · ${idx}/${queue.length} reviewed · <b>${Math.max(0, queue.length - idx)}</b> left</div>` +
+          (finished
+            ? `<div style="font-size:.95em;margin:10px 0">✅ Queue complete — ${done} saved.</div>`
+            : `<div style="font-size:.74em;color:var(--muted,#666);margin-bottom:2px">Next up #${idx + 1}/${queue.length}:</div>` +
+              `<a href="${escapeHtml(cur)}" target="_blank" rel="noopener" title="${escapeHtml(cur)}" style="display:block;font-size:.86em;font-weight:600;word-break:break-all;margin-bottom:8px;color:var(--accent,#0a58ca)">${escapeHtml(slug(cur))}</a>`) +
           (msg ? `<div style="font-size:.82em;color:var(--muted,#666);margin-bottom:8px">${escapeHtml(msg)}</div>` : '') +
           `<div style="display:flex;gap:6px;flex-wrap:wrap">` +
-          `<button class="ed-btn" id="cqNext" style="font-size:.82em">▶ Open next</button>` +
-          `<button class="ed-btn" id="cqSkip" style="font-size:.82em">Skip</button>` +
+          (finished ? '' :
+            `<button class="ed-btn" id="cqOpen" style="font-size:.82em">↗ Open &amp; capture</button>` +
+            `<button class="ed-btn" id="cqSaved" style="font-size:.82em" title="If the auto-detect didn't fire after your bookmarklet saved">✓ Saved → next</button>` +
+            `<button class="ed-btn" id="cqSkip" style="font-size:.82em">Skip ▶</button>`) +
           `<button class="ed-btn danger" id="cqClose" style="font-size:.82em">Close</button></div>`;
-        ov.querySelector('#cqNext').onclick = openNext;
-        ov.querySelector('#cqSkip').onclick = () => { stop(); idx++; render(idx < queue.length ? 'Skipped — open the next one.' : 'Queue finished.'); };
+        if (!finished){
+          ov.querySelector('#cqOpen').onclick = openCurrent;
+          ov.querySelector('#cqSaved').onclick = () => advance(true);
+          ov.querySelector('#cqSkip').onclick = () => advance(false);
+        }
         ov.querySelector('#cqClose').onclick = () => { stop(); ov.remove(); loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1'); loadDomainRecipes(domain); };
       };
-      const openNext = () => {
+      const openCurrent = () => {
         stop();
-        if (idx >= queue.length){ render('Queue finished — all opened.'); return; }
+        if (idx >= queue.length){ render('Queue complete.'); return; }
         const url = queue[idx];
         window.open(url, '_blank', 'noopener');
-        render(`Opened #${idx + 1}/${queue.length}. Click your bookmarklet on that tab → waiting for it to land…`);
+        render('Opened in a new tab — click your bookmarklet there. Auto-advances when it lands; or hit "Saved → next".');
         poll = setInterval(async () => {
           try {
             const r = await fetch(`/domains/${encodeURIComponent(domain)}/top?all=1`);
             const d = await r.json();
             const hit = (d.top || []).find(m => norm(m.url) === norm(url) && m.ingested);
-            if (hit){ stop(); done++; idx++; render(idx < queue.length ? 'Saved ✓ — open the next one.' : 'All done ✓ — queue complete.'); }
+            if (hit){ advance(true); }
           } catch {}
         }, 4000);
       };
-      render('Ready — click "Open next" to start. (Each page costs nothing; you click your bookmarklet.)');
+      render('Ready — review the URL below, then Open & capture or Skip.');
     }
 
     // Score-only path #2 ZERO-CLICK: hand the checked URLs to the Tampermonkey userscript.
