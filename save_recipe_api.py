@@ -4546,15 +4546,44 @@ def training_is_recipe_label_endpoint(sample_id: int, payload: dict = Body(...))
 
 
 @app.delete("/domains/{domain}")
-def delete_domain_endpoint(domain: str):
-    # TODO: gate with _require_perm when exposed publicly (see POST /domains).
+def delete_domain_endpoint(domain: str, request: Request, cascade: int = 0):
+    """Delete a domain's master record.
+
+    DEFAULT (cascade=0): removes ONLY the `domains` row — its ingested recipes
+    and cohort ledger are left intact (the historical, safe behavior; nothing
+    can be mass-deleted by accident).
+
+    cascade=1: ALSO removes the publisher's ingested master recipes and clears
+    its `collection_members` cohort. Recipe removal goes through the typed-
+    membership retire (`retire_master_membership`), so a row ALSO claimed by a
+    dish is KEPT (only its publisher block is cleared) and sqlite-vec is loaded
+    so the AFTER DELETE trigger cleans `recipes_master_vec`. SCOPED to this one
+    publisher_key — it cannot touch another domain's rows. Gated on
+    `delete_master` so only a curator can destroy corpus rows."""
+    _require_perm(request, "delete_master")
     try:
         from input.pipeline import domains_lib
+        host = domains_lib._canon_host(domain)
+        result = {"deleted": host, "cascade": bool(cascade)}
         with _db() as conn:
-            ok = domains_lib.delete_domain(conn, domain)
-            if not ok:
-                raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
-            return {"deleted": domain}
+            if cascade:
+                from input.pipeline import dishes as _dishes_lib, collections_lib
+                # retire_master_membership enables sqlite-vec itself before the
+                # delete, so the vec-cleanup trigger fires; rows with a surviving
+                # dish block are kept (publisher block cleared), not deleted.
+                kept_as_dish, master_deleted = _dishes_lib.retire_master_membership(
+                    conn, marker="publisher", value=host, other_marker="dish",
+                    remove_fields=["publisher", "refreshed_at"])
+                cohort_cleared = collections_lib.clear_members(conn, "publisher", host)
+                result.update({"master_deleted": master_deleted,
+                               "master_kept_as_dish": kept_as_dish,
+                               "cohort_cleared": cohort_cleared})
+                print(f"[DOMAIN-DELETE] CASCADE {host}: master_deleted={master_deleted} "
+                      f"kept_as_dish={kept_as_dish} cohort_cleared={cohort_cleared}")
+            ok = domains_lib.delete_domain(conn, host)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
+        return result
     except HTTPException:
         raise
     except Exception as e:

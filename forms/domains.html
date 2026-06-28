@@ -1058,14 +1058,38 @@
     }
 
     async function doDelete(domain){
-      if (!confirm(`Delete domain “${domain}”? This removes its master record (recipes are untouched).`)) return;
+      // Count what's attached so the curator SEES it before deciding. Cascade is
+      // never the default — it takes a deliberate second "yes" (and a third for
+      // large deletions), so months of records can't be wiped by a stray click.
+      const mrc = (domains[domain] || {}).master_recipe_count || 0;
+      let cohort = 0;
+      try { const t = await (await fetch(`/domains/${encodeURIComponent(domain)}/top?all=1`)).json(); cohort = (t.top || []).length; }
+      catch (e) { /* non-fatal — proceed with recipe count only */ }
+
+      let cascade = false;
+      if (mrc > 0 || cohort > 0){
+        if (!confirm(`Delete domain “${domain}”?\n\nIt has ${mrc} ingested master recipe(s) and ${cohort} cohort row(s).\n\nClick OK to continue (you'll choose whether to keep or delete the recipes next), or Cancel to stop.`)) return;
+        cascade = confirm(
+          `Delete the ${mrc} recipe(s) + ${cohort} cohort row(s) too?\n\n` +
+          `• OK — CASCADE: permanently remove the domain AND its ${mrc} recipe(s) + cohort (cannot be undone). Recipes also tagged to a dish are kept.\n` +
+          `• Cancel — keep the recipes, only remove the domain record (they'll be left in the corpus, unlinked).`);
+        if (cascade && mrc >= 25){
+          if (!confirm(`⚠ FINAL CHECK: this permanently deletes ${mrc} master recipes for “${domain}”.\n\nType-of-no-return. Absolutely sure?`)) return;
+        }
+      } else {
+        if (!confirm(`Delete domain “${domain}”? (No recipes or cohort rows are attached.)`)) return;
+      }
+
       try {
-        const r = await fetch(`/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' });
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}?cascade=${cascade ? 1 : 0}`, { method: 'DELETE' });
         if (!r.ok){ const e = await r.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${r.status}`); }
+        const res = await r.json().catch(() => ({}));
         delete domains[domain];
         selected = null;
         await loadDomains();
-        flash('Domain deleted');
+        flash(cascade
+          ? `Domain deleted — ${res.master_deleted ?? 0} recipe(s) removed, ${res.master_kept_as_dish ?? 0} kept (dish-linked), ${res.cohort_cleared ?? 0} cohort row(s) cleared.`
+          : 'Domain deleted (recipes left intact).');
       } catch (e) {
         flash(`Delete failed: ${e.message || e}`, true);
       }
