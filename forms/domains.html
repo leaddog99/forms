@@ -582,10 +582,35 @@
     // We auto-advance by polling /top: a URL flips to ingested once the bookmarklet saves
     // it to master. The per-page bookmarklet click is irreducible WITHOUT a userscript/
     // extension (a web app can't inject into a third-party tab) — see docs.
-    function captureQueue(domain){
+    async function captureQueue(domain){
       const queue = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
         .map(c => c.dataset.url).filter(Boolean);
       if (!queue.length){ const h = $('#topHint'); if (h){ h.style.color = 'var(--ed-warn)'; h.textContent = 'Check at least one row to queue.'; } return; }
+      // Curation must reach the CORPUS (master), not a personal library. The
+      // staged-capture form saves to whatever store-context #user_id it opens
+      // with, and the server gates a master write (user_id=0) on edit_master.
+      // So: (1) require the curator to actually hold edit_master — otherwise the
+      // master save would 403 and the capture would silently go nowhere; and
+      // (2) force the store to Master (sidebar:user_id=0 — same-origin localStorage
+      // the recipe form restores on load) so the staged save routes to master.
+      // The clean way in is the Master login (Users → Master → Log in as Master).
+      let me = null;
+      try { me = await fetch('/auth/me').then(r => r.json()); } catch (e) { /* offline */ }
+      const canMaster = !!(me && Array.isArray(me.permissions) && me.permissions.includes('edit_master'));
+      if (!canMaster){
+        document.getElementById('captureQueueOverlay')?.remove();
+        const warn = document.createElement('div');
+        warn.id = 'captureQueueOverlay';
+        warn.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:500;width:360px;background:var(--card,#fff);color:var(--ink,#222);border:1px solid var(--line,#ccc);border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.28);padding:14px 16px;font-family:Georgia,serif';
+        warn.innerHTML =
+          `<div style="font-weight:700;margin-bottom:6px">📋 Manual capture queue</div>` +
+          `<div style="font-size:.86em;line-height:1.5;margin-bottom:10px">⚠ Curated captures must land in the <b>Master</b> corpus, but you’re not signed in as a curator (no <code>edit_master</code>). Open <b>Users → Master → Log in as Master</b>, then re-run the queue.</div>` +
+          `<button class="ed-btn danger" id="cqClose" style="font-size:.82em">Close</button>`;
+        document.body.appendChild(warn);
+        warn.querySelector('#cqClose').onclick = () => warn.remove();
+        return;
+      }
+      try { localStorage.setItem('sidebar:user_id', '0'); } catch (e) { /* private mode */ }
       const norm = u => (u || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
       const slug = u => { try { return decodeURIComponent(new URL(u).pathname).replace(/^\/|\/$/g, '') || u; } catch { return u; } };
       let idx = 0, done = 0, poll = null;
@@ -603,7 +628,7 @@
         const finished = idx >= queue.length;
         const cur = finished ? '' : queue[idx];
         ov.innerHTML =
-          `<div style="font-weight:700;margin-bottom:4px">📋 Manual capture queue</div>` +
+          `<div style="font-weight:700;margin-bottom:4px">📋 Manual capture queue <span style="font-weight:400;font-size:.74em;color:var(--accent,#0a58ca)">→ saves to Master</span></div>` +
           `<div style="font-size:.78em;color:var(--muted,#666);margin-bottom:8px">Review the URL → <b>Open & capture</b> (click your bookmarklet in the new tab) or <b>Skip</b>. Free — your real browser beats the anti-bot/paywall.</div>` +
           `<div style="margin-bottom:6px;font-size:.9em">Saved <b>${done}</b> · ${idx}/${queue.length} reviewed · <b>${Math.max(0, queue.length - idx)}</b> left</div>` +
           (finished
