@@ -499,3 +499,29 @@ Debugging real harvests on `split/enrichment-api` (server now the NSSM `BCC` ser
 - The LLM keyword pre-screen has no form control (global flag, off).
 - Stand up packs for the other languages actually harvested (es/it/fr…) as they come up.
 - Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
+
+## Session log — 2026-06-28 — user 0 restored as the loginable Master/curator identity (saves to master + unlocks admin)
+
+Short, focused session on `split/enrichment-api` (`fd6d64b`, pushed). User's call: go back to **logging in as user 0** to do master work — it should behave like any normal user but save to the master collection and unlock the admin tools, rather than the "log in as a staff user, then tick the Master checkbox" model.
+
+### The key finding — the hard parts already existed
+The recipe form ALREADY has a two-layer model: **identity** (`app:self_user_id`, set by the users.html login) vs **store-context** (`#user_id` hidden field, toggled by the Master checkbox → 0 → `payload.user_id=0` → `master_recipes`, gated on `edit_master`). And users.html `login(uid)` already writes BOTH `app:self_user_id` AND `sidebar:user_id`. So the only real blocker was that **user 0 couldn't be a resolved identity** — three guards rejected it. Tiny surgical change, not a rewrite. ([[project_master_cookbook]], [[project_dish_library]])
+
+### What changed (`fd6d64b`, 18 files, +80/−32)
+- **`input/pipeline/auth.py` `resolve_user`** — `uid==0` returns a SYNTHETIC `owner` user `Master (curator)` (NOT a users-table row; PK is AUTOINCREMENT from 1 and bootstrap skips 0). `uid<0`/blank → None (anonymous). Owner grants `edit_master` + `admin_ui` + everything, so the EXISTING save gate (`payload.user_id==0 → require edit_master → master_recipes`) and admin nav both light up for the master login. **No save-endpoint change needed** — store-context decides WHERE, header identity gates PERMISSION; the existing block was already correct for this model.
+- **Two client identity guards now accept an explicit 0** — `library-shell.js selfUid()` and `recipe_form_styled.html getSelfUserId()` both guarded `> 0`, so `X-Self-User-Id: 0` was never sent. Now accept `>= 0` for an EXPLICIT value; missing/blank still falls back to anonymous/1 (never 0 by accident).
+- **users.html** — the pinned Master (#0) entry is loginable again: replaced the old "there's no Master account to log in as" copy with a **"Log in as Master"** button → `login(0)`; list-item meta now "saves to master · admin".
+- **Hard-gated the generic `/admin/*` CRUD endpoints** (`admin_list_models`/`schema`/`list`/`create`/`update`/`delete`) on the **`admin_ui`** permission — they were completely unauthenticated. Anonymous → 403; Master/owner → 200. Per-feature endpoints (dishes/master) already gate on their own perms; this closed the generic-registry hole. Only `admin.html` (the generic editor, reached via the admin-group nav) consumes `/admin/*`.
+- Cache-bust `library-shell.js?v` → `20260628a` across all 15 forms.
+
+### Verified LIVE (after the user's `Restart-Service BCC`)
+- `auth.py` unit: `resolve_user('0')` → owner w/ edit_master+admin_ui; `-1`/blank → None.
+- curl: `/auth/me` header 0 → owner+perms; anonymous → anonymous; `/admin/models` anonymous **403**, header 0 **200**.
+- **Browser end-to-end** (drove Chrome): users.html → Master → Log in as Master → recipe form loads as **Master (curator)**, `self_user_id=0`, `#user_id=0`, Master checkbox checked, picker greyed, admin burger appears. **Throwaway save** through the real endpoint (patched header): HTTP 200, **found_in_master: true**, **leaked_into_user5: false**, then DELETE 200 (no junk left; recipes.db unchanged → no backup needed).
+
+### Decision noted
+Admin gate is on the `admin_ui` PERMISSION (which user 0/owner holds), not a literal `user_id==0` check — keeps it consistent with how every other admin endpoint already gates (on perms), and since user 0 is the only owner it's effectively user-0-only today. Tighten to strict `user_id==0` if ever wanted (one helper).
+
+### Follow-ups
+- The earlier carried open item **"Curate-bookmarklet → master? confirm the manual-queue capture lands in master_recipes"** is now easier to reason about: logging in as Master makes the curator's identity user 0, so a master-context save from the form routes correctly. The bookmarklet path still needs its own confirmation (it may post with its own user_id).
+- Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
