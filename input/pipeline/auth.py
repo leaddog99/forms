@@ -100,8 +100,26 @@ def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str]) -
         uid = int(self_user_id_header)
     except (ValueError, TypeError):
         return None
-    if uid <= 0:
+    if uid < 0:
         return None
+    if uid == 0:
+        # user_id 0 is the curator/master identity — the dispatch target
+        # for master_recipes. It is NOT a row in the users table (the PK
+        # is AUTOINCREMENT from 1 and bootstrap skips 0); it resolves to a
+        # synthetic 'owner' so logging in as 0 grants edit_master + admin_ui
+        # and routes saves to the master collection. Returning it here is
+        # what makes "log in as Master" a real identity again.
+        return {
+            "user_id": 0,
+            "ghost_uuid": None,
+            "email": None,
+            "name": "Master (curator)",
+            "status": "system",
+            "subscription_tier": None,
+            "role": "owner",
+            "created_at": None,
+            "updated_at": None,
+        }
     row = conn.execute(
         "SELECT user_id, ghost_uuid, email, name, status, "
         "subscription_tier, role, created_at, updated_at "

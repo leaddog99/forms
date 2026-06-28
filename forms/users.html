@@ -70,7 +70,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260622a"></script>
+  <script src="/forms/library-shell.js?v=20260628a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -124,11 +124,11 @@
 
       const ul = $('#list'); ul.innerHTML = '';
 
-      // Pinned, read-only Master sentinel (#0) — not in the users table.
+      // Pinned Master curator identity (#0) — loginable, not a users-table row.
       const m = document.createElement('li');
       m.className = 'ed-item' + (selected === 0 ? ' selected' : '');
       m.style.marginBottom = '10px';
-      m.innerHTML = `<div class="ed-item-top"><span class="u-avatar gated">M</span><span class="ed-item-name">Master (curator collection)</span></div><div class="ed-item-meta" style="margin-left:33px;color:var(--accent)">#0 · role-gated</div>`;
+      m.innerHTML = `<div class="ed-item-top"><span class="u-avatar gated">M</span><span class="ed-item-name">Master (curator)</span></div><div class="ed-item-meta" style="margin-left:33px;color:var(--accent)">#0 · saves to master · admin</div>`;
       m.addEventListener('click', () => { selected = 0; renderList(); renderMain(); nav.afterSelect(); });
       ul.appendChild(m);
 
@@ -280,13 +280,17 @@
     function renderMaster(){
       $('#page').innerHTML = `
         <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · Master Collection</button></div>
-        <div class="u-head"><span class="u-avatar lg gated">M</span><h1 class="ed-title">Master (curator collection)</h1></div>
-        <div class="ed-status-strip"><span class="ed-pill ok"><i class="d"></i>role-gated</span><span class="ed-pill"><i class="d"></i>user #0 · sentinel</span></div>
-        <p class="ed-submeta">Not a real user — the dispatch target for the curated master collection.</p>
+        <div class="u-head"><span class="u-avatar lg gated">M</span><h1 class="ed-title">Master (curator)</h1></div>
+        <div class="ed-status-strip"><span class="ed-pill ok"><i class="d"></i>owner</span><span class="ed-pill"><i class="d"></i>user #0 · curator</span></div>
+        <p class="ed-submeta">The curator identity — works like any user, but saves to the master collection and unlocks the admin tools.</p>
         <section class="ed-block">
           <h3 class="ed-block-label">Access</h3>
-          <div class="ed-callout info"><span class="mark">○</span><span>There’s no “Master” account to log in as. Anyone with <strong>owner / admin / editor / author</strong> can save to the master collection from the recipe form — access is role-gated, not a separate identity. (user_id 0 is reserved and not editable here.)</span></div>
-        </section>`;
+          <div class="ed-callout info"><span class="mark">○</span><span>Log in as <strong>Master</strong> to curate. It behaves exactly like a normal login (same recipe form), except saves land in the <strong>master collection</strong> and the <strong>admin pages</strong> (Domains, Dishes, Chapters, Jobs, System…) become available. It’s a reserved identity (user&nbsp;0), not a row in this table, so there’s nothing to edit here.</span></div>
+        </section>
+        <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
+          <button type="button" class="ed-btn primary" id="masterLoginBtn">Log in as Master</button>
+        </div>`;
+      $('#masterLoginBtn').addEventListener('click', () => login(0));
     }
 
     function renderCreate(){

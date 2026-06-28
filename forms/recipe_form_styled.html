@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260622a"></script>
+  <script src="/forms/library-shell.js?v=20260628a"></script>
   <script src="/forms/image-well.js?v=20260620a"></script>
 </head>
 <body>
@@ -2372,11 +2372,17 @@
     //     login. Used here ONLY as a legacy fallback for sessions that
     //     pre-date app:self_user_id.
     //
-    // Returns an integer >= 1, or 1 as the final fallback.
+    // Returns an integer >= 0 — 0 is the master/curator identity (saves to
+    // master, unlocks admin); positive ids are normal users. Falls back to 1
+    // when no identity is stored (never 0 by accident — only an EXPLICIT 0
+    // counts as the master login).
     function getSelfUserId() {
       try {
         const explicit = localStorage.getItem('app:self_user_id');
-        if (explicit && parseInt(explicit, 10) > 0) return parseInt(explicit, 10);
+        if (explicit != null && explicit !== '') {
+          const n = parseInt(explicit, 10);
+          if (Number.isInteger(n) && n >= 0) return n;
+        }
         const legacy = localStorage.getItem('sidebar:user_id');
         if (legacy && parseInt(legacy, 10) > 0) return parseInt(legacy, 10);
       } catch (e) { /* private mode */ }

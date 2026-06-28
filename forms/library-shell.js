@@ -56,8 +56,16 @@
     const _origFetch = window.fetch.bind(window);
     function selfUid() {
       try {
+        // user_id 0 is the master/curator identity (saves to master,
+        // unlocks admin) — an EXPLICIT 0 is a real login and must be sent,
+        // so accept >= 0 here. A missing/blank/invalid value still yields
+        // no header (anonymous), never 0.
         const explicit = localStorage.getItem('app:self_user_id');
-        if (explicit && parseInt(explicit, 10) > 0) return String(parseInt(explicit, 10));
+        if (explicit != null && explicit !== '') {
+          const n = parseInt(explicit, 10);
+          if (Number.isInteger(n) && n >= 0) return String(n);
+        }
+        // Legacy fallback only covers positive ids (master was never stored here).
         const legacy = localStorage.getItem('sidebar:user_id');
         if (legacy && parseInt(legacy, 10) > 0) return String(parseInt(legacy, 10));
       } catch (e) { /* private mode / no storage */ }

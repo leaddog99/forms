@@ -4581,20 +4581,29 @@ def _admin_model_or_404(model: str):
     return m
 
 
+# The generic admin CRUD surface is gated on the `admin_ui` permission so
+# only the master/curator identity (user 0 → owner) — or any future staff
+# role granted admin_ui — can read or mutate the registered admin models
+# (system config, message categories, …). Per-feature endpoints (dishes,
+# master recipes) already gate on their own perms; this closes the generic
+# registry hole. _require_perm raises 403 for anyone without it.
 @app.get("/admin/models")
-def admin_list_models():
+def admin_list_models(request: Request):
     """The registered models, for the view's model switcher."""
+    _require_perm(request, "admin_ui")
     return [{"name": m.name, "label": m.label} for m in _admin.ADMIN_MODELS.values()]
 
 
 @app.get("/admin/{model}/schema")
-def admin_model_schema(model: str):
+def admin_model_schema(model: str, request: Request):
     """Field descriptors so the generic view can render list + form."""
+    _require_perm(request, "admin_ui")
     return _admin_model_or_404(model).schema_json()
 
 
 @app.get("/admin/{model}")
-def admin_list_rows(model: str):
+def admin_list_rows(model: str, request: Request):
+    _require_perm(request, "admin_ui")
     m = _admin_model_or_404(model)
     cols = [f.name for f in m.fields]
     try:
@@ -4610,7 +4619,8 @@ def admin_list_rows(model: str):
 
 
 @app.post("/admin/{model}")
-def admin_create_row(model: str, payload: dict = Body(...)):
+def admin_create_row(request: Request, model: str, payload: dict = Body(...)):
+    _require_perm(request, "admin_ui")
     m = _admin_model_or_404(model)
     try:
         for f in m.fields:  # required check first, clearest error
@@ -4647,7 +4657,8 @@ def admin_create_row(model: str, payload: dict = Body(...)):
 
 
 @app.patch("/admin/{model}/{row_id}")
-def admin_update_row(model: str, row_id: int, payload: dict = Body(...)):
+def admin_update_row(request: Request, model: str, row_id: int, payload: dict = Body(...)):
+    _require_perm(request, "admin_ui")
     m = _admin_model_or_404(model)
     try:
         sets, vals = [], []
@@ -4678,7 +4689,8 @@ def admin_update_row(model: str, row_id: int, payload: dict = Body(...)):
 
 
 @app.delete("/admin/{model}/{row_id}")
-def admin_delete_row(model: str, row_id: int):
+def admin_delete_row(request: Request, model: str, row_id: int):
+    _require_perm(request, "admin_ui")
     m = _admin_model_or_404(model)
     try:
         with _db() as conn:
