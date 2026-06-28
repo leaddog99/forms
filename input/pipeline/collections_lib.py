@@ -453,7 +453,14 @@ def semrush_export_patterns() -> list:
     via system_config `semrush_export_patterns` so a SEMrush filename change is a config
     edit, not code. Default catches both shapes (backlinks_pages + organic.PagesV3, both
     contain 'pages'/'Pages')."""
-    default = ["{domain}*[Pp]ages*.xlsx"]
+    # Three patterns so we match BOTH the plain export ({domain} at the start) AND SEMrush's
+    # URL-FORM export, which prefixes the name with the full URL (e.g.
+    # `https___www.177milkstreet.com_-organic.PagesV3-…xlsx`) → the domain sits mid-filename,
+    # preceded by `.` (www.) or `_`. The separator before {domain} (start / `.` / `_`) anchors
+    # it so a SUBSTRING domain can't false-match (e.g. `mango.com` ✗ `oliveandmango.com`).
+    default = ["{domain}*[Pp]ages*.xlsx",
+               "*.{domain}*[Pp]ages*.xlsx",
+               "*_{domain}*[Pp]ages*.xlsx"]
     try:
         from input.pipeline import system_config as _cfg
         val = _cfg.get_setting("semrush_export_patterns", default)

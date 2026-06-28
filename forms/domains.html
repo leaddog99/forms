@@ -325,14 +325,14 @@
             </div>
             <div class="src-group" data-src="backlinks_file">
               <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source === 'backlinks_file' ? 'checked' : ''}>
-                SEMrush page export <span class="src-sub">backlinks (by referring domains) OR Top-Pages (by traffic) — auto-detected; a Top-Pages /recipe subfolder export is cleanest</span></label>
-              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
+                SEMrush Top-Pages export <span class="src-sub">Organic Research → Pages (by TRAFFIC) — our default. Old backlinks-pages exports still auto-detected. URL-form filenames (<code>https___www.domain…-organic.PagesV3…</code>) are matched too.</span></label>
+              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below (SEMrush <b>Organic Research → Pages</b>) → press <b>Export</b> → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
-                ${field('f_backlinks_dir', 'Export folder OR exact file path (blank = auto-detect newest in Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\john\\Downloads\\bostonchefs.com_recipe-organic.PagesV3-us-….xlsx', full: true })}
-                ${urlField('f_semrush_report_url', 'SEMrush report deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/backlinks/pages/?q=domain…', full: true })}
+                ${field('f_backlinks_dir', 'Export folder OR exact file path (blank = auto-detect newest in Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\john\\Downloads\\https___www.domain.com_-organic.PagesV3-us-….xlsx', full: true })}
+                ${urlField('f_semrush_report_url', 'SEMrush Top-Pages deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/organic/pages/?q=domain&searchType=domain', full: true })}
               </div>
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
             </div>

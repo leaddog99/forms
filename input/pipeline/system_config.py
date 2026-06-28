@@ -183,16 +183,17 @@ SYSTEM_DEFAULTS: list[dict] = [
     # --- Harvest: the SEMrush human-workflow loop (docs/semrush-harvest-scheduling.md) ---
     {
         "key": "semrush_indexed_pages_url_template",
-        "value": ("https://www.semrush.com/analytics/backlinks/pages/"
-                  "?q={domain}&searchType=domain&sort_field=domainsnum"),
+        "value": ("https://www.semrush.com/analytics/organic/pages/"
+                  "?q={domain}&searchType=domain"),
         "type": "string",
         "category": "Harvest",
-        "label": "SEMrush Indexed-Pages URL template",
+        "label": "SEMrush Top-Pages URL template",
         "description": "The deep-link the worklist opens to land you on a domain's "
-                       "SEMrush Indexed-Pages report (sorted by referring domains), "
-                       "ready to Export. `{domain}` is substituted per row. A domain's "
-                       "own `semrush_report_url` (if set) overrides this. Edit here if "
-                       "SEMrush re-skins its URLs.",
+                       "SEMrush Organic Research → Pages report (Top Pages by TRAFFIC — our "
+                       "default export), ready to Export. `{domain}` is substituted per row. "
+                       "A domain's own `semrush_report_url` (if set) overrides this. Edit "
+                       "here if SEMrush re-skins its URLs. (Old backlinks-pages report was "
+                       "/analytics/backlinks/pages/?…sort_field=domainsnum.)",
     },
     {
         "key": "semrush_inbox_dir",
@@ -216,7 +217,9 @@ SYSTEM_DEFAULTS: list[dict] = [
     },
     {
         "key": "semrush_export_patterns",
-        "value": ["{domain}*[Pp]ages*.xlsx"],
+        "value": ["{domain}*[Pp]ages*.xlsx",
+                  "*.{domain}*[Pp]ages*.xlsx",
+                  "*_{domain}*[Pp]ages*.xlsx"],
         "type": "list",
         "category": "Harvest",
         "label": "SEMrush export filename patterns",
