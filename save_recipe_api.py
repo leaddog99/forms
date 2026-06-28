@@ -5880,6 +5880,37 @@ def _save_recipe_core(payload: dict) -> dict:
         source["originalUrl"] = normalized_source_url
         recipe_dict["_source"] = source
 
+    # Publisher auto-attribution (parity with /userscript-capture +
+    # /process-selected): when a MASTER save's URL is already a publisher
+    # cohort member, stamp the publisher block so a manual-queue / bookmarklet
+    # capture reaches the corpus WITH publisher provenance — no per-capture
+    # hint, no bookmarklet change. Only FILLS an absent publisher (never
+    # clobbers a dish/kind from the reject-rescue path; the typed-membership
+    # model allows both a dish AND a publisher block on one row). The matching
+    # ledger row is re-flagged selected=1 AFTER the insert succeeds (below).
+    _pub_attr_host = None
+    if user_id == 0 and normalized_source_url:
+        try:
+            with _db() as _pconn:
+                _prow = _pconn.execute(
+                    "SELECT collection_key FROM collection_members "
+                    "WHERE collection_type='publisher' AND url_normalized = ? LIMIT 1",
+                    (normalized_source_url,),
+                ).fetchone()
+            if _prow:
+                _pub_attr_host = _prow[0]
+                _m = dict(recipe_dict.get("_master") or {})
+                if not (_m.get("publisher") or "").strip():
+                    _m["publisher"] = _pub_attr_host
+                    _m.setdefault("kind", "top")
+                    _m.setdefault("refreshed_at", datetime.utcnow().isoformat())
+                    _m.setdefault("batch_source", "manual-capture")
+                    recipe_dict["_master"] = _m
+                    print(f"[ATTRIBUTE] master save attributed to publisher "
+                          f"{_pub_attr_host!r} (URL is a cohort member)")
+        except Exception as e:
+            print(f"[ATTRIBUTE] publisher auto-attribution skipped: {e}")
+
     # Friendly publisher name -> _source.siteName, STORED on the model so
     # every list (recipe sidebar, master winners, chapter top-10) reads one
     # field. Prefer the page's captured og:site_name; fall back to the
@@ -6104,6 +6135,21 @@ def _save_recipe_core(payload: dict) -> dict:
                 except Exception as e:
                     print(f"[WARN] metabase_url last_accessed bump failed: {e}")
             print("[OK] Recipe saved to database")
+            # Re-flag the publisher ledger so selected=1 matches this actually-
+            # saved master row (parity with /userscript-capture + /process-selected
+            # — a manual-queue capture now flips the cohort row to a winner and
+            # the harvest worklist / leaderboard reflect it). Idempotent.
+            if _pub_attr_host:
+                try:
+                    conn.execute(
+                        "UPDATE collection_members SET selected = 1 WHERE "
+                        "collection_type='publisher' AND collection_key = ? "
+                        "AND url_normalized = ?",
+                        (_pub_attr_host, normalized_source_url),
+                    )
+                    print(f"[ATTRIBUTE] ledger selected=1 for {_pub_attr_host} :: {normalized_source_url}")
+                except Exception as e:
+                    print(f"[ATTRIBUTE] ledger selected re-flag skipped: {e}")
             # Journal token usage from the save-time auto-enrich hook
             # (master rows only). Tagged with the row's recipe_id +
             # user_id so cost shows up in bcc_token_journal next to
