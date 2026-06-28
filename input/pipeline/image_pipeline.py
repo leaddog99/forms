@@ -80,7 +80,44 @@ MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 FETCH_TIMEOUT_S = 15
 
 
+def _fetch_image_via_unblocker(url: str) -> Optional[bytes]:
+    """Download the image THROUGH the configured web unblocker (Oxylabs/etc.) — for anti-bot
+    CDNs that 403 a direct image download even though the PAGE came through the unblocker
+    (e.g. fnl-guide.com). render=False (an image needs no JS render). Best-effort: None when
+    there are no unblocker creds, the bytes aren't an image, or anything fails."""
+    try:
+        from to_markdown.html_to_markdown import fetch_via_unblocker, unblocker_available
+    except Exception:
+        return None
+    if not unblocker_available():
+        return None
+    try:
+        res = fetch_via_unblocker(url, render=False)
+        if not res:
+            return None
+        resp, _meta = res
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        if ctype and not ctype.startswith("image/"):
+            return None
+        data = resp.content
+        if not data or len(data) > MAX_DOWNLOAD_BYTES:
+            return None
+        print(f"[image_pipeline] fetched image via unblocker: {url!r}")
+        return data
+    except Exception as e:
+        print(f"[image_pipeline] unblocker image fetch failed for {url!r}: {e}")
+        return None
+
+
 def _fetch_image_bytes(url: str) -> Optional[bytes]:
+    """Direct browser-UA GET; on failure (an anti-bot CDN blocking the direct download)
+    retry the download THROUGH the web unblocker so anti-bot publishers' images still rehost
+    locally instead of leaving a blank/hotlinked remote URL."""
+    direct = _fetch_image_direct(url)
+    return direct if direct is not None else _fetch_image_via_unblocker(url)
+
+
+def _fetch_image_direct(url: str) -> Optional[bytes]:
     """GET the image with a browser-shaped User-Agent (most CDNs allow
     image requests from a browser UA but block our bot string). Returns
     bytes on 2xx OR None on any failure / size violation."""
