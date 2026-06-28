@@ -4568,18 +4568,50 @@ def delete_domain_endpoint(domain: str, request: Request, cascade: int = 0):
         with _db() as conn:
             if cascade:
                 from input.pipeline import dishes as _dishes_lib, collections_lib
-                # retire_master_membership enables sqlite-vec itself before the
-                # delete, so the vec-cleanup trigger fires; rows with a surviving
-                # dish block are kept (publisher block cleared), not deleted.
-                kept_as_dish, master_deleted = _dishes_lib.retire_master_membership(
+                try:
+                    from input.pipeline import vector_store as _vs
+                    _vs.enable_vec(conn)   # so the AFTER DELETE vec trigger can fire
+                except Exception:
+                    pass
+                # (1) Typed-block retire: drop rows whose _master.publisher == host,
+                # KEEPING any also claimed by a dish (clears just the publisher block).
+                kept_as_dish, by_publisher = _dishes_lib.retire_master_membership(
                     conn, marker="publisher", value=host, other_marker="dish",
                     remove_fields=["publisher", "refreshed_at"])
+                # (2) Host sweep: legacy rows ingested BEFORE publisher attribution
+                # carry NO _master.publisher, so (1) can't see them. Catch them by
+                # URL host so "delete this publisher" is complete — still SPARING any
+                # row with a dish block, and SCOPED to this exact host (canonical
+                # compare, never a substring match). Vec trigger cleans each delete.
+                from urllib.parse import urlparse as _urlparse
+                by_host = 0
+                for _rid, _data, _un in conn.execute(
+                        "SELECT id, data, url_normalized FROM master_recipes").fetchall():
+                    try:
+                        _hn = _urlparse(_un or "").hostname or ""
+                    except Exception:
+                        continue
+                    if not _hn or domains_lib._canon_host(_hn) != host:
+                        continue
+                    try:
+                        _d = json.loads(_data)
+                    except Exception:
+                        continue
+                    if (_d.get("_master") or {}).get("dish"):
+                        continue   # dish-anchored → keep
+                    conn.execute("DELETE FROM master_recipes WHERE id = ?", (_rid,))
+                    by_host += 1
+                conn.commit()
                 cohort_cleared = collections_lib.clear_members(conn, "publisher", host)
-                result.update({"master_deleted": master_deleted,
+                result.update({"master_deleted": by_publisher + by_host,
+                               "master_by_publisher": by_publisher,
+                               "master_by_host_orphan": by_host,
                                "master_kept_as_dish": kept_as_dish,
                                "cohort_cleared": cohort_cleared})
-                print(f"[DOMAIN-DELETE] CASCADE {host}: master_deleted={master_deleted} "
-                      f"kept_as_dish={kept_as_dish} cohort_cleared={cohort_cleared}")
+                print(f"[DOMAIN-DELETE] CASCADE {host}: master_deleted="
+                      f"{by_publisher + by_host} (publisher={by_publisher}, "
+                      f"host-orphan={by_host}), kept_as_dish={kept_as_dish}, "
+                      f"cohort_cleared={cohort_cleared}")
             ok = domains_lib.delete_domain(conn, host)
         if not ok:
             raise HTTPException(status_code=404, detail=f"Unknown domain: {domain}")
