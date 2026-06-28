@@ -48,6 +48,8 @@
           <option value="rank">Sort: BCC rank (SEMrush traffic)</option>
           <option value="harvest">Sort: SEMrush due first</option>
           <option value="blocked">Sort: blocked first</option>
+          <option value="created">Sort: newest added</option>
+          <option value="modified">Sort: recently modified</option>
         </select>
         <div class="ed-rank-tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px">
           <button type="button" class="ed-btn" id="refreshRanksBtn" title="Re-import the newest SEMrush rank export (input/ or Downloads) and re-rank every domain">↻ Refresh SEMrush ranks</button>
@@ -144,6 +146,10 @@
           return (a.next_harvest_at || '').localeCompare(b.next_harvest_at || '') || a.domain.localeCompare(b.domain);
         },
         blocked: (a, b) => (isAllowed(a) - isAllowed(b)) || a.domain.localeCompare(b.domain),
+        // Newest first. created_at/updated_at are ISO strings (SELECT * from the
+        // domains table), so a reverse string compare = most-recent first; A–Z tiebreak.
+        created:  (a, b) => (b.created_at || '').localeCompare(a.created_at || '') || a.domain.localeCompare(b.domain),
+        modified: (a, b) => (b.updated_at || '').localeCompare(a.updated_at || '') || a.domain.localeCompare(b.domain),
       };
       return rows.sort(sorters[sortKey] || sorters.domain);
     }
