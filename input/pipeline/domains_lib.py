@@ -51,6 +51,7 @@ EDITABLE_FIELDS = (
     "ethnicity",         # the publisher's cultural origin (optional; not searched yet)
     "fetch_strategy",
     "render_required",   # JS-rendered site → fetch with a real browser (unblocker render=True)
+    "score_only",        # harvest MODE: 1 = Curate (score URL-only, pick manually); persists the picker choice
     "extract_notes",
     "custom_extractor",
     "allowed",
@@ -193,6 +194,12 @@ _RENDER_COLUMNS = {
     "render_required": "INTEGER NOT NULL DEFAULT 0",
     # When render_required was last auto-learned by a render-escalation (ISO). MANAGED.
     "render_learned_at": "TEXT",
+    # Harvest MODE persistence: 1 = the curator's default for this domain is the
+    # "Curate · score & pick" mode (score every candidate URL-only, select nothing,
+    # skip auto-extract). It's what distinguishes Curate from Blocked (both use
+    # fetch_strategy=unblocker), so without persisting it the Curate choice was lost
+    # on save. Editable via the harvest-mode picker; the form's Save now stores it.
+    "score_only": "INTEGER NOT NULL DEFAULT 0",
 }
 
 # Editorial provenance the curator can set (optional). cuisine_focus already lives in

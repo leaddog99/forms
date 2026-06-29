@@ -725,8 +725,10 @@
       if (dirty){ const b = $('#saveBtn'); if (b) b.disabled = false; }
     }
     function inferHarvestMode(d){
-      // score_only isn't a persisted field, so we infer open vs blocked from the saved
-      // fetch policy; an unblocker domain defaults to 'blocked' (curator can switch to curate).
+      // score_only is now persisted, so Curate survives a save. It's the field that
+      // distinguishes Curate from Blocked (both fetch via unblocker); fall back to the
+      // fetch policy for the open-vs-blocked split when score_only is off.
+      if (Number(d.score_only) === 1) return 'curate';
       return ((d.fetch_strategy || '') === 'unblocker') ? 'blocked' : 'open';
     }
 
@@ -958,6 +960,7 @@
         ethnicity: ($('#f_ethnicity')?.value || '').trim(),
         fetch_strategy: $('#f_fetch_strategy').value,
         render_required: $('#f_render_required').checked ? 1 : 0,
+        score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
         custom_extractor: $('#f_custom_extractor').value.trim(),
         extract_notes: $('#f_extract_notes').value.trim(),
         allowed: $('#f_allowed').checked ? 1 : 0,
