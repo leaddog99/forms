@@ -537,5 +537,25 @@ User asked to delete two non-recipe domains (turned out to be ONE site — fnl-g
 - **Two new domain-list sort fields (`…`):** "newest added" (`created_at` desc) + "recently modified" (`updated_at` desc) — already in `list_domains` SELECT *; verified live (rendered order matches, all 290 domains carry both timestamps).
 - `recipes.sql` re-dumped twice (after fnl removal + after the orphan cleanup); ADAM copy + integrity ok.
 
+## Session log — 2026-06-29 — domain-form persistence gaps (harvest MODE + records) · UI delete confirm-flow verified
+
+Continuation of the domain-delete work. Fixed two "form field doesn't save" bugs the user hit, verified the delete confirm flow through the real UI, and audited the whole form for other persistence gaps.
+
+### Delete confirm flow — verified via the real UI ([[project_domain_master]])
+Drove the actual `doDelete` handler with `window.confirm` intercepted (native dialogs would freeze the browser-automation extension) — captured the exact dialog text + fed programmed answers, then checked DB outcomes on 3 throwaway domains. **All three paths correct:** Cancel-first → 1 dialog, no fetch, nothing deleted; OK→Cancel-cascade → 2 dialogs, `cascade=0`, domain gone + recipes KEPT; OK→OK→OK (≥25) → 3 dialogs incl. the ⚠ FINAL CHECK, `cascade=1`, all gone. 0 orphan vec rows.
+
+### Harvest MODE (Curate) didn't persist — FIXED (`…`)
+Picking "Curate · score & pick" + Save was lost on reload. Root cause: `score_only` was never a persisted field, and `inferHarvestMode` could only return `open`/`blocked` (from `fetch_strategy`) — Curate and Blocked BOTH use `fetch_strategy=unblocker`, so Curate re-inferred as Blocked. Fix: new `domains.score_only` column (migrates on startup) + in `EDITABLE_FIELDS`; `collectFields` sends it; `inferHarvestMode` returns `curate` when `score_only=1`. Verified live (real select→Curate→Save→reload→`curate`).
+
+### "Records to pull from file" didn't persist — FIXED (`…`)
+Surfaced by the user's follow-up audit question. `f_records` was read only at refresh time + hardcoded to default 100 on render → reset every reload, unlike its sibling knobs (`keep_top_n`/`search_pages`/`harvest_ttl_days` all persist). Fix: new `domains.harvest_records` column (INTEGER DEFAULT 100) + `EDITABLE_FIELDS` + `collectFields` sends it + the `f_records` input populates from `d.harvest_records`. Verified live (set 37 → Save → reload → 37).
+
+### Field-persistence audit (the user's question: "any other fields not persisted?")
+Cross-referenced all 27 form `f_*` inputs ↔ `collectFields` (what Save sends) ↔ `EDITABLE_FIELDS` (what persists). Result after both fixes: **every field Save sends now persists** (no silent drops). `harvestable_skip`→maps to persisted `harvestable`; `harvest_source`→persists via its radio group. Only `check_recipe` is rendered-but-not-persisted, and that's **intentional** (a per-run flag fully determined by the harvest mode now that `score_only` persists). Lesson reinforced ([[feedback_db_form_sync]]): a form field with no `EDITABLE_FIELDS` entry is silently dropped on save — audit all edges.
+
+### Ops
+- **`DELETE /domains/{domain}` cascade is LAZY-migration-gated:** the `score_only`/`harvest_records` columns are added by `ensure_domains_table`, which runs on the first `/domains` request after a restart (not at startup) — a direct DB file check right after restart shows the column missing until something hits the domains path. Verified both migrate correctly once `/domains` is hit.
+- recipes.db unchanged this session (throwaway domains added+removed net-zero); last backup `1d4d42e` still current.
+
 ### Follow-ups
 - Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
