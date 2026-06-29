@@ -557,5 +557,25 @@ Cross-referenced all 27 form `f_*` inputs ↔ `collectFields` (what Save sends) 
 - **`DELETE /domains/{domain}` cascade is LAZY-migration-gated:** the `score_only`/`harvest_records` columns are added by `ensure_domains_table`, which runs on the first `/domains` request after a restart (not at startup) — a direct DB file check right after restart shows the column missing until something hits the domains path. Verified both migrate correctly once `/domains` is hit.
 - recipes.db unchanged this session (throwaway domains added+removed net-zero); last backup `1d4d42e` still current.
 
+## Session log — 2026-06-29 (later) — hero-image audit + 3-part fix (relative-URL backfill · extraction absolutize · paste-persist hardening)
+
+User couldn't get an image onto the oliveandmango.com potato salad (pasted → showed → save → gone), and worried the batch had WIPED images. Full audit + three fixes ([[feedback_db_form_sync]], [[feedback_single_path]], [[project_image_policy]]).
+
+### Audit — NOT a wipe
+Scanned all 1363 master + 315 user recipes by `image[0]` state. 1284 master / 267 user have URLs. Gaps: **21 unique oliveandmango recipes** stored a **site-relative** image path (`/images/uploads/…` — 404s on our host; 22 rows incl. the potato-salad user copy), **1 dead `blob:`** (John's Turkey Meatloaf — a paste that persisted a `blob:https://gemini.google.com/…` URL), ~46 empty (mostly typed/handwritten user recipes that never had one). Only oliveandmango had the relative-path defect (grouped by source host).
+
+### Root causes
+- **Batch "didn't pick up the image":** og:image is absolutized in `html_to_markdown.extract_og_meta` (urljoin), but the recipe **`image` field** (from JSON-LD/page) was NOT — oliveandmango's relative `/images/uploads/…` stored as-is. The images exist: `https://www.oliveandmango.com/images/uploads/…` → 200 (apex 301→www).
+- **Paste "didn't save":** the image well shows an **optimistic data:-URL preview BEFORE** the real `/images` upload. If the upload fails (or Save is clicked mid-upload), the preview looks added but `heroImageUrl` keeps the old/empty value → Save persists THAT. The meatloaf is the variant where a `blob:` URL itself reached `heroImageUrl` and saved.
+
+### Fixes (all shipped; backup taken before + after)
+1. **Backfill (data):** absolutized the 22 oliveandmango rows' relative `image` + `_source.previewImage` → `https://www.oliveandmango.com/…` (idempotent; left absolute/`/generated/` untouched). 0 relative left. Cleaned the 1 dead meatloaf blob → `[]` (0 blob/data images remain corpus-wide).
+2. **Extraction (code):** `extract/markdown_to_recipe._attach_source_metadata` now absolutizes site-relative `image`/`previewImage` against the page origin (urljoin; leaves `//`, `http(s)`, `/generated/` alone) — stops new relative paths recurring. **Needs BCC restart.**
+3. **Paste hardening (code, static):** `image-well.js handleFile` now **reverts the optimistic preview + shows a real error on upload failure** (no more silent stale-save), and the recipe-form **Save guards against a `data:`/`blob:` hero** (blocks the save with "re-add the image" instead of persisting a dead URL). Cache-bust `image-well.js?v=20260629a`.
+
+### Ops
+- recipes.sql re-dumped (backfill + blob cleanup); ADAM + integrity ok. **Restart needed** for the extraction absolutize (Python); the well/form fixes are static (reload). After restart, verify a fresh oliveandmango extract stores an absolute image, and a paste round-trips.
+
 ### Follow-ups
 - Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
+- Optional: `jsonld_to_recipe` (userscript capture path) doesn't share `_attach_source_metadata` — JSON-LD images are usually absolute, but absolutize there too for full parity if a relative one ever shows up. The ~46 empty (mostly user typed recipes) are expected, not a defect.
