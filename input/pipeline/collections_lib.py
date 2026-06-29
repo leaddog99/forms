@@ -388,11 +388,23 @@ def backlinks_search_dirs(extra=None):
       2. the configured inbox folder (semrush_inbox_dir → Downloads default)
       3. <project>/input — fallback for the tracked sample exports
     So an admin can just leave the export in Downloads (or point a domain at any folder)
-    and the harvest reads it in place — no need to move it into input/ first."""
+    and the harvest reads it in place — no need to move it into input/ first.
+
+    A per-domain override may be a FILE path (the explicit "use THIS file" case). Its
+    exact file is returned up-front by backlinks_file_path; HERE we contribute the file's
+    PARENT FOLDER to the search set so that if the exact file is STALE (re-downloaded with
+    a new timestamp, or moved), a fresh matching export in that same folder is still found
+    (newest match wins) instead of the override silently failing."""
     import os
     cand = []
     if extra:
-        cand.extend(extra if isinstance(extra, (list, tuple)) else [extra])
+        for e in (extra if isinstance(extra, (list, tuple)) else [extra]):
+            e = (e or "").strip().strip('"').strip("'")
+            if not e:
+                continue
+            ep = os.path.expanduser(e)
+            # File path (existing OR stale-but-.xlsx) → search its folder, not the file.
+            cand.append(os.path.dirname(ep) if (ep.lower().endswith(".xlsx") or os.path.isfile(ep)) else ep)
     cand.append(semrush_inbox_dir())
     cand.append(_input_dir())
     seen, out = set(), []

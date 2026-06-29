@@ -576,6 +576,15 @@ Scanned all 1363 master + 315 user recipes by `image[0]` state. 1284 master / 26
 ### Ops
 - recipes.sql re-dumped (backfill + blob cleanup); ADAM + integrity ok. **Restart needed** for the extraction absolutize (Python); the well/form fixes are static (reload). After restart, verify a fresh oliveandmango extract stores an absolute image, and a paste round-trips.
 
+## Session log — 2026-06-29 (later 2) — SEMrush harvest: de-staled "export not found" messages + stale-override fallback
+
+User hit "Refresh failed: No SEMrush export found for sallysbakingaddiction.com … Expected '…-backlinks-pages.xlsx'" and feared a backlinks regression. Investigated: **no regression** — live server's default deep-link is Top-Pages (`/analytics/organic/pages/`), export patterns match `*Pages*` (both shapes), and an entered override path DOES rule over the default. The actual failure was **the export was downloaded on another machine** (the harvest job runs on the server → never saw it; no `sallysbakingaddiction` file in the server's Downloads/input). Two real cleanups fell out:
+
+- **De-staled the 4 "export not found / expected file" strings** (`save_recipe_api` export-check `expected`, worklist `expected_file`, refresh-top 400; `collections_lib` FileNotFoundError) — they hardcoded `{domain}-backlinks-pages.xlsx` (the "still backlinks" red herring). New canonical helpers `collections_lib.expected_export_name()` + `export_not_found_message()` (one source, no drift): Top-Pages wording, and when a per-domain override is set-but-missing the message says the OVERRIDE didn't resolve, that an entered path takes precedence, and that the file must be on **THIS (server) machine** (the actual gotcha). Added the missing `collections_lib` import in the worklist fn.
+- **Stale-override fallback:** `backlinks_search_dirs` skipped a file-path override (`not isdir`), so when the exact override file went stale (re-downloaded w/ new timestamp / moved) its FOLDER wasn't even searched → silent fail. Now a file-path override contributes its PARENT FOLDER to the search set, so `backlinks_file_path` finds the newest matching export in that folder. Verified 4 cases: stale exact-file → newest-in-folder; EXISTING exact-file → that file still rules (not newest); folder override → newest; quoted path → newest. (The 6 domains whose overrides point at now-missing timestamped files in Downloads will self-heal to the newest match.)
+
+Both Python — **needs BCC restart** (user restarted for the messages; this fallback is a second change). No file-matching behavior change beyond the stale-folder add.
+
 ### Follow-ups
 - Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
 - Optional: `jsonld_to_recipe` (userscript capture path) doesn't share `_attach_source_metadata` — JSON-LD images are usually absolute, but absolutize there too for full parity if a relative one ever shows up. The ~46 empty (mostly user typed recipes) are expected, not a defect.
