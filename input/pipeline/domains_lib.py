@@ -60,6 +60,7 @@ EDITABLE_FIELDS = (
     "notes",
     "failure_count",
     "keep_top_n",     # publisher top-N to keep on refresh
+    "harvest_records",# records to pull from the SEMrush export on a backlinks_file harvest
     "recipe_path",    # publisher recipe URL path segment (detected, overridable)
     "serp_query",     # VERBATIM Google query for the harvest (overrides recipe_path)
     "search_pages",   # how many SERP pages (~10 results each) to fetch on refresh
@@ -115,6 +116,11 @@ _PAYWALL_COLUMNS = {
     # How many top recipes to KEEP (mark selected) on a publisher refresh — the
     # domains-page analog of a dish's top_n_final. Default 10, curator-overridable.
     "keep_top_n": "INTEGER NOT NULL DEFAULT 10",
+    # How many records to pull from the SEMrush export file on a backlinks_file
+    # harvest (the form's "Records to pull from file"). A harvest knob like
+    # keep_top_n/search_pages; PERSISTED so it sticks across edits/reloads (was
+    # read only at refresh time and reset to 100 each load). Default 100.
+    "harvest_records": "INTEGER NOT NULL DEFAULT 100",
     # The publisher's recipe URL path segment (e.g. 'recipes', 'recipe', 'cooking').
     # NOT assumed — detected per publisher (collections_lib.detect_recipe_path) and
     # stored here, curator-overridable. '' = not yet detected.
