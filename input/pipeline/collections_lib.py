@@ -471,6 +471,32 @@ def semrush_export_patterns() -> list:
         return default
 
 
+def expected_export_name(domain: str) -> str:
+    """Short example filename of the SEMrush export we look for. We harvest the
+    Organic TOP-PAGES export now (traffic-ranked) — NOT the old backlinks-pages
+    report — so the hint reflects that. Display-only."""
+    return f"{domain}-organic.PagesV3-<region>-<date>.xlsx"
+
+
+def export_not_found_message(domain: str, searched, override: str = None) -> str:
+    """One canonical 'no SEMrush export found' message, so all callers say the same
+    (Top-Pages, not backlinks) and an explicit per-domain override is honored in the
+    error too. `searched` = folders checked; `override` = domains.backlinks_dir if set."""
+    where = ", ".join(searched) or "(no existing folder configured)"
+    examples = (f"Expected a SEMrush Organic Top-Pages export — e.g. "
+                f"'{expected_export_name(domain)}', a subfolder export "
+                f"'{domain}_recipe-organic.PagesV3-…xlsx', or the URL-form "
+                f"'https___{domain}…-organic.PagesV3-…xlsx'.")
+    if override:
+        return (f"No SEMrush export found for {domain}: the per-domain override you set "
+                f"({override}) didn't resolve to an export file on THIS (server) machine. "
+                f"An entered path/filename takes precedence over the default — fix it on "
+                f"the domain form (make sure the file is saved on the server, not another "
+                f"machine), or clear it to use the newest match in: {where}. {examples}")
+    return (f"No SEMrush export found for {domain}. {examples} "
+            f"Looked in: {where}. Save the export there — no need to move it into input/.")
+
+
 def export_prefix(path):
     """The `{domain}[_subpath]` prefix of a SEMrush page-export filename — the part before
     the export-type marker (`-backlinks` OR `-organic`). e.g.
@@ -541,11 +567,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
     path = backlinks_file_path(domain, extra_dir=extra_dir)
     if not path:
         searched = backlinks_search_dirs(extra_dir)
-        raise FileNotFoundError(
-            f"No SEMrush export found for {domain}. Expected a file named "
-            f"'{domain}-backlinks-pages.xlsx' (or '{domain}_<subpath>-backlinks_pages.xlsx') "
-            f"in one of: {', '.join(searched) or '(no existing folder configured)'}. "
-            f"Save the export there (no need to move it into input/) and run again.")
+        raise FileNotFoundError(export_not_found_message(domain, searched, override=extra_dir))
     ws = openpyxl.load_workbook(path, read_only=True).active
     it = ws.iter_rows(values_only=True)
     header = [str(h or "") for h in next(it)]

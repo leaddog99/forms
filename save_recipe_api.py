@@ -3468,7 +3468,7 @@ def domain_backlinks_file_endpoint(domain: str):
             "path": path,                       # full path so the admin sees WHERE it read from
             "folder": os.path.dirname(path) if path else None,
             "searched": searched,               # every folder checked (in priority order)
-            "expected": f"{host}-backlinks-pages.xlsx"}
+            "expected": collections_lib.expected_export_name(host)}
 
 
 def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
@@ -3513,7 +3513,7 @@ def harvest_worklist_endpoint():
     SEMrush export, saves it to the watched inbox, then POSTs /semrush-inbox/scan.
     See docs/semrush-harvest-scheduling.md."""
     try:
-        from input.pipeline import domains_lib
+        from input.pipeline import domains_lib, collections_lib
         with _db() as conn:
             domains_lib.ensure_domains_table(conn)
             items = domains_lib.harvest_worklist(conn)
@@ -3526,7 +3526,7 @@ def harvest_worklist_endpoint():
                     "next_harvest_at": d.get("next_harvest_at"),
                     "harvest_ttl_days": d.get("harvest_ttl_days"),
                     "semrush_report_url": (d.get("semrush_report_url") or "").strip(),
-                    "expected_file": f"{d['domain']}-backlinks-pages.xlsx",
+                    "expected_file": collections_lib.expected_export_name(d['domain']),
                 } for d in items]}
     except Exception as e:
         print(f"[ERROR] harvest_worklist failed: {e}")
@@ -4229,12 +4229,9 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         if source == "backlinks_file":
             if not collections_lib.backlinks_file_path(host, extra_dir=backlinks_dir):
                 searched = collections_lib.backlinks_search_dirs(backlinks_dir)
-                raise HTTPException(status_code=400,
-                                    detail=f"No SEMrush export found for {host}. Expected "
-                                           f"'{host}-backlinks-pages.xlsx' (or a subdirectory "
-                                           f"export like '{host}_recipe-backlinks_pages.xlsx') in: "
-                                           + (", ".join(searched) or "(no existing folder configured)")
-                                           + ". Save the export there — no need to move it into input/.")
+                raise HTTPException(
+                    status_code=400,
+                    detail=collections_lib.export_not_found_message(host, searched, override=backlinks_dir))
         else:
             harvestable = payload.get("harvestable")
             harvestable = int(row.get("harvestable", 1)) if harvestable is None else (1 if harvestable else 0)
