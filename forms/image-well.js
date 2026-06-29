@@ -226,8 +226,19 @@
         img.src = dataUrl; frame.classList.add('iw-has-image');
       } catch (e) {}
       feedback('Uploading image…', 'info');
-      try { const r = _norm(await uploadBytes(file)); setUrl(r.url, { meta: r.meta }); feedback('Image added. Save to persist.', 'success'); }
-      catch (e) { feedback(`Upload failed: ${e.message || e}`, 'error'); }
+      try {
+        const r = _norm(await uploadBytes(file));
+        if (!r.url) throw new Error('server returned no URL');
+        setUrl(r.url, { meta: r.meta });
+        feedback('Image added. Save to persist.', 'success');
+      } catch (e) {
+        // Upload FAILED → revert the optimistic data:-URL preview to whatever
+        // was actually persisted (render() redraws from `url`, unchanged here).
+        // Otherwise the preview looks "added" while heroImageUrl keeps the old/
+        // empty value, and Save silently persists THAT (the potato-salad bug).
+        render();
+        feedback(`Upload failed — image NOT added (try again): ${e.message || e}`, 'error');
+      }
     }
     async function handleUrlString(s) {
       s = (s || '').trim();

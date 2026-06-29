@@ -1632,7 +1632,7 @@
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <script src="/forms/library-shell.js?v=20260628a"></script>
-  <script src="/forms/image-well.js?v=20260620a"></script>
+  <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
   <!-- Error dialog (shown via JS) -->
@@ -4089,6 +4089,16 @@
       // Validate first
       if (!validateForm()) {
         showFeedback('Please fill in the required fields', 'error');
+        return;
+      }
+
+      // Guard: never persist a transient data:/blob: hero image. Those mean the
+      // upload didn't finish or failed (the optimistic preview can mask that) —
+      // saving one stores a dead URL that's broken on reload (the gemini-blob
+      // meatloaf bug). Block the save with a clear ask to re-add the image.
+      const _hero = (heroImageUrl.value || '').trim();
+      if (_hero.startsWith('data:') || _hero.startsWith('blob:')) {
+        showFeedback('The image is still uploading or didn’t upload — re-add it (drop/paste the file again and wait for “Image added”) before saving.', 'error');
         return;
       }
 

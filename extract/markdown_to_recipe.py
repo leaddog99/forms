@@ -246,6 +246,32 @@ def _attach_source_metadata(json_data: dict, *, source_url: str, title: str) -> 
             scoring.setdefault("rawTitle", title)
         json_data["_scoring"] = scoring
 
+    # Absolutize SITE-RELATIVE image URLs against the page origin. JSON-LD /
+    # page images are often relative (e.g. "/images/uploads/x.jpg" on
+    # oliveandmango.com) and, stored as-is, 404 on OUR host. og:image is
+    # already absolutized in html_to_markdown.extract_og_meta; this covers the
+    # recipe `image` field + _source.previewImage. Leaves absolute, protocol-
+    # relative (//) and local /generated/ URLs untouched. (Backfilled the
+    # existing oliveandmango rows 2026-06-29; this stops new ones recurring.)
+    base = source_url or normalized
+    if base:
+        from urllib.parse import urljoin
+
+        def _abs(u):
+            if isinstance(u, str) and u.startswith("/") and not u.startswith(("//", "/generated/")):
+                return urljoin(base, u)
+            return u
+
+        img = json_data.get("image")
+        if isinstance(img, list):
+            json_data["image"] = [_abs(x) for x in img]
+        elif isinstance(img, str):
+            json_data["image"] = _abs(img)
+        prev = existing_source.get("previewImage")
+        if isinstance(prev, str) and prev:
+            existing_source["previewImage"] = _abs(prev)
+            json_data["_source"] = existing_source
+
 
 if __name__ == "__main__":
     import sys
