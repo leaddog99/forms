@@ -216,6 +216,60 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Publisher harvests use the per-domain `url_prefilter` flag instead.",
     },
     {
+        "key": "playwright_browsers_path",
+        "value": "",
+        "type": "string",
+        "category": "Screenshots",
+        "label": "Playwright browsers path (override)",
+        "description": "Folder where Playwright's headless-Chromium browsers are installed. "
+                       "Blank = auto-detect the standard per-user install locations (incl. "
+                       "every Windows profile, so a LocalSystem service still finds them). "
+                       "Set only if your browsers live somewhere non-standard — no "
+                       "machine-specific service-env editing needed (portable).",
+    },
+    {
+        "key": "screenshot_nav_timeout_ms",
+        "value": 25000,
+        "type": "int",
+        "category": "Screenshots",
+        "label": "Screenshot navigation timeout (ms)",
+        "description": "Hard per-capture timeout so a hung page can't stall a harvest. Default 25000.",
+    },
+    {
+        "key": "screenshot_settle_ms",
+        "value": 1500,
+        "type": "int",
+        "category": "Screenshots",
+        "label": "Screenshot settle delay (ms)",
+        "description": "Wait after domcontentloaded for JS widgets to render before the shot. "
+                       "Default 1500 (enough for most async content, short enough to beat a "
+                       "paywall modal).",
+    },
+    {
+        "key": "screenshot_viewport_w",
+        "value": 1500,
+        "type": "int",
+        "category": "Screenshots",
+        "label": "Screenshot viewport width (px)",
+        "description": "Headless viewport width. Default 1500 (matches the landscape thumbnail target).",
+    },
+    {
+        "key": "screenshot_viewport_h",
+        "value": 900,
+        "type": "int",
+        "category": "Screenshots",
+        "label": "Screenshot viewport height (px)",
+        "description": "Headless viewport height. Default 900.",
+    },
+    {
+        "key": "screenshot_capture_height",
+        "value": 800,
+        "type": "int",
+        "category": "Screenshots",
+        "label": "Screenshot capture height (px)",
+        "description": "Above-fold capture window height (masthead through intro). Default 800.",
+    },
+    {
         "key": "page_cache_enabled",
         "value": True,
         "type": "bool",

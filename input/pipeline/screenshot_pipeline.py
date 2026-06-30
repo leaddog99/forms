@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -64,6 +65,66 @@ SETTLE_MS = 1500
 NAV_TIMEOUT_MS = 25_000
 
 
+# The five capture knobs above are the built-in DEFAULTS; each is overridable
+# per-instance via a documented system_config key (screenshot_*), so a host can
+# tune timing for a slow network or a different page shape WITHOUT a code change
+# (portable-package principle: config defines the instance, not the code).
+def _screenshot_cfg() -> dict:
+    try:
+        from input.pipeline import system_config as _cfg
+        g = _cfg.get_setting
+        return {
+            "viewport_w":     int(g("screenshot_viewport_w", VIEWPORT_W)),
+            "viewport_h":     int(g("screenshot_viewport_h", VIEWPORT_H)),
+            "capture_height": int(g("screenshot_capture_height", CAPTURE_HEIGHT)),
+            "settle_ms":      int(g("screenshot_settle_ms", SETTLE_MS)),
+            "nav_timeout_ms": int(g("screenshot_nav_timeout_ms", NAV_TIMEOUT_MS)),
+        }
+    except Exception:
+        return {"viewport_w": VIEWPORT_W, "viewport_h": VIEWPORT_H,
+                "capture_height": CAPTURE_HEIGHT, "settle_ms": SETTLE_MS,
+                "nav_timeout_ms": NAV_TIMEOUT_MS}
+
+
+def _resolve_playwright_browsers_path() -> Optional[str]:
+    """Where Playwright's headless-Chromium browsers live — resolved at RUNTIME so
+    capture works regardless of HOW the app was launched and on ANY host, with no
+    machine-specific service-env surgery (portable-package). A Windows service runs
+    as LocalSystem, whose %LOCALAPPDATA% has no browsers, so we can't rely on the
+    default lookup. Precedence:
+      1. PLAYWRIGHT_BROWSERS_PATH already in the environment — honored as-is.
+      2. system_config `playwright_browsers_path` — the documented per-instance knob.
+      3. Auto-detect: scan the standard install dirs (incl. EVERY Windows user
+         profile, since the service account can't see the launching user's) for a
+         chromium-* build.
+    Returns a dir containing chromium-* builds, or None (let Playwright default)."""
+    import glob
+    env = (os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
+    if env and os.path.isdir(env):
+        return env
+    try:
+        from input.pipeline import system_config as _cfg
+        cfgp = os.path.expanduser((_cfg.get_setting("playwright_browsers_path", "") or "").strip())
+        if cfgp and os.path.isdir(cfgp):
+            return cfgp
+    except Exception:
+        pass
+    candidates = [
+        os.path.expanduser(os.path.join("~", "AppData", "Local", "ms-playwright")),   # Windows (per-user)
+        os.path.expanduser(os.path.join("~", ".cache", "ms-playwright")),             # Linux
+        os.path.expanduser(os.path.join("~", "Library", "Caches", "ms-playwright")),  # macOS
+    ]
+    if os.name == "nt":
+        candidates += glob.glob(r"C:\Users\*\AppData\Local\ms-playwright")
+    for c in candidates:
+        try:
+            if c and os.path.isdir(c) and glob.glob(os.path.join(c, "chromium-*")):
+                return c
+        except Exception:
+            continue
+    return None
+
+
 def _key_for(recipe_id: str) -> str:
     """recipe-screens/<recipe_id>-<sha8 of ts>.jpg
 
@@ -77,12 +138,14 @@ def _key_for(recipe_id: str) -> str:
     return f"recipe-screens/{recipe_id}-{sha8}.jpg"
 
 
-def _capture_raw_bytes(url: str,
-                       viewport_w: int = VIEWPORT_W,
-                       viewport_h: int = VIEWPORT_H,
-                       capture_h: int = CAPTURE_HEIGHT) -> Optional[bytes]:
+def _capture_raw_bytes(url: str) -> Optional[bytes]:
     """Drive headless Chromium (in a subprocess) and return the raw
     above-fold screenshot bytes for `url`. None on any failure.
+
+    Viewport / capture-height / settle / timeout come from _screenshot_cfg()
+    (system_config-backed, defaults = the module constants). The resolved
+    Playwright browsers dir is passed to the child via env so capture works
+    under a service account on any host.
 
     Run in a subprocess because Playwright's sync API can't be called
     from a thread inside uvicorn's asyncio context on Windows —
@@ -107,18 +170,27 @@ def _capture_raw_bytes(url: str,
         print(f"[screenshot] worker not found: {worker_path}")
         return None
 
+    cfg = _screenshot_cfg()
+    # Child inherits our env; point it at the resolved browsers dir so a
+    # LocalSystem service (whose own profile has no browsers) can still launch.
+    child_env = dict(os.environ)
+    bpath = _resolve_playwright_browsers_path()
+    if bpath:
+        child_env["PLAYWRIGHT_BROWSERS_PATH"] = bpath
+
     try:
         result = subprocess.run(
             [
                 _sys.executable, str(worker_path),
                 url,
-                str(viewport_w), str(viewport_h),
-                str(capture_h),
-                str(SETTLE_MS),
-                str(NAV_TIMEOUT_MS),
+                str(cfg["viewport_w"]), str(cfg["viewport_h"]),
+                str(cfg["capture_height"]),
+                str(cfg["settle_ms"]),
+                str(cfg["nav_timeout_ms"]),
             ],
             capture_output=True,
-            timeout=(NAV_TIMEOUT_MS // 1000) + 15,  # buffer for browser+settle
+            timeout=(cfg["nav_timeout_ms"] // 1000) + 15,  # buffer for browser+settle
+            env=child_env,
         )
         if result.returncode != 0:
             print(f"[screenshot] worker exit {result.returncode} for "
@@ -133,11 +205,7 @@ def _capture_raw_bytes(url: str,
         return None
 
 
-def capture_screenshot(url: str, recipe_id: str, *,
-                        viewport_w: int = VIEWPORT_W,
-                        viewport_h: int = VIEWPORT_H,
-                        capture_h: int = CAPTURE_HEIGHT,
-                        ) -> Optional[str]:
+def capture_screenshot(url: str, recipe_id: str) -> Optional[str]:
     """Capture above-fold view of a URL with headless Chromium, run
     through process_thumbnail, store via image_store, return public URL.
 
@@ -155,7 +223,7 @@ def capture_screenshot(url: str, recipe_id: str, *,
     if not recipe_id:
         return None
 
-    raw_bytes = _capture_raw_bytes(url, viewport_w, viewport_h, capture_h)
+    raw_bytes = _capture_raw_bytes(url)
     if not raw_bytes:
         return None
 
