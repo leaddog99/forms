@@ -3726,12 +3726,15 @@ async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
     Ledger lifecycle (retire / re-flag selected) stays with the caller."""
     from input.pipeline import page_cache
     try:
-        # Reuse the page the is-recipe filter already fetched this run (page_cache),
-        # so the winner-extract doesn't re-hit the network / re-spend an unblocker
-        # credit. force_refresh only re-runs the LLM, not the fetch.
+        # REUSE the cached FINISHED recipe (llm_extract_cache) when fresh: a re-harvest of
+        # an unchanged URL then costs NO LLM and NO fetch — the costly extract is the LLM
+        # step, so this is the real saving (force_refresh=False = "use the cache"). On a
+        # genuine miss the page_cache (enabled here) makes the fetch a SINGLE one, shared
+        # with the is-recipe filter. The thin→render retry below still forces a fresh
+        # render to get past a thin/partial cached extract.
         with page_cache.enabled():
             extract_result = await asyncio.to_thread(
-                extract_recipe_from_url, url, user_id=0, force_refresh=True)
+                extract_recipe_from_url, url, user_id=0, force_refresh=False)
     except Exception as e:
         print(f"{log_prefix} EXTRACT-MISS {url}: {type(e).__name__}: {e}")
         return False
