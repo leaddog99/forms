@@ -216,6 +216,27 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Publisher harvests use the per-domain `url_prefilter` flag instead.",
     },
     {
+        "key": "page_cache_enabled",
+        "value": True,
+        "type": "bool",
+        "category": "Harvest",
+        "label": "Harvest raw-page cache",
+        "description": "Cache the raw fetched page during a publisher harvest so the "
+                       "is-recipe filter and the winner-extract share ONE fetch (no "
+                       "double-fetch / double unblocker credit) and re-harvests within "
+                       "the TTL skip the network. Stored in a separate page_cache.db. "
+                       "Off = always re-fetch (the old behavior).",
+    },
+    {
+        "key": "page_cache_ttl_days",
+        "value": 5.0,
+        "type": "float",
+        "category": "Harvest",
+        "label": "Harvest page-cache TTL (days)",
+        "description": "How long a cached raw page stays fresh before a harvest re-fetches "
+                       "it. Default 5.",
+    },
+    {
         "key": "semrush_export_patterns",
         "value": ["{domain}*[Pp]ages*.xlsx",
                   "*.{domain}*[Pp]ages*.xlsx",

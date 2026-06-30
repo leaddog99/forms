@@ -3724,9 +3724,14 @@ async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
     `_save_recipe_core` with the `_master` top/publisher block. Honors the domain's
     fetch policy (unblocker/render) via extract_recipe_from_url. Returns True iff saved.
     Ledger lifecycle (retire / re-flag selected) stays with the caller."""
+    from input.pipeline import page_cache
     try:
-        extract_result = await asyncio.to_thread(
-            extract_recipe_from_url, url, user_id=0, force_refresh=True)
+        # Reuse the page the is-recipe filter already fetched this run (page_cache),
+        # so the winner-extract doesn't re-hit the network / re-spend an unblocker
+        # credit. force_refresh only re-runs the LLM, not the fetch.
+        with page_cache.enabled():
+            extract_result = await asyncio.to_thread(
+                extract_recipe_from_url, url, user_id=0, force_refresh=True)
     except Exception as e:
         print(f"{log_prefix} EXTRACT-MISS {url}: {type(e).__name__}: {e}")
         return False
@@ -3738,8 +3743,9 @@ async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
     if not ok:
         print(f"{log_prefix} THIN ({reason}) — render-retry {url}")
         try:
-            extract_result = await asyncio.to_thread(
-                extract_recipe_from_url, url, user_id=0, force_refresh=True, fetch_render=True)
+            with page_cache.enabled():
+                extract_result = await asyncio.to_thread(
+                    extract_recipe_from_url, url, user_id=0, force_refresh=True, fetch_render=True)
             recipe_dict = (extract_result or {}).get("recipe") or {}
             ok, reason = _is_cacheable(recipe_dict, min_ings=SAVE_GATE_MIN_INGREDIENTS,
                                        min_steps=SAVE_GATE_MIN_INSTRUCTIONS) if recipe_dict else (False, "empty recipe")
@@ -3826,12 +3832,16 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             return False
 
     def _work():
-        res = collections_lib.harvest_publisher_top(
-            host, keep=keep, discover_n=pages * 10,
-            recipe_path=recipe_path, query=query, check_recipe=check_recipe,
-            source=source, records=records, unblocker=unblocker,
-            backlinks_dir=backlinks_dir,
-            exclude_words=exclude_words, should_cancel=_should_cancel, score_only=score_only)
+        from input.pipeline import page_cache
+        # Cache each candidate's fetched page so the winner-extract below reuses it
+        # (shared via page_cache.db) instead of fetching every page a second time.
+        with page_cache.enabled():
+            res = collections_lib.harvest_publisher_top(
+                host, keep=keep, discover_n=pages * 10,
+                recipe_path=recipe_path, query=query, check_recipe=check_recipe,
+                source=source, records=records, unblocker=unblocker,
+                backlinks_dir=backlinks_dir,
+                exclude_words=exclude_words, should_cancel=_should_cancel, score_only=score_only)
         with _db() as conn:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists

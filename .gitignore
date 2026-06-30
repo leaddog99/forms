@@ -19,6 +19,11 @@ recipes.db-shm
 media.db
 media.db-wal
 media.db-shm
+# page_cache.db: raw harvest-page fetch cache (gzip HTML) — regenerable, kept out
+# of git/recipes.sql so it never bloats the tracked DB dump (see page_cache.py).
+page_cache.db
+page_cache.db-wal
+page_cache.db-shm
 # training.db: byproduct ML-training capture (is-recipe samples + future label
 # streams) accumulated as a free side effect of running the harvest/batch
 # pipeline. Regenerable-as-we-run, never source; see docs/corpus-ml-strategy.md.

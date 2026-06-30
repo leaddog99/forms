@@ -433,6 +433,37 @@ def fetch_with_full_fallback(url: str, *,
                               unblocker: bool = False,
                               render: bool = False,
                               ) -> tuple[requests.Response, dict]:
+    """Tiered fetch with an OPT-IN raw-page cache layered on top.
+
+    The actual fetching is `_fetch_with_full_fallback_uncached`. When a caller has
+    turned the page cache ON (the publisher harvest does, via `page_cache.enabled()`),
+    a fresh cached page is returned without hitting the network, and a successful
+    non-stub fetch is written back — so the harvest's is-recipe filter and its
+    winner-extract share ONE fetch (no double-fetch / double unblocker credit), and
+    re-harvests within the TTL skip the network entirely. Default-off: every other
+    caller behaves exactly as before."""
+    from input.pipeline import page_cache
+    if page_cache.is_enabled():
+        cached = page_cache.get(url, render)
+        if cached is not None:
+            return cached, {"source": "page-cache"}
+    resp, meta = _fetch_with_full_fallback_uncached(
+        url, timeout=timeout, try_wayback=try_wayback, unblocker=unblocker, render=render)
+    if page_cache.is_enabled():
+        try:
+            if 200 <= getattr(resp, "status_code", 0) < 300 and not _looks_blocked(resp):
+                page_cache.put(url, render, resp, meta)
+        except Exception:
+            pass
+    return resp, meta
+
+
+def _fetch_with_full_fallback_uncached(url: str, *,
+                              timeout: int = DEFAULT_TIMEOUT_SECONDS,
+                              try_wayback: bool = True,
+                              unblocker: bool = False,
+                              render: bool = False,
+                              ) -> tuple[requests.Response, dict]:
     """Tiered fetch: direct UA chain → [paid unblocker, opt-in] → Wayback.
 
     Returns (response, meta) where meta["source"] is "direct" | "unblocker" |
