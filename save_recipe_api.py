@@ -105,6 +105,7 @@ try:
         ensure_llm_extract_cache_table,
         get_cached_extract,
         set_cached_extract,
+        backfill_source_fingerprint,
         compute_recipe_fingerprint,
         prompt_version_for,
     )
@@ -7106,17 +7107,22 @@ def extract_recipe_from_url(
     # compute_recipe_fingerprint (name+ingredients+steps; dates/ratings excluded), so
     # it compares source-to-source and never churns on a date bump. '' when the page
     # has no Recipe JSON-LD (then revalidate can't run cheaply → fall back to the TTL).
+    # Parse the page's Recipe JSON-LD ONCE here, reused for BOTH (a) the raw-source
+    # fingerprint (revalidating reuse) and (b) the jsonld-direct extraction below — no
+    # second parse. None when the page has no usable Recipe JSON-LD (then revalidate
+    # falls back to the TTL and extraction falls back to the markdown LLM).
+    _src_rec = None
     current_source_fp = ""
     try:
         _jl = (md_result or {}).get("jsonld") or []
         if _jl:
-            from input.pipeline.extract_cache import compute_recipe_fingerprint as _cfp
             _src_rec = jsonld_to_recipe(_jl[0], source_url=md_result.get("source_url", ""),
-                                        title=md_result.get("title", ""))
+                                        title=md_result.get("title", ""), timings=timings)
             if _src_rec:
-                current_source_fp = _cfp(_src_rec)
+                current_source_fp = compute_recipe_fingerprint(_src_rec)
     except Exception as e:
-        print(f"[REVALIDATE] source-fingerprint compute failed (continuing): {e}")
+        print(f"[EXTRACT] JSON-LD parse failed (continuing → markdown LLM): {e}")
+        _src_rec = None
 
     print(f"[EXTRACT] has_jsonld={md_result['has_jsonld']} "
           f"markdown_len={len(md_result['markdown'])} "
@@ -7220,6 +7226,10 @@ def extract_recipe_from_url(
                 usage_log.pop()
         else:
             print(f"[REVALIDATE] source unchanged {url_norm} — reuse cached recipe (no LLM)")
+            # Activate change-detection for rows cached before source_fp existed: stamp it
+            # now (no TTL reset, no recipe rewrite) so the NEXT harvest can detect a change.
+            if current_source_fp and not cached_source_fp:
+                backfill_source_fingerprint(DB_PATH, url_norm, current_source_fp)
 
     if recipe is not None:
         path_used = "cache-hit"
@@ -7237,19 +7247,11 @@ def extract_recipe_from_url(
                 md_result, page_lang, timings, prompts, usage_log,
                 new_recipe_id, user_id,
             )
-        elif md_result.get("jsonld"):
-            try:
-                recipe = jsonld_to_recipe(
-                    md_result["jsonld"][0],
-                    source_url=md_result["source_url"],
-                    title=md_result["title"],
-                    timings=timings,
-                )
-                if recipe is not None:
-                    path_used = "jsonld-direct"
-            except Exception as e:
-                print(f"[WARN] jsonld_to_recipe raised, will fall back: {e}")
-                recipe = None
+        elif _src_rec is not None:
+            # Reuse the single JSON-LD parse from above (no second parse). A parse
+            # failure left _src_rec None → falls through to the markdown LLM below.
+            recipe = _src_rec
+            path_used = "jsonld-direct"
 
         if recipe is None:
             try:

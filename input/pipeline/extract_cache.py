@@ -247,3 +247,24 @@ def set_cached_extract(
             conn.commit()
     except Exception as e:
         print(f"[WARN] llm_extract_cache write failed: {e}")
+
+
+def backfill_source_fingerprint(db_path: str, url_normalized: str, source_fingerprint: str) -> None:
+    """Fill in source_fingerprint for an EXISTING row that lacks it (rows cached before
+    this column existed). Updates ONLY that column — never recipe_json or created_at — so
+    a revalidating reuse can activate change-detection on the NEXT harvest without
+    resetting the TTL or rewriting the recipe. Only fills a blank; never overwrites a real
+    value. Never raises."""
+    if not url_normalized or not source_fingerprint:
+        return
+    try:
+        with _connect(db_path) as conn:
+            ensure_llm_extract_cache_table(conn)
+            conn.execute(
+                "UPDATE llm_extract_cache SET source_fingerprint = ? "
+                "WHERE url_normalized = ? AND (source_fingerprint IS NULL OR source_fingerprint = '')",
+                (source_fingerprint, url_normalized),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"[WARN] source_fingerprint backfill failed: {e}")
