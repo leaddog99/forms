@@ -5,6 +5,7 @@ Running state log for the recipe forms project. Append-only style; prune as item
 ## Interesting links
 
 - https://claude.ai/public/artifacts/fd58ba67-876d-47fc-9610-561ada60639f — TBD context (logged 2026-05-13)
+- **[docs/harvest-and-cache-explained.md](docs/harvest-and-cache-explained.md)** — plain-language (high-school level) end-to-end walkthrough of the SEMrush harvest → page cache → recipe cache → change-detecting fingerprint → cache refresh, with a full exceptions table. The gate-by-gate detail is in [docs/recipe-candidate-pipeline.md](docs/recipe-candidate-pipeline.md).
 
 ---
 

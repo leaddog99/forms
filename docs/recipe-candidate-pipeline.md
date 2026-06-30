@@ -3,6 +3,10 @@
 What happens to a single candidate URL from discovery to ingestion, and **every if-test that
 changes the flow**. Written 2026-06-26 after the non-English filtering rework.
 
+> **New to this?** Start with [harvest-and-cache-explained.md](harvest-and-cache-explained.md) —
+> a high-school-level walkthrough of the *whole* SEMrush→cache journey (page cache, recipe cache,
+> the change-detecting fingerprint, and the exceptions). This doc is the gate-by-gate detail.
+
 ## TL;DR — does the Google harvest run the same gates as the SEMrush-file harvest?
 
 **Yes.** A publisher harvest has two *discovery sources* — **Google `site:` search** (`source='serp'`)
