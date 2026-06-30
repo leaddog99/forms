@@ -74,12 +74,20 @@ def ensure_llm_extract_cache_table(conn: sqlite3.Connection) -> None:
             prompt_version       TEXT NOT NULL,
             recipe_json          TEXT NOT NULL,
             semantic_fingerprint TEXT NOT NULL DEFAULT '',
+            source_fingerprint   TEXT NOT NULL DEFAULT '',
             created_at           TEXT NOT NULL,
             last_used_at         TEXT NOT NULL,
             hit_count            INTEGER NOT NULL DEFAULT 0
         )
         """
     )
+    # Additive migration (no rebuild — existing rows keep their cached recipes):
+    # source_fingerprint records the RAW page recipe-signal so a re-harvest can tell
+    # whether the SOURCE changed without an LLM call (revalidating reuse). Rows from
+    # before this column read as '' → can't revalidate cheaply → fall back to the TTL.
+    have = {c[1] for c in conn.execute("PRAGMA table_info(llm_extract_cache)").fetchall()}
+    if "source_fingerprint" not in have:
+        conn.execute("ALTER TABLE llm_extract_cache ADD COLUMN source_fingerprint TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 
@@ -161,14 +169,14 @@ def get_cached_extract(
             ensure_llm_extract_cache_table(conn)
             row = conn.execute(
                 """SELECT model, prompt_version, recipe_json,
-                          semantic_fingerprint, created_at
+                          semantic_fingerprint, created_at, source_fingerprint
                    FROM llm_extract_cache
                    WHERE url_normalized = ?""",
                 (url_normalized,),
             ).fetchone()
             if not row:
                 return None
-            row_model, row_pv, recipe_json, fingerprint, created_at = row
+            row_model, row_pv, recipe_json, fingerprint, created_at, source_fp = row
             same_pipeline = (row_model == model and row_pv == prompt_version)
             fresh = same_pipeline and _is_within_ttl(created_at, ttl_days)
             if fresh:
@@ -179,6 +187,7 @@ def get_cached_extract(
                     "llm_output": json.loads(recipe_json),
                     "cached_at": created_at,
                     "semantic_fingerprint": fingerprint or "",
+                    "source_fingerprint": source_fp or "",
                     "is_stale": False,
                 }
             # Stale: re-extract + overwrite. Carry the prior fingerprint for
@@ -188,6 +197,7 @@ def get_cached_extract(
                 "llm_output": None,
                 "cached_at": created_at,
                 "semantic_fingerprint": (fingerprint or "") if same_pipeline else "",
+                "source_fingerprint": source_fp or "",
                 "is_stale": True,
             }
     except Exception as e:
@@ -203,10 +213,14 @@ def set_cached_extract(
     prompt_version: str,
     llm_output: dict,
     semantic_fingerprint: str,
+    source_fingerprint: str = "",
 ) -> None:
     """Store/overwrite the extraction for this URL. ONE row per URL: a re-extract
     (new prompt/model, or TTL refresh) replaces the row in place, stamping the
-    current model + prompt_version and resetting the TTL clock. Never raises."""
+    current model + prompt_version and resetting the TTL clock. Never raises.
+
+    source_fingerprint = the RAW page recipe-signal (pre-translation) so a future
+    re-harvest can detect a source change without an LLM call."""
     if not url_normalized:
         return
     try:
@@ -216,17 +230,18 @@ def set_cached_extract(
             conn.execute(
                 """INSERT INTO llm_extract_cache
                      (url_normalized, model, prompt_version,
-                      recipe_json, semantic_fingerprint,
+                      recipe_json, semantic_fingerprint, source_fingerprint,
                       created_at, last_used_at, hit_count)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
                    ON CONFLICT(url_normalized) DO UPDATE SET
                      model                = excluded.model,
                      prompt_version       = excluded.prompt_version,
                      recipe_json          = excluded.recipe_json,
                      semantic_fingerprint = excluded.semantic_fingerprint,
+                     source_fingerprint   = excluded.source_fingerprint,
                      created_at           = excluded.created_at""",
                 (url_normalized, model, prompt_version,
-                 json.dumps(llm_output), semantic_fingerprint,
+                 json.dumps(llm_output), semantic_fingerprint, source_fingerprint,
                  now, now),
             )
             conn.commit()

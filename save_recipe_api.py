@@ -446,13 +446,13 @@ def _extract_cache_lookup(url_normalized, *, usage_log=None):
     actual spend.
     """
     if not url_normalized:
-        return None, "", "skip"
+        return None, "", "", "skip"
     if _is_bcc_self_url(url_normalized):
         # BCC self-URLs aren't extractable via the URL path — they
         # resolve to our form HTML, not recipe content. Treat them
         # like "no URL" so the caller falls through to vision / LLM /
         # whatever path actually has real content to work with.
-        return None, "", "skip"
+        return None, "", "", "skip"
     result = get_cached_extract(
         DB_PATH,
         url_normalized=url_normalized,
@@ -460,11 +460,11 @@ def _extract_cache_lookup(url_normalized, *, usage_log=None):
         prompt_version=EXTRACT_PROMPT_VERSION,
     )
     if result is None:
-        return None, "", "miss"
+        return None, "", "", "miss"
     if result["is_stale"]:
         # Pass the prior fingerprint forward; the write step on the
         # fresh re-extract will compare and surface drift.
-        return None, result["semantic_fingerprint"], "stale"
+        return None, result["semantic_fingerprint"], result.get("source_fingerprint", ""), "stale"
     if usage_log is not None:
         usage_log.append({
             "operation": "cache_hit_markdown_to_recipe",
@@ -473,10 +473,10 @@ def _extract_cache_lookup(url_normalized, *, usage_log=None):
             "output_tokens": 0,
             "meta": {"cached_at": result["cached_at"]},
         })
-    return result["llm_output"], result["semantic_fingerprint"], "hit"
+    return result["llm_output"], result["semantic_fingerprint"], result.get("source_fingerprint", ""), "hit"
 
 
-def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
+def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint="", source_fingerprint=""):
     """Persist a freshly-extracted recipe to the cache.
 
     Skips the write entirely if `recipe` looks empty/thin (see
@@ -518,6 +518,7 @@ def _extract_cache_write(url_normalized, recipe, *, prior_fingerprint=""):
             prompt_version=EXTRACT_PROMPT_VERSION,
             llm_output=cacheable,
             semantic_fingerprint=new_fp,
+            source_fingerprint=source_fingerprint,
         )
     except Exception as e:
         print(f"[CACHE] write failed for {url_normalized!r}: {e}")
@@ -3726,15 +3727,15 @@ async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
     Ledger lifecycle (retire / re-flag selected) stays with the caller."""
     from input.pipeline import page_cache
     try:
-        # REUSE the cached FINISHED recipe (llm_extract_cache) when fresh: a re-harvest of
-        # an unchanged URL then costs NO LLM and NO fetch — the costly extract is the LLM
-        # step, so this is the real saving (force_refresh=False = "use the cache"). On a
-        # genuine miss the page_cache (enabled here) makes the fetch a SINGLE one, shared
-        # with the is-recipe filter. The thin→render retry below still forces a fresh
-        # render to get past a thin/partial cached extract.
+        # REVALIDATE: reuse the cached FINISHED recipe only when the SOURCE is unchanged
+        # (raw-source fingerprint compare) — so a re-harvest of an unchanged URL costs NO
+        # LLM and NO fetch, while a URL whose recipe actually changed at the source gets a
+        # fresh extract. The page_cache (enabled here) shares the one fetch with the
+        # is-recipe filter, so the compare is ~free. The thin→render retry below still
+        # forces a fresh render to get past a thin/partial cached extract.
         with page_cache.enabled():
             extract_result = await asyncio.to_thread(
-                extract_recipe_from_url, url, user_id=0, force_refresh=False)
+                extract_recipe_from_url, url, user_id=0, revalidate=True)
     except Exception as e:
         print(f"{log_prefix} EXTRACT-MISS {url}: {type(e).__name__}: {e}")
         return False
@@ -6506,7 +6507,7 @@ async def extract_from_image_endpoint(
         # a previously-extracted recipe for that URL skips both the vision
         # OCR call AND the markdown-extract LLM call.
         url_norm = normalize_url(source_url) if source_url else ""
-        recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+        recipe, prior_fp, _src_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
         path_used = "cache-hit" if recipe is not None else "image-llm"
 
@@ -6649,7 +6650,7 @@ async def extract_from_pdf_endpoint(
         # call. Empty source_url means cache is skipped (e.g. raw upload
         # with no URL context).
         url_norm = normalize_url(source_url) if source_url else ""
-        recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+        recipe, prior_fp, _src_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
         path_used = "cache-hit" if recipe is not None else "pdf-llm"
 
@@ -6780,7 +6781,7 @@ async def extract_from_markdown_endpoint(
         # the lookup even runs. This mirrors the URL path's speculative
         # fast-path: never do expensive work for a result we already have.
         url_norm = normalize_url(effective_url) if effective_url else ""
-        recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+        recipe, prior_fp, _src_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
         path_used = "cache-hit" if recipe is not None else ""
         translation_meta_bm: dict | None = None
@@ -6968,6 +6969,7 @@ def extract_recipe_from_url(
     batch_overrides: dict | None = None,
     user_id: int = PLACEHOLDER_USER_ID,
     force_refresh: bool = False,
+    revalidate: bool = False,
     fetch_render: bool | None = None,
 ) -> dict:
     """Sync orchestrator: fetch URL → markdown → JSON-LD-or-LLM → enrich
@@ -7020,10 +7022,10 @@ def extract_recipe_from_url(
     # keys on the resolved url and re-caches to self-heal. Batch
     # (pre_scored/batch_overrides) and force_refresh always take the
     # full path so their authoritative fields / fresh extracts apply.
-    if not force_refresh and not pre_scored and not batch_overrides:
+    if not force_refresh and not revalidate and not pre_scored and not batch_overrides:
         spec_norm = normalize_url(url)
         spec_log: list = []
-        spec_recipe, _spec_fp, spec_status = _extract_cache_lookup(
+        spec_recipe, _spec_fp, _spec_src, spec_status = _extract_cache_lookup(
             spec_norm, usage_log=spec_log)
         if spec_recipe is not None and _cache_row_complete(spec_recipe):
             usage_log.extend(spec_log)   # journal the hit only if we serve it
@@ -7099,6 +7101,23 @@ def extract_recipe_from_url(
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise RuntimeError(f"Failed to fetch/convert URL: {e}") from e
 
+    # Source fingerprint for revalidating reuse: the RAW page recipe-signal from the
+    # page's JSON-LD, BEFORE any translation/cleaning — same date-stable basis as
+    # compute_recipe_fingerprint (name+ingredients+steps; dates/ratings excluded), so
+    # it compares source-to-source and never churns on a date bump. '' when the page
+    # has no Recipe JSON-LD (then revalidate can't run cheaply → fall back to the TTL).
+    current_source_fp = ""
+    try:
+        _jl = (md_result or {}).get("jsonld") or []
+        if _jl:
+            from input.pipeline.extract_cache import compute_recipe_fingerprint as _cfp
+            _src_rec = jsonld_to_recipe(_jl[0], source_url=md_result.get("source_url", ""),
+                                        title=md_result.get("title", ""))
+            if _src_rec:
+                current_source_fp = _cfp(_src_rec)
+    except Exception as e:
+        print(f"[REVALIDATE] source-fingerprint compute failed (continuing): {e}")
+
     print(f"[EXTRACT] has_jsonld={md_result['has_jsonld']} "
           f"markdown_len={len(md_result['markdown'])} "
           f"source_url={md_result['source_url']!r} "
@@ -7172,7 +7191,7 @@ def extract_recipe_from_url(
         pass
 
     url_norm = normalize_url(md_result["source_url"]) if md_result["source_url"] else ""
-    recipe, prior_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
+    recipe, prior_fp, cached_source_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
     drift = False
     path_used = ""
     if force_refresh and recipe is not None:
@@ -7184,6 +7203,23 @@ def extract_recipe_from_url(
               f"prior_fp={prior_fp[:12]!r}")
         recipe = None
         cache_status = "stale"
+    elif revalidate and recipe is not None:
+        # Reuse the cached FINISHED recipe ONLY if the source is unchanged. Compare
+        # this fetch's raw-source fingerprint to the one stored at cache time. A
+        # mismatch = the recipe changed at the source → drop the hit so the LLM
+        # re-extracts. A match (or no fingerprint on either side — e.g. no JSON-LD)
+        # → keep the within-TTL hit and skip the LLM. (The harvest passes this; it
+        # already fetched the page for the filter, so the compare is ~free.)
+        if current_source_fp and cached_source_fp and current_source_fp != cached_source_fp:
+            print(f"[REVALIDATE] source CHANGED {url_norm} — re-extracting "
+                  f"(cached={cached_source_fp[:8]} != current={current_source_fp[:8]})")
+            recipe = None
+            cache_status = "stale"
+            # The lookup logged a cache-hit; it's not one (we're re-extracting) — drop it.
+            if usage_log and usage_log[-1].get("operation") == "cache_hit_markdown_to_recipe":
+                usage_log.pop()
+        else:
+            print(f"[REVALIDATE] source unchanged {url_norm} — reuse cached recipe (no LLM)")
 
     if recipe is not None:
         path_used = "cache-hit"
@@ -7340,9 +7376,11 @@ def extract_recipe_from_url(
 
     # Cache write AFTER enrichment so screenshot/identity/preview travel with
     # the row. Write on a fresh extract, or to self-heal a hit row that
-    # predated screenshot/identity caching.
+    # predated screenshot/identity caching. Stamp the raw-source fingerprint so a
+    # future revalidating harvest can detect a source change without an LLM call.
     if path_used != "cache-hit" or was_incomplete:
-        cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
+        cache_status, drift = _extract_cache_write(
+            url_norm, recipe, prior_fingerprint=prior_fp, source_fingerprint=current_source_fp)
 
     timings["path"] = path_used
     _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
