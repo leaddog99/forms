@@ -4214,11 +4214,14 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
     host = domains_lib._canon_host(domain)
     with _db() as conn:
         row = domains_lib.get_domain(conn, host) or {}
-        # Discovery source: 'serp' (Google, default) or 'backlinks_file' (local SEMrush
-        # export, input/{host}-backlinks-pages.xlsx). The file IS the mechanism, so it
-        # bypasses the harvestable/query gates; everything downstream (incl. the recipe
-        # filter) is identical to the SERP path.
-        source = (payload.get("source") or "serp").strip() or "serp"
+        # Discovery source: 'serp' (Google) or 'backlinks_file' (a local SEMrush Top-Pages
+        # export — name kept for back-compat; the reader auto-detects backlinks-pages too).
+        # The file IS the mechanism, so it bypasses the harvestable/query gates; everything
+        # downstream (incl. the recipe filter) is identical to the SERP path.
+        # Default to the domain's STORED harvest_source (a bare API refresh shouldn't
+        # silently run Google when the domain is configured for the file); the UI always
+        # sends `source` explicitly. Fall back to 'serp' only when neither is set.
+        source = (payload.get("source") or row.get("harvest_source") or "serp").strip() or "serp"
         records = int(payload.get("records") or 0) or None
         # VERBATIM Google query (payload or stored serp_query) runs as-is, overrides path.
         query = (payload.get("query") or row.get("serp_query") or "").strip() or None

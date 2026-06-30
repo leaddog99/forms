@@ -585,6 +585,10 @@ User hit "Refresh failed: No SEMrush export found for sallysbakingaddiction.com 
 
 Both Python — **needs BCC restart** (user restarted for the messages; this fallback is a second change). No file-matching behavior change beyond the stale-folder add.
 
+**Verified live (after restart):** re-downloaded sallysbakingaddiction Top-Pages export on the SERVER (`…21_13_03Z.xlsx`); the override resolved cleanly and the file harvest ran **40 discovered → 39 recipe_pass → 39 scored/stored → 20 extracted to master**. (A bare API refresh with no `source` ran as SERP — the endpoint defaulted `source` to `'serp'` instead of the domain's stored `harvest_source`; the UI sends it explicitly so it didn't bite in practice.)
+
+**Naming + footgun cleanup (`…`):** the harvest source is internally `'backlinks_file'` but reads Top-Pages now — decided (user deferred) to **relabel UI only**, NOT rename the value (an opaque identifier; a rename = ~30-row migration + many sites for zero user benefit + risk). Fixed the last user-facing "SEMrush backlinks file" string (domains.html explainer step → "SEMrush Top-Pages export"; the radio label already said that; left the accurate "old backlinks-pages still auto-detected" note). Also fixed the endpoint to **default `source` to the domain's stored `harvest_source`** (fall back to 'serp' only when neither request nor row specifies) so a bare refresh can't silently run Google. Endpoint change needs a restart; the relabel is static.
+
 ### Follow-ups
 - Carried (unchanged): score-only #2 live test; canonical dish display name; partial-shift paywall calibration; `/collections/leaderboard` page; `serp_batch`; sub-steps v2.1; Voice P1.
 - Optional: `jsonld_to_recipe` (userscript capture path) doesn't share `_attach_source_metadata` — JSON-LD images are usually absolute, but absolutize there too for full parity if a relative one ever shows up. The ~46 empty (mostly user typed recipes) are expected, not a defect.
