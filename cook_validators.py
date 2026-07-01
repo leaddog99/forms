@@ -157,15 +157,21 @@ def v_mise_complete(cook: CookMetadata) -> List[str]:
     for iid in ing_ids - in_bundle:
         out.append(f"ingredient {iid}: not in any bundle — escapes the mise "
                    f"(would be measured mid-cook)")
-    # A step may reference an INGREDIENT id or a BUNDLE id — both are in the mise
-    # (deploying a pre-combined bundle as one unit is legitimate). Anything else
-    # is a fresh introduction.
-    valid_refs = ing_ids | bundle_ids
+    # A step may reference an INGREDIENT id, a BUNDLE id, or a declared PUT-ASIDE
+    # (ReservedItem) id. Bundles deploy a pre-combined mise entry as one unit;
+    # put-asides are cooking intermediates set aside mid-cook and used later —
+    # reduced pan juices, reserved pasta water, browned meat — which by definition
+    # have NO starting-ingredient id (ReservedItem.id is documented as "reused by a
+    # consuming StepIngredient"). Their created→consumed lifecycle + ordering are
+    # enforced by the appearance-order / consumed-step validators, not here. A step
+    # ingredient matching none of the three is a genuine fresh introduction (mise leak).
+    reserved_ids = {r.id for r in cook.reserved}
+    valid_refs = ing_ids | bundle_ids | reserved_ids
     for s in cook.steps:
         for si in s.ingredients:
             if si.ingredient_id not in valid_refs:
                 out.append(f"step {s.number}: '{si.ingredient_id}' is not a declared "
-                           f"ingredient or bundle — introduced fresh in a method step")
+                           f"ingredient, bundle, or put-aside — introduced fresh in a method step")
     return out
 
 
