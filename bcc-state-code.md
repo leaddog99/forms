@@ -9,6 +9,31 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-02 — cross-machine SEMrush upload (client→server)
+
+**Problem (user):** running a `backlinks_file` harvest from a DIFFERENT machine than the
+server failed — the SEMrush `.xlsx` was downloaded on the *client*, but the harvest job
+runs on the *server* and reads the *server's* filesystem, so the file was never visible.
+Confirmed by the improved "no export found … on THIS (server) machine" message + a live
+resolution test (barefootcontessa: the saved override pointed at a `…16_24_42Z.xlsx` that
+didn't exist; the real file was `…16_26_34Z.xlsx` — the stale-override fallback already
+picked the newest match on the server, so it only *ran* here).
+
+**Fix — an upload path.** `POST /domains/{domain}/upload-export` (`save_recipe_api.py`,
+after the `backlinks-file` GET): accepts a browser `UploadFile`, validates `.xlsx` +
+non-empty + ≤25 MB + `PK` zip magic, sanitizes to a basename, writes it into the configured
+inbox (`collections_lib.semrush_inbox_dir()` → Downloads default) — so an uploaded file is
+indistinguishable from a downloaded one — then **pins** `domains.backlinks_dir` to the exact
+saved path (+ `harvest_source='backlinks_file'`) so resolution is deterministic (exact
+existing path returned directly by `backlinks_file_path`; a later upload overwrites the pin,
+never stale). UI (`forms/domains.html`): "⤴ Upload export from this device" button + hidden
+file input in the backlinks_file group; `uploadExport()` POSTs FormData, updates the
+`f_backlinks_dir` field + selects the file source + re-checks the file line. Verified: py_compile
+clean; resolution smoke test (pin exact path → resolves; == newest match). **Needs a
+Restart-Service BCC to expose the new route.**
+
+---
+
 > 📦 **Earlier session logs (2026-05-13 … 2026-06-16) are archived** in [bcc-state-archive.md](bcc-state-archive.md) to keep this tracker lean. Recent logs (2026-06-17 →) remain below.
 
 ## Session log — 2026-06-17 — sub-step re-rework batch · deep cognitive-science report · THE SERP VENDOR SWITCH (SerpApi→Scale SERP) · domain-harvest overhaul + background job · system-wide domain scoring decided

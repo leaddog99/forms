@@ -334,6 +334,12 @@
                 SEMrush Top-Pages export <span class="src-sub">Organic Research → Pages (by TRAFFIC) — our default. Old backlinks-pages exports still auto-detected. URL-form filenames (<code>https___www.domain…-organic.PagesV3…</code>) are matched too.</span></label>
               <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below (SEMrush <b>Organic Research → Pages</b>) → press <b>Export</b> → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
+              <div style="margin:8px 0 2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="exportUploadInput" accept=".xlsx" style="display:none">
+                <button type="button" class="ed-btn" id="exportUploadBtn" title="Upload the SEMrush .xlsx from THIS device to the server — use this when you exported on a different machine than the one running the server">⤴ Upload export from this device</button>
+                <span class="ed-save-hint" id="exportUploadHint" style="font-size:.82em"></span>
+              </div>
+              <p class="ed-notes-help" style="margin:2px 0 6px;font-size:.8em">Exported on a different computer than the server? The harvest reads the file from the <b>server's</b> disk — so upload it here and it lands where the harvest looks (and pins this domain to it).</p>
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', d.harvest_records || 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
@@ -441,6 +447,8 @@
         loadDomainTop(d.domain, !on);
       });
       $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
+      $('#exportUploadBtn')?.addEventListener('click', () => $('#exportUploadInput')?.click());
+      $('#exportUploadInput')?.addEventListener('change', (e) => uploadExport(d.domain, e.target.files[0]));
       document.querySelectorAll('input[name=harvestSource]').forEach(r =>
         r.addEventListener('change', applySrcSelection));
       applySrcSelection();
@@ -487,6 +495,38 @@
         el.className = 'src-file missing'; el.textContent = 'could not check for file';
       }
       applySrcSelection();
+    }
+
+    // Upload a SEMrush .xlsx from THIS device → the server saves it where the harvest
+    // reads it (and pins backlinks_dir to the exact path). The cross-machine fix: the
+    // export downloaded on the client never had to reach the server before.
+    async function uploadExport(domain, fileObj){
+      const hint = $('#exportUploadHint');
+      const input = $('#exportUploadInput');
+      if (!fileObj){ return; }
+      if (!fileObj.name.toLowerCase().endsWith('.xlsx')){
+        if (hint) hint.textContent = '⚠ Pick the SEMrush .xlsx export.';
+        if (input) input.value = ''; return;
+      }
+      if (hint) hint.textContent = `Uploading ${fileObj.name}…`;
+      try {
+        const fd = new FormData(); fd.append('file', fileObj, fileObj.name);
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/upload-export`,
+                              { method: 'POST', body: fd });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok){ if (hint) hint.textContent = `⚠ ${data.detail || ('Upload failed ('+r.status+')')}`; return; }
+        if (hint) hint.textContent = `✓ Uploaded to the server — ${data.folder}`;
+        // Reflect the pinned override in the field + re-check the file line.
+        const bd = $('#f_backlinks_dir'); if (bd && data.path) bd.value = data.path;
+        // Make sure the file source is selected (the server pinned it too).
+        const radio = document.querySelector('input[name=harvestSource][value=backlinks_file]');
+        if (radio){ radio.checked = true; applySrcSelection(); }
+        loadBacklinksFile(domain);
+      } catch (err){
+        if (hint) hint.textContent = `⚠ Upload error: ${err.message || err}`;
+      } finally {
+        if (input) input.value = '';   // allow re-uploading the same filename
+      }
     }
 
     // Render the publisher top-N list — same component/look as the dishes

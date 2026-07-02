@@ -3473,6 +3473,43 @@ def domain_backlinks_file_endpoint(domain: str):
             "expected": collections_lib.expected_export_name(host)}
 
 
+@app.post("/domains/{domain}/upload-export")
+async def domain_upload_export_endpoint(domain: str, file: UploadFile = File(...)):
+    """Accept a SEMrush export uploaded FROM THE BROWSER and write it onto the SERVER's
+    disk where the harvest reads it — the cross-machine fix for "the .xlsx downloaded on
+    the client machine never reaches the server." Lands the file in the configured inbox
+    (semrush_inbox_dir → Downloads default) under its own name, then PINS the domain's
+    backlinks_dir override to the exact saved path so resolution is deterministic (an
+    existing exact path is returned directly by backlinks_file_path). A later upload
+    overwrites the pin with the new path — so there's never a stale override to chase."""
+    from input.pipeline import domains_lib, collections_lib
+    import os, re
+    host = domains_lib._canon_host(domain)
+    # basename only (strip any client path / traversal), then a conservative sanitize.
+    fname = os.path.basename((file.filename or "").replace("\\", "/")).strip()
+    if not fname.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400,
+                            detail="Upload a SEMrush .xlsx export (Organic Research → Pages → Export).")
+    fname = re.sub(r"[^A-Za-z0-9._-]", "_", fname)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(data) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400,
+                            detail=f"File too large ({len(data) // (1024 * 1024)} MB > 25 MB).")
+    if data[:2] != b"PK":   # .xlsx is a zip container — cheap sanity check
+        raise HTTPException(status_code=400, detail="That doesn't look like a valid .xlsx (Excel) file.")
+    folder = collections_lib.semrush_inbox_dir()
+    os.makedirs(folder, exist_ok=True)
+    dest = os.path.join(folder, fname)
+    with open(dest, "wb") as f:
+        f.write(data)
+    with _db() as conn:
+        domains_lib.update_domain(conn, host,
+                                  {"backlinks_dir": dest, "harvest_source": "backlinks_file"})
+    return {"saved": True, "filename": fname, "folder": folder, "path": dest}
+
+
 def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
                              records=None, label: str = "") -> Optional[int]:
     """Enqueue + spawn an out-of-process publisher_refresh job for `host` (the same
