@@ -3499,11 +3499,33 @@ async def domain_upload_export_endpoint(domain: str, file: UploadFile = File(...
                             detail=f"File too large ({len(data) // (1024 * 1024)} MB > 25 MB).")
     if data[:2] != b"PK":   # .xlsx is a zip container — cheap sanity check
         raise HTTPException(status_code=400, detail="That doesn't look like a valid .xlsx (Excel) file.")
-    folder = collections_lib.semrush_inbox_dir()
+    # Save into the project's own input/ folder — it's a harvest SEARCH dir AND it's
+    # writable by the SERVICE account (LocalSystem). The default inbox (~/Downloads) is a
+    # HUMAN profile folder the service can't necessarily write, which is the whole reason
+    # a client-downloaded export can't just be dropped there. Pinning the exact path below
+    # makes resolution work regardless; landing it in input/ keeps it found even if the
+    # pin is later cleared.
+    folder = collections_lib._input_dir()
     os.makedirs(folder, exist_ok=True)
     dest = os.path.join(folder, fname)
-    with open(dest, "wb") as f:
-        f.write(data)
+
+    def _write(path):
+        with open(path, "wb") as f:
+            f.write(data)
+    try:
+        _write(dest)
+    except PermissionError:
+        # An identically-named file exists and is owned by another account (can't
+        # overwrite) → fall back to the browser-style "(n)" de-dup suffix the glob tolerates.
+        base, ext = os.path.splitext(fname)
+        for n in range(1, 100):
+            alt = os.path.join(folder, f"{base} ({n}){ext}")
+            if not os.path.exists(alt):
+                _write(alt)
+                dest = alt
+                break
+        else:
+            raise
     with _db() as conn:
         domains_lib.update_domain(conn, host,
                                   {"backlinks_dir": dest, "harvest_source": "backlinks_file"})
