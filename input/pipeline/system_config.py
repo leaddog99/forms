@@ -180,6 +180,26 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "terms like 'best'/'top' also appear in legit single-recipe "
                        "titles, so they can drop good results — use with care.",
     },
+    {
+        "key": "serp_page_retries",
+        "value": 3,
+        "type": "int",
+        "category": "Search",
+        "label": "SERP page fetch attempts (transient-error retries)",
+        "description": "How many times to fetch a single SERP page before giving up on it. "
+                       "A transient ReadTimeout/ConnectionError on one page used to abandon "
+                       "the whole pagination, silently truncating a deep query (e.g. 20 of a "
+                       "target 75). Retrying rides out a network blip. 1 = no retry (old "
+                       "behavior).",
+    },
+    {
+        "key": "serp_page_retry_backoff",
+        "value": 2.0,
+        "type": "float",
+        "category": "Search",
+        "label": "SERP page retry backoff (seconds)",
+        "description": "Seconds to wait between retry attempts for a timed-out SERP page.",
+    },
     # --- Harvest: the SEMrush human-workflow loop (docs/semrush-harvest-scheduling.md) ---
     {
         "key": "semrush_indexed_pages_url_template",

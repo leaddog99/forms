@@ -9,6 +9,26 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-06 — SERP per-page retry (transient timeout no longer truncates a query)
+
+**Problem (user):** a `dish_refresh` (Hungarian Goulash, job #457, recurring — seen on an
+earlier run too) logged `[scaleserp] page 3 failed: ReadTimeout` and then `20 URLs (target 75)`.
+Root cause in `serp_search.py`: BOTH `_scaleserp` and `_serpapi` wrapped the per-page GET in
+`except Exception: break` — so a SINGLE transient network blip on one page abandoned the entire
+remaining pagination, silently truncating a deep query to whatever had already arrived.
+
+**Fix:** new `_serp_get_json()` helper retries a page on TRANSIENT errors only
+(`requests.exceptions.Timeout` / `ConnectionError`) — default 3 attempts, 2.0s backoff — before
+giving up; a non-transient error (bad JSON etc.) still stops paging immediately, and a real API
+error (`request_info.success=false`, e.g. out of credits) / genuine empty page still breaks as
+before. Both providers now route through it (single path). Retry knobs externalized +
+documented in `system_config` (`serp_page_retries`, `serp_page_retry_backoff`, category
+Search). Verified with a simulated page-3 timeout → retried → continued → 50 URLs (old code
+stopped at 20). **No server restart needed** — dish/publisher refreshes spawn fresh
+`python -m jobs` subprocesses, so a re-run of Hungarian Goulash picks up the new code immediately.
+
+---
+
 ## Session log — 2026-07-02 — cross-machine SEMrush upload (client→server)
 
 **Problem (user):** running a `backlinks_file` harvest from a DIFFERENT machine than the

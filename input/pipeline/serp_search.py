@@ -17,6 +17,7 @@ filter=0 (no Google similar-page collapsing), optional early-stop at `want`.
 from __future__ import annotations
 
 import os
+import time
 import requests
 
 SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
@@ -30,6 +31,45 @@ def _scaleserp_key() -> str | None:
     """Scale SERP key, accepting the common env-var spellings."""
     return (os.getenv("SCALESERP_KEY") or os.getenv("SCALE_SERP_API_KEY")
             or os.getenv("SCALESERP_API_KEY"))
+
+
+def _serp_retry_cfg() -> tuple[int, float]:
+    """(attempts, backoff_seconds) for transient per-page SERP retries. Config-overridable
+    (system_config `serp_page_retries` / `serp_page_retry_backoff`); defaults 3 / 2.0s."""
+    attempts, backoff = 3, 2.0
+    try:
+        from input.pipeline import system_config as _cfg
+        attempts = int(_cfg.get_setting("serp_page_retries", attempts) or attempts)
+        backoff = float(_cfg.get_setting("serp_page_retry_backoff", backoff) or backoff)
+    except Exception:
+        pass
+    return max(1, attempts), max(0.0, backoff)
+
+
+def _serp_get_json(endpoint, params, timeout, *, label: str, page) -> dict | None:
+    """GET + parse JSON for one SERP page, with retries on TRANSIENT network errors
+    (Timeout / ConnectionError). Returns the parsed dict, or None if the page exhausted
+    its retries or hit a non-transient error — in which case the caller stops paging.
+
+    Why: a single page-level ReadTimeout used to `break` the whole pagination loop,
+    silently truncating a deep query (e.g. target 75) to whatever had already arrived
+    (seen as '20 URLs (target 75)'). Retrying the page rides out a blip instead."""
+    attempts, backoff = _serp_retry_cfg()
+    for attempt in range(1, attempts + 1):
+        try:
+            return requests.get(endpoint, params=params, timeout=timeout).json()
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt < attempts:
+                print(f"  [{label}] page {page} {type(e).__name__} "
+                      f"(attempt {attempt}/{attempts}) — retrying in {backoff}s")
+                time.sleep(backoff)
+            else:
+                print(f"  [{label}] page {page} failed after {attempts} attempts: "
+                      f"{type(e).__name__}: {e}")
+        except Exception as e:   # non-transient (bad JSON, etc.) — don't spin, stop paging
+            print(f"  [{label}] page {page} failed: {type(e).__name__}: {e}")
+            return None
+    return None
 
 
 def active_provider() -> str:
@@ -160,10 +200,10 @@ def _serpapi(query, pages, want, gl, hl, timeout) -> list[dict]:
             params["gl"] = gl
         if hl:
             params["hl"] = hl
-        try:
-            org = requests.get(SERPAPI_ENDPOINT, params=params, timeout=timeout).json().get("organic_results") or []
-        except Exception:
+        data = _serp_get_json(SERPAPI_ENDPOINT, params, timeout, label="serpapi", page=p + 1)
+        if data is None:   # page exhausted retries / non-transient error → stop paging
             break
+        org = data.get("organic_results") or []
         for it in org:
             link = it.get("link") or ""
             if link and link not in seen:
@@ -192,12 +232,10 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
             params["gl"] = gl
         if hl:
             params["hl"] = hl
-        try:
-            data = requests.get(SCALESERP_ENDPOINT, params=params, timeout=timeout).json()
-            org = data.get("organic_results") or []
-        except Exception as e:
-            print(f"  [scaleserp] page {p} failed: {type(e).__name__}: {e}")
+        data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout, label="scaleserp", page=p)
+        if data is None:   # page exhausted retries / non-transient error → stop paging
             break
+        org = data.get("organic_results") or []
         if not org:
             ri = data.get("request_info") or {}
             if not ri.get("success"):  # surface a real error (e.g. out of credits), not a silent 0
