@@ -49,7 +49,6 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import numpy as np
-import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
@@ -83,8 +82,6 @@ from input.pipeline.validators import (is_recipe, score_recipe_text,          # 
 
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-SERPAPI_ENDPOINT = "https://serpapi.com/search.json"
-SERPAPI_TIMEOUT_S = 30
 FETCH_TIMEOUT_S = 10
 # Step 3's fetch is now shared with step 7's extract via the canonical
 # `fetch_with_ua_fallback`. Both go through the SAME UA chain so a URL
