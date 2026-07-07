@@ -35,6 +35,8 @@ _SYS = (
     "extract cleanly: ingredients bleed into editorial prose, image-heavy with little text, "
     "no clear ingredient/step separation. A human could dig the recipe out, but it's a poor "
     "source. Reject it here.\n"
+    "TIE-BREAK: when genuinely torn between 'recipe' and 'poor_quality', choose 'poor_quality' "
+    "(protect ingest quality — only clean, confidently-extractable pages earn 'recipe').\n"
     "Judge the CONTENT, not how much cooking vocabulary appears. Give a terse (<=8 word) reason."
 )
 
