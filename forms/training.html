@@ -362,7 +362,7 @@
     function reset() { offset = 0; total = 0; done = false; list.innerHTML = ''; endEl.hidden = true; loadMore(); }
 
     let t; $('#q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(reset, 250); });
-    ['fLabel', 'fDecision', 'fSource', 'fSort', 'hideEmpty'].forEach(id => $('#' + id).addEventListener('change', reset));
+    ['fLabel', 'fDecision', 'fSource', 'fSort', 'fShadow', 'hideEmpty'].forEach(id => $('#' + id).addEventListener('change', reset));
 
     new IntersectionObserver(es => { if (es[0].isIntersecting) loadMore(); }, { rootMargin: '300px' })
       .observe($('#sentinel'));
