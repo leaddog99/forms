@@ -9,6 +9,10 @@ _TRACKING_PARAMS = {
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "referrer", "source",
     "igshid", "_ga", "yclid", "msclkid",
+    # Google click/serving IDs — appended per-impression to organic results, so two
+    # SERP hits of the SAME page differ only here and dodge dedup (seen: Google now
+    # decorates organic results with srsltid, which fetched one page 4x in a batch).
+    "srsltid", "gclsrc", "dclid", "gbraid", "wbraid", "gad_source", "_gl",
 }
 
 
