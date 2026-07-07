@@ -39,6 +39,9 @@
       background: var(--card, #fff); padding: 12px 14px;
     }
     .lab-card.disagree { border-color: #d98a2b; box-shadow: 0 0 0 1px #d98a2b33; }
+    .lab-shadow { font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+      background: #6b8ab033; color: #4a6a90; border: 1px solid #6b8ab055; white-space: nowrap; }
+    .lab-shadow.dis { background: #d98a2b22; color: #b06a1a; border-color: #d98a2b66; }
     .lab-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
     .lab-verdict {
       font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
@@ -128,6 +131,11 @@
         <option value="borderline">Sort: Borderline first</option>
         <option value="recent">Sort: Newest</option>
       </select>
+      <select id="fShadow" aria-label="LLM cascade shadow" title="The is-recipe LLM cascade (shadow mode) records a keep/drop verdict next to the heuristic. 'LLM disagrees' = the review queue.">
+        <option value="">Any (LLM cascade)</option>
+        <option value="disagree">LLM disagrees</option>
+        <option value="any">Has LLM verdict</option>
+      </select>
       <label class="lab-check" title="Hide rows with no captured content (fetch-failed pages and pre-fetch collection-title drops) — they aren't worth correcting">
         <input type="checkbox" id="hideEmpty" checked> Hide fetch-failed / empty
       </label>
@@ -159,6 +167,7 @@
         decision: $('#fDecision').value,
         source: $('#fSource').value,
         sort: $('#fSort').value,
+        shadow: $('#fShadow').value,
         has_content: $('#hideEmpty').checked ? '1' : '0',
       };
     }
@@ -221,12 +230,18 @@
         ? `<div class="lab-phrases"><span class="lab-phrases-lbl">recipe phrases (${phrases.length})</span>${phrases.map(p => `<span class="lab-chip">${esc(p)}</span>`).join('')}</div>`
         : `<div class="lab-phrases none"><span class="lab-phrases-lbl">recipe phrases</span><span class="lab-none">none matched</span></div>`;
       const prov = provLabel(r);
+      const sv = r.shadow_verdict;
+      const sDis = sv && ((r.decision === 'kept' && sv === 'drop') || (r.decision === 'dropped' && sv === 'keep'));
+      const shadowHtml = sv
+        ? `<span class="lab-shadow${sDis ? ' dis' : ''}" title="LLM cascade${r.shadow_reason ? ': ' + esc(r.shadow_reason) : ''}">LLM: ${sv}${sDis ? ' ⚠ disagrees' : ''}</span>`
+        : '';
       const labeledMeta = r.human_label
         ? `you: ${r.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}`
         : '';
-      return `<div class="lab-card${disagrees(r) ? ' disagree' : ''}" data-id="${r.sample_id}">
+      return `<div class="lab-card${(disagrees(r) || sDis) ? ' disagree' : ''}" data-id="${r.sample_id}">
         <div class="lab-head">
           <span class="lab-verdict ${v}">${v}</span>
+          ${shadowHtml}
           <span class="lab-reason" title="${esc(r.reason)}">${v === 'dropped' ? 'dropped: ' : ''}${esc(reasonLabel(r.reason))} · score ${r.recipe_score ?? '—'}${r.threshold != null ? `/thr ${r.threshold}` : ''}</span>
           <span class="lab-flags">${esc(flags)}${prov ? ` · ${esc(prov)}` : ''} · ${esc(r.source)}</span>
         </div>

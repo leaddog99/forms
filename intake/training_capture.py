@@ -69,17 +69,25 @@ CREATE INDEX IF NOT EXISTS idx_isr_source   ON is_recipe_samples(source);
 _COLUMNS = (
     "captured_at,url,title,content,content_chars,lang_code,has_jsonld,"
     "translated,recipe_score,threshold,decision,reason,source,provenance,explore,"
-    "human_label,human_labeled_at,human_note"
+    "human_label,human_labeled_at,human_note,shadow_verdict,shadow_reason"
 )
 
 
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(TRAINING_DB_PATH, timeout=5.0)
     conn.executescript(_SCHEMA)  # idempotent self-install
-    try:                          # migrate pre-explore DBs (ALTER is a no-op if present)
-        conn.execute("ALTER TABLE is_recipe_samples ADD COLUMN explore INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    # Additive migrations (each ALTER is a no-op if the column already exists).
+    for ddl in (
+        "ALTER TABLE is_recipe_samples ADD COLUMN explore INTEGER DEFAULT 0",
+        "ALTER TABLE is_recipe_samples ADD COLUMN shadow_verdict TEXT",  # cascade shadow: 'keep'|'drop'
+        "ALTER TABLE is_recipe_samples ADD COLUMN shadow_reason TEXT",   # one-line LLM rationale
+        "ALTER TABLE is_recipe_samples ADD COLUMN embedding BLOB",       # persisted vector (corpus-ml)
+        "ALTER TABLE is_recipe_samples ADD COLUMN embedding_model TEXT",
+    ):
+        try:
+            conn.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
@@ -134,10 +142,11 @@ def capture_samples(kept, dropped, *, source="unknown", provenance=None,
                     prov_json,
                     1 if e.get("_explore") else 0,
                     None, None, None,   # human_label, human_labeled_at, human_note
+                    e.get("_shadow_verdict"), e.get("_shadow_reason"),  # cascade shadow (best-effort)
                 ))
         if not rows:
             return 0
-        placeholders = ",".join("?" * 18)
+        placeholders = ",".join("?" * 20)
         conn = _connect()
         try:
             conn.executemany(
@@ -190,7 +199,7 @@ def stats() -> dict:
 _LIST_COLUMNS = (
     "sample_id, captured_at, url, title, content_chars, lang_code, has_jsonld, "
     "translated, recipe_score, threshold, decision, reason, source, provenance, explore, "
-    "human_label, human_labeled_at, human_note"
+    "human_label, human_labeled_at, human_note, shadow_verdict, shadow_reason"
 )
 
 # Structural markers that LOCATE the recipe body inside a full-page text dump so
@@ -254,7 +263,7 @@ def _matched_phrases(content: str, limit: int = 30) -> list:
 
 def list_samples(*, limit=50, offset=0, search=None, decision=None,
                  source=None, label=None, has_content=False, snippet_chars=400,
-                 sort="recent") -> dict:
+                 sort="recent", shadow=None) -> dict:
     """Page of samples for the correction UI + a short content snippet. Filters:
     ``search`` (url/title/content substring), ``decision`` ('kept'|'dropped'),
     ``source``, ``label`` ('unlabeled'|'labeled'|'recipe'|'not_recipe'), and
@@ -290,6 +299,14 @@ def list_samples(*, limit=50, offset=0, search=None, decision=None,
         elif label in ("recipe", "not_recipe"):
             where.append("human_label = ?")
             params.append(label)
+        # Shadow (LLM cascade) filters: 'any' = has a shadow verdict; 'disagree' =
+        # the LLM's verdict contradicts the heuristic's keep/drop (the review queue).
+        if shadow == "any":
+            where.append("shadow_verdict IS NOT NULL")
+        elif shadow == "disagree":
+            where.append("shadow_verdict IS NOT NULL AND "
+                         "((decision='kept' AND shadow_verdict='drop') OR "
+                         " (decision='dropped' AND shadow_verdict='keep'))")
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         # 'borderline' = uncertainty sampling: nearest the threshold first. Rows
         # with no score/threshold (pre-fetch drops, legacy) go last; recency

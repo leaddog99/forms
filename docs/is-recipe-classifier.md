@@ -53,19 +53,34 @@ Artifact: `models/is_recipe/hybrid_lr.joblib`. Threshold is a config dial: **0.5
   rows backfilled. Retraining is now free (no re-embed). Full-corpus backfill = a rate-limited
   follow-up job (OpenAI TPM cap 1M/min — throttle ~4s/batch).
 
-## Integration plan (STAGED — not yet wired live)
-1. **Inference helper** `is_recipe_ml(text) -> (prob, verdict)`: embed → structural feats →
-   load artifact → probability. Cache the embedding on the row.
-2. **Wire into `_is_recipe_filter`** behind an OFF-by-default config flag (`is_recipe_ml_enabled`),
-   exactly like `keyword_prescreen`. When on: KEEP if `json-ld` OR `prob >= threshold`; the
-   section-weighted heuristic stays as the OFFLINE FALLBACK.
-3. **Cascade for the gray zone** (optional): if `prob` in an uncertain band, adjudicate with a
-   Haiku keep/drop call (~$0.002) — LLMs generalize to unseen domains inherently.
-4. **False-drop fetch fix** (separate track): render/unblocker-refetch stub domains + per-domain
-   trust override — no classifier recovers 226 chars of nothing.
-5. **Retraining loop**: the gauntlet + human_label column keep labeling for free; retrain
-   periodically, group-CV before promoting an artifact.
+## LLM cascade — SHADOW MODE (SHIPPED 2026-07-07)
+Why the cascade over the embeddings model: the embeddings-LR **memorizes domains** (0.94 only
+because it saw the publisher; on truly-new publishers it degrades). An LLM has no such
+dependence. AND a quick Haiku test surfaced the key implementation lesson — **send the recipe
+region, not the page prefix** (a food blog leads with narrative; Haiku dropped a real 13.5k-char
+recipe when shown only the intro). But a trustworthy accuracy number is **label-limited** (json-ld
+/ URL proxies are weakest exactly in the gray zone), so we ship SHADOW mode first: it labels +
+measures without deciding.
 
-## Open decision
-Whether the **~0.94 hybrid** clears the bar to wire into the live gate (behind the flag) vs.
-investing first in (a) more domains for generalization, or (b) an LLM cascade for new publishers.
+- `intake/isrecipe_cascade.py::shadow_classify(entries)` — over the GRAY ZONE (content-bearing,
+  non-JSON-LD candidates), batched Haiku keep/drop on **recipe-anchored snippets**
+  (`_smart_snippet`), best-effort, capped at 300/run. Stamps `_shadow_verdict`/`_shadow_reason`;
+  does **not** change keep/drop.
+- Hooked in `_is_recipe_filter` behind `system_config.is_recipe_cascade_shadow` (default OFF),
+  just before `capture_samples`, which persists `shadow_verdict`/`shadow_reason` onto every
+  `is_recipe_samples` row.
+- **Review loop:** ⋮ admin → Labeling → filter **"LLM disagrees"** — the rows where Haiku
+  contradicts the heuristic (a heuristic-drop the LLM would keep = a recovered recipe;
+  heuristic-keep the LLM would drop = a caught leak). Correcting these mints the gold gray-zone
+  labels we've been missing.
+- **To run:** turn on the flag in System config → run any harvest → review disagreements. Needs a
+  server restart for the new endpoint param + config seed.
+
+## Remaining plan
+1. After a batch or two of shadow data + human labels: measure the cascade honestly; if it clears
+   the bar, flip it from shadow → deciding (KEEP if json-ld OR heuristic-keep OR LLM-keep).
+2. **False-drop fetch fix** (separate track): render/unblocker-refetch stub domains + per-domain
+   trust override — no classifier recovers 226 chars of nothing.
+3. Re-evaluate the **embeddings-hybrid** once we have clean labels (it may still win on KNOWN
+   publishers; a hybrid-model + LLM-cascade split by domain-seen-before is possible).
+4. **Retraining loop**: embeddings persisted on the row → retrain free; group-CV before promoting.

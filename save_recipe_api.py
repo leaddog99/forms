@@ -4595,7 +4595,8 @@ def training_is_recipe_stats_endpoint():
 def training_is_recipe_samples_endpoint(limit: int = 50, offset: int = 0,
                                         search: str = "", decision: str = "",
                                         source: str = "", label: str = "",
-                                        has_content: int = 0, sort: str = "recent"):
+                                        has_content: int = 0, sort: str = "recent",
+                                        shadow: str = ""):
     from intake import training_capture
     return training_capture.list_samples(
         limit=max(1, min(int(limit), 200)),
@@ -4606,6 +4607,7 @@ def training_is_recipe_samples_endpoint(limit: int = 50, offset: int = 0,
         label=(label or "").strip() or None,
         has_content=bool(has_content),
         sort=(sort or "recent").strip() or "recent",
+        shadow=(shadow or "").strip() or None,
     )
 
 

@@ -351,6 +351,20 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "reuses the url-prefilter rate. See docs/keyword-prescreen.md.",
     },
     {
+        "key": "is_recipe_cascade_shadow",
+        "value": False,
+        "type": "bool",
+        "category": "Harvest",
+        "label": "Is-recipe LLM cascade — SHADOW mode",
+        "description": "After the heuristic decides keep/drop, run a cheap Haiku keep/drop pass "
+                       "over the GRAY ZONE (content-bearing candidates with NO schema.org/Recipe) "
+                       "using recipe-anchored snippets, and RECORD its verdict next to the "
+                       "heuristic's in training.db (shadow_verdict/shadow_reason). Does NOT change "
+                       "what the harvest keeps — it only labels, so a batch or two mints gold "
+                       "gray-zone data + measures the cascade before it's wired to decide. Review "
+                       "disagreements in ⋮ admin → Labeling. See docs/is-recipe-classifier.md.",
+    },
+    {
         "key": "filter_translate_max_chars",
         "value": 6000,
         "type": "int",
