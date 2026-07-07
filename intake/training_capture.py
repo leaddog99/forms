@@ -296,17 +296,19 @@ def list_samples(*, limit=50, offset=0, search=None, decision=None,
             where.append("human_label IS NULL")
         elif label == "labeled":
             where.append("human_label IS NOT NULL")
-        elif label in ("recipe", "not_recipe"):
+        elif label in ("recipe", "not_recipe", "poor_quality"):
             where.append("human_label = ?")
             params.append(label)
         # Shadow (LLM cascade) filters: 'any' = has a shadow verdict; 'disagree' =
         # the LLM's verdict contradicts the heuristic's keep/drop (the review queue).
+        # Shadow verdict is three-way (recipe|not_recipe|poor_quality); keep-equivalent
+        # is ONLY 'recipe' (both not_recipe and poor_quality mean drop).
         if shadow == "any":
             where.append("shadow_verdict IS NOT NULL")
         elif shadow == "disagree":
             where.append("shadow_verdict IS NOT NULL AND "
-                         "((decision='kept' AND shadow_verdict='drop') OR "
-                         " (decision='dropped' AND shadow_verdict='keep'))")
+                         "((decision='kept' AND shadow_verdict <> 'recipe') OR "
+                         " (decision='dropped' AND shadow_verdict = 'recipe'))")
         clause = ("WHERE " + " AND ".join(where)) if where else ""
         # 'borderline' = uncertainty sampling: nearest the threshold first. Rows
         # with no score/threshold (pre-fetch drops, legacy) go last; recency
@@ -350,8 +352,8 @@ def set_human_label(sample_id, label, note=None) -> dict:
     {sample_id, human_label, human_labeled_at, human_note} (or {'error': ...})."""
     try:
         label = (label or "").strip().lower() or None
-        if label not in (None, "recipe", "not_recipe"):
-            return {"error": f"invalid label {label!r} (recipe|not_recipe|null)"}
+        if label not in (None, "recipe", "not_recipe", "poor_quality"):
+            return {"error": f"invalid label {label!r} (recipe|not_recipe|poor_quality|null)"}
         conn = _connect()
         conn.row_factory = sqlite3.Row
         try:

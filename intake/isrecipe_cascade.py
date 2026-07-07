@@ -21,18 +21,26 @@ _BATCH = 8               # anchored snippets per Haiku call
 _MIN_CHARS = 200         # skip stubs / empty — nothing to classify
 _MAX_PER_RUN = 300       # cost backstop per harvest
 
+_VALID = {"recipe", "not_recipe", "poor_quality"}
+
 _SYS = (
-    "You are a strict is-recipe gate. For each page snippet (anchored on its recipe region), "
-    "decide KEEP or DROP. KEEP only a SINGLE complete cooking recipe — one dish with an "
-    "ingredient list AND step-by-step instructions. DROP anything else: a recipe roundup / "
-    "listicle (many recipes), a how-to / technique article, an ingredient or equipment "
-    "explainer, a product / restaurant / news / story page. Judge by the CONTENT, not by how "
-    "much cooking vocabulary appears. Give a terse (<=8 word) reason."
+    "You are a recipe-SOURCE quality gate. For each page snippet (anchored on its recipe "
+    "region), return ONE of three verdicts — judge EXTRACTABILITY, not just presence:\n"
+    "- 'recipe' — a SINGLE dish presented as a CLEAN, extractable recipe: a distinct "
+    "ingredient list AND ordered step-by-step instructions we could reliably pull.\n"
+    "- 'not_recipe' — genuinely not a recipe: a roundup/listicle (many recipes), a "
+    "how-to/technique article, an ingredient or equipment explainer, a review, or a "
+    "product/restaurant/news/story page.\n"
+    "- 'poor_quality' — a recipe IS technically present, but the layout is too messy to "
+    "extract cleanly: ingredients bleed into editorial prose, image-heavy with little text, "
+    "no clear ingredient/step separation. A human could dig the recipe out, but it's a poor "
+    "source. Reject it here.\n"
+    "Judge the CONTENT, not how much cooking vocabulary appears. Give a terse (<=8 word) reason."
 )
 
 _TOOL = {
     "name": "verdicts",
-    "description": "One keep/drop verdict per page id.",
+    "description": "One verdict per page id.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -42,10 +50,10 @@ _TOOL = {
                     "type": "object",
                     "properties": {
                         "id": {"type": "integer"},
-                        "keep": {"type": "boolean"},
+                        "verdict": {"type": "string", "enum": ["recipe", "not_recipe", "poor_quality"]},
                         "reason": {"type": "string"},
                     },
-                    "required": ["id", "keep"],
+                    "required": ["id", "verdict"],
                 },
             }
         },
@@ -98,14 +106,16 @@ def shadow_classify(entries, *, log=print) -> int:
                 idx = int(it.get("id"))
             except (TypeError, ValueError):
                 continue
-            if 0 <= idx < len(chunk):
-                chunk[idx]["_shadow_verdict"] = "keep" if it.get("keep") else "drop"
+            v = str(it.get("verdict") or "").strip().lower()
+            if 0 <= idx < len(chunk) and v in _VALID:
+                chunk[idx]["_shadow_verdict"] = v   # three-way: recipe|not_recipe|poor_quality
                 chunk[idx]["_shadow_reason"] = str(it.get("reason") or "")[:120]
                 done += 1
     # How often does the LLM DISAGREE with what the heuristic decided? (the signal to review)
+    # keep-equivalent = verdict 'recipe'; both not_recipe and poor_quality mean drop.
     dis = sum(1 for e in gray
               if e.get("_shadow_verdict")
-              and (e.get("_shadow_verdict") == "keep") != (e.get("_dropped_reason") is None))
+              and (e.get("_shadow_verdict") == "recipe") != (e.get("_dropped_reason") is None))
     log(f"  [cascade-shadow] classified {done}/{len(gray)} gray-zone candidates "
         f"({dis} disagree with the heuristic — review in Labeling)")
     return done

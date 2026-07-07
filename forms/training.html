@@ -81,6 +81,7 @@
     .lab-btn:hover { border-color: #b9b1a3; }
     .lab-btn.on-recipe { background: #2e7d32; border-color: #2e7d32; color: #fff; }
     .lab-btn.on-not { background: #b03a3a; border-color: #b03a3a; color: #fff; }
+    .lab-btn.on-poor { background: #d98a2b; border-color: #d98a2b; color: #fff; }
     .lab-meta { font-size: .74rem; color: var(--muted, #8a8175); margin-left: auto; }
     .lab-sentinel { height: 40px; }
     .lab-end { text-align: center; color: var(--muted, #8a8175); font-size: .82rem; padding: 16px 0; }
@@ -100,9 +101,14 @@
     <p class="lab-intro">
       Each row is a page the harvest/batch <b>is_recipe filter</b> judged, captured for training.
       The pill is the <b>heuristic's call</b> (KEPT = it thinks recipe · DROPPED = not) with its score.
-      Click <b>✓ Recipe</b> / <b>✗ Not a recipe</b> to record the <b>correct</b> answer — you only need to
-      bother where the heuristic looks <i>wrong</i> (those rows are flagged). Corrections are the gold
-      signal that lets a trained classifier beat the heuristic.
+      Click <b>✓ Recipe</b> / <b>✗ Not a recipe</b> / <b>⚠ Poor layout</b> to record the <b>correct</b> answer —
+      you only need to bother where the heuristic looks <i>wrong</i> (those rows are flagged). Corrections
+      are the gold signal that lets a trained classifier beat the heuristic.
+      <br><b>Rubric:</b> mark <b>✓ Recipe</b> only if a clean recipe can be <i>reliably extracted</i> —
+      a distinct ingredient list and ordered steps. Use <b>⚠ Poor layout</b> when a recipe is technically
+      there but too messy to extract cleanly (ingredients bleed into prose, image-heavy) — it's a poor
+      source, not a good keep. Reserve <b>✗ Not a recipe</b> for pages with no recipe at all (roundups,
+      articles, product pages).
       Rows are sorted <b>borderline-first</b> by default — nearest the score threshold, where the
       heuristic is least certain and your correction is worth the most (the score-100 JSON-LD
       certainties sink to the bottom).
@@ -116,6 +122,7 @@
         <option value="labeled">Labeled</option>
         <option value="recipe">Marked recipe</option>
         <option value="not_recipe">Marked not-recipe</option>
+        <option value="poor_quality">Marked poor-quality</option>
       </select>
       <select id="fDecision" aria-label="Heuristic decision">
         <option value="">Any verdict</option>
@@ -174,6 +181,13 @@
 
     function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u || '—'; } }
 
+    // Short display text for a human label (three-way).
+    function humanLabelText(l) {
+      return l === 'recipe' ? '✓ recipe'
+           : l === 'not_recipe' ? '✗ not-recipe'
+           : l === 'poor_quality' ? '⚠ poor layout' : '';
+    }
+
     // Format the stored UTC label timestamp (human_labeled_at) in the curator's local time.
     function fmtLabeledAt(iso) {
       if (!iso) return '';
@@ -183,10 +197,10 @@
       } catch { return ''; }
     }
 
+    // Keep-equivalent is ONLY 'recipe'; both 'not_recipe' and 'poor_quality' mean drop.
     function disagrees(r) {
       if (!r.human_label) return false;
-      return (r.decision === 'kept' && r.human_label === 'not_recipe')
-          || (r.decision === 'dropped' && r.human_label === 'recipe');
+      return (r.decision === 'kept') !== (r.human_label === 'recipe');
     }
 
     // Plain-English for the captured reason codes (raw code kept as a tooltip).
@@ -214,6 +228,7 @@
       if (lf === 'labeled') return human != null;
       if (lf === 'recipe') return human === 'recipe';
       if (lf === 'not_recipe') return human === 'not_recipe';
+      if (lf === 'poor_quality') return human === 'poor_quality';
       return true; // All
     }
 
@@ -240,12 +255,12 @@
         : `<div class="lab-phrases none"><span class="lab-phrases-lbl">recipe phrases</span><span class="lab-none">none matched</span></div>`;
       const prov = provLabel(r);
       const sv = r.shadow_verdict;
-      const sDis = sv && ((r.decision === 'kept' && sv === 'drop') || (r.decision === 'dropped' && sv === 'keep'));
+      const sDis = sv && ((r.decision === 'kept') !== (sv === 'recipe'));
       const shadowHtml = sv
         ? `<span class="lab-shadow${sDis ? ' dis' : ''}" title="LLM cascade${r.shadow_reason ? ': ' + esc(r.shadow_reason) : ''}">LLM: ${sv}${sDis ? ' ⚠ disagrees' : ''}</span>`
         : '';
       const labeledMeta = r.human_label
-        ? `you: ${r.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}${r.human_labeled_at ? ' · ' + fmtLabeledAt(r.human_labeled_at) : ''}`
+        ? `you: ${humanLabelText(r.human_label)}${r.human_labeled_at ? ' · ' + fmtLabeledAt(r.human_labeled_at) : ''}`
         : '';
       return `<div class="lab-card${(disagrees(r) || sDis) ? ' disagree' : ''}" data-id="${r.sample_id}">
         <div class="lab-head">
@@ -261,6 +276,7 @@
         <div class="lab-actions">
           <button class="lab-btn ${r.human_label === 'recipe' ? 'on-recipe' : ''}" data-set="recipe">✓ Recipe</button>
           <button class="lab-btn ${r.human_label === 'not_recipe' ? 'on-not' : ''}" data-set="not_recipe">✗ Not a recipe</button>
+          <button class="lab-btn ${r.human_label === 'poor_quality' ? 'on-poor' : ''}" data-set="poor_quality" title="A recipe is technically present, but the layout is too messy to extract cleanly (ingredients bleed into prose, image-heavy). Reject as a poor source.">⚠ Poor layout</button>
           <button class="lab-btn" data-set="">↺ clear</button>
           <span class="lab-meta">${esc(labeledMeta)}</span>
         </div>
@@ -275,14 +291,15 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const data = await r.json();
         // Update the card's button state + disagreement flag in place.
-        card.querySelectorAll('.lab-btn').forEach(b => b.classList.remove('on-recipe', 'on-not'));
+        card.querySelectorAll('.lab-btn').forEach(b => b.classList.remove('on-recipe', 'on-not', 'on-poor'));
         if (data.human_label === 'recipe') card.querySelector('[data-set=recipe]').classList.add('on-recipe');
         if (data.human_label === 'not_recipe') card.querySelector('[data-set=not_recipe]').classList.add('on-not');
+        if (data.human_label === 'poor_quality') card.querySelector('[data-set=poor_quality]').classList.add('on-poor');
         const decision = card.querySelector('.lab-verdict').classList.contains('kept') ? 'kept' : 'dropped';
-        const dis = data.human_label && ((decision === 'kept' && data.human_label === 'not_recipe') || (decision === 'dropped' && data.human_label === 'recipe'));
+        const dis = data.human_label && ((decision === 'kept') !== (data.human_label === 'recipe'));
         card.classList.toggle('disagree', !!dis);
         card.querySelector('.lab-meta').textContent = data.human_label
-          ? `you: ${data.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}${data.human_labeled_at ? ' · ' + fmtLabeledAt(data.human_labeled_at) : ''}` : '';
+          ? `you: ${humanLabelText(data.human_label)}${data.human_labeled_at ? ' · ' + fmtLabeledAt(data.human_labeled_at) : ''}` : '';
         // Drain the queue: if this row no longer matches the active filter, drop it.
         if (!matchesLabelFilter(data.human_label)) {
           card.style.transition = 'opacity .2s';
