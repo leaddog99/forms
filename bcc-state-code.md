@@ -9,6 +9,34 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-07 (late) — is-recipe classifier: analysis → embeddings → HONEST group-CV
+
+Deep dive on the harvest is-recipe gate (user: "we're losing too many recipes" + summaries leak in).
+Grounded in `logs/` + `training.db` (10.9k labeled), NOT code-reads (I was wrong twice from a
+code-read/Explore summary — see [[feedback_verify_with_runtime_data]]).
+- **Discriminator = structured recipe-card SECTION markers, 32×** (prep/cook time, servings, yield,
+  directions:). Verbs 1.7× (how-tos have them), ingredients 1.4×. **Repetition/multi-recipe idea =
+  NULL** (real recipes repeat card-timers too, related-recipe widgets). Most false-drops are **fetch
+  stubs** (median 226 chars → render/unblocker, not scoring).
+- Models, held-out then **group-CV by domain + dedupe** (the honest protocol; random split leaks via
+  domain memorization): flat-count leak 73%; embeddings-LR random-split **0.988 = leakage** → group-CV
+  0.90; struct-feats-only 0.79; **WINNER = HYBRID embeddings+section-features C=0.05 → group-CV AUC
+  0.936 ±0.026**. Moderate honest win over the live structural gate, not a blowout.
+- SHIPPED: `is_recipe_samples.embedding BLOB`+`embedding_model` (6,932 rows backfilled → free retrain);
+  artifact `models/is_recipe/hybrid_lr.joblib`; design `docs/is-recipe-classifier.md`. Cost: embed
+  ~$0.00003/candidate (60× < LLM classify; local embedder = $0). [[project_corpus_ml]] updated.
+- **NOT wired live** — integration staged behind an OFF-by-default flag in `_is_recipe_filter` (heuristic
+  = offline fallback; optional Haiku cascade for the gray zone; separate render-fetch track for stubs).
+  OPEN DECISION: does ~0.94 clear the bar to wire live, vs. more-domains / LLM-cascade first.
+
+Also this session (separate arcs, all shipped): cross-machine SEMrush **upload** endpoint; **SERP per-page
+retry**; **recipe_path** as a source-agnostic keep scope; domain-form **redesign mockup**
+(`forms/domains_mockup.html`, full reorg — awaiting sign-off). PENDING design: move `allowed`→a
+system_config disallowed_domains list (0 domains have both fields today); min-phrase/min-step thresholds
+as system_config defaults + dish/domain overrides (superseded in part by the classifier direction).
+
+---
+
 ## Session log — 2026-07-07 — recipe_path becomes a source-agnostic KEEP scope (identity vs extract-scope)
 
 **Problem (user):** a domain was auto-created as `epicurious.com` from dish runs; trying to add
