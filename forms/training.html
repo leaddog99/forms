@@ -174,6 +174,15 @@
 
     function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u || '—'; } }
 
+    // Format the stored UTC label timestamp (human_labeled_at) in the curator's local time.
+    function fmtLabeledAt(iso) {
+      if (!iso) return '';
+      try {
+        return new Date(iso).toLocaleString([], {
+          year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch { return ''; }
+    }
+
     function disagrees(r) {
       if (!r.human_label) return false;
       return (r.decision === 'kept' && r.human_label === 'not_recipe')
@@ -236,7 +245,7 @@
         ? `<span class="lab-shadow${sDis ? ' dis' : ''}" title="LLM cascade${r.shadow_reason ? ': ' + esc(r.shadow_reason) : ''}">LLM: ${sv}${sDis ? ' ⚠ disagrees' : ''}</span>`
         : '';
       const labeledMeta = r.human_label
-        ? `you: ${r.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}`
+        ? `you: ${r.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}${r.human_labeled_at ? ' · ' + fmtLabeledAt(r.human_labeled_at) : ''}`
         : '';
       return `<div class="lab-card${(disagrees(r) || sDis) ? ' disagree' : ''}" data-id="${r.sample_id}">
         <div class="lab-head">
@@ -273,7 +282,7 @@
         const dis = data.human_label && ((decision === 'kept' && data.human_label === 'not_recipe') || (decision === 'dropped' && data.human_label === 'recipe'));
         card.classList.toggle('disagree', !!dis);
         card.querySelector('.lab-meta').textContent = data.human_label
-          ? `you: ${data.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}` : '';
+          ? `you: ${data.human_label === 'recipe' ? '✓ recipe' : '✗ not-recipe'}${data.human_labeled_at ? ' · ' + fmtLabeledAt(data.human_labeled_at) : ''}` : '';
         // Drain the queue: if this row no longer matches the active filter, drop it.
         if (!matchesLabelFilter(data.human_label)) {
           card.style.transition = 'opacity .2s';
