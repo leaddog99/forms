@@ -324,8 +324,7 @@
               <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${(d.harvest_source || 'serp') === 'serp' ? 'checked' : ''}>
                 Google — site: search <span class="src-sub">SerpAPI; depth set in pages of ~10 results</span></label>
               <div class="ed-form-grid">
-                ${field('f_serp_query', 'Query (verbatim, incl. site:)', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
-                ${field('f_recipe_path', 'Recipe path (used if query blank)', d.recipe_path || '', { ph: 'recipes (else auto-detect)…' })}
+                ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
                 ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
               </div>
             </div>
@@ -351,8 +350,10 @@
           </div>
 
           <div class="ed-form-grid" style="margin:4px 0 2px">
-            ${field('f_keep_top_n', 'Keep top N (both sources)', d.keep_top_n || 10, { type: 'number' })}
+            ${field('f_recipe_path', 'Recipe URL path — scopes EVERY source', d.recipe_path || '', { ph: 'recipes (blank = no scope)' })}
+            ${field('f_keep_top_n', 'Keep top N (all sources)', d.keep_top_n || 10, { type: 'number' })}
           </div>
+          <p class="ed-notes-help" style="margin:0 0 8px;font-size:.8em">The URL path segment the publisher's recipes live under (e.g. <code>recipes</code> → keeps only <code>${escapeHtml(d.domain || 'domain.com')}/recipes/…</code>). A single-prefix KEEP filter applied to <b>every</b> source — Google, and the SEMrush file — so off-path clutter (galleries, videos, section indexes) is dropped before any fetch. Leave <b>blank</b> for publishers with no clean prefix (use a verbatim query instead). Separate from the domain identity — the record stays <code>${escapeHtml(d.domain || 'domain.com')}</code>.</p>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px">
             <input type="checkbox" id="f_check_recipe" checked>
             <span>Verify each is a recipe (is_recipe) — <i>uncheck for paywalled publishers where a fetch can't see the recipe</i></span>

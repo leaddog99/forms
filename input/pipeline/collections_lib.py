@@ -684,10 +684,16 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     recipe check → Moz → rank → keep), so a file URL is treated exactly like a Google one.
 
     `query` — a VERBATIM Google query (e.g. 'site:bostonglobe.com recipe'), run as-is
-    via SerpAPI; OVERRIDES path detection. The curator owns the Google syntax (same
-    as dish SERP queries); the code just executes it. Needed for publishers whose
-    recipes aren't under a clean path segment (Boston Globe lives under /YYYY/.../slug,
-    so `site:domain/recipes` finds nothing — the term form does).
+    via SerpAPI; overrides path-based DISCOVERY (how candidates are FOUND). The curator
+    owns the Google syntax (same as dish SERP queries); the code just executes it. Needed
+    for publishers whose recipes aren't under a clean path segment (Boston Globe lives
+    under /YYYY/.../slug, so `site:domain/recipes` finds nothing — the term form does).
+
+    `recipe_path` — the publisher's recipe URL path segment ('recipes'), a source-agnostic
+    KEEP SCOPE applied AFTER discovery to EVERY source (file / verbatim-query / path). It
+    is orthogonal to `query`: `query` decides what's discovered, `recipe_path` decides
+    what's kept. Blank = no scoping. Auto-detected (detect_recipe_path) only for the pure
+    path-discovery source when left blank.
 
     `check_recipe` — fetch each candidate and keep only real recipes via the CANONICAL
     dish-batch filter (`_is_recipe_filter`: schema.org/Recipe JSON-LD, else phrase
@@ -731,11 +737,17 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # file_meta: {url -> {traffic, traffic_pct, file_seq}} from a SEMrush export; {} for the
     # SERP/path sources (no per-page traffic available without the SEMrush API — see scoping
     # in docs/recipe-candidate-pipeline.md). Stamped onto members below; traffic tiebreaks.
+    # Normalize the (optional) recipe-path SCOPE to a single leading segment
+    # ('/recipes/' | 'recipes' → 'recipes'; single-prefix for now). This is a
+    # source-agnostic KEEP filter (the publisher fact "recipes live under /<path>"),
+    # NOT a discovery mechanism — DISCOVERY is chosen by `source`/`query` below, SCOPE
+    # is applied uniformly after. Kept separate so `serp_query` is discovery-only.
+    recipe_path = (recipe_path or "").strip().strip("/").split("/")[0] or None
+
     file_meta = {}
     if source == "backlinks_file":
         found, file_meta = _read_backlinks_file(domain, want=int(records or discover_n or 100),
                                                 extra_dir=backlinks_dir)
-        used_path = None
     elif query:
         target = root_domain("https://" + domain)
         found, seen = [], set()
@@ -747,12 +759,26 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                 found.append((link, title))
             if len(found) >= discover_n:
                 break
-        used_path = None
     else:
         if not recipe_path:
-            recipe_path = detect_recipe_path(domain)
+            recipe_path = detect_recipe_path(domain)   # convenience auto-detect for the path source
         found = discover_publisher_recipe_urls(domain, want=discover_n, recipe_path=recipe_path)
-        used_path = recipe_path
+    used_path = recipe_path
+
+    # SOURCE-AGNOSTIC PATH SCOPE: if the publisher's recipes live under a known URL path,
+    # keep only candidates under it — a hard pre-fetch filter applied to EVERY discovery
+    # source: file export rows (previously UNSCOPED — the missing counterpart), verbatim-
+    # query hits (previously host-checked only), and the path-discovery list (idempotent
+    # there — discover_publisher_recipe_urls already filtered). Optional: blank recipe_path
+    # = no scoping, for publishers with no clean prefix (e.g. Boston Globe /YYYY/.../slug —
+    # use a verbatim query instead). Drops off-path clutter (/gallery, /video, section
+    # indexes) before any fetch spend.
+    if recipe_path:
+        n_before = len(found)
+        found = [(l, t) for l, t in found if _under_path(l, recipe_path)]
+        if len(found) < n_before:
+            print(f"  [harvest] path-scoped to /{recipe_path}/ — dropped "
+                  f"{n_before - len(found)} off-path URL(s), {len(found)} under path")
 
     # Cheap pre-filter: drop archive/taxonomy/feed URLs (never a recipe) + collection/
     # listicle TITLES ("30 Greek Recipes", "10 Dinners") BEFORE the fetching recipe

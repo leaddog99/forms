@@ -9,6 +9,43 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-07 — recipe_path becomes a source-agnostic KEEP scope (identity vs extract-scope)
+
+**Problem (user):** a domain was auto-created as `epicurious.com` from dish runs; trying to add
+`epicurious.com/recipes` (to scope the harvest + filter spurious content) failed with "already
+exists" because the domain host is the identity key ([[project_domain_master]] — correct). User's
+insight: separate the domain IDENTITY (host) from the EXTRACT scope (the recipe path). Follow-ups:
+`recipe_path` was Google-only in the UI, arguably redundant with the path inside a `site:` query,
+and had NO counterpart for the SEMrush/file source.
+
+**Diagnosis (grounded in `harvest_publisher_top`):** path scope was fragmented + inconsistent —
+`backlinks_file` = `used_path=None` (NO scoping), verbatim `serp_query` = host-check only (soft),
+`recipe_path` = the only hard `_under_path` filter (Google-only, "used if query blank"). No single
+source-agnostic statement of "this publisher's recipes live under /<path>".
+
+**Fix (single-prefix, reuses the existing `recipe_path` column — no schema change):**
+- `collections_lib.harvest_publisher_top`: normalize `recipe_path` to one leading segment
+  (`/recipes/`→`recipes`), then apply `_under_path` as a HARD KEEP filter to EVERY source AFTER
+  discovery — file rows (the missing counterpart), verbatim-query hits (was host-only), and the
+  path-discovery list (idempotent). Blank = no scope (Boston Globe /YYYY/…). DISCOVERY (`source`/
+  `query`) and SCOPE (`recipe_path`) are now orthogonal; docstring updated.
+- UI (`domains.html`): moved `f_recipe_path` OUT of the Google-only group into the common area,
+  relabeled "Recipe URL path — scopes EVERY source" + help text; `serp_query` relabeled
+  "how to FIND candidates" (discovery-only). Field is outside any `.src-group`, so it stays
+  enabled for all sources.
+- Migration risk = zero: 0 domains currently have both `serp_query` and `recipe_path` set, so the
+  verbatim-query branch's new hard-scope changes no existing behavior.
+
+Verified: normalization + `_under_path` on real epicurious URLs (keeps `/recipes/<slug>`, drops the
+index / `/gallery` / `/video` / near-miss `/recipes-menus`). **No server restart needed** — harvest
+runs in a spawned `python -m jobs` subprocess (picks up collections_lib immediately), the UI is
+static (browser reload), and `recipe_path` was already an editable/persisted field. To use on
+epicurious: open the record, set **Recipe URL path = `recipes`**, refresh. NEXT (deferred): the
+add-domain UX guard (path-bearing input on an existing host → open + prefill recipe_path); multi-
+prefix if a publisher needs it.
+
+---
+
 ## Session log — 2026-07-06 — SERP per-page retry (transient timeout no longer truncates a query)
 
 **Problem (user):** a `dish_refresh` (Hungarian Goulash, job #457, recurring — seen on an
