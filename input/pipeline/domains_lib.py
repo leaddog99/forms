@@ -10,7 +10,9 @@ everything we know about a source site independent of any single recipe:
                  derived; a Greek site can still post a taco)
   - extraction   fetch_strategy / extract_notes / custom_extractor — folds in
                  the long-planned "domain quirks registry"
-  - gatekeeping  allowed — replaces the hardcoded _DEFAULT_DISALLOWED_DOMAINS
+  - gatekeeping  harvestable (skip a known publisher's refresh); the hard host
+                 blocklist moved OUT to system_config `disallowed_domains` (a
+                 junk host no longer needs a domains-master row to be blocked)
   - authority    domain_authority (DA is a domain property; metabase_url keeps
                  only the per-URL PA) + da_last_scored
   - ops          notes, failure_count, timestamps
@@ -54,7 +56,6 @@ EDITABLE_FIELDS = (
     "score_only",        # harvest MODE: 1 = Curate (score URL-only, pick manually); persists the picker choice
     "extract_notes",
     "custom_extractor",
-    "allowed",
     "domain_authority",
     "da_last_scored",
     "notes",
@@ -214,6 +215,20 @@ _EDITORIAL_COLUMNS = {
     "ethnicity": "TEXT",
 }
 
+# Poor-publisher signal (2026-07-08). The is-recipe LLM cascade tags harvest pages
+# recipe|not_recipe|poor_quality; a domain whose pages are repeatedly poor_quality
+# (a messy source we can't extract cleanly) is a POOR PUBLISHER. We roll the cascade
+# verdicts up per domain (from training.db) and, past a sample+fraction threshold,
+# flag it here so the harvest STOPS paying the per-page LLM cascade for its pages and
+# the curator can review it. MANAGED (recomputed by refresh_poor_publisher_flags), not
+# hand-edited → kept out of EDITABLE_FIELDS.
+_QUALITY_COLUMNS = {
+    "poor_quality_flag": "INTEGER NOT NULL DEFAULT 0",   # 1 = flagged poor publisher
+    "poor_quality_rate": "REAL",                         # fraction of poor_quality verdicts
+    "poor_quality_samples": "INTEGER",                   # cascade-classified pages behind it
+    "poor_quality_flagged_at": "TEXT",                   # when last (re)computed (ISO)
+}
+
 
 def ensure_domains_table(conn: sqlite3.Connection) -> None:
     conn.execute(
@@ -266,6 +281,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _EDITORIAL_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _QUALITY_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     conn.execute(
@@ -758,13 +776,15 @@ def recipes_for_domain(conn: sqlite3.Connection, domain: str) -> dict:
 _DISPLAY_CACHE: Optional[dict] = None
 _BLOCKED_CACHE: Optional[set] = None
 _RENDER_CACHE: Optional[set] = None
+_POOR_CACHE: Optional[set] = None
 
 
 def invalidate_cache() -> None:
-    global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE
+    global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE, _POOR_CACHE
     _DISPLAY_CACHE = None
     _BLOCKED_CACHE = None
     _RENDER_CACHE = None
+    _POOR_CACHE = None
 
 
 def parse_serp_exclusions(db_path: str = _DEFAULT_DB) -> tuple[set, list]:
@@ -824,34 +844,155 @@ def get_render_eligible_hosts(db_path: str = _DEFAULT_DB) -> set:
     return _RENDER_CACHE
 
 
-def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:
-    """Set of blocked root domains: the table's ``allowed = 0`` rows (the hard
-    per-publisher blocklist) UNIONed with the editable `serp_exclusions`
-    textarea's domain lines. Used by the batch SERP filter at root-domain grain.
-    The table part is cached (CRUD writers invalidate it); the textarea part is
-    read fresh via system_config (its own write-invalidated cache) so edits take
-    effect without a restart. Degrades to whatever it can read on error."""
-    global _BLOCKED_CACHE
-    if _BLOCKED_CACHE is None:
-        blocked: set = set()
+def get_poor_publisher_hosts(db_path: str = _DEFAULT_DB) -> set:
+    """Cached set of hosts+roots flagged POOR publishers (poor_quality_flag = 1). Used
+    by the is-recipe LLM cascade to SKIP the per-page classify for a domain we've already
+    judged a messy source — stop re-paying to relearn it. CRUD writers +
+    refresh_poor_publisher_flags invalidate it."""
+    global _POOR_CACHE
+    if _POOR_CACHE is None:
+        hosts: set = set()
         try:
             with _connect(db_path) as conn:
                 ensure_domains_table(conn)
                 for dom, root in conn.execute(
-                    "SELECT domain, root_domain FROM domains WHERE allowed = 0"
+                    "SELECT domain, root_domain FROM domains WHERE poor_quality_flag = 1"
                 ):
-                    if root:
-                        blocked.add(root.lower())
                     if dom:
-                        blocked.add(dom.lower())
+                        hosts.add(dom.lower())
+                    if root:
+                        hosts.add(root.lower())
         except Exception:
             pass
-        _BLOCKED_CACHE = blocked
+        _POOR_CACHE = hosts
+    return _POOR_CACHE
+
+
+def refresh_poor_publisher_flags(conn: Optional[sqlite3.Connection] = None,
+                                 db_path: str = _DEFAULT_DB, *,
+                                 min_samples: Optional[int] = None,
+                                 threshold: Optional[float] = None) -> dict:
+    """Roll the is-recipe LLM cascade's per-page verdicts (from the git-ignored
+    training.db) up per HOST and (re)set each domain's poor_quality_* columns. Keyed on
+    the URL host across EVERY source (dish batches AND publisher harvests) — a messy
+    source is a messy source wherever it shows up. A host with at least `min_samples`
+    cascade-classified pages whose poor_quality FRACTION is >= `threshold` is flagged a
+    poor publisher (poor_quality_flag = 1), auto-creating a minimal domains row if absent
+    (mirrors set_paywall_calibration) so the flag persists + the curator can review it;
+    a host that already HAS a row also gets its rate/samples refreshed (and cleared to 0
+    if it no longer crosses). Thresholds default from system_config
+    (poor_publisher_min_samples / poor_publisher_threshold). Best-effort; returns a
+    summary {flagged:[...], scored:int, min_samples, threshold} ({} on error). Pass a
+    `conn`, or omit to open `db_path` (lets the out-of-process harvest call it
+    connection-free)."""
+    if min_samples is None or threshold is None:
+        try:
+            from input.pipeline import system_config as cfg
+            if min_samples is None:
+                min_samples = int(cfg.get_setting("poor_publisher_min_samples", 8) or 8)
+            if threshold is None:
+                threshold = float(cfg.get_setting("poor_publisher_threshold", 0.5) or 0.5)
+        except Exception:
+            pass
+    min_samples = int(min_samples if min_samples is not None else 5)
+    threshold = float(threshold if threshold is not None else 0.5)
+
+    def _host(u: str) -> str:
+        try:
+            h = u.split("//", 1)[1].split("/", 1)[0].lower() if "//" in u else ""
+            return h[4:] if h.startswith("www.") else h
+        except Exception:
+            return ""
+
+    # Aggregate cascade verdicts per URL HOST from training.db (every source).
+    try:
+        from intake.training_capture import TRAINING_DB_PATH
+        tconn = sqlite3.connect(TRAINING_DB_PATH, timeout=5.0)
+        try:
+            rows = tconn.execute(
+                "SELECT url, shadow_verdict FROM is_recipe_samples "
+                "WHERE shadow_verdict IS NOT NULL AND url IS NOT NULL"
+            ).fetchall()
+        finally:
+            tconn.close()
+    except Exception:
+        return {}
+    counts: dict = {}   # canon host -> [n, poor]
+    for url, verdict in rows:
+        dom = _canon_host(_host(url or ""))
+        if not dom:
+            continue
+        c = counts.setdefault(dom, [0, 0])
+        c[0] += 1
+        if verdict == "poor_quality":
+            c[1] += 1
+    own = conn is None
+    if own:
+        conn = _connect(db_path)
+    flagged, scored = [], 0
+    try:
+        ensure_domains_table(conn)
+        now = _now()
+        for dom, (n, poor) in counts.items():
+            rate = (poor / n) if n else 0.0
+            flag = 1 if (n >= min_samples and rate >= threshold) else 0
+            if not domain_exists(conn, dom):
+                if not flag:
+                    continue   # don't mint rows for unknown hosts that aren't poor
+                conn.execute(
+                    "INSERT INTO domains (domain, root_domain, display_name, notes, "
+                    "created_at, updated_at) VALUES (?, ?, '', ?, ?, ?)",
+                    (dom, root_domain(dom) or dom,
+                     "auto-added: poor-publisher signal (is-recipe cascade)", now, now),
+                )
+            conn.execute(
+                "UPDATE domains SET poor_quality_flag = ?, poor_quality_rate = ?, "
+                "poor_quality_samples = ?, poor_quality_flagged_at = ? WHERE domain = ?",
+                (flag, round(rate, 4), n, now, dom),
+            )
+            scored += 1
+            if flag:
+                flagged.append(dom)
+        conn.commit()
+        invalidate_cache()
+    except Exception:
+        return {}
+    finally:
+        if own:
+            conn.close()
+    return {"flagged": flagged, "scored": scored,
+            "min_samples": min_samples, "threshold": threshold}
+
+
+def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:
+    """Set of blocked root domains: the editable system_config `disallowed_domains`
+    list UNIONed with the `serp_exclusions` textarea's domain lines. Used by the batch
+    SERP filter at root-domain grain, BEFORE any fetch. Both sources are DB-resident +
+    curator-editable — no code change, and (unlike the retired ``domains.allowed = 0``
+    flag this replaced) no per-publisher domains-master row is needed to block a junk
+    host. Read fresh through system_config's own write-invalidated cache, so edits take
+    effect without a restart. Degrades to whatever it can read on error."""
+    blocked: set = set()
+    try:
+        from input.pipeline import system_config as cfg
+        raw = cfg.get_setting("disallowed_domains", [], db_path=db_path) or []
+        if isinstance(raw, str):                    # tolerate a text/newline value
+            raw = raw.replace(",", "\n").splitlines()
+        for item in raw:
+            h = _canon_host(str(item))
+            if not h:
+                continue
+            blocked.add(h)
+            r = (root_domain(h) or "").lower()
+            if r:
+                blocked.add(r)
+    except Exception:
+        pass
     try:
         extra, _ = parse_serp_exclusions(db_path)
     except Exception:
         extra = set()
-    return _BLOCKED_CACHE | extra
+    return blocked | extra
 
 
 def seed_disallowed_domains(conn: sqlite3.Connection, hosts) -> int:

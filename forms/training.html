@@ -101,15 +101,15 @@
     <p class="lab-intro">
       Each row is a page the harvest/batch <b>is_recipe filter</b> judged, captured for training.
       The pill is the <b>heuristic's call</b> (KEPT = it thinks recipe · DROPPED = not) with its score.
-      Click <b>✓ Recipe</b> / <b>✗ Not a recipe</b> / <b>⚠ Poor layout</b> to record the <b>correct</b> answer —
+      Click <b>✓ Recipe</b> / <b>✗ Not a recipe</b> / <b>⚠ Poor quality</b> to record the <b>correct</b> answer —
       you only need to bother where the heuristic looks <i>wrong</i> (those rows are flagged). Corrections
       are the gold signal that lets a trained classifier beat the heuristic.
       <br><b>Rubric:</b> mark <b>✓ Recipe</b> only if a clean recipe can be <i>reliably extracted</i> —
-      a distinct ingredient list and ordered steps. Use <b>⚠ Poor layout</b> when a recipe is technically
+      a distinct ingredient list and ordered steps. Use <b>⚠ Poor quality</b> when a recipe is technically
       there but too messy to extract cleanly (ingredients bleed into prose, image-heavy) — it's a poor
       source, not a good keep. Reserve <b>✗ Not a recipe</b> for pages with no recipe at all (roundups,
-      articles, product pages). <b>Tie-break:</b> when genuinely torn between Recipe and Poor layout,
-      pick <b>⚠ Poor layout</b> — only clean, confidently-extractable pages earn ✓ Recipe.
+      articles, product pages). <b>Tie-break:</b> when genuinely torn between Recipe and Poor quality,
+      pick <b>⚠ Poor quality</b> — only clean, confidently-extractable pages earn ✓ Recipe.
       Rows are sorted <b>borderline-first</b> by default — nearest the score threshold, where the
       heuristic is least certain and your correction is worth the most (the score-100 JSON-LD
       certainties sink to the bottom).
@@ -186,7 +186,7 @@
     function humanLabelText(l) {
       return l === 'recipe' ? '✓ recipe'
            : l === 'not_recipe' ? '✗ not-recipe'
-           : l === 'poor_quality' ? '⚠ poor layout' : '';
+           : l === 'poor_quality' ? '⚠ poor quality' : '';
     }
 
     // Format the stored UTC label timestamp (human_labeled_at) in the curator's local time.
@@ -277,7 +277,7 @@
         <div class="lab-actions">
           <button class="lab-btn ${r.human_label === 'recipe' ? 'on-recipe' : ''}" data-set="recipe">✓ Recipe</button>
           <button class="lab-btn ${r.human_label === 'not_recipe' ? 'on-not' : ''}" data-set="not_recipe">✗ Not a recipe</button>
-          <button class="lab-btn ${r.human_label === 'poor_quality' ? 'on-poor' : ''}" data-set="poor_quality" title="A recipe is technically present, but the layout is too messy to extract cleanly (ingredients bleed into prose, image-heavy). Reject as a poor source.">⚠ Poor layout</button>
+          <button class="lab-btn ${r.human_label === 'poor_quality' ? 'on-poor' : ''}" data-set="poor_quality" title="A recipe is technically present, but the layout is too messy to extract cleanly (ingredients bleed into prose, image-heavy). Reject as a poor source.">⚠ Poor quality</button>
           <button class="lab-btn" data-set="">↺ clear</button>
           <span class="lab-meta">${esc(labeledMeta)}</span>
         </div>

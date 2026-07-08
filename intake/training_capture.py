@@ -208,28 +208,85 @@ _LIST_COLUMNS = (
 # includes terms PRUNED from RECIPE_PHRASES (e.g. "ingredients") — here they're
 # snippet ANCHORS for legibility, not scoring signals. Captured content is
 # lowercased, so these are lowercase.
-_SNIPPET_ANCHORS = (
+# SEED only — the live lists are system_config (snippet_recipe_anchors /
+# snippet_comment_markers), curator-editable per feedback_no_data_in_code. These
+# tuples are the bootstrap fallback (pre-seed boot / config unreachable) and the
+# values shipped in SYSTEM_DEFAULTS. Captured content is lowercased → lowercase here.
+_SNIPPET_ANCHORS_SEED = (
     "ingredients", "instructions", "directions", "method:", "method ",
     "prep time", "cook time", "total time", "yield", "servings", "serves",
     "preheat",
 )
+_COMMENT_MARKERS_SEED = (
+    "leave a reply", "leave a comment", "leave a review", "post a comment",
+    "comments are closed", "your email address will not be published",
+    "required fields are marked", "related posts", "related recipes",
+    "you may also like", "post navigation", "join the conversation",
+    "write a review", "rate this recipe",
+)
+
+
+def _cfg_list(key: str, seed) -> tuple:
+    """A system_config LIST setting as a lowercased tuple, falling back to `seed`.
+    Lazy runtime import so this module keeps its no-import-time-cycle property."""
+    try:
+        from input.pipeline import system_config as _sc
+        v = _sc.get_setting(key, None)
+        if isinstance(v, str):
+            v = v.replace(",", "\n").splitlines()
+        if v:
+            out = tuple(str(x).strip().lower() for x in v if str(x).strip())
+            if out:
+                return out
+    except Exception:
+        pass
+    return tuple(seed)
+
+
+def _cfg_int(key: str, seed: int) -> int:
+    """A system_config INT setting, falling back to `seed`. Best-effort, at-runtime."""
+    try:
+        from input.pipeline import system_config as _sc
+        v = _sc.get_setting(key, None)
+        return int(v) if v is not None else seed
+    except Exception:
+        return seed
+
+
+def _earliest(content: str, markers) -> int:
+    """Position of the earliest of `markers` in `content` (-1 if none)."""
+    pos = -1
+    for m in markers:
+        i = content.find(m)
+        if i != -1 and (pos == -1 or i < pos):
+            pos = i
+    return pos
 
 
 def _smart_snippet(content: str, max_chars: int = 400) -> str:
-    """A RECIPE-RELEVANT window of the captured (lowercased) page text. Anchors
-    on the earliest structural recipe marker so the curator sees the ingredient/
-    step region instead of the page header; falls back to the head when no marker
-    is present (which is itself a weak "probably not a recipe" tell)."""
+    """A RECIPE-RELEVANT window of the captured (lowercased) page text. Anchors on the
+    earliest structural recipe marker so the reader sees the ingredient/step region, not
+    the page header. When NO anchor is present (a header-less recipe buried under a long
+    intro), fall back to the window ENDING at the comments section — the recipe sits just
+    above the comments on a blog page — instead of the intro prefix. Only if there's no
+    comments boundary either do we return the head (itself a weak "not a recipe" tell)."""
     if not content:
         return ""
-    pos = -1
-    for a in _SNIPPET_ANCHORS:
-        i = content.find(a)
-        if i != -1 and (pos == -1 or i < pos):
-            pos = i
+    pos = _earliest(content, _cfg_list("snippet_recipe_anchors", _SNIPPET_ANCHORS_SEED))
     if pos == -1:
+        # LAST RESORT: 'scroll back' from the comments boundary to the recipe above it.
+        cpos = _earliest(content, _cfg_list("snippet_comment_markers", _COMMENT_MARKERS_SEED))
+        if cpos > max_chars:
+            start = max(0, cpos - max_chars)
+            sp = content.find(" ", start)
+            if sp != -1 and sp < cpos:
+                start = sp + 1
+            return "…" + content[start:cpos]
         return content[:max_chars]
-    start = max(0, pos - 40)
+    # Small lead-in so the window starts a few words BEFORE the anchor (context) — the
+    # bulk of the window is the max_chars of recipe text AFTER the anchor. Configurable.
+    lead = _cfg_int("snippet_lead_chars", 80)
+    start = max(0, pos - lead)
     if start > 0:  # snap to a word boundary so we don't cut mid-word
         sp = content.find(" ", start)
         start = sp + 1 if (sp != -1 and sp < pos) else start

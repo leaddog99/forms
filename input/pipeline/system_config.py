@@ -378,6 +378,164 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "risks dropping a recipe whose ingredients/method sit past the cut "
                        "(long-intro blogs). 0 = no cap (translate the whole page).",
     },
+    {
+        "key": "render_escalate_thin_chars",
+        "value": 3500,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Render-escalation thin-content threshold (chars)",
+        "description": "A would-be-dropped page whose PLAIN fetch returned FEWER than this "
+                       "many characters looks like a JS shell (nav only, body injected client-"
+                       "side) → worth re-fetching with a real browser (unblocker render=True). "
+                       "A page that returned MORE is genuinely not a recipe, not a shell, so "
+                       "rendering it again would only burn a credit. Default 3500.",
+    },
+    {
+        "key": "render_escalate_probe",
+        "value": True,
+        "type": "bool",
+        "category": "Harvest",
+        "label": "Render-escalation PROBE of unlearned domains",
+        "description": "Break the chicken-and-egg: normally only a domain already flagged "
+                       "render_required (or unblocker) may render-escalate, so a FRESH JS site "
+                       "(e.g. delish.com) is never rescued and never learned. When on, a would-"
+                       "be-dropped THIN stub on a not-yet-eligible domain still gets one render "
+                       "attempt; a success auto-learns the domain (render_required) so future "
+                       "runs render it up front. Bounded by the per-domain cap below.",
+    },
+    {
+        "key": "render_escalate_probe_max",
+        "value": 3,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Render-escalation probe cap (per domain per run)",
+        "description": "Most probe renders a not-yet-learned domain may spend in one filter "
+                       "run before giving up — so a genuinely-thin non-recipe site can't burn "
+                       "many credits confirming it's not a recipe. One success is enough to "
+                       "auto-learn the domain. 0 disables probing.",
+    },
+    {
+        "key": "poor_publisher_min_samples",
+        "value": 4,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Poor-publisher flag: min classified samples",
+        "description": "A host needs at least this many LLM-cascade-classified pages (across ALL "
+                       "sources — dish batches AND harvests, from training.db) before it can be "
+                       "flagged a POOR publisher. Guards against flagging on a tiny sample.",
+    },
+    {
+        "key": "poor_publisher_threshold",
+        "value": 0.6,
+        "type": "float",
+        "category": "Harvest",
+        "label": "Poor-publisher flag: poor_quality fraction",
+        "description": "When a domain's fraction of cascade 'poor_quality' verdicts reaches this "
+                       "(0-1) over at least the min-samples above, flag it a poor publisher: the "
+                       "harvest STOPS paying the per-page LLM cascade for its pages (they fall "
+                       "back to the heuristic) and the domain is badged for curator review. "
+                       "Default 0.5.",
+    },
+    {
+        "key": "disallowed_domains",
+        "value": ["youtube.com", "facebook.com", "reddit.com", "twitter.com",
+                  "pinterest.com", "tiktok.com", "linkedin.com", "wikipedia.org"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "Disallowed domains (hard blocklist)",
+        "description": "Root domains dropped from EVERY harvest/batch BEFORE any fetch (at "
+                       "root-domain grain), unioned with the SERP exclusions' domain lines. "
+                       "Social/aggregator/encyclopedia hosts whose pages use recipe vocabulary "
+                       "but aren't recipes. Replaces the old per-domain `allowed=0` flag — one "
+                       "editable list, no domains-master row needed to block a junk host.",
+    },
+    {
+        "key": "structure_ingredient_markers",
+        "value": ["ingredients"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "Structure gate — ingredient section markers (English)",
+        "description": "Header words that mark the INGREDIENTS section for the free is-recipe "
+                       "structural gate (base/English). A real recipe has BOTH an ingredients "
+                       "AND a method section. Non-English sites carry their own markers in their "
+                       "recipe_phrases/<lang>.json 'sections' block.",
+    },
+    {
+        "key": "structure_method_markers",
+        "value": ["instructions", "directions", "method", "preparation", "steps"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "Structure gate — method section markers (English)",
+        "description": "Header words that mark the METHOD/directions section for the structural "
+                       "is-recipe gate (base/English). If none is present, the verb fallback "
+                       "below can still satisfy the method side.",
+    },
+    {
+        "key": "structure_method_verbs",
+        "value": ["preheat", "combine", "mix", "stir", "whisk", "bake", "boil", "simmer",
+                  "fold", "knead", "pour", "cook", "roast", "saute", "chop", "slice", "dice",
+                  "mince", "melt", "beat", "blend", "grease", "drain", "season", "sprinkle",
+                  "spread", "cover", "remove", "transfer", "serve", "reduce", "garnish",
+                  "marinate", "refrigerate", "chill", "grill", "fry", "steam", "toss",
+                  "brush", "strain", "spoon", "layer", "dissolve", "scrape"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "Structure gate — method verbs (header-less fallback, English)",
+        "description": "Imperative cooking verbs. Many blog recipes write the method as prose "
+                       "with NO 'Directions/Method' header; a cluster of at least the minimum "
+                       "(below) DISTINCT verbs stands in for the missing header, so the cheap "
+                       "heuristic keeps header-less recipes (that still have an ingredients "
+                       "section) without paying the LLM. Word-boundary matched; accent-free.",
+    },
+    {
+        "key": "structure_method_verb_min",
+        "value": 4,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Structure gate — min distinct method verbs",
+        "description": "How many DISTINCT method verbs (from the list above) count as a "
+                       "header-less method section. Higher = stricter (fewer false keeps, more "
+                       "reliance on the LLM); lower = more recall. Default 4.",
+    },
+    {
+        "key": "snippet_recipe_anchors",
+        "value": ["ingredients", "instructions", "directions", "method:", "method ",
+                  "prep time", "cook time", "total time", "yield", "servings", "serves",
+                  "preheat"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "Recipe-region snippet anchors",
+        "description": "Markers used to find WHERE the recipe region begins when excerpting a "
+                       "page for the LLM cascade / Labeling UI — so the model sees the "
+                       "ingredient/step region, not the page header. The earliest match wins.",
+    },
+    {
+        "key": "snippet_lead_chars",
+        "value": 80,
+        "type": "int",
+        "category": "Harvest",
+        "label": "Recipe-region snippet lead-in (chars)",
+        "description": "How many characters of context to include BEFORE the recipe anchor in "
+                       "an excerpt (snapped to a word boundary). Small by design — the bulk of "
+                       "the window is the recipe text AFTER the anchor (the caller's max_chars, "
+                       "e.g. 1600 for the LLM cascade). Not the window size.",
+    },
+    {
+        "key": "snippet_comment_markers",
+        "value": ["leave a reply", "leave a comment", "leave a review", "post a comment",
+                  "comments are closed", "your email address will not be published",
+                  "required fields are marked", "related posts", "related recipes",
+                  "you may also like", "post navigation", "join the conversation",
+                  "write a review", "rate this recipe"],
+        "type": "list",
+        "category": "Harvest",
+        "label": "Comment-section boundary markers (recipe back-anchor)",
+        "description": "A blog page runs [intro] → [recipe] → [comments]. When NO recipe anchor "
+                       "is found (a header-less recipe buried under a long intro), the excerpt "
+                       "falls back to the window ENDING at the earliest of these comment/footer "
+                       "markers — 'scrolling back' from the comments to catch the recipe — "
+                       "instead of handing the LLM the intro prose.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}

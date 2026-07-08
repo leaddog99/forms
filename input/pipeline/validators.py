@@ -1,7 +1,9 @@
 # Recipe-content validators. Pure functions over text; no I/O.
 
+import functools
 import json
 import os
+import re
 import unicodedata
 from datetime import datetime, timezone
 
@@ -128,14 +130,64 @@ def score_recipe_for_lang(text: str, lang: str):
     return sum(1 for phrase in phrases if phrase in lowered)
 
 
-# Section markers for the BASE/English instance (the non-English packs carry their own
-# "sections" block in <lang>.json). A real recipe has BOTH an ingredients section AND a
-# method section — a vocabulary-rich GUIDE/tips article has at most one. This structural
-# AND is the free is-recipe gate (no LLM, no per-page translation).
-_BASE_SECTIONS_EN = {
-    "ingredients": ["ingredients"],
-    "method": ["instructions", "directions", "method", "preparation", "steps"],
-}
+# Structural is-recipe vocabulary — the LIVE values are system_config (DB-resident, curator-
+# editable), per feedback_no_data_in_code / project_system_config. These code constants are
+# BOOTSTRAP SEEDS only: the fallback used before the table is seeded or if config is
+# unreachable, and the seed value shipped in SYSTEM_DEFAULTS. (Non-English packs still carry
+# their own 'sections' block in recipe_phrases/<lang>.json.)
+#
+# A real recipe has BOTH an ingredients section AND a method section — a vocabulary-rich
+# GUIDE/tips article has at most one; this structural AND is the free gate (no LLM). Many
+# blog recipes write the METHOD as prose with NO header ("whisk the milk… bake…"), so a
+# cluster of DISTINCT cooking verbs is a header-less FALLBACK for the method side (still
+# requires the ingredients section, so precision holds; the LLM gray zone catches leaks).
+_INGREDIENT_MARKERS_SEED = ("ingredients",)
+_METHOD_MARKERS_SEED = ("instructions", "directions", "method", "preparation", "steps")
+_METHOD_VERBS_SEED = (
+    "preheat", "combine", "mix", "stir", "whisk", "bake", "boil", "simmer", "fold",
+    "knead", "pour", "cook", "roast", "saute", "chop", "slice", "dice", "mince", "melt",
+    "beat", "blend", "grease", "drain", "season", "sprinkle", "spread", "cover", "remove",
+    "transfer", "serve", "reduce", "garnish", "marinate", "refrigerate", "chill", "grill",
+    "fry", "steam", "toss", "brush", "strain", "spoon", "layer", "dissolve", "scrape",
+)
+_METHOD_VERB_MIN_SEED = 4   # distinct verbs that count as a header-less "method section"
+
+
+def _cfg_list(key: str, seed) -> tuple:
+    """A system_config LIST setting as a lowercased tuple, falling back to `seed`. Tolerates
+    a text/newline value. Best-effort + at-runtime (no import-time cost / cycle)."""
+    try:
+        from input.pipeline import system_config as _sc
+        v = _sc.get_setting(key, None)
+        if isinstance(v, str):
+            v = [s for s in v.replace(",", "\n").splitlines()]
+        if v:
+            out = tuple(str(x).strip().lower() for x in v if str(x).strip())
+            if out:
+                return out
+    except Exception:
+        pass
+    return tuple(seed)
+
+
+def _cfg_int(key: str, seed: int) -> int:
+    try:
+        from input.pipeline import system_config as _sc
+        v = _sc.get_setting(key, None)
+        return int(v) if v is not None else seed
+    except Exception:
+        return seed
+
+
+@functools.lru_cache(maxsize=8)
+def _verb_re(verbs: tuple):
+    """Compiled word-boundary alternation for a verb tuple (memoized per distinct list)."""
+    return re.compile(r"\b(" + "|".join(re.escape(v) for v in verbs) + r")\b")
+
+
+def _method_verb_count(t: str) -> int:
+    """DISTINCT method verbs (from system_config) in accent-stripped, lowercased `t`."""
+    return len(set(_verb_re(_cfg_list("structure_method_verbs", _METHOD_VERBS_SEED)).findall(t)))
 
 
 def _strip_accents(s: str) -> str:
@@ -151,7 +203,8 @@ def recipe_sections(lang: str) -> dict:
     base constant; other languages from their pack's 'sections' block. {} if unknown."""
     lang = (lang or "en").lower()[:2]
     if lang == "en":
-        return _BASE_SECTIONS_EN
+        return {"ingredients": list(_cfg_list("structure_ingredient_markers", _INGREDIENT_MARKERS_SEED)),
+                "method": list(_cfg_list("structure_method_markers", _METHOD_MARKERS_SEED))}
     data = _load_lang_phrases(lang)
     return (data.get("sections") if data else {}) or {}
 
@@ -175,6 +228,11 @@ def has_recipe_structure(text: str, base_lang: str, page_lang: str = None) -> bo
         meth += s.get("method", [])
     has_ing = any(_strip_accents(m) in t for m in ing)
     has_meth = any(_strip_accents(m) in t for m in meth)
+    # Header-less method fallback (English prose recipes): a cluster of distinct imperative
+    # cooking verbs substitutes for a missing method HEADER. Still requires the ingredients
+    # section, so precision holds; the LLM gray-zone pass catches any residual leak.
+    if has_ing and not has_meth and "en" in seen:
+        has_meth = _method_verb_count(t) >= _cfg_int("structure_method_verb_min", _METHOD_VERB_MIN_SEED)
     return has_ing and has_meth
 
 

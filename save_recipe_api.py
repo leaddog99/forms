@@ -3922,6 +3922,16 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             # different, ad-hoc mechanism). See docs/semrush-harvest-scheduling.md.
             if source == "backlinks_file":
                 domains_lib.mark_harvested(conn, host)
+            # Roll the LLM cascade's fresh poor_quality verdicts up per domain and
+            # (re)flag poor publishers, so future harvests stop paying the per-page LLM
+            # cascade for a known messy source. Best-effort; scans training.db.
+            try:
+                pp = domains_lib.refresh_poor_publisher_flags(conn)
+                if pp.get("flagged"):
+                    print(f"[PUBLISHER-REFRESH] poor-publisher flags: {pp['flagged']}")
+            except Exception as _ex:
+                print(f"[PUBLISHER-REFRESH] poor-publisher refresh skipped: "
+                      f"{type(_ex).__name__}: {_ex}")
         return res
 
     res = await asyncio.to_thread(_work)

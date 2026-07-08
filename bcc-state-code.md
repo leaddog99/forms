@@ -9,6 +9,74 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-08 — is-recipe recall (render-probe · poor-publisher · verb-fallback · comments back-anchor) + BIG externalization sweep
+
+Continuation of the is-recipe arc, on `split/enrichment-api`. Shipped three queued items, then
+chased a "clear recipes being dropped" report into a structure-gate fix — and (three curator
+call-outs later) moved ALL the structural word-lists out of code into `system_config`.
+
+### The three queued items (all SHIPPED)
+- **Render-escalation PROBE (delish fix)** — `build_query_batch._render_rescue`: the chicken-and-
+  egg was that escalation only fired for domains ALREADY flagged render-eligible, so a fresh JS
+  site was never rescued → never auto-learned. Now a would-be-dropped THIN stub on a NOT-yet-
+  eligible domain gets one bounded render probe (per-domain-per-run cap); a success stamps
+  `_render_escalated` → existing `mark_render_required` auto-learns it → next run renders up front.
+  Knobs: `render_escalate_thin_chars`/`render_escalate_probe`/`render_escalate_probe_max`.
+- **Poor-publisher signal** ([[project_domain_master]]) — `domains_lib.refresh_poor_publisher_flags`
+  rolls the cascade's per-page verdicts up **by URL host across ALL sources** (the state note's
+  "both batches" meant DISH batches; harvest rows have no verdicts yet — verified in training.db),
+  flags a host past sample+fraction thresholds (auto-creating a minimal domains row, mirroring
+  set_paywall_calibration), and the cascade now **SKIPS the per-page LLM for flagged hosts**
+  (`get_poor_publisher_hosts`, new `_QUALITY_COLUMNS`). Runs after each publisher refresh. Verified
+  live: **oliveandmango.com (75%) + cravingsbychrissyteigen.com (60%) flagged**, badged in
+  domains.html (repurposed the retired allowed pill/legend/sort). Defaults `min_samples=4`,
+  `threshold=0.6` (tuned to current sparse data; editable).
+- **`allowed` → `disallowed_domains`** — retired the per-domain `allowed` gatekeeper (0 rows ever
+  set it). `get_blocked_root_domains` now reads a `system_config.disallowed_domains` LIST (seeded
+  from the old hardcoded set) ∪ serp_exclusions; removed the checkbox/badge/legend/sort/save-field
+  from domains.html; dropped `allowed` from EDITABLE_FIELDS. Column kept (default 1) to avoid a
+  schema migration; `harvestable=0` already covers "keep the record, skip harvest".
+
+### "Clear recipes dropped" → the structure gate (grounded in the Indian Pudding human votes)
+Curator's is-recipe conflicts showed real recipes DROPPED `no-recipe-structure`. Diagnosed in
+`training.db`: NOT intro length (the gate scans full text) — the method had **no section HEADER**
+(narrative prose: "whisk… bake…"), and 2/5 also lacked an ingredients header. **`cascade_mode` is
+`decide`, so these were already auto-rescued** (the recorded "dropped" is the pre-override HEURISTIC
+label, by design). Still improved the cheap heuristic: **header-less method VERB fallback** in
+`validators.has_recipe_structure` — ≥N distinct imperative cooking verbs substitute for a missing
+method header, ingredients section still required. Measured on the human labels: **+18 recipes
+recovered / 2 not_recipe leaks (both caught by the cascade)**. ("instructions" was ALREADY a method
+marker — no change needed there.)
+- **Comments back-anchor (curator idea)** — `training_capture._smart_snippet`: when NO recipe anchor
+  is found (header-less recipe under a long intro), 'scroll back' a full `max_chars` from the
+  earliest comments/footer marker ([intro]→[recipe]→[comments]) instead of handing the LLM the intro
+  prose. Verified on a synthetic header-less page. (Clarified for the curator: the snippet JUMPS to
+  the anchor anywhere in the page + takes `max_chars`=1600 forward; the old `40`/now-`80` is only
+  pre-anchor lead-in, not the reach.)
+
+### THE THEME: no data in code ([[feedback_no_data_in_code]] — called out 3×, corrected)
+Moved every structural word-list into DB-resident, curator-editable `system_config` (code keeps only
+`*_SEED` fallbacks): `structure_ingredient_markers`, `structure_method_markers`,
+`structure_method_verbs`, `structure_method_verb_min` (validators), `snippet_recipe_anchors`,
+`snippet_comment_markers`, `snippet_lead_chars` (training_capture — read via lazy runtime
+get_setting, memoized regex, no import cycle). New **`docs/is-recipe-vocab-lists.md`**: per-list
+purpose + consuming module + authoring guidelines + **multi-language** story (English/base →
+system_config; other languages → `recipe_phrases/<lang>.json` "sections"; the verb-fallback / snippet
+anchors / comment markers are English-only gaps to promote into the packs for a non-English base).
+Also renamed the Labeling UI 'Poor layout' → 'Poor quality' (verbiage match; value unchanged).
+
+### Notes / open
+- **Server restart** picks up the save_recipe_api handler + in-process filter; out-of-process
+  harvests already see the shared libs; HTML is static. New system_config keys seed on next boot
+  (get_setting falls back to seed meanwhile). `allowed` column + a couple vestigial `allowed`
+  rank/worklist reads left in place (harmless, all rows =1).
+- **recipes.db schema changed** (`_QUALITY_COLUMNS` + poor flags + new domain row) — recipes.sql NOT
+  re-dumped this session.
+- **Deferred (offered, not done):** rename `is_recipe_cascade_mode`→`llm` (it's a term-of-art —
+  cheap-heuristic-gates-expensive-LLM cascade); add `training.db` (gold human labels, git-ignored) to
+  bcc_backup.bat; migrate the last two `config.py` lists (`_DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS`,
+  `RECIPE_PHRASES`) into system_config; carried delish stub auto-learn end-to-end verification.
+
 ## Session log — 2026-07-07 (evening) — LLM cascade SHIPPED + DECIDE mode ON + rejected ideas
 
 Culmination of the is-recipe arc. **The LLM cascade is live and DECIDING.**

@@ -47,7 +47,7 @@
           <option value="da">Sort: domain authority</option>
           <option value="rank">Sort: BCC rank (SEMrush traffic)</option>
           <option value="harvest">Sort: SEMrush due first</option>
-          <option value="blocked">Sort: blocked first</option>
+          <option value="poor">Sort: poor publisher first</option>
           <option value="created">Sort: newest added</option>
           <option value="modified">Sort: recently modified</option>
         </select>
@@ -79,8 +79,7 @@
       </div>
 
       <div class="ed-legend">
-        <span><i class="d ok"></i>allowed</span>
-        <span><i class="d none"></i>blocked</span>
+        <span><i class="d none"></i>poor publisher (is-recipe cascade)</span>
       </div>
 
       <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
@@ -108,7 +107,7 @@
     let sortKey = 'domain';
 
     /* ----------------------------- derivations ----------------------------- */
-    const isAllowed = (d) => d.allowed === undefined || !!d.allowed;
+    const isPoor = (d) => !!d.poor_quality_flag;   // is-recipe cascade flagged a messy source
     function listMeta(d){
       const bits = [];
       if (d.display_name) bits.push(d.display_name);
@@ -119,7 +118,7 @@
       const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
       if (m || u) bits.push(`${m}m · ${u}u`);
       if (d.harvest_due) bits.push(d.harvest_status === 'new' ? '⏰ SEMrush: new' : '⏰ SEMrush: due');
-      if (!isAllowed(d)) bits.push('blocked');
+      if (isPoor(d)) bits.push('⚠ poor' + (d.poor_quality_rate != null ? ` ${Math.round(d.poor_quality_rate * 100)}%` : ''));
       return bits.join(' · ') || '—';
     }
 
@@ -145,7 +144,7 @@
           if (an !== bn) return an - bn;
           return (a.next_harvest_at || '').localeCompare(b.next_harvest_at || '') || a.domain.localeCompare(b.domain);
         },
-        blocked: (a, b) => (isAllowed(a) - isAllowed(b)) || a.domain.localeCompare(b.domain),
+        poor:    (a, b) => (isPoor(b) - isPoor(a)) || ((b.poor_quality_rate || 0) - (a.poor_quality_rate || 0)) || a.domain.localeCompare(b.domain),
         // Newest first. created_at/updated_at are ISO strings (SELECT * from the
         // domains table), so a reverse string compare = most-recent first; A–Z tiebreak.
         created:  (a, b) => (b.created_at || '').localeCompare(a.created_at || '') || a.domain.localeCompare(b.domain),
@@ -163,7 +162,7 @@
         const li = document.createElement('li');
         li.className = 'ed-item' + (d.domain === selected ? ' selected' : '');
         li.innerHTML =
-          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span><span class="ed-item-flag ${isAllowed(d) ? 'ok' : 'none'}"></span></div>` +
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
           `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
         li.addEventListener('click', () => { selected = d.domain; renderList(); renderDetail(); nav.afterSelect(); });
         ul.appendChild(li);
@@ -176,7 +175,7 @@
     // list by "SEMrush due first" so the curator sees exactly what to harvest next.
     function updateDueCount(){
       const el = $('#hvDue'); if (!el) return;
-      const n = Object.values(domains).filter(d => isAllowed(d) && d.harvest_due).length;
+      const n = Object.values(domains).filter(d => d.harvest_due).length;
       el.textContent = n ? `⏰ ${n} due` : '✓ none due';
       el.style.color = n ? 'var(--accent-dark)' : 'var(--ed-ink-soft)';
       el.style.borderColor = n ? 'var(--accent)' : 'var(--line)';
@@ -274,7 +273,7 @@
 
         <h1 class="ed-title">${escapeHtml(d.domain)}</h1>
         <div class="ed-status-strip">
-          <span class="ed-pill ${isAllowed(d) ? 'ok' : 'warn'}"><i class="d"></i>${isAllowed(d) ? 'Allowed' : 'Blocked'}</span>
+          ${isPoor(d) ? `<span class="ed-pill warn" title="is-recipe cascade flagged a messy source"><i class="d"></i>⚠ Poor publisher</span>` : ''}
           ${d.root_domain ? `<span class="ed-pill"><i class="d"></i>root ${escapeHtml(d.root_domain)}</span>` : ''}
           ${d.domain_authority != null ? `<span class="ed-pill"><i class="d"></i>DA ${Math.round(d.domain_authority)}</span>` : ''}
           ${d.bcc_rank != null ? `<span class="ed-pill" title="rank among our allowed publishers by SEMrush organic traffic">BCC rank #${d.bcc_rank}</span>` : ''}
@@ -301,7 +300,7 @@
             ${field('f_ethnicity', 'Ethnicity', d.ethnicity, { ph: 'Greek' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
             ${field('f_render_required', d.render_learned_at ? ('JS-rendered — render with full browser · auto-learned ' + escapeHtml(fmtDate(d.render_learned_at))) : 'JS-rendered — render with full browser (unblocker render=True)', Number(d.render_required) === 1, { checkbox: true })}
-            ${field('f_allowed', 'Allowed (ingest from this site)', isAllowed(d), { checkbox: true })}
+            ${isPoor(d) ? `<label class="ed-field"><span class="ed-label">Cascade quality</span><div style="font-size:.82em;color:var(--accent-dark);line-height:1.4">⚠ Poor publisher — ${Math.round((d.poor_quality_rate || 0) * 100)}% <code>poor_quality</code> across ${d.poor_quality_samples || 0} classified pages. The per-page is-recipe LLM cascade is skipped for this domain (it falls back to the heuristic).</div></label>` : ''}
             ${field('f_domain_authority', 'Domain authority (DA)', d.domain_authority, { type: 'number' })}
             ${field('f_extract_notes', 'Extraction notes', d.extract_notes, { textarea: true, full: true, minh: 70, ph: 'JSON-LD reliable · needs www for Moz · paywalled — use screenshot…' })}
           </div>
@@ -1004,7 +1003,6 @@
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
         custom_extractor: $('#f_custom_extractor').value.trim(),
         extract_notes: $('#f_extract_notes').value.trim(),
-        allowed: $('#f_allowed').checked ? 1 : 0,
         domain_authority: numOrNull($('#f_domain_authority').value),
         notes: $('#f_notes').value.trim(),
         recipe_path: ($('#f_recipe_path')?.value || '').trim(),

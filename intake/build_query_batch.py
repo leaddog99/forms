@@ -539,11 +539,31 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     # isn't a recipe (a news/restaurant feature) is NOT a shell — rendering it
     # again would only burn a credit to confirm what we already know. Configurable.
     _render_thin_chars = 3500
+    # PROBE (the chicken-and-egg fix): a render escalation normally fires only for a
+    # domain ALREADY known to need a real browser (render_required / unblocker). But a
+    # FRESH JS site (e.g. delish.com) is never flagged until one of its pages is rescued
+    # — so its every page comes back a thin stub, is dropped, and it's never learned.
+    # When probing is on, a would-be-dropped THIN stub on a not-yet-eligible domain still
+    # gets ONE render attempt; a success stamps `_render_escalated`, so the caller's
+    # auto-learn (mark_render_required) flags the domain and the NEXT run renders it up
+    # front. Bounded per-domain-per-run so a genuinely-thin non-recipe site can't burn
+    # many credits confirming it's not a recipe. Configurable.
+    _render_probe = True
+    _render_probe_max = 3
     try:
         from input.pipeline.system_config import get_setting as _gs2
         _render_thin_chars = int(_gs2("render_escalate_thin_chars", 3500) or 3500)
+        _render_probe = bool(_gs2("render_escalate_probe", True))
+        _render_probe_max = int(_gs2("render_escalate_probe_max", 3) or 0)
     except Exception:
         pass
+    _probe_counts: dict[str, int] = {}   # host -> probe escalations spent this run
+
+    def _host_of(u: str) -> str:
+        try:
+            return u.split("//", 1)[1].split("/", 1)[0].lower() if "//" in u else ""
+        except Exception:
+            return ""
 
     # FILTER-STAGE translation cap: for a non-English page with no JSON-LD we translate the
     # visible text only to phrase-score keep-vs-drop — the EXTRACTION stage re-translates the
@@ -563,19 +583,31 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         body is injected client-side: the cheap render=False verify scored only the
         nav shell and would DROP a real recipe. Re-fetch this ONE page with a real
         browser (unblocker render=True) and re-evaluate. Bounded: fires only on a
-        would-be drop, once per URL, only when the entry is render-eligible (the
-        harvest is unblocker-flagged OR the caller marked it `_allow_render`), AND
-        only when the plain fetch looked like a THIN JS shell (a full non-recipe
-        page is dropped without paying for a render). Returns True iff it now
-        qualifies; on failure it leaves the caller's original verdict/score intact."""
+        would-be drop, once per URL, only when the plain fetch looked like a THIN JS
+        shell (a full non-recipe page is dropped without paying for a render), and only
+        when the entry is either render-eligible (the harvest is unblocker-flagged OR the
+        caller marked it `_allow_render`) OR — for a not-yet-learned domain — within the
+        bounded PROBE budget (so a fresh JS site can be auto-learned). Returns True iff it
+        now qualifies; on failure it leaves the caller's original verdict/score intact."""
         if not _render_ready:
-            return False
-        if not (unblocker or e.get("_allow_render")):
             return False
         # Skip pages that already returned their full text — they're genuinely not a
         # recipe, not a JS shell, so a render won't change the answer (saves a credit).
         if len(e.get("_cap_text") or "") >= _render_thin_chars:
             return False
+        eligible = bool(unblocker or e.get("_allow_render"))
+        probed = False
+        if not eligible:
+            # Domain isn't (yet) known to need a browser. PROBE this thin stub anyway,
+            # bounded per-domain-per-run, so a fresh JS site (delish.com) can earn its
+            # render_required flag on a success — otherwise it's dropped forever.
+            if not (_render_probe and _render_probe_max):
+                return False
+            host = _host_of(url)
+            if _probe_counts.get(host, 0) >= _render_probe_max:
+                return False
+            _probe_counts[host] = _probe_counts.get(host, 0) + 1
+            probed = True
         try:
             res = fetch_via_unblocker(url, render=True)
         except Exception as ex:
@@ -615,7 +647,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 e["_translated_for_filter"] = True
             kept.append(e)
             tag = "json-ld" if jsonld2 else f"score={score:>2}"
-            print(f"  [{i:>2}/{n}] KEEP {tag}* {url}  (render-escalated)")
+            print(f"  [{i:>2}/{n}] KEEP {tag}* {url}  (render-{'probe' if probed else 'escalated'})")
             return True
         # FAILURE — quiet sub-note (NOT a decision line); the caller logs the drop
         # and keeps the original plain score. No mutation of e.

@@ -116,9 +116,27 @@ def shadow_classify(entries, *, log=print) -> int:
         from intake.training_capture import _smart_snippet
     except Exception:
         return 0
+    # POOR-PUBLISHER skip: a domain we've already judged a messy source (its pages are
+    # repeatedly 'poor_quality') doesn't earn another per-page LLM classify — its gray-
+    # zone pages fall back to the heuristic. Stops re-paying to relearn a known bad source.
+    poor: set = set()
+    try:
+        from input.pipeline.domains_lib import get_poor_publisher_hosts
+        poor = get_poor_publisher_hosts()
+    except Exception:
+        poor = set()
+
+    def _host(u: str) -> str:
+        try:
+            h = u.split("//", 1)[1].split("/", 1)[0].lower() if "//" in u else ""
+            return h[4:] if h.startswith("www.") else h
+        except Exception:
+            return ""
+
     gray = [e for e in (entries or [])
             if isinstance(e, dict) and not e.get("jsonld_recipe")
-            and len((e.get("_cap_text") or "").strip()) >= _MIN_CHARS]
+            and len((e.get("_cap_text") or "").strip()) >= _MIN_CHARS
+            and (not poor or _host(e.get("url") or "") not in poor)]
     if not gray:
         return 0
     if len(gray) > _MAX_PER_RUN:
