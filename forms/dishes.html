@@ -313,6 +313,12 @@
     // In-memory cache + UI state.
     let dishes = {};          // name -> dish dict
     let selectedName = null;
+    // Bumped when the top-list should be invalidated (dish switch, Clear). A trailing
+    // async paint (in-flight loadTopRecipes, or a job's done-handler completing for a
+    // dish we've since left) checks this + `selectedName` and bails, so a stale result
+    // can't bleed into the currently-open dish or refill a just-cleared list.
+    let topGen = 0;
+    let currentRunJobId = null;   // the running refresh job id (armed while streaming; null = Cancel disabled)
     let mode = 'empty';       // 'empty' | 'view' | 'edit' | 'add'
     let searchTerm = '';
 
@@ -564,6 +570,15 @@
               logLinkHtml +
             `</span>` +
           `</div>` +
+          // Run controls, high + prominent (lifted out of the footer): Refresh (run the
+          // dish), Cancel (stop a running job — enabled only while one streams), Clear
+          // (clean out the job-log window at the bottom).
+          `<div class="button-row" id="dishRunControls" style="margin:12px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">` +
+            `<button type="button" class="primary" id="runBtn" title="Search, score, and re-ingest this dish's top recipes">🔄 Refresh</button>` +
+            `<button type="button" class="danger" id="cancelRunBtn" title="Stop a running refresh (aborts after the current candidate)" disabled>✋ Cancel</button>` +
+            `<button type="button" class="secondary" id="clearLogBtn" title="Clear the job-log window at the bottom">🧹 Clear log</button>` +
+            `<div class="feedback" id="feedback"></div>` +
+          `</div>` +
           (d.description ? `<div class="field full">` +
             `<label>Description</label>` +
             `<div class="locked" style="font-family:inherit;background:transparent;border-style:solid;white-space:pre-wrap">${escapeHtml(d.description)}</div>` +
@@ -627,12 +642,12 @@
           `<div id="rejectsSection" style="margin-top:18px"></div>` +
         `</div>`;
       $('#footerButtons').innerHTML =
-        `<button type="button" class="primary" id="runBtn">Run</button>` +
         `<button type="button" class="secondary" id="editBtn">Edit</button>` +
-        `<button type="button" class="danger" id="deleteBtn">Delete</button>` +
-        `<div class="feedback" id="feedback"></div>`;
+        `<button type="button" class="danger" id="deleteBtn">Delete</button>`;
       $('#actionFooter').style.display = '';
       $('#runBtn').addEventListener('click', () => doRun(d));
+      $('#cancelRunBtn').addEventListener('click', () => cancelDishRun());
+      $('#clearLogBtn').addEventListener('click', () => clearDishLog());
       $('#editBtn').addEventListener('click', () => { mode = 'edit'; renderDetail(); });
       $('#deleteBtn').addEventListener('click', () => doDelete(d));
       // Fire-and-forget reject load. The section stays hidden until
@@ -673,8 +688,12 @@
     async function loadTopRecipes(dishName) {
       const section = document.getElementById('topRecipesSection');
       if (!section) return;
+      const gen = topGen;   // snapshot; if invalidated mid-fetch, don't paint
       try {
         const res = await fetch(`${API}/dishes/${encodeURIComponent(dishName)}/top-recipes`);
+        // Bail if the curator switched dishes or cleared the list while we were fetching
+        // — else this stale result repaints the wrong dish / undoes a Clear.
+        if (selectedName !== dishName || gen !== topGen) return;
         if (!res.ok) { section.innerHTML = ''; return; }
         const payload = await res.json();
         const recipes = payload.recipes || [];
@@ -1179,6 +1198,29 @@
       }
     }
 
+    // Cancel the running refresh — cooperative: sets cancel_requested; the out-of-process
+    // job polls it between candidates and aborts (runner marks it 'cancelled').
+    async function cancelDishRun() {
+      if (currentRunJobId == null) return;
+      const btn = $('#cancelRunBtn');
+      if (btn){ btn.disabled = true; btn.textContent = 'Cancelling…'; }
+      setFeedback('Cancelling — stops after the current candidate…', 'info');
+      try { await fetch(`${API}/jobs/${currentRunJobId}/cancel`, { method: 'POST' }); }
+      catch (e){ setFeedback(`Cancel failed: ${e.message || e}`, 'error'); }
+    }
+
+    // Clean out the job-log window (view-only — the saved log reloads on the next open/run).
+    function clearDishLog() {
+      const body = document.getElementById('dishLogBody');
+      if (body) body.innerHTML = '';
+      const panel = document.getElementById('dishLogPanel');
+      if (panel) panel.style.display = 'none';
+      const status = document.getElementById('dishLogStatus');
+      if (status){ status.textContent = 'idle'; status.className = 'live-log-status'; }
+      const meta = document.getElementById('dishLogMeta');
+      if (meta) meta.textContent = '';
+    }
+
     // Run a dish refresh. Three phases:
     //   1. POST /dishes/<name>/refresh — returns 202 with {job_id} immediately
     //      (no Cloudflare 100s timeout). On 409 (job already in flight) we
@@ -1191,8 +1233,17 @@
     //      last_refreshed/last_run_count are fresh), render the view + a
     //      summary panel.
     async function doRun(d) {
-      const buttons = $('#footerButtons').querySelectorAll('button');
-      buttons.forEach(b => b.disabled = true);
+      const runBtn = $('#runBtn'), cancelBtn = $('#cancelRunBtn'), clearBtn = $('#clearLogBtn');
+      const footerBtns = $('#footerButtons').querySelectorAll('button');
+      // Disable Refresh/Clear/Edit/Delete while running; ENABLE Cancel (it targets the
+      // running job via currentRunJobId, set once we have the job id below).
+      const setRunning = (on) => {
+        if (runBtn) runBtn.disabled = on;
+        if (clearBtn) clearBtn.disabled = on;
+        footerBtns.forEach(b => b.disabled = on);
+        if (cancelBtn){ cancelBtn.disabled = !on; cancelBtn.textContent = '✋ Cancel'; }
+      };
+      setRunning(true);
       setFeedback('Enqueuing job…', 'info');
 
       let job_id = null;
@@ -1209,14 +1260,15 @@
           setFeedback(`Attaching to in-flight job #${job_id}…`, 'info');
         } else {
           setFeedback(`Run failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result)) || res.status}`, 'error');
-          buttons.forEach(b => b.disabled = false);
+          setRunning(false);
           return;
         }
       } catch (err) {
         setFeedback(`Enqueue failed: ${err.message || err}`, 'error');
-        buttons.forEach(b => b.disabled = false);
+        setRunning(false);
         return;
       }
+      currentRunJobId = job_id;   // arm the Cancel button for this job
 
       // The background poll runner is off, so a freshly-enqueued job sits
       // 'queued' until something drains it. Kick the server-side drain so THIS
@@ -1266,16 +1318,22 @@
         let data = {};
         try { data = JSON.parse(e.data); } catch (err) {}
         stream.close();
+        currentRunJobId = null;   // run finished — disarm Cancel
         liveLog.statusEl.textContent = data.status || 'done';
         liveLog.statusEl.className = 'live-log-status ' + statusClass(data.status);
-        // Refetch dish row + result panel from the completed job.
+        // ARTIFACT-BLEED GUARD: this job finished for dish `d.name`, but the curator may
+        // have switched to another dish (or started its run) meanwhile. Only refetch +
+        // append the result panel if that dish is still open — otherwise this job's
+        // summary bleeds onto the current dish's card. (The result is persisted; the
+        // in-memory row is still refreshed so a later reopen shows it.)
         try {
           const dishRes = await fetch(`${API}/dishes/${encodeURIComponent(d.name)}`);
           if (dishRes.ok) {
             const fresh = await dishRes.json();
-            dishes[fresh.name] = fresh;
+            dishes[fresh.name] = fresh;   // keep cache fresh even if we're elsewhere
+            renderList();                 // sidebar reflects the finished dish's new status (safe — not the detail card)
+            if (selectedName !== d.name) { setFeedback(`Job #${job_id} ${data.status} for ${d.name}`, data.status === 'success' ? 'success' : 'error'); return; }
             mode = 'view';
-            renderList();
             renderDetail();
             // The log panel is a sibling of #detailPanel, so renderDetail
             // didn't wipe it — renderViewCard -> loadDishLog reloads the

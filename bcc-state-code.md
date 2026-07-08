@@ -91,6 +91,29 @@ Also renamed the Labeling UI 'Poor layout' → 'Poor quality' (verbiage match; v
   string input) → added a whitespace-preserving one-per-line textarea + JSON dirty-compare. All the
   session's externalized lists are now genuinely editable. `docs/is-recipe-vocab-lists.md` updated.
 
+### Follow-up (same session) — paywall exemption · cross-job artifact bleed · dishes Refresh/Cancel/Clear
+- **Paywall exemption for the poor-publisher flag** (`domains_lib.refresh_poor_publisher_flags`): a
+  `paywall = 1` domain is NEVER flagged a poor publisher — its stubs read `poor_quality` because
+  they're GATED, not messy (Milk Street was wrongly flagged). Rate/samples still recorded for
+  visibility; returns `exempted_paywall`. Verified: 177milkstreet.com cleared.
+- **Cross-job ARTIFACT BLEED — fixed (both pages).** Root cause (traced): async job-`done`/reload
+  handlers painted into shared list DOM keyed off the CLOSURE's entity with no current-selection
+  guard, so a job finishing for A dumped its list onto the open B. `domains.html`: `renderResult`
+  bails `if (selected !== domain)`, `loadDomainTop` snapshots+checks a `topGen` token + `selected`.
+  `dishes.html`: `doRun` done-handler only rebuilds/append the detail card when `selectedName ===
+  d.name` (still refreshes the sidebar row + cache), `loadTopRecipes` guards on `selectedName`+`topGen`.
+- **Domains "Clear list" didn't stick — fixed.** Backend was correct (keys match, no master
+  fallback); the list was repainted by a trailing async write. `doClearTop` now bumps `topGen` so any
+  in-flight/late `loadDomainTop` bails. (Same root as the bleed.)
+- **Dishes Refresh · Cancel · Clear buttons** (curator: "like the domain extract has… move the
+  refresh from the footer up"). Clarified: **Clear = clean the job-log WINDOW** (view-only, NOT a data
+  wipe — I'd overthought a destructive dish-top clear). `dishes.html`: control row lifted out of the
+  footer to sit under the header (footer now just Edit/Delete); `clearDishLog()` empties the live-log
+  panel; `cancelDishRun()` + `currentRunJobId` arm Cancel while streaming. **Backend cancel made
+  REAL**: `build_batch` gained `should_cancel`, threaded into the dish-batch `_is_recipe_filter`;
+  `_handle_dish_refresh_job` polls `is_cancel_requested` and records a clean `cancelled` (not error).
+  UI verified in-browser (no console errors); **backend cancel needs a BCC restart** to go live.
+
 ## Session log — 2026-07-07 (evening) — LLM cascade SHIPPED + DECIDE mode ON + rejected ideas
 
 Culmination of the is-recipe arc. **The LLM cascade is live and DECIDING.**

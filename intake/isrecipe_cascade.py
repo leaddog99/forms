@@ -133,10 +133,17 @@ def shadow_classify(entries, *, log=print) -> int:
         except Exception:
             return ""
 
-    gray = [e for e in (entries or [])
-            if isinstance(e, dict) and not e.get("jsonld_recipe")
-            and len((e.get("_cap_text") or "").strip()) >= _MIN_CHARS
-            and (not poor or _host(e.get("url") or "") not in poor)]
+    base_gray = [e for e in (entries or [])
+                 if isinstance(e, dict) and not e.get("jsonld_recipe")
+                 and len((e.get("_cap_text") or "").strip()) >= _MIN_CHARS]
+    if poor:
+        gray = [e for e in base_gray if _host(e.get("url") or "") not in poor]
+        skipped = len(base_gray) - len(gray)
+        if skipped:
+            log(f"  [cascade-shadow] SKIPPED {skipped} gray-zone page(s) from flagged POOR "
+                f"publisher(s) — not re-paying the per-page LLM (heuristic stands)")
+    else:
+        gray = base_gray
     if not gray:
         return 0
     if len(gray) > _MAX_PER_RUN:

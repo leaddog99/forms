@@ -105,6 +105,11 @@
     let selected = null;     // host string, or '__new__'
     let term = '';
     let sortKey = 'domain';
+    // Bumped whenever the top-list should be invalidated (domain switch, Clear). A
+    // trailing async paint (in-flight loadDomainTop, or a job's renderResult completing
+    // for a domain we've since left) checks this + `selected` and bails, so a stale
+    // result can't bleed into the currently-open domain or refill a just-cleared list.
+    let topGen = 0;
 
     /* ----------------------------- derivations ----------------------------- */
     const isPoor = (d) => !!d.poor_quality_flag;   // is-recipe cascade flagged a messy source
@@ -579,10 +584,14 @@
 
     async function loadDomainTop(domain, all){
       const el = $('#domainTopList'); if (!el) return;
+      const gen = topGen;   // snapshot; if the list is invalidated mid-fetch, don't paint
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/top${all ? '?all=1' : ''}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
+        // Bail if the user navigated away or the list was cleared while we were fetching
+        // — else this stale result repaints the wrong domain / undoes a Clear.
+        if (selected !== domain || gen !== topGen) return;
         renderDomainTop(d.top || [], !!all);
         // ⚙ Process selected is for the cohort/worklist (where you check candidates);
         // hidden in the winners-only view (those are already ingested).
@@ -833,6 +842,11 @@
       // event AND the safety net below. The job already persisted the list + config,
       // so Save stays disabled (correct); we just re-render and report.
       const renderResult = (status, res, errorMsg) => {
+        // ARTIFACT-BLEED GUARD: this job finished for `domain`, but the curator may have
+        // navigated to another domain (or started its job) meanwhile. Only paint if that
+        // domain is still open — otherwise its result would bleed into the current form.
+        // (The result is persisted server-side; reopening `domain` repaints it correctly.)
+        if (selected !== domain) return;
         loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1');
         // The harvest AUTO-EXTRACTS the selected winners into master_recipes, so the
         // master/user browse dropdowns are now stale — reload them (and their counts)
@@ -910,6 +924,7 @@
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`, { method: 'DELETE' });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        topGen++;             // invalidate any in-flight loadDomainTop so it can't refill the cleared list
         renderDomainTop([]);
         if (hint){ hint.style.color = ''; hint.textContent = `Cleared ${data.cleared} row(s).`; }
       } catch (e) {

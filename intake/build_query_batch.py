@@ -1272,6 +1272,7 @@ def build_batch(
     top_n_serpapi: int = DEFAULT_TOP_SERPAPI,
     top_n_final: int = DEFAULT_TOP_FINAL,
     extra_urls: Optional[list[str]] = None,
+    should_cancel=None,
 ) -> dict:
     """Run the full front-end pipeline. Accepts a single query string OR
     a list of queries (the multi-query dish case — e.g. "spaghetti with
@@ -1377,7 +1378,7 @@ def build_batch(
         pass
     entries, dropped_not_recipe = _is_recipe_filter(
         entries, capture_source="dish_batch", capture_provenance={"dish": dish},
-        url_prefilter=_dish_url_prefilter)
+        url_prefilter=_dish_url_prefilter, should_cancel=should_cancel)
     # Auto-learn the JS-rendered hint from a dish batch too (symmetry with the
     # publisher harvest): any kept result that needed a render escalation flags its
     # domain so the form shows it + future runs escalate up front.

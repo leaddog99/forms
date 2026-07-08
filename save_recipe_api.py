@@ -4944,6 +4944,18 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     if pinned_urls:
         print(f"[REFRESH-DISH] {len(pinned_urls)} Editor's Choice pin(s) to include")
 
+    from input.pipeline.jobs import JobCancelled
+    job_id = job.get("id")
+
+    def _should_cancel():
+        # Cross-process poll: the server sets cancel_requested; this out-of-process
+        # job sees it via WAL between candidates (in _is_recipe_filter) and aborts.
+        try:
+            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+                return jobs_lib.is_cancel_requested(conn, job_id)
+        except Exception:
+            return False
+
     try:
         batch_result = await asyncio.to_thread(
             build_batch,
@@ -4952,7 +4964,17 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             top_n_serpapi=top_serp,
             top_n_final=top_final,
             extra_urls=pinned_urls or None,
+            should_cancel=_should_cancel,
         )
+    except JobCancelled:
+        # Cooperative cancel — record a clean 'cancelled' run (NOT an error), then
+        # re-raise so the runner marks the job cancelled.
+        print(f"[REFRESH-DISH] {canonical_name!r} cancelled by user")
+        with _db() as conn:
+            dishes_lib.record_run_result(
+                conn, canonical_name, status="cancelled", count=0,
+                log_filename=log_filename, rejects=[], ou_fit=None, bottom_ou=None)
+        raise
     except Exception as e:
         print(f"[REFRESH-DISH] build_batch failed: {e}")
         with _db() as conn:

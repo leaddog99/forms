@@ -877,12 +877,13 @@ def refresh_poor_publisher_flags(conn: Optional[sqlite3.Connection] = None,
     the URL host across EVERY source (dish batches AND publisher harvests) — a messy
     source is a messy source wherever it shows up. A host with at least `min_samples`
     cascade-classified pages whose poor_quality FRACTION is >= `threshold` is flagged a
-    poor publisher (poor_quality_flag = 1), auto-creating a minimal domains row if absent
-    (mirrors set_paywall_calibration) so the flag persists + the curator can review it;
-    a host that already HAS a row also gets its rate/samples refreshed (and cleared to 0
-    if it no longer crosses). Thresholds default from system_config
-    (poor_publisher_min_samples / poor_publisher_threshold). Best-effort; returns a
-    summary {flagged:[...], scored:int, min_samples, threshold} ({} on error). Pass a
+    poor publisher (poor_quality_flag = 1) — EXCEPT a curated `paywall = 1` domain, which is
+    EXEMPT (its stubs read poor_quality because they're GATED, not messy) — auto-creating a
+    minimal domains row if absent (mirrors set_paywall_calibration) so the flag persists + the
+    curator can review it; a host that already HAS a row also gets its rate/samples refreshed
+    (and cleared to 0 if it no longer crosses). Thresholds default from system_config
+    (poor_publisher_min_samples / poor_publisher_threshold). Best-effort; returns a summary
+    {flagged:[...], exempted_paywall:[...], scored:int, min_samples, threshold} ({} on error). Pass a
     `conn`, or omit to open `db_path` (lets the out-of-process harvest call it
     connection-free)."""
     if min_samples is None or threshold is None:
@@ -933,10 +934,21 @@ def refresh_poor_publisher_flags(conn: Optional[sqlite3.Connection] = None,
     try:
         ensure_domains_table(conn)
         now = _now()
+        exempted = []
         for dom, (n, poor) in counts.items():
             rate = (poor / n) if n else 0.0
             flag = 1 if (n >= min_samples and rate >= threshold) else 0
-            if not domain_exists(conn, dom):
+            row = conn.execute("SELECT paywall FROM domains WHERE domain = ?", (dom,)).fetchone()
+            exists = row is not None
+            # PAYWALL EXEMPTION: a gated publisher's pages fetch as STUBS and get tagged
+            # poor_quality — that's the PAYWALL, not a messy source. Never flag a paywall=1
+            # domain (we'd wrongly suppress its cascade); still record the rate for the
+            # curator's visibility. (An auto-created host is never paywalled, so this only
+            # spares curated paywall publishers like Milk Street.)
+            if flag and exists and row[0]:
+                flag = 0
+                exempted.append(dom)
+            if not exists:
                 if not flag:
                     continue   # don't mint rows for unknown hosts that aren't poor
                 conn.execute(
@@ -960,7 +972,7 @@ def refresh_poor_publisher_flags(conn: Optional[sqlite3.Connection] = None,
     finally:
         if own:
             conn.close()
-    return {"flagged": flagged, "scored": scored,
+    return {"flagged": flagged, "exempted_paywall": exempted, "scored": scored,
             "min_samples": min_samples, "threshold": threshold}
 
 
