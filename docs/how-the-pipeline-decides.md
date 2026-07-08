@@ -29,6 +29,10 @@ like a roundup ("15 Best…"), it's on the **disallowed-domains** blocklist, or 
 the publisher's **recipe-path** scope (e.g. only keep `domain.com/recipes/…`).
 
 ### Stage 2 — The is-recipe gate (`_is_recipe_filter`) — the core keep/drop
+> **Note:** this is a *provisional* sort into `kept`/`dropped`. In `decide` mode the LLM cascade
+> (Stage 2.5) can still MOVE a gray-zone page between the two buckets afterward — a heuristic drop
+> is not final until the cascade has had its say.
+
 Per URL, in order:
 1. **Fetch** (normal UA chain → Wayback fallback → paid unblocker; a JS-only shell is re-fetched
    with a real browser render).
@@ -42,9 +46,15 @@ Per URL, in order:
    keep if the phrase score clears a threshold.
 
 ### Stage 2.5 — LLM cascade (the adjudicator for the ambiguous middle)
-Runs only on the **gray zone**: content-bearing pages with **no** JSON-LD — where the heuristic is
-least sure. A cheap Haiku pass reads a **recipe-anchored** snippet (the recipe region, NOT the blog
-intro) and returns one of three verdicts:
+**The LLM is NOT always called.** It runs only on the **gray zone**: candidates that are
+**(a) content-bearing AND (b) have no JSON-LD** — the ambiguous middle where the heuristic is least
+sure. That set spans both heuristic-*kept* and heuristic-*dropped* pages (so it can rescue *and*
+catch). It is deliberately **skipped** for: JSON-LD keeps (already certain), pre-fetch drops
+(archive/roundup-title/excluded-section — no content to judge), and fetch-failed/stub drops (<200
+chars — nothing there; those need the render/unblocker *fetch* fix, not the cascade).
+
+For each gray-zone page, a cheap Haiku pass reads a **recipe-anchored** snippet (the recipe region,
+NOT the blog intro) and returns one of three verdicts:
 - **`recipe`** — a single dish, cleanly extractable (distinct ingredient list + ordered steps).
 - **`not_recipe`** — a roundup, how-to article, explainer, product/restaurant/news page.
 - **`poor_quality`** — a recipe IS there, but too messy to extract cleanly (ingredients bleed into
