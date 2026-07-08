@@ -45,6 +45,8 @@ class ReviewSource(BaseModel):
 
 class ProductSpecs(BaseModel):
     model_number: str = ""
+    mpn: str = ""                            # manufacturer part number — VENDOR-AGNOSTIC identity
+    gtin: str = ""                           # GTIN / UPC / EAN — global vendor-agnostic identity
     material: str = ""
     dimensions_in: str = ""
     capacity: str = ""

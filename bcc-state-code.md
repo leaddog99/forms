@@ -9,6 +9,50 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-08 (product commerce) — product-first affiliate catalog: demo viewer + retailer extractor + match-or-create + URL→ATK reverse table
+
+Monetization arc (see [[project_affiliate_catalog]]). Goal: recommend products **in context** of a
+recipe/step, "advice not ads". Discovered a well-built but forgotten 2026-06 subsystem
+(`product_model.py` + `intake/products/review_parsers.py:parse_atk` + `catalog_store.py`, proven
+end-to-end: an ATK loaf-pan review → **13 products** under Bakeware/Loaf Pans (1 lb); design in
+`docs/reviews-and-product-commerce.md`). Built the missing pieces + pivoted the ingestion model.
+
+- **Demo viewer SHIPPED** — `forms/products.html` (served at `/forms/products.html`) renders the
+  existing catalog: category → class → ranked product cards (tier badge, verbatim verdict +
+  reviewer, specs, buy chips). Brand-safe by construction (reviewer name + quote, NO review
+  link-out; only buy links leave). `catalog_store.list_catalog()` + `GET /product-catalog`
+  (needs a BCC restart to go live; the page falls back to the static `forms/product_catalog_demo.json`
+  snapshot meanwhile). **Gotcha:** open via the SERVER url, not the file:// path (else fetch fails).
+- **Matching decision:** the recipe↔product match is DETERMINISTIC via curated `product_class`
+  references (recipe.equipment → class → ranked products), and SIZE is the class grain
+  ("Saucepans (2 qt)" ≠ "Dutch Ovens (6-7 qt)") — so vectors are for discovery/cross-sell, not the
+  primary matcher. The vector experiment (`experiments/affiliate/`, equipment extractor + seed
+  catalog + needs-string-vs-affordance A/B) is PARKED as that discovery tool.
+- **PIVOT to product-first** (curator's call — review sites lock down → client extraction):
+  `extract/markdown_to_product.py` mines ONE retailer product page (Amazon/SLT/WS) → the existing
+  `Product` model — proven on a Cuisinart saucepan → `product_class="Saucepans (2 qt)"`, specs,
+  Amazon offer, NO fabricated verdict/editorial. The per-source roundup parsers become the "volume
+  extractors" for later.
+- **Match-or-create save path SHIPPED + tested** (`catalog_store.save_product`/`find_matches`): one
+  product = the entity (our `product_id`), a vendor = one `RetailerOffer`. First vendor (Amazon)
+  CREATES; later vendors MERGE onto the same product_id via the VENDOR-AGNOSTIC manufacturer key
+  (brand + `mpn`/`gtin`/`model_number`, added to `ProductSpecs` — NOT the Amazon-only ASIN); offers
+  de-dupe by (retailer, asin/sku) so re-scraping updates price not rows; no-key fallback =
+  embedding-nearest SUGGESTION (dist ≤ 0.55 confident) for the form's "add as a vendor to X?" prompt.
+  Embeds on save. Verified: Amazon create → WS merge (same model 719-16) → Amazon re-extract updates
+  price → 1 row, 2 vendors.
+- **URL→ATK reverse table SHIPPED** (`intake/products/review_facts.py`) — the curator's "mass ATK
+  scan" idea: materialized `product_review_links` keyed by ASIN + normalized URL → the ATK verdict
+  facts, so a product the curator extracts at a retail URL surfaces the ATK rec we already hold
+  (in our voice, brand-safe paraphrase via `our_voice()`). Affiliate-tag-agnostic (strips `?tag=`),
+  so any vendor's URL resolves. This repurposes the review-roundup path as the ACQUISITION ENGINE
+  for the reverse index (not a display surface). Verified on the 13 ATK rows (ASIN + URL lookups).
+- `review_model.py` — first-class schema.org `Review` (the "#2 first-class independent object"
+  direction) restored, but REVIEWS DEPRIORITIZED this session ("work on the product not reviews").
+- **NEXT (UI):** extract + save endpoints, the **product form** (extract → show reverse-table facts +
+  vendor-merge prompt → edit → save+embed), and the **product bookmarklet** (retail page → stage →
+  form). Then classify into category/product_class + the products_vec recommender.
+
 ## Session log — 2026-07-08 — is-recipe recall (render-probe · poor-publisher · verb-fallback · comments back-anchor) + BIG externalization sweep
 
 Continuation of the is-recipe arc, on `split/enrichment-api`. Shipped three queued items, then

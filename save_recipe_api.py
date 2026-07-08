@@ -2549,6 +2549,19 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/product-catalog")
+def product_catalog_endpoint():
+    """Read-only product catalog (categories -> classes -> ranked products) for the demo
+    viewer at /forms/products.html. Reads the existing product_categories/classes/products
+    tables (the ATK-extracted catalog)."""
+    from intake.products import catalog_store
+    try:
+        with _db() as conn:
+            return catalog_store.list_catalog(conn)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Catalog error: {e}")
+
+
 @app.get("/dishes/{name}/top-recipes")
 def list_dish_top_recipes(name: str):
     """Return the top-N recipes for this dish, DERIVED from the scoring ledger —

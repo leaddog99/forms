@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Best Cooks Club — Product Catalog (demo)</title>
+<link rel="stylesheet" href="/forms/tokens.css">
+<link rel="stylesheet" href="/forms/components.css">
+<style>
+  body { margin: 0; background: var(--bg, #faf7f2); color: var(--ink, #2b2622);
+         font-family: Georgia, 'Times New Roman', serif; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 22px 80px; }
+  h1 { font-size: 1.7rem; margin: 0 0 2px; }
+  .sub { color: var(--ed-ink-soft, #8a7f72); font-size: .92rem; margin: 0 0 22px; }
+  .src-note { font-size: .82rem; color: var(--ed-ink-soft, #8a7f72); font-style: italic; }
+  .cat { margin: 30px 0 6px; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase;
+         color: var(--ed-ink-soft, #8a7f72); border-bottom: 1px solid var(--line, #e7ddcf); padding-bottom: 6px; }
+  .class-h { margin: 18px 0 2px; font-size: 1.3rem; }
+  .guide { color: var(--ink, #2b2622); font-size: .95rem; margin: 2px 0 4px; }
+  .reviewers { font-size: .82rem; color: var(--ed-ink-soft, #8a7f72); margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .card { border: 1px solid var(--line, #e7ddcf); border-radius: 12px; background: var(--card, #fff);
+          padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .card.top { border-color: #cbb78a; box-shadow: 0 1px 0 #efe6d2; }
+  .p-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .p-name { font-size: 1.05rem; font-weight: 600; line-height: 1.25; }
+  .p-brand { font-size: .78rem; color: var(--ed-ink-soft, #8a7f72); text-transform: uppercase; letter-spacing: .06em; }
+  .badge { flex: 0 0 auto; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+           padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .bcc-pick { display: inline-block; font-size: .72rem; font-weight: 700; color: #7a4d00;
+              background: #fbeecb; border: 1px solid #e9d49a; border-radius: 999px; padding: 2px 8px; align-self: flex-start; }
+  .verdict { font-size: .9rem; font-style: italic; color: #4a4038; line-height: 1.45;
+             border-left: 3px solid var(--line, #e7ddcf); padding: 2px 0 2px 10px; }
+  .verdict .who { display: block; font-style: normal; font-size: .74rem; color: var(--ed-ink-soft, #8a7f72); margin-top: 4px; }
+  .specs { font-size: .8rem; color: #5c5348; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .buys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .buy { font-size: .78rem; border: 1px solid var(--line, #e7ddcf); border-radius: 8px; padding: 4px 9px;
+         color: var(--ink, #2b2622); text-decoration: none; background: var(--bg, #faf7f2); }
+  .buy .price { color: #2e7d32; font-weight: 600; }
+  .empty { color: var(--ed-ink-soft, #8a7f72); padding: 40px 0; }
+  .warn { background: #fbeecb; border: 1px solid #e9d49a; border-radius: 8px; padding: 8px 12px; font-size: .82rem; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Product Catalog <span style="font-size:.9rem;color:var(--ed-ink-soft,#8a7f72)">— demo viewer</span></h1>
+  <p class="sub">Read-only view of the existing product/review catalog (bookmarkleted reviews → ranked products).
+     Reviewer name + verdict shown; per policy we never link out to the review — only <b>buy</b> links leave.</p>
+  <div id="root"><p class="empty">Loading…</p></div>
+</div>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Tier -> badge colour. Best-to-worst.
+const TIER_STYLE = {
+  'Co-Winner':                     ['#1a4a1f', '#dff0d8'],
+  'Winner':                        ['#1a4a1f', '#dff0d8'],
+  'Highly Recommended':            ['#155e63', '#d6eff0'],
+  'Recommended':                   ['#274b8a', '#dbe6fb'],
+  'Recommended with Reservations': ['#7a5b00', '#fbeecb'],
+  'Not Recommended':               ['#7a1f1f', '#f6dede'],
+  'Discontinued':                  ['#6b6157', '#ece7de'],
+};
+const TIER_ORDER = Object.keys(TIER_STYLE);
+
+function verdict(p) { return (p.verdicts || [])[0] || {}; }
+function tierRank(p) { const t = verdict(p).tier || ''; const i = TIER_ORDER.indexOf(t); return i < 0 ? 99 : i; }
+
+function specLine(specs) {
+  if (!specs) return '';
+  const bits = [];
+  if (specs.capacity) bits.push('Capacity: ' + specs.capacity);
+  if (specs.material) bits.push(specs.material);
+  if (specs.dimensions_in) bits.push(specs.dimensions_in);
+  if (specs.dishwasher_safe) bits.push('Dishwasher: ' + specs.dishwasher_safe);
+  return bits.map(b => `<span>${esc(b)}</span>`).join('');
+}
+
+function card(p) {
+  const v = verdict(p);
+  const [fg, bg] = TIER_STYLE[v.tier] || ['#6b6157', '#ece7de'];
+  const top = tierRank(p) <= 1;   // Co-Winner / Winner
+  const offers = p.retailer_offers || [];
+  const buys = offers.map(o => {
+    const price = o.price != null ? ` · <span class="price">$${esc(o.price)}</span>` : '';
+    // Buy links only leave; if we haven't minted an affiliate link yet, show a non-link chip.
+    const label = `${esc(o.retailer || 'Buy')}${price}`;
+    return o.affiliate_url
+      ? `<a class="buy" href="${esc(o.affiliate_url)}" target="_blank" rel="noopener nofollow sponsored">${label}</a>`
+      : `<span class="buy" title="Buy link not yet minted (buy-enrichment pass)">${label}</span>`;
+  }).join('');
+  const summary = v.summary ? `<div class="verdict">${esc(v.summary)}${v.reviewer ? `<span class="who">— ${esc(v.reviewer)}</span>` : ''}</div>` : '';
+  return `<div class="card${top ? ' top' : ''}">
+    <div class="p-top">
+      <div>
+        <div class="p-brand">${esc(p.brand || '')}</div>
+        <div class="p-name">${esc(p.name || '')}</div>
+      </div>
+      ${v.tier ? `<span class="badge" style="color:${fg};background:${bg}">${esc(v.tier)}</span>` : ''}
+    </div>
+    ${p.bcc_pick ? `<span class="bcc-pick">★ BCC pick: ${esc(p.bcc_pick)}</span>` : ''}
+    ${p.bcc_blurb ? `<div style="font-size:.9rem">${esc(p.bcc_blurb)}</div>` : ''}
+    ${summary}
+    <div class="specs">${specLine(p.specs)}</div>
+    ${buys ? `<div class="buys">${buys}</div>` : '<div class="specs" style="color:#b0a596">no retailer offers captured</div>'}
+  </div>`;
+}
+
+function render(data) {
+  const root = $('#root');
+  const cats = data.categories || [];
+  const classes = data.classes || [];
+  const products = data.products || [];
+  if (!products.length) { root.innerHTML = '<p class="empty">No products in the catalog yet.</p>'; return; }
+  const byClass = {};
+  for (const p of products) (byClass[p.product_class] = byClass[p.product_class] || []).push(p);
+  const classesByCat = {};
+  for (const c of classes) (classesByCat[c.category] = classesByCat[c.category] || []).push(c);
+
+  let html = '';
+  for (const cat of cats) {
+    html += `<div class="cat">${esc(cat)}</div>`;
+    for (const c of (classesByCat[cat] || [])) {
+      const prods = (byClass[c.name] || []).slice().sort((a, b) => tierRank(a) - tierRank(b) || (a.name || '').localeCompare(b.name || ''));
+      const srcNames = (c.sources || []).map(s => s.reviewer || s.origin || '').filter(Boolean);
+      html += `<h2 class="class-h">${esc(c.name)} <span style="font-size:.8rem;color:var(--ed-ink-soft,#8a7f72)">(${prods.length})</span></h2>`;
+      if (c.buying_guide) html += `<div class="guide">${esc(c.buying_guide)}</div>`;
+      if (srcNames.length) html += `<div class="reviewers">Reviewed by: ${srcNames.map(esc).join(' · ')}</div>`;
+      html += `<div class="grid">${prods.map(card).join('')}</div>`;
+    }
+  }
+  root.innerHTML = html;
+}
+
+// Live endpoint first (needs a server restart to exist); fall back to the static snapshot
+// so the demo renders immediately.
+(async function () {
+  let data = null;
+  try {
+    const r = await fetch('/product-catalog');
+    if (r.ok) data = await r.json();
+  } catch {}
+  if (!data) {
+    try {
+      const r = await fetch('/forms/product_catalog_demo.json');
+      if (r.ok) { data = await r.json(); $('#root').insertAdjacentHTML('beforebegin',
+        '<div class="warn">Showing a static snapshot (the live <code>/product-catalog</code> endpoint needs a server restart). Restart BCC to serve live data.</div>'); }
+    } catch {}
+  }
+  if (!data) { $('#root').innerHTML = '<p class="empty">Could not load the catalog.</p>'; return; }
+  render(data);
+})();
+</script>
+</body>
+</html>

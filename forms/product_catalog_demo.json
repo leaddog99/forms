@@ -1,0 +1,565 @@
+{
+ "categories": [
+  "Bakeware"
+ ],
+ "classes": [
+  {
+   "name": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "criteria": [
+    "Performance",
+    "Ease of Use",
+    "Cleanup/Durability"
+   ],
+   "buying_guide": "",
+   "sources": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "authors": [
+      "Sarah Sandler",
+      "Kate Shannon Levine"
+     ],
+     "title": "The Best Loaf Pans of 2026",
+     "url": "https://www.americastestkitchen.com/equipment_reviews/1921-loaf-pans",
+     "last_updated": "March 4, 2026",
+     "captured_at": "2026-06-02T22:36:35.841Z"
+    }
+   ]
+  }
+ ],
+ "products": [
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "USA Pan",
+   "name": "USA Pan 1 lb Seamless Loaf Pan",
+   "specs": {
+    "model_number": "1146LF",
+    "material": "Aluminized steel with nonstick silicone coating",
+    "dimensions_in": "8.5 x 4.5 x 2.75 in",
+    "capacity": "5.6 cups",
+    "weight": "11.6 oz",
+    "dishwasher_safe": "Yes, but hand wash recommended"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Co-Winner",
+     "summary": "This lightweight molded loaf pan produced great loaves of sandwich bread and pound cake; they just looked a little less polished than loaves baked in folded pans. Its silicone nonstick coating released baked goods with ease.",
+     "ratings": {},
+     "price_at_test": 14.99
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Amazon",
+     "asin": "B0BKR8TN8X",
+     "source_url": "https://www.amazon.com/USA-Pan-Bakeware-Seamless-Nonstick/dp/B0BKR8TN8X/?tag=akotrx02554-20",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "df26d05f-7214-4af4-987c-2b4cd567a7d7"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "USA Pan",
+   "name": "USA Pan 1 lb Small Loaf Pan",
+   "specs": {
+    "model_number": "1140LF",
+    "material": "Aluminized steel with nonstick silicone coating",
+    "dimensions_in": "8⅝ × 4½ × 2¾ in",
+    "capacity": "6.3 cups",
+    "weight": "1 lb",
+    "dishwasher_safe": "No"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Co-Winner",
+     "summary": "This folded metal pan produced tall, picture-perfect pound cake and sandwich bread with crisp corners. Like all folded pans, it lacked handles and had crevices in the corners that trapped food.",
+     "ratings": {},
+     "price_at_test": 20.79
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Amazon",
+     "asin": "B0029JQEIC",
+     "source_url": "https://www.amazon.com/dp/B0029JQEIC?tag=akotrx02554-20",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "1931020f-941b-496d-80b6-ff4fe7cc61ce"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "OXO Good Grips",
+   "name": "OXO Good Grips Non-Stick Pro 1 Lb Loaf Pan",
+   "specs": {
+    "model_number": "11160300",
+    "material": "Aluminized steel with ceramic nonstick coating",
+    "dimensions_in": "8½ × 4½ × 2¾ in",
+    "capacity": "6.6 cups",
+    "weight": "14.75 oz",
+    "dishwasher_safe": "No"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Highly Recommended",
+     "summary": "This pan performed just as well as our favorite molded loaf pan; it just costs a bit more. Its rounded corners created baked goods with rounded edges that lacked the polish and refinement of foods baked in higher-ranking pans.",
+     "ratings": {},
+     "price_at_test": 23.99
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Amazon",
+     "asin": "B015CQZOCA",
+     "source_url": "https://www.amazon.com/dp/B015CQZOCA?tag=akotrx02554-20",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    },
+    {
+     "retailer": "OXO",
+     "asin": "",
+     "source_url": "https://oxo.x57o.net/c/2204542/577714/9558?u=https%3A%2F%2Fwww.oxo.com%2Fnon-stick-pro-1-lb-loaf-pan.html",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "b76f536f-c41c-4037-897d-808e83f78322"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Williams Sonoma",
+   "name": "Williams Sonoma Goldtouch Pro Nonstick Loaf Pan (1 lb)",
+   "specs": {
+    "model_number": "4741438",
+    "material": "Aluminized steel with nonstick coating",
+    "dimensions_in": "8.5 x 4.5 x 2.75 in",
+    "capacity": "5.6 cups",
+    "weight": "1 lb, 4 oz",
+    "dishwasher_safe": "Yes, but hand wash recommended"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Highly Recommended",
+     "summary": "This folded loaf pan performed nearly identically to our top choice, but it is more expensive. We love the crisp corners and straight walls it creates on cakes and breads.",
+     "ratings": {},
+     "price_at_test": 34.95
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Williams Sonoma",
+     "asin": "",
+     "source_url": "https://www.williams-sonoma.com/products/ws-goldtouchpro-loaf-pan/",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "60aac7c5-16d6-4c16-93f5-70e93c6e7779"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Pyrex",
+   "name": "Pyrex Easy Grab 1.5-qt Loaf Dish",
+   "specs": {
+    "model_number": "5300092",
+    "material": "Tempered soda-lime glass with plastic lid",
+    "dimensions_in": "8¼ × 5⅛ × 3 in",
+    "capacity": "6.5 cups",
+    "weight": "2 lb, 4 oz",
+    "dishwasher_safe": "Top rack only"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Recommended",
+     "summary": "We liked the even browning of pound cake and sandwich bread baked in this iconic pan. Unfortunately, it was significantly wider than we wanted and its baked goods looked chubby and squat.",
+     "ratings": {},
+     "price_at_test": 15.75
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Amazon",
+     "asin": "B005JD05OY",
+     "source_url": "https://www.amazon.com/dp/B005JD05OY?tag=akotrx02554-20",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    },
+    {
+     "retailer": "Walmart",
+     "asin": "",
+     "source_url": "https://goto.walmart.com/c/2204542/565706/9383?u=https%3A%2F%2Fwww.walmart.com%2Fip%2F19305562",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "fd0f5d19-f29a-46cc-b924-584d3bce31f2"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Cuisinart",
+   "name": "Cuisinart Chef’s Classic Nonstick 9\" Loaf Pan",
+   "specs": {
+    "model_number": "AMB-9LP",
+    "material": "Aluminized steel with nonstick coating",
+    "dimensions_in": "9 × 5 × 2¾ in",
+    "capacity": "7.5 cups",
+    "weight": "1 lb, 2.9 oz",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Recommended with Reservations",
+     "summary": "This pan is noticeably larger than most of the others in our lineup and almost oval in shape. Pound cake and sandwich bread browned evenly and tasted fine, but we preferred the shape of baked goods from narrower 8½ by 4½-inch pans.",
+     "ratings": {},
+     "price_at_test": 12.95
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Amazon",
+     "asin": "B0000ULZY0",
+     "source_url": "https://www.amazon.com/Cuisinart-AMB-9LP-Classic-Nonstick-Bakeware/dp/B0000ULZY0/?tag=akotrx02554-20",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    },
+    {
+     "retailer": "Cuisinart",
+     "asin": "",
+     "source_url": "https://www.cuisinart.com/chefs-classic-non-stick-9x5-loaf-pan/AMB-9LP.html",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    },
+    {
+     "retailer": "Target",
+     "asin": "",
+     "source_url": "https://goto.target.com/c/2204542/81938/2092?u=https%3A%2F%2Fwww.target.com%2Fp%2FA-81615530",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "1366d109-02a0-4b41-8ed8-13777e704089"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Emile Henry",
+   "name": "Emile Henry French Ceramic Potter Loaf Pan",
+   "specs": {
+    "model_number": "971388",
+    "material": "Ceramic stoneware",
+    "dimensions_in": "9 x 4.75 x 3 in",
+    "capacity": "5.75 cups",
+    "weight": "2 lb, 3½ oz",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Recommended with Reservations",
+     "summary": "This pretty loaf pan made nice cake and bread, but they browned more quickly, likely because of the pan’s dark color, which transfers more heat to the food within.",
+     "ratings": {},
+     "price_at_test": 60.0
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Williams Sonoma",
+     "asin": "",
+     "source_url": "https://www.williams-sonoma.com/products/emile-henry-potter-loaf-pan-riviera",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "b9c03387-c365-495e-b02b-3846f70b1783"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Le Creuset",
+   "name": "Le Creuset Heritage Loaf Pan",
+   "specs": {
+    "model_number": "71104023010005",
+    "material": "Ceramic stoneware",
+    "dimensions_in": "9 x 5 x 3 in",
+    "capacity": "6.8 cups",
+    "weight": "2 lb, 10.2 oz",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Recommended with Reservations",
+     "summary": "Everything we baked in this large ceramic loaf pan turned out great. Because the pan is a little longer and wider than our top models, cakes and breads baked more quickly.",
+     "ratings": {},
+     "price_at_test": 55.95
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [
+    {
+     "retailer": "Amazon",
+     "asin": "B006Y3ZLR4",
+     "source_url": "https://www.amazon.com/Creuset-Heritage-Stoneware-Loaf-White/dp/B006Y3ZLR4/?tag=akotrx02554-20",
+     "affiliate_url": "",
+     "price": null,
+     "savings": null
+    }
+   ],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "5cd1f9ba-b70f-4cb8-9649-b50286d6ca12"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Chicago Metallic",
+   "name": "Chicago Metallic Commercial II Nonstick 1 lb Loaf Pan",
+   "specs": {
+    "model_number": "59042",
+    "material": "Aluminized steel",
+    "dimensions_in": "8½ × 4½ × 2¾ in",
+    "capacity": "1.48 L",
+    "weight": "",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Discontinued",
+     "summary": "This folded pan produced straight-sided baked goods with sharp edges that released cleanly and browned evenly. But as with all the folded pans in our lineup, its inside corners had small crevices and we had to wash them carefully.",
+     "ratings": {},
+     "price_at_test": 17.99
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "b269485b-755b-4c07-8e2b-3eaac57bb8ca"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "OXO Good Grips",
+   "name": "OXO Good Grips Glass 1.6 Qt Loaf Baking Dish",
+   "specs": {
+    "model_number": "11176000",
+    "material": "Glass",
+    "dimensions_in": "8¼ × 5½ × 3⅛ in",
+    "capacity": "1.74 L",
+    "weight": "",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Discontinued",
+     "summary": "This glass pan is wider than our top-rated models. Baked goods were a bit round; we preferred sharp, distinct rectangular loaves. The pan didn’t scratch, and it was easy to clean.",
+     "ratings": {},
+     "price_at_test": 8.99
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "0bb41788-12d3-4325-aec9-9cd139aa1029"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Simply Calphalon",
+   "name": "Simply Calphalon Nonstick Bakeware Medium Loaf Pan",
+   "specs": {
+    "model_number": "1758084",
+    "material": "Carbon steel",
+    "dimensions_in": "8½ × 4½ × 2⅝ in",
+    "capacity": "1.52 L",
+    "weight": "",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Discontinued",
+     "summary": "This pan, which was exactly 8½ by 4½ inches across the top, performed well across our tests. It produced evenly browned baked goods with the rounded edges characteristic of molded loaf pans.",
+     "ratings": {},
+     "price_at_test": 12.01
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "a3d53f51-cd54-4a8d-b134-cc045bbd1e42"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Trudeau",
+   "name": "Trudeau Structure Silicone Pro Loaf Pan",
+   "specs": {
+    "model_number": "9912096",
+    "material": "Silicone and steel",
+    "dimensions_in": "8½ × 4½ × 2½ in",
+    "capacity": "1.46 L",
+    "weight": "",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Discontinued",
+     "summary": "Food baked in this pan had fairly crisp corners, but it was frustrating to use. The soft silicone was too flexible; the bottom buckled when we pressed it. Worse: It held on to lasagna smells even after we washed it several times.",
+     "ratings": {},
+     "price_at_test": 24.95
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "1003b229-8faa-4b62-9c4f-119df762db9a"
+  },
+  {
+   "product_class": "Loaf Pans (1 lb)",
+   "category": "Bakeware",
+   "brand": "Wilton",
+   "name": "Wilton Recipe Right 8.5 × 4.5 Medium Loaf Pan",
+   "specs": {
+    "model_number": "2105-950",
+    "material": "Steel",
+    "dimensions_in": "8½ × 4½ × 2½ in",
+    "capacity": "1.31 L",
+    "weight": "",
+    "dishwasher_safe": "Yes"
+   },
+   "verdicts": [
+    {
+     "reviewer": "America's Test Kitchen",
+     "tier": "Discontinued",
+     "summary": "Although this pan measures 8½ by 4½ inches at the top edges, the bottom is narrow and its total capacity is slightly smaller than those of the other pans. Sandwich bread mushroomed over the top and pound cake overflowed slightly.",
+     "ratings": {},
+     "price_at_test": 7.53
+    }
+   ],
+   "image_url": "",
+   "retailer_offers": [],
+   "bcc_pick": "",
+   "bcc_blurb": "",
+   "critique": "",
+   "rank_score": null,
+   "sources": [
+    "America's Test Kitchen"
+   ],
+   "product_id": "ef601df9-01f8-4fe4-bb08-b07e748d2e22"
+  }
+ ]
+}
