@@ -18,6 +18,8 @@ What it does, in order:
   2. Copies recipes.db AND recipes.sql to ADAM (\\Adam\tbotb, mapped Z:)
      under Backups\recipes-db\ with a timestamp in the filename.
   3. Verifies the copied .db with PRAGMA integrity_check before trusting it.
+  4. Also copies the git-ignored training.db (the is-recipe corpus / gold human
+     labels) to ADAM — best-effort, its only off-machine backup.
 
 Run it any time you want an off-machine snapshot — especially BEFORE a risky
 batch run. Reads the live DB read-only, so it's safe while the server is up.
@@ -37,6 +39,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DB = HERE / "recipes.db"
 SQL = HERE / "recipes.sql"
+# The is-recipe training corpus — git-ignored (never in the .sql dump), so the ADAM
+# copy is its ONLY backup. It holds the curator's human_label CORRECTIONS: the gold
+# signal that teaches where the heuristic is wrong. Worth off-machine copies.
+TRAINING = HERE / "training.db"
 DEFAULT_ADAM = Path(r"Z:\Backups\recipes-db")
 
 
@@ -175,6 +181,16 @@ def run_backup(dest: Path = DEFAULT_ADAM, no_adam: bool = False) -> dict:
         raise RuntimeError(f"integrity_check FAILED on the backup copy {db_dst}")
     out.update({"adam": True, "db_dst": str(db_dst), "sql_dst": str(sql_dst),
                 "integrity": "ok"})
+    # The git-ignored training corpus (gold human labels) — its only off-machine copy.
+    # Best-effort: a missing/locked training.db must not fail the recipes.db backup.
+    if TRAINING.exists():
+        try:
+            train_dst = dest / f"training_{ts}.db"
+            shutil.copy2(TRAINING, train_dst)
+            out["training_dst"] = str(train_dst)
+            out["training_integrity"] = "ok" if integrity_ok(train_dst) else "FAILED"
+        except Exception as e:  # noqa: BLE001
+            out["training_error"] = f"{type(e).__name__}: {e}"
     return out
 
 
@@ -196,6 +212,10 @@ def main() -> int:
         print(f"copied -> {r['db_dst']}")
         print(f"copied -> {r['sql_dst']}")
         print("integrity_check: ok")
+        if r.get("training_dst"):
+            print(f"copied -> {r['training_dst']}  (training corpus, integrity: {r.get('training_integrity')})")
+        elif r.get("training_error"):
+            print(f"training.db NOT copied: {r['training_error']}", file=sys.stderr)
     elif args.no_adam:
         print("--no-adam: skipped ADAM copy.")
     return 0

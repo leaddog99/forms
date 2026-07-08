@@ -92,6 +92,15 @@
         const step = s.type === 'float' ? 'any' : '1';
         return `<input type="number" step="${step}" id="f_${esc(s.key)}" value="${esc(s.value)}" ${ro}>`;
       }
+      if (s.type === 'list'){
+        // JSON list edited one item per line. Leading/trailing SPACES are significant
+        // and preserved (e.g. recipe_phrases ' ounce') — only fully-blank lines drop.
+        const lines = Array.isArray(s.value) ? s.value.join('\n') : (s.value ?? '');
+        return `<textarea id="f_${esc(s.key)}" rows="10" ${ro} style="width:100%;`
+             + `font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92rem;`
+             + `padding:11px 13px;border:1px solid var(--border);border-radius:10px;`
+             + `background:#fff;color:var(--ink);resize:vertical">${esc(lines)}</textarea>`;
+      }
       if (s.type === 'text'){
         // multi-line, monospace (one item per line — e.g. serp_exclusions)
         return `<textarea id="f_${esc(s.key)}" rows="8" ${ro} style="width:100%;`
@@ -132,13 +141,17 @@
       if (s.type === 'bool') return el.checked;
       if (s.type === 'int') return el.value === '' ? null : parseInt(el.value, 10);
       if (s.type === 'float') return el.value === '' ? null : parseFloat(el.value);
+      // list: one item per line; keep leading/trailing spaces, drop only blank lines.
+      if (s.type === 'list') return el.value.split('\n').filter(l => l.trim() !== '');
       return el.value;
     }
 
     function onEdit(s, el){
       if (s.type === 'bool'){ const st = document.getElementById('st_'+s.key); if (st) st.textContent = el.checked ? 'On' : 'Off'; }
       const v = readVal(s, el);
-      if (v === s.value) delete dirty[s.key]; else dirty[s.key] = v;
+      // lists are arrays → compare by value, not reference, so an unchanged list isn't "dirty"
+      const same = (s.type === 'list') ? JSON.stringify(v) === JSON.stringify(s.value) : (v === s.value);
+      if (same) delete dirty[s.key]; else dirty[s.key] = v;
       $('#saveBtn').disabled = Object.keys(dirty).length === 0;
     }
 

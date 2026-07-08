@@ -303,11 +303,12 @@ def _matched_phrases(content: str, limit: int = 30) -> list:
     if not content:
         return []
     try:
-        from input.pipeline.config import RECIPE_PHRASES
+        from input.pipeline.validators import recipe_phrases
+        phrases = recipe_phrases()   # LIVE system_config list (seed-fallback), whitespace intact
     except Exception:
         return []
     seen, out = set(), []
-    for p in RECIPE_PHRASES:
+    for p in phrases:
         if p in content:
             t = p.strip()
             if t and t not in seen:

@@ -10,12 +10,28 @@ from datetime import datetime, timezone
 from input.pipeline.config import RECIPE_PHRASES, IS_RECIPE_THRESHOLD
 
 
+def recipe_phrases() -> list:
+    """The LIVE English/base recipe-phrase list — system_config `recipe_phrases`, falling
+    back to the code seed (config.RECIPE_PHRASES). Whitespace is PRESERVED (never stripped):
+    the leading/trailing spaces in entries like ' ounce' / 'yield ' are load-bearing (they
+    stop the substring match firing inside 'announce' / 'yielding'). Best-effort, at-runtime
+    so this module keeps no import-time dependency on system_config."""
+    try:
+        from input.pipeline import system_config as _sc
+        v = _sc.get_setting("recipe_phrases", None)
+        if isinstance(v, (list, tuple)) and v:
+            return [p for p in v if isinstance(p, str)]
+    except Exception:
+        pass
+    return RECIPE_PHRASES
+
+
 def score_recipe_text(text: str) -> int:
     """Count occurrences of recipe phrases (case-insensitive)."""
     if not text:
         return 0
     lowered = text.lower()
-    return sum(1 for phrase in RECIPE_PHRASES if phrase in lowered)
+    return sum(1 for phrase in recipe_phrases() if phrase in lowered)
 
 
 # --- Per-language phrase scoring (score RAW non-English text, no per-page translate) ---
@@ -111,7 +127,7 @@ def _phrases_and_threshold(lang: str):
     translated <lang>.json. (None, None) when we have no list for it."""
     lang = (lang or "en").lower()[:2]
     if lang == "en":
-        return RECIPE_PHRASES, IS_RECIPE_THRESHOLD
+        return recipe_phrases(), IS_RECIPE_THRESHOLD
     data = _load_lang_phrases(lang)
     if data:
         return data["phrases"], data["threshold"]

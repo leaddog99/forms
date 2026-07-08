@@ -24,6 +24,15 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+# SEED sources for two lists migrated OUT of config.py into this DB-resident record
+# (feedback_no_data_in_code). The code lists stay as the diffable bootstrap fallback;
+# these references keep the seed in one place instead of re-typing ~158 phrases. Safe
+# one-way import — config.py imports no pipeline module (no cycle).
+from input.pipeline.config import (
+    RECIPE_PHRASES as _RECIPE_PHRASES_SEED,
+    _DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS as _URL_PATH_FRAGMENTS_SEED,
+)
+
 
 # ============================================================
 #  Bootstrap seed (DEFAULTS) — code constant is seed-only.
@@ -448,6 +457,39 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Social/aggregator/encyclopedia hosts whose pages use recipe vocabulary "
                        "but aren't recipes. Replaces the old per-domain `allowed=0` flag — one "
                        "editable list, no domains-master row needed to block a junk host.",
+    },
+    {
+        "key": "disallowed_url_path_fragments",
+        "value": _URL_PATH_FRAGMENTS_SEED,
+        "type": "list",
+        "category": "Harvest",
+        "label": "Disallowed URL-path fragments",
+        "description": "URL-path SUBSTRINGS that mark a roundup/article/news page rather than a "
+                       "single recipe, dropped from every batch BEFORE any fetch (e.g. "
+                       "'/articles/', '/roundup', '/buying-guide' — the "
+                       "americastestkitchen.com/articles/24-the-best-beef-stew pattern that "
+                       "survives phrase scoring because narrative articles use recipe "
+                       "vocabulary). Matched as a lowercase substring of the full URL, so "
+                       "anchor them with slashes to avoid hitting a recipe slug. The sibling "
+                       "of 'disallowed_domains' (which blocks whole hosts).",
+    },
+    {
+        "key": "recipe_phrases",
+        "value": _RECIPE_PHRASES_SEED,
+        "type": "list",
+        "category": "Harvest",
+        "label": "Recipe-phrase detection list (English / base is_recipe score)",
+        "description": "The ~158 phrases the English/base is-recipe HEURISTIC counts to score a "
+                       "page (a page scoring >= the is_recipe threshold is a candidate). One "
+                       "phrase per line. IMPORTANT: leading/trailing SPACES are SIGNIFICANT and "
+                       "preserved — ' ounce' (with the space) avoids matching 'announce', "
+                       "'yield ' avoids 'yielding'; do NOT trim them. Entries are matched as a "
+                       "lowercase substring, so keep them specific enough to not fire in "
+                       "narrative prose (bare ' cup' / single spice names were pruned for that "
+                       "reason — quantified/anchored forms like '1/2 cup', 'squeeze of' stay). "
+                       "NON-ENGLISH pages do NOT use this list; each language has its own "
+                       "recipe_phrases/<lang>.json, regenerated from this one by "
+                       "scripts/translate_recipe_phrases.py — re-run that after editing here.",
     },
     {
         "key": "structure_ingredient_markers",

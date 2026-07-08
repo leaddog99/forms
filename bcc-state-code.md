@@ -72,10 +72,24 @@ Also renamed the Labeling UI 'Poor layout' → 'Poor quality' (verbiage match; v
   rank/worklist reads left in place (harmless, all rows =1).
 - **recipes.db schema changed** (`_QUALITY_COLUMNS` + poor flags + new domain row) — recipes.sql NOT
   re-dumped this session.
-- **Deferred (offered, not done):** rename `is_recipe_cascade_mode`→`llm` (it's a term-of-art —
-  cheap-heuristic-gates-expensive-LLM cascade); add `training.db` (gold human labels, git-ignored) to
-  bcc_backup.bat; migrate the last two `config.py` lists (`_DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS`,
-  `RECIPE_PHRASES`) into system_config; carried delish stub auto-learn end-to-end verification.
+- **Deferred (offered, not done):** rename `is_recipe_cascade_mode`→`llm` (curator DECLINED — kept
+  the cascade term-of-art); carried delish stub auto-learn end-to-end verification.
+
+### Follow-up (same session) — training.db backup + finish the config-list migration
+- **training.db → ADAM backup** (`backup_db.py`): the git-ignored is-recipe corpus (gold human
+  labels) is now copied to ADAM alongside recipes.db, integrity-checked, best-effort (a
+  missing/locked training.db can't fail the recipes backup). Its ONLY off-machine copy.
+- **Last two `config.py` lists → system_config** (curator: "migrate config py lists to the system
+  db"): `RECIPE_PHRASES` → `recipe_phrases` (158 entries; **whitespace is significant — `' ounce'`
+  not `'ounce'` — the reader `validators.recipe_phrases()` preserves it, NO strip**) and
+  `_DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS` → `disallowed_url_path_fragments` (read live in
+  `_filter_disallowed`). Code lists kept as the diffable SEED (system_config seeds reference them, so
+  no re-typing); consumers (validators score + `_phrases_and_threshold`, training_capture
+  `_matched_phrases`, translate_recipe_phrases script) read live w/ seed fallback. Rich descriptions
+  built into each setting. **Bug found + fixed:** `forms/system.html` had NO `list`-type editor at
+  all (every list setting incl. the pre-existing `semrush_export_patterns` fell through to a broken
+  string input) → added a whitespace-preserving one-per-line textarea + JSON dirty-compare. All the
+  session's externalized lists are now genuinely editable. `docs/is-recipe-vocab-lists.md` updated.
 
 ## Session log — 2026-07-07 (evening) — LLM cascade SHIPPED + DECIDE mode ON + rejected ideas
 

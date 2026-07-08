@@ -24,9 +24,17 @@ it, and the multi-language story.**
 | `snippet_comment_markers` | `training_capture.py` → `_smart_snippet` | Comment/footer markers used as the recipe **back-anchor** (see below). |
 | `snippet_lead_chars` | `training_capture.py` → `_smart_snippet` | Chars of context to include BEFORE the recipe anchor (a small lead-in, not the window size). |
 | `disallowed_domains` | `input/pipeline/domains_lib.py` → `get_blocked_root_domains` | Root-domain hard blocklist, dropped before any fetch. |
+| `disallowed_url_path_fragments` | `intake/build_query_batch.py` → `_filter_disallowed` | URL-path substrings that mark a roundup/article/news page, dropped before any fetch. |
+| `recipe_phrases` | `input/pipeline/validators.py` → `recipe_phrases()` → `score_recipe_text` / `_phrases_and_threshold` | The ~158 phrases the English/base is-recipe HEURISTIC counts to score a page. |
 
 Related (not structural vocab, but same "editable list" family): `serp_exclusions`
 (SERP `-site:`/`-term`), `semrush_export_patterns` (inbox filename globs).
+
+**Editing lists in the admin** (⋮ → System config): a `list` setting is a textarea, **one item
+per line**. Blank lines are dropped; **leading/trailing spaces on a line are PRESERVED** — this
+matters for `recipe_phrases` (`" ounce"` with the space is not `"ounce"`). The `recipe_phrases`
+list also does NOT get the accent-strip/lowercase normalization the structure-marker lists do,
+so write it exactly as it should match (lowercase, spaces intentional).
 
 ### The structure gate (`has_recipe_structure`)
 A real recipe has **BOTH an ingredients section AND a method section**; a vocabulary-rich

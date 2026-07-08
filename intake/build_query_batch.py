@@ -269,7 +269,15 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     except Exception:
         table_block = set()
     domain_block = {d.lower() for d in DISALLOWED_DOMAINS} | table_block
-    path_block = {f.lower() for f in DISALLOWED_URL_PATH_FRAGMENTS}
+    # URL-path fragments: the LIVE editable list (system_config), falling back to the
+    # config.py seed (imported as DISALLOWED_URL_PATH_FRAGMENTS) if unset/unreadable.
+    try:
+        from input.pipeline.system_config import get_setting as _gs
+        _frags = _gs("disallowed_url_path_fragments", None)
+        _frags = _frags if isinstance(_frags, (list, tuple)) and _frags else DISALLOWED_URL_PATH_FRAGMENTS
+    except Exception:
+        _frags = DISALLOWED_URL_PATH_FRAGMENTS
+    path_block = {str(f).lower() for f in _frags}
     for e in entries:
         domain = (e.get("domain") or "").lower()
         if domain in domain_block:

@@ -22,6 +22,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from input.pipeline.config import RECIPE_PHRASES, IS_RECIPE_THRESHOLD  # noqa: E402
 
+
+def _live_recipe_phrases():
+    """The LIVE English phrase list (system_config, seed-fallback) so a regenerated pack
+    reflects any curator edit made in the admin — not the stale code seed."""
+    try:
+        from input.pipeline.validators import recipe_phrases
+        return recipe_phrases()
+    except Exception:
+        return RECIPE_PHRASES
+
 _OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "intake", "recipe_phrases")
 
@@ -98,7 +108,7 @@ def translate_phrases(lang: str):
         operation="translate_recipe_phrases", model="claude-haiku-4-5",
         max_tokens=8000, temperature=0, system=_sys_prompt(lang_name),
         messages=[{"role": "user",
-                   "content": "English detection phrases:\n" + ", ".join(RECIPE_PHRASES)}],
+                   "content": "English detection phrases:\n" + ", ".join(_live_recipe_phrases())}],
         tools=[_TOOL], tool_choice={"type": "tool", "name": "phrase_translations"})
     ti = next((b.input for b in resp.content if getattr(b, "type", "") == "tool_use"), None)
     ti = ti if isinstance(ti, dict) else {}

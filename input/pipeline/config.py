@@ -11,8 +11,12 @@
 # stay in code — they're not batch-pipeline-only tunables. The user's
 # call 2026-05-24.
 #
-# RECIPE_PHRASES stays in code too — ~158 entries of semi-data,
-# reviewed/diffed in code rather than tuned in a config file.
+# RECIPE_PHRASES and _DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS below are now the
+# BOOTSTRAP SEEDS for the DB-resident system_config settings `recipe_phrases` /
+# `disallowed_url_path_fragments` (feedback_no_data_in_code) — kept here so they
+# stay diffable in code, but the LIVE values the pipeline reads are the editable
+# system_config ones (validators._recipe_phrases / build_query_batch._filter_disallowed
+# read them at runtime, falling back to these). Edit in ⋮ admin → System config.
 
 import json as _json
 from pathlib import Path as _Path
