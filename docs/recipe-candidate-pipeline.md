@@ -5,7 +5,9 @@ changes the flow**. Written 2026-06-26 after the non-English filtering rework.
 
 > **New to this?** Start with [harvest-and-cache-explained.md](harvest-and-cache-explained.md) —
 > a high-school-level walkthrough of the *whole* SEMrush→cache journey (page cache, recipe cache,
-> the change-detecting fingerprint, and the exceptions). This doc is the gate-by-gate detail.
+> the change-detecting fingerprint, and the exceptions). For a plain-language map of every gate
+> **plus how the embedding & regression compute/decide**, see
+> [how-the-pipeline-decides.md](how-the-pipeline-decides.md). This doc is the gate-by-gate detail.
 
 ## TL;DR — does the Google harvest run the same gates as the SEMrush-file harvest?
 

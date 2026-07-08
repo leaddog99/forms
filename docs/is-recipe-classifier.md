@@ -2,6 +2,8 @@
 
 Written 2026-07-07. Supersedes the flat phrase-count heuristic for the harvest is-recipe gate.
 Companion to [corpus-ml-strategy.md](corpus-ml-strategy.md) (this is its first shipped project).
+For the plain-language map of every gate + how the embedding/regression compute, see
+[how-the-pipeline-decides.md](how-the-pipeline-decides.md).
 
 ## Problem
 The harvest filter decides keep/drop for every candidate URL. Two failure modes were live:
