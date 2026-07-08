@@ -64,6 +64,50 @@ _TOOL = {
 }
 
 
+def cascade_mode() -> str:
+    """Effective cascade mode from system_config `is_recipe_cascade_mode`
+    ('off' | 'shadow' | 'decide'). Anything unrecognized -> 'off'. (Replaces the
+    legacy `is_recipe_cascade_shadow` bool, migrated to 'shadow' on this instance.)"""
+    try:
+        from input.pipeline.system_config import get_setting as _gs
+        m = (_gs("is_recipe_cascade_mode", "off") or "off").strip().lower()
+        return m if m in ("off", "shadow", "decide") else "off"
+    except Exception:
+        return "off"
+
+
+def apply_decide(kept, dropped, *, log=print) -> tuple:
+    """DECIDE mode — apply the asymmetric cascade override, mutating `kept`/`dropped`
+    IN PLACE (call AFTER shadow_classify has stamped verdicts AND after training capture,
+    so the recorded label stays the HEURISTIC decision). Policy (validated ~77% rescue /
+    ~88% catch precision on curator labels):
+      - RESCUE: a heuristic DROP the LLM calls 'recipe'            -> move to kept.
+      - CATCH:  a heuristic KEEP the LLM calls not_recipe/poor_quality -> move to dropped
+                (never overrides a JSON-LD keep — those never reach the LLM anyway).
+    Entries with no LLM verdict (outside the gray zone) are untouched. Returns (rescued, caught)."""
+    new_kept, new_dropped, resc, caught = [], [], 0, 0
+    for e in kept:
+        sv = e.get("_shadow_verdict")
+        if sv in ("not_recipe", "poor_quality") and not e.get("jsonld_recipe"):
+            e["_dropped_reason"] = f"cascade-{sv}"
+            new_dropped.append(e)
+            caught += 1
+        else:
+            new_kept.append(e)
+    for e in dropped:
+        if e.get("_shadow_verdict") == "recipe":
+            e.pop("_dropped_reason", None)
+            new_kept.append(e)
+            resc += 1
+        else:
+            new_dropped.append(e)
+    kept[:] = new_kept
+    dropped[:] = new_dropped
+    log(f"  [cascade-decide] rescued {resc} (heuristic-drop -> keep), "
+        f"caught {caught} (heuristic-keep -> drop)")
+    return resc, caught
+
+
 def shadow_classify(entries, *, log=print) -> int:
     """Stamp `_shadow_verdict` ('keep'|'drop') + `_shadow_reason` onto each GRAY-ZONE
     entry in `entries` (a mixed list of kept+dropped filter entries). Returns the count

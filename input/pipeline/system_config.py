@@ -351,18 +351,19 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "reuses the url-prefilter rate. See docs/keyword-prescreen.md.",
     },
     {
-        "key": "is_recipe_cascade_shadow",
-        "value": False,
-        "type": "bool",
+        "key": "is_recipe_cascade_mode",
+        "value": "off",
+        "type": "string",
         "category": "Harvest",
-        "label": "Is-recipe LLM cascade — SHADOW mode",
-        "description": "After the heuristic decides keep/drop, run a cheap Haiku keep/drop pass "
-                       "over the GRAY ZONE (content-bearing candidates with NO schema.org/Recipe) "
-                       "using recipe-anchored snippets, and RECORD its verdict next to the "
-                       "heuristic's in training.db (shadow_verdict/shadow_reason). Does NOT change "
-                       "what the harvest keeps — it only labels, so a batch or two mints gold "
-                       "gray-zone data + measures the cascade before it's wired to decide. Review "
-                       "disagreements in ⋮ admin → Labeling. See docs/is-recipe-classifier.md.",
+        "label": "Is-recipe LLM cascade mode (off | shadow | decide)",
+        "description": "Cheap Haiku three-way pass (recipe|not_recipe|poor_quality) over the GRAY "
+                       "ZONE (content-bearing candidates with NO schema.org/Recipe), on recipe-"
+                       "anchored snippets. 'off' = never run. 'shadow' = classify + RECORD the "
+                       "verdict next to the heuristic's in training.db but do NOT change keep/drop "
+                       "(measure + mint gold labels; review in ⋮ admin → Labeling). 'decide' = also "
+                       "APPLY the asymmetric override: rescue a heuristic-drop the LLM calls 'recipe' "
+                       "(~77% precision) and drop a heuristic-keep it calls poor_quality/not_recipe "
+                       "(~88%); training still records the heuristic label. See docs/is-recipe-classifier.md.",
     },
     {
         "key": "filter_translate_max_chars",

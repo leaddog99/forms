@@ -791,24 +791,25 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 dropped.append(e)
                 print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
 
-    # LLM cascade — SHADOW MODE (best-effort, opt-in via system_config
-    # `is_recipe_cascade_shadow`, default OFF). Adjudicates the gray zone
-    # (content-bearing non-JSON-LD candidates) with Haiku and STAMPS its verdict
-    # onto each entry; it does NOT change keep/drop. capture_samples (below)
-    # then persists `_shadow_verdict`/`_shadow_reason` so we can measure the
-    # cascade + mint gold labels before wiring it to actually decide. See
-    # docs/is-recipe-classifier.md.
+    # LLM cascade (system_config `is_recipe_cascade_mode`: off | shadow | decide;
+    # back-compat with the legacy `is_recipe_cascade_shadow` bool). shadow_classify
+    # stamps a three-way verdict (recipe|not_recipe|poor_quality) on the gray zone
+    # (content-bearing, non-JSON-LD candidates); capture (below) records BOTH the
+    # HEURISTIC decision and the cascade verdict. In 'decide' mode we then re-partition
+    # kept/dropped per the asymmetric rescue/catch policy — AFTER capture, so the
+    # training label stays the heuristic's call. Best-effort. See docs/is-recipe-classifier.md.
+    _casc_mode = "off"
     try:
-        from input.pipeline.system_config import get_setting as _gs
-        if _gs("is_recipe_cascade_shadow", False):
-            from intake.isrecipe_cascade import shadow_classify
+        from intake.isrecipe_cascade import cascade_mode, shadow_classify
+        _casc_mode = cascade_mode()
+        if _casc_mode in ("shadow", "decide"):
             shadow_classify(kept + dropped)
-    except Exception as _ex:  # never let shadow logging break a harvest
-        print(f"  [cascade-shadow] skipped ({type(_ex).__name__}: {_ex})")
+    except Exception as _ex:  # never let the cascade break a harvest
+        print(f"  [cascade] skipped ({type(_ex).__name__}: {_ex})")
 
     # Byproduct training-data capture (best-effort, off the hot path, separate
-    # git-ignored training.db). One labeled sample per decision; then pop the
-    # transient content so it never leaks into the downstream batch JSON.
+    # git-ignored training.db). One labeled sample per HEURISTIC decision + the cascade
+    # verdict; then pop the transient content so it never leaks into the downstream JSON.
     try:
         from intake.training_capture import capture_samples
         capture_samples(kept, dropped, source=capture_source,
@@ -816,6 +817,15 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                         threshold=IS_RECIPE_THRESHOLD)
     except Exception:
         pass
+
+    # DECIDE mode: now let the cascade override the heuristic (rescue lost recipes /
+    # catch quality-leaks). Done AFTER capture so training keeps the heuristic label.
+    if _casc_mode == "decide":
+        try:
+            from intake.isrecipe_cascade import apply_decide
+            apply_decide(kept, dropped)
+        except Exception as _ex:
+            print(f"  [cascade-decide] skipped ({type(_ex).__name__}: {_ex})")
     for _e in kept:
         _e.pop("_cap_text", None)
     for _e in dropped:
