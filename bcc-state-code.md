@@ -49,9 +49,14 @@ end-to-end: an ATK loaf-pan review → **13 products** under Bakeware/Loaf Pans 
   for the reverse index (not a display surface). Verified on the 13 ATK rows (ASIN + URL lookups).
 - `review_model.py` — first-class schema.org `Review` (the "#2 first-class independent object"
   direction) restored, but REVIEWS DEPRIORITIZED this session ("work on the product not reviews").
-- **NEXT (UI):** extract + save endpoints, the **product form** (extract → show reverse-table facts +
-  vendor-merge prompt → edit → save+embed), and the **product bookmarklet** (retail page → stage →
-  form). Then classify into category/product_class + the products_vec recommender.
+- **UI SHIPPED (pending a BCC restart to exercise the endpoints):** `POST /extract-product` (markdown
+  → Product + reverse-table facts + match suggestions in one call), `POST /products` (match-or-create
+  save), `POST /product-fact-voice`, `GET /product-facts`; `forms/product_form.html` (extract → ATK
+  facts + "add as a vendor to X?" merge prompt → edit specs/vendors/blurb → save; also paste-to-test);
+  `forms/product_bookmarklet.js` (retail page → harvest Product JSON-LD + markdown → /stage-markdown →
+  open the form; loader one-liner at the file's end). Reuses the recipe /stage-markdown rails.
+- **NEXT:** BCC restart → verify the bookmarklet→form→extract→save loop end-to-end; then classify into
+  category/product_class + the products_vec recommender + the recipe→product_class link (§8).
 
 ## Session log — 2026-07-08 — is-recipe recall (render-probe · poor-publisher · verb-fallback · comments back-anchor) + BIG externalization sweep
 

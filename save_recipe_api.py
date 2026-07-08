@@ -2549,6 +2549,67 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.post("/extract-product")
+async def extract_product_endpoint(request: Request):
+    """Mine one retailer product page's staged markdown into a Product, AND return everything
+    the product form needs in one shot: the extracted `product`, the reverse-table ATK `facts`
+    for its URL/ASIN, and existing-product `matches` (for the 'add as a vendor to X?' prompt)."""
+    from extract.markdown_to_product import markdown_to_product
+    from intake.products import catalog_store, review_facts
+    body = await request.json()
+    md = (body.get("markdown") or "").strip()
+    source_url = body.get("source_url") or ""
+    title = body.get("title") or ""
+    if not md:
+        raise HTTPException(status_code=400, detail="markdown required")
+    product = markdown_to_product(md, source_url=source_url, title=title)
+    if product is None:
+        raise HTTPException(status_code=422, detail="could not extract a product from this page")
+    offers = product.get("retailer_offers") or []
+    asin = (offers[0].get("asin") if offers else "") or ""
+    try:
+        with _db() as conn:
+            facts = review_facts.lookup(conn, asin=asin, url=source_url)
+            matches = catalog_store.find_matches(conn, product)
+    except Exception as e:
+        print(f"[EXTRACT-PRODUCT] facts/matches lookup failed: {e}")
+        facts, matches = [], {"exact": None, "candidates": []}
+    return {"product": product, "facts": facts, "matches": matches}
+
+
+@app.post("/products")
+async def save_product_endpoint(request: Request):
+    """Match-or-create save. Body: {product, merge_into?}. `merge_into` (a product_id) appends
+    this vendor's offer to that product; omit it to auto-merge on the manufacturer key or create."""
+    from intake.products import catalog_store
+    body = await request.json()
+    product = body.get("product")
+    if not isinstance(product, dict):
+        raise HTTPException(status_code=400, detail="product object required")
+    try:
+        with _db() as conn:
+            return catalog_store.save_product(conn, product, merge_into=body.get("merge_into"))
+    except Exception as e:
+        print(f"[SAVE-PRODUCT] failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Save error: {e}")
+
+
+@app.post("/product-fact-voice")
+async def product_fact_voice_endpoint(request: Request):
+    """Paraphrase one review fact into BCC's voice (brand-safe attribution) for the form."""
+    from intake.products import review_facts
+    body = await request.json()
+    return {"text": review_facts.our_voice(body.get("fact") or {})}
+
+
+@app.get("/product-facts")
+def product_facts_endpoint(url: str = "", asin: str = ""):
+    """Reverse-table lookup: ATK verdict facts for a product URL/ASIN (used by the form)."""
+    from intake.products import review_facts
+    with _db() as conn:
+        return {"facts": review_facts.lookup(conn, asin=asin, url=url)}
+
+
 @app.get("/product-catalog")
 def product_catalog_endpoint():
     """Read-only product catalog (categories -> classes -> ranked products) for the demo
