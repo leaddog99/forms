@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>MOCKUP — Domain editor redesign</title>
+  <!-- STANDALONE MOCKUP (dummy data) for the domain-form full reorg. Links the same
+       shared editor CSS so it looks native + ports 1:1. Not wired to any endpoint.
+       New IA: Identity · Extraction profile · Harvest(Discovery·Scope·Nature·Run) ·
+       Results · Notes. See bcc-state-code 2026-07-07. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    /* Mockup-only grouping visuals — token-based so they match the shared design.
+       On port these move into components.css (or a scoped block in domains.html). */
+    .mk-banner{ background:var(--accent-soft); border:1px solid var(--accent); color:var(--accent-dark);
+      border-radius:10px; padding:8px 14px; margin:0 0 16px; font-size:.82rem; }
+    .mk-section-intro{ font-size:.85rem; color:var(--muted); margin:-2px 0 14px; }
+    .mk-sub{ border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin:0 0 12px; background:var(--card); }
+    .mk-sub-label{ font-size:.72rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+    .mk-sub-head{ display:flex; align-items:center; gap:8px; margin:0 0 12px; }
+    .mk-sub-hint{ font-size:.78rem; color:var(--muted); margin:8px 0 0; }
+    details.mk-sub > summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; }
+    details.mk-sub > summary::-webkit-details-marker{ display:none; }
+    details.mk-sub > summary .chev{ color:var(--muted); transition:transform .15s; }
+    details.mk-sub[open] > summary .chev{ transform:rotate(90deg); }
+    .mk-toggles{ display:flex; flex-direction:column; gap:2px; margin-top:12px; }
+    .mk-toggle{ display:flex; gap:10px; align-items:flex-start; padding:9px 10px; border-radius:8px; }
+    .mk-toggle:hover{ background:var(--accent-soft); }
+    .mk-toggle input{ margin-top:3px; flex:0 0 auto; }
+    .mk-toggle .t-label{ font-weight:600; }
+    .mk-toggle .t-hint{ display:block; font-size:.78rem; color:var(--muted); font-weight:400; margin-top:1px; }
+    .mk-run{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:6px 0 2px; }
+    .mk-chips{ display:flex; gap:6px; }
+    .mk-chip{ padding:5px 13px; border-radius:999px; border:1px solid var(--line); background:var(--card);
+      cursor:pointer; font-size:.82rem; color:var(--ink); }
+    .mk-chip.on{ background:var(--accent); color:#fff; border-color:var(--accent); }
+    .mk-run-sep{ flex:1 1 auto; }
+    .mk-actions{ display:flex; gap:10px; align-items:center; flex-wrap:nowrap; margin:10px 0 2px; }
+    .mk-results{ display:flex; flex-direction:column; gap:6px; }
+    .mk-rrow{ display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+    .mk-rrank{ font-weight:700; color:var(--muted); width:20px; text-align:right; }
+    .mk-rtitle{ font-weight:600; flex:1 1 auto; }
+    .mk-rmeta{ font-size:.76rem; color:var(--muted); display:flex; gap:10px; align-items:center; }
+    .mk-idhead{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin:0 0 4px; }
+    .mk-lock{ font-size:.72rem; color:var(--muted); border:1px dashed var(--line); border-radius:6px; padding:1px 7px; }
+    .mk-pills{ display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 14px; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head"><h2>Domains <span class="ed-count">3</span></h2></div>
+      <ul class="ed-list">
+        <li class="ed-item is-active"><span class="ed-item-name">Epicurious</span><span class="ed-item-meta">epicurious.com · DA 91</span></li>
+        <li class="ed-item"><span class="ed-item-name">Serious Eats</span><span class="ed-item-meta">seriouseats.com · DA 89</span></li>
+        <li class="ed-item"><span class="ed-item-name">Boston Globe</span><span class="ed-item-meta">bostonglobe.com · DA 93</span></li>
+      </ul>
+    </aside>
+
+    <main class="ed-content">
+      <div class="ed-page" id="page"></div>
+    </main>
+  </div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // --- helpers copied verbatim from domains.html so the mockup ports 1:1 ---
+    function field(id, label, value, opts = {}){
+      const v = value == null ? '' : String(value);
+      const full = opts.full ? ' full' : '';
+      const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : `ex: ${opts.ph}`) : '';
+      if (opts.textarea){
+        return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
+          `<textarea id="${id}" class="ed-notes"${opts.minh ? ` style="min-height:${opts.minh}px"` : ''} placeholder="${escapeHtml(ph)}">${escapeHtml(v)}</textarea></div>`;
+      }
+      if (opts.select){
+        const oh = opts.select.map(o => { const ov=(o&&typeof o==='object')?o.v:o, ol=(o&&typeof o==='object')?o.l:o;
+          return `<option value="${ov}"${ov===v?' selected':''}>${ol}</option>`; }).join('');
+        return `<div class="ed-field${full}"><label for="${id}">${label}</label><select id="${id}">${oh}</select></div>`;
+      }
+      if (opts.checkbox){
+        return `<div class="ed-field${full}"><label class="ed-check"><input type="checkbox" id="${id}"${value?' checked':''}> ${label}</label></div>`;
+      }
+      const ro = opts.readonly ? ' readonly' : '';
+      return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
+        `<input id="${id}" type="${opts.type||'text'}" value="${escapeHtml(v)}"${ro} placeholder="${escapeHtml(ph)}"${opts.readonly?' tabindex="-1"':''}></div>`;
+    }
+    function urlField(id, label, value, opts = {}){
+      const v = value == null ? '' : String(value);
+      const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : `ex: ${opts.ph}`) : '';
+      const ic = (g,t) => `<button type="button" class="url-ic" title="${t}" style="flex:0 0 auto;width:30px;border:1px solid var(--line);background:var(--card);border-radius:6px;cursor:pointer;font-size:14px;color:var(--accent-dark)">${g}</button>`;
+      return `<div class="ed-field full"><label for="${id}">${label}</label><div style="display:flex;gap:6px;align-items:stretch">` +
+        `<input id="${id}" type="url" value="${escapeHtml(v)}" placeholder="${escapeHtml(ph)}" style="flex:1 1 auto;min-width:0">` + ic('↗','Open') + ic('⧉','Copy') + `</div></div>`;
+    }
+
+    const LANG = [{v:'en',l:'English'},{v:'el',l:'Greek'},{v:'fr',l:'French'},{v:'it',l:'Italian'}];
+    const STRAT = [{v:'plain',l:'plain'},{v:'unblocker',l:'unblocker'},{v:'screenshot',l:'screenshot'}];
+
+    // --- dummy record: epicurious.com, fully populated ---
+    const d = {
+      domain:'epicurious.com', display_name:'Epicurious', domain_authority:91, allowed:1,
+      story:"Condé Nast's recipe hub — a deep, well-tested archive drawing on the Gourmet and Bon Appétit back catalogs.",
+      logo_url:'https://logo.clearbit.com/epicurious.com',
+      country:'United States', language:'en', cuisine_focus:'', ethnicity:'',
+      fetch_strategy:'plain', render_required:0, custom_extractor:'',
+      extract_notes:'JSON-LD Recipe reliable. Individual recipes live under /recipes/food/views/.',
+      harvest_source:'serp', serp_query:'', search_pages:10,
+      harvest_records:100, harvest_ttl_days:90, backlinks_dir:'',
+      semrush_report_url:'https://www.semrush.com/analytics/organic/pages/?q=epicurious.com&searchType=domain',
+      recipe_path:'recipes', exclude_words:'gallery video news', keep_top_n:10,
+      paywall:0, harvestable:1, check_recipe:1, score_only:0,
+      last_harvested_at:'2026-07-07', corpus_count:14, notes:''
+    };
+    const kept = [
+      {rank:1, title:'Greek Lemon Potatoes',      grade:'A',  pa:62, da:91, pwr:78, ingested:true},
+      {rank:2, title:'Classic Beef Stroganoff',   grade:'A-', pa:58, da:91, pwr:74, ingested:true},
+      {rank:3, title:'One-Pot Chicken and Rice',  grade:'B+', pa:51, da:91, pwr:69, ingested:false},
+    ];
+
+    function render(){
+      const isSerp = (d.harvest_source || 'serp') === 'serp';
+      $('#page').innerHTML = `
+        <div class="mk-banner">🎨 <b>MOCKUP</b> — dummy data, not wired to the server. Reviewing the new layout only.</div>
+
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle">Admin · Edit Domain ▾</button></div>
+
+        <!-- ═══ IDENTITY ═══ -->
+        <section class="ed-block">
+          <h3 class="ed-block-label">Identity</h3>
+          <div class="mk-idhead">
+            <h1 class="ed-title" style="margin:0">${escapeHtml(d.domain)}</h1>
+            <span class="mk-lock">🔒 host = identity (immutable)</span>
+          </div>
+          <div class="mk-pills">
+            <span class="ed-pill">DA ${d.domain_authority}</span>
+            <span class="ed-pill">${d.allowed ? 'allowed' : 'blocked'}</span>
+            <span class="ed-pill">${d.corpus_count} in corpus</span>
+            <span class="ed-pill">last harvested ${escapeHtml(d.last_harvested_at)}</span>
+          </div>
+          <div class="ed-form-grid">
+            ${field('f_display_name','Display name', d.display_name, { ph:'NYT Cooking' })}
+            ${field('f_domain_authority','Domain authority (DA)', d.domain_authority, { type:'number' })}
+          </div>
+          ${field('f_story','Story', d.story, { textarea:true, full:true, minh:80, ph:'A short editorial bio of this site…' })}
+          ${field('f_logo_url','Logo URL', d.logo_url, { full:true, ph:'https://… (Clearbit auto-fills)' })}
+        </section>
+
+        <!-- ═══ EXTRACTION PROFILE ═══ -->
+        <section class="ed-block">
+          <h3 class="ed-block-label">Extraction profile</h3>
+          <p class="mk-section-intro">How we READ this site (independent of any single recipe).</p>
+          <div class="ed-form-grid">
+            ${field('f_country','Country', d.country, { ph:'United States' })}
+            ${field('f_language','Language (ISO 639-1)', d.language, { select:LANG })}
+            ${field('f_cuisine_focus','Cuisine (searchable)', d.cuisine_focus, { ph:'Greek' })}
+            ${field('f_ethnicity','Ethnicity', d.ethnicity, { ph:'Greek' })}
+            ${field('f_fetch_strategy','Fetch strategy', d.fetch_strategy, { select:STRAT })}
+            ${field('f_render_required','JS-rendered — render with full browser', d.render_required===1, { checkbox:true })}
+            ${field('f_allowed','Allowed (ingest from this site)', d.allowed===1, { checkbox:true })}
+          </div>
+          ${field('f_extract_notes','Extraction notes', d.extract_notes, { textarea:true, full:true, minh:64, ph:'JSON-LD reliable · needs www for Moz…' })}
+          ${field('f_custom_extractor','Custom extractor (module path)', d.custom_extractor, { full:true, ph:'intake.parsers.foo' })}
+        </section>
+
+        <!-- ═══ HARVEST ═══ -->
+        <section class="ed-block">
+          <h3 class="ed-block-label">Harvest — top recipes</h3>
+          <p class="mk-section-intro">Discover this publisher's notable recipes, scope + filter, then run. <b>Discovery</b> = how candidates are FOUND; <b>Scope</b> = which are KEPT.</p>
+
+          <!-- Discovery -->
+          <div class="mk-sub">
+            <div class="mk-sub-head"><span class="mk-sub-label">Discovery — how candidates are found</span></div>
+            <div class="src-groups" id="srcGroups">
+              <div class="src-group ${isSerp?'is-active':'is-dim'}" data-src="serp">
+                <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${isSerp?'checked':''}>
+                  Google — site: search <span class="src-sub">SerpAPI; depth in pages of ~10 results</span></label>
+                <div class="ed-form-grid">
+                  ${field('f_serp_query','Query (verbatim, incl. site:)', d.serp_query, { full:true, ph:'site:bostonglobe.com recipe' })}
+                  ${field('f_search_pages','Depth — pages (×10)', d.search_pages, { type:'number' })}
+                </div>
+              </div>
+              <div class="src-group ${!isSerp?'is-active':'is-dim'}" data-src="backlinks_file">
+                <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${!isSerp?'checked':''}>
+                  SEMrush Top-Pages export <span class="src-sub">Organic Research → Pages (by traffic)</span></label>
+                <div class="src-file ok" style="margin:8px 0">✓ epicurious.com_…PagesV3-us-20260707.xlsx — C:\\Users\\john\\PycharmProjects\\forms\\input</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px">
+                  <button type="button" class="ed-btn">⤴ Upload export from this device</button>
+                </div>
+                <div class="ed-form-grid">
+                  ${field('f_records','Records to pull from file', d.harvest_records, { type:'number' })}
+                  ${field('f_harvest_ttl_days','Refresh every (days)', d.harvest_ttl_days, { type:'number' })}
+                  ${field('f_backlinks_dir','Export folder OR exact file path', d.backlinks_dir, { full:true, ph:'blank = auto-detect newest…' })}
+                  ${urlField('f_semrush_report_url','SEMrush deep-link (one-click Export)', d.semrush_report_url, { ph:'https://…/organic/pages/?q=domain' })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scope & keep -->
+          <div class="mk-sub">
+            <div class="mk-sub-head"><span class="mk-sub-label">Scope &amp; keep — which URLs count</span></div>
+            <div class="ed-form-grid">
+              ${field('f_recipe_path','Recipe URL path — scopes EVERY source', d.recipe_path, { ph:'recipes (blank = no scope)' })}
+              ${field('f_keep_top_n','Keep top N', d.keep_top_n, { type:'number' })}
+            </div>
+            ${field('f_exclude_words','Exclude sections (drop these URL sections)', d.exclude_words, { full:true, ph:'restaurant chef news holiday event' })}
+            <p class="mk-sub-hint"><b>Path</b> keeps only <code>${escapeHtml(d.domain)}/${escapeHtml(d.recipe_path||'…')}/…</code>; <b>exclude</b> drops matching sections (galleries, video). Both filter before any fetch spend.</p>
+          </div>
+
+          <!-- Publisher nature (collapsible) -->
+          <details class="mk-sub">
+            <summary><span class="chev">▸</span><span class="mk-sub-label">Publisher nature — behavior flags</span></summary>
+            <div class="mk-toggles">
+              <label class="mk-toggle"><input type="checkbox" id="f_check_recipe" ${d.check_recipe?'checked':''}><span><span class="t-label">Verify each is a recipe (is_recipe)</span><span class="t-hint">Uncheck for paywalled publishers where a fetch can't see the recipe body.</span></span></label>
+              <label class="mk-toggle"><input type="checkbox" id="f_paywall" ${d.paywall?'checked':''}><span><span class="t-label">Gated / premium (paywall)</span><span class="t-hint">Harvest trusts it (skips fetch-verify); a rescore PA-calibrates it to free-equivalent.</span></span></label>
+              <label class="mk-toggle"><input type="checkbox" id="f_harvestable_skip" ${d.harvestable?'':'checked'}><span><span class="t-label">Skip this publisher</span><span class="t-hint">No mechanical way to list recipes — the Google refresh won't run.</span></span></label>
+              <label class="mk-toggle"><input type="checkbox" id="f_score_only" ${d.score_only?'checked':''}><span><span class="t-label">Score only</span><span class="t-hint">Rank URLs by Moz (zero fetches) and ingest nothing — you pick winners from the cohort.</span></span></label>
+            </div>
+          </details>
+
+          <!-- Run -->
+          <div class="mk-run">
+            <span class="mk-sub-label" title="One click sets fetch strategy + render + verify + score-only for you">Preset</span>
+            <div class="mk-chips">
+              <button type="button" class="mk-chip on" title="Normal site — plain fetch, verify on">Open</button>
+              <button type="button" class="mk-chip" title="Anti-bot site — unblocker + full-browser render, verify on">Blocked</button>
+              <button type="button" class="mk-chip" title="Expensive/anti-bot — score URLs only, you pick winners manually">Curate</button>
+            </div>
+            <span class="mk-sub-hint" style="margin:0">sets fetch · render · verify · score-only</span>
+          </div>
+          <div class="mk-actions">
+            <button type="button" class="ed-btn">Refresh</button>
+            <button type="button" class="ed-btn danger" disabled>Cancel</button>
+            <button type="button" class="ed-btn danger">Clear</button>
+          </div>
+        </section>
+
+        <!-- ═══ RESULTS ═══ -->
+        <section class="ed-block">
+          <h3 class="ed-block-label">Results — kept recipes</h3>
+          <p class="mk-section-intro">The OUTPUT of the last harvest. ★ = kept; “in corpus” = already ingested.</p>
+          <div class="mk-results">
+            ${kept.map(r => `
+              <div class="mk-rrow">
+                <span class="mk-rrank">${r.rank}</span>
+                <span class="mk-rtitle">${escapeHtml(r.title)}</span>
+                <span class="mk-rmeta">
+                  <span class="ed-pill">${r.grade}</span>
+                  ${r.ingested ? '<span class="ed-pill">in corpus</span>' : ''}
+                  <span>DA ${r.da} · PA ${r.pa} · pwr ${r.pwr}</span>
+                  <span title="kept">★</span>
+                </span>
+              </div>`).join('')}
+          </div>
+        </section>
+
+        <!-- ═══ NOTES ═══ -->
+        <section class="ed-block">
+          <h3 class="ed-block-label">Curator notes</h3>
+          <textarea id="f_notes" class="ed-notes" placeholder="Anything else worth recording about this site…">${escapeHtml(d.notes)}</textarea>
+        </section>
+
+        <div class="ed-actions">
+          <button type="button" class="ed-btn">💾 Save</button>
+          <button type="button" class="ed-btn">✨ Enrich</button>
+          <span class="mk-run-sep"></span>
+          <button type="button" class="ed-btn danger">🗑 Delete domain</button>
+        </div>
+      `;
+
+      // source radios dim/highlight (same behavior as the live applySrcSelection)
+      document.querySelectorAll('input[name=harvestSource]').forEach(r => r.addEventListener('change', () => {
+        const chosen = document.querySelector('input[name=harvestSource]:checked').value;
+        document.querySelectorAll('.src-group').forEach(g => {
+          const active = g.dataset.src === chosen;
+          g.classList.toggle('is-active', active); g.classList.toggle('is-dim', !active);
+        });
+      }));
+      // mode chips (visual only)
+      document.querySelectorAll('.mk-chip').forEach(c => c.addEventListener('click', () => {
+        document.querySelectorAll('.mk-chip').forEach(x => x.classList.remove('on')); c.classList.add('on');
+      }));
+    }
+    render();
+  </script>
+</body>
+</html>
