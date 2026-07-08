@@ -9,6 +9,46 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-07 (evening) — LLM cascade SHIPPED + DECIDE mode ON + rejected ideas
+
+Culmination of the is-recipe arc. **The LLM cascade is live and DECIDING.**
+- **Cascade (SHIPPED):** `intake/isrecipe_cascade.py` — Haiku three-way (recipe|not_recipe|
+  **poor_quality**) over the GRAY ZONE (content-bearing, non-JSON-LD candidates) on recipe-anchored
+  snippets. `system_config.is_recipe_cascade_mode` = off|shadow|**decide** (replaced the shadow bool).
+  **Flipped to `decide` this session** — applies the asymmetric override AFTER training capture (so the
+  recorded label stays the heuristic's): RESCUE a heuristic-drop the LLM calls 'recipe'; CATCH a
+  heuristic-keep it calls poor_quality/not_recipe; never touches a JSON-LD keep. Harvest jobs read it
+  fresh (out-of-process) — no restart needed; admin editor shows it after next restart.
+- **`poor_quality` third label** (user's "reject on style" insight — the real target is EXTRACTABILITY,
+  not presence): human_label + LLM verdict + Labeling UI button, with a stricter tie-break ("when torn,
+  default poor_quality"). Keeps training data honest (a messy recipe is NOT labeled not_recipe).
+- **Validated on 28 curator labels (2 dishes):** cascade decision accuracy **75% vs heuristic 29%**
+  (≈2.6×); asymmetric-policy precision **RESCUE 77% / CATCH 88%** (catch jumped from a coin-flip once
+  poor_quality existed). Deployment-ready → flipped on.
+- **TESTED & REJECTED (data killed them — logged in docs/is-recipe-classifier.md):** (1) feed the
+  markers to the LLM — explicit hint = no gain; markers-guided **two-section snippet** = REGRESSION
+  (68%→46% decision, catch 8/16→5/16, because stripping context made Haiku rubber-stamp roundups).
+  (2) count repeats / **structure pairs** to spot multi-recipe pages — REVERSED: json-ld single recipes
+  have median 2 pairs (print/jump/related widgets), roundups have 0 (they LINK OUT, don't embed cards).
+- **`srsltid` dedup fix** (`url_utils.normalize_url`): Google's per-impression tracking param made one
+  page look like 4 → fetched/scored/LLM'd 4×. Added srsltid + Google click-ids to the blocklist.
+- **Labeling UI** (`forms/training.html`): three-way `poor_quality` button + filter + badge, LLM-verdict
+  badge + "LLM disagrees" filter (fixed its missing reload), human_labeled_at timestamps.
+- **Docs:** new `docs/how-the-pipeline-decides.md` (plain-language every gate + embedding=which-dish /
+  regression=ranking / embedding-LR classifier=prototype-not-shipped); is-recipe-classifier.md updated.
+- Embeddings persisted on `is_recipe_samples` (6,932 rows) → free retrain; hybrid artifact saved but NOT
+  live (cascade won on unseen-domain generalization).
+
+**Meta-win this session: having the labeled data made every design call decidable** — the cascade, the
+tie-break, and THREE rejected ideas were all settled by measurement, not intuition (my snippet
+hypothesis was wrong; the data caught it). See [[feedback_verify_with_runtime_data]].
+
+**Open items for next session:** (1) delish.com fetch-stub fix (67% of stub false-drops = one JS site
+set to plain fetch; broaden render-escalation trigger to thin content + auto-learn). (2) domain-level
+"poor publisher" signal (oliveandmango tagged poor_quality across BOTH batches → flag the domain, stop
+re-paying per-page). (3) `allowed` → a system_config disallowed_domains list (drop it from the extract
+form). (4) domain-form redesign mockup → port to live (`forms/domains_mockup.html`, awaiting sign-off).
+
 ## Session log — 2026-07-07 (late) — is-recipe classifier: analysis → embeddings → HONEST group-CV
 
 Deep dive on the harvest is-recipe gate (user: "we're losing too many recipes" + summaries leak in).

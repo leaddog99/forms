@@ -78,6 +78,22 @@ measures without deciding.
 - **To run:** turn on the flag in System config → run any harvest → review disagreements. Needs a
   server restart for the new endpoint param + config seed.
 
+## Tested & rejected (don't re-litigate — the data said no)
+All measured on the curator-labeled gray-zone set; each was a sound hypothesis that the data killed.
+- **Feed the structural signal to the LLM** (2026-07-07). Two forms A/B'd vs the plain anchored
+  snippet: (a) an explicit "both markers present" **hint** → no gain; (b) a **markers-guided
+  two-section snippet** (show only the ingredient + method regions) → *regression* 68%→46% decision,
+  catch-precision 8/16→5/16. Why: stripping the surrounding context hid the roundup/editorial framing,
+  so Haiku rubber-stamped "recipe" and MORE leaks got through. Lesson: feed the LLM the recipe region
+  *in context*; do NOT feed it the heuristic's verdict (it just copies the heuristic's mistakes).
+- **Count repeats / structure pairs to spot multi-recipe pages** (2026-07-07, two variants). (a)
+  card-timer repetition → null (both recipes & summaries ~0.7% with ≥3). (b) count complete
+  ingredient+method **structure pairs** → *reversed*: json-ld single recipes have median **2** pairs
+  (print/jump/related-recipe widgets repeat the markers), while roundup-URL pages have **0** — because
+  **roundups link out, they don't embed cards.** So "≥2 pairs" flags real recipes, not roundups. The
+  multi-embedded-card page we keep imagining is rare in what reaches the filter (collection-title +
+  no-structure + the LLM already handle real roundups).
+
 ## Remaining plan
 1. After a batch or two of shadow data + human labels: measure the cascade honestly; if it clears
    the bar, flip it from shadow → deciding (KEEP if json-ld OR heuristic-keep OR LLM-keep).
