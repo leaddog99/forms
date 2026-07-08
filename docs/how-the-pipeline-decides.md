@@ -53,6 +53,13 @@ catch). It is deliberately **skipped** for: JSON-LD keeps (already certain), pre
 (archive/roundup-title/excluded-section — no content to judge), and fetch-failed/stub drops (<200
 chars — nothing there; those need the render/unblocker *fetch* fix, not the cascade).
 
+> **"Structured" ≠ a free pass.** Two different things get called "structured": (1) a page with
+> machine-readable **JSON-LD** `schema.org/Recipe`, and (2) a page that merely passed the **structural
+> gate** (has ingredient/method *text* markers but no JSON-LD). ONLY #1 skips the LLM. A #2
+> structural-gate KEEP is still content-bearing + non-JSON-LD → it's in the gray zone → the LLM
+> audits it and can CATCH it as a messy roundup. (Proof: batches show `heuristic=kept, LLM=poor_quality`
+> rows — those are structural-gate keeps the LLM overruled.)
+
 For each gray-zone page, a cheap Haiku pass reads a **recipe-anchored** snippet (the recipe region,
 NOT the blog intro) and returns one of three verdicts:
 - **`recipe`** — a single dish, cleanly extractable (distinct ingredient list + ordered steps).
