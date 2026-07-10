@@ -36,11 +36,13 @@ MODEL_SIZE = "base.en"          # English-only: faster + sharper for kitchen use
 _DEVICE = "cpu"
 _COMPUTE = "int8"               # the CPU sweet spot for faster-whisper
 
-# Bias decoding toward the kitchen command vocabulary — improves recall of a
-# quietly/quickly spoken command. Double-edged: biasing can also turn a noise
-# clip INTO a command (a false advance), so keep the confidence gates below
+# Bias decoding toward the WAKE WORD + kitchen command vocabulary — improves recall
+# of a quietly/quickly spoken command. "hey" leads the list on purpose: base.en kept
+# decoding the soft /h/ onset of "hey chef" as pay/lay/today/it (voice log 2026-07-10),
+# so biasing toward "hey" pulls the wake word back. Double-edged: biasing can also turn
+# a noise clip INTO a command (a false advance), so keep the confidence gates below
 # strict, and WATCH logs/cook_stt.log for it. Set to "" to disable the bias.
-_HOTWORDS = "next back previous repeat again step stop start begin pause resume tip done chef"
+_HOTWORDS = "hey chef next back previous repeat again step stop start begin pause resume tip done"
 
 # Hallucination gates (the canonical Whisper trio). A segment is dropped if ANY
 # trips. Tuned to the 2026-06-18 failure shapes; revisit against cook_stt.log.

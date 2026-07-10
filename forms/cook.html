@@ -570,15 +570,23 @@
       var b=IDX.bundle[id.trim()]; return '<b>'+E(b?b.label:id)+'</b>'; });
     return html;
   }
-  // Expand the SAME tokens into PLAIN, de-abbreviated speech (for TTS / voice).
-  function spokenText(step){
-    var t=String(step.instruction||'');
+  // Expand {ingN}/{amt}/{bundle} in an ARBITRARY fragment into PLAIN, de-abbreviated
+  // speech (for TTS / voice). `text` shares the step's token space ({ingN} indexes the
+  // PARENT step's ingredients), so a sub-step's `screen` fragment reads the SAME words
+  // the eye sees — just voiced (no condensing).
+  function spokenFragment(step, text){
+    var t=String(text||'');
     t=t.replace(/\{ing(\d+)\}/g, function(mm,n){
       var si=(step.ingredients||[])[parseInt(n,10)-1]; if(!si) return '';
       var a=amtStr(si.amount); return (a?a+' ':'')+stripArticle(si.label||''); });
     t=t.replace(/\{amt:([^}]*)\}/g, function(mm,x){ var p=x.split('|'); return ((units==='met'&&p[1])?p[1]:p[0]).trim(); });
     t=t.replace(/\{bundle:([^}]*)\}/g, function(mm,id){ var b=IDX.bundle[id.trim()]; return b?b.label:id; });
-    return tidyText(deAbbrev((step.name? step.name+'. ':'') + t));
+    return tidyText(deAbbrev(t));
+  }
+  // The whole step, spoken: name + full instruction (steps with no sub-steps, plus
+  // "read step" and where-was-I).
+  function spokenText(step){
+    return spokenFragment(step, (step && step.name ? step.name+'. ' : '') + (step && step.instruction || ''));
   }
   // de-abbreviate for the ear: units + common fractions spoken in full.
   function deAbbrev(s){
@@ -718,25 +726,43 @@
     if(talk) speak(line);
   }
 
-  // ---- sub-steps (v2) — MODEL-authored memory-sized voice chunks --------- //
+  // ---- sub-steps (v2) — MODEL-authored memory-sized chunks --------------- //
   // Each step may carry `substeps` (cook_rework v2, docs/procedural-instruction-
-  // research.md): one terse spoken action per chunk, split-on-independence /
-  // clustered-on-coupling. Talk-ON voice walks them one per "next"; back/repeat
-  // ARE the voice re-scan (a cook can re-hear, higher friction than a glance).
-  // Screen keeps the WHOLE step visible (it tolerates more) — sub-steps are the
-  // voice/place-keeping layer only. Talk-OFF (silent/screen) reads whole, untouched.
-  // Replaces the deleted client-side heuristic chopper (was tedious) with real data.
-  var _subs = [], _subIdx = 0;   // _subs = this step's spoken voice lines; [] ⇒ whole-step
+  // research.md): one action per chunk, split-on-independence / clustered-on-
+  // coupling. Talk-ON voice walks them one per "next"; back/repeat ARE the voice
+  // re-scan (a cook can re-hear, higher friction than a glance).
+  // Voice reads the SAME text the eye sees — each chunk's `screen` fragment, just
+  // voiced (tokens expanded, units de-abbreviated). We deliberately DON'T speak the
+  // model's terser `voice` field: condensing dropped too much (curator call
+  // 2026-07-10 — "read the screen entry, don't lose information").
+  var _subs = [], _subIdx = 0;   // _subs = this step's spoken lines; [] ⇒ whole-step
   function subsFor(step){
-    return (step && step.substeps || []).map(function(ss){ return tidyText(deAbbrev(ss.voice || '')); })
-      .filter(Boolean);
+    return (step && step.substeps || []).map(function(ss){
+      var src = (ss.screen!=null && ss.screen!=='') ? ss.screen : (ss.voice||'');
+      return spokenFragment(step, src);   // voice what's on screen, not a terse rewrite
+    }).filter(Boolean);
   }
-  function speakSub(i){
+  // Spoken equipment lead-in — "You'll need a large skillet and a baking sheet."
+  // Announced ONCE on entry to a step (before the first sub-step) so the cook can
+  // gather tools before the action starts; "" when the step needs no equipment.
+  // Sizes voiced inline ("a 6-quart Dutch oven"); de-abbreviated for the ear.
+  function _artFor(w){ return /^[aeiou8]/i.test(String(w)) ? 'an ' : 'a '; }
+  function equipmentPreamble(step){
+    var eqs=(step && step.equipment||[]).map(function(se){ return IDX.eq[se.equipment_id]; }).filter(Boolean);
+    if(!eqs.length) return '';
+    var names=eqs.map(function(e){ var sz=e.size?amtStr(e.size):'';
+      var phrase=(sz?sz+' ':'')+stripArticle(e.name||''); return _artFor(phrase)+phrase; });
+    var list = names.length<=1 ? (names[0]||'')
+      : names.length===2 ? (names[0]+' and '+names[1])
+      : (names.slice(0,-1).join(', ')+', and '+names[names.length-1]);
+    return deAbbrev("You'll need " + list + ". ");
+  }
+  function speakSub(i, lead){   // `lead` = optional spoken preamble (equipment) for step entry
     _subIdx = i;
     var n = window.cookView.currentNumber();
     setVoiceStatus('speaking', 'Step ' + (n || '') + (_subs.length > 1 ? (' · part ' + (i + 1) + '/' + _subs.length) : ''));
     highlightSub(i);
-    return speak(_subs[i]);
+    return speak((lead || '') + _subs[i]);
   }
   // Light up the on-screen sub-step that's being spoken (screen + ear in sync).
   function highlightSub(i){
@@ -795,12 +821,14 @@
     startMise: function(){ return enterMise(); },          // fresh start + "mise" command
     go: function(step){ step=step||this.currentStep(); if(step){ markCurrent(step.number);   // move + scroll, SILENT
       var d=stepDiv(step.number); if(d) d.scrollIntoView({behavior:'smooth',block:'start'}); } return step; },
-    // read = ENTER a step. Talk-ON: split into the model's voice sub-steps + speak
-    // the first; no substeps ⇒ whole step. Talk-OFF: silent move (screen reads whole).
+    // read = ENTER a step. Talk-ON: announce the step's equipment ("You'll need …"),
+    // then speak the first sub-step (rest walk on "next"); no substeps ⇒ equipment
+    // lead + whole step. Talk-OFF: silent move (screen reads whole).
     read: function(step){ step=this.go(step);
       if(step && talk){
         _subs = subsFor(step); _subIdx = 0;
-        var _pr = _subs.length ? speakSub(0) : speak(spokenText(step));
+        var lead = equipmentPreamble(step);   // "You'll need …" — once, on entry
+        var _pr = _subs.length ? speakSub(0, lead) : speak(lead + spokenText(step));
         if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); });
       } else { _subs = []; _subIdx = 0; }
       return step; },
@@ -930,7 +958,11 @@
   // Tunables shipped to the worklet so cook.html stays the single source of truth.
   function _vadCfg(){ return { hangFull:SILENCE_HANG_MS, hangShort:SILENCE_HANG_SHORT_MS,
     shortCmdMax:SHORT_CMD_MAX_VOICE_MS, minVoice:MIN_VOICE_MS, guardMs:700,
-    bargeIn:BARGE_IN, bargeThresh:BARGE_THRESH, preRollMs:250, maxMs:15000 }; }
+    bargeIn:BARGE_IN, bargeThresh:BARGE_THRESH, preRollMs:400, maxMs:15000 }; }
+  // preRollMs 400 (was 250): captures more audio BEFORE the energy trigger so a soft
+  // onset consonant (the /h/ of "hey", /ch/ of "chef") isn't clipped, AND gives Whisper
+  // a lead-in run-up (it decodes abrupt t=0 starts worse). Pre-roll is copied from a
+  // ring regardless of energy, so a longer one adds no false triggers.
   // _speaking is the single flag for "Chef is talking" — route every write through
   // this so the worklet (which ignores input while she speaks) stays in sync.
   function _setSpeaking(on){ _speaking = on; if(vadNode){ try{ vadNode.port.postMessage({ cmd:'speaking', on:on }); }catch(e){} } }
@@ -1121,6 +1153,7 @@
   var _THINK_ACKS = [];
   var _WAIT_MSGS = [];
   var THINK_GAP_MS = 2500;   // beat between reassurances (after one finishes, before the next)
+  var THINK_LEAD_MS = 700;   // grace beat before the FIRST filler — a fast reply cancels it (no cut)
   var _ackGate = null;       // Promise resolving when the in-flight filler finishes; consumed by the answer player
   var _thinkTimer = null, _thinkActive = false, _waitIdx = 0;
   // START_ON_GO: hitting the hands-free button ARMS the mic and gives a short "ready"
@@ -1134,9 +1167,10 @@
   function _stopAck(){ return _pick(_STOP_ACKS); }
   function _readyPrompt(){ return _pick(_READY_PROMPTS); }
   function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){
-    var subs = subsFor(s);
-    if(subs.length) subs.forEach(function(t){ prefetchSpeak(t); });
-    else prefetchSpeak(spokenText(s));
+    var subs = subsFor(s), lead = equipmentPreamble(s);
+    if(subs.length){ prefetchSpeak((lead || '') + subs[0]);   // entry utterance (equipment lead + first chunk)
+      subs.forEach(function(t){ prefetchSpeak(t); }); }        // plain chunks for next / re-scan
+    else prefetchSpeak((lead || '') + spokenText(s));
   });
   _WAKE_ACKS.concat(_STOP_ACKS, _READY_PROMPTS).forEach(prefetchSpeak); }   // warm the spoken acks/prompts too (cook_ack/cook_wait warmed in loadCookMessages)
   function _playUrl(url){
@@ -1207,7 +1241,11 @@
       var play = _playFiller(text); _ackGate = play;
       play.then(function(){ if(_thinkActive && hf){ _thinkTimer = setTimeout(loop, THINK_GAP_MS); } });
     }
-    loop();
+    // Grace beat before the FIRST filler: a quick reply (a nav action, or a fast answer)
+    // resolves and stopThinking() cancels this timer, so short interactions never hear a
+    // filler start and get cut mid-word (curator 2026-07-10 "reacting too fast"). Slow
+    // replies still get covered once the beat elapses.
+    _thinkTimer = setTimeout(loop, THINK_LEAD_MS);
   }
   function stopThinking(){
     _thinkActive = false;
@@ -1492,7 +1530,18 @@
   // transcriptions generously (chefs, hey chair, jefe, geoff…). _G strips all
   // occurrences (for short command utterances); _LEAD strips only a leading wake
   // (preserves a question that legitimately mentions a wake-like word later).
-  var _WAKE_SRC = "(hey chef|hey chefs|hey chef's|a chef|chef|chefs|chef's|hey chair|hey jeff|jeff|jeff's|jjeff|geoff|jefe)";
+  // Wake word + its frequent Whisper mis-hears. base.en on a kitchen mic routinely
+  // mangles "hey" into pay/lay/it/hay/may/eh/ay/a/way before "chef" (seen live in the
+  // voice log 2026-07-10: "lay chef next", "pay chef next", "it chef next"). We accept
+  // them as the SAME wake so "hey chef, next" strips clean → hits the INSTANT local
+  // command, instead of leaving "lay next" that misses the command and falls to the LLM
+  // (which then fired the think-filler and cut it off). The mis-heard "hey" tokens are
+  // wake ONLY when glued to chef; bare chef/jeff/… still stand alone.
+  // The "hey" slot: its whole rhyming family via [a-z]?ay — lay/pay/say/day/way/bay/
+  // jay/cay/fay/gay/hay/kay/may/nay/tay/ray and bare "ay" — plus hey/hi/eh/it/a/okay.
+  // Generative so we don't have to chase every new mis-hear one at a time.
+  var _WAKE_HEY = "(?:[a-z]?ay|hey|hi|eh|it|a|okay|ok)";
+  var _WAKE_SRC = "(" + _WAKE_HEY + " chef(?:'?s)?|hey chair|chef(?:'?s)?|hey jeff|jeff(?:'?s)?|jjeff|geoff|jefe)";
   var _WAKE      = new RegExp("\\b" + _WAKE_SRC + "\\b", "i");
   var _WAKE_G    = new RegExp("\\b" + _WAKE_SRC + "\\b", "ig");
   var _WAKE_LEAD = new RegExp("^[\\s,.:;!?-]*" + _WAKE_SRC + "\\b[\\s,.:;!?-]*", "i");

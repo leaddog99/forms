@@ -9,6 +9,37 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-10 (cook voice polish) — equipment lead-in · voice=screen · wake mis-hears · filler grace beat · onset capture
+
+Live cook-view voice session ("hey chef works much better!"), five fixes in `forms/cook.html`
+(+ one in `cook_stt.py`), all verified by parse-check; see [[project_cookview_feedback]], [[project_cook_voice]].
+
+- **Equipment lead-in.** Entering a NEW step announces `equipmentPreamble(step)` — "You'll need a large
+  skillet and a baking sheet." (sizes voiced inline, de-abbreviated) — then bridges to the first sub-step.
+  Fires ONLY on entry (`read()` → `speakSub(0, lead)`; next/back/repeat/re-scan don't), prefetched with the
+  entry utterance so it's instant.
+- **Voice reads the SCREEN, no condensing** (curator: "don't truncate… you are losing too much information").
+  New `spokenFragment(step,text)`; `subsFor` now voices each sub-step's `ss.screen` fragment (tokens
+  expanded, units de-abbreviated), NOT the model's terse `ss.voice`. REVERSES the [[project_recipe_anchor]]
+  terse-voice/screen split for the voice half (model still authors both fields).
+- **Wake-word mis-hears** (voice log showed base.en hears "hey chef" as pay/lay/it/today chef → those fell
+  through to the LLM and got the think-filler cut off). `_WAKE_HEY` now matches the whole "-ay" rhyming
+  family generatively (`[a-z]?ay` = lay/pay/say/day/way/… + bare ay) + hey/hi/eh/it/a/okay, glued to `chef`.
+  So "lay chef next" strips clean → INSTANT local command, no LLM, no filler. Verified no false positives
+  ("is it done yet", "play the video", mid-word "today chef" all safe via `\b`).
+- **Filler grace beat.** `startThinking()` waits `THINK_LEAD_MS=700` before the first "still working" line; a
+  fast reply cancels it, so short interactions never hear a filler start then get cut mid-word.
+- **Onset capture.** VAD `preRollMs` 250 → **400** (ring copy, no new false triggers) so a soft onset
+  consonant isn't clipped + Whisper gets a lead-in run-up. STT `_HOTWORDS` now leads with **"hey"** (was
+  "chef" only) to stop base.en decoding the wake onset as pay/lay/today — the audio HAS the /h/; the decoder
+  was guessing. (hotwords change needs the BCC restart to take effect.)
+- **Also fixed:** the `message_categories.general` fallback bucket held a `__SMOKE_TEST__` sentinel that the
+  cook think-filler read aloud ("why does it keep saying smoke test") — removed from recipes.db. Real
+  `cook_ack`/`cook_wait` lines activate on restart. See [[project_friendly_status_messages]].
+
+**All uncommitted-until-now cook.html + cook_stt.py; reload applies everything except the two restart-gated
+bits (hotwords + cook_ack/cook_wait seeding).**
+
 ## Session log — 2026-07-10 (product commerce, cont.) — factual `description` field + product sqlite-vec + size normalizer + portable bookmarklet host
 
 Continuation of the 2026-07-08 product session (see [[project_product_commerce_build]], [[project_affiliate_catalog]]).
