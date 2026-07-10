@@ -757,12 +757,24 @@
       : (names.slice(0,-1).join(', ')+', and '+names[names.length-1]);
     return deAbbrev("You'll need " + list + ". ");
   }
+  // "Tip available" — a light SPOKEN flag appended to the END of a step's reading (the
+  // whole-step utterance, or the LAST sub-step) when the step carries a tip/check, so the
+  // cook knows they can say "tip"/"comment" to hear it. Non-interactive (unlike the
+  // disabled maybeOfferTip offer) — just a suffix on the same utterance, no mic-deaf gap.
+  // (Inline English — voice-pack debt, see project_voice_pack.)
+  var _TIP_AVAIL = ' Tip available.';
+  function stepHasTip(step){
+    if(!step) return false;
+    if((step.attachments || []).some(function(a){ return a.text; })) return true;
+    return !!(step.tip || step.check);
+  }
   function speakSub(i, lead){   // `lead` = optional spoken preamble (equipment) for step entry
     _subIdx = i;
     var n = window.cookView.currentNumber();
     setVoiceStatus('speaking', 'Step ' + (n || '') + (_subs.length > 1 ? (' · part ' + (i + 1) + '/' + _subs.length) : ''));
     highlightSub(i);
-    return speak((lead || '') + _subs[i]);
+    var tail = (i === _subs.length - 1 && stepHasTip(window.cookView.currentStep())) ? _TIP_AVAIL : '';
+    return speak((lead || '') + _subs[i] + tail);
   }
   // Light up the on-screen sub-step that's being spoken (screen + ear in sync).
   function highlightSub(i){
@@ -828,7 +840,8 @@
       if(step && talk){
         _subs = subsFor(step); _subIdx = 0;
         var lead = equipmentPreamble(step);   // "You'll need …" — once, on entry
-        var _pr = _subs.length ? speakSub(0, lead) : speak(lead + spokenText(step));
+        var _pr = _subs.length ? speakSub(0, lead)
+                               : speak(lead + spokenText(step) + (stepHasTip(step) ? _TIP_AVAIL : ''));
         if(_pr && _pr.then) _pr.then(function(){ maybeOfferTip(step); });
       } else { _subs = []; _subIdx = 0; }
       return step; },
@@ -1173,10 +1186,12 @@
   function _stopAck(){ return _pick(_STOP_ACKS); }
   function _readyPrompt(){ return _INTRO_MSGS.length ? _pick(_INTRO_MSGS) : _READY_FALLBACK; }
   function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){
-    var subs = subsFor(s), lead = equipmentPreamble(s);
-    if(subs.length){ prefetchSpeak((lead || '') + subs[0]);   // entry utterance (equipment lead + first chunk)
-      subs.forEach(function(t){ prefetchSpeak(t); }); }        // plain chunks for next / re-scan
-    else prefetchSpeak((lead || '') + spokenText(s));
+    var subs = subsFor(s), lead = equipmentPreamble(s), tip = stepHasTip(s) ? _TIP_AVAIL : '';
+    if(subs.length){ var first = (lead || '') + subs[0];
+      prefetchSpeak(first);                                    // entry utterance (equipment lead + first chunk)
+      subs.forEach(function(t){ prefetchSpeak(t); });          // plain chunks for next / re-scan
+      if(tip) prefetchSpeak((subs.length === 1 ? first : subs[subs.length - 1]) + tip);   // last chunk + tip flag
+    } else prefetchSpeak((lead || '') + spokenText(s) + tip);
   });
   _WAKE_ACKS.concat(_STOP_ACKS, [_READY_FALLBACK]).forEach(prefetchSpeak); }   // warm the acks + opener fallback (cook_intro/ack/wait warmed in loadCookMessages)
   function _playUrl(url){
