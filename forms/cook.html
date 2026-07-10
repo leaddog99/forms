@@ -1152,6 +1152,7 @@
   // (then the filler simply stays silent — the answer still comes).
   var _THINK_ACKS = [];
   var _WAIT_MSGS = [];
+  var _INTRO_MSGS = [];   // cook_intro — the armed opener lines (from the DB message store)
   var THINK_GAP_MS = 1200;   // beat between reassurances (after one finishes, before the next) — short
                              // enough that the rotating cook_wait line is actually reached on a
                              // normal 2-4s LLM wait (was 2500, which only surfaced on long thinks)
@@ -1163,23 +1164,21 @@
   // — so Chef doesn't launch into the recipe before the cook is positioned/ready.
   // Flip to false to read step 1 the instant the button is pressed (the old behavior).
   var START_ON_GO = true;
-  // The armed opener: onboarding cue spoken once when hands-free arms. Says the
-  // pre-flight assumption (mise/bundles/equipment ready) AND the exact go phrase, so a
-  // first-timer knows what to say. Kept as the single line (not rotated) so the "say
-  // hey chef go" instruction is never skipped. (More inline English — voice-pack debt,
-  // see project_voice_pack; deliberately deferred.)
-  var _READY_PROMPTS = ["I'm ready! I assume you have your ingredients pre-measured, your bundles created, and your equipment ready. So say, hey chef, go — and we'll start cooking the BCC way!"];
+  // The armed opener now comes from the DB message store (cook_intro, curator-editable,
+  // rotated) — see loadCookMessages. This is only the OFFLINE fallback: a minimal line
+  // used when the store didn't load, so the cook is never left without the go cue.
+  var _READY_FALLBACK = "Ready when you are — say, hey chef, go, to start.";
   function _pick(a){ return a[Math.floor(Math.random() * a.length)]; }
   function _wakeAck(){ return _pick(_WAKE_ACKS); }
   function _stopAck(){ return _pick(_STOP_ACKS); }
-  function _readyPrompt(){ return _pick(_READY_PROMPTS); }
+  function _readyPrompt(){ return _INTRO_MSGS.length ? _pick(_INTRO_MSGS) : _READY_FALLBACK; }
   function prefetchAllSteps(){ ((CK && CK.steps) || []).forEach(function(s){
     var subs = subsFor(s), lead = equipmentPreamble(s);
     if(subs.length){ prefetchSpeak((lead || '') + subs[0]);   // entry utterance (equipment lead + first chunk)
       subs.forEach(function(t){ prefetchSpeak(t); }); }        // plain chunks for next / re-scan
     else prefetchSpeak((lead || '') + spokenText(s));
   });
-  _WAKE_ACKS.concat(_STOP_ACKS, _READY_PROMPTS).forEach(prefetchSpeak); }   // warm the spoken acks/prompts too (cook_ack/cook_wait warmed in loadCookMessages)
+  _WAKE_ACKS.concat(_STOP_ACKS, [_READY_FALLBACK]).forEach(prefetchSpeak); }   // warm the acks + opener fallback (cook_intro/ack/wait warmed in loadCookMessages)
   function _playUrl(url){
     return new Promise(function(res){
       var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
@@ -1262,15 +1261,19 @@
   // no code list) — cook_ack (short immediate) + cook_wait (rotating). Fetched once
   // and TTS-prefetched. /messages falls back to the seeded 'general' bucket, so these
   // populate even before cook_ack/cook_wait are seeded (pre-restart).
-  function _loadMsgCat(cat, apply){
-    fetch('/messages?category=' + cat + '&order=random&count=20')
+  function _loadMsgCat(cat, apply, opts){
+    // opts.noFallback → ask the server NOT to borrow the 'general' bucket (the opener
+    // must never speak the extraction-wait lines if cook_intro is empty).
+    var url = '/messages?category=' + cat + '&order=random&count=20' + ((opts && opts.noFallback) ? '&fallback=none' : '');
+    fetch(url)
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(d){ if(d && d.messages && d.messages.length){ apply(d.messages); d.messages.forEach(prefetchSpeak); } })
       .catch(function(){});
   }
   function loadCookMessages(){
-    _loadMsgCat('cook_ack',  function(m){ _THINK_ACKS = m; });
-    _loadMsgCat('cook_wait', function(m){ _WAIT_MSGS  = m; });
+    _loadMsgCat('cook_intro', function(m){ _INTRO_MSGS = m; }, {noFallback:true});   // the armed opener (no general fallback)
+    _loadMsgCat('cook_ack',   function(m){ _THINK_ACKS = m; });
+    _loadMsgCat('cook_wait',  function(m){ _WAIT_MSGS  = m; });
   }
   function stopSpeaking(){
     _speakSeq++;                          // invalidate any in-flight speak()
@@ -1609,7 +1612,7 @@
     { name:'cancel',  re:/\b(cancel|never ?mind|forget it|stop it|that's enough|drop it|stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough|cancel|nevermind)$/, act:function(){ stopSpeaking(); setAwaiting(false); setAsking(false); _tipOffer = null; if(hf) setVoiceStatus('listening', _listenHint()); } },
     { name:'pause',   re:/\b(pause|hold on|wait a (second|sec|minute|moment)|resume|un ?pause)\b|^(wait|hold)$/, act:function(){ togglePlayPause(); } },
     { name:'back',    re:/\b(go back|back up|previous step|previous one|last step|one step back|back one|back a step)\b|^(back|previous|backward)$/, act:function(){ window.cookView.back(); } },
-    { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along|go ahead|go on|keep going|let'?s go)\b|^(next|forward|skip|go|check|checked|check it|check it off|check this off|check that off)$/, act:function(){ window.cookView.next(); } },
+    { name:'next',    re:/\b(next step|next one|move on|skip (this|ahead|it)?|onward|move along|go ahead|go on|keep going|let'?s go)\b|^(next|forward|skip|go|start|check|checked|check it|check it off|check this off|check that off)$/, act:function(){ window.cookView.next(); } },
     { name:'stop',    re:/\b(stop cooking|stop listening|end session|turn off|i'm done cooking|that's all|all done)\b|^(stop|halt|exit|quit)$/, act:function(){ stopHandsFree({spoken:true}); } }
   ];
   function matchCommand(cmd){

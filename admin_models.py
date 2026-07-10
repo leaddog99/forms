@@ -115,7 +115,7 @@ class AdminModel:
 # bucket has no enabled messages.
 STATUS_MESSAGE_CATEGORIES = [
     "screenshot", "url", "extract", "image", "pdf", "save",
-    "cook_ack", "cook_wait", "general",
+    "cook_intro", "cook_ack", "cook_wait", "general",
 ]
 
 _STATUS_SEED = [
@@ -150,6 +150,10 @@ _STATUS_SEED = [
     ("save", "Filing it in the cookbook…"),
     ("save", "Making it official…"),
     ("save", "Tucking the recipe in for the night…"),
+    # cook_intro — the OPENER spoken once when hands-free ARMS (waiting for the go-word).
+    # Rotated when there are several; each line MUST tell the cook the exact go phrase
+    # ("say hey chef go") or a first-timer won't know how to start.
+    ("cook_intro", "I'm ready! I assume you have your ingredients pre-measured, your bundles created, and your equipment ready. So say, hey chef, go — and we'll start cooking the BCC way!"),
     # cook_ack — the SHORT immediate acknowledgment SPOKEN the instant a "hey chef"
     # question is dispatched (before the rotating cook_wait lines). Keep them snappy.
     ("cook_ack", "Okay, one moment."),

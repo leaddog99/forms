@@ -4959,14 +4959,17 @@ def status_messages_active():
 
 
 @app.get("/messages")
-def messages_endpoint(category: str, order: str = "", count: int = 0):
+def messages_endpoint(category: str, order: str = "", count: int = 0, fallback: str = "general"):
     """The 'messages' subroutine as an endpoint: a READY, presorted message list for ONE
     category. `order` overrides the stored order_mode (top|alpha|random); `count` caps the
-    list. Falls back to the 'general' bucket when the category is empty/disabled."""
+    list. Falls back to the 'general' bucket when the category is empty/disabled — pass
+    `fallback=none` (or empty) to DISABLE that (e.g. the cook opener, which must never
+    borrow the extraction-wait lines)."""
     try:
         from admin_models import get_messages
+        fb = None if fallback.strip().lower() in ("", "none", "0", "false") else fallback
         with _db() as conn:
-            msgs = get_messages(conn, category, order=(order or None), count=(count or None))
+            msgs = get_messages(conn, category, order=(order or None), count=(count or None), fallback=fb)
         return {"category": category, "order": order or None, "messages": msgs}
     except Exception as e:
         print(f"[ERROR] messages({category!r}) failed: {e}")
