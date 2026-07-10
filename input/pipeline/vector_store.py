@@ -351,3 +351,131 @@ def find_similar_master_recipes(conn: sqlite3.Connection,
          "chapter": r[2], "dish": r[3]}
         for r in rows
     ]
+
+
+# === Product vec0 helpers ===================================================
+#
+# products_vec.rowid ↔ products.product_id (the uuid TEXT). Aux columns
+# product_class + category pre-filter KNN (same-class cross-sell, or exclude
+# self). Mirrors dishes_vec exactly; the products table + its embedding BLOB
+# (source of truth) live in intake/products/catalog_store.py.
+
+
+def ensure_product_vec_tables(conn: sqlite3.Connection) -> None:
+    """Create products_vec + its AFTER DELETE trigger (idempotent). Call AFTER the
+    `products` table exists (catalog_store.ensure_product_tables). The trigger body
+    deletes from products_vec, so any connection deleting from `products` must have
+    sqlite-vec loaded (enable_vec) — same contract as dishes/master (project_vec_delete_triggers)."""
+    enable_vec(conn)
+    conn.execute(f"""
+        CREATE VIRTUAL TABLE IF NOT EXISTS products_vec USING vec0(
+            product_id TEXT PRIMARY KEY,
+            embedding float[{EMBED_DIM}],
+            +product_class TEXT,
+            +category TEXT
+        )
+    """)
+    conn.commit()
+    conn.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_product_vec_cleanup
+        AFTER DELETE ON products
+        BEGIN
+            DELETE FROM products_vec WHERE product_id = OLD.product_id;
+        END
+        """
+    )
+    conn.commit()
+
+
+def upsert_product_vector(conn: sqlite3.Connection, product_id: str,
+                          embedding: np.ndarray, *,
+                          product_class: Optional[str] = None,
+                          category: Optional[str] = None) -> None:
+    """Replace the vec0 row for a product (DELETE + INSERT; vec0 has no upsert)."""
+    arr = np.asarray(embedding, dtype="float32")
+    if arr.size != EMBED_DIM:
+        raise ValueError(f"embedding wrong dim: {arr.size} != {EMBED_DIM}")
+    conn.execute("DELETE FROM products_vec WHERE product_id = ?", (product_id,))
+    conn.execute(
+        "INSERT INTO products_vec(product_id, embedding, product_class, category) "
+        "VALUES (?, ?, ?, ?)",
+        (product_id, arr.tobytes(), product_class, category),
+    )
+    conn.commit()
+
+
+def delete_product_vector(conn: sqlite3.Connection, product_id: str) -> None:
+    """Drop a product's vec0 row (the trigger covers base-table deletes; this is the
+    explicit path)."""
+    conn.execute("DELETE FROM products_vec WHERE product_id = ?", (product_id,))
+    conn.commit()
+
+
+def find_similar_products(conn: sqlite3.Connection, query_vec: np.ndarray, *,
+                          k: int = 5,
+                          product_class: Optional[str] = None,
+                          category: Optional[str] = None,
+                          exclude_id: Optional[str] = None) -> list[dict]:
+    """KNN over products_vec. Returns [{product_id, distance, product_class, category}]
+    distance-ascending. Optional pre-filters (class/category/exclude self) push into
+    vec0 via an `product_id IN (subselect)` clause — same trick as find_similar_dishes."""
+    arr = np.asarray(query_vec, dtype="float32").tobytes()
+    sub_clauses: list[str] = []
+    sub_params: list = []
+    if product_class is not None:
+        sub_clauses.append("product_class = ?")
+        sub_params.append(product_class)
+    if category is not None:
+        sub_clauses.append("category = ?")
+        sub_params.append(category)
+    if exclude_id is not None:
+        sub_clauses.append("product_id != ?")
+        sub_params.append(exclude_id)
+
+    if sub_clauses:
+        subselect = "SELECT product_id FROM products_vec WHERE " + " AND ".join(sub_clauses)
+        sql = (
+            "SELECT product_id, distance, product_class, category FROM products_vec "
+            "WHERE embedding MATCH ? AND k = ? AND product_id IN (" + subselect + ") "
+            "ORDER BY distance"
+        )
+        rows = conn.execute(sql, [arr, k, *sub_params]).fetchall()
+    else:
+        sql = (
+            "SELECT product_id, distance, product_class, category FROM products_vec "
+            "WHERE embedding MATCH ? AND k = ? ORDER BY distance"
+        )
+        rows = conn.execute(sql, (arr, k)).fetchall()
+
+    return [
+        {"product_id": r[0], "distance": float(r[1]),
+         "product_class": r[2], "category": r[3]}
+        for r in rows
+    ]
+
+
+def rebuild_products_vec_from_blobs(conn: sqlite3.Connection) -> int:
+    """Rebuild products_vec from the source-of-truth `products.embedding` BLOB — the
+    free, API-less regeneration path (mirrors rebuild_master_vec_from_blobs). Clears
+    first (drops orphans too). Returns vectors written."""
+    import json as _json
+    enable_vec(conn)
+    conn.execute("DELETE FROM products_vec")
+    rows = conn.execute(
+        "SELECT product_id, data, embedding FROM products WHERE embedding IS NOT NULL"
+    ).fetchall()
+    written = 0
+    for pid, data_json, blob in rows:
+        vec = np.frombuffer(blob, dtype="float32") if blob else None
+        if vec is None or vec.size != EMBED_DIM:
+            continue
+        try:
+            d = _json.loads(data_json) if data_json else {}
+        except Exception:
+            d = {}
+        upsert_product_vector(conn, pid, vec,
+                              product_class=(d.get("product_class") or None),
+                              category=(d.get("category") or None))
+        written += 1
+    return written

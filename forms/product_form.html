@@ -75,6 +75,8 @@
         <div><label class="f">Product class (size-scoped)</label><input type="text" id="p_class" placeholder="Saucepans (2 qt)"></div>
       </div>
       <label class="f">Image URL</label><input type="text" id="p_image">
+      <label class="f">Description — factual, drives search/matching (not our voice)</label>
+      <textarea id="p_desc" style="min-height:64px;font-family:inherit;font-size:.92rem"></textarea>
     </div>
 
     <div class="block">
@@ -154,7 +156,7 @@ async function extract() {
 
 function fillForm(p) {
   set('p_name', p.name); set('p_brand', p.brand); set('p_category', p.category); set('p_class', p.product_class);
-  set('p_image', p.image_url);
+  set('p_image', p.image_url); set('p_desc', p.description);
   const s = p.specs || {};
   set('sp_model', s.model_number); set('sp_mpn', s.mpn); set('sp_gtin', s.gtin);
   set('sp_capacity', s.capacity); set('sp_dims', s.dimensions_in); set('sp_weight', s.weight);
@@ -215,7 +217,7 @@ function collect() {
   return {
     ...(CURRENT || {}),
     name: val('p_name'), brand: val('p_brand'), category: val('p_category'), product_class: val('p_class'),
-    image_url: val('p_image'), bcc_pick: val('p_pick'), bcc_blurb: val('p_blurb'),
+    image_url: val('p_image'), description: val('p_desc'), bcc_pick: val('p_pick'), bcc_blurb: val('p_blurb'),
     specs: { model_number: val('sp_model'), mpn: val('sp_mpn'), gtin: val('sp_gtin'),
              material: val('sp_material'), capacity: val('sp_capacity'), dimensions_in: val('sp_dims'),
              weight: val('sp_weight'), dishwasher_safe: val('sp_dish') },

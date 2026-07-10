@@ -31,7 +31,16 @@ from typing import Any, Optional
 from input.pipeline.config import (
     RECIPE_PHRASES as _RECIPE_PHRASES_SEED,
     _DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS as _URL_PATH_FRAGMENTS_SEED,
+    BCC_LINK_DOMAIN as _PUBLIC_HOST_SEED,
 )
+
+
+def _as_origin(host: str) -> str:
+    """Normalize a bare host or URL to a scheme-qualified origin, no trailing slash."""
+    h = (host or "").strip()
+    if h and "://" not in h:
+        h = "https://" + h
+    return h.rstrip("/")
 
 
 # ============================================================
@@ -41,6 +50,19 @@ from input.pipeline.config import (
 # ============================================================
 
 SYSTEM_DEFAULTS: list[dict] = [
+    {
+        "key": "public_base_url",
+        "value": _as_origin(_PUBLIC_HOST_SEED),
+        "type": "string",
+        "category": "Branding",
+        "label": "Public base URL (externally reachable)",
+        "description": "The externally-reachable origin of this app — e.g. the "
+                       "Cloudflare tunnel host. Bookmarklets run on a third-party "
+                       "(retailer/recipe) page and POST here, and the install page "
+                       "bakes it into the loader, so a self-hoster ships their own "
+                       "host with no code change. Seeded from bcc_link_domain; "
+                       "scheme optional (https assumed).",
+    },
     {
         "key": "scheduler_enabled",
         "value": True,
@@ -676,6 +698,13 @@ def get_setting(key: str, default: Any = None, *, db_path: Optional[str] = None)
     if key in _SEED_BY_KEY:
         return _SEED_BY_KEY[key]["value"]
     return default
+
+
+def public_base_url() -> str:
+    """The externally-reachable origin clients (bookmarklets, permalinks) target.
+    Reads system_config.public_base_url (canonical), normalized to a scheme-qualified
+    origin; falls back to the bcc_link_domain seed. Empty string only if nothing is set."""
+    return _as_origin(get_setting("public_base_url", _PUBLIC_HOST_SEED))
 
 
 def set_setting(conn: sqlite3.Connection, key: str, value: Any) -> None:

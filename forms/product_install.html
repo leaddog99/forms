@@ -3,16 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Install Recipe Bookmarklet</title>
+  <title>Install Product Grabber (Admin)</title>
   <style>
+    /* Admin palette: a deeper clay/teal accent to visually distinguish this
+       CATALOG-ADMIN tool from the user-facing recipe grabber (install.html). */
     :root {
-      --accent: #b8602a;
-      --accent-dark: #944a1f;
-      --bg: #faf6f1;
+      --accent: #2f6f6a;
+      --accent-dark: #23524e;
+      --bg: #f6f3ef;
       --text: #1f1611;
       --muted: #6b5b4f;
       --card: #fff;
-      --border: #e6dccf;
+      --border: #e2dbd0;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
@@ -20,6 +22,10 @@
       -webkit-font-smoothing: antialiased; }
     .wrap { max-width: 560px; margin: 0 auto; padding: 24px 18px 64px;
       padding-bottom: max(64px, env(safe-area-inset-bottom)); }
+    .admin-chip { display: inline-block; font-size: 0.72rem; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-dark);
+      background: #dcebe9; border: 1px solid #c3ddd9; border-radius: 999px;
+      padding: 3px 10px; margin: 0 0 10px; }
     h1 { font-size: 1.6rem; margin: 0 0 8px; letter-spacing: -0.01em; }
     h3 { margin: 0 0 8px; font-size: 1rem; }
     .sub { color: var(--muted); margin: 0 0 28px; font-size: 0.95rem; }
@@ -43,13 +49,13 @@
     .drag-row { text-align: center; padding: 8px 0 4px; }
     ol { margin: 0; padding-left: 22px; line-height: 1.55; }
     ol li { margin-bottom: 10px; }
-    code { background: #f3ece2; padding: 2px 6px; border-radius: 5px; font-size: 0.9em;
+    code { background: #eef1ef; padding: 2px 6px; border-radius: 5px; font-size: 0.9em;
       font-family: ui-monospace, Menlo, monospace; }
     details { margin-top: 18px; }
     details summary { cursor: pointer; color: var(--muted); font-size: 0.92rem;
       padding: 4px 0; user-select: none; -webkit-user-select: none; }
     details[open] summary { color: var(--text); }
-    pre.raw { background: #2a1f17; color: #f6eadb; padding: 14px;
+    pre.raw { background: #1c2624; color: #e7f0ee; padding: 14px;
       border-radius: 10px; overflow-x: auto; font-size: 0.75rem; line-height: 1.4;
       font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all;
       user-select: all; -webkit-user-select: all; margin-top: 10px; }
@@ -59,10 +65,8 @@
     .switch a { color: var(--accent-dark); }
     [hidden] { display: none !important; }
 
-    /* ---------- Right-side cross-page nav (⋮) ---------- */
-    /* No library-shell header on this page — initNav() mounts the
-       toggle as a fixed top-right button. Uses install.html's own
-       palette (var(--accent) etc.), not the forms.css tokens. */
+    /* Right-side cross-page nav (mounted as a fixed top-right button;
+       no library-shell header on this page). Uses this page's palette. */
     .nav-toggle {
       background: var(--accent); color: #fff; border: none;
       width: 36px; height: 36px; border-radius: 8px;
@@ -91,9 +95,9 @@
       font: inherit; font-size: 0.95em; text-align: left;
       cursor: pointer; box-sizing: border-box;
     }
-    .nav-menu .nav-item:hover { background: #f4ebdd; }
+    .nav-menu .nav-item:hover { background: #eaf1ef; }
     .nav-menu .nav-item.active {
-      background: #f4ebdd; color: var(--accent-dark); font-weight: 600;
+      background: #eaf1ef; color: var(--accent-dark); font-weight: 600;
     }
     .nav-menu .badge-soon {
       font-size: 0.72em; color: var(--muted);
@@ -101,7 +105,7 @@
     }
     .coming-soon-overlay {
       position: fixed; inset: 0;
-      background: rgba(42, 33, 27, 0.45);
+      background: rgba(28, 38, 36, 0.45);
       z-index: 200;
       display: flex; align-items: center; justify-content: center;
       padding: 24px;
@@ -110,11 +114,9 @@
       background: var(--card);
       border-radius: 14px; padding: 28px 32px;
       max-width: 400px; text-align: center;
-      box-shadow: 0 12px 36px rgba(60,40,20,.3);
+      box-shadow: 0 12px 36px rgba(30,50,45,.3);
     }
-    .coming-soon-card h2 {
-      font-size: 1.4em; margin: 0 0 8px; color: var(--text);
-    }
+    .coming-soon-card h2 { font-size: 1.4em; margin: 0 0 8px; color: var(--text); }
     .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
     .coming-soon-card button {
       background: var(--accent); color: #fff; border: none;
@@ -127,25 +129,29 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Install Recipe Grabber</h1>
-    <p class="sub">A one-click bookmark that imports the recipe you're reading.</p>
+    <span class="admin-chip">Catalog admin</span>
+    <h1>Install Product Grabber</h1>
+    <p class="sub">A one-click bookmark that imports the retailer product you're viewing into the
+      affiliate catalog. This is an <strong>admin</strong> tool &mdash; separate from the recipe
+      grabber your readers use.</p>
 
     <!-- ========== DESKTOP BLOCK ========== -->
     <section id="desktop-block" hidden>
       <div class="card">
         <p style="margin:0 0 14px">Drag this button onto your bookmarks bar:</p>
         <div class="drag-row">
-          <a id="dragLink" class="drag" href="#">Grab Recipe</a>
+          <a id="dragLink" class="drag" href="#">Grab Product</a>
         </div>
-        <p class="note" style="text-align:center">Then visit any recipe page and click it.</p>
+        <p class="note" style="text-align:center">Then open a retailer <strong>product</strong> page
+          (Amazon / Williams Sonoma / Sur La Table / a manufacturer) and click it.</p>
       </div>
 
       <div class="card">
         <h3>No bookmarks bar showing?</h3>
         <ol>
-          <li><strong>Chrome / Edge:</strong> <code>Ctrl+Shift+B</code> (or <code>⌘+Shift+B</code> on Mac) to toggle it.</li>
-          <li><strong>Firefox:</strong> right-click the toolbar → <strong>Bookmarks Toolbar</strong> → <strong>Always Show</strong>.</li>
-          <li><strong>Safari (Mac):</strong> View menu → <strong>Show Favorites Bar</strong>.</li>
+          <li><strong>Chrome / Edge:</strong> <code>Ctrl+Shift+B</code> (or <code>&#8984;+Shift+B</code> on Mac) to toggle it.</li>
+          <li><strong>Firefox:</strong> right-click the toolbar &rarr; <strong>Bookmarks Toolbar</strong> &rarr; <strong>Always Show</strong>.</li>
+          <li><strong>Safari (Mac):</strong> View menu &rarr; <strong>Show Favorites Bar</strong>.</li>
         </ol>
       </div>
 
@@ -154,9 +160,13 @@
         <button id="copyBtnDesktop" class="copy" type="button">Copy bookmarklet code</button>
         <p class="note" id="copyStatusDesktop" aria-live="polite">Click to copy.</p>
         <ol style="margin-top:14px">
-          <li>Right-click your bookmarks bar → <strong>Add page…</strong> (or use <code>Ctrl+D</code>, then choose to edit).</li>
-          <li>Name it <code>Grab Recipe</code>, paste the copied text as the URL, save.</li>
+          <li>Right-click your bookmarks bar &rarr; <strong>Add page&hellip;</strong> (or <code>Ctrl+D</code>, then edit).</li>
+          <li>Name it <code>Grab Product</code>, paste the copied text as the URL, save.</li>
         </ol>
+        <p class="note"><strong>Catch:</strong> if pasting silently strips <code>javascript:</code> off the
+          front (browsers do this for security), put the cursor at the very start of the URL and type
+          those 11 characters back in by hand. That stripped prefix is the usual cause of a
+          &ldquo;syntax error&rdquo; when the bookmark runs.</p>
       </div>
     </section>
 
@@ -169,10 +179,10 @@
 
       <div class="card">
         <ol>
-          <li><span class="step-num">Tap</span> the orange button above to copy.</li>
-          <li><span class="step-num">Bookmark this page</span>: tap Share <span aria-hidden="true">⬆️</span> → <strong>Add Bookmark</strong> → Save.</li>
-          <li>Open <strong>Bookmarks</strong> (the open-book icon) → <strong>Edit</strong>.</li>
-          <li>Tap the bookmark you just made. Change the name to <code>Grab Recipe</code> and replace the URL by pasting (tap-and-hold the URL field → <strong>Paste</strong>).</li>
+          <li><span class="step-num">Tap</span> the button above to copy.</li>
+          <li><span class="step-num">Bookmark this page</span>: tap Share <span aria-hidden="true">&#11014;&#65039;</span> &rarr; <strong>Add Bookmark</strong> &rarr; Save.</li>
+          <li>Open <strong>Bookmarks</strong> (the open-book icon) &rarr; <strong>Edit</strong>.</li>
+          <li>Tap the bookmark you just made. Change the name to <code>Grab Product</code> and replace the URL by pasting (tap-and-hold the URL field &rarr; <strong>Paste</strong>).</li>
           <li>Tap <strong>Done</strong>. You're installed.</li>
         </ol>
         <p class="note"><strong>Catch:</strong> If pasting silently strips <code>javascript:</code> off the front, position the cursor at the start of the URL and type those 11 characters in manually.</p>
@@ -181,11 +191,11 @@
       <div class="card">
         <h3>Using it</h3>
         <ol>
-          <li>Open any recipe page in Safari.</li>
-          <li>Tap the <code>Grab Recipe</code> bookmark.</li>
-          <li>A new tab opens with the editable recipe form. The original page stays on screen until the import finishes.</li>
+          <li>Open any retailer product page in Safari.</li>
+          <li>Tap the <code>Grab Product</code> bookmark.</li>
+          <li>A new tab opens with the editable product form. The original page stays on screen until the import finishes.</li>
         </ol>
-        <p class="note">First time only: if nothing happens, go to <strong>Settings → Safari → Block Pop-ups</strong> and turn it OFF (or allow pop-ups for <span class="pop-host">recipes.tbotb.com</span>).</p>
+        <p class="note">First time only: if nothing happens, go to <strong>Settings &rarr; Safari &rarr; Block Pop-ups</strong> and turn it OFF (or allow pop-ups for <span class="pop-host">recipes.tbotb.com</span>).</p>
       </div>
     </section>
 
@@ -200,21 +210,18 @@
   </div>
 
   <script>
-    // Cross-page nav (⋮ top-right). Mounted as a fixed top-right button
-    // because install.html has no library-shell header.
     if (window.LibraryShell && LibraryShell.initNav) {
-      LibraryShell.initNav({ currentPage: 'install' });
+      LibraryShell.initNav({ currentPage: 'product-install' });
     }
 
-    // The loader carries the app's PUBLIC host (portable-package: no host in
-    // code). buildLoader(base) templates it in; the loader stashes that origin
-    // on window.__recipeBookmarkletApi (derived from its own <script src>) so the
-    // bookmarklet reads it back — no host baked into bookmarklet.js. Same loader
-    // works on desktop and iOS: opens a popup synchronously inside the user
-    // gesture (iOS Safari requires this), then injects bookmarklet.js cache-busted.
+    // The loader carries the app's PUBLIC host (portable-package: no host in code).
+    // buildLoader(base) templates it in; the loader stashes that origin on
+    // window.__productBookmarkletApi (derived from its own <script src>) so the
+    // bookmarklet reads it back — no host baked into product_bookmarklet.js.
+    // ASCII "..." (not the ellipsis char) so copy/paste can't mangle it.
     function buildLoader(base) {
       base = String(base || '').replace(/\/+$/, '');
-      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='" + base + "/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
+      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading product importer...</h2>');window.__productBookmarkletPopup=p;var s=document.createElement('script');s.src='" + base + "/forms/product_bookmarklet.js?'+Date.now();window.__productBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
     }
 
     // Start from this page's own origin so drag/copy work instantly; then ask
@@ -236,9 +243,6 @@
       if (b && b.bookmarklet_api_base) applyBase(b.bookmarklet_api_base);
     }).catch(function () { /* keep the location.origin fallback */ });
 
-    // OS detection: iOS / iPadOS gets the Share→Add Bookmark flow,
-    // everything else gets the drag-to-bookmarks-bar flow.
-    // iPadOS 13+ reports as Mac; disambiguate via maxTouchPoints.
     var ua = navigator.userAgent || '';
     var isIOS = /iPad|iPhone|iPod/.test(ua) ||
                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -265,8 +269,6 @@
       show(currentlyIos ? 'desktop' : 'ios');
     });
 
-    // Wire both copy buttons (each block has its own pair so the status
-    // line lives next to the button the user actually clicked).
     function wireCopy(btnId, statusId) {
       var btn = document.getElementById(btnId);
       var status = document.getElementById(statusId);
@@ -291,7 +293,6 @@
           }
         } catch (e) { /* fall through */ }
 
-        // Fallback: select the raw <pre> so the user can long-press / Ctrl+C.
         var pre = document.getElementById('rawCode');
         var details = pre.parentElement;
         if (!details.open) details.open = true;
@@ -300,7 +301,7 @@
         var sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(r);
-        status.textContent = 'Clipboard blocked. The code is now selected below — copy it manually.';
+        status.textContent = 'Clipboard blocked. The code is now selected below - copy it manually.';
       });
     }
     wireCopy('copyBtnIos', 'copyStatusIos');

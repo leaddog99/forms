@@ -9,6 +9,50 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-10 (product commerce, cont.) — factual `description` field + product sqlite-vec + size normalizer + portable bookmarklet host
+
+Continuation of the 2026-07-08 product session (see [[project_product_commerce_build]], [[project_affiliate_catalog]]).
+Closed the extractor's image/description/sizing gaps, gave products their own vec0 KNN, and made the
+bookmarklet host portable — all on `split/enrichment-api`. UNCOMMITTED work from an interrupted session,
+now committed. Server is STALE (last start 2026-06-25) so NONE of this has run live yet.
+
+- **Factual `description` field** (`product_model.Product`) — LLM-normalized, de-marketed product copy
+  (material / construction / size / key features); human-facing AND the primary semantic signal for
+  matching/embedding. Distinct from `bcc_blurb` (our opinion). Wired through `forms/product_form.html`
+  (load + save) and embedded on save as the canonical text.
+- **Size normalizer** (`intake/products/measures.py`, NEW) — one canonical form for the messy retailer
+  size syntax: unicode fractions → decimals (`8⅝ → 8.625`), `×/by → x`, `2 Qt → 2 qt`, ranges preserved
+  (`6-7 qt`), and class-token sizes (`Dutch Ovens (6-7 Quarts) → (6-7 qt)`). Owns only PARSING; the unit
+  vocabulary stays single-source in `enrich.measurement.convert` ([[feedback_single_path]]) — added a
+  `LENGTH` domain (mm-based, non-culinary) + a `PREFERRED_SYMBOL` display-canonicalization table +
+  `is_known_unit`/`preferred_symbol`. `catalog_store` normalizes on save + match (idempotent).
+- **Product sqlite-vec SHIPPED** ([[project_sqlite_vec_migration]], [[project_vec_delete_triggers]]) —
+  `products_vec` vec0 table in `vector_store.py` (`ensure_product_vec_tables` + AFTER DELETE trigger,
+  `upsert`/`delete`/`find_similar_products`, `rebuild_products_vec_from_blobs`), aux columns
+  `product_class` + `category` for same-class cross-sell / exclusion KNN. `catalog_store` keeps it in
+  lockstep with the source-of-truth `products.embedding` BLOB (one-time backfill on init), embeds the
+  canonical `description`. Replaces the in-Python numpy scan (mirrors `find_similar_dishes`).
+- **Portable bookmarklet host** ([[project_portable_package]], [[feedback_no_data_in_code]]) —
+  `system_config.public_base_url` (seeded from `bcc_link_domain`, scheme-normalized to an origin) is now
+  the canonical externally-reachable host; `save_recipe_api` `/brand` returns it as `bookmarklet_api_base`.
+  `install.html` + `product_bookmarklet.js` read the host back from the server (nothing baked into the
+  bookmarklet code) so a self-hoster ships their own domain with no code change. `forms/product_install.html`
+  (NEW) = the catalog-ADMIN install page (clay/teal accent, visually distinct from the user-facing recipe
+  grabber).
+- **NEXT (unchanged):** BCC restart to exercise the bookmarklet → form → extract → save loop + all product
+  endpoints live; then classify into category/product_class + the `products_vec` recommender + the
+  recipe→product_class link. Restart = `Restart-Service BCC` (admin; `bcc_restart.bat` self-elevates).
+
+## Session log — 2026-07-10 (cook voice) — spoken think-acks (`cook_ack`) + rotating wait lines (`cook_wait`)
+
+Small hands-free-cook polish ([[project_cook_voice]], [[project_friendly_status_messages]]), committed
+separately from the product work above. Two new DB message kinds in the `admin_models` seed list:
+`cook_ack` (the SHORT immediate ack SPOKEN the instant a "hey chef" question dispatches, before the
+rotating lines) and `cook_wait` (rotated while Chef's answer generates so a long wait never sits in dead
+silence — written to sound natural aloud, no ellipsis). `forms/cook.html` fetches both from the DB message
+store (`loadCookMessages`, no code list) and prefetch-warms the TTS; `cook_stt.py` gains transcript
+`_norm` / `_looks_repetitive` hygiene. Authored — needs a restart to seed the new message kinds.
+
 ## Session log — 2026-07-08 (product commerce) — product-first affiliate catalog: demo viewer + retailer extractor + match-or-create + URL→ATK reverse table
 
 Monetization arc (see [[project_affiliate_catalog]]). Goal: recommend products **in context** of a

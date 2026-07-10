@@ -81,6 +81,10 @@ class Product(BaseModel):
     category: str = ""                       # ≈ classification.chapter
     brand: str = ""
     name: str = ""
+    description: str = ""                     # LLM-normalized FACTUAL product copy (material,
+                                             # construction, size, key features) — de-marketed,
+                                             # NOT our opinion (that's bcc_blurb). Human-facing AND
+                                             # the primary semantic signal for matching/embedding.
     specs: ProductSpecs = Field(default_factory=ProductSpecs)
     verdicts: List[ProductVerdict] = Field(default_factory=list)   # one per review source (consensus)
     image_url: str = ""                      # to coopt into our own store

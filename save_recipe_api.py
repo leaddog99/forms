@@ -3004,9 +3004,19 @@ def get_dish_fit_data_endpoint(name: str):
 def branding_config():
     """Public app-shell branding (site name, logo, home link) for the
     library-shell header. Sourced from bcc_config.json so swapping the
-    brand is a config edit, not a code change."""
+    brand is a config edit, not a code change.
+
+    `bookmarklet_api_base` is the externally-reachable origin the bookmarklets
+    POST to (they run on a retailer/recipe page, so they can't read our host
+    from location). DB-resident (system_config.public_base_url, seeded from
+    bcc_link_domain) so a self-hoster's install page bakes THEIR host into the
+    loader with no code change (portable-package)."""
     from input.pipeline.config import BRAND_NAME, BRAND_LOGO_URL, BRAND_HOME_URL
-    return {"name": BRAND_NAME, "logo_url": BRAND_LOGO_URL, "home_url": BRAND_HOME_URL}
+    from input.pipeline.system_config import public_base_url
+    return {
+        "name": BRAND_NAME, "logo_url": BRAND_LOGO_URL, "home_url": BRAND_HOME_URL,
+        "bookmarklet_api_base": public_base_url(),
+    }
 
 
 @app.get("/chapters")

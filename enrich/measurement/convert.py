@@ -44,6 +44,7 @@ class Domain(Enum):
     VOLUME = "volume"
     MASS = "mass"
     COUNT = "count"
+    LENGTH = "length"   # linear dimension — NOT culinary; used by product sizing (base mm)
 
 
 CUP_ML = 236.5882365
@@ -78,7 +79,51 @@ UNITS: dict[str, tuple[Domain, float]] = {
     "whole": (Domain.COUNT, 1.0), "head": (Domain.COUNT, 1.0),
     "can": (Domain.COUNT, 1.0), "package": (Domain.COUNT, 1.0),
     "pkg": (Domain.COUNT, 1.0),
+    # length -> mm (product dimensions; never a culinary quantity, so additive/safe)
+    "mm": (Domain.LENGTH, 1.0), "millimeter": (Domain.LENGTH, 1.0),
+    "cm": (Domain.LENGTH, 10.0), "centimeter": (Domain.LENGTH, 10.0),
+    "m": (Domain.LENGTH, 1000.0), "meter": (Domain.LENGTH, 1000.0), "metre": (Domain.LENGTH, 1000.0),
+    "in": (Domain.LENGTH, 25.4), "inch": (Domain.LENGTH, 25.4), "inches": (Domain.LENGTH, 25.4),
+    '"': (Domain.LENGTH, 25.4),
+    "ft": (Domain.LENGTH, 304.8), "foot": (Domain.LENGTH, 304.8), "feet": (Domain.LENGTH, 304.8),
+    "yd": (Domain.LENGTH, 914.4), "yard": (Domain.LENGTH, 914.4),
 }
+
+
+# Preferred SHORT symbol for a unit token — collapses synonyms to one canonical
+# display form ("quart"/"quarts"/"qt" -> "qt", '"'/"inch"/"inches" -> "in"). This
+# is the single place unit *display* canonicalization lives (canonical_unit() only
+# normalizes the registry key, which keeps synonyms distinct). Used by product
+# sizing (intake/products/measures.py) and available to any display path.
+PREFERRED_SYMBOL: dict[str, str] = {
+    # volume
+    "ml": "ml", "milliliter": "ml", "cc": "ml", "cl": "cl", "dl": "dl",
+    "l": "l", "liter": "l", "litre": "l",
+    "tsp": "tsp", "teaspoon": "tsp", "t": "tsp",
+    "tbsp": "tbsp", "tablespoon": "tbsp", "tbs": "tbsp", "tbl": "tbsp",
+    "fl_oz": "fl oz", "fluid_ounce": "fl oz",
+    "cup": "cup", "c": "cup", "pint": "pt", "pt": "pt",
+    "quart": "qt", "qt": "qt", "gallon": "gal", "gal": "gal", "stick": "stick",
+    # mass
+    "mg": "mg", "g": "g", "gram": "g", "gr": "g", "kg": "kg", "kilogram": "kg",
+    "oz": "oz", "ounce": "oz", "lb": "lb", "lbs": "lb", "pound": "lb",
+    # length
+    "mm": "mm", "millimeter": "mm", "cm": "cm", "centimeter": "cm",
+    "m": "m", "meter": "m", "metre": "m",
+    "in": "in", "inch": "in", "inches": "in", '"': "in",
+    "ft": "ft", "foot": "ft", "feet": "ft", "yd": "yd", "yard": "yd",
+}
+
+
+def preferred_symbol(u: str) -> str:
+    """Canonical short symbol for a unit token, collapsing synonyms/plurals
+    ('Inches' -> 'in', 'quarts' -> 'qt'). Unknown tokens return trimmed as-is."""
+    key = (u or "").strip().lower().replace(" ", "_").rstrip(".")
+    if key in PREFERRED_SYMBOL:
+        return PREFERRED_SYMBOL[key]
+    if key.endswith("s") and key[:-1] in PREFERRED_SYMBOL:
+        return PREFERRED_SYMBOL[key[:-1]]
+    return (u or "").strip()
 
 # Units that are really "count of a thing" — used by the parser to decide a
 # bare quantity ("3 eggs") means COUNT, not an error.
@@ -272,7 +317,7 @@ class ConversionResult:
 
 
 # The canonical base unit each domain reduces to (for readable step traces).
-BASE_UNIT = {Domain.VOLUME: "mL", Domain.MASS: "g", Domain.COUNT: "items"}
+BASE_UNIT = {Domain.VOLUME: "mL", Domain.MASS: "g", Domain.COUNT: "items", Domain.LENGTH: "mm"}
 
 
 def _g(x: float) -> str:
