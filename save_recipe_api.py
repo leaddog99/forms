@@ -5426,6 +5426,26 @@ async def _handle_domain_scoring_job(job: dict) -> dict:
 jobs_lib.register_handler("domain_scoring", _handle_domain_scoring_job)
 
 
+def _recipe_equipment_from_cook(cook_equipment) -> list:
+    """Mirror the cook-rework's inferred tools (`_cook.equipment`: id/name/size) into
+    the recipe's top-level schema `equipment` (HowToTool). Makes the tools REAL recipe
+    data — the recipe editor shows them AND the product-commerce match keys off them
+    (equipment -> product_class; `size` is the class grain, e.g. "Saucepans (2 qt)").
+    Carries `size` when present. Deduped by name (first wins), order preserved."""
+    out, seen = [], set()
+    for e in (cook_equipment or []):
+        name = ((e.get("name") if isinstance(e, dict) else getattr(e, "name", None)) or "").strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        item = {"@type": "HowToTool", "name": name}
+        size = e.get("size") if isinstance(e, dict) else getattr(e, "size", None)
+        if size:
+            item["size"] = size
+        out.append(item)
+    return out
+
+
 async def _handle_cook_rework_job(job: dict) -> dict:
     """Cook-rework: turn a captured recipe into a validated `_cook` block
     (cook_rework.rework_recipe) and persist it ONLY when the §5 gauntlet passes.
@@ -5471,7 +5491,13 @@ async def _handle_cook_rework_job(job: dict) -> dict:
             cur = json.loads(conn.execute(
                 f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
                 (recipe_id, user_id)).fetchone()[0])
-            cur["_cook"] = cook.model_dump()
+            ck_dump = cook.model_dump()
+            cur["_cook"] = ck_dump
+            # Mirror the inferred tools into the recipe's REAL top-level `equipment`
+            # (HowToTool + size) so the editor shows them and product-commerce can key
+            # off equipment -> product_class. The rework is the authoritative derivation,
+            # so a re-rework re-syncs it.
+            cur["equipment"] = _recipe_equipment_from_cook(ck_dump.get("equipment"))
             conn.execute(
                 f"UPDATE {table} SET data = ?, updated_at = ? WHERE recipe_id = ? AND user_id = ?",
                 (json.dumps(cur, ensure_ascii=False), cook.reworked_at, recipe_id, user_id))

@@ -3885,7 +3885,7 @@
 
       // Equipment
       equipmentList.innerHTML = '';
-      (r.equipment || []).forEach(eq => addEquipment(eq.name || eq));
+      (r.equipment || []).forEach(eq => addEquipment(eq));   // pass the object so `size` carries
       if (!r.equipment?.length) addEquipment();
 
       // Source
@@ -5080,9 +5080,16 @@
       const li = document.createElement('li');
       li.className = 'ingredient-item';
       li.draggable = true;
-      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><input type="text" placeholder="e.g., 9x13 baking dish" value="${value}" /><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
+      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><input type="text" placeholder="e.g., 9x13 baking dish" /><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
       setupDrag(li, equipmentList);
       const input = li.querySelector('input');
+      // `value` may be a plain name string OR a schema object {name, size}. Stash `size`
+      // (the product-commerce class grain) on the row so it survives edit + save even
+      // though it isn't shown — getEquipment reads it back. cook-rework populates it.
+      const _eqName = (value && typeof value === 'object') ? (value.name || '') : (value || '');
+      input.value = _eqName;
+      const _eqSize = (value && typeof value === 'object' && value.size) ? value.size : null;
+      if (_eqSize) li.dataset.eqSize = JSON.stringify(_eqSize);
       const insertBtn = li.querySelector('.insert');
       const deleteBtn = li.querySelector('.delete');
 
@@ -5208,9 +5215,13 @@
     }
 
     function getEquipment() {
-      return [...equipmentList.querySelectorAll('input')].map(i => ({
-        "@type": "HowToTool", name: i.value
-      })).filter(e => e.name);
+      return [...equipmentList.querySelectorAll('.ingredient-item')].map(li => {
+        const name = (li.querySelector('input')?.value || '').trim();
+        if (!name) return null;
+        const item = { "@type": "HowToTool", name };
+        if (li.dataset.eqSize) { try { item.size = JSON.parse(li.dataset.eqSize); } catch (e) {} }
+        return item;   // carry the stashed size (product-commerce class grain) through save
+      }).filter(Boolean);
     }
 
     function getNotes() {
@@ -6231,10 +6242,7 @@
 
       // Equipment
       equipmentList.innerHTML = '';
-      (r.equipment || []).forEach(eq => {
-        const name = typeof eq === 'string' ? eq : (eq.name || '');
-        if (name) addEquipment(name);
-      });
+      (r.equipment || []).forEach(eq => addEquipment(eq));   // pass the object so `size` carries
       if (!r.equipment?.length) addEquipment();
 
       // Source — always assign (not gated on r._source) so that a
