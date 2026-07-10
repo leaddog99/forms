@@ -114,7 +114,8 @@ class AdminModel:
 # of rotating status messages. "general" is the fallback when a specific
 # bucket has no enabled messages.
 STATUS_MESSAGE_CATEGORIES = [
-    "screenshot", "url", "extract", "image", "pdf", "save", "general",
+    "screenshot", "url", "extract", "image", "pdf", "save",
+    "cook_ack", "cook_wait", "general",
 ]
 
 _STATUS_SEED = [
@@ -149,6 +150,23 @@ _STATUS_SEED = [
     ("save", "Filing it in the cookbook…"),
     ("save", "Making it official…"),
     ("save", "Tucking the recipe in for the night…"),
+    # cook_ack — the SHORT immediate acknowledgment SPOKEN the instant a "hey chef"
+    # question is dispatched (before the rotating cook_wait lines). Keep them snappy.
+    ("cook_ack", "Okay, one moment."),
+    ("cook_ack", "Let me think."),
+    ("cook_ack", "Give me a second."),
+    ("cook_ack", "Hold on, let me check."),
+    ("cook_ack", "Good question — one sec."),
+    # cook_wait — SPOKEN ALOUD in the hands-free cook view while Chef thinks (the
+    # LLM answer is generating). Written to sound natural out loud (no ellipsis),
+    # short + light. Rotated so a long wait never sits in dead silence.
+    ("cook_wait", "Still working on it."),
+    ("cook_wait", "Hold on, let me find that."),
+    ("cook_wait", "One moment, almost there."),
+    ("cook_wait", "Let me dig that up."),
+    ("cook_wait", "Bear with me, still looking."),
+    ("cook_wait", "I misplaced the recipe — it's here somewhere."),
+    ("cook_wait", "Just a second, checking on that."),
     # general fallback
     ("general", "Working some kitchen magic…"),
     ("general", "Stirring the pot…"),

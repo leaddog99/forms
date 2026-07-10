@@ -357,6 +357,7 @@
     <button class="btn primary" id="handsfree">🎙️ Hands-free</button>
     <button class="btn" id="touchmode">🙈 No-look</button>
     <button class="btn on" id="talkbtn">🔊 Talk</button>
+    <button class="btn" id="wakebtn" title="Require “hey chef” before commands">🗣️ Hey Chef</button>
     <button class="btn" id="readstep">▶ Read</button>
     <button class="btn" id="askbtn">💬 Ask</button>
     <button class="btn" id="awake">☀ Awake</button>
@@ -959,8 +960,26 @@
   var capturing = false, voiceMs = 0, silenceMs = 0, capBuf = [], capLen = 0, capRate = 16000, noiseFloor = 0.01, _speakGuard = 0;
   var _hbFrames = 0, _hbPeak = 0;   // mic heartbeat: confirms the frame loop is alive + shows rms vs threshold + state
   function _now(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
-  // Set true for strict "Alexa mode": require "Chef" before commands too.
-  var REQUIRE_WAKE_FOR_COMMANDS = false;
+  // Strict "hey chef" gate: require the wake word before COMMANDS too, so bare
+  // "next"/"back" spoken in normal conversation don't drive the interface — the
+  // 2026-07-10 noisy-kitchen log showed exactly that ("you can say back",
+  // "…click her again. Next."). Persisted; toggle with the 🗣️ button. Default ON.
+  var REQUIRE_WAKE_FOR_COMMANDS = (function(){
+    try { var v = localStorage.getItem('cook:requireWake'); return v === null ? true : v === '1'; }
+    catch(e){ return true; }
+  })();
+  function setRequireWake(on){
+    REQUIRE_WAKE_FOR_COMMANDS = !!on;
+    try { localStorage.setItem('cook:requireWake', on ? '1' : '0'); } catch(e){}
+    var b = document.getElementById('wakebtn');
+    if(b){
+      b.classList.toggle('on', !!on);
+      b.textContent = on ? '🗣️ Hey Chef: on' : '🗣️ Hey Chef: off';
+      b.title = on ? 'Commands need “hey chef” first (noisy-room safe). Tap to allow bare commands.'
+                   : 'Bare “next / back” work. Tap to require “hey chef” before commands.';
+    }
+    if(typeof hf !== 'undefined' && hf) setVoiceStatus('listening', _listenHint());
+  }
   var vstatus = document.getElementById('vstatus');
 
   function setVoiceStatus(state, msg){
@@ -972,14 +991,18 @@
   }
   function hideVoiceStatus(){ if(vstatus) vstatus.className = ''; }
   function _listenHint(){ var n = window.cookView.currentNumber();
-    var base = n != null ? ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”')
-                         : 'Listening — say “hey chef…” to ask a question';
+    var base;
+    if(n != null){
+      base = REQUIRE_WAKE_FOR_COMMANDS
+        ? ('Listening — step ' + n + ' · say “hey chef, next” (or back / repeat)')
+        : ('Listening — step ' + n + ' · say next, back, repeat, or “hey chef…”');
+    } else { base = 'Listening — say “hey chef…” to ask a question'; }
     return _lastHeard ? (base + ' · heard: “' + _lastHeard + '”') : base; }
   function _onSpeakEnd(){ _setSpeaking(false); _speakGuard = _now() + 700;   // ignore the (louder) echo tail after she stops
     refreshMidIcon(); setAsking(false);
     if (hf && _armedWaiting){ setVoiceStatus('listening', '🎙️ Ready — say “go” to start'); return; }   // post "ready" cue: keep the go-hint
     if (_pendingFollowUp){ _pendingFollowUp = false; followUpUntil = _now() + FOLLOWUP_MS; }   // re-extend the window once the answer finishes
-    if (hf) setVoiceStatus('listening', (followUpUntil > _now())
+    if (hf) setVoiceStatus('listening', (followUpUntil > _now() && !REQUIRE_WAKE_FOR_COMMANDS)
       ? '🎧 Ask a follow-up — no “hey chef” needed (or say a command)'
       : _listenHint()); }
 
@@ -1085,6 +1108,21 @@
   // SEE the button reset, so "it stopped but you don't know it").
   var _WAKE_ACKS = ["Yes?", "Here!"];
   var _STOP_ACKS = ["All done!", "See you!", "Stopping."];
+  // Spoken filler while the LLM is invoked — covers the dead air between finishing
+  // a "hey chef" question and the answer arriving. A SHORT ack plays immediately,
+  // then playful "still working" lines rotate (with a small gap after each) until the
+  // answer comes, so a long wait never sits in silence. The answer's first clip waits
+  // for the in-flight filler to finish (no overlap).
+  // NO language in code (feedback_no_data_in_code): both lists are loaded from the DB
+  // message store — cook_ack (short immediate) + cook_wait (rotating) — seeded in
+  // admin_models.py, curator-editable. /messages falls back to the seeded 'general'
+  // bucket server-side, so these populate on load; empty only if the store is offline
+  // (then the filler simply stays silent — the answer still comes).
+  var _THINK_ACKS = [];
+  var _WAIT_MSGS = [];
+  var THINK_GAP_MS = 2500;   // beat between reassurances (after one finishes, before the next)
+  var _ackGate = null;       // Promise resolving when the in-flight filler finishes; consumed by the answer player
+  var _thinkTimer = null, _thinkActive = false, _waitIdx = 0;
   // START_ON_GO: hitting the hands-free button ARMS the mic and gives a short "ready"
   // cue, then WAITS for a spoken go-word ("go"/"start"/"begin") before reading step 1
   // — so Chef doesn't launch into the recipe before the cook is positioned/ready.
@@ -1100,7 +1138,7 @@
     if(subs.length) subs.forEach(function(t){ prefetchSpeak(t); });
     else prefetchSpeak(spokenText(s));
   });
-  _WAKE_ACKS.concat(_STOP_ACKS, _READY_PROMPTS).forEach(prefetchSpeak); }   // warm the spoken acks/prompts too
+  _WAKE_ACKS.concat(_STOP_ACKS, _READY_PROMPTS).forEach(prefetchSpeak); }   // warm the spoken acks/prompts too (cook_ack/cook_wait warmed in loadCookMessages)
   function _playUrl(url){
     return new Promise(function(res){
       var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
@@ -1128,9 +1166,72 @@
       u.onend = function(){ _onSpeakEnd(); res(); }; u.onerror = function(){ _onSpeakEnd(); res(); };
       speechSynthesis.speak(u); }catch(e){ _onSpeakEnd(); res(); } });
   }
+  // Play a short filler while the LLM is invoked, to cover the silence. Plays on the
+  // shared audio element and keeps the mic guarded (_setSpeaking) but deliberately
+  // does NOT run the full _onSpeakEnd lifecycle (no follow-up window / setAsking) —
+  // the answer is still coming. Sets _ackGate; the answer player awaits it so the
+  // first sentence never talks over the filler. Tied to _speakSeq so a stop/new ask
+  // supersedes it.
+  // Play one filler clip on the shared audio element. Keeps the mic guarded but does
+  // NOT run the full _onSpeakEnd lifecycle (the answer is still coming). Returns the
+  // play promise (assigned to _ackGate so the answer player waits for it).
+  function _playFiller(text){
+    var seq = _speakSeq;
+    return getSpeechUrl(text).then(function(url){
+      if(seq !== _speakSeq || !hf || !_thinkActive) return;
+      return new Promise(function(res){
+        var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
+        if(_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
+        var done = function(){ a.onended = null; a.onerror = null; res(); };
+        a.onended = done; a.onerror = done;
+        var p = a.play(); if(p && p.catch) p.catch(done);
+      });
+    }).catch(function(){});
+  }
+  // Cover the LLM-invocation silence: a short ack immediately, then rotating "still
+  // working" lines (from the cook_wait message store) with a beat between each, until
+  // the answer arrives. _ackGate always holds the in-flight filler so the answer's
+  // first sentence waits for it (no overlap). Tied to _speakSeq; a stop supersedes.
+  function startThinking(){
+    _thinkActive = true; _waitIdx = 0;
+    var first = true;
+    function loop(){
+      if(!_thinkActive || !hf) return;
+      // Pool comes from the store: cook_ack for the first (short) filler, cook_wait for
+      // the rotating ones — each falling back to the other if one bucket didn't load.
+      var pool = first ? (_THINK_ACKS.length ? _THINK_ACKS : _WAIT_MSGS)
+                       : (_WAIT_MSGS.length ? _WAIT_MSGS : _THINK_ACKS);
+      if(!pool.length) return;   // store not loaded / offline → no filler (answer still comes)
+      var text = first ? _pick(pool) : pool[_waitIdx++ % pool.length];
+      first = false;
+      var play = _playFiller(text); _ackGate = play;
+      play.then(function(){ if(_thinkActive && hf){ _thinkTimer = setTimeout(loop, THINK_GAP_MS); } });
+    }
+    loop();
+  }
+  function stopThinking(){
+    _thinkActive = false;
+    if(_thinkTimer){ clearTimeout(_thinkTimer); _thinkTimer = null; }
+  }
+  // All spoken filler language comes from the DB message store (curator-editable,
+  // no code list) — cook_ack (short immediate) + cook_wait (rotating). Fetched once
+  // and TTS-prefetched. /messages falls back to the seeded 'general' bucket, so these
+  // populate even before cook_ack/cook_wait are seeded (pre-restart).
+  function _loadMsgCat(cat, apply){
+    fetch('/messages?category=' + cat + '&order=random&count=20')
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if(d && d.messages && d.messages.length){ apply(d.messages); d.messages.forEach(prefetchSpeak); } })
+      .catch(function(){});
+  }
+  function loadCookMessages(){
+    _loadMsgCat('cook_ack',  function(m){ _THINK_ACKS = m; });
+    _loadMsgCat('cook_wait', function(m){ _WAIT_MSGS  = m; });
+  }
   function stopSpeaking(){
     _speakSeq++;                          // invalidate any in-flight speak()
     _streamSeq++;                         // and cancel any in-flight streamed answer
+    _ackGate = null;                      // drop any pending filler gate (superseded)
+    stopThinking();                       // stop the rotating wait-filler loop
     _pausedMid = false;                   // a hard stop clears any mid-step pause
     try{ if(_audioEl){ _audioEl.pause(); } }catch(e){}
     if('speechSynthesis' in window){ try{ speechSynthesis.cancel(); }catch(e){} }
@@ -1586,13 +1687,17 @@
 
     // 3. follow-up window — a substantive utterance shortly after an answer needs no wake
     //    word (one-word follow-ups like "why?" now welcome — chars, not word count).
-    if(!_asking && _now() < followUpUntil && t.length >= 2){
+    // No-wake follow-up window (say "why?" right after an answer). Disabled in
+    // strict wake mode so ambient chatter in a noisy room can't become a question.
+    if(!REQUIRE_WAKE_FOR_COMMANDS && !_asking && _now() < followUpUntil && t.length >= 2){
       vlog('followup', text); askChef(text); return;
     }
 
     // 4. ambient kitchen chatter — heard, not for Chef. Stay SILENT (don't nag the cook).
     vlog('ignored', text);
-    setVoiceStatus('listening', 'Heard “' + text + '” — say a command, or “hey chef …” to ask');
+    setVoiceStatus('listening', REQUIRE_WAKE_FOR_COMMANDS
+      ? ('Heard “' + text + '” — say “hey chef” first (e.g. “hey chef, next”)')
+      : ('Heard “' + text + '” — say a command, or “hey chef …” to ask'));
   }
   // Run a navigation action Chef chose conversationally (via ask_or_act). Each nav
   // method speaks the new step itself, so we don't double-speak.
@@ -1619,26 +1724,36 @@
   // ~1s after you stop, vs waiting for the whole answer to generate + synthesize.
   function makeAnswerPlayer(){
     var mySeq = ++_streamSeq;            // claim the stream; later asks/stops invalidate us
+    stopThinking();                      // answer is here — stop queuing new wait-fillers (the in-flight one finishes via _ackGate)
     var queue = [], playing = false, ended = false, finished = false;
     function alive(){ return mySeq === _streamSeq && hf; }
     function finish(){
       if(finished) return; finished = true;
       _setSpeaking(false); _speakGuard = _now() + 700; refreshMidIcon(); setAsking(false);
-      followUpUntil = _now() + FOLLOWUP_MS;   // a follow-up needs no "hey chef"
-      if(alive()) setVoiceStatus('listening', '🎧 Ask a follow-up — no “hey chef” needed (or say a command)');
+      followUpUntil = _now() + FOLLOWUP_MS;   // a follow-up needs no "hey chef" (unless strict wake mode)
+      if(alive()) setVoiceStatus('listening', REQUIRE_WAKE_FOR_COMMANDS
+        ? _listenHint()
+        : '🎧 Ask a follow-up — no “hey chef” needed (or say a command)');
     }
     function playNext(){
       if(!alive()){ return; }
       if(!queue.length){ playing = false; if(ended) finish(); return; }
       playing = true;
-      queue.shift().then(function(url){
-        if(!alive()) return;
-        var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
-        if(_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
-        a.onended = function(){ _setSpeaking(false); playNext(); };
-        a.onerror = function(){ _setSpeaking(false); playNext(); };
-        if(alive()) setVoiceStatus('speaking', '…');
-        var p = a.play(); if(p && p.catch) p.catch(function(){ _setSpeaking(false); playNext(); });
+      // The FIRST sentence waits for the thinking-filler to finish (consumed here, so
+      // later sentences don't re-wait). A 2.5s cap means a stuck filler never blocks Chef.
+      var gate = _ackGate; _ackGate = null;
+      var waited = gate ? Promise.race([gate, new Promise(function(r){ setTimeout(r, 2500); })]) : Promise.resolve();
+      waited.then(function(){
+        if(!alive()){ playing = false; return; }
+        return queue.shift().then(function(url){
+          if(!alive()) return;
+          var a = _ensureAudioEl(); a.src = url; _setSpeaking(true); refreshMidIcon();
+          if(_spkCtx && _spkCtx.state === 'suspended'){ try{ _spkCtx.resume(); }catch(e){} }
+          a.onended = function(){ _setSpeaking(false); playNext(); };
+          a.onerror = function(){ _setSpeaking(false); playNext(); };
+          if(alive()) setVoiceStatus('speaking', '…');
+          var p = a.play(); if(p && p.catch) p.catch(function(){ _setSpeaking(false); playNext(); });
+        });
       }).catch(function(){ if(alive()) playNext(); });
     }
     return {
@@ -1659,15 +1774,17 @@
       body: JSON.stringify({ recipe_id:RECIPE_ID, user_id:parseInt(USER_ID,10)||0, question:question, current_step:cur, allow_actions:true }) })
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
       .then(function(res){
+        stopThinking();                    // fallback answer is here — stop the wait-filler loop
         if (res.ok && res.j && res.j.action){      // Chef chose to navigate, not answer
           vlog('command', 'chef→' + res.j.action + (res.j.step != null ? (' ' + res.j.step) : ''));
           setAsking(false); doChefAction(res.j.action, res.j.step); return;
         }
         if (res.ok && res.j && res.j.answer){ _pendingFollowUp = true; followUpUntil = _now() + FOLLOWUP_MS; vlog('answer', res.j.answer); }
         else { setAsking(false); vlog('error', (res.j && res.j.detail) || 'no answer'); }
-        speak(deAbbrev(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.')));
+        var _g = _ackGate || Promise.resolve();   // let the in-flight filler finish, then answer (no overlap)
+        _g.then(function(){ speak(deAbbrev(res.ok ? (res.j.answer || '') : (res.j.detail || 'Sorry, I could not answer that.'))); });
       })
-      .catch(function(){ setAsking(false); vlog('error', 'fetch failed'); speak('Sorry, I could not reach the kitchen brain just now.'); });
+      .catch(function(){ stopThinking(); setAsking(false); vlog('error', 'fetch failed'); speak('Sorry, I could not reach the kitchen brain just now.'); });
   }
   // Streamed ask: sentences play as they arrive; an action navigates. Falls back
   // to askChefOnce if the browser/stream can't deliver SSE.
@@ -1675,6 +1792,7 @@
     setAsking(true);
     setVoiceStatus('thinking', 'Chef is thinking…');
     stopSpeaking();                       // cancel any current speech/stream (bumps _streamSeq)
+    startThinking();                      // cover the LLM-invocation silence: ack now, then rotating waits
     var cur = window.cookView.currentNumber();
     var player = null, terminated = false, fullText = '';
     fetch('/cook/ask-stream', { method:'POST', headers:{'Content-Type':'application/json'},
@@ -1684,13 +1802,13 @@
         var reader = r.body.getReader(), dec = new TextDecoder(), sbuf = '';
         function handle(ev){
           if(terminated) return;
-          if(ev.type === 'action'){ terminated = true; vlog('command', 'chef→' + ev.action + (ev.step != null ? (' ' + ev.step) : ''));
+          if(ev.type === 'action'){ terminated = true; stopThinking(); vlog('command', 'chef→' + ev.action + (ev.step != null ? (' ' + ev.step) : ''));
             setAsking(false); doChefAction(ev.action, ev.step); return; }
           if(ev.type === 'sentence'){ fullText += (fullText ? ' ' : '') + ev.text;
             if(!player) player = makeAnswerPlayer(); player.enqueue(ev.text); return; }
-          if(ev.type === 'done'){ if(player) player.markEnded(); else setAsking(false);
+          if(ev.type === 'done'){ if(player) player.markEnded(); else { stopThinking(); setAsking(false); }
             if(fullText) vlog('answer', fullText); return; }
-          if(ev.type === 'error'){ terminated = true; vlog('error', ev.detail || 'stream error');
+          if(ev.type === 'error'){ terminated = true; stopThinking(); vlog('error', ev.detail || 'stream error');
             setAsking(false); speak(ev.detail || 'Sorry, I could not answer that.'); return; }
         }
         function pump(){
@@ -1883,6 +2001,10 @@
     document.getElementById('handsfree').addEventListener('click', startHandsFree);
     document.getElementById('touchmode').addEventListener('click', function(){ setTouchMode(!touchMode); });
     document.getElementById('talkbtn').addEventListener('click', function(){ setTalk(!talk); });
+    var _wb = document.getElementById('wakebtn');
+    if(_wb){ _wb.addEventListener('click', function(){ setRequireWake(!REQUIRE_WAKE_FOR_COMMANDS); }); }
+    setRequireWake(REQUIRE_WAKE_FOR_COMMANDS);   // sync button label/state to the persisted default
+    loadCookMessages();                          // pull cook_ack + cook_wait spoken lines from the DB message store
     wireTouchPad();
     document.getElementById('cb-back').addEventListener('click', function(){
       location.href='/forms/recipe_form_styled.html?recipe_id='+encodeURIComponent(RECIPE_ID)+'&user_id='+encodeURIComponent(USER_ID); });
