@@ -5590,6 +5590,53 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
     return {"answer": answer}
 
 
+@app.post("/recipes/{recipe_id}/derive-equipment")
+def derive_equipment_endpoint(recipe_id: str, payload: dict = Body(...)):
+    """Derive a recipe's equipment from its instructions (the "without a cook-view"
+    path — enrich/equipment.py) and PERSIST it into the top-level `equipment`
+    (HowToTool + size) so the editor shows it and product-commerce can key off it.
+    For recipes never reworked. Journaled as enrich_equipment. Degrades to 503."""
+    try:
+        user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
+    except (TypeError, ValueError):
+        user_id = PLACEHOLDER_USER_ID
+    persist = payload.get("persist", True)
+
+    table = _recipes_table_for(user_id)
+    with _db() as conn:
+        row = conn.execute(
+            f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
+            (recipe_id, user_id)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+    recipe = json.loads(row[0])
+
+    import llm  # attribute to recipe/user, label enrich_equipment
+    llm.enter(recipe_id=recipe_id, user_id=user_id)
+    try:
+        from enrich.equipment import derive_equipment
+        equipment = derive_equipment(recipe)
+    except Exception as e:
+        print(f"[ERROR] /recipes/{recipe_id}/derive-equipment: {e}")
+        raise HTTPException(status_code=503, detail="Equipment derivation is unavailable right now — try again in a moment.")
+    finally:
+        llm.flush()
+
+    if persist and equipment:
+        def _save():
+            with _db() as conn:
+                cur = json.loads(conn.execute(
+                    f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
+                    (recipe_id, user_id)).fetchone()[0])
+                cur["equipment"] = equipment
+                conn.execute(
+                    f"UPDATE {table} SET data = ? WHERE recipe_id = ? AND user_id = ?",
+                    (json.dumps(cur, ensure_ascii=False), recipe_id, user_id))
+                conn.commit()
+        _save()
+    return {"equipment": equipment, "persisted": bool(persist and equipment)}
+
+
 def _inject_dish_competitiveness(recipe: dict) -> None:
     """Stamp the dish's LIVE (nightly-rolled-up) in-chapter competitiveness onto
     _scoring transiently, just before enrich, so the editorial commentary

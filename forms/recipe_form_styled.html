@@ -2070,7 +2070,11 @@
 
         <!-- Equipment -->
         <section class="form-section">
-          <h3>Equipment</h3>
+          <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Equipment
+            <button type="button" class="derive-btn" onclick="deriveEquipment(this)"
+              title="Derive the equipment from this recipe's instructions (AI — logged to billing). Replaces the list."
+              style="font-size:.72rem;font-weight:600;padding:4px 11px;border:1px solid var(--border,#e2dbd0);border-radius:999px;background:var(--accent-soft,#f4ece6);color:var(--accent,#b8602a);cursor:pointer">✨ Derive</button>
+          </h3>
           <ul class="ingredient-list" id="equipmentList"></ul>
         </section>
 
@@ -5212,6 +5216,37 @@
       // Focus only on user-driven adds. See addIngredient note.
       if (!value && afterElement) input.focus();
       autoGrow(input);
+    }
+
+    // ✨ Derive equipment from the recipe's instructions (the "without a cook-view"
+    // path — POST /recipes/{id}/derive-equipment, journaled as enrich_equipment).
+    // Replaces the Equipment list with the derived tools (name + size) and persists.
+    async function deriveEquipment(btn) {
+      const rid = (document.getElementById('recipe_id')?.value || '').trim();
+      const uid = parseInt((document.getElementById('user_id')?.value || '1'), 10) || 1;
+      const label = btn.textContent;
+      if (!rid) { btn.textContent = '✨ Save the recipe first'; setTimeout(() => btn.textContent = label, 2500); return; }
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = '⏳ Deriving…';
+      try {
+        const r = await fetch(`/recipes/${encodeURIComponent(rid)}/derive-equipment`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: uid })
+        });
+        if (!r.ok) throw new Error('derive ' + r.status);
+        const d = await r.json();
+        const equip = d.equipment || [];
+        equipmentList.innerHTML = '';
+        equip.forEach(eq => addEquipment(eq));
+        if (!equip.length) addEquipment();
+        btn.textContent = equip.length ? `✓ ${equip.length} tools` : 'No tools found';
+      } catch (e) {
+        console.warn('[derive-equipment]', e);
+        btn.textContent = '⚠ Try again';
+      } finally {
+        setTimeout(() => btn.textContent = label, 2500);
+        btn.disabled = false; delete btn.dataset.busy;
+      }
     }
 
     function getEquipment() {
