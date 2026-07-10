@@ -1596,7 +1596,7 @@
     // kept missing and the cook repeated it. Accept those mis-hears (anchored to the
     // WHOLE utterance so "chocolate chips" mid-step can't trigger), same trick as the
     // wake word's jeff/geoff for "chef". `_TIPWORD` is the shared tip/hint token set.
-    { name:'tip',     re:/\b(read|play|hear|say|give me|tell me)\s+(the\s+|me\s+the\s+|out\s+the\s+|us\s+the\s+)?(tips?|hints?|chips?|hips?|ship)\b|\bwhat'?s the (tip|chip)\b|\bis there a (tip|chip)\b|\bany (tips?|hints?|chips?)\b|\bthe tips? please\b|^(tips?|hints?|chips?|hips?|ship)$/, act:function(){ readCurrentTip(); } },
+    { name:'tip',     re:/\b(read|play|hear|say|give me|tell me)\s+(the\s+|me\s+the\s+|out\s+the\s+|us\s+the\s+)?(tips?|hints?|chips?|hips?|ship|comments?)\b|\bwhat'?s the (tip|chip|comment)\b|\bis there a (tip|chip|comment)\b|\bany (tips?|hints?|chips?|comments?)\b|\bthe (tips?|comments?) please\b|^(tips?|hints?|chips?|hips?|ship|comments?)$/, act:function(){ readCurrentTip(); } },
     { name:'repeat',  re:/\b(repeat|say (that|it) again|again please|one more time|come again|read (that|it) again|what did you say)\b|^again$/, act:function(){ window.cookView.repeat(); } },
     { name:'restart', re:/\b(start over|restart|from the top|begin again|start again|start from the beginning)\b/, act:function(){ window.cookView.reset(); setTimeout(function(){ window.cookView.read(); }, 350); } },
     { name:'cancel',  re:/\b(cancel|never ?mind|forget it|stop it|that's enough|drop it|stop talking|stop reading|stop speaking|be quiet|quiet please|hush|shush|silence|zip it)\b|^(quiet|enough|cancel|nevermind)$/, act:function(){ stopSpeaking(); setAwaiting(false); setAsking(false); _tipOffer = null; if(hf) setVoiceStatus('listening', _listenHint()); } },
