@@ -11,7 +11,16 @@
 // Edit this file → update is live on the next bookmark click/tap (the
 // loader cache-busts with ?<timestamp>). No re-install ever.
 (async function () {
-  const API = 'https://recipes.tbotb.com';
+  // The app host is NOT hardcoded here (portable-package: no data in code). It
+  // rides in on the loader, which sets window.__recipeBookmarkletApi and the
+  // <script src> both to the configured origin (served by install.html from
+  // system_config.public_base_url). We read it back from there.
+  const API = (function () {
+    try { if (window.__recipeBookmarkletApi) return String(window.__recipeBookmarkletApi); } catch (e) {}
+    try { const cs = document.currentScript; if (cs && cs.src) return new URL(cs.src).origin; } catch (e) {}
+    try { const sc = document.querySelector('script[src*="bookmarklet.js"]'); if (sc && sc.src) return new URL(sc.src).origin; } catch (e) {}
+    return location.origin; // last resort (correct only when run on the app itself)
+  })();
   const FORM = API + '/forms/recipe_form_styled.html';
 
   // The loader put the synchronously-opened popup here. If for any reason
@@ -618,7 +627,13 @@
 // injects THIS file cache-busted (?Date.now()), so editing bookmarklet.js is
 // live on the very next click — no re-install. The loader itself rarely
 // changes; only re-copy this if the loader (not the logic above) is edited.
-// Kept in sync with the LOADER var in forms/install.html (the install page,
-// which also offers a Copy button + draggable link).
 //
-// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='https://recipes.tbotb.com/forms/bookmarklet.js?'+Date.now();(document.body||document.documentElement).appendChild(s);})();
+// Don't copy this by hand — install.html emits the loader with the configured
+// host (system_config.public_base_url) baked in. The host below is only a
+// documented DEFAULT; the real bookmark carries whatever host the install page
+// was served with. The loader stashes that origin on window.__recipeBookmarkletApi
+// (derived from its own <script src>, so the host appears once) and the script
+// above reads it back — no host hardcoded in the JS.
+//
+// Template (install page substitutes __BASE__ with the public base URL):
+// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='__BASE__/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();

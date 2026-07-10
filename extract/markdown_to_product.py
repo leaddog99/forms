@@ -55,11 +55,22 @@ AUTHORITY RULES:
 3. Ignore page chrome, navigation, ads, "customers also bought", Q&A, and the customer-review
    section — this is the product record, not a review.
 
+IMAGE: set `image_url` to the product's primary hero image. Priority: the JSON-LD `image`,
+else a "PRIMARY IMAGE" URL line in the markdown (the bookmarklet includes og:image there),
+else the first clearly-product image. Output an ABSOLUTE https URL; never a data: URI.
+
+DESCRIPTION: write `description` — a concise, FACTUAL 2-4 sentence product description drawn
+ONLY from the page (material, construction, size, notable features, intended use). This is
+reference copy that also drives search/matching, so pack in the concrete facts. STRIP marketing
+hype and superlatives ("best-in-class", "you'll love") and do NOT add any opinion — that's the
+curator's `bcc_blurb`, not this. If the page gives nothing factual, leave it "".
+
 SIZE IS CRITICAL: capture capacity/volume and key dimensions into `specs` (capacity,
 dimensions_in), and reflect the size in `product_class` — the specific, SIZE-SCOPED ranked
 grouping this product belongs to (e.g. "Loaf Pans (1 lb)", "Saucepans (2 qt)", "Dutch Ovens
 (6-7 qt)"), NOT a generic "Pans". `category` is the coarse aisle ("Bakeware", "Cookware",
-"Knives"). A small saucepan and a Dutch oven are DIFFERENT classes.
+"Knives"). A small saucepan and a Dutch oven are DIFFERENT classes. Capture sizes as written;
+we canonicalize units afterward, so don't fret the exact syntax.
 
 RETAILER OFFER: fill exactly one `retailer_offers` entry for THIS page — retailer name, the
 ASIN if it's Amazon, `source_url` (the page URL), and `price` if shown. Do NOT invent an
@@ -136,6 +147,8 @@ def markdown_to_product(
 
     try:
         product = Product.model_validate(json_data).model_dump()
+        from intake.products.measures import normalize_product
+        normalize_product(product)   # canonicalize dimensions/capacity/class size
         if timings is not None:
             timings["validate_ms"] = int((time.perf_counter() - t_llm) * 1000)
         return product
