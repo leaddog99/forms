@@ -432,6 +432,7 @@
     { page: 'training',  label: 'Labeling', href: '/forms/training.html', group: 'admin' },
     { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
     { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', group: 'admin' },
+    { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', group: 'admin' },
   ];
 
   // Cached one-shot role probe. Resolves to the role string ('admin',
