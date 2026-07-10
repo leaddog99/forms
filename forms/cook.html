@@ -1152,7 +1152,9 @@
   // (then the filler simply stays silent — the answer still comes).
   var _THINK_ACKS = [];
   var _WAIT_MSGS = [];
-  var THINK_GAP_MS = 2500;   // beat between reassurances (after one finishes, before the next)
+  var THINK_GAP_MS = 1200;   // beat between reassurances (after one finishes, before the next) — short
+                             // enough that the rotating cook_wait line is actually reached on a
+                             // normal 2-4s LLM wait (was 2500, which only surfaced on long thinks)
   var THINK_LEAD_MS = 700;   // grace beat before the FIRST filler — a fast reply cancels it (no cut)
   var _ackGate = null;       // Promise resolving when the in-flight filler finishes; consumed by the answer player
   var _thinkTimer = null, _thinkActive = false, _waitIdx = 0;
