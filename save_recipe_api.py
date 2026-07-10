@@ -5526,6 +5526,44 @@ def cook_rework_endpoint(recipe_id: str, request: Request, user_id: int = PLACEH
             "stream_url": f"/jobs/{job_id}/stream"}
 
 
+@app.post("/recipes/{recipe_id}/notes-ask")
+def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
+    """Chef's-Notes chat: a grounded, recipe-context Q&A whose answer the user keeps
+    as a Chef's Notes block. Reuses cook_ask's grounding (this recipe + our KB +
+    general cooking knowledge, brand-safe, cooking-only), but journals under
+    operation='notes_chat' so this feature's spend is legible per-feature AND
+    per-user in bcc_token_journal. Personal, on-device content (the split's local
+    'possess & use' side) — never flows to the corpus. Degrades to a friendly 503."""
+    question = (payload.get("question") or "").strip()
+    try:
+        user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
+    except (TypeError, ValueError):
+        user_id = PLACEHOLDER_USER_ID
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required.")
+
+    table = _recipes_table_for(user_id)
+    with _db() as conn:
+        row = conn.execute(
+            f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Recipe not found.")
+    recipe = json.loads(row[0])
+
+    import llm  # gateway: attribute this Q&A to the recipe/user, label it notes_chat
+    llm.enter(recipe_id=recipe_id, user_id=user_id)
+    try:
+        from cook_ask import ask as chef_ask
+        answer = chef_ask(recipe, question, operation="notes_chat")
+    except Exception as e:
+        print(f"[ERROR] /recipes/{recipe_id}/notes-ask: {e}")
+        raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.")
+    finally:
+        llm.flush()   # write the buffered notes_chat usage to the journal
+    return {"answer": answer}
+
+
 def _inject_dish_competitiveness(recipe: dict) -> None:
     """Stamp the dish's LIVE (nightly-rolled-up) in-chapter competitiveness onto
     _scoring transiently, just before enrich, so the editorial commentary

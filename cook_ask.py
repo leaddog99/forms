@@ -198,11 +198,13 @@ def build_context(recipe: dict, current_step: Optional[int]) -> str:
 # The call
 # --------------------------------------------------------------------------- #
 def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
-        usage_log: Optional[list] = None) -> str:
+        usage_log: Optional[list] = None, operation: str = "cook_ask") -> str:
     """Answer `question` as Chef, grounded in `recipe`. Returns plain text
-    suitable for TTS. Appends a token-journal entry to `usage_log` if provided.
-    Raises on a hard API failure — the caller (endpoint) maps that to a friendly
-    503 rather than leaking a stack trace to the cook."""
+    suitable for TTS. `operation` is the billing/journal label — the cook view
+    uses the default "cook_ask"; the Chef's-Notes chat passes "notes_chat" so its
+    spend is legible per-feature in bcc_token_journal. Appends a token-journal
+    entry to `usage_log` if provided. Raises on a hard API failure — the caller
+    (endpoint) maps that to a friendly 503 rather than leaking a stack trace."""
     question = (question or "").strip()
     if not question:
         return "What would you like to know?"
@@ -214,7 +216,7 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
         f"My question: {question}"
     )
     resp = llm.create(
-        operation="cook_ask", model=MODEL,
+        operation=operation, model=MODEL,
         max_tokens=_MAX_TOKENS,
         system=CHEF_SYSTEM,
         messages=[{"role": "user", "content": user}],

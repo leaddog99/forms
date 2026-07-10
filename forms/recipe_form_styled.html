@@ -5135,12 +5135,47 @@
       const li = document.createElement('li');
       li.className = 'ingredient-item';
       li.draggable = true;
-      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><textarea rows="1" placeholder="e.g., Best served warm"></textarea><span class="item-actions"><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
+      li.innerHTML = `<span class="drag-handle">⋮⋮</span><span class="bullet"></span><textarea rows="1" placeholder="e.g., Best served warm — or type a question and tap ✨"></textarea><span class="item-actions"><button type="button" class="item-btn ask" title="Ask Chef about this recipe (AI — logged to billing)">✨</button><button type="button" class="item-btn insert">+</button><button type="button" class="item-btn delete">&times;</button></span>`;
       setupDrag(li, notesList);
       const input = li.querySelector('textarea');
       input.value = value;
+      const askBtn = li.querySelector('.ask');
       const insertBtn = li.querySelector('.insert');
       const deleteBtn = li.querySelector('.delete');
+
+      // ✨ Ask Chef: send this block's text as a question, grounded in the saved recipe
+      // (reuses cook_ask; journaled as source "notes_chat"). The answer replaces the
+      // block as an editable "Q: … / A: …" exchange; hit + for a new block to keep asking.
+      askBtn.onclick = async () => {
+        const q = input.value.trim();
+        const rid = (document.getElementById('recipe_id')?.value || '').trim();
+        const uid = parseInt((document.getElementById('user_id')?.value || '1'), 10) || 1;
+        if (!rid) { input.focus(); input.placeholder = 'Save the recipe first, then ask Chef here.'; return; }
+        if (!q)   { input.focus(); input.placeholder = 'Type a question about this recipe, then tap ✨'; return; }
+        if (askBtn.dataset.busy) return;
+        askBtn.dataset.busy = '1'; const glyph = askBtn.textContent; askBtn.textContent = '⏳';
+        input.readOnly = true; li.style.opacity = '0.65';
+        try {
+          const r = await fetch(`/recipes/${encodeURIComponent(rid)}/notes-ask`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: q, user_id: uid })
+          });
+          if (!r.ok) throw new Error('notes-ask ' + r.status);
+          const d = await r.json();
+          const answer = (d.answer || '').trim();
+          // Keep the whole exchange in ONE block — collapse blank lines so the
+          // multi-block loader (splits on a blank line) doesn't break it apart.
+          input.value = (`Q: ${q}\nA: ${answer}`).replace(/\n{2,}/g, '\n');
+          autoGrow(input);
+        } catch (e) {
+          input.value = q;   // restore the question so nothing is lost
+          input.placeholder = 'Chef is unavailable right now — try again in a moment.';
+          console.warn('[notes-chat]', e);
+        } finally {
+          input.readOnly = false; li.style.opacity = '';
+          askBtn.textContent = glyph; delete askBtn.dataset.busy;
+        }
+      };
 
       input.addEventListener('input', () => autoGrow(input));
       input.addEventListener('keydown', (e) => {
