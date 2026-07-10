@@ -9,6 +9,37 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-10 (later) — Chef's Notes chat (✨ Ask), multi-block notes, cook-voice dredge fix, reprocess; "keep source links" decision
+
+Continuation of the cook-voice session, into the recipe form. All SHIPPED + verified live.
+
+- **Chef's Notes chat v1 SHIPPED (33c4d6d)** — each Chef's Notes block gets a **✨ Ask** button:
+  sends the block text as a question, grounded in the SAVED recipe (reuses `cook_ask` —
+  this recipe + KB + general cooking knowledge, brand-safe, cooking-only), stores the answer
+  as an editable `Q: … / A: …` block; `+` = a new block → running chat history. `cook_ask.ask()`
+  gained an `operation` label; new `POST /recipes/{id}/notes-ask` wraps in
+  `llm.context(recipe_id,user_id)`+`flush` and journals as **`notes_chat`** (per-feature + per-user
+  billing). Verified live: ~5s round-trip, grounded answer, journal row stamped
+  (user 5 / recipe / sonnet-4-6). See [[project_notes_chat]]. Deferred: streaming, notes-tuned
+  prompt, AI-provenance flag, multi-turn context.
+- **Chef's Notes = multi-block field (b40c8a8)** — was splitting a pasted block into one item
+  per line (single-`\n` between-entries separator). Now blocks separate on a BLANK line (`\n\n`),
+  so a pasted block keeps its own newlines and stays ONE entry; Enter = newline within a block
+  (+ adds a block). Legacy single-`\n` notes load as one merged block (no data loss).
+- **Cook-voice dredge fix (06ceee8)** — the earlier "voice reads the screen fragment" change was
+  WRONG: `screen` is visual shorthand (arrows/chips), so the Milanese breading dredge voiced as a
+  bare ingredient list. Reverted: voice reads the `voice` field (ear-written), fall back to `screen`
+  only when empty; `→` voices as "then"; equipment lead-in keeps its trailing space. Plus "Tip
+  available" spoken at the end of a step that has a tip (274dbf2), and `go`/`start` next-synonyms
+  + `comment(s)` tip-synonym.
+- **Reprocessed Chicken Milanese** through the current cook-rework engine (v2.2, job 496) — gauntlet
+  passed first Opus pass; 7→6 steps; the dredge is now explicit in the `voice` field and the
+  "half the half seasoned salt" oddity is gone. ~$0.44.
+- **DECISION — "unlink from original": NOT happening.** Curator confirmed the source/provenance
+  links stay (`_source.originalUrl`/`siteName`/`pageScreenshot`, `provenance`, `_match`,
+  `url_normalized` all remain on user rows). "Recipe unique per user" = freely editable, NOT stripped
+  of attribution. No unlink migration to build.
+
 ## Session log — 2026-07-10 (cook voice polish) — equipment lead-in · voice=screen · wake mis-hears · filler grace beat · onset capture
 
 Live cook-view voice session ("hey chef works much better!"), five fixes in `forms/cook.html`
