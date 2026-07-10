@@ -1163,7 +1163,12 @@
   // — so Chef doesn't launch into the recipe before the cook is positioned/ready.
   // Flip to false to read step 1 the instant the button is pressed (the old behavior).
   var START_ON_GO = true;
-  var _READY_PROMPTS = ["Ready when you are.", "All set — say go when you're ready."];
+  // The armed opener: onboarding cue spoken once when hands-free arms. Says the
+  // pre-flight assumption (mise/bundles/equipment ready) AND the exact go phrase, so a
+  // first-timer knows what to say. Kept as the single line (not rotated) so the "say
+  // hey chef go" instruction is never skipped. (More inline English — voice-pack debt,
+  // see project_voice_pack; deliberately deferred.)
+  var _READY_PROMPTS = ["I'm ready! I assume you have your ingredients pre-measured, your bundles created, and your equipment ready. So say, hey chef, go — and we'll start cooking the BCC way!"];
   function _pick(a){ return a[Math.floor(Math.random() * a.length)]; }
   function _wakeAck(){ return _pick(_WAKE_ACKS); }
   function _stopAck(){ return _pick(_STOP_ACKS); }
