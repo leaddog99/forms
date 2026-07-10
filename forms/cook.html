@@ -591,6 +591,9 @@
   // de-abbreviate for the ear: units + common fractions spoken in full.
   function deAbbrev(s){
     s=String(s);
+    // Visual sequence arrows ("flour → egg → panko") don't speak — voice them as "then"
+    // so a spoken shorthand still conveys the ORDER (a screen fragment reaching the ear).
+    s=s.replace(/\s*(?:→|➜|⇒|-\s*>)\s*/g, ', then ');
     // "in" → "inches" ONLY as a measurement (preceded by a number or fraction):
     // "9 in" / "9-in" / "9in" / "½ in". A bare preposition ("fold in spices") is left
     // alone — the blanket \bin\b rule used to read it as "inches". Run before the
@@ -738,8 +741,13 @@
   var _subs = [], _subIdx = 0;   // _subs = this step's spoken lines; [] ⇒ whole-step
   function subsFor(step){
     return (step && step.substeps || []).map(function(ss){
-      var src = (ss.screen!=null && ss.screen!=='') ? ss.screen : (ss.voice||'');
-      return spokenFragment(step, src);   // voice what's on screen, not a terse rewrite
+      // Voice the `voice` field — the ear-optimized, COMPLETE spoken chunk; fall back to
+      // `screen` only when voice is empty. (This briefly read `screen` instead, but that
+      // field is VISUAL shorthand — "flour → egg → panko" with token chips — and lost the
+      // action verbs when spoken: the Milanese dredge came out as a bare ingredient list.
+      // The screen chip layout stays on-screen; the ear gets the full sentence. 2026-07-10.)
+      var src = (ss.voice!=null && ss.voice!=='') ? ss.voice : (ss.screen||'');
+      return spokenFragment(step, src);
     }).filter(Boolean);
   }
   // Spoken equipment lead-in — "You'll need a large skillet and a baking sheet."
@@ -755,7 +763,7 @@
     var list = names.length<=1 ? (names[0]||'')
       : names.length===2 ? (names[0]+' and '+names[1])
       : (names.slice(0,-1).join(', ')+', and '+names[names.length-1]);
-    return deAbbrev("You'll need " + list + ". ");
+    return deAbbrev("You'll need " + list + ".") + " ";   // trailing space (deAbbrev trims) so the lead-in doesn't run into the step
   }
   // "Tip available" — a light SPOKEN flag appended to the END of a step's reading (the
   // whole-step utterance, or the LAST sub-step) when the step carries a tip/check, so the
