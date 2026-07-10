@@ -3876,7 +3876,7 @@
 
       // Notes
       notesList.innerHTML = '';
-      const notesArr = (r.notes || '').split('\n').filter(Boolean);
+      const notesArr = (r.notes || '').split(/\n{2,}/).map(s => s.trim()).filter(Boolean);   // blocks split on a BLANK line; single newlines stay within a block
       notesArr.forEach(note => addNote(note));
       if (!notesArr.length) addNote();
 
@@ -5144,7 +5144,8 @@
 
       input.addEventListener('input', () => autoGrow(input));
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote('', li); }
+        // Enter = a newline WITHIN this block (Chef's Notes is a MULTI-BLOCK freeform
+        // field — use the + button to add another block). Backspace on an empty block deletes it.
         if (e.key === 'Backspace' && input.value === '' && notesList.children.length > 1) {
           const prev = li.previousElementSibling;
           li.remove();
@@ -5178,7 +5179,10 @@
     }
 
     function getNotes() {
-      return [...notesList.querySelectorAll('textarea')].map(i => i.value).filter(Boolean).join('\n');
+      // MULTI-BLOCK field: each textarea is one freeform block (may contain its own
+      // newlines). Join blocks with a BLANK line so a pasted paragraph stays ONE entry;
+      // load splits symmetrically on a blank line.
+      return [...notesList.querySelectorAll('textarea')].map(i => i.value.trim()).filter(Boolean).join('\n\n');
     }
 
     function clearLists() {
@@ -6183,7 +6187,7 @@
 
       // Notes
       notesList.innerHTML = '';
-      const notesArr = (r.notes || '').split('\n').filter(Boolean);
+      const notesArr = (r.notes || '').split(/\n{2,}/).map(s => s.trim()).filter(Boolean);   // blocks split on a BLANK line; single newlines stay within a block
       notesArr.forEach(note => addNote(note));
       if (!notesArr.length) addNote();
 
