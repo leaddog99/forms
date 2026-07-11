@@ -90,12 +90,19 @@ def derive_equipment(recipe: dict, *, operation: str = "enrich_equipment") -> li
 
     out, seen = [], set()
     for it in items:
-        name = str(it.get("name") or "").strip()
+        # The model usually returns {name, size?} objects, but occasionally a bare
+        # string — accept both.
+        if isinstance(it, str):
+            name, size = it.strip(), None
+        elif isinstance(it, dict):
+            name = str(it.get("name") or "").strip()
+            size = it.get("size")
+        else:
+            continue
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
         tool = {"@type": "HowToTool", "name": name}
-        size = it.get("size")
         size = size.strip() if isinstance(size, str) else size
         if size:
             tool["size"] = size
