@@ -2050,6 +2050,25 @@
         <!-- Chef's Notes -->
         <section class="form-section">
           <h3>Chef's Notes</h3>
+          <!-- Ask Chef: a DEDICATED, obvious affordance (was only a subtle ✨ on each
+               note bullet — "far from obvious"). Grounds on the recipe on screen, so it
+               works even before the recipe is saved. The Q&A lands as a note block below. -->
+          <div class="ask-chef" style="border:1px solid var(--border,#e2dbd0);border-radius:12px;padding:12px 14px;margin-bottom:14px;background:var(--accent-soft,#f7f1ea)">
+            <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:.9rem;color:var(--accent,#b8602a);margin-bottom:8px">
+              <span style="font-size:1.05rem">💬</span> Ask Chef about this recipe
+            </div>
+            <div style="display:flex;gap:8px;align-items:stretch">
+              <input type="text" id="askChefInput"
+                     placeholder="e.g., Can I make this ahead? What can I use instead of buttermilk?"
+                     style="flex:1;min-width:0;padding:9px 12px;border:1px solid var(--border,#e2dbd0);border-radius:8px;font-size:.9rem"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();askChef();}" />
+              <button type="button" id="askChefBtn" onclick="askChef()"
+                      style="flex:0 0 auto;font-weight:700;padding:9px 16px;border:none;border-radius:8px;background:var(--accent,#b8602a);color:#fff;cursor:pointer">✨ Ask</button>
+            </div>
+            <div style="font-size:.72rem;color:var(--muted,#8a7f72);margin-top:7px;line-height:1.35">
+              Chef answers from <em>this</em> recipe plus general cooking know‑how. The question &amp; answer are saved as a note below — tap <strong>✨</strong> on any note to ask a follow‑up.
+            </div>
+          </div>
           <ul class="ingredient-list" id="notesList"></ul>
         </section>
 
@@ -2068,13 +2087,11 @@
           </div>
         </section>
 
-        <!-- Equipment -->
+        <!-- Equipment — auto-derived at extract time (verb/pan-inferred, sized) for
+             every recipe; edit inline here. The old manual "✨ Derive" button was
+             removed once extraction populates equipment automatically. -->
         <section class="form-section">
-          <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Equipment
-            <button type="button" class="derive-btn" onclick="deriveEquipment(this)"
-              title="Derive the equipment from this recipe's instructions (AI — logged to billing). Replaces the list."
-              style="font-size:.72rem;font-weight:600;padding:4px 11px;border:1px solid var(--border,#e2dbd0);border-radius:999px;background:var(--accent-soft,#f4ece6);color:var(--accent,#b8602a);cursor:pointer">✨ Derive</button>
-          </h3>
+          <h3>Equipment</h3>
           <ul class="ingredient-list" id="equipmentList"></ul>
         </section>
 
@@ -5159,21 +5176,14 @@
       // block as an editable "Q: … / A: …" exchange; hit + for a new block to keep asking.
       askBtn.onclick = async () => {
         const q = input.value.trim();
-        const rid = (document.getElementById('recipe_id')?.value || '').trim();
-        const uid = parseInt((document.getElementById('user_id')?.value || '1'), 10) || 1;
-        if (!rid) { input.focus(); input.placeholder = 'Save the recipe first, then ask Chef here.'; return; }
         if (!q)   { input.focus(); input.placeholder = 'Type a question about this recipe, then tap ✨'; return; }
         if (askBtn.dataset.busy) return;
         askBtn.dataset.busy = '1'; const glyph = askBtn.textContent; askBtn.textContent = '⏳';
         input.readOnly = true; li.style.opacity = '0.65';
         try {
-          const r = await fetch(`/recipes/${encodeURIComponent(rid)}/notes-ask`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question: q, user_id: uid })
-          });
-          if (!r.ok) throw new Error('notes-ask ' + r.status);
-          const d = await r.json();
-          const answer = (d.answer || '').trim();
+          // Grounds on the CURRENT form state (askChefGrounded), so a follow-up
+          // works even before the recipe is saved. No more silent save-gate.
+          const answer = await askChefGrounded(q);
           // Keep the whole exchange in ONE block — collapse blank lines so the
           // multi-block loader (splits on a blank line) doesn't break it apart.
           input.value = (`Q: ${q}\nA: ${answer}`).replace(/\n{2,}/g, '\n');
@@ -5218,34 +5228,62 @@
       autoGrow(input);
     }
 
-    // ✨ Derive equipment from the recipe's instructions (the "without a cook-view"
-    // path — POST /recipes/{id}/derive-equipment, journaled as enrich_equipment).
-    // Replaces the Equipment list with the derived tools (name + size) and persists.
-    async function deriveEquipment(btn) {
-      const rid = (document.getElementById('recipe_id')?.value || '').trim();
-      const uid = parseInt((document.getElementById('user_id')?.value || '1'), 10) || 1;
-      const label = btn.textContent;
-      if (!rid) { btn.textContent = '✨ Save the recipe first'; setTimeout(() => btn.textContent = label, 2500); return; }
+    // (The manual "✨ Derive equipment" flow was removed — equipment is now derived
+    //  automatically at extract time. See enrich/equipment.py + the extract prompt.)
+
+    // --- Ask Chef (Chef's-Notes chat) -------------------------------------
+    // A minimal grounding snapshot of the recipe AS IT IS ON SCREEN. cook_ask's
+    // build_context reads name/description/recipeIngredient/recipeInstructions/notes
+    // when there's no _cook block, so this grounds an answer even before the recipe
+    // is saved — which is what un-gates the feature.
+    function askChefContext() {
+      return {
+        name: (document.getElementById('name')?.value || '').trim(),
+        description: (document.getElementById('description')?.value || '').trim(),
+        recipeIngredient: getIngredients(),
+        recipeInstructions: getSteps(),
+        notes: getNotes(),
+      };
+    }
+
+    // Shared grounded ask → answer text (throws on failure). Sends the saved
+    // recipe_id when we have one (server prefers the richer saved row incl. _cook),
+    // else "_new" + the form context above.
+    async function askChefGrounded(question) {
+      const rid = (document.getElementById('recipe_id')?.value || '').trim() || '_new';
+      const uidRaw = parseInt((document.getElementById('user_id')?.value || '1'), 10);
+      const user_id = Number.isNaN(uidRaw) ? 1 : uidRaw;
+      const r = await fetch(`/recipes/${encodeURIComponent(rid)}/notes-ask`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, user_id, recipe: askChefContext() })
+      });
+      if (!r.ok) throw new Error('notes-ask ' + r.status);
+      const d = await r.json();
+      return (d.answer || '').trim();
+    }
+
+    // Dedicated Ask Chef card → append the Q/A as a new Chef's-Notes block.
+    async function askChef() {
+      const input = document.getElementById('askChefInput');
+      const btn = document.getElementById('askChefBtn');
+      const q = (input?.value || '').trim();
+      if (!q) { input?.focus(); return; }
       if (btn.dataset.busy) return;
-      btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = '⏳ Deriving…';
+      btn.dataset.busy = '1'; const label = btn.textContent;
+      btn.textContent = '⏳'; btn.disabled = true; input.disabled = true;
       try {
-        const r = await fetch(`/recipes/${encodeURIComponent(rid)}/derive-equipment`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: uid })
-        });
-        if (!r.ok) throw new Error('derive ' + r.status);
-        const d = await r.json();
-        const equip = d.equipment || [];
-        equipmentList.innerHTML = '';
-        equip.forEach(eq => addEquipment(eq));
-        if (!equip.length) addEquipment();
-        btn.textContent = equip.length ? `✓ ${equip.length} tools` : 'No tools found';
+        const answer = await askChefGrounded(q);
+        // ONE block — collapse blank lines so the multi-block loader keeps it intact.
+        addNote((`Q: ${q}\nA: ${answer}`).replace(/\n{2,}/g, '\n'));
+        input.value = '';
+        document.getElementById('notesList')?.lastElementChild
+          ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } catch (e) {
-        console.warn('[derive-equipment]', e);
-        btn.textContent = '⚠ Try again';
+        console.warn('[ask-chef]', e);
+        input.placeholder = 'Chef is unavailable right now — try again in a moment.';
       } finally {
-        setTimeout(() => btn.textContent = label, 2500);
-        btn.disabled = false; delete btn.dataset.busy;
+        btn.textContent = label; delete btn.dataset.busy;
+        btn.disabled = false; input.disabled = false; input.focus();
       }
     }
 

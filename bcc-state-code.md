@@ -9,6 +9,52 @@ Running state log for the recipe forms project. Append-only style; prune as item
 
 ---
 
+## Session log — 2026-07-12 — equipment auto-derive + backfill, Ask Chef un-gated, dishes-list images, log naming, two design notes
+
+Big multi-thread session. All code SHIPPED + live (service restarted, pid 7820); DB backfill done.
+
+- **Equipment on BASE extraction (not a button).** `Tool.size` added to `recipe_model.py` (was
+  silently dropped on every RecipeModel round-trip). Equipment derivation folded into the
+  markdown-LLM extract prompt (`extract/markdown_to_recipe.py`) AND a fast-lane fallback in
+  `enrich/api.py` (`do_equipment` flag — fires a single `enrich.equipment.derive_equipment` ONLY
+  when the JSON-LD fast lane yields no equipment; no-op cost on the LLM path). **Correction logged:**
+  the earlier belief that "we only extract equipment for cook recipes" was WRONG — base extraction
+  had been populating `equipment` all along (2,189 non-cook recipes have it, 657 sized). See
+  [[project_equipment_standardization]].
+- **✨ Derive button REMOVED** (UI + `deriveEquipment()` JS + `POST /recipes/{id}/derive-equipment`).
+  Redundant once extraction auto-derives; the shared `enrich/equipment.derive_equipment` stays (used
+  by the extract fast-lane + the backfill). Confirmed 404.
+- **Ask Chef (Chef's-Notes chat) — un-gated + made obvious.** Dedicated "💬 Ask Chef about this
+  recipe" card at the top of Chef's Notes (was only a subtle ✨ per note bullet — "far from
+  obvious"). `notes-ask` endpoint now accepts the form's CURRENT recipe context (`recipe` payload) →
+  grounds an answer BEFORE the recipe is ever saved (killed the silent save-gate). `askChefGrounded`
+  shared by the card + the per-block ✨. See [[project_notes_chat]].
+- **Dishes-list card images — derived from the recipe table, no column.** `dishes.representative_images`
+  picks each dish's best-ranked master recipe hero (`_source.previewImage || image[0]`) via a single
+  `master_recipes` scan; `/dishes` returns `preview_image`; `forms/dishes.html` renders a 40px
+  thumbnail per dish. First cut used a `dish_run_data_points` window-join = **17.7s**; rewrote to the
+  master scan = **68ms**, 100/100 dishes. This is Phase 0 of [[project_recipe_table_backed_lists]].
+- **Log filenames now timestamp-FIRST** (flat, no subfolder — curator's call). `jobs._build_log_filename`
+  → `{ISO-ts}_job_{type}_{id}_{label}.log`; `cook_voice_{day}.log` → `{day}_cook_voice.log`. Sorts
+  chronologically in `logs/`; no DB migration (still flat filenames). Takes effect next restart.
+- **Equipment BACKFILL saga** (`scripts/backfill_equipment.py`, NEW). Started a blind `--mode all`
+  (2,563) — caught via runtime data that it was NOT adding sizes (544→541 on master; sizes come from
+  the source text / `_cook`, not derivation) AND was degrading 3 cook-reworked recipes. STOPPED at
+  ~255, RESTORED the 3 from `_cook` (lossless), made the script `_cook`-aware (mirrors from `_cook`,
+  never re-derives a reworked recipe). Ran `--mode missing` instead → filled 332 empties. Final:
+  master 2,224/2,225 equipped (627 sized), personal 338/338 (112 sized), 1 edge-case empty.
+- **Two design notes + memories.** [[project_recipe_table_backed_lists]]
+  (docs/recipe-table-backed-lists.md) — dishes & domains → first-class recipe-table-backed lists;
+  batch-stamp swap (`source`+`batch_id`); VERIFIED domains already do source-scoped deletes safely via
+  `retire_master_membership` (typed-block refcount: dish vs publisher). [[project_equipment_standardization]]
+  (docs/equipment-product-linking.md) — equipment names/sizes NOT standardized (16,270 items/1,815
+  names); design = canonical tool dictionary + xref tables (tool_aliases/canonical_tools/tool_products)
+  anchored to the Google Product Taxonomy; buildable offline (block→embed→cluster→LLM-classify→review).
+  Surfaced a bug: stringified `_cook` size-dicts leaked into `equipment.size`.
+- **Lesson:** an f-string edit crash-looped NSSM at startup (literal `{...}` in `SYSTEM_PROMPT`);
+  `ast.parse` passed but the format-spec only errors at real import. VERIFY prompt/f-string edits by
+  IMPORTING the module, not just parsing.
+
 ## Session log — 2026-07-10 (later) — Chef's Notes chat (✨ Ask), multi-block notes, cook-voice dredge fix, reprocess; "keep source links" decision
 
 Continuation of the cook-voice session, into the recipe form. All SHIPPED + verified live.

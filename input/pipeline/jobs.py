@@ -324,7 +324,10 @@ def _build_log_filename(job: dict) -> str:
     slug_src = label or (job.get("entity_ref") or "").split(":", 1)[-1]
     entity_slug = _slug_for_log(slug_src)[:60].strip("-")
     suffix = f"_{entity_slug}" if entity_slug else ""
-    return f"job_{type_slug}_{job['id']}{suffix}_{ts}.log"
+    # Timestamp FIRST (ISO, lexically == chronologically) so `logs/` lists in run order
+    # by default. Kept flat (no per-source subfolder) — still one filename, so the DB
+    # `log_filename` refs and the /logs/<filename> URLs are unaffected.
+    return f"{ts}_job_{type_slug}_{job['id']}{suffix}.log"
 
 
 # ============================================================

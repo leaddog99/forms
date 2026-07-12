@@ -596,6 +596,41 @@ def list_dishes(conn: sqlite3.Connection) -> list[dict]:
     return [row_to_dict(r) for r in rows]
 
 
+def representative_images(conn: sqlite3.Connection) -> dict:
+    """{dish_name: image_url} — each dish's card image DERIVED from its recipes (the
+    recipe table), not a stored column. For each dish, picks the best-RANKED master
+    recipe (`_master.rank`) that actually HAS an image, preferring the cooped og-thumb
+    (`_source.previewImage`) over the hotlinked schema.org `image[0]`.
+
+    Phase 0 of docs/recipe-table-backed-lists.md — reads straight from `master_recipes`
+    via `_master.dish`, NOT the `dish_run_data_points` ledger (that join over every
+    run's rows × JSON-extracting big blobs cost ~18s; this single scan is ~70ms and
+    covers legacy dishes too). `_master.rank`/`kind='top'` is the denormalized label the
+    top-recipes tiles deliberately distrust for RANKING, but for a thumbnail it's fine —
+    any decent top recipe's hero. No denormalized `dishes.image` data is introduced."""
+    sql = """
+        SELECT json_extract(data, '$._master.dish') AS dish,
+               COALESCE(
+                   NULLIF(json_extract(data, '$._source.previewImage'), ''),
+                   json_extract(data, '$.image[0]')
+               ) AS img,
+               COALESCE(CAST(json_extract(data, '$._master.rank') AS INTEGER), 9999) AS rank
+        FROM master_recipes
+        WHERE json_extract(data, '$._master.dish') IS NOT NULL
+    """
+    try:
+        best: dict = {}   # dish -> (rank, img)
+        for dish, img, rank in conn.execute(sql).fetchall():
+            if not dish or not img:
+                continue
+            if dish not in best or rank < best[dish][0]:
+                best[dish] = (rank, img)
+        return {dish: rank_img[1] for dish, rank_img in best.items()}
+    except Exception as e:
+        print(f"[dishes] representative_images failed: {e}")
+        return {}
+
+
 def get_dish(conn: sqlite3.Connection, name: str) -> Optional[dict]:
     """Look up by name (case-insensitive — table uses COLLATE NOCASE)."""
     row = conn.execute(

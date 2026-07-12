@@ -383,9 +383,21 @@
           if (d.name === selectedName) li.classList.add('selected');
           const queries = Array.isArray(d.queries) ? d.queries : [];
           const queryHint = queries.length === 1 ? queries[0] : `${queries.length} queries`;
+          // Thumbnail DERIVED from the dish's top recipe hero (recipe table), served
+          // via /dishes preview_image — Phase 0 of the recipe-table-backed lists plan.
+          // No stored dishes.image column. Hides itself if the src 404s.
+          const thumbStyle = 'width:40px;height:40px;flex:0 0 auto;border-radius:7px;object-fit:cover;background:var(--accent-soft,#f4ece6)';
+          const thumb = d.preview_image
+            ? `<img src="${escapeHtml(d.preview_image)}" alt="" loading="lazy" style="${thumbStyle}" onerror="this.style.visibility='hidden'">`
+            : `<span style="${thumbStyle}"></span>`;
           li.innerHTML =
-            `<div class="entity-name">${escapeHtml(d.name)} ${statusBadge(d)}</div>` +
-            `<div class="entity-meta">${escapeHtml(queryHint)} · top ${escapeHtml(d.top_n_final)} · last: ${escapeHtml(fmtDate(d.last_refreshed))}</div>`;
+            `<div style="display:flex;align-items:center;gap:10px">` +
+              thumb +
+              `<div style="flex:1;min-width:0">` +
+                `<div class="entity-name">${escapeHtml(d.name)} ${statusBadge(d)}</div>` +
+                `<div class="entity-meta">${escapeHtml(queryHint)} · top ${escapeHtml(d.top_n_final)} · last: ${escapeHtml(fmtDate(d.last_refreshed))}</div>` +
+              `</div>` +
+            `</div>`;
           li.addEventListener('click', () => {
             selectedName = d.name;
             mode = 'view';

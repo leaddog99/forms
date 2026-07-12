@@ -1292,7 +1292,7 @@ def cook_voice_log(payload: dict = Body(...)):
             return {"ok": True, "written": 0}
         os.makedirs("logs", exist_ok=True)
         day = datetime.now().strftime("%Y-%m-%d")
-        fname = f"cook_voice_{day}.log"
+        fname = f"{day}_cook_voice.log"   # date-first so logs/ lists chronologically
         with open(os.path.join("logs", fname), "a", encoding="utf-8") as f:
             f.write(f"\n==== voice log {datetime.now().isoformat()} · {name or rid} "
                     f"({len(entries)} entries) ====\n")
@@ -2312,7 +2312,13 @@ def delete_user(user_id: int):
 def list_dishes_endpoint():
     try:
         with _db() as conn:
-            return dishes_lib.list_dishes(conn)
+            dishes = dishes_lib.list_dishes(conn)
+            # Card image DERIVED from each dish's top recipe (recipe table), not a
+            # stored column — Phase 0 of docs/recipe-table-backed-lists.md.
+            imgs = dishes_lib.representative_images(conn)
+            for d in dishes:
+                d["preview_image"] = imgs.get(d.get("name")) or None
+            return dishes
     except Exception as e:
         print(f"[ERROR] list_dishes failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
@@ -5568,17 +5574,37 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
     if not question:
         raise HTTPException(status_code=400, detail="question is required.")
 
-    table = _recipes_table_for(user_id)
-    with _db() as conn:
-        row = conn.execute(
-            f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
-        ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Recipe not found.")
-    recipe = json.loads(row[0])
+    # Grounding source, in priority order:
+    #   1. the SAVED row (richest — carries `_cook`, KB links, etc.)
+    #   2. the form's CURRENT recipe context sent in the payload (`recipe`) — lets
+    #      the user ask BEFORE the recipe is ever saved (un-gates the ✨ Ask button;
+    #      cook_ask.build_context falls back to name/ingredients/instructions/notes).
+    # So a brand-new, never-saved recipe still gets a grounded answer instead of a
+    # silent 404. See project_notes_chat.
+    recipe = None
+    if recipe_id and recipe_id != "_new":
+        table = _recipes_table_for(user_id)
+        with _db() as conn:
+            row = conn.execute(
+                f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
+            ).fetchone()
+        if row:
+            recipe = json.loads(row[0])
+    if recipe is None:
+        form_recipe = payload.get("recipe")
+        if isinstance(form_recipe, dict) and (
+            form_recipe.get("recipeIngredient") or form_recipe.get("recipeInstructions")
+            or form_recipe.get("name")
+        ):
+            recipe = form_recipe
+    if recipe is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Add a name, ingredients, or steps first so Chef has something to answer about.",
+        )
 
     import llm  # gateway: attribute this Q&A to the recipe/user, label it notes_chat
-    llm.enter(recipe_id=recipe_id, user_id=user_id)
+    llm.enter(recipe_id=(recipe_id or "_new"), user_id=user_id)
     try:
         from cook_ask import ask as chef_ask
         answer = chef_ask(recipe, question, operation="notes_chat")
@@ -5590,51 +5616,10 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
     return {"answer": answer}
 
 
-@app.post("/recipes/{recipe_id}/derive-equipment")
-def derive_equipment_endpoint(recipe_id: str, payload: dict = Body(...)):
-    """Derive a recipe's equipment from its instructions (the "without a cook-view"
-    path — enrich/equipment.py) and PERSIST it into the top-level `equipment`
-    (HowToTool + size) so the editor shows it and product-commerce can key off it.
-    For recipes never reworked. Journaled as enrich_equipment. Degrades to 503."""
-    try:
-        user_id = int(payload.get("user_id", PLACEHOLDER_USER_ID))
-    except (TypeError, ValueError):
-        user_id = PLACEHOLDER_USER_ID
-    persist = payload.get("persist", True)
-
-    table = _recipes_table_for(user_id)
-    with _db() as conn:
-        row = conn.execute(
-            f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
-            (recipe_id, user_id)).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Recipe not found.")
-    recipe = json.loads(row[0])
-
-    import llm  # attribute to recipe/user, label enrich_equipment
-    llm.enter(recipe_id=recipe_id, user_id=user_id)
-    try:
-        from enrich.equipment import derive_equipment
-        equipment = derive_equipment(recipe)
-    except Exception as e:
-        print(f"[ERROR] /recipes/{recipe_id}/derive-equipment: {e}")
-        raise HTTPException(status_code=503, detail="Equipment derivation is unavailable right now — try again in a moment.")
-    finally:
-        llm.flush()
-
-    if persist and equipment:
-        def _save():
-            with _db() as conn:
-                cur = json.loads(conn.execute(
-                    f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
-                    (recipe_id, user_id)).fetchone()[0])
-                cur["equipment"] = equipment
-                conn.execute(
-                    f"UPDATE {table} SET data = ? WHERE recipe_id = ? AND user_id = ?",
-                    (json.dumps(cur, ensure_ascii=False), recipe_id, user_id))
-                conn.commit()
-        _save()
-    return {"equipment": equipment, "persisted": bool(persist and equipment)}
+# NOTE: the manual POST /recipes/{id}/derive-equipment endpoint was removed —
+# equipment is now derived automatically at extract time (enrich/api.py folds it into
+# the markdown-LLM prompt and fast-lane fallback). The shared derivation lives on in
+# enrich/equipment.py::derive_equipment (used by the extract path + the batch backfill).
 
 
 def _inject_dish_competitiveness(recipe: dict) -> None:

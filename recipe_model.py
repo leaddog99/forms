@@ -321,6 +321,12 @@ class HowToStep(BaseModel):
 class Tool(BaseModel):
     type: str = Field(default="HowToTool", alias="@type")
     name: Optional[str] = ""
+    # Size is the product-commerce class grain (equipment -> product_class,
+    # e.g. "Saucepans (2 qt)"). Populated at extract time (verb/pan-derived),
+    # by the cook-rework mirror, or by hand in the editor. Present ONLY when the
+    # recipe states/implies one — never invented. Without this field the model
+    # would silently DROP size on every RecipeModel round-trip (extraction, save).
+    size: Optional[str] = None
 
     @field_validator('name', mode='before')
     @classmethod

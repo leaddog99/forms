@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json as _json
 import re as _re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal, Optional
@@ -101,6 +102,14 @@ class EnrichmentRequest:
     # `_measurements` block aligned 1:1 with recipeIngredient — the metric/weight
     # layer beside the source's own strings. Off by default (opt-in cost).
     do_measurements: bool = False
+    # Guarantee a top-level `equipment` list on EVERY extracted recipe (powers
+    # product-commerce: equipment -> product_class). The markdown-LLM path emits
+    # equipment inline from its prompt, but the JSON-LD fast lane has no LLM and
+    # JSON-LD rarely carries equipment — so this fires a SINGLE grounded derive
+    # (enrich.equipment) ONLY when the extracted recipe has NO equipment. It is
+    # therefore a no-op cost on markdown-LLM extracts and the ONLY way fast-lane
+    # recipes get equipment without a button. On by default.
+    do_equipment: bool = True
     profile: Profile = "full"             # output shaping / seal
 
     # --- authority scores supplied BY THE CALLER (TBOTB), not fetched here ---
@@ -430,6 +439,25 @@ def enrich(req: EnrichmentRequest) -> EnrichmentResult:
             timings["measure_counts"] = m_meta.get("counts") or {}
         except Exception as e:
             print(f"[enrich] measurement pass failed ({e}); skipping _measurements")
+
+    # --- Equipment: guarantee the top-level `equipment` list for commerce. The
+    #     markdown-LLM path already emits it inline (its prompt derives tools from
+    #     the instructions), so this only fires when equipment is EMPTY — i.e. the
+    #     JSON-LD fast lane (no LLM, JSON-LD rarely lists tools) or a prompt miss.
+    #     ONE grounded Sonnet call; best-effort (a failure leaves equipment empty
+    #     rather than aborting the extract). See enrich/equipment.py. ---
+    if req.do_equipment and not (recipe.get("equipment") or []):
+        try:
+            from .equipment import derive_equipment
+            t_eq = time.perf_counter()
+            equipment = derive_equipment(recipe)
+            if equipment:
+                recipe["equipment"] = equipment
+            timings["equipment_ms"] = int((time.perf_counter() - t_eq) * 1000)
+            print(f"[enrich] equipment derived ({len(equipment)} tools) "
+                  f"[{extract_path or 'unknown'} path had none]")
+        except Exception as e:
+            print(f"[enrich] equipment derive failed ({e}); leaving equipment empty")
 
     # --- 4. Enrichment blocks — INDIVIDUALLY selectable via req.enrich (a set
     #        of block names off the live registry). identity/translate/embed

@@ -45,9 +45,16 @@ You are a culinary data extractor. Given markdown describing a recipe — possib
 
 AUTHORITY RULES:
 1. If the markdown contains a section titled "STRUCTURED RECIPE DATA (JSON-LD)" with a fenced ```json``` block, treat that JSON-LD as the AUTHORITATIVE source for: name, description, ingredients (recipeIngredient), instructions (recipeInstructions), prepTime, cookTime, totalTime, recipeYield, recipeCategory, recipeCuisine, keywords, nutrition, aggregateRating, author, datePublished, dateModified, video, image. Copy values through with minimal reshaping to match the schema.
-2. Use the surrounding markdown ONLY to fill fields the JSON-LD does not cover (notes, equipment, servingSuggestions).
+2. Use the surrounding markdown to fill fields the JSON-LD does not cover (notes, servingSuggestions).
 3. If no JSON-LD section is present, derive ALL fields from the markdown body. Preserve quantities and unit text exactly as written — do not convert units.
 4. Ignore page chrome, navigation links, advertisements, comment threads, and "related recipes" lists.
+
+EQUIPMENT (ALWAYS derive — do NOT wait for the source to list it):
+- Populate `equipment` for EVERY recipe by inferring the tools the cook needs from the ingredients and instructions. This field powers downstream product matching, so it must not be left empty when the instructions imply tools.
+- Include tools implied by a prep or cook verb: grate -> grater, whisk -> whisk, zest -> zester, sift -> sieve, fry -> skillet, blend -> blender, bake -> the stated pan/dish, simmer -> saucepan/pot, roast -> roasting pan/sheet.
+- ORDER equipment by first appearance in the instructions; dedupe so each tool appears once (name it plainly and singular: "large skillet", "9x13 baking dish", "box grater").
+- Give a `size` ONLY when the recipe states or clearly implies one (a 12-inch skillet -> "12 in", a 9x13 dish -> "9x13 in", a 3-quart saucepan -> "3 qt"). Omit `size` when unstated — NEVER invent a size.
+- Do NOT list ingredients or pantry staples as equipment. Each item is `{{"@type": "HowToTool", "name": "...", "size": "..."?}}` (braces doubled here only because this prompt is an f-string).
 
 PROVENANCE AND CLASSIFICATION ARE HANDLED ELSEWHERE. Leave the `provenance` and `classification` blocks at their schema defaults (empty strings, empty lists, null where applicable). A separate enrichment step (`enrich_recipe`) fills those fields on demand — your job here is the structured recipe data only. Spending tokens on provenance/classification reasoning here just makes you slower.
 
