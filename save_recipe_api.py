@@ -7179,6 +7179,19 @@ async def extract_from_markdown_endpoint(
         path_used = "cache-hit" if recipe is not None else ""
         translation_meta_bm: dict | None = None
 
+        # Cache HIT that carries no equipment — a row cached from the JSON-LD fast lane
+        # (or before equipment was derived at extract time). Derive it now and HEAL the
+        # cache, else every re-extract of this URL keeps returning tools-less (the
+        # shrimp-creole bug: a cache hit skipped the miss-block _ensure_equipment below).
+        if recipe is not None and not (recipe.get("equipment") or []):
+            _ensure_equipment(recipe, path_used="cache-hit")
+            if recipe.get("equipment"):
+                try:
+                    _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
+                    print("[EXTRACT] healed cached recipe with derived equipment")
+                except Exception as e:
+                    print(f"[EXTRACT] equipment cache-heal skipped: {e}")
+
         if recipe is None:
             # === Extraction-stage translation (bookmarklet path), MISS only ===
             # Markdown comes from the bookmarklet/browser, so there are no HTTP
@@ -7661,7 +7674,12 @@ def extract_recipe_from_url(
     # Every extract carries equipment — the JSON-LD fast lane emits none and the
     # enrich() do_equipment step is off on the legacy path. Runs in the enrichment
     # tail (before cache write) so a derived list is cached + self-heals old rows.
+    # `_eq_healed` = a cache hit that was equipment-less and just gained tools; it
+    # forces a cache re-write below (a legacy row is "complete" on screenshot+identity
+    # so `was_incomplete` alone wouldn't heal it — the equipment-in-cache miss).
+    _eq_missing_before = not (recipe.get("equipment") or [])
     _ensure_equipment(recipe, path_used=path_used)
+    _eq_healed = _eq_missing_before and bool(recipe.get("equipment"))
 
     # === Enrichment tail — runs BEFORE the cache write so its expensive,
     # URL-static outputs (chapter, cooped preview image, identity card,
@@ -7752,10 +7770,12 @@ def extract_recipe_from_url(
             print(f"[SCREENSHOT] capture failed (continuing): {e}")
 
     # Cache write AFTER enrichment so screenshot/identity/preview travel with
-    # the row. Write on a fresh extract, or to self-heal a hit row that
-    # predated screenshot/identity caching. Stamp the raw-source fingerprint so a
-    # future revalidating harvest can detect a source change without an LLM call.
-    if path_used != "cache-hit" or was_incomplete:
+    # the row. Write on a fresh extract, to self-heal a hit row that predated
+    # screenshot/identity caching (was_incomplete), OR a hit that just gained
+    # equipment (_eq_healed — equipment isn't in _cache_row_complete). Stamp the
+    # raw-source fingerprint so a future revalidating harvest can detect a source
+    # change without an LLM call.
+    if path_used != "cache-hit" or was_incomplete or _eq_healed:
         cache_status, drift = _extract_cache_write(
             url_norm, recipe, prior_fingerprint=prior_fp, source_fingerprint=current_source_fp)
 
