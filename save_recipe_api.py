@@ -5511,6 +5511,27 @@ def _stamp_translation_provenance(recipe, meta) -> None:
     recipe["_source"] = src
 
 
+def _extract_response(recipe, *, new_recipe_id, timings, prompts, usage_log,
+                      t_start, user_id, ok_msg="Extraction successful") -> dict:
+    """The shared extract-endpoint response envelope: journal token usage, stamp source
+    drift, record true wall-clock total, and return the `{success, recipe_id, recipe,
+    _timings, _prompt, _usage}` dict. `recipe['id']` is stamped by the caller (its position
+    differs per endpoint). Converges the identical return tails of extract-from-{image,pdf,
+    markdown}. `ok_msg` sets the [OK] log line."""
+    _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+    _maybe_stamp_source_drift(timings, user_id=user_id)
+    timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
+    print(f"[OK] {ok_msg}")
+    return {
+        "success": True,
+        "recipe_id": new_recipe_id,
+        "recipe": recipe,
+        "_timings": timings,
+        "_prompt": prompts,
+        "_usage": usage_log,
+    }
+
+
 async def _handle_cook_rework_job(job: dict) -> dict:
     """Cook-rework: turn a captured recipe into a validated `_cook` block
     (cook_rework.rework_recipe) and persist it ONLY when the §5 gauntlet passes.
@@ -6986,23 +7007,9 @@ async def extract_from_image_endpoint(
                 recipe["image"] = [src_url]  # hero defaults to the original; editable later
         except Exception as e:
             print(f"[EXTRACT] sourceImage persist skipped: {e}")
-        # Journal LLM token usage before returning (extract happened regardless
-        # of whether the user later saves the recipe).
-        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-        _maybe_stamp_source_drift(timings, user_id=user_id)
-
-        # Stamp total AFTER the enrich tail (chapter/moz/identity) so the
-        # reported time is true wall-clock, not just up to the cache write.
-        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-        print("[OK] Extraction successful")
-        return {
-            "success": True,
-            "recipe_id": new_recipe_id,
-            "recipe": recipe,
-            "_timings": timings,
-            "_prompt": prompts,
-            "_usage": usage_log,
-        }
+        return _extract_response(
+            recipe, new_recipe_id=new_recipe_id, timings=timings,
+            prompts=prompts, usage_log=usage_log, t_start=t_start, user_id=user_id)
 
     except HTTPException:
         raise
@@ -7101,20 +7108,10 @@ async def extract_from_pdf_endpoint(
 
         _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log)
         recipe["id"] = new_recipe_id
-        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-        _maybe_stamp_source_drift(timings, user_id=user_id)
-
-        # Stamp total AFTER the enrich tail for true wall-clock timing.
-        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-        print("[OK] PDF extraction successful")
-        return {
-            "success": True,
-            "recipe_id": new_recipe_id,
-            "recipe": recipe,
-            "_timings": timings,
-            "_prompt": prompts,
-            "_usage": usage_log,
-        }
+        return _extract_response(
+            recipe, new_recipe_id=new_recipe_id, timings=timings, prompts=prompts,
+            usage_log=usage_log, t_start=t_start, user_id=user_id,
+            ok_msg="PDF extraction successful")
 
     except HTTPException:
         raise
@@ -7285,20 +7282,9 @@ async def extract_from_markdown_endpoint(
         _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log)
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
-        _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-        _maybe_stamp_source_drift(timings, user_id=user_id)
-
-        # Stamp total AFTER the enrich tail for true wall-clock timing.
-        timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
-        print("[OK] Extraction successful")
-        return {
-            "success": True,
-            "recipe_id": new_recipe_id,
-            "recipe": recipe,
-            "_timings": timings,
-            "_prompt": prompts,
-            "_usage": usage_log,
-        }
+        return _extract_response(
+            recipe, new_recipe_id=new_recipe_id, timings=timings, prompts=prompts,
+            usage_log=usage_log, t_start=t_start, user_id=user_id)
 
     except HTTPException:
         raise
