@@ -17,6 +17,18 @@
     .wt-group { padding: 9px 14px 4px; font-size: .72rem; letter-spacing: .06em;
       text-transform: uppercase; color: var(--ed-ink-soft); font-weight: 700;
       background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+    .wt-section { padding: 5px 14px 3px 20px; font-size: .74rem; font-weight: 600;
+      color: var(--ink); background: var(--bg); }
+    .ed-item.wt-leaf .ed-item-name { color: var(--accent-dark); }
+    .wt-tag { display: inline-block; font-size: .64rem; font-weight: 700; letter-spacing: .04em;
+      text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-left: 6px;
+      background: var(--accent-soft, #f4ece6); color: var(--accent, #b8602a); vertical-align: middle; }
+    .wt-form .ed-field { margin-bottom: 10px; }
+    .wt-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .wt-form input, .wt-form textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+      border-radius: 7px; font: inherit; font-size: .9rem; }
+    .wt-form textarea { min-height: 70px; resize: vertical; }
+    .wt-form-actions { display: flex; gap: 8px; margin-top: 12px; }
     .wt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
     .wt-chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px;
       padding: 3px 10px; font-size: .82em; color: var(--ink); }
@@ -58,6 +70,9 @@
           <button class="ed-icon-btn" id="searchToggle" title="Search" aria-label="Search">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
+          <button class="ed-icon-btn" id="addToggle" title="Add a category / leaf" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
         </div>
       </div>
       <div class="ed-controls" id="controls" hidden>
@@ -83,6 +98,9 @@
     let byId = {};
     let selected = null;    // id, or null (=> tester)
     let term = '';
+    let mode = 'view';      // 'view' | 'add' | 'edit'
+    let lastTerm = '';      // last tested term (to prefill Add-a-leaf)
+    let addPrefill = null;  // {headline, section, subcategory, leaf} to seed the Add form
 
     async function load(){
       try {
@@ -95,117 +113,219 @@
       }
     }
 
-    /* ---------------- list (grouped by headline) ---------------- */
+    const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort();
+    const headlines = () => uniq(cats.map(c => c.headline));
+    const sectionsFor = (hl) => uniq(cats.filter(c => c.headline === hl).map(c => c.section));
+    const subsFor = (hl, sec) => uniq(cats.filter(c => c.headline === hl && c.section === sec).map(c => c.subcategory));
+
+    /* ---------------- list (headline > section > item) ---------------- */
     function renderList(){
       const t = term.toLowerCase();
       const rows = cats.filter(c => !t
-        || c.subcategory.toLowerCase().includes(t)
-        || c.headline.toLowerCase().includes(t)
+        || [c.headline,c.section,c.subcategory,c.leaf].some(v => (v||'').toLowerCase().includes(t))
         || (c.description||'').toLowerCase().includes(t)
         || (c.products||[]).some(p => p.toLowerCase().includes(t)));
       $('#count').textContent = `(${rows.length})`;
       const ul = $('#list'); ul.innerHTML = '';
       if (!rows.length){ ul.innerHTML = '<li class="ed-empty">No matches</li>'; return; }
-      // group by headline, preserve first-seen order
-      const groups = new Map();
-      for (const c of rows){ if (!groups.has(c.headline)) groups.set(c.headline, []); groups.get(c.headline).push(c); }
-      for (const [hl, items] of groups){
-        const h = document.createElement('li');
-        h.className = 'wt-group'; h.textContent = `${hl} (${items.length})`;
+      const byHl = new Map();
+      for (const c of rows){
+        if (!byHl.has(c.headline)) byHl.set(c.headline, new Map());
+        const secMap = byHl.get(c.headline), key = c.section || '—';
+        if (!secMap.has(key)) secMap.set(key, []);
+        secMap.get(key).push(c);
+      }
+      for (const [hl, secMap] of byHl){
+        const n = [...secMap.values()].reduce((a,v)=>a+v.length,0);
+        const h = document.createElement('li'); h.className = 'wt-group'; h.textContent = `${hl} (${n})`;
         ul.appendChild(h);
-        for (const c of items){
-          const li = document.createElement('li');
-          li.className = 'ed-item' + (c.id === selected ? ' selected' : '');
-          const badges = [];
-          if (c.product_count) badges.push(`${c.product_count} products`);
-          badges.push(c.has_embedding ? '✓ embedded' : '⚠ no vector');
-          li.innerHTML =
-            `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(c.subcategory)}</span></div>` +
-            `<div class="ed-item-meta">${escapeHtml(badges.join(' · '))}</div>`;
-          li.addEventListener('click', () => { selected = c.id; renderList(); renderDetail(); nav.afterSelect(); });
-          ul.appendChild(li);
+        for (const [sec, items] of secMap){
+          if (sec !== '—'){ const s = document.createElement('li'); s.className = 'wt-section'; s.textContent = sec; ul.appendChild(s); }
+          for (const c of items){
+            const li = document.createElement('li');
+            const isLeaf = !!c.leaf;
+            li.className = 'ed-item' + (c.id === selected && mode==='view' ? ' selected' : '') + (isLeaf ? ' wt-leaf' : '');
+            const nm = c.leaf || c.subcategory || c.section || c.headline;
+            const tag = c.curator_added ? '<span class="wt-tag">leaf</span>' : '';
+            const badges = [];
+            if (c.product_count) badges.push(`${c.product_count} products`);
+            badges.push(c.has_embedding ? '✓ embedded' : '⚠ no vec');
+            li.innerHTML =
+              `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(nm)}</span>${tag}</div>` +
+              `<div class="ed-item-meta">${escapeHtml(badges.join(' · '))}</div>`;
+            li.addEventListener('click', () => { selected = c.id; mode='view'; renderList(); renderDetail(); nav.afterSelect(); });
+            ul.appendChild(li);
+          }
         }
       }
     }
 
-    /* ---------------- detail ---------------- */
+    /* ---------------- detail (dispatch on mode) ---------------- */
     function renderDetail(){
-      const panel = $('#page');
+      if (mode === 'add')  return renderForm(null);
+      if (mode === 'edit' && byId[selected]) return renderForm(byId[selected]);
       if (selected == null || !byId[selected]) return renderTester();
       const c = byId[selected];
       const chips = (c.products||[]).map(p => `<span class="wt-chip">${escapeHtml(p)}</span>`).join('');
-      panel.innerHTML = `
-        <div class="ed-kicker">
-          <button type="button" class="ed-purpose-toggle" id="backToTest">← Test a term</button>
-        </div>
-        <h1 class="ed-title">${escapeHtml(c.subcategory)}</h1>
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="backToTest">← Test a term</button></div>
+        <h1 class="ed-title">${escapeHtml(c.leaf || c.subcategory || c.section || c.headline)}${c.curator_added?'<span class="wt-tag">leaf</span>':''}</h1>
         <div class="ed-status-strip">
           <span class="ed-pill"><i class="d"></i>${escapeHtml(c.headline)}</span>
+          ${c.section?`<span class="ed-pill"><i class="d"></i>${escapeHtml(c.section)}</span>`:''}
           <span class="ed-pill"><i class="d"></i>${c.product_count} sample products</span>
           <span class="ed-pill${c.has_embedding?'':' warn'}"><i class="d"></i>${c.has_embedding?'✓ embedded':'⚠ no vector'}</span>
         </div>
         <p class="ed-submeta">${escapeHtml(c.ws_path)}${c.url ? ` · <a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">Open on Williams-Sonoma ↗</a>` : ''}</p>
-
+        <div style="display:flex;gap:8px;margin:6px 0 4px;align-items:center">
+          <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          <button type="button" class="ed-btn" id="addLeafBtn">＋ Add a leaf here</button>
+          <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
+        </div>
         <section class="ed-block">
-          <h3 class="ed-block-label">Category description (embedding source)</h3>
+          <h3 class="ed-block-label">Description (embedding source)</h3>
           <p class="wt-desc">${c.description ? escapeHtml(c.description) : '<span class="muted">— none —</span>'}</p>
         </section>
-
         <section class="ed-block">
           <h3 class="ed-block-label">Sample products ${c.product_count ? `(${c.product_count})` : ''}</h3>
-          ${chips ? `<div class="wt-chips">${chips}</div>` : '<p class="muted">No product samples yet (v2 browser pass covers the core equipment categories).</p>'}
+          ${chips ? `<div class="wt-chips">${chips}</div>` : '<p class="muted">No product samples.</p>'}
         </section>`;
-      $('#backToTest')?.addEventListener('click', () => { selected = null; renderList(); renderDetail(); });
+      $('#backToTest')?.addEventListener('click', () => { selected = null; mode='view'; renderList(); renderDetail(); });
+      $('#editBtn')?.addEventListener('click', () => { mode='edit'; renderDetail(); });
+      $('#addLeafBtn')?.addEventListener('click', () => {
+        addPrefill = { headline: c.headline, section: c.section, subcategory: c.subcategory, leaf: '' };
+        selected = null; mode='add'; renderList(); renderDetail();
+      });
+      const del = $('#delBtn');
+      del?.addEventListener('click', async () => {
+        if (del.dataset.armed !== '1'){
+          del.dataset.armed = '1'; del.textContent = 'Confirm delete?';
+          setTimeout(() => { if (del.isConnected){ del.dataset.armed=''; del.textContent='Delete'; } }, 3000);
+          return;
+        }
+        del.disabled = true; del.textContent = 'Deleting…';
+        try {
+          const r = await fetch(`/ws-categories/${c.id}`, { method: 'DELETE' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          await load();
+          selected = null; mode='view'; renderList(); renderDetail();
+          flash && flash('Deleted');
+        } catch (e){ del.disabled=false; del.textContent='Delete'; flash && flash('Delete failed: '+(e.message||e)); }
+      });
     }
 
-    /* ---------------- test-a-term (the equipment->category matcher) ---------------- */
+    /* ---------------- test-a-term ---------------- */
     function renderTester(){
-      const panel = $('#page');
-      panel.innerHTML = `
-        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Williams-Sonoma product taxonomy · ${cats.length} categories</span></div>
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Williams-Sonoma product taxonomy · ${cats.length} nodes</span></div>
         <div class="wt-tester">
           <h3>Test a term</h3>
-          <p class="muted" style="margin:0">Type a recipe's equipment (e.g. <em>box grater</em>, <em>9x5 loaf pan</em>, <em>dutch oven</em>) — this runs the same embedding matcher recipes use and shows the top categories it lands on.</p>
+          <p class="muted" style="margin:0">Type a recipe's equipment (e.g. <em>box grater</em>, <em>compost bags</em>, <em>glass storage containers</em>) — this runs the same embedding matcher recipes use and shows where it lands. If it misses, <strong>Add a leaf</strong> right from the result.</p>
           <div class="wt-test-row">
-            <input type="text" id="q" placeholder="box grater" autocomplete="off">
+            <input type="text" id="q" placeholder="box grater" autocomplete="off" value="${escapeHtml(lastTerm)}">
             <button type="button" class="ed-btn" id="go">Match</button>
           </div>
           <div class="wt-hits" id="hits"></div>
         </div>
-        <p class="muted" style="margin-top:14px">Pick a category from the list (☰) to see its description, sample products, and embedding status.</p>`;
-      const run = () => testMatch();
-      $('#go').addEventListener('click', run);
-      $('#q').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); run(); } });
+        <p class="muted" style="margin-top:14px">Pick a node from the list (☰), or ＋ to add one.</p>`;
+      $('#go').addEventListener('click', testMatch);
+      $('#q').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); testMatch(); } });
       $('#q').focus();
+      if (lastTerm) testMatch();
     }
 
     async function testMatch(){
-      const q = $('#q').value.trim();
+      const q = $('#q').value.trim(); lastTerm = q;
       const box = $('#hits');
       if (!q){ box.innerHTML = ''; return; }
       box.innerHTML = '<p class="muted">Matching…</p>';
       try {
         const r = await fetch(`/ws-categories/match?q=${encodeURIComponent(q)}&k=5`);
         if (!r.ok) throw new Error('match ' + r.status);
-        const d = await r.json();
-        const hits = d.matches || [];
+        const hits = (await r.json()).matches || [];
         if (!hits.length){ box.innerHTML = '<p class="muted">No categories.</p>'; return; }
-        box.innerHTML = hits.map((m, i) => {
+        const rowsHtml = hits.map((m, i) => {
           const pct = Math.max(0, Math.min(100, Math.round(m.score * 100)));
           const samp = m.products_sample ? `<div class="wt-hit-samp">${escapeHtml(m.products_sample.split('; ').slice(0,4).join(' · '))}</div>` : '';
           return `<div class="wt-hit${i===0?' top':''}${m.matched?'':' below'}" data-id="${m.ws_category_id}">
             <span class="wt-hit-path">${escapeHtml(m.ws_path)}</span>
             <span class="wt-hit-score">${m.score.toFixed(3)}${m.matched?'':' ·below'}</span>
-            <div class="wt-bar"><i style="width:${pct}%"></i></div>
-            ${samp}
+            <div class="wt-bar"><i style="width:${pct}%"></i></div>${samp}
           </div>`;
         }).join('');
+        box.innerHTML = rowsHtml +
+          `<button type="button" class="ed-btn" id="addFromMiss" style="margin-top:10px">＋ Not right? Add a leaf for “${escapeHtml(q)}”</button>`;
         box.querySelectorAll('.wt-hit').forEach(el => el.addEventListener('click', () => {
           const id = parseInt(el.getAttribute('data-id'), 10);
-          if (byId[id]){ selected = id; renderList(); renderDetail(); nav.afterSelect(); }
+          if (byId[id]){ selected = id; mode='view'; renderList(); renderDetail(); nav.afterSelect(); }
         }));
+        // Prefill Add with the TOP hit's parent path + the tested term as the leaf.
+        $('#addFromMiss')?.addEventListener('click', () => {
+          const top = byId[hits[0]?.ws_category_id] || {};
+          addPrefill = { headline: top.headline || '', section: top.section || '',
+                         subcategory: top.subcategory || '', leaf: q };
+          selected = null; mode='add'; renderList(); renderDetail();
+        });
       } catch (e){
         box.innerHTML = `<p class="muted">Match failed: ${escapeHtml(e.message||e)}</p>`;
+      }
+    }
+
+    /* ---------------- add / edit form ---------------- */
+    function renderForm(existing){
+      const isEdit = !!existing;
+      const c = existing || addPrefill || {};
+      const dl = (id, opts) => `<datalist id="${id}">${uniq(opts).map(o=>`<option value="${escapeHtml(o)}">`).join('')}</datalist>`;
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancelForm">← Cancel</button></div>
+        <h1 class="ed-title">${isEdit ? 'Edit node' : 'Add a category / leaf'}</h1>
+        <p class="ed-submeta">${isEdit ? 'Edit + re-embed — takes effect on the next match.' : 'Fill the levels you want (headline required). The <strong>leaf</strong> is the finest level. It’s embedded and matchable immediately.'}</p>
+        <div class="wt-form">
+          <div class="ed-field"><label>Headline (L1)</label>
+            <input id="f_hl" list="dl_hl" value="${escapeHtml(c.headline||'')}" placeholder="Home Essentials">${dl('dl_hl', headlines())}</div>
+          <div class="ed-field"><label>Section (L2)</label>
+            <input id="f_sec" list="dl_sec" value="${escapeHtml(c.section||'')}" placeholder="Kitchen & Home Storage">${dl('dl_sec', cats.map(x=>x.section))}</div>
+          <div class="ed-field"><label>Subcategory (L3)</label>
+            <input id="f_sub" list="dl_sub" value="${escapeHtml(c.subcategory||'')}" placeholder="Food Storage Containers & Lunch Boxes">${dl('dl_sub', cats.map(x=>x.subcategory))}</div>
+          <div class="ed-field"><label>Leaf (L4 — your finer category)</label>
+            <input id="f_leaf" value="${escapeHtml(c.leaf||'')}" placeholder="Compost Bags"></div>
+          <div class="ed-field"><label>Description (feeds the embedding)</label>
+            <textarea id="f_desc" placeholder="What belongs here — materials, uses, sizes, synonyms…">${escapeHtml(c.description||'')}</textarea></div>
+          <div class="ed-field"><label>Sample products (optional, “; ” separated)</label>
+            <textarea id="f_prod" placeholder="OXO Compostable Bags; …">${escapeHtml((c.products||[]).join('; '))}</textarea></div>
+          <div class="wt-form-actions">
+            <button type="button" class="ed-btn primary" id="saveForm">${isEdit ? 'Save + re-embed' : 'Add + embed'}</button>
+            <span class="muted" id="formStatus"></span>
+          </div>
+        </div>`;
+      $('#cancelForm').addEventListener('click', () => { mode='view'; addPrefill=null; renderDetail(); });
+      $('#saveForm').addEventListener('click', () => saveForm(isEdit ? existing.id : null));
+      $('#f_leaf').focus();
+    }
+
+    async function saveForm(editId){
+      const body = {
+        headline: $('#f_hl').value.trim(), section: $('#f_sec').value.trim(),
+        subcategory: $('#f_sub').value.trim(), leaf: $('#f_leaf').value.trim(),
+        description: $('#f_desc').value.trim(), products_sample: $('#f_prod').value.trim(),
+      };
+      if (!body.headline || !(body.section || body.subcategory || body.leaf)){
+        $('#formStatus').textContent = 'Headline + at least one of section/subcategory/leaf.'; return;
+      }
+      const btn = $('#saveForm'); btn.disabled = true; $('#formStatus').textContent = 'Embedding…';
+      try {
+        const r = await fetch(editId ? `/ws-categories/${editId}` : '/ws-categories', {
+          method: editId ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || ('HTTP '+r.status));
+        const saved = await r.json();
+        await load();
+        selected = saved.id; mode='view'; addPrefill=null;
+        renderList(); renderDetail();
+        flash && flash(editId ? 'Updated + re-embedded' : 'Added + embedded — try the match again');
+      } catch (e){
+        $('#formStatus').textContent = 'Failed: ' + (e.message||e); btn.disabled = false;
       }
     }
 
@@ -214,6 +334,7 @@
       const c = $('#controls'); c.hidden = !c.hidden; if (!c.hidden) $('#search').focus();
     });
     $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
+    $('#addToggle').addEventListener('click', () => { addPrefill=null; selected=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
 
     load();
   </script>

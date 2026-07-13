@@ -5734,17 +5734,19 @@ def list_ws_categories_endpoint():
     with _db() as conn:
         try:
             rows = conn.execute(
-                "SELECT id, headline, subcategory, ws_path, url, description, products_sample, "
-                "(embedding IS NOT NULL) FROM ws_categories ORDER BY headline, subcategory"
+                "SELECT id, headline, section, subcategory, leaf, ws_path, url, description, "
+                "products_sample, source, (embedding IS NOT NULL) FROM ws_categories "
+                "ORDER BY headline, section, subcategory, leaf"
             ).fetchall()
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"ws_categories unavailable: {e}")
     out = []
-    for rid, hl, sub, path, url, desc, samp, has in rows:
+    for rid, hl, sec, sub, leaf, path, url, desc, samp, source, has in rows:
         prods = [p for p in (samp or "").split("; ") if p.strip()]
-        out.append({"id": rid, "headline": hl, "subcategory": sub, "ws_path": path,
-                    "url": url, "description": desc, "products": prods,
-                    "product_count": len(prods), "has_embedding": bool(has)})
+        out.append({"id": rid, "headline": hl, "section": sec, "subcategory": sub, "leaf": leaf,
+                    "ws_path": path, "url": url, "description": desc, "products": prods,
+                    "product_count": len(prods), "has_embedding": bool(has),
+                    "source": source or "ws", "curator_added": (source == "curator")})
     return out
 
 
@@ -5764,6 +5766,123 @@ def match_ws_categories_endpoint(q: str, k: int = 5):
             print(f"[ERROR] /ws-categories/match: {e}")
             raise HTTPException(status_code=503, detail="Matching is unavailable right now.")
     return {"query": q, "matches": res}
+
+
+def _ws_path(headline, section, subcategory, leaf) -> str:
+    """Full display path from the 4 levels present (blank levels skipped)."""
+    return " > ".join(p for p in (headline, section, subcategory, leaf) if (p or "").strip())
+
+
+def _ws_embed_blob(path: str, description: str, products: str) -> bytes:
+    """Embed a WS category the SAME way scripts/build_ws_taxonomy.py does — full path +
+    description + sample products — so a curator LEAF matches on equal footing with the
+    scraped rows."""
+    from input.pipeline.embeddings import embed_text, vec_to_bytes
+    text = f"{path}."
+    if description:
+        text += f" {description}"
+    if products:
+        text += f" Sample products: {products}"
+    return vec_to_bytes(embed_text(text))
+
+
+def _ws_category_row(rid, headline, section, subcategory, leaf, path, url, description,
+                     products, source) -> dict:
+    prods = [p for p in (products or "").split("; ") if p.strip()]
+    return {"id": rid, "headline": headline, "section": section, "subcategory": subcategory,
+            "leaf": leaf, "ws_path": path, "url": url, "description": description,
+            "products": prods, "product_count": len(prods), "has_embedding": True,
+            "source": source, "curator_added": (source == "curator")}
+
+
+@app.post("/ws-categories")
+def create_ws_category_endpoint(payload: dict = Body(...)):
+    """Curator adds a node to the WS taxonomy inline (from the taxonomy viewer) when the
+    matcher misses — typically a LEAF (L4) under an existing subcategory (compost bags, glass
+    food-storage containers), but any of headline/section/subcategory/leaf may be supplied.
+    Persists WITH its embedding so the very next match can hit it. url is NULL (WS has no page
+    for it); source='curator'. No restart needed — the matcher reloads the table each call."""
+    headline = (payload.get("headline") or "").strip()
+    section = (payload.get("section") or "").strip()
+    subcategory = (payload.get("subcategory") or "").strip()
+    leaf = (payload.get("leaf") or "").strip()
+    description = (payload.get("description") or "").strip()
+    products = (payload.get("products_sample") or "").strip()
+    if not headline or not (section or subcategory or leaf):
+        raise HTTPException(status_code=400,
+                            detail="headline plus at least one of section/subcategory/leaf are required.")
+    path = _ws_path(headline, section, subcategory, leaf)
+    try:
+        emb = _ws_embed_blob(path, description, products)
+    except Exception as e:
+        print(f"[ERROR] create ws-category embed: {e}")
+        raise HTTPException(status_code=503, detail="Embedding is unavailable right now.")
+    with _db() as conn:
+        cur = conn.execute(
+            "INSERT INTO ws_categories (headline, section, subcategory, leaf, ws_path, url, "
+            "description, products_sample, embedding, source, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?, 'curator', datetime('now'))",
+            (headline, section or None, subcategory or None, leaf or None, path, None,
+             description or None, products or None, emb))
+        conn.commit()
+        rid = cur.lastrowid
+    print(f"[WS-TAXONOMY] curator added '{path}' (embedded)")
+    return _ws_category_row(rid, headline, section or None, subcategory or None, leaf or None,
+                            path, None, description, products, "curator")
+
+
+@app.put("/ws-categories/{cat_id}")
+def update_ws_category_endpoint(cat_id: int, payload: dict = Body(...)):
+    """Edit a node (leaf/description/products) and RE-EMBED so a refinement immediately
+    changes what it matches. Used to sharpen a near-miss (e.g. add a leaf/description so
+    'glass storage containers' lands right)."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT headline, section, subcategory, leaf, url, description, products_sample, source "
+            "FROM ws_categories WHERE id = ?", (cat_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Category not found.")
+        cur_hl, cur_sec, cur_sub, cur_leaf, url, cur_desc, cur_prod, source = row
+        def _pick(key, cur):
+            v = payload.get(key)
+            return (v if v is not None else (cur or "")).strip()
+        headline = _pick("headline", cur_hl) or cur_hl
+        section = _pick("section", cur_sec)
+        subcategory = _pick("subcategory", cur_sub)
+        leaf = _pick("leaf", cur_leaf)
+        description = _pick("description", cur_desc)
+        products = _pick("products_sample", cur_prod)
+        path = _ws_path(headline, section, subcategory, leaf)
+        try:
+            emb = _ws_embed_blob(path, description, products)
+        except Exception as e:
+            print(f"[ERROR] update ws-category embed: {e}")
+            raise HTTPException(status_code=503, detail="Embedding is unavailable right now.")
+        conn.execute(
+            "UPDATE ws_categories SET headline=?, section=?, subcategory=?, leaf=?, ws_path=?, "
+            "description=?, products_sample=?, embedding=? WHERE id=?",
+            (headline, section or None, subcategory or None, leaf or None, path,
+             description or None, products or None, emb, cat_id))
+        conn.commit()
+    print(f"[WS-TAXONOMY] curator edited #{cat_id} -> '{path}' (re-embedded)")
+    return _ws_category_row(cat_id, headline, section or None, subcategory or None,
+                            leaf or None, path, url, description, products, source or "ws")
+
+
+@app.delete("/ws-categories/{cat_id}")
+def delete_ws_category_endpoint(cat_id: int):
+    """Remove a taxonomy node. Curator leaves are gone for good; a WS-scraped row will
+    reappear on the next scrape (the scrape only clears source='ws'). Returns the deleted
+    row's path for the UI toast."""
+    with _db() as conn:
+        row = conn.execute("SELECT ws_path, source FROM ws_categories WHERE id = ?",
+                           (cat_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Category not found.")
+        conn.execute("DELETE FROM ws_categories WHERE id = ?", (cat_id,))
+        conn.commit()
+    print(f"[WS-TAXONOMY] deleted #{cat_id} '{row[0]}' (source={row[1]})")
+    return {"deleted": cat_id, "ws_path": row[0], "source": row[1] or "ws"}
 
 
 def _inject_dish_competitiveness(recipe: dict) -> None:
