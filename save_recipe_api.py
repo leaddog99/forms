@@ -5464,6 +5464,53 @@ def _recipe_equipment_from_cook(cook_equipment) -> list:
     return out
 
 
+def _ensure_equipment(recipe: dict, *, path_used: str = "") -> None:
+    """Guarantee a top-level `equipment` list on an extracted recipe, in place. The
+    JSON-LD fast lane (`jsonld_to_recipe`) emits NO equipment (JSON-LD rarely lists
+    tools), and the enrich() `do_equipment` fallback is skipped on the legacy extract
+    path (_USE_ENRICHMENT_API off), so a fast-lane recipe would reach the form with no
+    equipment (the shrimp-creole bug). Derive it here when empty. Markdown-LLM extracts
+    already carry it (their prompt derives it) -> no-op. Best-effort; never raises."""
+    if not recipe or (recipe.get("equipment") or []):
+        return
+    try:
+        from enrich.equipment import derive_equipment
+        eq = derive_equipment(recipe)
+        if eq:
+            recipe["equipment"] = eq
+            print(f"[EXTRACT] equipment derived ({len(eq)} tools)"
+                  + (f" [{path_used} had none]" if path_used else ""))
+    except Exception as e:
+        print(f"[EXTRACT] equipment derive failed: {type(e).__name__}: {e}")
+
+
+def _finalize_extract_recipe(recipe, *, url_norm=None, usage_log=None) -> None:
+    """The per-recipe enrichment triplet every extract endpoint runs AFTER the extract
+    cache write: cookbook chapter + Moz PA/DA/OU scoring + dish identity card. Converges
+    the identical block that was copy-pasted across extract-from-{image,pdf,markdown}
+    (each step idempotent / best-effort). Equipment is deliberately NOT here — it runs
+    BEFORE the cache write (see _ensure_equipment) so a fast-lane recipe's derived tools
+    are cached; chapter/moz/identity intentionally re-stamp per serve as before."""
+    _attach_chapter(recipe, usage_log=usage_log)
+    _attach_moz_scoring(recipe, url_norm)
+    _attach_identity_card(recipe, usage_log=usage_log)
+
+
+def _stamp_translation_provenance(recipe, meta) -> None:
+    """Stamp `_source` translation provenance (originalLanguage/translated/translatedAt/
+    originalTitle) from a translation meta dict. Was duplicated in the bookmarklet and
+    URL extract paths. `_SOURCE_STATIC_SUBKEYS` whitelists these for cache/claim survival."""
+    if not recipe or not meta:
+        return
+    src = recipe.get("_source") or {}
+    src["originalLanguage"] = meta.get("originalLanguage", "")
+    src["translated"] = True
+    src["translatedAt"] = meta.get("translatedAt", "")
+    if meta.get("originalTitle"):
+        src["originalTitle"] = meta["originalTitle"]
+    recipe["_source"] = src
+
+
 async def _handle_cook_rework_job(job: dict) -> dict:
     """Cook-rework: turn a captured recipe into a validated `_cook` block
     (cook_rework.rework_recipe) and persist it ONLY when the §5 gauntlet passes.
@@ -6915,9 +6962,7 @@ async def extract_from_image_endpoint(
         # Moz scoring at extract time so the form can show PA/DA/OU/root
         # before the user decides whether to save. Cheap, URL-keyed, no
         # dependency on the recipe being persisted.
-        _attach_chapter(recipe, usage_log=usage_log)
-        _attach_moz_scoring(recipe, url_norm)
-        _attach_identity_card(recipe, usage_log=usage_log)
+        _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log)
         # Stamp the minted UUID onto the recipe so the form picks it up.
         recipe["id"] = new_recipe_id
         # Retain the ORIGINAL captured image as the recipe's sourceImage
@@ -7054,9 +7099,7 @@ async def extract_from_pdf_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
-        _attach_chapter(recipe, usage_log=usage_log)
-        _attach_moz_scoring(recipe, url_norm)
-        _attach_identity_card(recipe, usage_log=usage_log)
+        _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log)
         recipe["id"] = new_recipe_id
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         _maybe_stamp_source_drift(timings, user_id=user_id)
@@ -7229,22 +7272,17 @@ async def extract_from_markdown_endpoint(
 
             # Stamp translation provenance on cache row (so refetch sees it).
             if recipe is not None and translation_meta_bm:
-                src = recipe.get("_source") or {}
-                src["originalLanguage"] = translation_meta_bm["originalLanguage"]
-                src["translated"] = True
-                src["translatedAt"] = translation_meta_bm["translatedAt"]
-                if translation_meta_bm.get("originalTitle"):
-                    src["originalTitle"] = translation_meta_bm["originalTitle"]
-                recipe["_source"] = src
+                _stamp_translation_provenance(recipe, translation_meta_bm)
+
+            # Every extract carries equipment (fast lane emits none). See _ensure_equipment.
+            _ensure_equipment(recipe, path_used=path_used)
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
-        _attach_chapter(recipe, usage_log=usage_log)
-        _attach_moz_scoring(recipe, url_norm)
-        _attach_identity_card(recipe, usage_log=usage_log)
+        _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log)
         recipe["id"] = new_recipe_id
         # Journal LLM token usage before returning.
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
@@ -7628,17 +7666,16 @@ def extract_recipe_from_url(
         # would. _SOURCE_STATIC_SUBKEYS in recipe_model.py whitelists
         # these four keys for claim/cache survival.
         if recipe is not None and translation_meta:
-            src = recipe.get("_source") or {}
-            src["originalLanguage"] = translation_meta["originalLanguage"]
-            src["translated"] = True
-            src["translatedAt"] = translation_meta["translatedAt"]
-            if translation_meta.get("originalTitle"):
-                src["originalTitle"] = translation_meta["originalTitle"]
-            recipe["_source"] = src
+            _stamp_translation_provenance(recipe, translation_meta)
 
     if recipe is None:
         _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
         raise RuntimeError("Failed to extract recipe from URL")
+
+    # Every extract carries equipment — the JSON-LD fast lane emits none and the
+    # enrich() do_equipment step is off on the legacy path. Runs in the enrichment
+    # tail (before cache write) so a derived list is cached + self-heals old rows.
+    _ensure_equipment(recipe, path_used=path_used)
 
     # === Enrichment tail — runs BEFORE the cache write so its expensive,
     # URL-static outputs (chapter, cooped preview image, identity card,
