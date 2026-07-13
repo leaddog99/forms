@@ -5634,6 +5634,30 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
 # enrich/equipment.py::derive_equipment (used by the extract path + the batch backfill).
 
 
+@app.get("/recipes/{recipe_id}/equipment-products")
+def equipment_products_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
+    """Map each of the recipe's `equipment` items to a Williams-Sonoma product category
+    (the `product_class`) via the `ws_categories` embeddings — the commerce bridge from a
+    recipe's tools to purchasable products. Cosine over ~186 WS categories (built by
+    scripts/build_ws_taxonomy.py); returns per-item best category + score + sample products.
+    See intake/products/equipment_match + docs/equipment-product-linking.md."""
+    table = _recipes_table_for(user_id)
+    with _db() as conn:
+        row = conn.execute(
+            f"SELECT data FROM {table} WHERE recipe_id = ? AND user_id = ?",
+            (recipe_id, user_id)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Recipe not found.")
+        recipe = json.loads(row[0])
+        try:
+            from intake.products.equipment_match import match_recipe_equipment
+            matches = match_recipe_equipment(recipe, conn)
+        except Exception as e:
+            print(f"[ERROR] /recipes/{recipe_id}/equipment-products: {e}")
+            raise HTTPException(status_code=503, detail="Equipment matching is unavailable right now.")
+    return {"recipe_id": recipe_id, "count": len(matches), "equipment_matches": matches}
+
+
 def _inject_dish_competitiveness(recipe: dict) -> None:
     """Stamp the dish's LIVE (nightly-rolled-up) in-chapter competitiveness onto
     _scoring transiently, just before enrich, so the editorial commentary
