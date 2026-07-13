@@ -5432,12 +5432,24 @@ async def _handle_domain_scoring_job(job: dict) -> dict:
 jobs_lib.register_handler("domain_scoring", _handle_domain_scoring_job)
 
 
+def _size_face(size):
+    """Coerce a size value to a plain display string. `_cook` equipment sizes are
+    measurement DICTS ({imperial, metric, convertible}); the top-level `equipment.size`
+    (Tool.size: Optional[str]) MUST be a string, else a raw dict leaks into the recipe
+    and serializes as "{'imperial': …}". Prefer the imperial face (source of truth)."""
+    if isinstance(size, dict):
+        return (str(size.get("imperial") or size.get("metric") or "")).strip() or None
+    if isinstance(size, str):
+        return size.strip() or None
+    return None
+
+
 def _recipe_equipment_from_cook(cook_equipment) -> list:
     """Mirror the cook-rework's inferred tools (`_cook.equipment`: id/name/size) into
     the recipe's top-level schema `equipment` (HowToTool). Makes the tools REAL recipe
     data — the recipe editor shows them AND the product-commerce match keys off them
     (equipment -> product_class; `size` is the class grain, e.g. "Saucepans (2 qt)").
-    Carries `size` when present. Deduped by name (first wins), order preserved."""
+    Carries `size` (coerced to the imperial-face STRING) when present. Deduped by name."""
     out, seen = [], set()
     for e in (cook_equipment or []):
         name = ((e.get("name") if isinstance(e, dict) else getattr(e, "name", None)) or "").strip()
@@ -5445,7 +5457,7 @@ def _recipe_equipment_from_cook(cook_equipment) -> list:
             continue
         seen.add(name.lower())
         item = {"@type": "HowToTool", "name": name}
-        size = e.get("size") if isinstance(e, dict) else getattr(e, "size", None)
+        size = _size_face(e.get("size") if isinstance(e, dict) else getattr(e, "size", None))
         if size:
             item["size"] = size
         out.append(item)

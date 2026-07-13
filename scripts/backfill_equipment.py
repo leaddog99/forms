@@ -58,9 +58,20 @@ def _rows(conn, table, start_after):
     return conn.execute(q, (start_after,)).fetchall()
 
 
+def _size_face(size):
+    """Coerce a size to a display string. `_cook` sizes are measurement DICTS
+    ({imperial,metric,convertible}); equipment.size must be a STRING (prefer imperial)."""
+    if isinstance(size, dict):
+        return (str(size.get("imperial") or size.get("metric") or "")).strip() or None
+    if isinstance(size, str):
+        return size.strip() or None
+    return None
+
+
 def _mirror_from_cook(cook_equipment):
     """Mirror `_cook.equipment` (id/name/size) into top-level HowToTool shape — same as
-    save_recipe_api._recipe_equipment_from_cook. Dedup by name, order preserved, carries size."""
+    save_recipe_api._recipe_equipment_from_cook. Dedup by name, order preserved; size
+    coerced to the imperial-face string (never a raw measurement dict)."""
     out, seen = [], set()
     for e in (cook_equipment or []):
         name = ((e.get("name") if isinstance(e, dict) else None) or "").strip()
@@ -68,7 +79,7 @@ def _mirror_from_cook(cook_equipment):
             continue
         seen.add(name.lower())
         item = {"@type": "HowToTool", "name": name}
-        size = e.get("size") if isinstance(e, dict) else None
+        size = _size_face(e.get("size") if isinstance(e, dict) else None)
         if size:
             item["size"] = size
         out.append(item)

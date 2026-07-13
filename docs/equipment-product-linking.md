@@ -45,23 +45,56 @@ exist yet.
 
 The **cross-reference** is A→B (alias resolution) and B→`product_class`→C.
 
-## 3. Anchor `product_class` to the Google Product Taxonomy (GPC)
+## 3. Anchor the taxonomy — two candidates, and why we want BOTH
 
-Rather than invent a taxonomy, adopt **Google Product Category** — the ~6,000-node public taxonomy
-that Google Shopping / Merchant Center / affiliate feeds already use. It has exactly our leaves under
-**Home & Garden > Kitchen & Dining**:
+### 3a. Google Product Taxonomy (GPC) — the compliance spine
+The ~6,000-node public taxonomy Google Shopping / Merchant Center / affiliate feeds use. Kitchen
+leaves live under **Home & Garden > Kitchen & Dining** (Kitchen Tools & Utensils 668, Cookware &
+Bakeware +4424, Kitchen Appliances, Tableware 672). Free downloadable single file. **Strength:** it's
+what retailer feeds are tagged with → zero-glue join to purchasable SKUs. **Weakness:** it's a *single
+functional tree* and its kitchen leaves are sparse/odd (Cookie Presses, Sink Mats & Grids, Carving
+Forks) — a poor vocabulary for naming everyday tools.
 
-- **Kitchen Tools & Utensils (668)** — Slotted Spoons, Flour Sifters, Kitchen Shears, Ricers,
-  Carving Forks, Whisks, Graters, Spatulas, Colanders, Cutting Boards, Mixing Bowls, …
-- **Cookware & Bakeware** (+ Cookware Accessories 4424) — pans, pots, skillets, saucepans,
-  Dutch ovens, baking dishes, sheet pans, loaf/cake pans.
-- **Kitchen Appliances** — stand mixers, food processors, blenders, deep fryers.
-- **Tableware (672)** — plates, bowls-as-serving, cups.
+### 3b. Williams-Sonoma — the RICHER, sales-oriented taxonomy (browsed live 2026-07-12)
+WS's taxonomy is **multi-faceted** (not one tree) and merchandising-built — and its functional leaves
+fit real kitchen equipment far better than GPC. Every top category is sliced by **type · material ·
+brand · use-case · deal**:
 
-Why GPC: (a) it's free + downloadable as one text file (`taxonomy-with-ids.en-US.txt`, ~6k lines);
-(b) affiliate/retailer feeds are already tagged with it, so **canonical tool → GPC → products** is
-the natural, zero-glue bridge to the catalog; (c) it's a stable external standard, not code-owned
-data ([[feedback_no_data_in_code]]). `size` stays the intra-class grain ("Saucepans (2 qt)").
+**Cookware** — *type:* Fry Pans & Skillets · Dutch Ovens & Braisers · Saucepans & Sauciers ·
+Stockpots & Multipots · Sauté Pans · Casseroles & Baking Dishes · Roasting Pans · Grill Pans ·
+Woks · Tea Kettles. *material:* Stainless-Steel · Nonstick · Ceramic Nonstick · Enameled/Seasoned
+Cast Iron · Copper · Carbon Steel · Induction. *brand:* All-Clad · Le Creuset · Staub · Made In · … .
+
+**Cook's Tools** — *Cooking:* Spatulas & Turners · Spoons, Ladles & Whisks · Tongs & Forks · Salt &
+Pepper Mills. *Prep:* Measuring Cups & Spoons · **Mixing Bowls** · **Cutting Boards** · **Colanders &
+Salad Spinners** · Peelers & Choppers · **Graters & Zesters** · Mandolines & Spiralizers · **Mortars
+& Pestles** · Food Mills & Ricers · Shears & Herb Tools. *Gadgets:* Thermometers & Timers · Kitchen
+Scales · Can Openers. *use-case:* Pizza · Pasta · Grill · Baking & Pastry · Meat & Seafood · Egg
+Tools. *brand:* Microplane · OXO · Peugeot · … .
+
+**Bakeware** — Sheet Pans & Cookie Sheets · Cake & Bundt Pans · **Bread & Loaf Pans** · Cupcake &
+Muffin Pans · Pie Dishes & Tart Pans · Ramekins; *tools:* Rolling Pins · Cooling Racks · Pizza Stones.
+**Cutlery** — chef/paring/bread/santoku/carving knives, shears, honing. **Electrics** — stand mixers,
+food processors, blenders, toasters.
+
+Our top equipment maps ~1:1 onto WS leaves (vs a stretch on GPC):
+`whisk → Spoons, Ladles & Whisks` · `box grater → Graters & Zesters` · `large bowl → Mixing Bowls` ·
+`cutting board → Cutting Boards` · `colander → Colanders & Salad Spinners` · `loaf tin/pan → Bread &
+Loaf Pans` · `saucepan → Saucepans & Sauciers` · `dutch oven → Dutch Ovens & Braisers` · `baking
+sheet → Sheet Pans & Cookie Sheets`.
+
+### 3c. Recommendation — WS functional tree as the canonical spine + facets for selling; GPC as the compliance bridge
+- **`canonical_tools.product_class`** = the WS *functional* leaf (it's the cleaner kitchen vocabulary).
+- **Carry facets** on the canonical tool / product for **sales-oriented** recommendation — the whole
+  reason WS's taxonomy is richer: `material` (cast iron / nonstick / stainless), `use_case`
+  (pizza / pasta / grill), `price_tier`, `brand`. A recipe that needs a Dutch oven can then surface
+  "Le Creuset 5.5 qt (premium)" vs a value pick — merchandising, not just classification.
+- **Keep a GPC id** as a secondary mapping so we can still join to any affiliate feed tagged with GPC.
+- `size` stays the intra-class grain ("Saucepans (2 qt)"). All of it is table data, not code
+  ([[feedback_no_data_in_code]]).
+
+So: **GPC = the plumbing to reach products; WS = the shape that sells them.** The canonical dictionary
+carries both a WS functional class and a GPC id, plus the sales facets.
 
 ## 4. The cross-reference tables
 
@@ -73,12 +106,18 @@ CREATE TABLE canonical_tools (
     id            INTEGER PRIMARY KEY,
     name          TEXT NOT NULL,          -- canonical label, e.g. "loaf pan" (most-frequent variant)
     head_noun     TEXT,                   -- "pan" — the blocking key
-    gpc_id        INTEGER,                -- Google Product Category leaf id  <- the product_class
-    gpc_path      TEXT,                   -- "Home & Garden > Kitchen & Dining > … > Bakeware"
+    ws_class      TEXT,                   -- Williams-Sonoma functional leaf  <- the product_class spine
+                                          --   e.g. "Bakeware > Bread & Loaf Pans"
+    gpc_id        INTEGER,                -- Google Product Category leaf id (compliance bridge to feeds)
+    -- sales facets (WS is faceted; these drive merchandising, not just classification):
+    default_material TEXT,                -- typical material when the recipe implies one (cast iron…)
+    use_case      TEXT,                   -- pizza | pasta | grill | baking | … (NULL = general)
+    is_appliance  INTEGER DEFAULT 0,
     description   TEXT,                   -- one line, powers embedding + disambiguation
-    embedding     BLOB,                   -- for matching NEW mentions at ingest (sqlite-vec)
-    is_appliance  INTEGER DEFAULT 0
+    embedding     BLOB                    -- for matching NEW mentions at ingest (sqlite-vec)
 );
+-- (product-level facets — brand, price_tier, material, exact size — live on the catalog
+--  `products` rows, filtered at recommend time; canonical_tools carries only the class + defaults.)
 
 -- A→B: THE cross-reference. Every raw mention we've seen → its canonical tool.
 CREATE TABLE tool_aliases (
@@ -143,4 +182,5 @@ the LLM GPC-mapping is ~$1; the only real labor is reviewing ~200 canonical rows
 ## 7. Sources
 
 - Google Product Taxonomy — [Kitchen & Dining (638) / Kitchen Tools & Utensils (668)](https://productcategory.net/finder/home-and-garden/kitchen-and-dining/kitchen-tools-and-utensils/); full downloadable list `taxonomy-with-ids.en-US.txt` (~6k categories).
+- Williams-Sonoma taxonomy — browsed live via the site nav 2026-07-12 (server fetch is bot-blocked; read through Chrome): [Cookware](https://www.williams-sonoma.com/shop/cookware/), [Cook's Tools](https://www.williams-sonoma.com/shop/cooks-tools/), [Bakeware](https://www.williams-sonoma.com/shop/bakeware/). Multi-faceted (type · material · brand · use-case · deal); functional leaves fit kitchen equipment ~1:1.
 - Entity resolution / canonicalization — [The Rise of Semantic Entity Resolution (Towards Data Science)](https://towardsdatascience.com/the-rise-of-semantic-entity-resolution/); [Entity Resolution: Top Techniques (Spot Intelligence)](https://spotintelligence.com/2024/01/22/entity-resolution/) — block → embed → agglomerative-merge (cosine ≥0.93) → most-frequent-name canonical → LLM for hard matches.
