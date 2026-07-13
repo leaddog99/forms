@@ -5658,6 +5658,46 @@ def equipment_products_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
     return {"recipe_id": recipe_id, "count": len(matches), "equipment_matches": matches}
 
 
+@app.get("/ws-categories")
+def list_ws_categories_endpoint():
+    """The Williams-Sonoma product taxonomy (ws_categories) for the admin viewer — WS's own
+    headline/subcategory hierarchy + description + sample products. Omits the embedding BLOB;
+    reports has_embedding + a product count. Built by scripts/build_ws_taxonomy.py."""
+    with _db() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT id, headline, subcategory, ws_path, url, description, products_sample, "
+                "(embedding IS NOT NULL) FROM ws_categories ORDER BY headline, subcategory"
+            ).fetchall()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"ws_categories unavailable: {e}")
+    out = []
+    for rid, hl, sub, path, url, desc, samp, has in rows:
+        prods = [p for p in (samp or "").split("; ") if p.strip()]
+        out.append({"id": rid, "headline": hl, "subcategory": sub, "ws_path": path,
+                    "url": url, "description": desc, "products": prods,
+                    "product_count": len(prods), "has_embedding": bool(has)})
+    return out
+
+
+@app.get("/ws-categories/match")
+def match_ws_categories_endpoint(q: str, k: int = 5):
+    """Test the equipment→category matcher: embed `q` (an equipment term) and return the
+    top-k WS categories by cosine. Powers the taxonomy viewer's 'Test a term' box so you
+    can see exactly what a recipe's tool would match to."""
+    q = (q or "").strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="q is required.")
+    with _db() as conn:
+        try:
+            from intake.products.equipment_match import match_equipment_name
+            res = match_equipment_name(q, conn, k=max(1, min(int(k), 10)))
+        except Exception as e:
+            print(f"[ERROR] /ws-categories/match: {e}")
+            raise HTTPException(status_code=503, detail="Matching is unavailable right now.")
+    return {"query": q, "matches": res}
+
+
 def _inject_dish_competitiveness(recipe: dict) -> None:
     """Stamp the dish's LIVE (nightly-rolled-up) in-chapter competitiveness onto
     _scoring transiently, just before enrich, so the editorial commentary

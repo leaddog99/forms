@@ -422,6 +422,7 @@
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
+    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', group: 'admin' },
     { page: 'users',     label: 'Users',     href: '/forms/users.html', group: 'admin' },
     // `action` items run JS instead of navigating (see initNav wiring).
     { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', group: 'admin' },

@@ -2091,8 +2091,14 @@
              every recipe; edit inline here. The old manual "✨ Derive" button was
              removed once extraction populates equipment automatically. -->
         <section class="form-section">
-          <h3>Equipment</h3>
+          <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Equipment
+            <button type="button" class="derive-btn" onclick="shopEquipment(this)"
+              title="Match each tool to a Williams-Sonoma product category and show shoppable picks"
+              style="font-size:.72rem;font-weight:600;padding:4px 11px;border:1px solid var(--border,#e2dbd0);border-radius:999px;background:var(--accent-soft,#f4ece6);color:var(--accent,#b8602a);cursor:pointer">🛒 Shop the tools</button>
+          </h3>
           <ul class="ingredient-list" id="equipmentList"></ul>
+          <!-- Equipment -> WS product_class matches (GET /recipes/{id}/equipment-products). -->
+          <div id="equipmentShop" style="margin-top:10px"></div>
         </section>
 
         <!-- Source Info -->
@@ -5284,6 +5290,46 @@
       } finally {
         btn.textContent = label; delete btn.dataset.busy;
         btn.disabled = false; input.disabled = false; input.focus();
+      }
+    }
+
+    // 🛒 Shop the tools — match each equipment item to a Williams-Sonoma product category
+    // (GET /recipes/{id}/equipment-products; the ws_categories embeddings) and show the
+    // matched class + a few real product picks. Needs the recipe SAVED (matches by id).
+    async function shopEquipment(btn) {
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      const rid = (document.getElementById('recipe_id')?.value || '').trim();
+      const uid = parseInt((document.getElementById('user_id')?.value || '1'), 10);
+      const user_id = Number.isNaN(uid) ? 1 : uid;
+      const out = document.getElementById('equipmentShop');
+      const label = btn.textContent;
+      if (!rid) { btn.textContent = '🛒 Save the recipe first'; setTimeout(() => btn.textContent = label, 2500); return; }
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = '1'; btn.disabled = true; btn.textContent = '⏳ Matching…'; out.innerHTML = '';
+      try {
+        const r = await fetch(`/recipes/${encodeURIComponent(rid)}/equipment-products?user_id=${user_id}`);
+        if (!r.ok) throw new Error('match ' + r.status);
+        const d = await r.json();
+        const rows = (d.equipment_matches || []).filter(m => m.matched);
+        if (!rows.length) {
+          out.innerHTML = '<div style="font-size:.82rem;color:var(--muted,#8a7f72)">No confident product matches yet.</div>';
+        } else {
+          out.innerHTML = rows.map(m => {
+            const samp = m.products_sample ? m.products_sample.split('; ').slice(0, 3).join(' · ') : '';
+            return `<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border-soft,#efe9e1)">`
+              + `<span style="flex:0 0 42%;font-weight:600">${_esc(m.equipment)}${m.size ? ` <span style="font-weight:400;color:var(--muted,#8a7f72)">(${_esc(m.size)})</span>` : ''}</span>`
+              + `<span style="flex:1">→ <strong>${_esc(m.ws_path)}</strong>`
+              + (samp ? `<div style="font-size:.78rem;color:var(--muted,#8a7f72);margin-top:2px">${_esc(samp)}</div>` : '')
+              + `</span></div>`;
+          }).join('');
+        }
+        btn.textContent = `✓ ${rows.length} matched`;
+      } catch (e) {
+        console.warn('[shop-equipment]', e);
+        btn.textContent = '⚠ Try again';
+      } finally {
+        setTimeout(() => btn.textContent = label, 2500);
+        btn.disabled = false; delete btn.dataset.busy;
       }
     }
 

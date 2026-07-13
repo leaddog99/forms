@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Product Taxonomy</title>
+  <!-- Williams-Sonoma product taxonomy viewer on the shared master/detail editor shell
+       (cloned from domains.html per memory/feedback_editor_template_not_runtime + the
+       editor-shell). READ-ONLY: shows the ws_categories table (WS's own headline >
+       subcategory hierarchy + description + sample products + embedding status) built by
+       scripts/build_ws_taxonomy.py, plus a live "test a term" box that runs the same
+       equipment->category matcher recipes use (/ws-categories/match). -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    .wt-group { padding: 9px 14px 4px; font-size: .72rem; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--ed-ink-soft); font-weight: 700;
+      background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+    .wt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .wt-chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+      padding: 3px 10px; font-size: .82em; color: var(--ink); }
+    .wt-desc { line-height: 1.5; color: var(--ink); }
+    /* Test-a-term panel */
+    .wt-tester { border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+      padding: 14px 16px; margin-bottom: 6px; }
+    .wt-tester h3 { margin: 0 0 4px; }
+    .wt-test-row { display: flex; gap: 8px; margin: 10px 0 4px; }
+    .wt-test-row input { flex: 1 1 auto; min-width: 0; }
+    .wt-hits { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+    .wt-hit { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center;
+      padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); cursor: pointer; }
+    .wt-hit.top { border-color: var(--accent); background: var(--accent-soft, #f4ece6); }
+    .wt-hit-path { font-weight: 600; }
+    .wt-hit-score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent-dark); }
+    .wt-bar { grid-column: 1 / -1; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+    .wt-bar > i { display: block; height: 100%; background: var(--accent); }
+    .wt-hit-samp { grid-column: 1 / -1; font-size: .8em; color: var(--ed-ink-soft); }
+    .wt-hit.below { opacity: .6; }
+    .wt-pillrow { display: flex; flex-wrap: wrap; gap: 6px; }
+    .muted { color: var(--ed-ink-soft); }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Taxonomy <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search" aria-label="Search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search categories…">
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260709a"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'ws-taxonomy' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Taxonomy', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, flash } = LibraryShell;
+
+    let cats = [];          // rows from /ws-categories
+    let byId = {};
+    let selected = null;    // id, or null (=> tester)
+    let term = '';
+
+    async function load(){
+      try {
+        const r = await fetch('/ws-categories');
+        cats = await r.json();
+        byId = {}; cats.forEach(c => byId[c.id] = c);
+        renderList(); renderDetail();
+      } catch (e){
+        $('#list').innerHTML = `<li class="ed-empty">Failed to load: ${escapeHtml(e.message||e)}</li>`;
+      }
+    }
+
+    /* ---------------- list (grouped by headline) ---------------- */
+    function renderList(){
+      const t = term.toLowerCase();
+      const rows = cats.filter(c => !t
+        || c.subcategory.toLowerCase().includes(t)
+        || c.headline.toLowerCase().includes(t)
+        || (c.description||'').toLowerCase().includes(t)
+        || (c.products||[]).some(p => p.toLowerCase().includes(t)));
+      $('#count').textContent = `(${rows.length})`;
+      const ul = $('#list'); ul.innerHTML = '';
+      if (!rows.length){ ul.innerHTML = '<li class="ed-empty">No matches</li>'; return; }
+      // group by headline, preserve first-seen order
+      const groups = new Map();
+      for (const c of rows){ if (!groups.has(c.headline)) groups.set(c.headline, []); groups.get(c.headline).push(c); }
+      for (const [hl, items] of groups){
+        const h = document.createElement('li');
+        h.className = 'wt-group'; h.textContent = `${hl} (${items.length})`;
+        ul.appendChild(h);
+        for (const c of items){
+          const li = document.createElement('li');
+          li.className = 'ed-item' + (c.id === selected ? ' selected' : '');
+          const badges = [];
+          if (c.product_count) badges.push(`${c.product_count} products`);
+          badges.push(c.has_embedding ? '✓ embedded' : '⚠ no vector');
+          li.innerHTML =
+            `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(c.subcategory)}</span></div>` +
+            `<div class="ed-item-meta">${escapeHtml(badges.join(' · '))}</div>`;
+          li.addEventListener('click', () => { selected = c.id; renderList(); renderDetail(); nav.afterSelect(); });
+          ul.appendChild(li);
+        }
+      }
+    }
+
+    /* ---------------- detail ---------------- */
+    function renderDetail(){
+      const panel = $('#page');
+      if (selected == null || !byId[selected]) return renderTester();
+      const c = byId[selected];
+      const chips = (c.products||[]).map(p => `<span class="wt-chip">${escapeHtml(p)}</span>`).join('');
+      panel.innerHTML = `
+        <div class="ed-kicker">
+          <button type="button" class="ed-purpose-toggle" id="backToTest">← Test a term</button>
+        </div>
+        <h1 class="ed-title">${escapeHtml(c.subcategory)}</h1>
+        <div class="ed-status-strip">
+          <span class="ed-pill"><i class="d"></i>${escapeHtml(c.headline)}</span>
+          <span class="ed-pill"><i class="d"></i>${c.product_count} sample products</span>
+          <span class="ed-pill${c.has_embedding?'':' warn'}"><i class="d"></i>${c.has_embedding?'✓ embedded':'⚠ no vector'}</span>
+        </div>
+        <p class="ed-submeta">${escapeHtml(c.ws_path)}${c.url ? ` · <a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">Open on Williams-Sonoma ↗</a>` : ''}</p>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Category description (embedding source)</h3>
+          <p class="wt-desc">${c.description ? escapeHtml(c.description) : '<span class="muted">— none —</span>'}</p>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Sample products ${c.product_count ? `(${c.product_count})` : ''}</h3>
+          ${chips ? `<div class="wt-chips">${chips}</div>` : '<p class="muted">No product samples yet (v2 browser pass covers the core equipment categories).</p>'}
+        </section>`;
+      $('#backToTest')?.addEventListener('click', () => { selected = null; renderList(); renderDetail(); });
+    }
+
+    /* ---------------- test-a-term (the equipment->category matcher) ---------------- */
+    function renderTester(){
+      const panel = $('#page');
+      panel.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Williams-Sonoma product taxonomy · ${cats.length} categories</span></div>
+        <div class="wt-tester">
+          <h3>Test a term</h3>
+          <p class="muted" style="margin:0">Type a recipe's equipment (e.g. <em>box grater</em>, <em>9x5 loaf pan</em>, <em>dutch oven</em>) — this runs the same embedding matcher recipes use and shows the top categories it lands on.</p>
+          <div class="wt-test-row">
+            <input type="text" id="q" placeholder="box grater" autocomplete="off">
+            <button type="button" class="ed-btn" id="go">Match</button>
+          </div>
+          <div class="wt-hits" id="hits"></div>
+        </div>
+        <p class="muted" style="margin-top:14px">Pick a category from the list (☰) to see its description, sample products, and embedding status.</p>`;
+      const run = () => testMatch();
+      $('#go').addEventListener('click', run);
+      $('#q').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); run(); } });
+      $('#q').focus();
+    }
+
+    async function testMatch(){
+      const q = $('#q').value.trim();
+      const box = $('#hits');
+      if (!q){ box.innerHTML = ''; return; }
+      box.innerHTML = '<p class="muted">Matching…</p>';
+      try {
+        const r = await fetch(`/ws-categories/match?q=${encodeURIComponent(q)}&k=5`);
+        if (!r.ok) throw new Error('match ' + r.status);
+        const d = await r.json();
+        const hits = d.matches || [];
+        if (!hits.length){ box.innerHTML = '<p class="muted">No categories.</p>'; return; }
+        box.innerHTML = hits.map((m, i) => {
+          const pct = Math.max(0, Math.min(100, Math.round(m.score * 100)));
+          const samp = m.products_sample ? `<div class="wt-hit-samp">${escapeHtml(m.products_sample.split('; ').slice(0,4).join(' · '))}</div>` : '';
+          return `<div class="wt-hit${i===0?' top':''}${m.matched?'':' below'}" data-id="${m.ws_category_id}">
+            <span class="wt-hit-path">${escapeHtml(m.ws_path)}</span>
+            <span class="wt-hit-score">${m.score.toFixed(3)}${m.matched?'':' ·below'}</span>
+            <div class="wt-bar"><i style="width:${pct}%"></i></div>
+            ${samp}
+          </div>`;
+        }).join('');
+        box.querySelectorAll('.wt-hit').forEach(el => el.addEventListener('click', () => {
+          const id = parseInt(el.getAttribute('data-id'), 10);
+          if (byId[id]){ selected = id; renderList(); renderDetail(); nav.afterSelect(); }
+        }));
+      } catch (e){
+        box.innerHTML = `<p class="muted">Match failed: ${escapeHtml(e.message||e)}</p>`;
+      }
+    }
+
+    /* ---------------- controls ---------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls'); c.hidden = !c.hidden; if (!c.hidden) $('#search').focus();
+    });
+    $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
+
+    load();
+  </script>
+</body>
+</html>
