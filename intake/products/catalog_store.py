@@ -183,6 +183,138 @@ def list_catalog(conn: sqlite3.Connection) -> dict:
 
 
 # ============================================================================
+#  Admin ACDV surface — flat list + single-product get / in-place update / delete
+#  for forms/products.html (the product analog of domains.html). Distinct from
+#  list_catalog (the category->class->product tree the demo viewer used) and from
+#  the match-or-create save path below (which is the extraction workflow).
+# ============================================================================
+
+def list_products(conn: sqlite3.Connection) -> list:
+    """Flat admin roster of every product (for the editor sidebar), grouped/sorted
+    category -> class -> best-tier -> name. Lightweight per row (no embedding blob)."""
+    ensure_product_tables(conn)
+    out = []
+    for pid, pc, cat, brand, name, data, rank in conn.execute(
+            "SELECT product_id, product_class, category, brand, name, data, rank_score FROM products"):
+        try:
+            d = json.loads(data) or {}
+        except Exception:
+            d = {}
+        verds = d.get("verdicts") or []
+        out.append({
+            "product_id": pid, "product_class": pc or "", "category": cat or "",
+            "brand": brand or "", "name": name or "", "rank_score": rank,
+            "tier": (verds[0].get("tier") if verds else "") or "",
+            "bcc_pick": d.get("bcc_pick") or "",
+            "has_image": bool(d.get("image_url")),
+            "offers": len(d.get("retailer_offers") or []),
+        })
+    out.sort(key=lambda p: (p["category"], p["product_class"],
+                            _tier_rank({"verdicts": [{"tier": p["tier"]}]}), p["name"]))
+    return out
+
+
+def get_product(conn: sqlite3.Connection, product_id: str) -> dict | None:
+    """One product's full `data` blob (+ product_id/rank_score), or None."""
+    ensure_product_tables(conn)
+    row = conn.execute(
+        "SELECT product_id, data, rank_score FROM products WHERE product_id = ?",
+        (product_id,)).fetchone()
+    if not row:
+        return None
+    try:
+        d = json.loads(row[1]) if row[1] else {}
+    except Exception:
+        d = {}
+    d["product_id"] = row[0]
+    if d.get("rank_score") is None:
+        d["rank_score"] = row[2]
+    return d
+
+
+# Curator-editable fields (top-level string/scalar). specs / retailer_offers / verdicts
+# are handled structurally below.
+_EDITABLE_SCALAR = ("brand", "name", "product_class", "category", "image_url",
+                    "description", "bcc_pick", "bcc_blurb", "critique")
+
+
+def update_product(conn: sqlite3.Connection, product_id: str, patch: dict) -> dict | None:
+    """In-place edit of one product (curator ACDV). Merges `patch` into the stored
+    `data` blob, re-normalizes + re-embeds, and keeps the top-level columns + vec index
+    in lockstep. Returns the updated product, or None if it doesn't exist."""
+    ensure_product_tables(conn)
+    row = conn.execute("SELECT data FROM products WHERE product_id = ?", (product_id,)).fetchone()
+    if not row:
+        return None
+    d = json.loads(row[0]) if row[0] else {}
+    for f in _EDITABLE_SCALAR:
+        if f in patch:
+            d[f] = patch[f]
+    if isinstance(patch.get("specs"), dict):
+        specs = d.get("specs") or {}
+        specs.update({k: v for k, v in patch["specs"].items()})
+        d["specs"] = specs
+    if isinstance(patch.get("retailer_offers"), list):
+        d["retailer_offers"] = patch["retailer_offers"]
+    if isinstance(patch.get("verdicts"), list):
+        d["verdicts"] = patch["verdicts"]
+    if "rank_score" in patch:
+        d["rank_score"] = patch["rank_score"]
+    _normalize_product(d)   # re-canonicalize size/class if class or dims changed
+    now = _now()
+    blob = vec = None
+    if _EMBED_OK:
+        try:
+            vec = embed_text(compose_product_text(d))
+            blob = vec_to_bytes(vec)
+        except Exception:
+            blob = vec = None
+    if blob is not None:
+        conn.execute(
+            "UPDATE products SET product_class=?, category=?, brand=?, name=?, data=?, "
+            "rank_score=?, embedding=?, updated_at=? WHERE product_id=?",
+            (d.get("product_class", ""), d.get("category", ""), d.get("brand", ""),
+             d.get("name", ""), json.dumps(d), d.get("rank_score"), blob, now, product_id))
+    else:
+        conn.execute(
+            "UPDATE products SET product_class=?, category=?, brand=?, name=?, data=?, "
+            "rank_score=?, updated_at=? WHERE product_id=?",
+            (d.get("product_class", ""), d.get("category", ""), d.get("brand", ""),
+             d.get("name", ""), json.dumps(d), d.get("rank_score"), now, product_id))
+    conn.commit()
+    if vec is not None and _VEC_OK:
+        try:
+            vector_store.upsert_product_vector(
+                conn, product_id, vec,
+                product_class=(d.get("product_class") or None),
+                category=(d.get("category") or None))
+        except Exception as e:  # pragma: no cover
+            print(f"[VEC] update_product upsert failed for {product_id}: {e}")
+    d["product_id"] = product_id
+    return d
+
+
+def delete_product(conn: sqlite3.Connection, product_id: str) -> bool:
+    """Delete one product. The AFTER DELETE trigger on `products` cleans products_vec,
+    so the CALLER must have loaded sqlite-vec (enable_vec) first — same contract as the
+    recipe/dish delete paths (project_vec_delete_triggers)."""
+    ensure_product_tables(conn)
+    cur = conn.execute("DELETE FROM products WHERE product_id = ?", (product_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def distinct_classes(conn: sqlite3.Connection) -> list:
+    """[(product_class, category)] actually present in the products table — powers the
+    class/category datalists in the editor (the dictionary tables are under-populated)."""
+    ensure_product_tables(conn)
+    return [(r[0], r[1]) for r in conn.execute(
+        "SELECT product_class, category FROM products "
+        "WHERE product_class IS NOT NULL AND product_class <> '' "
+        "GROUP BY product_class, category ORDER BY category, product_class")]
+
+
+# ============================================================================
 #  Match-or-create save path — the product-first workflow (one product, many vendors).
 #  A product is the entity (our product_id); a vendor is one RetailerOffer. Re-extracting
 #  the same item from a different vendor MERGES the offer onto the existing product instead

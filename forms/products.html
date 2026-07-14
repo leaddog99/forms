@@ -1,157 +1,351 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Best Cooks Club — Product Catalog (demo)</title>
-<link rel="stylesheet" href="/forms/tokens.css">
-<link rel="stylesheet" href="/forms/components.css">
-<style>
-  body { margin: 0; background: var(--bg, #faf7f2); color: var(--ink, #2b2622);
-         font-family: Georgia, 'Times New Roman', serif; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 22px 80px; }
-  h1 { font-size: 1.7rem; margin: 0 0 2px; }
-  .sub { color: var(--ed-ink-soft, #8a7f72); font-size: .92rem; margin: 0 0 22px; }
-  .src-note { font-size: .82rem; color: var(--ed-ink-soft, #8a7f72); font-style: italic; }
-  .cat { margin: 30px 0 6px; font-size: .78rem; letter-spacing: .12em; text-transform: uppercase;
-         color: var(--ed-ink-soft, #8a7f72); border-bottom: 1px solid var(--line, #e7ddcf); padding-bottom: 6px; }
-  .class-h { margin: 18px 0 2px; font-size: 1.3rem; }
-  .guide { color: var(--ink, #2b2622); font-size: .95rem; margin: 2px 0 4px; }
-  .reviewers { font-size: .82rem; color: var(--ed-ink-soft, #8a7f72); margin: 0 0 16px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-  .card { border: 1px solid var(--line, #e7ddcf); border-radius: 12px; background: var(--card, #fff);
-          padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-  .card.top { border-color: #cbb78a; box-shadow: 0 1px 0 #efe6d2; }
-  .p-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .p-name { font-size: 1.05rem; font-weight: 600; line-height: 1.25; }
-  .p-brand { font-size: .78rem; color: var(--ed-ink-soft, #8a7f72); text-transform: uppercase; letter-spacing: .06em; }
-  .badge { flex: 0 0 auto; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-           padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
-  .bcc-pick { display: inline-block; font-size: .72rem; font-weight: 700; color: #7a4d00;
-              background: #fbeecb; border: 1px solid #e9d49a; border-radius: 999px; padding: 2px 8px; align-self: flex-start; }
-  .verdict { font-size: .9rem; font-style: italic; color: #4a4038; line-height: 1.45;
-             border-left: 3px solid var(--line, #e7ddcf); padding: 2px 0 2px 10px; }
-  .verdict .who { display: block; font-style: normal; font-size: .74rem; color: var(--ed-ink-soft, #8a7f72); margin-top: 4px; }
-  .specs { font-size: .8rem; color: #5c5348; display: flex; flex-wrap: wrap; gap: 4px 12px; }
-  .buys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-  .buy { font-size: .78rem; border: 1px solid var(--line, #e7ddcf); border-radius: 8px; padding: 4px 9px;
-         color: var(--ink, #2b2622); text-decoration: none; background: var(--bg, #faf7f2); }
-  .buy .price { color: #2e7d32; font-weight: 600; }
-  .empty { color: var(--ed-ink-soft, #8a7f72); padding: 40px 0; }
-  .warn { background: #fbeecb; border: 1px solid #e9d49a; border-radius: 8px; padding: 8px 12px; font-size: .82rem; margin-bottom: 16px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Products</title>
+  <!-- Product catalog ACDV editor on the shared master/detail editor shell (cloned from
+       ws_taxonomy.html / domains.html per memory/feedback_editor_template_not_runtime).
+       Add / Change / Delete / View the `products` table: sidebar grouped category > class >
+       product; detail pane shows specs, verdicts, offers, image + Edit/Delete; add/edit form
+       re-embeds via the backend. Endpoints: GET /products/list, GET/PUT/DELETE /products/{id},
+       POST /products (create). Replaces the old read-only demo viewer. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    .pc-group { padding: 9px 14px 4px; font-size: .72rem; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--ed-ink-soft); font-weight: 700;
+      background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+    .pc-class { padding: 5px 14px 3px 20px; font-size: .74rem; font-weight: 600;
+      color: var(--ink); background: var(--bg); }
+    .pc-tag { display: inline-block; font-size: .62rem; font-weight: 700; letter-spacing: .04em;
+      text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-left: 6px;
+      background: var(--accent-soft, #f4ece6); color: var(--accent, #b8602a); vertical-align: middle; }
+    .pc-form .ed-field { margin-bottom: 10px; }
+    .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .pc-form input, .pc-form textarea, .pc-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .pc-form textarea { min-height: 60px; resize: vertical; }
+    .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pc-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .pc-fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 12px 0; }
+    .pc-fieldset > legend { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+      font-weight: 700; color: var(--ed-ink-soft); padding: 0 6px; }
+    .pc-hero { max-width: 180px; max-height: 180px; border-radius: 10px; border: 1px solid var(--line);
+      object-fit: contain; background: var(--card); }
+    .pc-specs { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: .9rem; }
+    .pc-specs dt { color: var(--ed-ink-soft); }
+    .pc-specs dd { margin: 0; }
+    .pc-verdict { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--bg); }
+    .pc-verdict .rev { font-weight: 600; }
+    .pc-offer { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+    .pc-offer:last-child { border-bottom: 0; }
+    .pc-price { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent-dark); }
+    .muted { color: var(--ed-ink-soft); }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Product Catalog <span style="font-size:.9rem;color:var(--ed-ink-soft,#8a7f72)">— demo viewer</span></h1>
-  <p class="sub">Read-only view of the existing product/review catalog (bookmarkleted reviews → ranked products).
-     Reviewer name + verdict shown; per policy we never link out to the review — only <b>buy</b> links leave.</p>
-  <div id="root"><p class="empty">Loading…</p></div>
-</div>
-<script>
-const $ = (s, r = document) => r.querySelector(s);
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-// Tier -> badge colour. Best-to-worst.
-const TIER_STYLE = {
-  'Co-Winner':                     ['#1a4a1f', '#dff0d8'],
-  'Winner':                        ['#1a4a1f', '#dff0d8'],
-  'Highly Recommended':            ['#155e63', '#d6eff0'],
-  'Recommended':                   ['#274b8a', '#dbe6fb'],
-  'Recommended with Reservations': ['#7a5b00', '#fbeecb'],
-  'Not Recommended':               ['#7a1f1f', '#f6dede'],
-  'Discontinued':                  ['#6b6157', '#ece7de'],
-};
-const TIER_ORDER = Object.keys(TIER_STYLE);
-
-function verdict(p) { return (p.verdicts || [])[0] || {}; }
-function tierRank(p) { const t = verdict(p).tier || ''; const i = TIER_ORDER.indexOf(t); return i < 0 ? 99 : i; }
-
-function specLine(specs) {
-  if (!specs) return '';
-  const bits = [];
-  if (specs.capacity) bits.push('Capacity: ' + specs.capacity);
-  if (specs.material) bits.push(specs.material);
-  if (specs.dimensions_in) bits.push(specs.dimensions_in);
-  if (specs.dishwasher_safe) bits.push('Dishwasher: ' + specs.dishwasher_safe);
-  return bits.map(b => `<span>${esc(b)}</span>`).join('');
-}
-
-function card(p) {
-  const v = verdict(p);
-  const [fg, bg] = TIER_STYLE[v.tier] || ['#6b6157', '#ece7de'];
-  const top = tierRank(p) <= 1;   // Co-Winner / Winner
-  const offers = p.retailer_offers || [];
-  const buys = offers.map(o => {
-    const price = o.price != null ? ` · <span class="price">$${esc(o.price)}</span>` : '';
-    // Buy links only leave; if we haven't minted an affiliate link yet, show a non-link chip.
-    const label = `${esc(o.retailer || 'Buy')}${price}`;
-    return o.affiliate_url
-      ? `<a class="buy" href="${esc(o.affiliate_url)}" target="_blank" rel="noopener nofollow sponsored">${label}</a>`
-      : `<span class="buy" title="Buy link not yet minted (buy-enrichment pass)">${label}</span>`;
-  }).join('');
-  const summary = v.summary ? `<div class="verdict">${esc(v.summary)}${v.reviewer ? `<span class="who">— ${esc(v.reviewer)}</span>` : ''}</div>` : '';
-  return `<div class="card${top ? ' top' : ''}">
-    <div class="p-top">
-      <div>
-        <div class="p-brand">${esc(p.brand || '')}</div>
-        <div class="p-name">${esc(p.name || '')}</div>
-      </div>
-      ${v.tier ? `<span class="badge" style="color:${fg};background:${bg}">${esc(v.tier)}</span>` : ''}
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
     </div>
-    ${p.bcc_pick ? `<span class="bcc-pick">★ BCC pick: ${esc(p.bcc_pick)}</span>` : ''}
-    ${p.bcc_blurb ? `<div style="font-size:.9rem">${esc(p.bcc_blurb)}</div>` : ''}
-    ${summary}
-    <div class="specs">${specLine(p.specs)}</div>
-    ${buys ? `<div class="buys">${buys}</div>` : '<div class="specs" style="color:#b0a596">no retailer offers captured</div>'}
-  </div>`;
-}
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
 
-function render(data) {
-  const root = $('#root');
-  const cats = data.categories || [];
-  const classes = data.classes || [];
-  const products = data.products || [];
-  if (!products.length) { root.innerHTML = '<p class="empty">No products in the catalog yet.</p>'; return; }
-  const byClass = {};
-  for (const p of products) (byClass[p.product_class] = byClass[p.product_class] || []).push(p);
-  const classesByCat = {};
-  for (const c of classes) (classesByCat[c.category] = classesByCat[c.category] || []).push(c);
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Products <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search" aria-label="Search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="Add a product" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search products…">
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
 
-  let html = '';
-  for (const cat of cats) {
-    html += `<div class="cat">${esc(cat)}</div>`;
-    for (const c of (classesByCat[cat] || [])) {
-      const prods = (byClass[c.name] || []).slice().sort((a, b) => tierRank(a) - tierRank(b) || (a.name || '').localeCompare(b.name || ''));
-      const srcNames = (c.sources || []).map(s => s.reviewer || s.origin || '').filter(Boolean);
-      html += `<h2 class="class-h">${esc(c.name)} <span style="font-size:.8rem;color:var(--ed-ink-soft,#8a7f72)">(${prods.length})</span></h2>`;
-      if (c.buying_guide) html += `<div class="guide">${esc(c.buying_guide)}</div>`;
-      if (srcNames.length) html += `<div class="reviewers">Reviewed by: ${srcNames.map(esc).join(' · ')}</div>`;
-      html += `<div class="grid">${prods.map(card).join('')}</div>`;
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260714a"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'products' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Products', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, flash } = LibraryShell;
+
+    const PICKS = ['', 'Best Overall', 'Best Value', 'Premium'];
+    let rows = [];          // light list rows
+    let byId = {};          // product_id -> light row
+    let full = {};          // product_id -> full data (lazy)
+    let classes = [];       // [{name, category}]
+    let categories = [];
+    let selected = null;    // product_id or null
+    let term = '';
+    let mode = 'view';      // 'view' | 'add' | 'edit'
+
+    async function load(keep){
+      try {
+        const r = await fetch('/products/list');
+        const d = await r.json();
+        rows = d.products || []; classes = d.classes || []; categories = d.categories || [];
+        byId = {}; rows.forEach(p => byId[p.product_id] = p);
+        if (keep && byId[keep]) selected = keep;
+        else if (selected && !byId[selected]) selected = null;
+        renderList(); renderDetail();
+      } catch (e){
+        $('#list').innerHTML = `<li class="ed-empty">Failed to load: ${escapeHtml(e.message||e)}</li>`;
+      }
     }
-  }
-  root.innerHTML = html;
-}
 
-// Live endpoint first (needs a server restart to exist); fall back to the static snapshot
-// so the demo renders immediately.
-(async function () {
-  let data = null;
-  try {
-    const r = await fetch('/product-catalog');
-    if (r.ok) data = await r.json();
-  } catch {}
-  if (!data) {
-    try {
-      const r = await fetch('/forms/product_catalog_demo.json');
-      if (r.ok) { data = await r.json(); $('#root').insertAdjacentHTML('beforebegin',
-        '<div class="warn">Showing a static snapshot (the live <code>/product-catalog</code> endpoint needs a server restart). Restart BCC to serve live data.</div>'); }
-    } catch {}
-  }
-  if (!data) { $('#root').innerHTML = '<p class="empty">Could not load the catalog.</p>'; return; }
-  render(data);
-})();
-</script>
+    const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort();
+    const classNames = () => uniq(classes.map(c => c.name));
+    const catNames = () => uniq(categories.concat(classes.map(c => c.category)));
+
+    /* ---------------- list (category > class > product) ---------------- */
+    function renderList(){
+      const t = term.toLowerCase();
+      const list = rows.filter(p => !t
+        || [p.name, p.brand, p.product_class, p.category, p.tier, p.bcc_pick]
+             .some(v => (v||'').toLowerCase().includes(t)));
+      $('#count').textContent = `(${list.length})`;
+      const ul = $('#list'); ul.innerHTML = '';
+      if (!list.length){ ul.innerHTML = '<li class="ed-empty">No products</li>'; return; }
+      const byCat = new Map();
+      for (const p of list){
+        const cat = p.category || '—';
+        if (!byCat.has(cat)) byCat.set(cat, new Map());
+        const clsMap = byCat.get(cat), key = p.product_class || '—';
+        if (!clsMap.has(key)) clsMap.set(key, []);
+        clsMap.get(key).push(p);
+      }
+      for (const [cat, clsMap] of byCat){
+        const n = [...clsMap.values()].reduce((a,v)=>a+v.length,0);
+        const h = document.createElement('li'); h.className = 'pc-group'; h.textContent = `${cat} (${n})`;
+        ul.appendChild(h);
+        for (const [cls, items] of clsMap){
+          if (cls !== '—'){ const s = document.createElement('li'); s.className = 'pc-class'; s.textContent = cls; ul.appendChild(s); }
+          for (const p of items){
+            const li = document.createElement('li');
+            li.className = 'ed-item' + (p.product_id === selected && mode==='view' ? ' selected' : '');
+            const pick = p.bcc_pick ? `<span class="pc-tag">${escapeHtml(p.bcc_pick)}</span>` : '';
+            const meta = [];
+            if (p.tier) meta.push(escapeHtml(p.tier));
+            meta.push(p.has_image ? '🖼' : 'no image');
+            meta.push(`${p.offers} offer${p.offers===1?'':'s'}`);
+            li.innerHTML =
+              `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(p.brand ? p.brand+' · ' : '')}${escapeHtml(p.name||'(unnamed)')}</span>${pick}</div>` +
+              `<div class="ed-item-meta">${meta.join(' · ')}</div>`;
+            li.addEventListener('click', () => { selected = p.product_id; mode='view'; renderList(); renderDetail(); nav.afterSelect(); });
+            ul.appendChild(li);
+          }
+        }
+      }
+    }
+
+    /* ---------------- detail (dispatch on mode) ---------------- */
+    async function ensureFull(id){
+      if (full[id]) return full[id];
+      const r = await fetch(`/products/${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return (full[id] = await r.json());
+    }
+
+    async function renderDetail(){
+      if (mode === 'add')  return renderForm(null);
+      if (mode === 'edit' && selected){ try { return renderForm(await ensureFull(selected)); } catch(e){ return renderIntro(e); } }
+      if (selected == null || !byId[selected]) return renderIntro();
+      let p;
+      try { p = await ensureFull(selected); }
+      catch (e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; return; }
+      const specs = p.specs || {};
+      const specRows = [['Material','material'],['Capacity','capacity'],['Dimensions','dimensions_in'],
+        ['Weight','weight'],['Model #','model_number'],['MPN','mpn'],['GTIN','gtin'],['Dishwasher','dishwasher_safe']]
+        .filter(([,k]) => specs[k]).map(([lbl,k]) => `<dt>${lbl}</dt><dd>${escapeHtml(String(specs[k]))}</dd>`).join('');
+      const verds = (p.verdicts||[]).map(v => `
+        <div class="pc-verdict"><div class="rev">${escapeHtml(v.reviewer||'')} ${v.tier?`— <strong>${escapeHtml(v.tier)}</strong>`:''}</div>
+        ${v.summary?`<div class="muted" style="margin-top:3px">${escapeHtml(v.summary)}</div>`:''}</div>`).join('');
+      const offers = (p.retailer_offers||[]).map(o => {
+        const url = o.affiliate_url || o.source_url || '';
+        const price = (o.price != null) ? `<span class="pc-price">$${Number(o.price).toFixed(2)}</span>` : '';
+        return `<div class="pc-offer"><span>${escapeHtml(o.retailer||'—')}</span>${price}
+          ${url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener">open ↗</a>`:''}</div>`;
+      }).join('');
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="backToIntro">← Catalog</button></div>
+        <h1 class="ed-title">${escapeHtml(p.name||'(unnamed)')}${p.bcc_pick?`<span class="pc-tag">${escapeHtml(p.bcc_pick)}</span>`:''}</h1>
+        <div class="ed-status-strip">
+          ${p.brand?`<span class="ed-pill"><i class="d"></i>${escapeHtml(p.brand)}</span>`:''}
+          <span class="ed-pill"><i class="d"></i>${escapeHtml(p.category||'—')}</span>
+          <span class="ed-pill"><i class="d"></i>${escapeHtml(p.product_class||'—')}</span>
+          ${(p.verdicts&&p.verdicts[0]&&p.verdicts[0].tier)?`<span class="ed-pill"><i class="d"></i>${escapeHtml(p.verdicts[0].tier)}</span>`:''}
+        </div>
+        <div style="display:flex;gap:8px;margin:6px 0 4px;align-items:center">
+          <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
+        </div>
+        ${p.image_url?`<section class="ed-block"><img class="pc-hero" src="${escapeHtml(p.image_url)}" alt="" onerror="this.style.display='none'"></section>`:''}
+        ${p.bcc_blurb?`<section class="ed-block"><h3 class="ed-block-label">BCC blurb</h3><p>${escapeHtml(p.bcc_blurb)}</p></section>`:''}
+        ${p.description?`<section class="ed-block"><h3 class="ed-block-label">Description (embedding source)</h3><p>${escapeHtml(p.description)}</p></section>`:''}
+        <section class="ed-block"><h3 class="ed-block-label">Specs</h3>${specRows?`<dl class="pc-specs">${specRows}</dl>`:'<p class="muted">— none —</p>'}</section>
+        <section class="ed-block"><h3 class="ed-block-label">Reviews</h3>${verds||'<p class="muted">— none —</p>'}</section>
+        <section class="ed-block"><h3 class="ed-block-label">Offers</h3>${offers||'<p class="muted">— none —</p>'}</section>`;
+      $('#backToIntro')?.addEventListener('click', () => { selected=null; mode='view'; renderList(); renderDetail(); });
+      $('#editBtn')?.addEventListener('click', () => { mode='edit'; renderDetail(); });
+      const del = $('#delBtn');
+      del?.addEventListener('click', async () => {
+        if (del.dataset.armed !== '1'){
+          del.dataset.armed='1'; del.textContent='Confirm delete?';
+          setTimeout(()=>{ if(del.isConnected){ del.dataset.armed=''; del.textContent='Delete'; } }, 3000); return;
+        }
+        del.disabled=true; del.textContent='Deleting…';
+        const id = selected;
+        try {
+          const r = await fetch(`/products/${encodeURIComponent(id)}`, { method:'DELETE' });
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          delete full[id]; selected=null; mode='view';
+          await load(); flash && flash('Deleted');
+        } catch(e){ del.disabled=false; del.textContent='Delete'; flash && flash('Delete failed: '+(e.message||e)); }
+      });
+    }
+
+    function renderIntro(err){
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Product catalog · ${rows.length} products · ${classes.length} classes</span></div>
+        <h1 class="ed-title">Products</h1>
+        <p class="muted">${err?('Load error: '+escapeHtml(err.message||err)):'Pick a product from the list (☰), or ＋ to add one. These are the sellable products the recipe “Shop the tools” commerce join links to.'}</p>`;
+    }
+
+    /* ---------------- add / edit form ---------------- */
+    function renderForm(existing){
+      const isEdit = !!existing;
+      const p = existing || {};
+      const s = p.specs || {};
+      const o = (p.retailer_offers && p.retailer_offers[0]) || {};
+      const dl = (id, opts) => `<datalist id="${id}">${uniq(opts).map(x=>`<option value="${escapeHtml(x)}">`).join('')}</datalist>`;
+      const pickOpts = PICKS.map(x => `<option value="${escapeHtml(x)}" ${(p.bcc_pick||'')===x?'selected':''}>${x||'— none —'}</option>`).join('');
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancelForm">← Cancel</button></div>
+        <h1 class="ed-title">${isEdit ? 'Edit product' : 'Add a product'}</h1>
+        <p class="ed-submeta">${isEdit ? 'Edits re-embed the product (affects the recipe→product match immediately).' : 'A blank product to fill in by hand. Class + Category link it into the taxonomy / recipe match.'}</p>
+        <div class="pc-form">
+          <div class="pc-row2">
+            <div class="ed-field"><label>Brand</label><input id="f_brand" value="${escapeHtml(p.brand||'')}" placeholder="USA Pan"></div>
+            <div class="ed-field"><label>Name</label><input id="f_name" value="${escapeHtml(p.name||'')}" placeholder="USA Pan 1 lb Small Loaf Pan"></div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Category</label><input id="f_cat" list="dl_cat" value="${escapeHtml(p.category||'')}" placeholder="Bakeware">${dl('dl_cat', catNames())}</div>
+            <div class="ed-field"><label>Product class</label><input id="f_class" list="dl_class" value="${escapeHtml(p.product_class||'')}" placeholder="Loaf Pans (1 lb)">${dl('dl_class', classNames())}</div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>BCC pick</label><select id="f_pick">${pickOpts}</select></div>
+            <div class="ed-field"><label>Image URL</label><input id="f_img" value="${escapeHtml(p.image_url||'')}" placeholder="https://…"></div>
+          </div>
+          <div class="ed-field"><label>BCC blurb (our voice)</label><textarea id="f_blurb" placeholder="Why we like it…">${escapeHtml(p.bcc_blurb||'')}</textarea></div>
+          <div class="ed-field"><label>Description (factual — feeds the embedding)</label><textarea id="f_desc" placeholder="Material, construction, use, sizes…">${escapeHtml(p.description||'')}</textarea></div>
+
+          <fieldset class="pc-fieldset"><legend>Specs</legend>
+            <div class="pc-row3">
+              <div class="ed-field"><label>Material</label><input id="s_material" value="${escapeHtml(s.material||'')}"></div>
+              <div class="ed-field"><label>Capacity</label><input id="s_capacity" value="${escapeHtml(s.capacity||'')}"></div>
+              <div class="ed-field"><label>Dimensions (in)</label><input id="s_dims" value="${escapeHtml(s.dimensions_in||'')}"></div>
+            </div>
+            <div class="pc-row3">
+              <div class="ed-field"><label>Weight</label><input id="s_weight" value="${escapeHtml(s.weight||'')}"></div>
+              <div class="ed-field"><label>Model #</label><input id="s_model" value="${escapeHtml(s.model_number||'')}"></div>
+              <div class="ed-field"><label>Dishwasher</label><input id="s_dish" value="${escapeHtml(s.dishwasher_safe||'')}"></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="pc-fieldset"><legend>Primary offer</legend>
+            <div class="pc-row3">
+              <div class="ed-field"><label>Retailer</label><input id="o_ret" value="${escapeHtml(o.retailer||'')}" placeholder="Williams Sonoma"></div>
+              <div class="ed-field"><label>Price ($)</label><input id="o_price" type="number" step="0.01" value="${o.price!=null?o.price:''}"></div>
+              <div class="ed-field"><label>Buy URL</label><input id="o_url" value="${escapeHtml(o.affiliate_url||o.source_url||'')}" placeholder="https://…"></div>
+            </div>
+          </fieldset>
+
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="saveForm">${isEdit ? 'Save + re-embed' : 'Add product'}</button>
+            <span class="muted" id="formStatus"></span>
+          </div>
+        </div>`;
+      $('#cancelForm').addEventListener('click', () => { mode='view'; renderDetail(); });
+      $('#saveForm').addEventListener('click', () => saveForm(isEdit ? existing : null));
+      $('#f_name').focus();
+    }
+
+    function buildOffer(existingOffers){
+      const ret = $('#o_ret').value.trim(), url = $('#o_url').value.trim();
+      const priceRaw = $('#o_price').value.trim();
+      const price = priceRaw === '' ? null : Number(priceRaw);
+      const offers = Array.isArray(existingOffers) ? existingOffers.map(x => ({...x})) : [];
+      if (!ret && !url && price == null) return offers;         // nothing to write
+      const first = { ...(offers[0]||{}) };
+      first.retailer = ret; first.price = price;
+      if (url) { if (first.source_url && !first.affiliate_url) first.affiliate_url = url; else first.affiliate_url = url; }
+      offers[0] = first;
+      return offers;
+    }
+
+    async function saveForm(existing){
+      const isEdit = !!existing;
+      const body = {
+        brand: $('#f_brand').value.trim(), name: $('#f_name').value.trim(),
+        category: $('#f_cat').value.trim(), product_class: $('#f_class').value.trim(),
+        bcc_pick: $('#f_pick').value, image_url: $('#f_img').value.trim(),
+        bcc_blurb: $('#f_blurb').value.trim(), description: $('#f_desc').value.trim(),
+        specs: {
+          material: $('#s_material').value.trim(), capacity: $('#s_capacity').value.trim(),
+          dimensions_in: $('#s_dims').value.trim(), weight: $('#s_weight').value.trim(),
+          model_number: $('#s_model').value.trim(), dishwasher_safe: $('#s_dish').value.trim(),
+        },
+        retailer_offers: buildOffer(existing ? existing.retailer_offers : []),
+      };
+      if (!body.name){ $('#formStatus').textContent = 'Name is required.'; return; }
+      const btn = $('#saveForm'); btn.disabled = true; $('#formStatus').textContent = 'Saving…';
+      try {
+        let savedId;
+        if (isEdit){
+          const r = await fetch(`/products/${encodeURIComponent(existing.product_id)}`, {
+            method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || ('HTTP '+r.status));
+          savedId = existing.product_id; full[savedId] = await r.json();
+        } else {
+          const r = await fetch('/products', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ product: body }) });
+          if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || ('HTTP '+r.status));
+          savedId = (await r.json()).product_id; delete full[savedId];
+        }
+        selected = savedId; mode='view';
+        await load(savedId);
+        flash && flash(isEdit ? 'Saved + re-embedded' : 'Product added');
+      } catch (e){
+        $('#formStatus').textContent = 'Failed: ' + (e.message||e); btn.disabled = false;
+      }
+    }
+
+    /* ---------------- controls ---------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls'); c.hidden = !c.hidden; if (!c.hidden) $('#search').focus();
+    });
+    $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
+    $('#addToggle').addEventListener('click', () => { selected=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
+
+    load();
+  </script>
 </body>
 </html>

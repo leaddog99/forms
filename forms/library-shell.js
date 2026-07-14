@@ -419,21 +419,23 @@
     { page: 'gourmet',   label: 'Gourmet',   comingSoon: true, group: 'user' },
     { page: 'install',   label: 'Bookmarklet', href: '/forms/install.html', group: 'user' },
     // --- admin group (corpus + system back-office — TBOTB side) ---
-    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
+    // Kept in alphabetical order by label. `action` items run JS instead of
+    // navigating (see initNav wiring).
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
+    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
-    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', group: 'admin' },
-    { page: 'users',     label: 'Users',     href: '/forms/users.html', group: 'admin' },
-    // `action` items run JS instead of navigating (see initNav wiring).
     { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', group: 'admin' },
     { page: 'run-jobs',  label: 'Jobs/Queued', action: 'runQueuedJobs', group: 'admin' },
     { page: 'jobs',      label: 'Jobs/Scheduled', href: '/forms/jobs_admin.html', group: 'admin' },
-    { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', group: 'admin' },
-    { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', group: 'admin' },
     { page: 'training',  label: 'Labeling', href: '/forms/training.html', group: 'admin' },
-    { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
     { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', group: 'admin' },
+    { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', group: 'admin' },
     { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', group: 'admin' },
+    { page: 'products',  label: 'Products', href: '/forms/products.html', group: 'admin' },
+    { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
+    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', group: 'admin' },
+    { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', group: 'admin' },
+    { page: 'users',     label: 'Users',     href: '/forms/users.html', group: 'admin' },
   ];
 
   // Cached one-shot role probe. Resolves to the role string ('admin',

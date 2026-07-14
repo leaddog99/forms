@@ -2629,6 +2629,59 @@ def product_catalog_endpoint():
         raise HTTPException(status_code=500, detail=f"Catalog error: {e}")
 
 
+@app.get("/products/list")
+def products_list_endpoint():
+    """Flat admin roster for the product ACDV editor (forms/products.html): every product +
+    the distinct classes/categories present (used as datalist sources for the edit form).
+    Separate from /product-catalog (the read-only category->class tree). See
+    intake/products/catalog_store.list_products."""
+    from intake.products import catalog_store
+    with _db() as conn:
+        products = catalog_store.list_products(conn)
+        classes = [{"name": n, "category": c} for n, c in catalog_store.distinct_classes(conn)]
+    categories = sorted({c["category"] for c in classes if c["category"]})
+    return {"products": products, "classes": classes, "categories": categories}
+
+
+@app.get("/products/{product_id}")
+def product_get_endpoint(product_id: str):
+    """One product's full data blob for the editor detail pane."""
+    from intake.products import catalog_store
+    with _db() as conn:
+        p = catalog_store.get_product(conn, product_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    return p
+
+
+@app.put("/products/{product_id}")
+async def product_update_endpoint(product_id: str, request: Request):
+    """Curator in-place edit of one product (merges a partial patch into the stored blob,
+    re-normalizes + re-embeds, keeps columns + vec index in lockstep)."""
+    from intake.products import catalog_store
+    patch = await request.json()
+    if not isinstance(patch, dict):
+        raise HTTPException(status_code=400, detail="patch object required")
+    with _db() as conn:
+        p = catalog_store.update_product(conn, product_id, patch)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    return p
+
+
+@app.delete("/products/{product_id}")
+def product_delete_endpoint(product_id: str):
+    """Delete one product. Loads sqlite-vec first so the AFTER DELETE trigger can clean
+    products_vec (project_vec_delete_triggers)."""
+    from intake.products import catalog_store
+    with _db() as conn:
+        _enable_vec_for_delete(conn)   # trg keeps products_vec (vec0) clean on delete
+        ok = catalog_store.delete_product(conn, product_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    return {"deleted": product_id}
+
+
 @app.get("/dishes/{name}/top-recipes")
 def list_dish_top_recipes(name: str):
     """Return the top-N recipes for this dish, DERIVED from the scoring ledger —
