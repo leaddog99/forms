@@ -5719,7 +5719,12 @@ def equipment_products_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
         recipe = json.loads(row[0])
         try:
             from intake.products.equipment_match import match_recipe_equipment
+            from intake.products.category_link import products_for_ws_category
             matches = match_recipe_equipment(recipe, conn)
+            # Attach catalog products per matched category (equipment → category → products).
+            for m in matches:
+                if m.get("matched") and m.get("ws_category_id"):
+                    m["catalog_products"] = products_for_ws_category(conn, m["ws_category_id"], limit=6)
         except Exception as e:
             print(f"[ERROR] /recipes/{recipe_id}/equipment-products: {e}")
             raise HTTPException(status_code=503, detail="Equipment matching is unavailable right now.")
@@ -5752,9 +5757,9 @@ def list_ws_categories_endpoint():
 
 @app.get("/ws-categories/match")
 def match_ws_categories_endpoint(q: str, k: int = 5):
-    """Test the equipment→category matcher: embed `q` (an equipment term) and return the
-    top-k WS categories by cosine. Powers the taxonomy viewer's 'Test a term' box so you
-    can see exactly what a recipe's tool would match to."""
+    """Test the equipment→category matcher: the LLM classification of `q` into the taxonomy
+    (the real answer, cached in tool_term_map) PLUS the embedding candidate shortlist for
+    context. Powers the taxonomy viewer's 'Test a term' box."""
     q = (q or "").strip()
     if not q:
         raise HTTPException(status_code=400, detail="q is required.")
@@ -5765,7 +5770,7 @@ def match_ws_categories_endpoint(q: str, k: int = 5):
         except Exception as e:
             print(f"[ERROR] /ws-categories/match: {e}")
             raise HTTPException(status_code=503, detail="Matching is unavailable right now.")
-    return {"query": q, "matches": res}
+    return {"query": q, **res}
 
 
 def _ws_path(headline, section, subcategory, leaf) -> str:
@@ -5793,6 +5798,18 @@ def _ws_category_row(rid, headline, section, subcategory, leaf, path, url, descr
             "leaf": leaf, "ws_path": path, "url": url, "description": description,
             "products": prods, "product_count": len(prods), "has_embedding": True,
             "source": source, "curator_added": (source == "curator")}
+
+
+def _invalidate_tool_term_cache(conn) -> None:
+    """Clear the LLM term→category cache after a taxonomy change so added/edited/deleted
+    categories (and curator leaves) are reconsidered on the next match. Best-effort."""
+    try:
+        from intake.products.equipment_match import clear_term_cache
+        n = clear_term_cache(conn)
+        if n:
+            print(f"[WS-TAXONOMY] cleared {n} cached term classifications (taxonomy changed)")
+    except Exception as e:
+        print(f"[WS-TAXONOMY] term-cache clear skipped: {e}")
 
 
 @app.post("/ws-categories")
@@ -5826,6 +5843,7 @@ def create_ws_category_endpoint(payload: dict = Body(...)):
              description or None, products or None, emb))
         conn.commit()
         rid = cur.lastrowid
+        _invalidate_tool_term_cache(conn)   # new category -> reconsider classifications
     print(f"[WS-TAXONOMY] curator added '{path}' (embedded)")
     return _ws_category_row(rid, headline, section or None, subcategory or None, leaf or None,
                             path, None, description, products, "curator")
@@ -5864,6 +5882,7 @@ def update_ws_category_endpoint(cat_id: int, payload: dict = Body(...)):
             (headline, section or None, subcategory or None, leaf or None, path,
              description or None, products or None, emb, cat_id))
         conn.commit()
+        _invalidate_tool_term_cache(conn)   # edited category -> reconsider classifications
     print(f"[WS-TAXONOMY] curator edited #{cat_id} -> '{path}' (re-embedded)")
     return _ws_category_row(cat_id, headline, section or None, subcategory or None,
                             leaf or None, path, url, description, products, source or "ws")
@@ -5881,8 +5900,38 @@ def delete_ws_category_endpoint(cat_id: int):
             raise HTTPException(status_code=404, detail="Category not found.")
         conn.execute("DELETE FROM ws_categories WHERE id = ?", (cat_id,))
         conn.commit()
+        _invalidate_tool_term_cache(conn)   # removed category -> reconsider classifications
     print(f"[WS-TAXONOMY] deleted #{cat_id} '{row[0]}' (source={row[1]})")
     return {"deleted": cat_id, "ws_path": row[0], "source": row[1] or "ws"}
+
+
+@app.post("/product-classes/relink")
+def relink_product_classes_endpoint():
+    """Auto-map every catalog product_class → its nearest ws_category by embedding (the
+    commerce join's last hop). Preserves curator (manual) mappings. See
+    intake/products/category_link + docs/equipment-product-linking.md."""
+    with _db() as conn:
+        try:
+            from intake.products.category_link import relink_product_classes
+            res = relink_product_classes(conn)
+        except Exception as e:
+            print(f"[ERROR] /product-classes/relink: {e}")
+            raise HTTPException(status_code=503, detail=f"Relink failed: {e}")
+    return res
+
+
+@app.get("/ws-categories/{cat_id}/products")
+def ws_category_products_endpoint(cat_id: int, limit: int = 12):
+    """Catalog products linked to a WS category (via product_class → ws_category map),
+    best first. Powers the recipe's 'Shop the tools' + the taxonomy viewer."""
+    with _db() as conn:
+        try:
+            from intake.products.category_link import products_for_ws_category
+            prods = products_for_ws_category(conn, cat_id, limit=max(1, min(int(limit), 50)))
+        except Exception as e:
+            print(f"[ERROR] /ws-categories/{cat_id}/products: {e}")
+            raise HTTPException(status_code=503, detail="Product lookup unavailable.")
+    return {"ws_category_id": cat_id, "count": len(prods), "products": prods}
 
 
 def _inject_dish_competitiveness(recipe: dict) -> None:

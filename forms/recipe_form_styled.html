@@ -4842,6 +4842,23 @@
     let draggedItem = null;
 
     function setupDrag(li, list, onReorder = null) {
+      // Drag ONLY from the ⋮⋮ handle. The whole row being draggable meant a click-drag
+      // to SELECT text in a field started a reorder instead ("it just slides around" —
+      // couldn't copy the equipment text). The li is draggable only while the pointer is
+      // held on the handle; released/ended it goes back to non-draggable so fields select
+      // + copy normally. One fix covers ingredients, steps, equipment, and notes.
+      li.draggable = false;
+      const handle = li.querySelector('.drag-handle');
+      if (handle) {
+        handle.style.cursor = 'grab';
+        const arm = () => { li.draggable = true; };
+        const disarm = () => { li.draggable = false; };
+        handle.addEventListener('mousedown', arm);
+        handle.addEventListener('mouseup', disarm);
+        handle.addEventListener('touchstart', arm, { passive: true });
+        handle.addEventListener('touchend', disarm);
+      }
+
       li.addEventListener('dragstart', (e) => {
         draggedItem = li;
         li.classList.add('dragging');
@@ -4850,6 +4867,7 @@
 
       li.addEventListener('dragend', () => {
         li.classList.remove('dragging');
+        li.draggable = false;   // back to selectable after a reorder
         list.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
         draggedItem = null;
         if (onReorder) onReorder();

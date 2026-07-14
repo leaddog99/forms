@@ -242,26 +242,35 @@
       try {
         const r = await fetch(`/ws-categories/match?q=${encodeURIComponent(q)}&k=5`);
         if (!r.ok) throw new Error('match ' + r.status);
-        const hits = (await r.json()).matches || [];
-        if (!hits.length){ box.innerHTML = '<p class="muted">No categories.</p>'; return; }
-        const rowsHtml = hits.map((m, i) => {
-          const pct = Math.max(0, Math.min(100, Math.round(m.score * 100)));
+        const d = await r.json();
+        const cls = d.classification || {};
+        const cands = d.candidates || [];
+        // The LLM classification — the real answer (or NONE for consumables / non-tools).
+        const banner = (cls.matched && cls.ws_path)
+          ? `<div class="wt-hit top" data-id="${cls.ws_category_id}">
+               <span class="wt-hit-path">🧠 ${escapeHtml(cls.ws_path)}</span>
+               <span class="wt-hit-score">LLM</span></div>`
+          : `<div class="wt-hit below"><span class="wt-hit-path">🧠 No category fits — ${escapeHtml(cls.reason || 'not a matchable tool')}</span><span class="wt-hit-score">NONE</span></div>`;
+        const candHtml = cands.map(m => {
+          const pct = Math.max(0, Math.min(100, Math.round((m.score||0) * 100)));
           const samp = m.products_sample ? `<div class="wt-hit-samp">${escapeHtml(m.products_sample.split('; ').slice(0,4).join(' · '))}</div>` : '';
-          return `<div class="wt-hit${i===0?' top':''}${m.matched?'':' below'}" data-id="${m.ws_category_id}">
+          return `<div class="wt-hit${m.matched?'':' below'}" data-id="${m.ws_category_id}">
             <span class="wt-hit-path">${escapeHtml(m.ws_path)}</span>
-            <span class="wt-hit-score">${m.score.toFixed(3)}${m.matched?'':' ·below'}</span>
+            <span class="wt-hit-score">${(m.score||0).toFixed(3)}</span>
             <div class="wt-bar"><i style="width:${pct}%"></i></div>${samp}
           </div>`;
         }).join('');
-        box.innerHTML = rowsHtml +
-          `<button type="button" class="ed-btn" id="addFromMiss" style="margin-top:10px">＋ Not right? Add a leaf for “${escapeHtml(q)}”</button>`;
-        box.querySelectorAll('.wt-hit').forEach(el => el.addEventListener('click', () => {
+        box.innerHTML = banner
+          + `<div class="muted" style="margin:12px 0 4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em">embedding candidates (context)</div>`
+          + candHtml
+          + `<button type="button" class="ed-btn" id="addFromMiss" style="margin-top:10px">＋ Not right? Add a leaf for “${escapeHtml(q)}”</button>`;
+        box.querySelectorAll('.wt-hit[data-id]').forEach(el => el.addEventListener('click', () => {
           const id = parseInt(el.getAttribute('data-id'), 10);
           if (byId[id]){ selected = id; mode='view'; renderList(); renderDetail(); nav.afterSelect(); }
         }));
-        // Prefill Add with the TOP hit's parent path + the tested term as the leaf.
+        // Prefill Add with the classified (or top candidate) parent path + term as the leaf.
         $('#addFromMiss')?.addEventListener('click', () => {
-          const top = byId[hits[0]?.ws_category_id] || {};
+          const top = byId[cls.ws_category_id] || byId[cands[0]?.ws_category_id] || {};
           addPrefill = { headline: top.headline || '', section: top.section || '',
                          subcategory: top.subcategory || '', leaf: q };
           selected = null; mode='add'; renderList(); renderDetail();
