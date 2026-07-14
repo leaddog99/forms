@@ -1111,3 +1111,7 @@ Couldn't copy text from the recipe master's equipment/ingredients/steps/notes �
 ### Follow-ups
 - Carried: score-only #2 live test; canonical dish display name; paywall calibration SELECTION half; `/collections/leaderboard`; `serp_batch`; sub-steps v2.1; Voice P1; cook-view failing-gate message ([[project_cookrework_error_message]]).
 - New: grow the product catalog (only 19 products) so the commerce join has depth; consider promoting `tool_term_map` hits into a canonical tool dictionary ([[project_equipment_standardization]]).
+
+
+### VERIFIED LIVE (post-restart, 2026-07-14)
+Commerce join confirmed over HTTP: GET /recipes/{recipe_id}/equipment-products keys on the UUID recipe_id + user_id (master=uid 0). Easy Banana Bread (f1e799c1…): loaf pan -> Bakeware > Bread & Loaf Pans [llm] -> 6 real products (Chicago Metallic, Cuisinart); fork -> Tongs & Forks (old embed mis-fire to Can Openers gone); toothpick -> NONE. /ws-categories/match tester: parchment paper -> Parchment & Baking Papers, aluminum foil -> Foil, Wraps & Storage Bags (both curator categories), cast iron skillet -> Fry Pans & Skillets via LLM while the embedding candidate wrongly said Outdoor Cookware (0.545) — the exact mis-fire the LLM matcher fixes. 217 categories serving. The pending-restart caveat above is cleared.
