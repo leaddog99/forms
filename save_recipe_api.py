@@ -2682,6 +2682,166 @@ def product_delete_endpoint(product_id: str):
     return {"deleted": product_id}
 
 
+# ---- Reviews ACDV editor (forms/reviews.html) -------------------------------------
+# Reviews as a first-class, curator-editable object: the AUTHORITY layer of the
+# monetization pipeline (memory/project_monetization_pipeline) — reviews SUPPORT product
+# selection (rank-within-class + trust copy), they don't drive it. A review = one reviewer's
+# roundup of one product_class; its products are DERIVED from the products table's verdicts.
+# See intake/products/review_store.
+
+@app.get("/reviews/list")
+def reviews_list_endpoint():
+    """Flat roster for the reviews editor sidebar + datalist sources (reviewers / classes /
+    categories). Registered BEFORE /reviews/{id} so the static route isn't shadowed."""
+    from intake.products import review_store, catalog_store
+    with _db() as conn:
+        reviews = review_store.list_reviews(conn)
+        reviewers = review_store.distinct_reviewers(conn)
+        classes = [{"name": n, "category": c} for n, c in catalog_store.distinct_classes(conn)]
+    categories = sorted({c["category"] for c in classes if c["category"]})
+    return {"reviews": reviews, "reviewers": reviewers, "classes": classes,
+            "categories": categories, "tiers": review_store.TIERS}
+
+
+@app.get("/reviews/{review_id}")
+def review_get_endpoint(review_id: str):
+    """One review's metadata + its derived product roster (each with this reviewer's verdict)."""
+    from intake.products import review_store
+    with _db() as conn:
+        r = review_store.get_review(conn, review_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Review not found.")
+    return r
+
+
+@app.post("/reviews")
+async def review_create_endpoint(request: Request):
+    """Create a review metadata record. Body: {review: {reviewer, product_class, ...}} (or the
+    fields flat). reviewer + product_class are required (the identity/join key)."""
+    from intake.products import review_store
+    body = await request.json()
+    patch = body.get("review") if isinstance(body, dict) and "review" in body else body
+    if not isinstance(patch, dict):
+        raise HTTPException(status_code=400, detail="review object required")
+    try:
+        with _db() as conn:
+            r = review_store.create_review(conn, patch)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return r
+
+
+@app.put("/reviews/{review_id}")
+async def review_update_endpoint(review_id: str, request: Request):
+    """Edit a review header's metadata + (optional) `product_verdicts` — a list of per-item
+    edits [{review_product_id, tier?, summary?, price_at_test?, …}] written into review_products
+    (which reproject to the linked catalog products)."""
+    from intake.products import review_store
+    patch = await request.json()
+    if not isinstance(patch, dict):
+        raise HTTPException(status_code=400, detail="patch object required")
+    with _db() as conn:
+        r = review_store.update_review(conn, review_id, patch)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Review not found.")
+    return r
+
+
+@app.delete("/reviews/{review_id}")
+def review_delete_endpoint(review_id: str):
+    """Delete a review + its review_products + provenance link, then reproject the affected
+    catalog products (empties their verdicts if nothing else links). The catalog products are
+    NOT deleted (facts are never silently dropped — memory/feedback_no_silent_removal)."""
+    from intake.products import review_store
+    with _db() as conn:
+        ok = review_store.delete_review(conn, review_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Review not found.")
+    return {"deleted": review_id}
+
+
+@app.post("/reviews/{review_id}/products")
+async def review_add_product_endpoint(review_id: str, request: Request):
+    """Add one reviewed item to a review (auto-resolves its dynamic link to a catalog product)."""
+    from intake.products import review_store
+    body = await request.json()
+    item = body.get("item") if isinstance(body, dict) and "item" in body else body
+    if not isinstance(item, dict):
+        raise HTTPException(status_code=400, detail="item object required")
+    with _db() as conn:
+        r = review_store.add_review_product(conn, review_id, item)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Review not found.")
+    return r
+
+
+@app.post("/reviews/{review_id}/resolve-links")
+def review_resolve_links_endpoint(review_id: str, force: bool = False):
+    """(Re)compute the dynamic review_product -> catalog product links for this review."""
+    from intake.products import review_store
+    with _db() as conn:
+        res = review_store.resolve_links(conn, review_id, force=force)
+        r = review_store.get_review(conn, review_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="Review not found.")
+    return {"result": res, "review": r}
+
+
+@app.delete("/review-products/{rpid}")
+def review_product_delete_endpoint(rpid: str):
+    """Delete one reviewed item; reprojects the product it was linked to."""
+    from intake.products import review_store
+    with _db() as conn:
+        ok = review_store.delete_review_product(conn, rpid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Reviewed item not found.")
+    return {"deleted": rpid}
+
+
+@app.post("/review-products/{rpid}/link")
+async def review_product_link_endpoint(rpid: str, request: Request):
+    """(Re)link one reviewed item to a catalog product. Body {product_id}: a product_id sets a
+    manual link; null/absent auto-resolves by identity."""
+    from intake.products import review_store
+    body = await request.json() if await request.body() else {}
+    product_id = body.get("product_id") if isinstance(body, dict) else None
+    with _db() as conn:
+        ok = review_store.link_review_product(conn, rpid, product_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Reviewed item or product not found.")
+    return {"linked": rpid, "product_id": product_id}
+
+
+@app.post("/extract-review")
+async def extract_review_endpoint(request: Request):
+    """Bookmarklet entry: a captured review page (markdown + url) -> decoded by its per-source
+    parser -> ingested into the review header + its review_products (idempotent), with dynamic
+    links resolved. Returns the stored review. See intake/products/review_sources.ingest_review."""
+    from intake.products import review_sources
+    body = await request.json()
+    md = (body.get("markdown") or body.get("md") or "") if isinstance(body, dict) else ""
+    url = (body.get("url") or "") if isinstance(body, dict) else ""
+    captured_at = (body.get("captured_at") or "") if isinstance(body, dict) else ""
+    if not md.strip():
+        raise HTTPException(status_code=400, detail="markdown required")
+    try:
+        with _db() as conn:
+            review = review_sources.ingest_review(conn, md, url=url, captured_at=captured_at)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NotImplementedError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return review
+
+
+@app.get("/review-sources")
+def review_sources_endpoint():
+    """Which review-source decoders exist + whether each is implemented (for the bookmarklet /
+    editor to show 'we recognize this source')."""
+    from intake.products import review_sources
+    return {"sources": review_sources.supported()}
+
+
 @app.get("/dishes/{name}/top-recipes")
 def list_dish_top_recipes(name: str):
     """Return the top-N recipes for this dish, DERIVED from the scoring ledger —
@@ -5503,8 +5663,17 @@ def _recipe_equipment_from_cook(cook_equipment) -> list:
     data — the recipe editor shows them AND the product-commerce match keys off them
     (equipment -> product_class; `size` is the class grain, e.g. "Saucepans (2 qt)").
     Carries `size` (coerced to the imperial-face STRING) when present. Deduped by name."""
+    # Guard against a stringified list (would char-explode into single-letter
+    # HowToTools, deduped — see enrich.equipment.derive_equipment for the same fix).
+    if isinstance(cook_equipment, str):
+        try:
+            cook_equipment = json.loads(cook_equipment)
+        except Exception:
+            cook_equipment = []
+    if not isinstance(cook_equipment, list):
+        cook_equipment = []
     out, seen = [], set()
-    for e in (cook_equipment or []):
+    for e in cook_equipment:
         name = ((e.get("name") if isinstance(e, dict) else getattr(e, "name", None)) or "").strip()
         if not name or name.lower() in seen:
             continue

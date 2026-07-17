@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Reviews</title>
+  <!-- Reviews ACDV editor on the shared master/detail editor shell (cloned from products.html
+       per memory/feedback_editor_template_not_runtime). TWO-TABLE model
+       (memory/project_reviews_architecture): a review header + its review_products (the SOURCE OF
+       TRUTH for verdicts), each DYNAMICALLY linked to a catalog product by identity (not
+       predetermined). Reviews are the AUTHORITY layer that SUPPORTS product picks
+       (memory/project_monetization_pipeline) — they don't select them. We can also author our OWN
+       reviews (reviewer = "Best Cooks Club", items added by hand).
+       Endpoints: GET /reviews/list, GET/POST/PUT/DELETE /reviews/{id},
+       POST /reviews/{id}/products, POST /reviews/{id}/resolve-links,
+       DELETE /review-products/{rpid}, POST /review-products/{rpid}/link. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    .pc-group { padding: 9px 14px 4px; font-size: .72rem; letter-spacing: .06em;
+      text-transform: uppercase; color: var(--ed-ink-soft); font-weight: 700;
+      background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+    .pc-form .ed-field { margin-bottom: 10px; }
+    .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .pc-form input, .pc-form textarea, .pc-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .pc-form textarea { min-height: 54px; resize: vertical; }
+    .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pc-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .rv-tier { font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+      padding: 1px 7px; border-radius: 999px; background: var(--accent-soft, #f4ece6); color: var(--accent, #b8602a); white-space: nowrap; }
+    .rv-price { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent-dark); }
+    .rv-prod { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--bg); }
+    .rv-prod .top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .rv-prod .nm { font-weight: 600; }
+    .rv-link { font-size: .74rem; margin-top: 4px; }
+    .rv-link.on  { color: var(--accent-dark, #2e7d54); }
+    .rv-link.off { color: #b23b3b; }
+    .rv-acts { display: flex; gap: 6px; margin-top: 6px; }
+    .rv-acts .ed-btn { font-size: .74rem; padding: 3px 8px; }
+    .rv-verd { display: grid; grid-template-columns: 150px 1fr 90px; gap: 8px; align-items: start; margin-top: 6px; }
+    .rv-verd label { display:block; font-size:.68rem; font-weight:600; color:var(--ed-ink-soft); margin-bottom:2px; }
+    .rv-prov { font-family: ui-monospace, monospace; font-size: .78rem; word-break: break-all; color: var(--ed-ink-soft); }
+    .muted { color: var(--ed-ink-soft); }
+    .rv-toolbar { display:flex; gap:8px; margin:6px 0 4px; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Reviews <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search" aria-label="Search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="Add a review" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search reviews…">
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260714d"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'reviews' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Reviews', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, flash } = LibraryShell;
+
+    let rows = [];          // light list rows
+    let byId = {};          // review_id -> light row
+    let full = {};          // review_id -> full data (lazy)
+    let reviewers = [];
+    let classes = [];       // [{name, category}]
+    let categories = [];
+    let tiers = [];
+    let selected = null;    // review_id or null
+    let term = '';
+    let mode = 'view';      // 'view' | 'add' | 'edit'
+    let editingItems = new Set();   // review_product_id in inline-edit
+    let addingItem = false;
+    let _deepLinkDone = false;      // consume ?review=<id> once (bookmarklet lands here)
+    let taxOpts = [];               // [{id, label}] full ws-taxonomy paths (incl. leaf)
+    let taxLabelToId = {};          // label -> ws_category_id
+    let taxById = {};               // ws_category_id -> label
+
+    async function loadTaxonomy(){
+      if (taxOpts.length) return;
+      try {
+        const d = await (await fetch('/ws-categories')).json();
+        taxOpts = (d||[]).map(c => {
+          const label = c.leaf ? `${c.ws_path} > ${c.leaf}` : (c.ws_path || c.subcategory || '');
+          return { id: c.id, label };
+        }).filter(o => o.label);
+        taxOpts.sort((a,b) => a.label.localeCompare(b.label));
+        taxLabelToId = {}; taxById = {};
+        taxOpts.forEach(o => { taxLabelToId[o.label] = o.id; taxById[o.id] = o.label; });
+      } catch(e){ /* taxonomy optional */ }
+    }
+
+    async function load(keep){
+      try {
+        await loadTaxonomy();
+        const r = await fetch('/reviews/list');
+        const d = await r.json();
+        rows = d.reviews || []; reviewers = d.reviewers || [];
+        classes = d.classes || []; categories = d.categories || []; tiers = d.tiers || [];
+        byId = {}; rows.forEach(x => byId[x.review_id] = x);
+        if (!_deepLinkDone){ _deepLinkDone = true;
+          const q = new URLSearchParams(location.search).get('review');
+          if (q && byId[q]){ selected = q; keep = q; } }
+        if (keep && byId[keep]) selected = keep;
+        else if (selected && !byId[selected]) selected = null;
+        renderList(); renderDetail();
+      } catch (e){
+        $('#list').innerHTML = `<li class="ed-empty">Failed to load: ${escapeHtml(e.message||e)}</li>`;
+      }
+    }
+    async function reloadReview(){ delete full[selected]; await load(selected); }
+
+    const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort();
+    const classNames = () => uniq(classes.map(c => c.name));
+    const catNames = () => uniq(categories.concat(classes.map(c => c.category)));
+    const tierOpts = (sel) => ['',...tiers].map(t=>`<option value="${escapeHtml(t)}" ${(sel||'')===t?'selected':''}>${t||'— none —'}</option>`).join('');
+
+    /* ---------------- list (category > review) ---------------- */
+    function renderList(){
+      const t = term.toLowerCase();
+      const list = rows.filter(x => !t
+        || [x.reviewer, x.title, x.product_class, x.category].some(v => (v||'').toLowerCase().includes(t)));
+      $('#count').textContent = `(${list.length})`;
+      const ul = $('#list'); ul.innerHTML = '';
+      if (!list.length){ ul.innerHTML = '<li class="ed-empty">No reviews</li>'; return; }
+      const byCat = new Map();
+      for (const x of list){
+        const cat = x.category || '—';
+        if (!byCat.has(cat)) byCat.set(cat, []);
+        byCat.get(cat).push(x);
+      }
+      for (const [cat, items] of byCat){
+        const h = document.createElement('li'); h.className = 'pc-group';
+        h.textContent = `${cat} (${items.length})`; ul.appendChild(h);
+        for (const x of items){
+          const li = document.createElement('li');
+          li.className = 'ed-item' + (x.review_id === selected && mode==='view' ? ' selected' : '');
+          const meta = [`${x.products} item${x.products===1?'':'s'}`];
+          if (x.products) meta.push(`${x.linked}/${x.products} linked`);
+          if (x.last_updated) meta.push('upd. ' + escapeHtml(x.last_updated));
+          li.innerHTML =
+            `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(x.reviewer||'(no reviewer)')}</span></div>` +
+            `<div class="ed-item-meta">${escapeHtml(x.title||x.product_class||'')}</div>` +
+            `<div class="ed-item-meta">${meta.join(' · ')}</div>`;
+          li.addEventListener('click', () => { selected = x.review_id; mode='view'; editingItems.clear(); addingItem=false; renderList(); renderDetail(); nav.afterSelect(); });
+          ul.appendChild(li);
+        }
+      }
+    }
+
+    /* ---------------- detail ---------------- */
+    async function ensureFull(id){
+      if (full[id]) return full[id];
+      const r = await fetch(`/reviews/${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return (full[id] = await r.json());
+    }
+
+    function itemCard(p){
+      const rpid = p.review_product_id;
+      if (editingItems.has(rpid)){
+        return `<div class="rv-prod" data-rpid="${escapeHtml(rpid)}">
+          <div class="top"><span class="nm">${escapeHtml(p.brand?p.brand+' · ':'')}${escapeHtml(p.name||'(unnamed)')}</span></div>
+          <div class="rv-verd">
+            <div><label>Tier</label><select class="e_tier">${tierOpts(p.tier)}</select></div>
+            <div><label>Verdict</label><textarea class="e_sum">${escapeHtml(p.summary||'')}</textarea></div>
+            <div><label>Price@test</label><input class="e_price" type="number" step="0.01" value="${p.price_at_test!=null?p.price_at_test:''}"></div>
+          </div>
+          <div class="rv-verd" style="grid-template-columns:1fr 1fr;margin-top:6px">
+            <div><label>Name</label><input class="e_name" value="${escapeHtml(p.name||'')}"></div>
+            <div><label>Brand</label><input class="e_brand" value="${escapeHtml(p.brand||'')}"></div>
+          </div>
+          <div class="rv-verd" style="grid-template-columns:1fr 1fr;margin-top:6px">
+            <div><label>ASIN (identity)</label><input class="e_asin" value="${escapeHtml(p.asin||'')}"></div>
+            <div><label>Source URL (identity)</label><input class="e_url" value="${escapeHtml(p.url||'')}"></div>
+          </div>
+          <div class="rv-acts"><button class="ed-btn primary it-save" data-rpid="${escapeHtml(rpid)}">Save item</button>
+            <button class="ed-btn it-cancel" data-rpid="${escapeHtml(rpid)}">Cancel</button></div>
+        </div>`;
+      }
+      const price = (p.price_at_test != null) ? `<span class="rv-price">$${Number(p.price_at_test).toFixed(2)}</span>` : '';
+      const link = p.product_id
+        ? `<div class="rv-link on">🔗 linked → ${escapeHtml(p.linked_name||p.product_id)} <span class="muted">(${escapeHtml(p.linked_by||'')})</span></div>`
+        : `<div class="rv-link off">⚠ unlinked — no catalog product matches its identity yet</div>`;
+      return `<div class="rv-prod" data-rpid="${escapeHtml(rpid)}">
+        <div class="top"><span class="nm">${escapeHtml(p.brand?p.brand+' · ':'')}${escapeHtml(p.name||'(unnamed)')}</span>
+          ${p.tier?`<span class="rv-tier">${escapeHtml(p.tier)}</span>`:''}${price}</div>
+        ${p.summary?`<div class="muted" style="margin-top:4px">${escapeHtml(p.summary)}</div>`:''}
+        ${link}
+        <div class="rv-acts">
+          <button class="ed-btn it-edit" data-rpid="${escapeHtml(rpid)}">Edit</button>
+          <button class="ed-btn it-relink" data-rpid="${escapeHtml(rpid)}">Auto-relink</button>
+          <button class="ed-btn it-del" data-rpid="${escapeHtml(rpid)}" style="color:#b23b3b">Remove</button>
+        </div>
+      </div>`;
+    }
+
+    function addItemCard(){
+      return `<div class="rv-prod" id="addItemCard">
+        <div class="rv-verd" style="grid-template-columns:1fr 1fr">
+          <div><label>Name *</label><input id="a_name" placeholder="USA Pan 1 lb Small Loaf Pan"></div>
+          <div><label>Brand</label><input id="a_brand" placeholder="USA Pan"></div>
+        </div>
+        <div class="rv-verd">
+          <div><label>Tier</label><select id="a_tier">${tierOpts('')}</select></div>
+          <div><label>Verdict</label><textarea id="a_sum" placeholder="What the reviewer concluded…"></textarea></div>
+          <div><label>Price@test</label><input id="a_price" type="number" step="0.01"></div>
+        </div>
+        <div class="rv-verd" style="grid-template-columns:1fr 1fr">
+          <div><label>ASIN (for linking)</label><input id="a_asin" placeholder="B0029JQEIC"></div>
+          <div><label>Source URL (for linking)</label><input id="a_url" placeholder="https://…"></div>
+        </div>
+        <div class="rv-acts"><button class="ed-btn primary" id="a_save">Add item</button>
+          <button class="ed-btn" id="a_cancel">Cancel</button><span class="muted" id="a_status"></span></div>
+      </div>`;
+    }
+
+    async function renderDetail(){
+      if (mode === 'add')  return renderForm(null);
+      if (mode === 'edit' && selected){ try { return renderForm(await ensureFull(selected)); } catch(e){ return renderIntro(e); } }
+      if (selected == null || !byId[selected]) return renderIntro();
+      let v;
+      try { v = await ensureFull(selected); }
+      catch (e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; return; }
+      const items = v.products||[];
+      const linked = items.filter(p => p.product_id).length;
+      const cards = items.map(itemCard).join('');
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="backToIntro">← Reviews</button></div>
+        <h1 class="ed-title">${escapeHtml(v.reviewer||'(no reviewer)')}</h1>
+        <p class="ed-submeta">${escapeHtml(v.title||'')}</p>
+        <div class="ed-status-strip">
+          <span class="ed-pill" title="WS taxonomy"><i class="d"></i>${escapeHtml(v.ws_path||v.category||'— untaxonomized —')}</span>
+          <span class="ed-pill"><i class="d"></i>${items.length} items</span>
+          <span class="ed-pill"><i class="d"></i>${linked}/${items.length} linked</span>
+          ${v.last_updated?`<span class="ed-pill"><i class="d"></i>upd. ${escapeHtml(v.last_updated)}</span>`:''}
+          ${v.rating_scale?`<span class="ed-pill"><i class="d"></i>${escapeHtml(v.rating_scale)}</span>`:''}
+        </div>
+        <div class="rv-toolbar">
+          <button type="button" class="ed-btn" id="editBtn">Edit header</button>
+          <button type="button" class="ed-btn" id="resolveBtn">Resolve links</button>
+          <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete review</button>
+        </div>
+        ${v.buying_guide?`<section class="ed-block"><h3 class="ed-block-label">Buying guide — source editorial (raw material for our summary)</h3><p style="white-space:pre-wrap">${escapeHtml(v.buying_guide)}</p></section>`:''}
+        ${(v.criteria&&v.criteria.length)?`<section class="ed-block"><h3 class="ed-block-label">What to look for</h3><ul>${v.criteria.map(cc=>`<li>${escapeHtml(cc)}</li>`).join('')}</ul></section>`:''}
+        ${v.notes?`<section class="ed-block"><h3 class="ed-block-label">Curator notes</h3><p>${escapeHtml(v.notes)}</p></section>`:''}
+        <section class="ed-block">
+          <h3 class="ed-block-label">Reviewed items (${items.length} · ${linked} linked)</h3>
+          ${cards||'<p class="muted">— no items yet —</p>'}
+          ${addingItem ? addItemCard() : '<button type="button" class="ed-btn" id="addItemBtn">＋ Add reviewed item</button>'}
+        </section>
+        <section class="ed-block"><h3 class="ed-block-label">Provenance</h3>
+          <p class="muted" style="margin:0 0 3px">Source page (identity/audit only — never shown to users as an outbound link):</p>
+          ${LibraryShell.urlControl(v.url, {display:true})}
+          ${v.captured_at?`<p class="muted" style="margin-top:4px">Captured ${escapeHtml(v.captured_at)}</p>`:''}</section>`;
+      wireDetail();
+    }
+
+    function wireDetail(){
+      $('#backToIntro')?.addEventListener('click', () => { selected=null; mode='view'; editingItems.clear(); addingItem=false; renderList(); renderDetail(); });
+      $('#editBtn')?.addEventListener('click', () => { mode='edit'; renderDetail(); });
+      $('#resolveBtn')?.addEventListener('click', async (e) => {
+        e.target.disabled=true; e.target.textContent='Resolving…';
+        try { await fetch(`/reviews/${encodeURIComponent(selected)}/resolve-links?force=true`, {method:'POST'});
+          await reloadReview(); flash && flash('Links resolved'); }
+        catch(err){ flash && flash('Resolve failed: '+(err.message||err)); e.target.disabled=false; e.target.textContent='Resolve links'; }
+      });
+      const del = $('#delBtn');
+      del?.addEventListener('click', async () => {
+        if (del.dataset.armed !== '1'){
+          del.dataset.armed='1'; del.textContent='Confirm — keeps catalog products, drops the review + items';
+          setTimeout(()=>{ if(del.isConnected){ del.dataset.armed=''; del.textContent='Delete review'; } }, 3500); return;
+        }
+        del.disabled=true; del.textContent='Deleting…';
+        const id = selected;
+        try {
+          const r = await fetch(`/reviews/${encodeURIComponent(id)}`, { method:'DELETE' });
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          delete full[id]; selected=null; mode='view';
+          await load(); flash && flash('Review deleted (catalog products kept)');
+        } catch(e){ del.disabled=false; del.textContent='Delete review'; flash && flash('Delete failed: '+(e.message||e)); }
+      });
+      // item actions
+      document.querySelectorAll('.it-edit').forEach(b => b.addEventListener('click', () => { editingItems.add(b.dataset.rpid); renderDetail(); }));
+      document.querySelectorAll('.it-cancel').forEach(b => b.addEventListener('click', () => { editingItems.delete(b.dataset.rpid); renderDetail(); }));
+      document.querySelectorAll('.it-save').forEach(b => b.addEventListener('click', () => saveItem(b.dataset.rpid)));
+      document.querySelectorAll('.it-relink').forEach(b => b.addEventListener('click', async () => {
+        b.disabled=true; b.textContent='…';
+        try { await fetch(`/review-products/${encodeURIComponent(b.dataset.rpid)}/link`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+          await reloadReview(); } catch(e){ flash && flash('Relink failed'); }
+      }));
+      document.querySelectorAll('.it-del').forEach(b => b.addEventListener('click', async () => {
+        if (b.dataset.armed!=='1'){ b.dataset.armed='1'; b.textContent='Confirm?'; setTimeout(()=>{ if(b.isConnected){b.dataset.armed='';b.textContent='Remove';} },2500); return; }
+        try { await fetch(`/review-products/${encodeURIComponent(b.dataset.rpid)}`, {method:'DELETE'});
+          editingItems.delete(b.dataset.rpid); await reloadReview(); flash && flash('Item removed'); }
+        catch(e){ flash && flash('Remove failed'); }
+      }));
+      $('#addItemBtn')?.addEventListener('click', () => { addingItem=true; renderDetail(); });
+      $('#a_cancel')?.addEventListener('click', () => { addingItem=false; renderDetail(); });
+      $('#a_save')?.addEventListener('click', addItem);
+    }
+
+    async function saveItem(rpid){
+      const card = document.querySelector(`.rv-prod[data-rpid="${CSS.escape(rpid)}"]`);
+      const body = { product_verdicts: [{
+        review_product_id: rpid,
+        tier: card.querySelector('.e_tier').value,
+        summary: card.querySelector('.e_sum').value,
+        price_at_test: card.querySelector('.e_price').value.trim()===''? null : Number(card.querySelector('.e_price').value),
+        name: card.querySelector('.e_name').value.trim(),
+        brand: card.querySelector('.e_brand').value.trim(),
+        asin: card.querySelector('.e_asin').value.trim(),
+        url: card.querySelector('.e_url').value.trim(),
+      }]};
+      try { await fetch(`/reviews/${encodeURIComponent(selected)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        editingItems.delete(rpid); await reloadReview(); flash && flash('Item saved'); }
+      catch(e){ flash && flash('Save failed: '+(e.message||e)); }
+    }
+
+    async function addItem(){
+      const name = $('#a_name').value.trim();
+      if (!name){ $('#a_status').textContent = 'Name is required.'; return; }
+      const item = { name, brand: $('#a_brand').value.trim(), tier: $('#a_tier').value,
+        summary: $('#a_sum').value.trim(),
+        price_at_test: $('#a_price').value.trim()===''? null : Number($('#a_price').value),
+        asin: $('#a_asin').value.trim(), url: $('#a_url').value.trim() };
+      $('#a_save').disabled = true; $('#a_status').textContent = 'Adding…';
+      try { await fetch(`/reviews/${encodeURIComponent(selected)}/products`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({item})});
+        addingItem=false; await reloadReview(); flash && flash('Item added'); }
+      catch(e){ $('#a_status').textContent = 'Failed: '+(e.message||e); $('#a_save').disabled=false; }
+    }
+
+    function renderIntro(err){
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Review authority layer · ${rows.length} reviews</span></div>
+        <h1 class="ed-title">Reviews</h1>
+        <p class="muted">${err?('Load error: '+escapeHtml(err.message||err)):'Pick a review (☰), or ＋ to add one. A review = one reviewer’s roundup of a product class; its items are the source of truth for verdicts and link dynamically to catalog products. Reviews <em>support</em> the picks (rank + trust copy) — they don’t select them. Set the reviewer to “Best Cooks Club” to author your own.'}</p>`;
+    }
+
+    /* ---------------- add / edit review HEADER ---------------- */
+    function renderForm(existing){
+      const isEdit = !!existing;
+      const v = existing || {};
+      const dl = (id, opts) => `<datalist id="${id}">${uniq(opts).map(x=>`<option value="${escapeHtml(x)}">`).join('')}</datalist>`;
+      const reviewerField = isEdit
+        ? `<div class="ed-field"><label>Reviewer (source identity — locked)</label><input value="${escapeHtml(v.reviewer||'')}" disabled></div>`
+        : `<div class="ed-field"><label>Reviewer *</label><input id="f_reviewer" list="dl_rev" value="${escapeHtml(v.reviewer||'')}" placeholder="America's Test Kitchen — or Best Cooks Club">${dl('dl_rev', reviewers.concat(['Best Cooks Club']))}</div>`;
+      const curTax = (v.ws_category_id != null && taxById[v.ws_category_id]) || v.ws_path || '';
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancelForm">← Cancel</button></div>
+        <h1 class="ed-title">${isEdit ? 'Edit review header' : 'Add a review'}</h1>
+        <p class="ed-submeta">${isEdit ? 'The reviewer (source) is locked; everything else — including the taxonomy — is editable. Items/verdicts are edited on the review page.' : 'A review record (third-party authority OR your own — set reviewer to “Best Cooks Club”). Add items on the review page after saving.'}</p>
+        <div class="pc-form">
+          <div class="pc-row2">
+            ${reviewerField}
+            <div class="ed-field"><label>Title</label><input id="f_title" value="${escapeHtml(v.title||'')}" placeholder="The Best Loaf Pans of 2026"></div>
+          </div>
+          <div class="ed-field"><label>Taxonomy — search the product category (headline › section › subcategory › leaf)</label>
+            <input id="f_tax" list="dl_tax" value="${escapeHtml(curTax)}" placeholder="Type to search… e.g. Loaf Pans">
+            <datalist id="dl_tax">${taxOpts.map(o=>`<option value="${escapeHtml(o.label)}">`).join('')}</datalist></div>
+          <div class="ed-field"><label>Source URL (provenance/audit only — never shown to end users as an outbound link)</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="f_url" value="${escapeHtml(v.url||'')}" placeholder="https://…" style="flex:1">
+              ${LibraryShell.urlControl('', {inputId:'f_url'})}
+            </div></div>
+          <div class="pc-row3">
+            <div class="ed-field"><label>Last updated</label><input id="f_updated" value="${escapeHtml(v.last_updated||'')}" placeholder="March 4, 2026"></div>
+            <div class="ed-field"><label>Captured at</label><input id="f_captured" value="${escapeHtml(v.captured_at||'')}" placeholder="2026-06-02T…"></div>
+            <div class="ed-field"><label>Rating scale</label><input id="f_scale" value="${escapeHtml(v.rating_scale||'')}" placeholder="3-star (Good/Fair/Poor)"></div>
+          </div>
+          <div class="ed-field"><label>Buying guide — source editorial (raw material for our summary)</label><textarea id="f_guide" style="min-height:120px" placeholder="The review's what-to-look-for / what-to-avoid / considerations…">${escapeHtml(v.buying_guide||'')}</textarea></div>
+          <div class="ed-field"><label>Curator notes (our own)</label><textarea id="f_notes" placeholder="Anything worth remembering…">${escapeHtml(v.notes||'')}</textarea></div>
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="saveForm">${isEdit ? 'Save header' : 'Add review'}</button>
+            <span class="muted" id="formStatus"></span>
+          </div>
+        </div>`;
+      $('#cancelForm').addEventListener('click', () => { mode='view'; renderDetail(); });
+      $('#saveForm').addEventListener('click', () => saveForm(isEdit ? existing : null));
+      (isEdit ? $('#f_title') : $('#f_reviewer')).focus();
+    }
+
+    function resolveTax(){
+      const label = ($('#f_tax').value||'').trim();
+      if (!label) return null;
+      if (taxLabelToId[label] != null) return taxLabelToId[label];
+      const lc = label.toLowerCase();
+      const hit = taxOpts.find(o=>o.label.toLowerCase()===lc) || taxOpts.find(o=>o.label.toLowerCase().includes(lc));
+      return hit ? hit.id : null;
+    }
+
+    async function saveForm(existing){
+      const isEdit = !!existing;
+      const btn = $('#saveForm'); btn.disabled = true; $('#formStatus').textContent = 'Saving…';
+      const wsId = resolveTax();
+      try {
+        let savedId;
+        if (isEdit){
+          const body = { title: $('#f_title').value.trim(),
+            url: $('#f_url').value.trim(), last_updated: $('#f_updated').value.trim(),
+            captured_at: $('#f_captured').value.trim(), rating_scale: $('#f_scale').value.trim(),
+            buying_guide: $('#f_guide').value.trim(), notes: $('#f_notes').value.trim() };
+          if (wsId != null) body.ws_category_id = wsId;
+          const r = await fetch(`/reviews/${encodeURIComponent(existing.review_id)}`, {
+            method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || ('HTTP '+r.status));
+          savedId = existing.review_id; full[savedId] = await r.json();
+        } else {
+          const reviewer = $('#f_reviewer').value.trim();
+          if (!reviewer){ $('#formStatus').textContent = 'Reviewer is required.'; btn.disabled=false; return; }
+          if (wsId == null){ $('#formStatus').textContent = 'Pick a taxonomy — search the product category.'; btn.disabled=false; return; }
+          const body = { review: { reviewer, ws_category_id: wsId, title: $('#f_title').value.trim(),
+            url: $('#f_url').value.trim(), last_updated: $('#f_updated').value.trim(),
+            captured_at: $('#f_captured').value.trim(), rating_scale: $('#f_scale').value.trim(),
+            buying_guide: $('#f_guide').value.trim(), notes: $('#f_notes').value.trim() }};
+          const r = await fetch('/reviews', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || ('HTTP '+r.status));
+          savedId = (await r.json()).review_id; delete full[savedId];
+        }
+        selected = savedId; mode='view';
+        await load(savedId);
+        flash && flash(isEdit ? 'Header saved' : 'Review added — now add its items');
+      } catch (e){
+        $('#formStatus').textContent = 'Failed: ' + (e.message||e); btn.disabled = false;
+      }
+    }
+
+    /* ---------------- controls ---------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls'); c.hidden = !c.hidden; if (!c.hidden) $('#search').focus();
+    });
+    $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
+    $('#addToggle').addEventListener('click', () => { selected=null; mode='add'; editingItems.clear(); addingItem=false; renderList(); renderDetail(); nav.afterSelect(); });
+
+    load();
+  </script>
+</body>
+</html>

@@ -432,6 +432,8 @@
     { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', group: 'admin' },
     { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', group: 'admin' },
     { page: 'products',  label: 'Products', href: '/forms/products.html', group: 'admin' },
+    { page: 'review-install', label: 'Review Grabber', href: '/forms/review_install.html', group: 'admin' },
+    { page: 'reviews',   label: 'Reviews', href: '/forms/reviews.html', group: 'admin' },
     { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
     { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', group: 'admin' },
     { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', group: 'admin' },
@@ -864,9 +866,67 @@
     return ctl;
   }
 
+  // ---- Shared URL-field control (memory/feedback_url_field_control) ------------------
+  // Every URL field renders with two icon affordances: click-to-open (↗) + copy (⧉).
+  // Two modes: display (read-only text + open link + copy) and input (buttons that read a
+  // linked <input>'s LIVE value). Self-wires one delegated click handler + minimal CSS.
+  let _urlWired = false;
+  function _ensureUrlCtl() {
+    if (_urlWired) return;
+    _urlWired = true;
+    const st = document.createElement('style');
+    st.textContent =
+      '.ls-url-ctl{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}' +
+      '.ls-url-text{font-family:ui-monospace,monospace;font-size:.82rem;word-break:break-all}' +
+      '.ls-url-btn{display:inline-flex;align-items:center;justify-content:center;min-width:24px;' +
+      'height:24px;padding:0 6px;border:1px solid var(--line,#ccc);border-radius:6px;' +
+      'background:var(--card,#fff);cursor:pointer;font-size:.85rem;line-height:1;' +
+      'text-decoration:none;color:inherit}' +
+      '.ls-url-btn:hover{background:var(--accent-soft,#f0e8e0)}' +
+      '.ls-url-btn.disabled{opacity:.4;cursor:default;pointer-events:none}';
+    document.head.appendChild(st);
+    document.addEventListener('click', function (e) {
+      const c = e.target.closest && e.target.closest('.ls-url-copy');
+      if (c) {
+        e.preventDefault();
+        const v = c.dataset.inputId ? ((document.getElementById(c.dataset.inputId) || {}).value || '') : (c.dataset.url || '');
+        if (!v) { flash('No URL to copy', true); return; }
+        (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject())
+          .then(() => flash('URL copied')).catch(() => flash('Copy failed', true));
+        return;
+      }
+      const o = e.target.closest && e.target.closest('.ls-url-open');
+      if (o) {
+        e.preventDefault();
+        const v = (document.getElementById(o.dataset.inputId) || {}).value || '';
+        if (/^https?:\/\//i.test(v)) window.open(v, '_blank', 'noopener');
+        else flash('Not a valid link', true);
+      }
+    });
+  }
+  function urlControl(url, opts) {
+    opts = opts || {};
+    _ensureUrlCtl();
+    const u = (url || '').trim(), safe = escapeHtml(u);
+    if (opts.inputId) {
+      const id = escapeHtml(opts.inputId);
+      return '<span class="ls-url-ctl">' +
+        '<button type="button" class="ls-url-btn ls-url-open" data-input-id="' + id + '" title="Open in new tab" aria-label="Open link">↗</button>' +
+        '<button type="button" class="ls-url-btn ls-url-copy" data-input-id="' + id + '" title="Copy URL" aria-label="Copy URL">⧉</button></span>';
+    }
+    const openable = /^https?:\/\//i.test(u);
+    const open = openable
+      ? '<a class="ls-url-btn" href="' + safe + '" target="_blank" rel="noopener noreferrer" title="Open in new tab" aria-label="Open link">↗</a>'
+      : '<span class="ls-url-btn disabled" title="Not a link">↗</span>';
+    const copy = u ? '<button type="button" class="ls-url-btn ls-url-copy" data-url="' + safe + '" title="Copy URL" aria-label="Copy URL">⧉</button>' : '';
+    const text = (opts.display === false) ? '' : '<span class="ls-url-text">' + (safe || '— none —') + '</span>';
+    return '<span class="ls-url-ctl">' + text + (u ? open + copy : '') + '</span>';
+  }
+
   window.LibraryShell = {
     init,
     initNav,
+    urlControl,
     initEditorNav,
     initIdentityBadge,
     openSidebar,

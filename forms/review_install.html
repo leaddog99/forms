@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Install Product Grabber (Admin)</title>
+  <title>Install Review Grabber (Admin)</title>
   <style>
-    /* Admin palette: a deeper clay/teal accent to visually distinguish this
-       CATALOG-ADMIN tool from the user-facing recipe grabber (install.html). */
+    /* Admin palette: a plum accent to distinguish the REVIEW grabber from the
+       product grabber (teal) and the user-facing recipe grabber. */
     :root {
-      --accent: #2f6f6a;
-      --accent-dark: #23524e;
+      --accent: #6d4b7a;
+      --accent-dark: #513959;
       --bg: #f6f3ef;
       --text: #1f1611;
       --muted: #6b5b4f;
@@ -24,7 +24,7 @@
       padding-bottom: max(64px, env(safe-area-inset-bottom)); }
     .admin-chip { display: inline-block; font-size: 0.72rem; font-weight: 700;
       letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-dark);
-      background: #dcebe9; border: 1px solid #c3ddd9; border-radius: 999px;
+      background: #ece2f0; border: 1px solid #dccbe4; border-radius: 999px;
       padding: 3px 10px; margin: 0 0 10px; }
     h1 { font-size: 1.6rem; margin: 0 0 8px; letter-spacing: -0.01em; }
     h3 { margin: 0 0 8px; font-size: 1rem; }
@@ -55,7 +55,7 @@
     details summary { cursor: pointer; color: var(--muted); font-size: 0.92rem;
       padding: 4px 0; user-select: none; -webkit-user-select: none; }
     details[open] summary { color: var(--text); }
-    pre.raw { background: #1c2624; color: #e7f0ee; padding: 14px;
+    pre.raw { background: #241c26; color: #efe7f0; padding: 14px;
       border-radius: 10px; overflow-x: auto; font-size: 0.75rem; line-height: 1.4;
       font-family: ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all;
       user-select: all; -webkit-user-select: all; margin-top: 10px; }
@@ -64,86 +64,27 @@
     .switch { margin-top: 18px; text-align: center; font-size: 0.88rem; color: var(--muted); }
     .switch a { color: var(--accent-dark); }
     [hidden] { display: none !important; }
-
-    /* Right-side cross-page nav (mounted as a fixed top-right button;
-       no library-shell header on this page). Uses this page's palette. */
-    .nav-toggle {
-      background: var(--accent); color: #fff; border: none;
-      width: 36px; height: 36px; border-radius: 8px;
-      cursor: pointer; font-size: 1.3em; line-height: 1;
-      box-shadow: 0 2px 8px rgba(0,0,0,.15);
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 0;
-    }
-    .nav-toggle:hover { background: var(--accent-dark); }
-    .nav-menu {
-      position: fixed; top: 60px; right: 16px;
-      background: var(--card);
-      border: 1px solid var(--border); border-radius: 10px;
-      padding: 6px; min-width: 220px;
-      box-shadow: 0 6px 20px rgba(60,40,20,.18);
-      z-index: 101;
-      display: none;
-    }
-    .nav-menu.open { display: block; }
-    .nav-menu .nav-item {
-      display: flex; align-items: center; justify-content: space-between;
-      width: 100%;
-      padding: 9px 12px; border-radius: 6px;
-      color: var(--text); text-decoration: none;
-      background: transparent; border: none;
-      font: inherit; font-size: 0.95em; text-align: left;
-      cursor: pointer; box-sizing: border-box;
-    }
-    .nav-menu .nav-item:hover { background: #eaf1ef; }
-    .nav-menu .nav-item.active {
-      background: #eaf1ef; color: var(--accent-dark); font-weight: 600;
-    }
-    .nav-menu .badge-soon {
-      font-size: 0.72em; color: var(--muted);
-      font-style: italic; margin-left: 8px;
-    }
-    .coming-soon-overlay {
-      position: fixed; inset: 0;
-      background: rgba(28, 38, 36, 0.45);
-      z-index: 200;
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-    }
-    .coming-soon-card {
-      background: var(--card);
-      border-radius: 14px; padding: 28px 32px;
-      max-width: 400px; text-align: center;
-      box-shadow: 0 12px 36px rgba(30,50,45,.3);
-    }
-    .coming-soon-card h2 { font-size: 1.4em; margin: 0 0 8px; color: var(--text); }
-    .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
-    .coming-soon-card button {
-      background: var(--accent); color: #fff; border: none;
-      padding: 9px 22px; border-radius: 8px;
-      font-weight: 600; cursor: pointer; font-size: 0.95em;
-    }
-    .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
   <script src="/forms/library-shell.js?v=20260714d"></script>
 </head>
 <body>
   <div class="wrap">
     <span class="admin-chip">Catalog admin</span>
-    <h1>Install Product Grabber</h1>
-    <p class="sub">A one-click bookmark that imports the retailer product you're viewing into the
-      affiliate catalog. This is an <strong>admin</strong> tool &mdash; separate from the recipe
-      grabber your readers use.</p>
+    <h1>Install Review Grabber</h1>
+    <p class="sub">A one-click bookmark that imports the product <strong>review</strong> you're viewing
+      (its summary + the individual product recommendations) into the review catalog. This is an
+      <strong>admin</strong> tool. Today it decodes <strong>America's Test Kitchen</strong>; other
+      sources (Wirecutter, Williams Sonoma, WSJ) are recognized but not yet decodable.</p>
 
     <!-- ========== DESKTOP BLOCK ========== -->
     <section id="desktop-block" hidden>
       <div class="card">
         <p style="margin:0 0 14px">Drag this button onto your bookmarks bar:</p>
         <div class="drag-row">
-          <a id="dragLink" class="drag" href="#">Grab Product</a>
+          <a id="dragLink" class="drag" href="#">Grab Review</a>
         </div>
-        <p class="note" style="text-align:center">Then open a retailer <strong>product</strong> page
-          (Amazon / Williams Sonoma / Sur La Table / a manufacturer) and click it.</p>
+        <p class="note" style="text-align:center">Then open a product <strong>review</strong> page
+          (e.g. an America's Test Kitchen equipment review) and click it.</p>
       </div>
 
       <div class="card">
@@ -161,12 +102,11 @@
         <p class="note" id="copyStatusDesktop" aria-live="polite">Click to copy.</p>
         <ol style="margin-top:14px">
           <li>Right-click your bookmarks bar &rarr; <strong>Add page&hellip;</strong> (or <code>Ctrl+D</code>, then edit).</li>
-          <li>Name it <code>Grab Product</code>, paste the copied text as the URL, save.</li>
+          <li>Name it <code>Grab Review</code>, paste the copied text as the URL, save.</li>
         </ol>
         <p class="note"><strong>Catch:</strong> if pasting silently strips <code>javascript:</code> off the
           front (browsers do this for security), put the cursor at the very start of the URL and type
-          those 11 characters back in by hand. That stripped prefix is the usual cause of a
-          &ldquo;syntax error&rdquo; when the bookmark runs.</p>
+          those 11 characters back in by hand.</p>
       </div>
     </section>
 
@@ -182,7 +122,7 @@
           <li><span class="step-num">Tap</span> the button above to copy.</li>
           <li><span class="step-num">Bookmark this page</span>: tap Share <span aria-hidden="true">&#11014;&#65039;</span> &rarr; <strong>Add Bookmark</strong> &rarr; Save.</li>
           <li>Open <strong>Bookmarks</strong> (the open-book icon) &rarr; <strong>Edit</strong>.</li>
-          <li>Tap the bookmark you just made. Change the name to <code>Grab Product</code> and replace the URL by pasting (tap-and-hold the URL field &rarr; <strong>Paste</strong>).</li>
+          <li>Tap the bookmark you just made. Change the name to <code>Grab Review</code> and replace the URL by pasting (tap-and-hold the URL field &rarr; <strong>Paste</strong>).</li>
           <li>Tap <strong>Done</strong>. You're installed.</li>
         </ol>
         <p class="note"><strong>Catch:</strong> If pasting silently strips <code>javascript:</code> off the front, position the cursor at the start of the URL and type those 11 characters in manually.</p>
@@ -191,9 +131,9 @@
       <div class="card">
         <h3>Using it</h3>
         <ol>
-          <li>Open any retailer product page in Safari.</li>
-          <li>Tap the <code>Grab Product</code> bookmark.</li>
-          <li>A new tab opens with the editable product form. The original page stays on screen until the import finishes.</li>
+          <li>Open a product review page in Safari.</li>
+          <li>Tap the <code>Grab Review</code> bookmark.</li>
+          <li>A new tab opens on the Reviews editor with the imported review + its product recs. The original page stays on screen until the import finishes.</li>
         </ol>
         <p class="note">First time only: if nothing happens, go to <strong>Settings &rarr; Safari &rarr; Block Pop-ups</strong> and turn it OFF (or allow pop-ups for <span class="pop-host">recipes.tbotb.com</span>).</p>
       </div>
@@ -211,23 +151,17 @@
 
   <script>
     if (window.LibraryShell && LibraryShell.initNav) {
-      LibraryShell.initNav({ currentPage: 'product-install' });
+      LibraryShell.initNav({ currentPage: 'review-install' });
     }
 
     // The loader carries the app's PUBLIC host (portable-package: no host in code).
-    // buildLoader(base) templates it in; the loader stashes that origin on
-    // window.__productBookmarkletApi (derived from its own <script src>) so the
-    // bookmarklet reads it back — no host baked into product_bookmarklet.js.
-    // ASCII "..." (not the ellipsis char) so copy/paste can't mangle it.
+    // It stashes that origin on window.__reviewBookmarkletApi (derived from its own
+    // <script src>) so review_bookmarklet.js reads it back — no host baked into the JS.
     function buildLoader(base) {
       base = String(base || '').replace(/\/+$/, '');
-      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading product importer...</h2>');window.__productBookmarkletPopup=p;var s=document.createElement('script');s.src='" + base + "/forms/product_bookmarklet.js?'+Date.now();window.__productBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
+      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;var s=document.createElement('script');s.src='" + base + "/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
     }
 
-    // Start from this page's own origin so drag/copy work instantly; then ask
-    // the server for the CONFIGURED public base URL (system_config.public_base_url,
-    // seeded from bcc_link_domain) and re-render — that's the externally-reachable
-    // host the bookmarklet must hit (this page may be open on localhost).
     var LOADER = '';
     function applyBase(base) {
       LOADER = buildLoader(base);
@@ -252,13 +186,9 @@
       var desktopBlock = document.getElementById('desktop-block');
       var switchTarget = document.getElementById('switchTarget');
       if (which === 'ios') {
-        iosBlock.hidden = false;
-        desktopBlock.hidden = true;
-        switchTarget.textContent = 'desktop';
+        iosBlock.hidden = false; desktopBlock.hidden = true; switchTarget.textContent = 'desktop';
       } else {
-        iosBlock.hidden = true;
-        desktopBlock.hidden = false;
-        switchTarget.textContent = 'iOS';
+        iosBlock.hidden = true; desktopBlock.hidden = false; switchTarget.textContent = 'iOS';
       }
     }
     show(isIOS ? 'ios' : 'desktop');
@@ -273,34 +203,22 @@
       var btn = document.getElementById(btnId);
       var status = document.getElementById(statusId);
       if (!btn) return;
-
       function flashOk(msg) {
-        btn.classList.add('ok');
-        btn.textContent = 'Copied!';
-        status.textContent = msg;
-        setTimeout(function () {
-          btn.classList.remove('ok');
-          btn.textContent = 'Copy bookmarklet code';
-        }, 2200);
+        btn.classList.add('ok'); btn.textContent = 'Copied!'; status.textContent = msg;
+        setTimeout(function () { btn.classList.remove('ok'); btn.textContent = 'Copy bookmarklet code'; }, 2200);
       }
-
       btn.addEventListener('click', async function () {
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             await navigator.clipboard.writeText(LOADER);
-            flashOk('Copied. Now follow the steps above.');
-            return;
+            flashOk('Copied. Now follow the steps above.'); return;
           }
         } catch (e) { /* fall through */ }
-
         var pre = document.getElementById('rawCode');
         var details = pre.parentElement;
         if (!details.open) details.open = true;
-        var r = document.createRange();
-        r.selectNodeContents(pre);
-        var sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(r);
+        var r = document.createRange(); r.selectNodeContents(pre);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
         status.textContent = 'Clipboard blocked. The code is now selected below - copy it manually.';
       });
     }

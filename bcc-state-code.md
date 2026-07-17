@@ -1135,3 +1135,177 @@ The 4 new endpoints are new routes → **need a restart** (`bcc_restart.bat`, UA
 ### Follow-ups
 - Carried: grow the sparse product catalog (only 20 products / 6 classes — that's why most recipe tools match a category but return 0 products); score-only #2 live test; paywall calibration SELECTION half; `/collections/leaderboard`; sub-steps v2.1; Voice P1; cook-view failing-gate message.
 - New: products_vec backfill gap (7/20) — rebuild from BLOBs (vector_store.rebuild_products_vec_from_blobs) so product↔product KNN is complete. Consider a "relink product classes" button on the Products or Taxonomy page (POST /product-classes/relink already exists) so new products join the recipe→product map without a manual call.
+
+## Session log — 2026-07-14 (later) — Reviews subsystem: two-table model (reviews + review_products, DYNAMIC link) + per-source parser package + bookmarklet ingest loop
+
+The catalog's review facts were invisible (buried inside `products.verdicts[]`, no UI) and welded to
+one review at ingest. Built Reviews as a first-class ACDV surface AND re-architected the model with
+the curator (product-first monetization). All SHIPPED to disk + verified over HTTP via TestClient;
+needs a **BCC restart** (`bcc_restart.bat`, UAC) to serve the new routes + `forms/reviews.html`.
+See [[project_reviews_architecture]] + [[project_monetization_pipeline]] (both NEW memories).
+
+- **Architecture locked (curator, product-first):** reviews are the AUTHORITY layer that SUPPORTS a
+  product's pick (rank-within-class + trust copy) — they do NOT select it (the recipe→class→rank
+  commerce join does). Map: recipe monetization SURFACES (equipment · ingredients · cuisine→travel ·
+  author→cookbooks) → product category assignment → recommended products → **supported by reviews** →
+  reworked (our voice) + affiliate-monetized → the synthesized product block IS the interface.
+- **TWO-TABLE normalized model** (`intake/products/review_store.py`, recipes.db — NEW tables
+  `reviews` + `review_products`). `review_products` = one row per item AS REVIEWED = **source of
+  truth** for tier/verdict/price/specs + retail identity (asin/model/url). The link to a catalog SKU
+  is **DYNAMIC** (`review_products.product_id`, resolved by identity match — model/mpn/gtin/asin/url —
+  or manual), **not predetermined**: one product can be supported by many reviews; an item can be
+  UNLINKED. `products.verdicts[]` is now a **DERIVED PROJECTION** (`_reproject_product`, direct write,
+  no re-embed) — no dual authoring. Migration lifted the 13 ATK loaf-pan verdicts into review_products,
+  linked by identity, reprojected (guarded per-review so it can't resurrect deleted rows). Delete
+  keeps catalog products + reprojects ([[feedback_no_silent_removal]]).
+- **Per-source parser PACKAGE** (`intake/products/review_sources/`, curator: "a module per source
+  style, like recipe standardization a method each"): `base` (shared retailer/asin/spec helpers) +
+  `atk` (real, deterministic, ported from the old `review_parsers.py`) + `wirecutter`/`williams_sonoma`/
+  `wsj` STUBS (detect the source, `IMPLEMENTED=False`, raise "not built yet") + registry
+  (`detect_source`/`parse_review`/`supported`) + **`ingest_review`** bridge (parse → create_review →
+  idempotent `upsert_review_product` by asin/name → resolve_links). `review_parsers.py` is now a thin
+  back-compat shim re-exporting the package. ATK class is still hardcoded "Loaf Pans (1 lb)" — flagged
+  TODO in atk.py (infer class+size grain from the page).
+- **We can author our OWN reviews** — a review with reviewer="Best Cooks Club" (our editorial), no
+  parser, items added by hand in the editor. First-class in the Add form (datalist offers it).
+- **Bookmarklet ingest loop** (curator's vision: browse to a review → bookmarklet → extract header +
+  product recs): `forms/review_bookmarklet.js` (clone of product_bookmarklet — harvests page markdown,
+  keeps anchors for buy-links/ASINs, POSTs `/extract-review`, opens the editor at `?review=<id>`) +
+  `POST /extract-review` (markdown+url → ingest_review) + `GET /review-sources`. reviews.html honors
+  `?review=` deep-link.
+- **UI** `forms/reviews.html` (ACDV, cloned from products.html): sidebar category→review (items/linked
+  counts); detail shows each reviewed item with 🔗 link status, per-item Edit/Auto-relink/Remove, ＋Add
+  item, Resolve-links, header Edit, Delete. Nav: **Reviews** added to admin group (alphabetized, between
+  Products/System); library-shell cache bumped 20260714a→**20260714b** across all 18 pages + reviews.html.
+- **Endpoints** (save_recipe_api.py): `/reviews/list`, GET/POST/PUT/DELETE `/reviews/{id}`,
+  `POST /reviews/{id}/products`, `POST /reviews/{id}/resolve-links`, `DELETE /review-products/{rpid}`,
+  `POST /review-products/{rpid}/link`, `POST /extract-review`, `GET /review-sources`.
+- **Verified over HTTP (TestClient, real app):** list/get/create/update/delete; add item w/ real ASIN
+  → auto-linked via 'asin', bogus ASIN → unlinked; verdict edit reprojects to the product block;
+  `/extract-review` on the ATK fixture idempotent (13→13, all linked); unrecognized→422, wirecutter
+  stub→422 "not built yet". Final DB clean: 1 review / 13 review_products / 13 linked / 0 orphans / 0
+  dup verdicts. **recipes.db schema changed** (reviews + review_products) — recipes.sql NOT re-dumped.
+- **PENDING live (post-restart):** open admin→Reviews→ATK loaf pans (13 items, all 🔗 linked); edit a
+  verdict→Save→check the product block; Add a "Best Cooks Club" review + an item; run the review
+  bookmarklet on a live ATK page (real-world capture fidelity vs the fixture is the open question).
+- **NEXT:** infer ATK product_class (drop the hardcode); build the wirecutter/ws/wsj decoders
+  (LLM-assisted for the unstructured ones); a manual product-picker for relink (auto-resolve only
+  today); a review install page (mirror product_install.html) so the bookmarklet is one-click.
+
+### Follow-up (same session, post-restart) — WS-taxonomy single type-ahead + shared URL control
+Restart #1 confirmed the reviews subsystem live (port 8009: /review-sources, /reviews/list w/ 13
+linked items, reviews.html HTTP 200). Then two curator refinements:
+- **Review classification = a single type-ahead over the WS taxonomy** (curator: not cascading
+  dropdowns — one searchable field; and it's a **4-level** tree headline > section > subcategory >
+  our-added **leaf**, e.g. "Loaf Pans"). `reviews` gained additive cols `ws_category_id` + `ws_path`
+  (idempotent ALTER); the pick resolves id→path+headline (headline seeds `category` for grouping).
+  **`product_class` is no longer a join key** (items link by identity) so it's unlocked — the natural
+  key is now (reviewer, url) via `_existing_review_id` (falls back to product_class only for url-less
+  manual reviews); `_backfill_ws_taxonomy` seeds each review's taxonomy from `product_class_ws_map`
+  (ATK → id 79, Bakeware > … > Bread & Loaf Pans). reviews.html: the locked reviewer+class fields
+  became one `#f_tax` datalist type-ahead over `/ws-categories` (label = full ws_path [+ leaf]),
+  editable on add AND edit; only reviewer stays locked. Verified over HTTP: ATK backfilled; create own
+  review w/ pick → path+category derived; retaxonomize changes path; delete clean; ingest still
+  idempotent (13→13).
+- **Shared URL-field control** ([[feedback_url_field_control]], NEW memory) — `LibraryShell.urlControl(url,{display}|{inputId})`
+  renders click-to-open (↗) + copy (⧉) icons, self-wires one delegated handler + CSS; works for
+  read-only display and for a live `<input>`. First use: reviews.html source-URL input + provenance
+  display. **Retrofit backlog: apply to ALL url fields** (domains, products, offers/buy URLs, install
+  pages, system_config…). library-shell cache bumped **20260714b→20260714c** across all 18 pages +
+  reviews.html (urlControl was added to the same cached file). node --check on library-shell.js passed.
+- **Still needs another restart** for the taxonomy BACKEND (new `ws_*` cols + create/update handling +
+  URL-less natural key) — the client (reviews.html + library-shell.js) is static so a browser reload
+  picks it up, but POST /reviews from the new form (no product_class, sends ws_category_id) will fail
+  on the pre-taxonomy server code until restarted.
+
+### Follow-up (same session) — LLM review extraction (Grabber pulled 0 items on real pages)
+Root cause (verified live on ATK `.../1482-13-by-9-inch-baking-pans-slash-dishes`, not paywalled): the
+deterministic `atk.parse` skips any product block with no specs AND no price, but real ATK pages hide
+specs/price behind collapsed "Full Ratings & Specs" toggles → it skipped all 13 → review imported EMPTY
+(and mislabeled class via the hardcode). Curator's call: let the LLM extract (low-volume, infrequent).
+- **`extract/markdown_to_review.py` (NEW)** — LLM extractor mirroring `markdown_to_product.py`
+  (`llm.stream(operation="review_extract", model="claude-sonnet-4-6", max_tokens=8192)`, JSON-in-prompt,
+  fence-strip + validate). Outputs the DECODER dict (singular `verdict` per product, NOT the pydantic
+  plural `verdicts`) via local pydantic models. Rules: class from the HEADER (one class per roundup),
+  every tested product with tier+verdict, FULL name incl. brand, offers/asin only from real links, and
+  hard BRAND-SAFETY (never fabricate specs/prices/asins/verdicts). Verified on the 13x9 fixture: class
+  "13x9 Baking Pans"/Bakeware, 11 products, correct tiers, real ASIN only where a /dp/ link existed, no
+  invented prices.
+- **`review_sources/__init__.py`** — new `extract_review()` = DETERMINISTIC-FIRST + LLM FALLBACK: try the
+  regex decoder (free/instant; loaf-pan fixture still wins in 0.00s w/ specs), fall through to the LLM when
+  it's unrecognized/stub/**yields 0 products**. `ingest_review` now (a) calls extract_review, (b) backfills
+  EMPTY header fields (title/date/scale) on re-ingest without clobbering curator edits, (c) **SELECTS the
+  WS taxonomy from the list** via `equipment_match.classify_term` (the same matcher behind the type-ahead
+  sibling + commerce join — curator corrected: taxonomy is a search-SELECTION from the ws_categories list,
+  NOT an LLM-invented label). Curator's manual type-ahead pick is respected (only fills when unset).
+- **No endpoint/UI/bookmarklet changes** — `/extract-review` already routed to ingest_review.
+- **Verified end-to-end (in-proc + TestClient HTTP):** the empty live 13x9 review now filled to 11 items,
+  title "The Best 13 by 9-Inch Baking Pans/Dishes", ws_path "Bakeware > … > Casseroles & Baking Dishes"
+  (selected from list), Winner = WS Goldtouch; idempotent re-ingest (24→24 review_products, no dupes);
+  loaf-pan deterministic fast-path unaffected. NEW fixture `intake/products/fixtures/atk_13x9_baking_pans.md`.
+- **Note:** a 3rd earlier-grabbed empty review exists (ATK "Rimmed Baking Sheets", 1718) — same root cause,
+  fills on re-ingest. **Restart** needed so the LIVE bookmarklet uses the LLM path (in-proc run already
+  populated the 13x9 review's data, visible via /reviews now).
+
+### Follow-up (same session, cont.) — PER-SOURCE prompts + editorial "buying guide" capture
+Two curator refinements after the first LLM pass:
+1. **Extraction = LLM with PER-SOURCE PROMPTS (not deterministic, not one generic prompt).** Curator: "LLM
+   with specific prompts... a set of source-specific prompts might improve efficiency." Refactored: the
+   shared mechanism (extract/markdown_to_review) now builds its system prompt from a BASE + a `source_hints`
+   fragment; each source module contributes an **`EXTRACT_HINTS`** string (atk = "Everything We Tested" tiers
+   + "What You Need to Know" editorial + specs-behind-toggle warning; wirecutter = "Our pick/Runner-up/Also
+   great" roles + "How we picked"; williams_sonoma; wsj = "Best Overall" + Pros/Cons). `extract_review` now
+   detects the source, loads its hints, and runs the LLM tuned to that site — **LLM is the PRIMARY path**
+   (the deterministic `parse()` regex stays only for the shim/offline, NOT called live). So ATK-specific
+   knowledge lives in `atk.py` as a PROMPT, not a parser.
+2. **Capture the review's EDITORIAL HEADER for writing OUR summaries** (curator: the per-product verdicts are
+   sparse; the rich content is the "What to Look For / Avoid / considerations / FAQs" BEFORE the product
+   list). Added `product_class.buying_guide` to the extractor (thorough, faithful, brand-safe capture) +
+   `criteria` bullets. Stored on the review: new `reviews.buying_guide` column (additive ALTER) + `criteria`
+   in the data blob; wired through create/update/get_review, `ingest_review` (passes it + backfills EMPTY on
+   re-ingest, never clobbers curator edits), and `forms/reviews.html` (detail shows "Buying guide — source
+   editorial" + "What to look for"; header form has an editable textarea). Verified over HTTP: 13x9 review
+   carries a 573-char buying_guide (thin only because the hand-written fixture condensed it — real page is
+   richer), GET returns it, PUT edits persist. NEXT (follow-up): an LLM step to REWORK buying_guide into OUR
+   editorial voice (bcc_blurb / a class buying guide) — the "reworked" node of the monetization pipeline.
+- **Restart still required** for the live bookmarklet + form to use the LLM extraction, taxonomy backend,
+  and buying_guide columns (running server predates all of it; the DB data is already populated).
+
+## Session log — 2026-07-17 — equipment "char-explosion" corruption: root cause + fix + 10-recipe repair
+
+Curator flagged a recipe (Best Chocolate Chip Cookies, `30054f22…`) whose equipment was "a mess."
+Its `equipment` was 27 `HowToTool` objects, each `name` a SINGLE CHARACTER (`[ { " n a m e : s i v
+}` …). See [[project_equipment_standardization]].
+
+- **Root cause (reproduced exactly):** `enrich.equipment.derive_equipment` reads the model's
+  `equipment_list` tool value as `items` and iterates `for it in items`. The Sonnet tool call
+  **intermittently serializes `equipment` as a JSON STRING** instead of an array (verified live: the
+  tool_use input came back `type=str`) — iterating that string char-by-char, wrapping each char in a
+  `HowToTool`, and deduping produces exactly the 27 single-letter "tools." The tool SCHEMA is correct
+  (`equipment: array`); the model just doesn't always honor it. Pydantic would REJECT a string
+  (`RecipeModel` raises → clean extract failure), but `derive_equipment` writes straight to
+  `recipe["equipment"]`, bypassing that guard.
+- **Fix (`enrich/equipment.py`):** new `_as_item_list()` coerces the tool value to a list —
+  pass-through for a real list, `json.loads` for a JSON string, and **lenient on the model's trailing
+  commas** (`{"name":"large bowl", }`, which fail strict `json.loads` and silently emptied the result
+  — a quieter second bug), hard-reject any scalar so a string can never be char-iterated. Same guard
+  added to `save_recipe_api._recipe_equipment_from_cook` (the `_cook` mirror path). Verified: module
+  imports, `save_recipe_api` compiles, helper handles string/trailing-comma/scalar/list; end-to-end
+  `derive_equipment` on the cookies recipe now returns 9 clean tools.
+- **Data repair (`scripts/`-style one-shot):** scanned all 2,669 recipes-with-equipment → **10
+  corrupted** (spanning 2026-06-03 → 2026-07-12, all base-extract, none `_cook` — a long-standing
+  intermittent bug, NOT the recent backfill). Re-derived each via the fixed `derive_equipment`, wrote
+  back ONLY the equipment field via fresh re-read (safe vs the live service; WAL + `busy_timeout`).
+  All 10 now carry sensible tools (Berry Crisp, Julia Child's coq au vin, both banana breads,
+  blueberry muffins, bougatsa, bratwurst, burrito bowls, Korean short ribs). Re-scan: **0 remaining**.
+  (`bcc_token_journal` lock warnings during the run were the running service holding that table; the
+  master_recipes/recipes writes committed fine.)
+- **Blast radius small (10/2,669)** because the string-return is intermittent AND only the derive
+  path (button/`_ensure_equipment`/backfill) is exposed — the markdown-LLM extract goes through
+  pydantic, which rejects a string outright.
+- **PENDING RESTART:** the running service still holds the OLD `derive_equipment` in memory, so a
+  fresh extract could still char-explode until `bcc_restart.bat` (UAC). Code fix on disk +
+  branch `split/enrichment-api`, uncommitted (alongside the reviews work). recipes.db data already
+  repaired live — a page reload shows the clean tools now.
+- **Not done (low risk):** the identical loop in `scripts/backfill_equipment.py:_mirror_from_cook`
+  (mirrors structured `_cook.equipment`, far less likely a string) — left unguarded; flag if touched.
