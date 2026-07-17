@@ -5239,6 +5239,13 @@
           const prev = li.previousElementSibling || li.nextElementSibling;
           li.remove();
           prev?.querySelector('textarea, input')?.focus();
+        } else {
+          // Last block: keep the ≥1-block invariant (like ingredients/steps), but
+          // still HONOR the delete by clearing it — otherwise an Ask Chef Q/A that
+          // is the only note can never be removed (the X appears to do nothing).
+          input.value = '';
+          autoGrow(input);
+          input.focus();
         }
       };
 
