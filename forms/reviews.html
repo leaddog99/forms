@@ -40,6 +40,10 @@
     .rv-link.off { color: #b23b3b; }
     .rv-acts { display: flex; gap: 6px; margin-top: 6px; }
     .rv-acts .ed-btn { font-size: .74rem; padding: 3px 8px; }
+    .rv-srcs { font-size: .74rem; margin-top: 5px; display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+    .rv-srcs-lbl { color: var(--muted, #777); font-weight: 600; }
+    .rv-src { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-alt, #f7f7f5); }
+    .rv-src .rv-price { margin-left: 0; font-size: .72rem; }
     .rv-verd { display: grid; grid-template-columns: 150px 1fr 90px; gap: 8px; align-items: start; margin-top: 6px; }
     .rv-verd label { display:block; font-size:.68rem; font-weight:600; color:var(--ed-ink-soft); margin-bottom:2px; }
     .rv-prov { font-family: ui-monospace, monospace; font-size: .78rem; word-break: break-all; color: var(--ed-ink-soft); }
@@ -211,11 +215,22 @@
       const link = p.product_id
         ? `<div class="rv-link on">🔗 linked → ${escapeHtml(p.linked_name||p.product_id)} <span class="muted">(${escapeHtml(p.linked_by||'')})</span></div>`
         : `<div class="rv-link off">⚠ unlinked — no catalog product matches its identity yet</div>`;
+      // Product sources = the item's retailer offers (where to buy). Buy-links are
+      // the only outbound links we surface (brand-safe). Mirrors products.html chips.
+      const offers = (p.retailer_offers||[]).map(o => {
+        const url = o.affiliate_url || o.source_url || '';
+        const price = (o.price != null) ? ` <span class="rv-price">$${Number(o.price).toFixed(2)}</span>` : '';
+        return `<span class="rv-src">${escapeHtml(o.retailer||'source')}${price}${url?` ${LibraryShell.urlControl(url,{display:false})}`:''}</span>`;
+      }).join('');
+      const sources = offers
+        ? `<div class="rv-srcs"><span class="rv-srcs-lbl">Sources:</span> ${offers}</div>`
+        : (p.url ? `<div class="rv-srcs"><span class="rv-srcs-lbl">Source:</span> ${LibraryShell.urlControl(p.url,{display:false})}</div>` : '');
       return `<div class="rv-prod" data-rpid="${escapeHtml(rpid)}">
         <div class="top"><span class="nm">${escapeHtml(p.brand?p.brand+' · ':'')}${escapeHtml(p.name||'(unnamed)')}</span>
           ${p.tier?`<span class="rv-tier">${escapeHtml(p.tier)}</span>`:''}${price}</div>
         ${p.summary?`<div class="muted" style="margin-top:4px">${escapeHtml(p.summary)}</div>`:''}
         ${link}
+        ${sources}
         <div class="rv-acts">
           <button class="ed-btn it-edit" data-rpid="${escapeHtml(rpid)}">Edit</button>
           <button class="ed-btn it-relink" data-rpid="${escapeHtml(rpid)}">Auto-relink</button>

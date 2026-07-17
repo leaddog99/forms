@@ -521,6 +521,10 @@ def _review_products(conn: sqlite3.Connection, review_id: str) -> list:
             "review_product_id": rpid, "name": name or "", "brand": brand or "",
             "tier": tier or "", "summary": summary or "", "price_at_test": price,
             "asin": dd.get("asin", ""), "url": dd.get("url", ""),
+            # The item's retailer offers = its "product sources" (where to buy).
+            # Surfaced per-item in the reviews editor so each summary links out to
+            # its sources; buy-links are the ONLY outbound links (brand-safe).
+            "retailer_offers": dd.get("retailer_offers") or [],
             "product_id": pid, "linked_by": linked_by or "", "linked_name": linked_name,
         })
     out.sort(key=lambda p: (catalog_store._tier_rank({"verdicts": [{"tier": p["tier"]}]}), p["name"]))

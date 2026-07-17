@@ -1309,3 +1309,16 @@ Its `equipment` was 27 `HowToTool` objects, each `name` a SINGLE CHARACTER (`[ {
   repaired live — a page reload shows the clean tools now.
 - **Not done (low risk):** the identical loop in `scripts/backfill_equipment.py:_mirror_from_cook`
   (mirrors structured `_cook.equipment`, far less likely a string) — left unguarded; flag if touched.
+
+### Follow-up (same day) — reviews: per-item "product sources" links
+Curator (after a live bookmarklet extract): "no ability to link to the list of product sources from
+our individual product review summaries — that's a must." Each `review_product` already carried
+`retailer_offers` (real affiliate buy-links: Amazon `?tag=…`, Sur La Table, Le Creuset…) but the
+per-item view never exposed them. Fix: `review_store._review_products` now returns `retailer_offers`
+per item, and `forms/reviews.html` `itemCard` renders a **"Sources:"** row of retailer chips, each
+with the shared `LibraryShell.urlControl(url,{display:false})` open ↗ / copy ⧉ icons (buy-links are
+the ONLY outbound links — brand-safe; the review's own page `url` stays provenance-only). Falls back
+to the item's single source `url` when it has no offers. Verified: review_store compiles,
+`_review_products` emits offers for the extracted ATK bread-oven review (7 items, 1–3 offers each),
+reviews.html inline JS parses. **Needs a restart** for the offers to reach the live API (old
+`_review_products` in memory returns only the `url` fallback until then).
