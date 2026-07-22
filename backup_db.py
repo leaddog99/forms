@@ -32,13 +32,17 @@ copy entirely (just refresh recipes.sql) with --no-adam.
 import argparse
 import datetime
 import shutil
+import gzip
 import sqlite3
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DB = HERE / "recipes.db"
-SQL = HERE / "recipes.sql"
+# Gzip-compressed logical dump (~5x smaller). Plain text blows past GitHub's
+# 100 MB per-file limit once the corpus grows; the .gz stays well under it and
+# has no LFS quota. Restore: `gunzip -c recipes.sql.gz | sqlite3 new.db`.
+SQL = HERE / "recipes.sql.gz"
 # The is-recipe training corpus — git-ignored (never in the .sql dump), so the ADAM
 # copy is its ONLY backup. It holds the curator's human_label CORRECTIONS: the gold
 # signal that teaches where the heuristic is wrong. Worth off-machine copies.
@@ -117,7 +121,7 @@ def write_sql_dump(db_path: Path, out_path: Path) -> list[str]:
             "SELECT name, sql FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' ORDER BY rowid")
     ]
-    with open(out_path, "w", encoding="utf-8") as f:
+    with gzip.open(out_path, "wt", encoding="utf-8") as f:
         f.write("-- recipes.db logical dump (deterministic, stable-ordered)\n")
         f.write(
             f"-- excluded vec index tables ({', '.join(vts) or 'none'}) — "
@@ -132,10 +136,19 @@ def write_sql_dump(db_path: Path, out_path: Path) -> list[str]:
             if name in _EXCLUDE_TABLES or create_sql is None:
                 continue
             f.write(create_sql + ";\n")
+            # Only NON-generated columns are insertable. SELECT * / bare VALUES(...)
+            # would also emit GENERATED ALWAYS (...) VIRTUAL|STORED columns (e.g.
+            # master_recipes.dish_key/publisher_key) — which can't be INSERTed, so the
+            # row would carry more values than the table accepts and the dump would
+            # FAIL to restore. Name the insertable columns explicitly (xinfo.hidden
+            # 2=VIRTUAL, 3=STORED generated).
+            cols = [r[1] for r in mem.execute(f'PRAGMA table_xinfo("{name}")')
+                    if r[6] not in (2, 3)]
+            collist = ",".join(f'"{c}"' for c in cols)
             ob = _order_by(mem, name)
-            q = f'SELECT * FROM "{name}"' + (f" ORDER BY {ob}" if ob else "")
+            q = f'SELECT {collist} FROM "{name}"' + (f" ORDER BY {ob}" if ob else "")
             for row in mem.execute(q):
-                f.write(f'INSERT INTO "{name}" VALUES('
+                f.write(f'INSERT INTO "{name}" ({collist}) VALUES('
                         + ",".join(_sql_literal(v) for v in row) + ");\n")
         # indexes / triggers / views (skip auto-indexes, which have sql IS NULL)
         for name, sql in mem.execute(
@@ -174,7 +187,7 @@ def run_backup(dest: Path = DEFAULT_ADAM, no_adam: bool = False) -> dict:
     dest.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     db_dst = dest / f"recipes_{ts}.db"
-    sql_dst = dest / f"recipes_{ts}.sql"
+    sql_dst = dest / f"recipes_{ts}.sql.gz"
     shutil.copy2(DB, db_dst)
     shutil.copy2(SQL, sql_dst)
     if not integrity_ok(db_dst):
@@ -206,7 +219,7 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    print(f"recipes.sql refreshed ({r['sql_mb']} MB); "
+    print(f"{SQL.name} refreshed ({r['sql_mb']} MB); "
           f"excluded vec tables: {r['excluded'] or 'none'}")
     if r.get("adam"):
         print(f"copied -> {r['db_dst']}")

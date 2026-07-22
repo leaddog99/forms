@@ -1322,3 +1322,31 @@ to the item's single source `url` when it has no offers. Verified: review_store 
 `_review_products` emits offers for the extracted ATK bread-oven review (7 items, 1–3 offers each),
 reviews.html inline JS parses. **Needs a restart** for the offers to reach the live API (old
 `_review_products` in memory returns only the `url` fallback until then).
+
+## Session log — 2026-07-22 — recipes.sql backup was silently NON-restorable (generated columns) + Ask Chef delete fix
+
+- **`backup_db.py` dump could not be restored — FIXED.** Re-dumping recipes.sql surfaced that the
+  git-side backup (the "restore source") had been broken since `master_recipes` gained the
+  `dish_key` / `publisher_key` **GENERATED ALWAYS (…) VIRTUAL** columns: `write_sql_dump` emitted
+  `SELECT *` + bare `INSERT … VALUES(…)`, so each row carried the 2 computed generated values that
+  can't be INSERTed → `executescript` failed with "master_recipes has 9 columns but 11 values". The
+  **currently-committed HEAD recipes.sql failed the same way** — the backup silently didn't restore.
+  Fix: the dump now names the INSERTABLE columns explicitly (`PRAGMA table_xinfo`, excluding hidden
+  2=VIRTUAL / 3=STORED generated) in both the column list and `INSERT INTO t (cols) VALUES(…)`.
+  master_recipes is the only table with generated columns (full scan). Verified: fresh dump
+  **round-trips into a clean sqlite DB**, all row counts match the live DB (recipes 344,
+  master_recipes ~2889, reviews 4, review_products 31, products 21, ws_categories 217, domains 298,
+  dishes 116), and `master_recipes.dish_key` recomputes on the restored copy.
+- **Dump is now GZIP-compressed — `recipes.sql.gz`.** The valid re-dump was **158 MB uncompressed**,
+  past GitHub's 100 MB per-file limit (push rejected by the pre-receive hook) — the old 72 MB dump
+  squeaked under, but real corpus growth blew it past. Curator's call (vs Git LFS / untracking):
+  gzip. `backup_db.py` writes `recipes.sql.gz` via `gzip.open` (~5× smaller — **32.8 MB**); ADAM copy
+  is `recipes_{ts}.sql.gz`; plain `recipes.sql` is now git-ignored (never tracked); `.gitignore` +
+  docstrings updated. Restore: `gunzip -c recipes.sql.gz | sqlite3 new.db`. Verified the .gz
+  round-trips clean. ADAM copy skipped (`--no-adam`); run `bcc_backup.bat` for the off-machine copy.
+  (The old 72 MB `recipes.sql` blob stays in git history — harmless, under the limit, already on origin.)
+- **Ask Chef / Chef's Notes delete (×) fixed** (`forms/recipe_form_styled.html`, committed 430a859) —
+  the note-delete was guarded by `notesList.children.length > 1`, so the X silently no-opped on the
+  SOLE remaining block; an Ask Chef Q/A that was the only note could never be removed. Last block now
+  clears in place (keeps the ≥1-block invariant like ingredients/steps); multi-block delete still
+  fully removes. Verified live in-browser (real mouse click).
