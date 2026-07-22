@@ -1362,5 +1362,19 @@ reviews.html inline JS parses. **Needs a restart** for the offers to reach the l
   returned {status} — origin anti-bot block" (flags 401/402/403/429/503) instead of the misleading
   "{provider} returned {status}", and the transport/except branch says "transport/account error" — so
   a future origin 402 never again reads as "unpaid". Verified live (new message fires on a real 402).
-  The Wayback fallback already covers the content; Oxylabs residential-zone tuning is the open lever
-  if live seriouseats fetches are wanted. See [[project_fetchfail_salvage]].
+  The Wayback fallback already covers the content. See [[project_fetchfail_salvage]].
+- **Oxylabs tuning explored → CLIENT-SIDE RETRY-ON-BLOCK shipped (the real lever).** Measured live +
+  read the docs. Findings: (1) **geo-targeting doesn't help** — `x-oxylabs-geo-location: United States`
+  produced a 402 where no-geo gave a benign 404 on the same URL. (2) **Residential proxies would be a
+  DOWNGRADE** — raw IPs, no anti-bot/JS-render; Web Unblocker is the right product for a Dotdash site.
+  (3) **Root mechanism (from Oxylabs docs):** Web Unblocker marks ANY target **4xx as success and
+  passes it straight through WITHOUT rotating** — it only auto-retries 5xx / AI-detected blocks — and
+  `x-oxylabs-successful-status-codes` **can't** force a 4xx retry (4xx always "successful"). So a 402
+  bot-block inherently slips its retry logic. (4) Web Unblocker rotates fingerprint+IP **per request**
+  (observed via `X-Oxylabs-Request-Headers` cycling UA/platform); the block is IP-intermittent
+  (measured ~80–100% single-shot live now vs 10/10 blocked during the hot job window). **Fix**
+  (`_fetch_via_proxy_unblocker`): a bounded fresh-IP retry loop on origin block statuses
+  (401/402/403/429/503), gated by the `X-Oxylabs-Content-Status-Code` echo so it retries an ORIGIN
+  block but NOT an Oxylabs-side 429 rate-limit; count = `system_config.unblocker_block_retries`
+  (default **2**, code-fallback like the sibling unblocker_* keys; 0 disables). Verified live: 2xx →
+  LIVE, real **404 → NO retry** (no wasted credits), import clean. `x-oxylabs-render:html` unchanged.

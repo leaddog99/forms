@@ -300,6 +300,7 @@ def _unblocker_cfg() -> dict:
         "proxy_user": os.getenv("UNBLOCKER_PROXY_USER"),
         "proxy_pass": os.getenv("UNBLOCKER_PROXY_PASS"),
         "endpoint": None, "proxy_host": None, "proxy_port": None,
+        "block_retries": 2,
     }
     try:
         from input.pipeline import system_config
@@ -308,6 +309,11 @@ def _unblocker_cfg() -> dict:
         cfg["endpoint"] = system_config.get_setting("unblocker_endpoint", "") or None
         cfg["proxy_host"] = system_config.get_setting("unblocker_proxy_host", "") or None
         cfg["proxy_port"] = system_config.get_setting("unblocker_proxy_port", 0) or None
+        # Extra fresh-IP retries on an ORIGIN anti-bot block (see _fetch_via_proxy_unblocker).
+        # A proxy provider passes any target 4xx straight through WITHOUT rotating (Oxylabs
+        # only auto-retries 5xx / AI-detected blocks), so a People-Inc-style 402 needs a
+        # client-side retry — each attempt gets a fresh exit IP. 0 disables.
+        cfg["block_retries"] = int(system_config.get_setting("unblocker_block_retries", 2) or 0)
     except Exception:
         cfg["provider"] = (os.getenv("UNBLOCKER_PROVIDER") or "scraperapi").lower()
     return cfg
@@ -341,26 +347,41 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     except Exception:
         pass
-    try:
-        resp = requests.get(url, proxies=proxies, headers=headers,
-                            timeout=timeout, verify=False)
-        if not (200 <= resp.status_code < 300):
-            # Proxy providers GET the target directly, so this status is the TARGET
-            # ORIGIN's response relayed through the proxy — NOT a provider billing or
-            # transport error. (A transport/account failure raises and is caught below.)
-            # People Inc. / Dotdash properties (seriouseats) serve 402 as their bot-block,
-            # which reads like "account unpaid" if attributed to the provider — so name
-            # the origin explicitly and flag the common anti-bot statuses.
-            hint = " — origin anti-bot block" if resp.status_code in (401, 402, 403, 429, 503) else ""
-            print(f"[unblocker] {provider} proxied OK; target ORIGIN returned "
-                  f"{resp.status_code}{hint} for {url}")
+    # Origin anti-bot statuses worth a fresh-IP retry. A proxy provider GETs the target
+    # directly and passes any 4xx straight through WITHOUT rotating (Oxylabs only auto-
+    # retries 5xx / AI-detected blocks), so a People-Inc-style 402 needs a client retry —
+    # each attempt draws a fresh exit IP + fingerprint, and the block is IP-intermittent.
+    _BLOCK = (401, 402, 403, 429, 503)
+    retries = max(0, int(cfg.get("block_retries", 0) or 0))
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.get(url, proxies=proxies, headers=headers,
+                                timeout=timeout, verify=False)
+        except Exception as e:
+            print(f"[unblocker] {provider} transport/account error for {url}: {e}")
             return None
-    except Exception as e:
-        print(f"[unblocker] {provider} transport/account error for {url}: {e}")
+        if 200 <= resp.status_code < 300:
+            _fix_response_encoding(resp)   # resp.url is already the target (we GET it directly)
+            tag = f" (attempt {attempt + 1})" if attempt else ""
+            print(f"[unblocker] {provider} fetched {url} LIVE{tag}")
+            return resp, {"source": "unblocker", "provider": provider}
+        # Non-2xx = the TARGET ORIGIN's status relayed through the proxy (a provider/account
+        # failure raises above), confirmed when X-Oxylabs-Content-Status-Code echoes it — that
+        # header's presence means the request reached the origin, so retrying draws a new IP
+        # rather than hammering an Oxylabs-side 429. seriouseats/People Inc. serve 402 here,
+        # which read like "account unpaid" under the old "{provider} returned" wording.
+        origin_echo = resp.headers.get("x-oxylabs-content-status-code")
+        is_origin_block = resp.status_code in _BLOCK and (
+            origin_echo is None or origin_echo == str(resp.status_code))
+        if is_origin_block and attempt < retries:
+            print(f"[unblocker] {provider} origin {resp.status_code} anti-bot block "
+                  f"for {url} — retrying with a fresh IP ({attempt + 1}/{retries})")
+            continue
+        hint = " — origin anti-bot block" if resp.status_code in _BLOCK else ""
+        print(f"[unblocker] {provider} proxied OK; target ORIGIN returned "
+              f"{resp.status_code}{hint} for {url}"
+              + (f" (gave up after {retries + 1} tries)" if is_origin_block else ""))
         return None
-    _fix_response_encoding(resp)   # resp.url is already the target (we GET it directly)
-    print(f"[unblocker] {provider} fetched {url} LIVE")
-    return resp, {"source": "unblocker", "provider": provider}
 
 
 def _fetch_via_get_unblocker(url, provider, cfg, timeout, render):
