@@ -39,6 +39,24 @@ MOZ_REFRESH_TTL_DAYS = 30
 # re-learn. Kill switch: system_config `moz_canonical_learning` (default on).
 _CANON: Optional[dict] = None   # domain -> (use_www: bool, trailing_slash: bool); None = unloaded
 
+# Moz ROW meter (per-process) — every url_metrics target = 1 billed row. Lets a harvest
+# report actual rows spent + what the canonical-variant learning saved. reset per batch.
+_MOZ_ROWS = 0
+_MOZ_CALLS = 0
+
+
+def reset_moz_row_stats() -> None:
+    global _MOZ_ROWS, _MOZ_CALLS
+    _MOZ_ROWS = 0
+    _MOZ_CALLS = 0
+
+
+def moz_row_stats() -> dict:
+    """(rows, calls, urls_scored). `rows` = billed Moz targets; `calls` = scored URLs.
+    `saved` = rows the canonical learning avoided vs the old flat 4-variant probe."""
+    return {"rows": _MOZ_ROWS, "calls": _MOZ_CALLS,
+            "saved_vs_4x": max(0, _MOZ_CALLS * 4 - _MOZ_ROWS)}
+
 
 def _compute_ou(pa: float, da: float) -> Optional[float]:
     """Opportunity score: derived from Moz PA and DA. Lifted from the batch
@@ -183,6 +201,9 @@ def _canon_learn(url: str, crawled_url: str) -> None:
 def _moz_url_metrics(candidates: list[str], auth: str) -> Optional[list]:
     """One Moz url_metrics call for the given target URLs. Returns the results list
     (Moz preserves target order) or None on failure."""
+    global _MOZ_ROWS, _MOZ_CALLS
+    _MOZ_ROWS += len(candidates)   # every target = 1 billed row
+    _MOZ_CALLS += 1
     try:
         resp = requests.post(
             MOZ_API_URL,

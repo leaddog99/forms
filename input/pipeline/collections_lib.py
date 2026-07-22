@@ -837,6 +837,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
 
     scored = []
     n_rp = len(recipe_pass)
+    from input.pipeline import url_scoring as _us
+    _us.reset_moz_row_stats()
     print(f"  [harvest] Moz scoring {n_rp} recipe candidate(s)…")
     for i, (url, title) in enumerate(recipe_pass, 1):
         if should_cancel and should_cancel():
@@ -857,6 +859,9 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             print(f"  [{i:>2}/{n_rp}] MOZ-OK   pa={_fp(pa)} da={_fp(da)}  {url}")
         else:
             print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
+    _ms = _us.moz_row_stats()
+    print(f"  [harvest] Moz rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
+          f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old 4-variant probe)")
     # System-wide authority score: replace raw-PA ranking with the corpus-grain
     # OU/power blend (one global PA~DA fit, paywall-remapped PA), so rank_score is
     # comparable ACROSS publishers, not just within one. Within a publisher DA is
