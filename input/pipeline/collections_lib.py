@@ -875,6 +875,15 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         m["rank"] = i
         # score_only: mark NOTHING selected — the human picks winners from the scored list.
         m["selected"] = 0 if score_only else (1 if i <= keep else 0)
+    # Ranked authority display WITH OU: the per-URL MOZ-OK line above shows pa/da but not
+    # OU, because OU needs the whole-corpus fit that score_members() stamps only after every
+    # candidate is scored. Surface pa/da/OU here in rank order; '*' marks the selected top-N.
+    _ns = len(scored)
+    for m in scored:
+        _ou = m.get("ou")
+        _ous = "    ?" if _ou is None else f"{_ou:+5.1f}"
+        _sel = "*" if m.get("selected") else " "
+        print(f"  {_sel}[{m['rank']:>2}/{_ns}] pa={m['pa']:>4.0f} da={m['da']:>4.0f} ou={_ous}  {m['url']}")
     # Translate the SELECTED members' titles to the instance base language for a READABLE
     # ledger: the harvested og:title is in the publisher's language (e.g. Greek 'Μπουγάτσα με
     # κρέμα'), and while the ingested master copy is translated, the discovery list shows this

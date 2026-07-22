@@ -1404,3 +1404,17 @@ reviews.html inline JS parses. **Needs a restart** for the offers to reach the l
   a per-domain provider swap (our code already lists `brightdata`), billing flips to 100%-of-requests,
   FUTURE work. Pragmatic present: **Wayback already carries seriouseats**; strategic endgame for a
   Pay-Per-Crawl publisher is licensing, not brute-force rotation. See [[project_fetchfail_salvage]], [[project_serp_provider]].
+- **Harvest log readability — 3 additions** (curator, while watching the seriouseats log): (1) the
+  **winner-extract** lines now carry a `[N/keep]` seq (`[PUBLISHER-REFRESH] [3/5] SAVED master …`),
+  mirroring the candidate loop's `[N/120]` — caller builds a seq'd log_prefix in `_extract_publisher_url_to_master`;
+  correctly tracks the SLOT through backfill (a THIN winner's slot shows the same `[2/5]` until filled).
+  (2) each **candidate KEEP/DROP line shows the FETCH SOURCE** (`direct | unblocker | wayback | page-cache`)
+  in an aligned column — `_fetch_for_filter` now returns the source (`meta["source"]`), threaded via a
+  `_dl` decision-line prefix into every post-fetch line (`[ 4/120] page-cache KEEP json-ld …`); pre-fetch
+  drops (EXCLUDE/URL-SKIP/collection-title/KW-SKIP) have no source, left as-is. Resolves the earlier
+  "why did some come through directly?" confusion — cache hits now read `page-cache`, nothing was live.
+  (3) the **Moz DA/PA block now shows OU** — the per-URL MOZ-OK line can't (OU needs the whole-corpus fit
+  stamped by `score_members` AFTER all candidates score), so a ranked `*[rank/n] pa= da= ou=` display is
+  emitted post-scoring (`*` = selected top-N). Verified live (job 578, success): all three formats render,
+  source column shows wayback+page-cache, OU displayed, winners `[1/5]…[5/5]`. Fresh job process picks up
+  all three without a server restart (`python -m jobs exec` imports current code).

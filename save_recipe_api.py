@@ -4293,8 +4293,12 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         url = m.get("url")
         if not url:
             continue
+        # Seq tag on the winner-extract log lines — [winner-slot / top-N kept], mirroring
+        # the candidate loop's [N/120] format so the log shows which selected winner is
+        # being processed and how many were selected.
+        seq_prefix = f"[PUBLISHER-REFRESH] [{extracted + 1}/{keep}]"
         if await _extract_publisher_url_to_master(
-                url, host, extracted + 1, "/domains/refresh-top", "[PUBLISHER-REFRESH]",
+                url, host, extracted + 1, "/domains/refresh-top", seq_prefix,
                 traffic=m.get("traffic"), traffic_pct=m.get("traffic_pct")):
             extracted += 1
             saved_urls.append(url)

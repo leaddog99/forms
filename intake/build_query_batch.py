@@ -294,8 +294,8 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[str, bool, str]]:
-    """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld, lang_code).
+def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[str, bool, str, str]]:
+    """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld, lang_code, source).
     Returns None on any failure (HTTP error, timeout, parse error).
 
     Three signals returned in one round-trip:
@@ -325,7 +325,10 @@ def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[st
     """
     try:
         resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S, unblocker=unblocker)
-        return _response_to_filter_signals(resp)
+        text, jsonld, lang = _response_to_filter_signals(resp)
+        # Carry the fetch SOURCE (direct | unblocker | wayback) so the candidate log
+        # can show where each page's content actually came from.
+        return text, jsonld, lang, (_meta or {}).get("source") or "direct"
     except Exception:
         return None
 
@@ -655,7 +658,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 e["_translated_for_filter"] = True
             kept.append(e)
             tag = "json-ld" if jsonld2 else f"score={score:>2}"
-            print(f"  [{i:>2}/{n}] KEEP {tag}* {url}  (render-{'probe' if probed else 'escalated'})")
+            print(f"  [{i:>2}/{n}] {'unblocker':<9} KEEP {tag}* {url}  (render-{'probe' if probed else 'escalated'})")
             return True
         # FAILURE — quiet sub-note (NOT a decision line); the caller logs the drop
         # and keeps the original plain score. No mutation of e.
@@ -729,9 +732,14 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             e["recipe_score"] = 0
             e["_dropped_reason"] = "fetch-failed"
             dropped.append(e)
-            print(f"  [{i:>2}/{len(entries)}] FETCH-FAIL  {url}")
+            print(f"  [{i:>2}/{len(entries)}] {'':<9} FETCH-FAIL  {url}")
             continue
-        text, has_recipe_jsonld, lang_code = result
+        text, has_recipe_jsonld, lang_code, src = result
+        e["_fetch_source"] = src
+        # Decision-line prefix carrying the fetch source (direct | unblocker | wayback),
+        # so every post-fetch KEEP/DROP line shows where the content came from — aligned
+        # in the same column as the [N/total] index.
+        _dl = f"  [{i:>2}/{len(entries)}] {src:<9}"
         e["_lang"] = lang_code
         e["_cap_text"] = text  # transient: byproduct training capture (popped before return)
         # Effective scoring language for THIS page: the fixed domain language (publisher
@@ -748,7 +756,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 e["recipe_score"] = 0
                 e["_dropped_reason"] = "collection-title"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP collection [{lang_code}] {url}  (en-title: {title_en!r})")
+                print(f"{_dl} DROP collection [{lang_code}] {url}  (en-title: {title_en!r})")
                 continue
 
         if has_recipe_jsonld:
@@ -758,7 +766,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             e["jsonld_recipe"] = True
             kept.append(e)
             lang_tag = f" [{lang_code}]" if is_non_english(lang_code) else ""
-            print(f"  [{i:>2}/{len(entries)}] KEEP json-ld   {url}{lang_tag}")
+            print(f"{_dl} KEEP json-ld   {url}{lang_tag}")
             continue
 
         # No JSON-LD. Score by the EFFECTIVE language (_eff_lang: domain language for a
@@ -781,13 +789,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             tag = "" if _eff_lang == _base_lang else f" [{_eff_lang}]"
             if has_recipe_structure(text, _base_lang, _eff_lang):
                 kept.append(e)
-                print(f"  [{i:>2}/{len(entries)}] KEEP struct phrase={score:>2}{tag}  {url}")
+                print(f"{_dl} KEEP struct phrase={score:>2}{tag}  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
                 e["_dropped_reason"] = "no-recipe-structure"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP no-struct phrase={score:>2}{tag}  {url}")
+                print(f"{_dl} DROP no-struct phrase={score:>2}{tag}  {url}")
             continue
 
         # language ≠ base AND no phrase pack for it: translate the page's text (in its own
@@ -799,7 +807,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             if not ok:
                 e["_dropped_reason"] = f"translation-suspect:{why}"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP xlate-bad {url} [{_eff_lang}: {why}]")
+                print(f"{_dl} DROP xlate-bad {url} [{_eff_lang}: {why}]")
                 continue
             score = score_recipe_text(tr.translated_markdown.lower())
             e["recipe_score"] = score
@@ -807,13 +815,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             e["_translated_for_filter"] = True
             if score >= IS_RECIPE_THRESHOLD:
                 kept.append(e)
-                print(f"  [{i:>2}/{len(entries)}] KEEP xlate={score:>2} [{_eff_lang}]  {url}")
+                print(f"{_dl} KEEP xlate={score:>2} [{_eff_lang}]  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
                 e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP xlate={score:>2} [{_eff_lang}]  {url}")
+                print(f"{_dl} DROP xlate={score:>2} [{_eff_lang}]  {url}")
         except Exception as ex:
             # Translation API failure -> raw phrase check rather than dropping. Logged loudly.
             print(f"      [translate] {type(ex).__name__}: {ex} -- falling back to raw phrase check")
@@ -823,13 +831,13 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             e["_translation_failed"] = True
             if score >= IS_RECIPE_THRESHOLD:
                 kept.append(e)
-                print(f"  [{i:>2}/{len(entries)}] KEEP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
+                print(f"{_dl} KEEP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
                 e["_dropped_reason"] = f"recipe-score<{IS_RECIPE_THRESHOLD}"
                 dropped.append(e)
-                print(f"  [{i:>2}/{len(entries)}] DROP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
+                print(f"{_dl} DROP score={score:>2} [{_eff_lang}, xlate-fail]  {url}")
 
     # LLM cascade (system_config `is_recipe_cascade_mode`: off | shadow | decide;
     # back-compat with the legacy `is_recipe_cascade_shadow` bool). shadow_classify
