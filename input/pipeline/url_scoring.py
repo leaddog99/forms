@@ -27,6 +27,18 @@ MOZ_TIMEOUT_SECONDS = 8
 # and interactive paths agree on what "stale" means).
 MOZ_REFRESH_TTL_DAYS = 30
 
+# --- Per-domain canonical-variant learning (Moz ROW reduction) ---------------
+# Moz bills PER TARGET URL in the batch. score_url_via_moz probes up to 4 variants
+# (www/non-www × trailing-slash) per URL to find the CANONICAL form — the one the
+# site actually serves, which concentrates the link graph; the others score ~15 PA
+# points lower. That's 4 Moz rows per URL. But the canonical pattern is CONSTANT per
+# domain, so we learn it ONCE (first URL of a domain does the full 4-variant probe)
+# and then query only that single variant for the rest of the domain's URLs = 1 row.
+# ~4x fewer Moz rows on the dominant case (a publisher harvest is all one domain).
+# Self-healing: if a learned single-variant probe returns un-crawled, we re-expand +
+# re-learn. Kill switch: system_config `moz_canonical_learning` (default on).
+_CANON: Optional[dict] = None   # domain -> (use_www: bool, trailing_slash: bool); None = unloaded
+
 
 def _compute_ou(pa: float, da: float) -> Optional[float]:
     """Opportunity score: derived from Moz PA and DA. Lifted from the batch
@@ -76,6 +88,116 @@ def _url_variants(url: str) -> list[str]:
     return out
 
 
+def _canon_learning_on() -> bool:
+    """Kill switch for the per-domain canonical-variant learning (default ON)."""
+    try:
+        from input.pipeline import system_config
+        return bool(system_config.get_setting("moz_canonical_learning", True))
+    except Exception:
+        return True
+
+
+def _canon_domain(url: str) -> str:
+    """Domain key for the canonical cache: lowercased host, www stripped (so www.x.com
+    and x.com share one learned pattern)."""
+    try:
+        host = (urlparse(url).netloc or "").lower()
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return ""
+
+
+def _canon_load() -> None:
+    """Lazily load the learned per-domain canonical patterns into the process cache."""
+    global _CANON
+    if _CANON is not None:
+        return
+    _CANON = {}
+    try:
+        from input.pipeline import db
+        conn = db.connect()
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS moz_domain_canonical ("
+                "domain TEXT PRIMARY KEY, use_www INTEGER NOT NULL, "
+                "trailing_slash INTEGER NOT NULL, learned_at TEXT NOT NULL)")
+            conn.commit()
+            for dom, w, s in conn.execute(
+                    "SELECT domain, use_www, trailing_slash FROM moz_domain_canonical"):
+                _CANON[dom] = (bool(w), bool(s))
+        finally:
+            conn.close()
+    except Exception as e:   # DB unreachable → in-process-only learning still works
+        logger.info("moz canonical cache load skipped: %s", e)
+
+
+def _canonical_variant(url: str, pattern: tuple) -> str:
+    """Rebuild `url` into the domain's learned canonical form (use_www, trailing_slash)."""
+    use_www, trailing = pattern
+    p = urlparse(url)
+    host = (p.netloc or "").lower()
+    base = host[4:] if host.startswith("www.") else host
+    host2 = ("www." + base) if use_www else base
+    path = p.path or "/"
+    if trailing:
+        path2 = path if path.endswith("/") else path + "/"
+    else:
+        path2 = path.rstrip("/") if len(path) > 1 else path
+    return urlunparse((p.scheme, host2, path2, p.params, p.query, p.fragment))
+
+
+def _canon_learn(url: str, crawled_url: str) -> None:
+    """Record the canonical (www?, trailing-slash?) pattern for this URL's domain,
+    derived from the variant Moz actually crawled. Persists + updates the cache."""
+    global _CANON
+    dom = _canon_domain(url)
+    if not dom or not crawled_url:
+        return
+    try:
+        p = urlparse(crawled_url)
+        host = (p.netloc or "").lower()
+        use_www = host.startswith("www.")
+        path = p.path or "/"
+        trailing = path.endswith("/") and len(path) > 1
+    except Exception:
+        return
+    if _CANON is None:
+        _CANON = {}
+    _CANON[dom] = (use_www, trailing)
+    try:
+        from input.pipeline import db
+        conn = db.connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO moz_domain_canonical "
+                "(domain, use_www, trailing_slash, learned_at) VALUES (?,?,?,?)",
+                (dom, int(use_www), int(trailing),
+                 datetime.now(timezone.utc).isoformat()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass   # in-process cache still holds it for the rest of this run
+
+
+def _moz_url_metrics(candidates: list[str], auth: str) -> Optional[list]:
+    """One Moz url_metrics call for the given target URLs. Returns the results list
+    (Moz preserves target order) or None on failure."""
+    try:
+        resp = requests.post(
+            MOZ_API_URL,
+            headers={"Authorization": "Basic " + auth},
+            json={"targets": candidates,
+                  "metrics": ["title", "page_authority", "domain_authority", "http_code"]},
+            timeout=MOZ_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        return resp.json().get("results") or []
+    except Exception as e:
+        logger.warning("Moz scoring failed for %s: %s", candidates[:1], e)
+        return None
+
+
 def score_url_via_moz(url: str) -> Optional[dict]:
     """Call the Moz URL Metrics API for a single URL. Returns None on any
     failure (missing creds, network, non-200). Never raises.
@@ -90,36 +212,59 @@ def score_url_via_moz(url: str) -> Optional[dict]:
         logger.info("Moz creds missing — skipping scoring for %s", url)
         return None
 
-    candidates = _url_variants(url)
     auth = base64.b64encode(f"{MOZ_ACCESS_ID}:{MOZ_SECRET_KEY}".encode()).decode()
-    try:
-        resp = requests.post(
-            MOZ_API_URL,
-            headers={"Authorization": "Basic " + auth},
-            json={"targets": candidates,
-                  "metrics": ["title", "page_authority", "domain_authority", "http_code"]},
-            timeout=MOZ_TIMEOUT_SECONDS,
-        )
-        resp.raise_for_status()
-        results = resp.json().get("results") or []
-    except Exception as e:
-        logger.warning("Moz scoring failed for %s: %s", url, e)
+
+    # Per-domain canonical learning: if we've learned this domain's canonical form,
+    # query ONLY that variant (1 Moz row). Otherwise probe all ~4 variants (learn call).
+    learning_on = _canon_learning_on()
+    pattern = None
+    if learning_on:
+        _canon_load()
+        pattern = _CANON.get(_canon_domain(url))
+    candidates = [_canonical_variant(url, pattern)] if pattern else _url_variants(url)
+
+    results = _moz_url_metrics(candidates, auth)
+    if results is None:
         return None
 
-    if not results:
+    def _pick(cands, res):
+        """Pair each result with the target we sent (Moz preserves order), then pick
+        the best-tier crawled/estimated variant by PA. Returns (chosen_result,
+        chosen_target_url, usable) where `usable` = the chosen variant has REAL Moz
+        data (http_code 200/301/302 crawled OR 402 estimated — NOT 0/missing). The
+        canonical form is the highest-PA variant with real data; the 0-code variants
+        are the wrong/uncrawled forms that score ~15 PA lower or nothing."""
+        paired = list(zip(cands, res)) if len(res) == len(cands) else [(None, r) for r in res]
+        crawled = [(u, r) for u, r in paired if r.get("http_code") in (200, 301, 302)]
+        estimated = [(u, r) for u, r in paired if r.get("http_code") == 402]
+        pool = crawled or estimated or paired
+        if not pool:
+            return None, None, False
+        cu, cr = max(pool, key=lambda ur: ur[1].get("page_authority") or 0)
+        usable = cr.get("http_code") in (200, 301, 302, 402)
+        return cr, cu, usable
+
+    chosen, chosen_url, usable = _pick(candidates, results)
+
+    # Self-heal: a learned single-variant probe that comes back with NO real Moz data
+    # (http_code 0) means the learned pattern is stale/wrong for this URL — re-expand to
+    # all variants + re-learn.
+    if pattern and not usable:
+        candidates = _url_variants(url)
+        results = _moz_url_metrics(candidates, auth)
+        if results is None:
+            return None
+        chosen, chosen_url, usable = _pick(candidates, results)
+        pattern = None   # treat as an unlearned call below so we (re)learn from the probe
+
+    if chosen is None:
         return None
 
-    # Tiered variant pick: Moz returns one entry per URL variant we
-    # queried, each with an http_code telling us whether it was really
-    # crawled (200/301/302) vs. estimate-only (402) vs. no signal (0/
-    # missing). The canonical-PA variant is the one Moz has the most
-    # real data on, so we walk those tiers in order and within the best
-    # tier we have, pick the highest PA (the canonical concentrates the
-    # link graph).
-    crawled = [r for r in results if r.get("http_code") in (200, 301, 302)]
-    estimated = [r for r in results if r.get("http_code") == 402]
-    pool = crawled or estimated or results
-    chosen = max(pool, key=lambda r: r.get("page_authority") or 0)
+    # Learn the domain's canonical form from the chosen (highest-PA, has-data) variant,
+    # but only on a FULL probe (pattern is None) so the single-variant re-query reproduces
+    # the same pick next time.
+    if learning_on and pattern is None and usable and chosen_url:
+        _canon_learn(url, chosen_url)
 
     pa = float(chosen.get("page_authority") or 0)
     da = float(chosen.get("domain_authority") or 0)
