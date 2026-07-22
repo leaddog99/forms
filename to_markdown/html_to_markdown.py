@@ -345,10 +345,18 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
         resp = requests.get(url, proxies=proxies, headers=headers,
                             timeout=timeout, verify=False)
         if not (200 <= resp.status_code < 300):
-            print(f"[unblocker] {provider} returned {resp.status_code} for {url}")
+            # Proxy providers GET the target directly, so this status is the TARGET
+            # ORIGIN's response relayed through the proxy — NOT a provider billing or
+            # transport error. (A transport/account failure raises and is caught below.)
+            # People Inc. / Dotdash properties (seriouseats) serve 402 as their bot-block,
+            # which reads like "account unpaid" if attributed to the provider — so name
+            # the origin explicitly and flag the common anti-bot statuses.
+            hint = " — origin anti-bot block" if resp.status_code in (401, 402, 403, 429, 503) else ""
+            print(f"[unblocker] {provider} proxied OK; target ORIGIN returned "
+                  f"{resp.status_code}{hint} for {url}")
             return None
     except Exception as e:
-        print(f"[unblocker] {provider} failed for {url}: {e}")
+        print(f"[unblocker] {provider} transport/account error for {url}: {e}")
         return None
     _fix_response_encoding(resp)   # resp.url is already the target (we GET it directly)
     print(f"[unblocker] {provider} fetched {url} LIVE")

@@ -1350,3 +1350,17 @@ reviews.html inline JS parses. **Needs a restart** for the offers to reach the l
   SOLE remaining block; an Ask Chef Q/A that was the only note could never be removed. Last block now
   clears in place (keeps the ≥1-block invariant like ingredients/steps); multi-block delete still
   fully removes. Verified live in-browser (real mouse click).
+- **Unblocker "402" diagnosis — it's the ORIGIN, not billing; log message fixed.** seriouseats
+  publisher-refresh (jobs 574/575) showed every URL 402-ing from the unblocker → Wayback fallback,
+  looking like an unpaid Oxylabs account. Runtime data disproved that: SAME proxy/creds/moment,
+  thekitchn returned 200 (200 live fetches, 0 errors); only seriouseats 402'd. Captured the discarded
+  402 BODY — it's a **People Inc. / Dotdash access-block page** ("contact support@people.inc"):
+  seriouseats serves **HTTP 402 as its bot-block status** (unusual — most use 403), and Oxylabs
+  relays that origin status through the proxy. So it's target-side IP blocking, INTERMITTENT
+  (IP-dependent: on retry 4/5 fetched LIVE), not an account issue. Fix (`to_markdown/html_to_markdown.py`
+  `_fetch_via_proxy_unblocker`): the non-2xx log now reads "{provider} proxied OK; target ORIGIN
+  returned {status} — origin anti-bot block" (flags 401/402/403/429/503) instead of the misleading
+  "{provider} returned {status}", and the transport/except branch says "transport/account error" — so
+  a future origin 402 never again reads as "unpaid". Verified live (new message fires on a real 402).
+  The Wayback fallback already covers the content; Oxylabs residential-zone tuning is the open lever
+  if live seriouseats fetches are wanted. See [[project_fetchfail_salvage]].
