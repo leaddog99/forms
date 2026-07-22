@@ -289,6 +289,15 @@ _UNBLOCKER_PROXY_PROVIDERS = {
     "brightdata": ("brd.superproxy.io",  33335, None),   # Web Unlocker zone renders by default
 }
 
+# Per-RUN circuit breaker (process-level; resets each job process). Some publishers
+# (Dotdash / People Inc. — seriouseats) burst-block the ENTIRE unblocker exit pool once
+# a harvest ramps up, so every fresh-IP retry still 402s. After N consecutive origin
+# blocks on a host, stop attempting the (slow) unblocker for that host for the rest of
+# the run and go straight to the Wayback fallback — retries can't beat a fully-blocked
+# pool, so they're pure wasted latency. A single non-block response (2xx or a real 404)
+# proves the pool works again for that host and resets the counter.
+_UNBLOCKER_HOST_BLOCKS: dict = {}
+
 
 def _unblocker_cfg() -> dict:
     """BYOK + provider config. GET-style key in UNBLOCKER_API_KEY; proxy-style creds
@@ -300,7 +309,7 @@ def _unblocker_cfg() -> dict:
         "proxy_user": os.getenv("UNBLOCKER_PROXY_USER"),
         "proxy_pass": os.getenv("UNBLOCKER_PROXY_PASS"),
         "endpoint": None, "proxy_host": None, "proxy_port": None,
-        "block_retries": 2,
+        "block_retries": 2, "circuit_trip": 3,
     }
     try:
         from input.pipeline import system_config
@@ -314,8 +323,13 @@ def _unblocker_cfg() -> dict:
         # only auto-retries 5xx / AI-detected blocks), so a People-Inc-style 402 needs a
         # client-side retry — each attempt gets a fresh exit IP. 0 disables.
         cfg["block_retries"] = int(system_config.get_setting("unblocker_block_retries", 2) or 0)
+        # Per-run circuit breaker: consecutive origin blocks on a host before we stop
+        # attempting the unblocker for that host (see _UNBLOCKER_HOST_BLOCKS). 0 disables.
+        cfg["circuit_trip"] = int(system_config.get_setting("unblocker_circuit_trip", 3) or 0)
     except Exception:
         cfg["provider"] = (os.getenv("UNBLOCKER_PROVIDER") or "scraperapi").lower()
+        cfg["block_retries"] = 2
+        cfg["circuit_trip"] = 3
     return cfg
 
 
@@ -326,6 +340,36 @@ def unblocker_available() -> bool:
     if cfg["provider"] in _UNBLOCKER_PROXY_PROVIDERS:
         return bool(cfg["proxy_user"] and cfg["proxy_pass"])
     return bool(cfg["key"])
+
+
+def _circuit_host(url) -> str:
+    from urllib.parse import urlparse
+    try:
+        h = (urlparse(url).hostname or "").lower()
+        return h[4:] if h.startswith("www.") else h
+    except Exception:
+        return ""
+
+
+def _circuit_open(url, trip: int) -> bool:
+    """True when this host has hit `trip` consecutive origin blocks this run (breaker
+    open → skip the unblocker, go straight to the fallback). trip<=0 disables."""
+    if trip and trip > 0:
+        return _UNBLOCKER_HOST_BLOCKS.get(_circuit_host(url), 0) >= trip
+    return False
+
+
+def _circuit_note_block(url, trip: int) -> None:
+    host = _circuit_host(url)
+    n = _UNBLOCKER_HOST_BLOCKS.get(host, 0) + 1
+    _UNBLOCKER_HOST_BLOCKS[host] = n
+    if trip and n == trip:
+        print(f"[unblocker] circuit OPEN for {host} after {n} consecutive origin blocks "
+              f"— skipping the unblocker for this host for the rest of the run (→ fallback)")
+
+
+def _circuit_note_success(url) -> None:
+    _UNBLOCKER_HOST_BLOCKS.pop(_circuit_host(url), None)
 
 
 def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
@@ -362,6 +406,7 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
             return None
         if 200 <= resp.status_code < 300:
             _fix_response_encoding(resp)   # resp.url is already the target (we GET it directly)
+            _circuit_note_success(url)     # pool works for this host → reset the breaker
             tag = f" (attempt {attempt + 1})" if attempt else ""
             print(f"[unblocker] {provider} fetched {url} LIVE{tag}")
             return resp, {"source": "unblocker", "provider": provider}
@@ -377,6 +422,12 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
             print(f"[unblocker] {provider} origin {resp.status_code} anti-bot block "
                   f"for {url} — retrying with a fresh IP ({attempt + 1}/{retries})")
             continue
+        # A non-block origin response (real 404/410, etc.) proves the exit pool reaches
+        # the origin fine — reset the breaker; only an actual origin block counts against it.
+        if is_origin_block:
+            _circuit_note_block(url, cfg.get("circuit_trip", 0))
+        else:
+            _circuit_note_success(url)
         hint = " — origin anti-bot block" if resp.status_code in _BLOCK else ""
         print(f"[unblocker] {provider} proxied OK; target ORIGIN returned "
               f"{resp.status_code}{hint} for {url}"
@@ -423,6 +474,13 @@ def fetch_via_unblocker(url: str, *, timeout: int = UNBLOCKER_TIMEOUT_SECONDS,
     cfg = _unblocker_cfg()
     provider = cfg["provider"]
     if provider in _UNBLOCKER_PROXY_PROVIDERS:
+        # Per-run circuit breaker: if this host has already burst-blocked the whole exit
+        # pool this run, skip the (slow, futile) unblocker call and let the caller fall
+        # through to Wayback. Retries can't beat a fully-blocked pool.
+        if _circuit_open(url, cfg.get("circuit_trip", 0)):
+            print(f"[unblocker] circuit open for {_circuit_host(url)} — skipping unblocker, "
+                  f"using fallback for {url}")
+            return None
         return _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render)
     return _fetch_via_get_unblocker(url, provider, cfg, timeout, render)
 

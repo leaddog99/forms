@@ -1377,4 +1377,30 @@ reviews.html inline JS parses. **Needs a restart** for the offers to reach the l
   (401/402/403/429/503), gated by the `X-Oxylabs-Content-Status-Code` echo so it retries an ORIGIN
   block but NOT an Oxylabs-side 429 rate-limit; count = `system_config.unblocker_block_retries`
   (default **2**, code-fallback like the sibling unblocker_* keys; 0 disables). Verified live: 2xx →
-  LIVE, real **404 → NO retry** (no wasted credits), import clean. `x-oxylabs-render:html` unchanged.
+  LIVE, real **404 → NO retry**, import clean. `x-oxylabs-render:html` unchanged.
+- **Post-restart re-run (job 576) → the retry alone does NOT rescue a BURST block.** Live tally: 0 LIVE,
+  36 origin blocks, 73 retry attempts, 31 Wayback. The retry fires correctly but every fresh IP still
+  402s during a harvest burst — People Inc. blocks the whole reachable Oxylabs **exit pool** (the set of
+  proxy IPs Web Unblocker rotates through), not one IP, so rotation can't win. Isolated/spaced requests
+  recover only partially (delay experiment: **2/6** with 60–100s spacing + 90s cooldown, and the block
+  RETURNED after 2 successes → cumulative/reputation, not a simple rate window).
+- **CIRCUIT BREAKER shipped** (`_UNBLOCKER_HOST_BLOCKS` in html_to_markdown): after N consecutive origin
+  blocks on a host in a run, stop calling the (slow, now-known-billable) unblocker for that host and go
+  straight to Wayback; a non-block response (2xx or real 404) resets it. Process-scoped → resets per job
+  run. Count = `system_config.unblocker_circuit_trip` (default **3**, 0 disables). Unit-tested (trips at
+  3, resets on success, 0 disables; fixed a `www.`-strip host-parse bug so `washington.com` isn't mangled).
+- **Per-domain DELAY: built then REVERTED** (curator: "forget the delay — it didn't work and increases
+  complexity"). Only ~33% effective and the underlying cause is reputation/licensing, not rate. Backed out
+  the `domains.harvest_delay_ms` column + throttle cleanly (zero diff).
+- **Deep web research (subagent) — is there a NATIVE Oxylabs fix? NO.** `x-oxylabs-successful-status-codes`
+  is additive-only ("2xx and 4xx are always marked successful" — can't demote a 402); Web Scraper API has
+  the SAME rule; no product/header exposes content-vs-status block detection. **CORRECTION to an earlier
+  claim:** a 402 is a **billable "success"** to Oxylabs (4xx=success), so the retries are NOT cost-free —
+  each blocked URL with retry=2 is 3× billed, which is exactly why the circuit breaker matters (caps it).
+  **Reframe:** the 402 + "contact support@people.inc" is likely a deliberate **Pay-Per-Crawl / licensing
+  gate** (industry trend since ~mid-2025, incl. Cloudflare), i.e. monetizing identified crawler traffic,
+  not a solvable anti-bot puzzle. **The one real lever = Bright Data Web Unlocker's `x-unblock-expect`**
+  (content-validation → auto-retry on a block that returns a 2xx/4xx) — the behavior Oxylabs won't expose;
+  a per-domain provider swap (our code already lists `brightdata`), billing flips to 100%-of-requests,
+  FUTURE work. Pragmatic present: **Wayback already carries seriouseats**; strategic endgame for a
+  Pay-Per-Crawl publisher is licensing, not brute-force rotation. See [[project_fetchfail_salvage]], [[project_serp_provider]].
