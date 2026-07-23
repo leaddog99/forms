@@ -393,6 +393,10 @@
             <input type="checkbox" id="f_paywall" ${Number(d.paywall) === 1 ? 'checked' : ''}>
             <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify) <i>and</i> a system rescore PA-calibrates it to free-equivalent so its link-starved pages aren't penalized${d.pa_cal_at ? ` · <b>calibrated</b> ${escapeHtml(fmtDate(d.pa_cal_at))} (n=${Number(d.pa_cal_n) || 0})` : ' · <i>not yet calibrated — runs on the next Rescore</i>'}</span>
           </label>
+          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
+            <input type="checkbox" id="f_trust_extraction" ${Number(d.trust_extraction) === 1 ? 'checked' : ''}>
+            <span><b>Trust extraction</b> — this publisher's recipes have an unconventional layout the cheap is-recipe gate wrongly drops (e.g. Boston Globe's story-format recipes with no "Ingredients" heading). Keep its candidates past the structure gate + LLM catch so the full extractor decodes them. <i>Pair with a SEMrush URL filter that already narrows to recipe pages.</i></span>
+          </label>
           <div class="ed-form-grid" style="margin:4px 0 2px">
             ${field('f_exclude_words', 'Exclude sections (skip these URL sections — e.g. restaurant chef news)', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
           </div>
@@ -1155,6 +1159,7 @@
         harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp',
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
         paywall: $('#f_paywall')?.checked ? 1 : 0,
+        trust_extraction: $('#f_trust_extraction')?.checked ? 1 : 0,
         harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
         // SEMrush deep-link + advanced filter (semrush_report_url is DERIVED server-side).
         semrush_db: ($('#f_semrush_db')?.value || 'us').trim() || 'us',

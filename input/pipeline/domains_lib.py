@@ -71,6 +71,7 @@ EDITABLE_FIELDS = (
     "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
     "semrush_report_url",      # DERIVED from the semrush_* fields UNLESS uncoupled — then a pasted custom URL
     "semrush_url_uncoupled",   # 1 = use the pasted semrush_report_url as-is (don't regenerate)
+    "trust_extraction",        # 1 = keep candidates past the structure gate + cascade catch → extractor
     "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
     "exclude_words",       # OPTIONAL per-domain EXCLUSIONARY sections (restaurant/chef/news)
     "profile",             # long researched bio (deep-enrich; curator-editable)
@@ -233,6 +234,13 @@ _EDITORIAL_COLUMNS = {
 # LLM story in what they're genuinely authoritative on). See extract/domain_enrich.py
 # deep_enrich_domain + project_domain_master.
 _ENRICH_COLUMNS = {
+    # TRUST EXTRACTION: this publisher embeds real recipes in an unconventional structure
+    # (no "Ingredients" header, in article prose — e.g. Boston Globe) that the cheap
+    # is-recipe gate + LLM cascade wrongly drop, but the full EXTRACTOR decodes fine. When
+    # 1, the harvest KEEPS this domain's candidates past the structure gate AND the cascade
+    # poor_quality/not_recipe CATCH, so they reach the extractor. Safe when paired with a
+    # SEMrush URL filter (pre-narrows to recipe URLs). See build_query_batch + isrecipe_cascade.
+    "trust_extraction": "INTEGER NOT NULL DEFAULT 0",
     "profile": "TEXT NOT NULL DEFAULT ''",
     "brand_authority": "INTEGER",
     "referring_domains": "INTEGER",
@@ -865,14 +873,40 @@ _DISPLAY_CACHE: Optional[dict] = None
 _BLOCKED_CACHE: Optional[set] = None
 _RENDER_CACHE: Optional[set] = None
 _POOR_CACHE: Optional[set] = None
+_TRUST_CACHE: Optional[set] = None
 
 
 def invalidate_cache() -> None:
-    global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE, _POOR_CACHE
+    global _DISPLAY_CACHE, _BLOCKED_CACHE, _RENDER_CACHE, _POOR_CACHE, _TRUST_CACHE
     _DISPLAY_CACHE = None
     _BLOCKED_CACHE = None
     _RENDER_CACHE = None
     _POOR_CACHE = None
+    _TRUST_CACHE = None
+
+
+def get_trust_extraction_hosts(db_path: str = _DEFAULT_DB) -> set:
+    """Cached set of hosts+roots flagged `trust_extraction = 1` — publishers whose real
+    recipes have an unconventional structure the cheap is-recipe gate/cascade wrongly drop
+    but the extractor decodes. The harvest keeps their candidates past the structure gate +
+    cascade catch. CRUD writers invalidate the cache."""
+    global _TRUST_CACHE
+    if _TRUST_CACHE is None:
+        hosts: set = set()
+        try:
+            with _connect(db_path) as conn:
+                ensure_domains_table(conn)
+                for dom, root in conn.execute(
+                    "SELECT domain, root_domain FROM domains WHERE trust_extraction = 1"
+                ):
+                    if dom:
+                        hosts.add(dom.lower())
+                    if root:
+                        hosts.add(root.lower())
+        except Exception:
+            pass
+        _TRUST_CACHE = hosts
+    return _TRUST_CACHE
 
 
 def parse_serp_exclusions(db_path: str = _DEFAULT_DB) -> tuple[set, list]:

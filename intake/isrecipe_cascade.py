@@ -88,7 +88,8 @@ def apply_decide(kept, dropped, *, log=print) -> tuple:
     new_kept, new_dropped, resc, caught = [], [], 0, 0
     for e in kept:
         sv = e.get("_shadow_verdict")
-        if sv in ("not_recipe", "poor_quality") and not e.get("jsonld_recipe"):
+        if sv in ("not_recipe", "poor_quality") and not e.get("jsonld_recipe") \
+                and not e.get("_trust_extraction"):
             e["_dropped_reason"] = f"cascade-{sv}"
             new_dropped.append(e)
             caught += 1

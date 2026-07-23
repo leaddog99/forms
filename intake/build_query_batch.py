@@ -665,6 +665,15 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         print(f"      [render-escalate] {url} still scores {score} rendered — not a recipe")
         return False
 
+    # TRUST-EXTRACTION hosts: publishers whose real recipes have an unconventional
+    # structure the cheap gate + cascade wrongly drop (Boston Globe) — keep their
+    # candidates past the structure gate + cascade catch → the extractor decodes them.
+    try:
+        from input.pipeline.domains_lib import get_trust_extraction_hosts
+        _trust_hosts = get_trust_extraction_hosts()
+    except Exception:
+        _trust_hosts = set()
+
     for i, e in enumerate(entries, start=1):
         # Cooperative cancel: a long publisher harvest can be aborted between
         # candidates (each is a fetch + score, the slow unit). Raises up to the job
@@ -673,6 +682,11 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             from input.pipeline.jobs import JobCancelled
             raise JobCancelled(f"cancelled after {i - 1}/{len(entries)} candidates")
         url = e["url"]
+        if _trust_hosts:
+            _h = url.split("//", 1)[-1].split("/", 1)[0].lower()
+            _h = _h[4:] if _h.startswith("www.") else _h
+            if _h in _trust_hosts or (root_domain(url) or "").lower() in _trust_hosts:
+                e["_trust_extraction"] = True
         # PER-DOMAIN EXCLUSION (admin-set, exclusionary): a URL whose path SECTION matches
         # one of this publisher's exclude words (bostonchefs: restaurant/chef/news) is the
         # site's own "not a recipe" taxonomy — skip outright, overriding any food word. No
@@ -790,6 +804,18 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             if has_recipe_structure(text, _base_lang, _eff_lang):
                 kept.append(e)
                 print(f"{_dl} KEEP struct phrase={score:>2}{tag}  {url}")
+            elif e.get("_trust_extraction"):
+                # Per-domain trust override: this publisher's pages are known to
+                # carry a real recipe that the cheap structure gate can't see
+                # (unconventional markup — e.g. Boston Globe's story-format
+                # recipes with no "Ingredients" heading). The full extractor
+                # decodes them correctly, so keep the entry and let extraction
+                # do the real parse. Safe because trust is granted per-host on
+                # the domains master, typically paired with a SEMrush URL=recipe
+                # filter that already constrains the candidate set. See
+                # docs/recipe-pipeline.md (trust_extraction).
+                kept.append(e)
+                print(f"{_dl} KEEP trust  phrase={score:>2}{tag}  {url}")
             elif _render_rescue(e, url, i):
                 continue
             else:
