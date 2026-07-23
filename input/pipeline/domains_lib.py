@@ -69,13 +69,19 @@ EDITABLE_FIELDS = (
     "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
     "paywall",        # gated premium publisher (drives PA-remap)
     "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
-    "semrush_report_url",  # editable one-click deep-link into SEMrush for this domain
+    # semrush_report_url is DERIVED (build_semrush_pages_url from the semrush_* fields), not stored.
     "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
     "exclude_words",       # OPTIONAL per-domain EXCLUSIONARY sections (restaurant/chef/news)
     "profile",             # long researched bio (deep-enrich; curator-editable)
     "brand_authority",     # Moz V3 Brand Authority 0-100 (managed by deep-enrich; overridable)
     "referring_domains",   # Moz V3 referring-domain count (managed; overridable)
     "ranking_keywords",    # JSON list of top keywords the site ranks for (managed)
+    "semrush_db",              # SEMrush country database (us, gr, …)
+    "semrush_search_type",     # domain | subdomain | subfolder | url
+    "semrush_filter_word",     # advanced-filter value, e.g. "Recipe"
+    "semrush_filter_field",    # mkwd (Top Keyword) | url
+    "semrush_filter_include",  # 1=Include, 0=Exclude
+    "semrush_filter_criterion",# containing | not_containing | …
 )
 
 
@@ -233,6 +239,23 @@ _ENRICH_COLUMNS = {
     "enriched_at": "TEXT",                            # when deep-enrich last ran (ISO)
 }
 
+# SEMrush deep-link builder fields (per-domain) — used to GENERATE the Top-Pages /
+# Organic-Pages report URL with an Advanced Filter, so the exported page list is
+# PRE-FILTERED (e.g. keyword containing "Recipe") before it ever reaches our own
+# filters. The report is the ORGANIC pages view (what a domain ranks for in organic
+# search — excludes paid/promoted); toppages is an alias of organic/pages (same data).
+# Mirrors SEMrush's own advanced-filter form: {Include/Exclude, field, criterion, word}.
+# db = country database (ISO-2: us, gr, …); searchType = domain|subdomain|subfolder|url.
+# See domains_lib.build_semrush_pages_url + project_backlinks_source.
+_SEMRUSH_FILTER_COLUMNS = {
+    "semrush_db": "TEXT NOT NULL DEFAULT 'us'",              # country db (us, gr, …)
+    "semrush_search_type": "TEXT NOT NULL DEFAULT 'domain'", # domain|subdomain|subfolder|url
+    "semrush_filter_word": "TEXT NOT NULL DEFAULT ''",       # e.g. "Recipe" ('' = no filter)
+    "semrush_filter_field": "TEXT NOT NULL DEFAULT 'mkwd'",  # mkwd (Top Keyword) | url
+    "semrush_filter_include": "INTEGER NOT NULL DEFAULT 1",  # 1=Include, 0=Exclude
+    "semrush_filter_criterion": "TEXT NOT NULL DEFAULT 'containing'",
+}
+
 # Poor-publisher signal (2026-07-08). The is-recipe LLM cascade tags harvest pages
 # recipe|not_recipe|poor_quality; a domain whose pages are repeatedly poor_quality
 # (a messy source we can't extract cleanly) is a POOR PUBLISHER. We roll the cascade
@@ -302,6 +325,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _ENRICH_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _SEMRUSH_FILTER_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _QUALITY_COLUMNS.items():
@@ -411,12 +437,54 @@ def _today() -> str:
 
 def report_url_template(conn: Optional[sqlite3.Connection] = None) -> str:
     """The SEMrush Indexed-Pages deep-link template (`{domain}` placeholder), from
-    system_config so a SEMrush URL re-skin is a config edit ([[feedback_no_data_in_code]])."""
+    system_config so a SEMrush URL re-skin is a config edit ([[feedback_no_data_in_code]]).
+    LEGACY: retained for back-compat; new links are built by build_semrush_pages_url."""
     from input.pipeline import system_config
     return system_config.get_setting(
         "semrush_indexed_pages_url_template",
-        "https://www.semrush.com/analytics/backlinks/pages/"
-        "?q={domain}&searchType=domain&sort_field=domainsnum")
+        "https://www.semrush.com/analytics/organic/pages/?q={domain}&searchType=domain")
+
+
+def semrush_pages_base_url() -> str:
+    """Base SEMrush report URL the deep-link builder targets (params added in code, so
+    NO `{domain}` here). Default = the Top-Pages / Organic-Pages report (organic-search
+    demand; excludes paid). Config-overridable (system_config `semrush_pages_base_url`);
+    e.g. flip to `.../analytics/organic/pages/` — same organic data, different path."""
+    from input.pipeline import system_config
+    return (system_config.get_setting(
+        "semrush_pages_base_url",
+        "https://www.semrush.com/analytics/toppages/") or "").strip()
+
+
+def build_semrush_pages_url(d: dict) -> str:
+    """Generate the SEMrush Top-Pages deep-link for a domain row WITH its per-domain
+    Advanced Filter — db (country), searchType (domain/subdomain/…), and an
+    include/field/criterion/word filter that PRE-FILTERS the page list in SEMrush (e.g.
+    Top-Keyword containing "Recipe") before export. Mirrors SEMrush's own filter form:
+    {inc, fld, cri, val}. No filter word → a plain (unfiltered) report URL. '' if no host."""
+    import json
+    from urllib.parse import urlencode
+    host = (d.get("domain") or "").strip()
+    base = semrush_pages_base_url()
+    if not host or not base:
+        return ""
+    params = {
+        "db": (d.get("semrush_db") or "us").strip() or "us",
+        "q": host,
+        "searchType": (d.get("semrush_search_type") or "domain").strip() or "domain",
+    }
+    word = (d.get("semrush_filter_word") or "").strip()
+    if word:
+        adv = {
+            "inc": bool(int(d.get("semrush_filter_include", 1) or 0)),
+            "fld": (d.get("semrush_filter_field") or "mkwd").strip() or "mkwd",
+            "cri": (d.get("semrush_filter_criterion") or "containing").strip() or "containing",
+            "val": word,
+        }
+        params["filter"] = json.dumps(
+            {"search": "", "changesTypes": "", "answerEngines": [], "advanced": {"0": adv}},
+            separators=(",", ":"))
+    return base.split("?")[0] + "?" + urlencode(params)
 
 
 def _derive_schedule(d: dict, report_template: Optional[str] = None) -> None:
@@ -435,11 +503,12 @@ def _derive_schedule(d: dict, report_template: Optional[str] = None) -> None:
     # keyed on semrush_report_url — that link is now auto-defaulted for every domain
     # (below), so keying on it would put the whole corpus on the worklist.
     managed = d.get("harvest_source") == "backlinks_file"
-    # Default the report deep-link from the template when the row has none stored.
-    if not (d.get("semrush_report_url") or "").strip() and d.get("domain"):
-        tmpl = report_template if report_template is not None else report_url_template()
-        if tmpl:
-            d["semrush_report_url"] = tmpl.replace("{domain}", d["domain"])
+    # semrush_report_url is DERIVED from the per-domain SEMrush filter fields
+    # (build_semrush_pages_url) — the curator edits db / searchType / filter word+field,
+    # and the deep-link is generated (with the Advanced Filter baked in). Always recompute
+    # so the "↗ Open" link reflects the current fields.
+    if d.get("domain"):
+        d["semrush_report_url"] = build_semrush_pages_url(d)
     d["next_harvest_at"] = None
     d["harvest_status"] = None
     d["harvest_due"] = False
@@ -598,13 +667,6 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     if not domain_exists(conn, host):
         raise ValueError(f"Domain '{host}' not found")
     sets = {k: fields[k] for k in EDITABLE_FIELDS if k in fields}
-    # The form pre-fills semrush_report_url with the auto-derived default; if the
-    # curator didn't customize it, store '' so the field keeps meaning "custom
-    # override only" and a template change still propagates. A real custom URL persists.
-    if "semrush_report_url" in sets:
-        derived = (report_url_template() or "").replace("{domain}", host)
-        if (sets["semrush_report_url"] or "").strip() == derived:
-            sets["semrush_report_url"] = ""
     if not sets:
         return get_domain(conn, host)
     sets["updated_at"] = _now()

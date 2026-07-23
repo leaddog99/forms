@@ -358,8 +358,19 @@
                 ${field('f_records', 'Records to pull from file', d.harvest_records || 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
                 ${field('f_backlinks_dir', 'Export folder OR exact file path (blank = auto-detect newest in Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\john\\Downloads\\https___www.domain.com_-organic.PagesV3-us-….xlsx', full: true })}
-                ${urlField('f_semrush_report_url', 'SEMrush Top-Pages deep-link (one-click to Export)', d.semrush_report_url || '', { ph: 'https://…/analytics/organic/pages/?q=domain&searchType=domain', full: true })}
               </div>
+              <div class="ed-block-label" style="margin:12px 0 2px;font-size:.82em">SEMrush deep-link + advanced filter <span style="font-weight:400;color:var(--muted,#8a7f72)">(pre-filters the page list in SEMrush before export — e.g. Top Keyword containing "Recipe")</span></div>
+              <div class="ed-form-grid" style="margin-top:2px">
+                ${field('f_semrush_db', 'Country (db)', d.semrush_db || 'us', { ph: 'us · gr · uk …' })}
+                ${field('f_semrush_search_type', 'Analyze by', d.semrush_search_type || 'domain', { select: [{v:'domain',l:'Domain'},{v:'subdomain',l:'Subdomain'},{v:'subfolder',l:'Subfolder'},{v:'url',l:'URL'}] })}
+              </div>
+              <div class="ed-form-grid" style="margin-top:2px">
+                ${field('f_semrush_filter_include', 'Filter', String(d.semrush_filter_include ?? 1), { select: [{v:'1',l:'Include'},{v:'0',l:'Exclude'}] })}
+                ${field('f_semrush_filter_field', 'Field', d.semrush_filter_field || 'mkwd', { select: [{v:'mkwd',l:'Top Keyword'},{v:'url',l:'URL'}] })}
+                ${field('f_semrush_filter_criterion', 'Condition', d.semrush_filter_criterion || 'containing', { select: [{v:'containing',l:'Containing'},{v:'not_containing',l:'Not containing'},{v:'exactly',l:'Exactly matching'},{v:'starting',l:'Begins with'},{v:'ending',l:'Ends with'}] })}
+                ${field('f_semrush_filter_word', 'Word (blank = no filter)', d.semrush_filter_word || '', { ph: 'Recipe' })}
+              </div>
+              ${urlField('f_semrush_report_url', 'Generated deep-link — ↗ opens the pre-filtered report to Export', d.semrush_report_url || '', { full: true })}
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
             </div>
           </div>
@@ -450,6 +461,10 @@
       $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
       $('#deepEnrichBtn').addEventListener('click', () => doDeepEnrich(d.domain));
       renderKeywords($('#f_ranking_keywords')?.value);
+      // SEMrush deep-link: regenerate the preview live as the filter fields change
+      // (mirrors domains_lib.build_semrush_pages_url — server re-derives it on save/reload).
+      ['f_semrush_db','f_semrush_search_type','f_semrush_filter_include','f_semrush_filter_field','f_semrush_filter_criterion','f_semrush_filter_word']
+        .forEach(id => { const el = $('#'+id); if (el){ el.addEventListener('input', () => refreshSemrushUrl(d.domain)); el.addEventListener('change', () => refreshSemrushUrl(d.domain)); } });
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
@@ -995,6 +1010,31 @@
             + `<span style="${meta}">#${k.rank ?? '?'} · ${fmt(k.volume)}</span></span>`).join('');
     }
 
+    // Build the SEMrush Top-Pages deep-link from the current filter fields — mirrors
+    // domains_lib.build_semrush_pages_url. The server RE-DERIVES this on save/reload; this
+    // is just the live preview so the curator sees the URL as they set the filter.
+    function buildSemrushUrl(domain){
+      if (!domain) return '';
+      const base = 'https://www.semrush.com/analytics/toppages/';
+      const p = new URLSearchParams({
+        db: ($('#f_semrush_db')?.value || 'us').trim() || 'us',
+        q: domain,
+        searchType: $('#f_semrush_search_type')?.value || 'domain',
+      });
+      const word = ($('#f_semrush_filter_word')?.value || '').trim();
+      if (word){
+        const adv = { inc: ($('#f_semrush_filter_include')?.value || '1') === '1',
+                      fld: $('#f_semrush_filter_field')?.value || 'mkwd',
+                      cri: $('#f_semrush_filter_criterion')?.value || 'containing',
+                      val: word };
+        p.set('filter', JSON.stringify({ search:'', changesTypes:'', answerEngines:[], advanced:{ '0': adv } }));
+      }
+      return base + '?' + p.toString();
+    }
+    function refreshSemrushUrl(domain){
+      const el = $('#f_semrush_report_url'); if (el) el.value = buildSemrushUrl(domain);
+    }
+
     // Deep enrich: Moz FACTS (Brand Authority, referring domains, ranking keywords) +
     // a grounded LLM RESEARCH profile. Fills the form for review; does NOT save.
     async function doDeepEnrich(domain){
@@ -1101,7 +1141,13 @@
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
         paywall: $('#f_paywall')?.checked ? 1 : 0,
         harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
-        semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),
+        // SEMrush deep-link + advanced filter (semrush_report_url is DERIVED server-side).
+        semrush_db: ($('#f_semrush_db')?.value || 'us').trim() || 'us',
+        semrush_search_type: $('#f_semrush_search_type')?.value || 'domain',
+        semrush_filter_word: ($('#f_semrush_filter_word')?.value || '').trim(),
+        semrush_filter_field: $('#f_semrush_filter_field')?.value || 'mkwd',
+        semrush_filter_include: ($('#f_semrush_filter_include')?.value || '1') === '1' ? 1 : 0,
+        semrush_filter_criterion: $('#f_semrush_filter_criterion')?.value || 'containing',
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),
         exclude_words: ($('#f_exclude_words')?.value || '').trim(),
       };
