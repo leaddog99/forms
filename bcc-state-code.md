@@ -1455,3 +1455,38 @@ Curator wants pre-filtered SEMrush exports (sites like southernliving/bostonglob
 - **`url` default** (was mkwd): curator found URL matches ~900 recipes vs Top-Keyword's ~100 on bostonglobe; bulk-migrated 299 rows.
 - **Report = ORGANIC pages** (research): toppages == organic/pages (same data, excludes paid); the paid "Top Pages" is Traffic-Analytics at a different URL. Base is config (`semrush_pages_base_url`).
 - **Open/future (curator notes, in [[project_backlinks_source]]):** (1) the `url`/other fld·cri codes are GUESSES — SEMrush doesn't document them; confirm by decoding a live URL. (2) multi-condition filters (`advanced:{"0","1"}`, AND) — support one now. (3) an "Uncouple" switch to paste a custom URL + grey out the form fields. (4) [[project_moz_scoring_cost]] TODO: Brand Authority on the recipe form/post — a CALL to `moz_v3.brand_authority`, not a code copy.
+
+## Session log — 2026-07-23 (later) — Trust-extraction override + domain-form field glossary + dead-field cull
+
+Follow-on from the Boston Globe drop investigation. The Globe embeds real recipes in a story-format
+layout (no "Ingredients" heading); the cheap structure gate + LLM cascade DROP them before extraction,
+yet the full extractor decodes them perfectly (16 ingredients, 3 steps on the gateau-basque test).
+- **Trust-extraction per-domain override SHIPPED** (commit e214edf). New `trust_extraction` flag on the
+  domains master. When set, the harvest KEEPS that host's candidates past BOTH the structure gate and
+  the cascade poor_quality/not_recipe catch, so they reach the extractor. `domains_lib`:
+  `trust_extraction` col (`_ENRICH_COLUMNS`, auto-migrated) + `EDITABLE_FIELDS` +
+  `get_trust_extraction_hosts()` cache (+ invalidation). `build_query_batch`: load trust hosts, stamp
+  `_trust_extraction` per entry, trust-keep branch in the structure gate (`KEEP trust`).
+  `isrecipe_cascade.apply_decide`: skips the catch for trusted hosts. `domains.html`: checkbox + save
+  wiring. **Safe when paired with a SEMrush URL filter** that already narrows to recipe pages. NEEDS
+  RESTART before the form can save the flag (schema + `domains_lib` code in the server process); the
+  harvest job process picks up its side automatically (`python -m jobs exec` fresh import). See
+  [[project_split_architecture]] / docs/recipe-candidate-pipeline.md (Stage 2 trust gate).
+- **Domain-form field GLOSSARY written** (commit 71258f8, `docs/domain-form-fields.md`). Curator: "we
+  have options in the domain form that are opaque TO ME!! ... i suspect some of them don't do anything."
+  Every control on the Domains editor, in form order, tagged 🟢 LIVE / 🟡 CURATOR-TOOL / ⚪ INERT,
+  verified against the code (an Explore agent traced each of ~40 fields to its consumption site; I
+  hand-verified the surprising calls — it wrongly flagged `harvest_records` dead, but that one is LIVE
+  via the refresh payload like keep_top_n). Key clarifier: the open/blocked/curate **mode cards are
+  presets over four low-level switches** (fetch_strategy/render_required/check_recipe/score_only), not
+  fields. The whole SEMrush deep-link group is CURATOR-TOOL (builds the export hotlink; no automated
+  step reads it).
+- **Two truly-vestigial fields REMOVED** (this commit). `custom_extractor` (deceptive name — there was
+  NEVER a per-domain custom-extractor mechanism wired up; zero dispatch) and `failure_count` (never even
+  written; was only a display pill). Dropped from the form + `EDITABLE_FIELDS` + `CREATE TABLE`. Existing
+  DBs keep the now-ignored columns (harmless). Aspirational inert fields KEPT on purpose: story/profile,
+  the Moz-enrich trio (brand_authority/referring_domains/ranking_keywords), country/cuisine_focus/
+  ethnicity, extract_notes, domain_authority/da_last_scored, notes.
+- **Also this session (earlier, already committed):** SEMrush "Uncouple" switch (2980c5e), Moz dish-batch
+  rows summary line (cb99020), jobs stderr-to-per-file-log (0bd8374/20edeee), old dishes.html removed
+  (fb4d473).

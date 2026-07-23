@@ -67,7 +67,8 @@ harvest time, not these columns.
 | **Domain authority (DA)** | ⚪ INERT | Populated + displayed, and even returned by `get_paywall_calibrations`, **but the paywall remap math never uses it** — live DA for scoring is sourced from `url_scoring`, not this column. Reference only. |
 | **DA scored (date)** | ⚪ INERT | Timestamp for the above. No consumer. |
 | **Extraction notes** | ⚪ INERT | A human hint ("JSON-LD reliable", "needs www for Moz"). Form-only; nothing dispatches on it. |
-| **Custom extractor** | ⚪ INERT | ⚠️ Deceptive name — **nothing dispatches on it**. There is no per-domain custom-extractor mechanism wired up. Purely stored. |
+
+*(**Custom extractor** and the **fetch-fails** status pill were removed 2026-07-23 — see the INERT-fields section below. There was never a per-domain custom-extractor mechanism wired up.)*
 
 ## Section: Top recipes — publisher refresh
 
@@ -115,20 +116,23 @@ ingests the exported *file*, not these settings. They exist to make the export s
 
 ---
 
-## ⚪ INERT fields — candidates for removal
+## ⚪ INERT fields
 
-These are stored + shown but **no code reads them to change behavior**. They're the "options that
-don't do anything" — safe to hide or drop from the form (schema columns can stay until a migration):
+These are stored + shown but **no code reads them to change behavior** — the "options that don't do
+anything". They split into *aspirational* (plausibly wanted for a future publisher page or scoring
+input) and *truly vestigial*.
 
-- **custom_extractor** — deceptive name, zero dispatch. Strongest removal candidate.
-- **failure_count** — never even written; only a display pill.
-- **story**, **profile** — editorial/reference text, no consumer.
-- **brand_authority**, **referring_domains**, **ranking_keywords** — Moz enrich output, write-only.
+**Removed 2026-07-23** — the two truly-vestigial ones were dropped from the form + `EDITABLE_FIELDS`
++ `CREATE TABLE` (existing DBs keep the now-ignored columns; harmless):
+
+- ~~**custom_extractor**~~ — deceptive name, zero dispatch. Gone.
+- ~~**failure_count**~~ — never even written; was only a display pill. Gone.
+
+**Still present (aspirational — kept on purpose):**
+
+- **story**, **profile** — editorial/reference text, no consumer yet (future publisher page).
+- **brand_authority**, **referring_domains**, **ranking_keywords** — Moz enrich output, write-only (future scoring input).
 - **country**, **cuisine_focus**, **ethnicity** — display/UI-filter only, no pipeline consumer.
 - **extract_notes** — human hint, no dispatch.
 - **domain_authority**, **da_last_scored** — displayed, but live scoring DA comes from `url_scoring`.
 - **notes** — ops/display.
-
-**Recommendation:** before removing, decide which are *aspirational* (story/profile/brand_authority
-are plausibly wanted for a future publisher page or scoring input) vs *truly vestigial*
-(`custom_extractor`, `failure_count`). The vestigial two are the clean wins.

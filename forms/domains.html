@@ -284,7 +284,6 @@
           ${d.bcc_rank != null ? `<span class="ed-pill" title="rank among our allowed publishers by SEMrush organic traffic">BCC rank #${d.bcc_rank}</span>` : ''}
           ${d.semrush_rank != null ? `<span class="ed-pill" title="global SEMrush rank by organic traffic">SEMrush #${d.semrush_rank.toLocaleString()}</span>` : ''}
           ${d.da_last_scored ? `<span class="ed-pill"><i class="d"></i>DA scored ${escapeHtml(fmtDate(d.da_last_scored))}</span>` : ''}
-          ${d.failure_count ? `<span class="ed-pill warn"><i class="d"></i>${d.failure_count} fetch fails</span>` : ''}
         </div>
         <p class="ed-submeta">Updated ${fmtDate(d.updated_at)}${d.created_at ? ' · created ' + fmtDate(d.created_at) : ''}</p>
 
@@ -442,10 +441,9 @@
         </section>
 
         <details class="ed-block" style="border-top:1px solid var(--line);padding-top:10px">
-          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo, custom extractor</summary>
+          <summary style="cursor:pointer;font-weight:600;color:var(--ed-ink-soft);font-size:.92em;list-style:revert">Advanced — logo</summary>
           <div class="ed-form-grid" style="margin-top:12px">
             ${field('f_logo_url', 'Logo URL', d.logo_url, { ph: 'https://… (Clearbit auto-fills)' })}
-            ${field('f_custom_extractor', 'Custom extractor (module path)', d.custom_extractor, { ph: 'intake.parsers.foo' })}
           </div>
         </details>
 
@@ -1146,7 +1144,6 @@
         fetch_strategy: $('#f_fetch_strategy').value,
         render_required: $('#f_render_required').checked ? 1 : 0,
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
-        custom_extractor: $('#f_custom_extractor').value.trim(),
         extract_notes: $('#f_extract_notes').value.trim(),
         domain_authority: numOrNull($('#f_domain_authority').value),
         notes: $('#f_notes').value.trim(),

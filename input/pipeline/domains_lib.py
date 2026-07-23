@@ -8,14 +8,13 @@ everything we know about a source site independent of any single recipe:
                  pipeline's _source.originalLanguage), optional cuisine_focus
                  HINT (NOT authoritative recipe ethnicity — that stays dish-
                  derived; a Greek site can still post a taco)
-  - extraction   fetch_strategy / extract_notes / custom_extractor — folds in
-                 the long-planned "domain quirks registry"
+  - extraction   fetch_strategy / extract_notes — capture hints for the harvest
   - gatekeeping  harvestable (skip a known publisher's refresh); the hard host
                  blocklist moved OUT to system_config `disallowed_domains` (a
                  junk host no longer needs a domains-master row to be blocked)
   - authority    domain_authority (DA is a domain property; metabase_url keeps
                  only the per-URL PA) + da_last_scored
-  - ops          notes, failure_count, timestamps
+  - ops          notes, timestamps
 
 This is the source of truth (per ``feedback_no_data_in_code``). The shipped
 ``domain_display_names.json`` is demoted to a one-time BOOTSTRAP SEED — same
@@ -55,11 +54,9 @@ EDITABLE_FIELDS = (
     "render_required",   # JS-rendered site → fetch with a real browser (unblocker render=True)
     "score_only",        # harvest MODE: 1 = Curate (score URL-only, pick manually); persists the picker choice
     "extract_notes",
-    "custom_extractor",
     "domain_authority",
     "da_last_scored",
     "notes",
-    "failure_count",
     "keep_top_n",     # publisher top-N to keep on refresh
     "harvest_records",# records to pull from the SEMrush export on a backlinks_file harvest
     "recipe_path",    # publisher recipe URL path segment (detected, overridable)
@@ -299,12 +296,10 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
             ethnicity           TEXT,
             fetch_strategy      TEXT NOT NULL DEFAULT 'plain',
             extract_notes       TEXT,
-            custom_extractor    TEXT,
             allowed             INTEGER NOT NULL DEFAULT 1,
             domain_authority    REAL,
             da_last_scored      TEXT,
             notes               TEXT,
-            failure_count       INTEGER NOT NULL DEFAULT 0,
             master_recipe_count INTEGER NOT NULL DEFAULT 0,
             user_recipe_count   INTEGER NOT NULL DEFAULT 0,
             counts_updated_at   TEXT,
