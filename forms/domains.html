@@ -422,17 +422,24 @@
               <select id="userPicker"><option value="">Loading…</option></select></div>
           </div>
 
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 6px">
-            <p class="ed-notes-help" id="topListLabel" style="margin:0">Kept top recipes:</p>
-            <div style="display:flex;gap:6px;align-items:center">
+          <p class="ed-notes-help" id="topListLabel" style="margin:14px 0 6px">Kept top recipes:</p>
+          <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
+
+          <!-- Persistent scored-cohort panel — mirrors the dishes form's cohort accordion
+               (reuses the shared .ed-accordion component). Always present; the winners list
+               above stays winners-only. The curation actions live HERE because they operate
+               on the cohort's checked also-rans, not the already-ingested winners. -->
+          <details class="ed-accordion" id="domainCohortAcc" style="margin-top:16px">
+            <summary>Scored cohort <span class="ed-count" id="domainCohortCount"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 10px">Every candidate the last harvest scored — the full cohort by <code>rank_score</code> (OU/power blend), straight from the ledger. ★ = kept winner; the rest are ranked-but-not-kept also-rans (dimmed). Check worthy also-rans → <b>⚙ Process selected</b> to ingest just those via the unblocker.</p>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
               <button type="button" class="ed-btn" id="processSelBtn" style="font-size:.8em;display:none" title="Extract the CHECKED rows into master via the unblocker (1 render each)">⚙ Process selected</button>
               <button type="button" class="ed-btn" id="queueCapBtn" style="font-size:.8em;display:none" title="FREE manual queue: opens each CHECKED page so you click your bookmarklet — no unblocker cost. (ROUGH prototype — UI redesign tomorrow.)">📋 Queue (manual)</button>
               <button type="button" class="ed-btn" id="userscriptBtn" style="font-size:.8em;display:none" title="ZERO-CLICK FREE: the BCC capture userscript (Tampermonkey) walks the CHECKED pages in your real browser, beating anti-bot, saving each to master, paced 8–25s. Tracked as a job. Install once from /forms/bcc-capture.user.js">⚡ Run userscript</button>
               <label id="slowWrap" class="ed-check" style="display:none;font-size:.76em;gap:4px;align-items:center" title="Slower delays (30–60s) for touchy / rate-limiting sites"><input type="checkbox" id="usSlow"> slow</label>
-              <button type="button" class="ed-btn" id="cohortToggle" data-on="0" style="font-size:.8em" title="Show EVERY scored candidate — winners ★ plus the ranked-but-not-kept also-rans, with DA/PA — like the dishes scored cohort">☰ Scored cohort</button>
             </div>
-          </div>
-          <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
+            <div class="top-recipes-list" id="domainCohortList"><div class="ed-empty-fit">Open or refresh to load the scored cohort.</div></div>
+          </details>
         </section>
 
         <section class="ed-block">
@@ -479,16 +486,6 @@
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
       $('#queueCapBtn')?.addEventListener('click', () => captureQueue(d.domain));
       $('#userscriptBtn')?.addEventListener('click', () => runUserscriptQueue(d.domain));
-      // Wire the cohort toggle HERE (renderDetail re-creates the button each render) —
-      // not in the global section, where it'd attach once to a button that no longer exists.
-      $('#cohortToggle')?.addEventListener('click', () => {
-        const btn = $('#cohortToggle');
-        const on = btn.dataset.on === '1';
-        btn.dataset.on = on ? '0' : '1';
-        btn.classList.toggle('active', !on);
-        btn.textContent = on ? '☰ Scored cohort' : '★ Winners only';
-        loadDomainTop(d.domain, !on);
-      });
       $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
       $('#exportUploadBtn')?.addEventListener('click', () => $('#exportUploadInput')?.click());
       $('#exportUploadInput')?.addEventListener('change', (e) => uploadExport(d.domain, e.target.files[0]));
@@ -500,7 +497,8 @@
       applyHarvestMode(inferHarvestMode(d), { dirty: false });   // initial — don't dirty on load
       loadBacklinksFile(d.domain);     // detect the SEMrush export → fills the file line
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
-      loadDomainTop(d.domain, $('#cohortToggle')?.dataset.on === '1');  // stored publisher ledger
+      loadDomainTop(d.domain);         // stored winners (kept top-N)
+      loadDomainCohort(d.domain);      // full scored cohort (persistent panel)
     }
 
     // Activate the chosen source group (highlight + enable its inputs); dim + disable
@@ -575,9 +573,9 @@
     // Render the publisher top-N list — same component/look as the dishes
     // top-recipes list (tile · rank · title · host · grade/corpus/★ · DA/PA/pwr ·
     // actions). Reuses the .top-recipe-* classes lifted from dishes.html.
-    function renderDomainTop(list, cohort){
-      const el = $('#domainTopList'); if (!el) return;
-      if (!list || !list.length){ el.innerHTML = '<div class="ed-empty-fit">No top recipes yet — run a refresh.</div>'; return; }
+    function renderDomainTop(list, cohort, elSel = '#domainTopList'){
+      const el = $(elSel); if (!el) return;
+      if (!list || !list.length){ el.innerHTML = `<div class="ed-empty-fit">${cohort ? 'No scored cohort yet — run a refresh.' : 'No top recipes yet — run a refresh.'}</div>`; return; }
       el.innerHTML = list.map((m, i) => {
         const host = (() => { try { return new URL(m.url).hostname.replace(/^www\./, ''); } catch { return m.url || '—'; } })();
         const title = escapeHtml(m.name || m.title || host);
@@ -620,28 +618,45 @@
       }).join('');
     }
 
-    async function loadDomainTop(domain, all){
+    // Winners list — the kept top-N (always winners-only now; the full cohort lives in
+    // its own persistent panel below, loaded by loadDomainCohort).
+    async function loadDomainTop(domain){
       const el = $('#domainTopList'); if (!el) return;
       const gen = topGen;   // snapshot; if the list is invalidated mid-fetch, don't paint
       try {
-        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top${all ? '?all=1' : ''}`);
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
         // Bail if the user navigated away or the list was cleared while we were fetching
         // — else this stale result repaints the wrong domain / undoes a Clear.
         if (selected !== domain || gen !== topGen) return;
-        renderDomainTop(d.top || [], !!all);
-        // ⚙ Process selected is for the cohort/worklist (where you check candidates);
-        // hidden in the winners-only view (those are already ingested).
-        const psb = $('#processSelBtn'); if (psb) psb.style.display = all ? 'inline-flex' : 'none';
-        const qcb = $('#queueCapBtn'); if (qcb) qcb.style.display = all ? 'inline-flex' : 'none';
-        const usb = $('#userscriptBtn'); if (usb) usb.style.display = all ? 'inline-flex' : 'none';
-        const sw = $('#slowWrap'); if (sw) sw.style.display = all ? 'inline-flex' : 'none';
-        const lbl = $('#topListLabel');
-        if (lbl) lbl.textContent = all
-          ? `Scored cohort — ${d.count} candidates (${d.selected_count || 0} kept ★, rest are also-rans)`
-          : 'Kept top recipes:';
-      } catch (e) { el.innerHTML = `<li class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</li>`; }
+        renderDomainTop(d.top || [], false, '#domainTopList');
+      } catch (e) { el.innerHTML = `<div class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</div>`; }
+    }
+
+    // Persistent scored-cohort panel (mirrors the dishes form's cohort accordion). Full
+    // ledger by rank_score: winners ★ + dimmed also-rans. The count shows in the summary
+    // even while collapsed. Curation buttons appear only when there are pickable (not-yet-
+    // ingested) also-rans to process.
+    async function loadDomainCohort(domain){
+      const el = $('#domainCohortList'); if (!el) return;
+      const gen = topGen;
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/top?all=1`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (selected !== domain || gen !== topGen) return;
+        const rows = d.top || [];
+        renderDomainTop(rows, true, '#domainCohortList');
+        const cnt = $('#domainCohortCount');
+        if (cnt) cnt.textContent = rows.length ? `(${d.selected_count || 0}★ / ${d.count || rows.length} scored)` : '';
+        // ⚙ Process selected / queue / userscript operate on checked also-rans — show them
+        // only when the cohort has rows not already in the corpus.
+        const pickable = rows.some(m => !m.ingested);
+        ['#processSelBtn', '#queueCapBtn', '#userscriptBtn', '#slowWrap'].forEach(sel => {
+          const b = $(sel); if (b) b.style.display = pickable ? 'inline-flex' : 'none';
+        });
+      } catch (e) { el.innerHTML = `<div class="ed-empty-fit">Couldn’t load cohort (${escapeHtml(String(e.message || e))}).</div>`; }
     }
 
     // Publisher refresh: run the (verbatim) query → verify recipes → Moz-score →
@@ -650,7 +665,7 @@
     // (out-of-process; 1 render each). Reuses streamRefresh for the live log + reload +
     // cancel; renderResult shows the "ingested N of M" summary.
     async function processSelected(domain){
-      const picks = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
+      const picks = Array.from(document.querySelectorAll('#domainCohortList .ms-pick:checked'))
         .map(c => c.dataset.url).filter(Boolean);
       const hint = $('#topHint'), btn = $('#processSelBtn');
       if (!picks.length){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Check at least one row to process.'; } return; }
@@ -676,7 +691,7 @@
     // it to master. The per-page bookmarklet click is irreducible WITHOUT a userscript/
     // extension (a web app can't inject into a third-party tab) — see docs.
     async function captureQueue(domain){
-      const queue = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
+      const queue = Array.from(document.querySelectorAll('#domainCohortList .ms-pick:checked'))
         .map(c => c.dataset.url).filter(Boolean);
       if (!queue.length){ const h = $('#topHint'); if (h){ h.style.color = 'var(--ed-warn)'; h.textContent = 'Check at least one row to queue.'; } return; }
       // Curation must reach the CORPUS (master), not a personal library. The
@@ -740,7 +755,7 @@
           ov.querySelector('#cqSaved').onclick = () => advance(true);
           ov.querySelector('#cqSkip').onclick = () => advance(false);
         }
-        ov.querySelector('#cqClose').onclick = () => { stop(); ov.remove(); loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1'); loadDomainRecipes(domain); };
+        ov.querySelector('#cqClose').onclick = () => { stop(); ov.remove(); loadDomainTop(domain); loadDomainCohort(domain); loadDomainRecipes(domain); };
       };
       const openCurrent = () => {
         stop();
@@ -765,7 +780,7 @@
     // with the #bcc-capture hash, and the installed userscript walks the rest in the real
     // browser (free, beats anti-bot), paced 8–25s (or slow 30–60s).
     async function runUserscriptQueue(domain){
-      const picks = Array.from(document.querySelectorAll('#domainTopList .ms-pick:checked'))
+      const picks = Array.from(document.querySelectorAll('#domainCohortList .ms-pick:checked'))
         .map(c => c.dataset.url).filter(Boolean);
       const hint = $('#topHint');
       if (!picks.length){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Check at least one row to queue.'; } return; }
@@ -885,7 +900,8 @@
         // domain is still open — otherwise its result would bleed into the current form.
         // (The result is persisted server-side; reopening `domain` repaints it correctly.)
         if (selected !== domain) return;
-        loadDomainTop(domain, $('#cohortToggle')?.dataset.on === '1');
+        loadDomainTop(domain);
+        loadDomainCohort(domain);
         // The harvest AUTO-EXTRACTS the selected winners into master_recipes, so the
         // master/user browse dropdowns are now stale — reload them (and their counts)
         // so the just-ingested recipes appear without reopening the form.
@@ -962,8 +978,10 @@
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`, { method: 'DELETE' });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        topGen++;             // invalidate any in-flight loadDomainTop so it can't refill the cleared list
-        renderDomainTop([]);
+        topGen++;             // invalidate any in-flight loadDomainTop/Cohort so it can't refill the cleared list
+        renderDomainTop([], false, '#domainTopList');
+        renderDomainTop([], true, '#domainCohortList');
+        const cc = $('#domainCohortCount'); if (cc) cc.textContent = '';
         if (hint){ hint.style.color = ''; hint.textContent = `Cleared ${data.cleared} row(s).`; }
       } catch (e) {
         if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Clear failed: ${e.message || e}`; }
@@ -1414,9 +1432,9 @@
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
-    // Scored-cohort toggle: flip between kept winners only and the FULL scored cohort
-    // (winners ★ + dimmed also-rans) — mirrors the dishes scored-cohort panel.
-    // (cohortToggle is wired inside renderDetail — it's re-created per domain render.)
+    // Scored cohort now lives in its own persistent .ed-accordion panel (loadDomainCohort),
+    // mirroring the dishes form — no toggle. Winners list + cohort panel load together on
+    // domain open (renderDetail) and after every refresh/process (renderResult).
     $('#refreshRanksBtn').addEventListener('click', refreshRanks);
     $('#rescoreBtn').addEventListener('click', rescoreDomains);
     $('#scanInboxBtn').addEventListener('click', scanInbox);
