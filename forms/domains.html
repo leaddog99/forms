@@ -366,7 +366,7 @@
               </div>
               <div class="ed-form-grid" style="margin-top:2px">
                 ${field('f_semrush_filter_include', 'Filter', String(d.semrush_filter_include ?? 1), { select: [{v:'1',l:'Include'},{v:'0',l:'Exclude'}] })}
-                ${field('f_semrush_filter_field', 'Field', d.semrush_filter_field || 'mkwd', { select: [{v:'mkwd',l:'Top Keyword'},{v:'url',l:'URL'}] })}
+                ${field('f_semrush_filter_field', 'Field', d.semrush_filter_field || 'url', { select: [{v:'url',l:'URL'},{v:'mkwd',l:'Top Keyword'}] })}
                 ${field('f_semrush_filter_criterion', 'Condition', d.semrush_filter_criterion || 'containing', { select: [{v:'containing',l:'Containing'},{v:'not_containing',l:'Not containing'},{v:'exactly',l:'Exactly matching'},{v:'starting',l:'Begins with'},{v:'ending',l:'Ends with'}] })}
                 ${field('f_semrush_filter_word', 'Word (blank = no filter)', d.semrush_filter_word || '', { ph: 'Recipe' })}
               </div>
@@ -1145,7 +1145,7 @@
         semrush_db: ($('#f_semrush_db')?.value || 'us').trim() || 'us',
         semrush_search_type: $('#f_semrush_search_type')?.value || 'domain',
         semrush_filter_word: ($('#f_semrush_filter_word')?.value || '').trim(),
-        semrush_filter_field: $('#f_semrush_filter_field')?.value || 'mkwd',
+        semrush_filter_field: $('#f_semrush_filter_field')?.value || 'url',
         semrush_filter_include: ($('#f_semrush_filter_include')?.value || '1') === '1' ? 1 : 0,
         semrush_filter_criterion: $('#f_semrush_filter_criterion')?.value || 'containing',
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),

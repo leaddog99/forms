@@ -251,7 +251,7 @@ _SEMRUSH_FILTER_COLUMNS = {
     "semrush_db": "TEXT NOT NULL DEFAULT 'us'",              # country db (us, gr, …)
     "semrush_search_type": "TEXT NOT NULL DEFAULT 'domain'", # domain|subdomain|subfolder|url
     "semrush_filter_word": "TEXT NOT NULL DEFAULT ''",       # e.g. "Recipe" ('' = no filter)
-    "semrush_filter_field": "TEXT NOT NULL DEFAULT 'mkwd'",  # mkwd (Top Keyword) | url
+    "semrush_filter_field": "TEXT NOT NULL DEFAULT 'url'",   # url (URL — default; catches more) | mkwd (Top Keyword)
     "semrush_filter_include": "INTEGER NOT NULL DEFAULT 1",  # 1=Include, 0=Exclude
     "semrush_filter_criterion": "TEXT NOT NULL DEFAULT 'containing'",
 }
