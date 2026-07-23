@@ -296,6 +296,18 @@ def cmd_exec(args: argparse.Namespace) -> int:
         f = None
     try:
         return _run_job_id(args.job_id)
+    except BaseException:
+        # An exception propagating PAST here would otherwise be printed by Python's
+        # excepthook AFTER the finally restores sys.stderr (→ back to DEVNULL) and the
+        # empty file is deleted — losing the traceback. Write it to the file now.
+        if f is not None:
+            try:
+                import traceback
+                traceback.print_exc(file=f)
+                f.flush()
+            except Exception:
+                pass
+        raise
     finally:
         sys.stderr = prev_stderr
         if f is not None:
