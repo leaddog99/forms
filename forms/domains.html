@@ -370,7 +370,8 @@
                 ${field('f_semrush_filter_criterion', 'Condition', d.semrush_filter_criterion || 'containing', { select: [{v:'containing',l:'Containing'},{v:'not_containing',l:'Not containing'},{v:'exactly',l:'Exactly matching'},{v:'starting',l:'Begins with'},{v:'ending',l:'Ends with'}] })}
                 ${field('f_semrush_filter_word', 'Word (blank = no filter)', d.semrush_filter_word || '', { ph: 'Recipe' })}
               </div>
-              ${urlField('f_semrush_report_url', 'Generated deep-link — ↗ opens the pre-filtered report to Export', d.semrush_report_url || '', { full: true })}
+              <div style="margin:6px 0 2px">${field('f_semrush_url_uncoupled', 'Uncouple — paste a custom URL below (stops auto-generating; greys the filter fields above)', d.semrush_url_uncoupled, { checkbox: true, full: true })}</div>
+              ${urlField('f_semrush_report_url', 'Deep-link — ↗ opens the report to Export (auto-generated, or your pasted URL when uncoupled)', d.semrush_report_url || '', { full: true })}
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
             </div>
           </div>
@@ -465,6 +466,12 @@
       // (mirrors domains_lib.build_semrush_pages_url — server re-derives it on save/reload).
       ['f_semrush_db','f_semrush_search_type','f_semrush_filter_include','f_semrush_filter_field','f_semrush_filter_criterion','f_semrush_filter_word']
         .forEach(id => { const el = $('#'+id); if (el){ el.addEventListener('input', () => refreshSemrushUrl(d.domain)); el.addEventListener('change', () => refreshSemrushUrl(d.domain)); } });
+      $('#f_semrush_url_uncoupled')?.addEventListener('change', (e) => {
+        const un = e.target.checked;
+        if (!un) refreshSemrushUrl(d.domain);   // re-coupling → regenerate from the fields
+        setSemrushCoupling(un);
+      });
+      setSemrushCoupling(!!(d.semrush_url_uncoupled));   // initial state on render
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
@@ -1032,7 +1039,15 @@
       return base + '?' + p.toString();
     }
     function refreshSemrushUrl(domain){
+      if ($('#f_semrush_url_uncoupled')?.checked) return;   // uncoupled → leave the pasted URL alone
       const el = $('#f_semrush_report_url'); if (el) el.value = buildSemrushUrl(domain);
+    }
+    // Uncouple state: when ON, grey out + disable the filter fields (they no longer drive
+    // the URL) and let the curator edit/paste the deep-link; when OFF, filter fields drive it.
+    function setSemrushCoupling(uncoupled){
+      ['f_semrush_db','f_semrush_search_type','f_semrush_filter_include','f_semrush_filter_field','f_semrush_filter_criterion','f_semrush_filter_word']
+        .forEach(id => { const el = $('#'+id); if (el){ el.disabled = !!uncoupled; el.style.opacity = uncoupled ? '.45' : ''; } });
+      const url = $('#f_semrush_report_url'); if (url) url.readOnly = !uncoupled;
     }
 
     // Deep enrich: Moz FACTS (Brand Authority, referring domains, ranking keywords) +
@@ -1148,6 +1163,8 @@
         semrush_filter_field: $('#f_semrush_filter_field')?.value || 'url',
         semrush_filter_include: ($('#f_semrush_filter_include')?.value || '1') === '1' ? 1 : 0,
         semrush_filter_criterion: $('#f_semrush_filter_criterion')?.value || 'containing',
+        semrush_url_uncoupled: $('#f_semrush_url_uncoupled')?.checked ? 1 : 0,
+        semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),  // stored when uncoupled; re-derived when coupled
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),
         exclude_words: ($('#f_exclude_words')?.value || '').trim(),
       };

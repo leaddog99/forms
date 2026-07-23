@@ -69,7 +69,8 @@ EDITABLE_FIELDS = (
     "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
     "paywall",        # gated premium publisher (drives PA-remap)
     "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
-    # semrush_report_url is DERIVED (build_semrush_pages_url from the semrush_* fields), not stored.
+    "semrush_report_url",      # DERIVED from the semrush_* fields UNLESS uncoupled — then a pasted custom URL
+    "semrush_url_uncoupled",   # 1 = use the pasted semrush_report_url as-is (don't regenerate)
     "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
     "exclude_words",       # OPTIONAL per-domain EXCLUSIONARY sections (restaurant/chef/news)
     "profile",             # long researched bio (deep-enrich; curator-editable)
@@ -254,6 +255,10 @@ _SEMRUSH_FILTER_COLUMNS = {
     "semrush_filter_field": "TEXT NOT NULL DEFAULT 'url'",   # url (URL — default; catches more) | mkwd (Top Keyword)
     "semrush_filter_include": "INTEGER NOT NULL DEFAULT 1",  # 1=Include, 0=Exclude
     "semrush_filter_criterion": "TEXT NOT NULL DEFAULT 'containing'",
+    # UNCOUPLE: when 1, semrush_report_url is a curator-PASTED custom URL used as-is —
+    # NOT regenerated from the filter fields (for a SEMrush view the builder can't express
+    # yet). When 0 (default), the URL is derived from the fields (build_semrush_pages_url).
+    "semrush_url_uncoupled": "INTEGER NOT NULL DEFAULT 0",
 }
 
 # Poor-publisher signal (2026-07-08). The is-recipe LLM cascade tags harvest pages
@@ -505,9 +510,9 @@ def _derive_schedule(d: dict, report_template: Optional[str] = None) -> None:
     managed = d.get("harvest_source") == "backlinks_file"
     # semrush_report_url is DERIVED from the per-domain SEMrush filter fields
     # (build_semrush_pages_url) — the curator edits db / searchType / filter word+field,
-    # and the deep-link is generated (with the Advanced Filter baked in). Always recompute
-    # so the "↗ Open" link reflects the current fields.
-    if d.get("domain"):
+    # and the deep-link is generated. EXCEPT when UNCOUPLED: then it's a curator-pasted
+    # custom URL, used as-is (leave the stored value alone).
+    if d.get("domain") and not d.get("semrush_url_uncoupled"):
         d["semrush_report_url"] = build_semrush_pages_url(d)
     d["next_harvest_at"] = None
     d["harvest_status"] = None
