@@ -87,6 +87,24 @@
     });
     const { escapeHtml, flash } = LibraryShell;
 
+    // Shared URL-field component — any URL-valued field renders as an input plus
+    // ↗ open-in-new-tab and ⧉ copy icons (see feedback_url_field_control). The icons
+    // are wired once via a delegated .url-ic click handler on #page (below).
+    function urlField(id, label, value, opts = {}){
+      const v = value == null ? '' : String(value);
+      const full = opts.full ? ' full' : '';
+      const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : `ex: ${opts.ph}`) : '';
+      const ic = (act, glyph, title) =>
+        `<button type="button" class="url-ic" data-act="${act}" data-for="${id}" title="${title}" ` +
+        `style="flex:0 0 auto;width:30px;border:1px solid var(--line);background:var(--card);` +
+        `border-radius:6px;cursor:pointer;font-size:14px;color:var(--accent-dark)">${glyph}</button>`;
+      return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
+        `<div style="display:flex;gap:6px;align-items:stretch">` +
+          `<input id="${id}" type="url" value="${escapeHtml(v)}" placeholder="${escapeHtml(ph)}" style="flex:1 1 auto;min-width:0">` +
+          ic('open', '↗', 'Open in a new tab') + ic('copy', '⧉', 'Copy URL') +
+        `</div></div>`;
+    }
+
     const PICKS = ['', 'Best Overall', 'Best Value', 'Premium'];
     let rows = [];          // light list rows
     let byId = {};          // product_id -> light row
@@ -252,7 +270,7 @@
           </div>
           <div class="pc-row2">
             <div class="ed-field"><label>BCC pick</label><select id="f_pick">${pickOpts}</select></div>
-            <div class="ed-field"><label>Image URL</label><input id="f_img" value="${escapeHtml(p.image_url||'')}" placeholder="https://…"></div>
+            ${urlField('f_img', 'Image URL', p.image_url||'', { ph: 'https://…' })}
           </div>
           <div class="ed-field"><label>BCC blurb (our voice)</label><textarea id="f_blurb" placeholder="Why we like it…">${escapeHtml(p.bcc_blurb||'')}</textarea></div>
           <div class="ed-field"><label>Description (factual — feeds the embedding)</label><textarea id="f_desc" placeholder="Material, construction, use, sizes…">${escapeHtml(p.description||'')}</textarea></div>
@@ -274,7 +292,7 @@
             <div class="pc-row3">
               <div class="ed-field"><label>Retailer</label><input id="o_ret" value="${escapeHtml(o.retailer||'')}" placeholder="Williams Sonoma"></div>
               <div class="ed-field"><label>Price ($)</label><input id="o_price" type="number" step="0.01" value="${o.price!=null?o.price:''}"></div>
-              <div class="ed-field"><label>Buy URL</label><input id="o_url" value="${escapeHtml(o.affiliate_url||o.source_url||'')}" placeholder="https://…"></div>
+              ${urlField('o_url', 'Buy URL', o.affiliate_url||o.source_url||'', { ph: 'https://…' })}
             </div>
           </fieldset>
 
@@ -344,6 +362,19 @@
     });
     $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
     $('#addToggle').addEventListener('click', () => { selected=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
+
+    // Open / Copy affordances for any urlField() — delegated on #page (survives re-renders),
+    // acts on the input's live value. Shared behavior across all editor forms.
+    $('#page').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.url-ic'); if (!btn) return;
+      const inp = document.getElementById(btn.dataset.for); const url = (inp?.value || '').trim();
+      if (!url){ flash && flash('No URL yet', true); return; }
+      if (btn.dataset.act === 'open'){ window.open(url, '_blank', 'noopener'); return; }
+      try { await navigator.clipboard.writeText(url); }
+      catch { inp.select(); document.execCommand('copy'); }   // fallback for non-secure contexts
+      const g = btn.textContent; btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = g; }, 1100);
+    });
 
     load();
   </script>
