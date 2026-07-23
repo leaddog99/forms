@@ -886,6 +886,8 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     Drops URLs Moz can't score (missing credentials, no-such-page, etc).
     score_url_via_moz already computes ou internally."""
     kept, dropped = [], []
+    from input.pipeline import url_scoring as _us
+    _us.reset_moz_row_stats()
     for i, e in enumerate(entries, start=1):
         url = e["url"]
         scores = score_url_via_moz(url)
@@ -917,6 +919,9 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
         print(f"  [{i:>2}/{len(entries)}] MOZ-OK      "
               f"pa={_fmt_num(e['pa'])} da={_fmt_num(e['da'])} "
               f"ou={_fmt_num(e['ou'], width=6, decimals=2)}  {url}")
+    _ms = _us.moz_row_stats()
+    print(f"  [moz] rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
+          f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old 4-variant probe)")
     return kept, dropped
 
 
