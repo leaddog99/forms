@@ -813,7 +813,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 # do the real parse. Safe because trust is granted per-host on
                 # the domains master, typically paired with a SEMrush URL=recipe
                 # filter that already constrains the candidate set. See
-                # docs/recipe-pipeline.md (trust_extraction).
+                # docs/recipe-candidate-pipeline.md (Stage 2, trust gate).
                 kept.append(e)
                 print(f"{_dl} KEEP trust  phrase={score:>2}{tag}  {url}")
             elif _render_rescue(e, url, i):

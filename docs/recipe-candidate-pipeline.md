@@ -8,6 +8,8 @@ changes the flow**. Written 2026-06-26 after the non-English filtering rework.
 > the change-detecting fingerprint, and the exceptions). For a plain-language map of every gate
 > **plus how the embedding & regression compute/decide**, see
 > [how-the-pipeline-decides.md](how-the-pipeline-decides.md). This doc is the gate-by-gate detail.
+> For **what each knob on the domain form actually does** (and which options are inert), see
+> [domain-form-fields.md](domain-form-fields.md).
 
 ## TL;DR — does the Google harvest run the same gates as the SEMrush-file harvest?
 
@@ -100,6 +102,12 @@ Applied to the discovered list before any network spend:
     - **[if the text has an ingredients-section marker AND a method-section marker]** (accent-
       insensitive, looking in base + page language) → **KEEP** (`struct`). A real recipe has both;
       a vocabulary-rich guide/tips article has at most one.
+    - **[elif the domain's `trust_extraction` flag is set]** → **KEEP** (`trust`). This publisher is
+      known to embed real recipes in an unconventional layout the structural gate can't see (e.g.
+      Boston Globe's story-format recipes with no "Ingredients" heading), but the full extractor
+      decodes them fine. Skips the structure gate AND the LLM cascade's poor_quality/not_recipe
+      "catch" (`isrecipe_cascade.apply_decide`). Safe because it's set per-host and normally paired
+      with a SEMrush URL filter that already narrows the candidate set to recipe pages.
     - **[elif the page looks like a thin JS shell AND render is eligible]** → re-fetch once with a
       full browser (unblocker render) and re-evaluate (auto-learns `render_required`).
     - **[else]** → DROP `no-recipe-structure`. (The phrase *count* is still recorded for ranking/
@@ -173,6 +181,7 @@ full recipe happens regardless of language. (See `project_live_is_recipe_warn`.)
 | Stage 2 | non-English collection title | drop `collection-title` |
 | Stage 2 | has Recipe JSON-LD | **keep** (trusted) |
 | Stage 2 | lang has pack / == base | structural gate (keep if ingredients+method) |
+| Stage 2 | `trust_extraction` set | **keep** `trust` (skip structure gate + LLM catch → extractor) |
 | Stage 2 | thin JS shell | render-escalate + re-check |
 | Stage 2 | lang has no pack | translate + count threshold |
 | Stage 3 | `check_recipe` off (paywall) | skip Stage 2; inline no-fetch filter |
