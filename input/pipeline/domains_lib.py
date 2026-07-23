@@ -72,6 +72,10 @@ EDITABLE_FIELDS = (
     "semrush_report_url",  # editable one-click deep-link into SEMrush for this domain
     "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
     "exclude_words",       # OPTIONAL per-domain EXCLUSIONARY sections (restaurant/chef/news)
+    "profile",             # long researched bio (deep-enrich; curator-editable)
+    "brand_authority",     # Moz V3 Brand Authority 0-100 (managed by deep-enrich; overridable)
+    "referring_domains",   # Moz V3 referring-domain count (managed; overridable)
+    "ranking_keywords",    # JSON list of top keywords the site ranks for (managed)
 )
 
 
@@ -215,6 +219,20 @@ _EDITORIAL_COLUMNS = {
     "ethnicity": "TEXT",
 }
 
+# Deep-enrich fields (Moz V3 FACTS + LLM-research STORY). The short `story` stays a
+# 1-2 sentence blurb; `profile` is the long researched bio. `brand_authority` /
+# `referring_domains` come from Moz V3 (input/pipeline/moz_v3.py); `ranking_keywords`
+# is a JSON list [{keyword, volume, rank}] of what the publisher ranks for (grounds the
+# LLM story in what they're genuinely authoritative on). See extract/domain_enrich.py
+# deep_enrich_domain + project_domain_master.
+_ENRICH_COLUMNS = {
+    "profile": "TEXT NOT NULL DEFAULT ''",
+    "brand_authority": "INTEGER",
+    "referring_domains": "INTEGER",
+    "ranking_keywords": "TEXT NOT NULL DEFAULT ''",   # JSON list
+    "enriched_at": "TEXT",                            # when deep-enrich last ran (ISO)
+}
+
 # Poor-publisher signal (2026-07-08). The is-recipe LLM cascade tags harvest pages
 # recipe|not_recipe|poor_quality; a domain whose pages are repeatedly poor_quality
 # (a messy source we can't extract cleanly) is a POOR PUBLISHER. We roll the cascade
@@ -281,6 +299,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _EDITORIAL_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _ENRICH_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _QUALITY_COLUMNS.items():

@@ -292,8 +292,19 @@
           <h3 class="ed-block-label">Editorial</h3>
           <div class="ed-form-grid">
             ${field('f_display_name', 'Display name', d.display_name, { ph: 'NYT Cooking' })}
-            ${field('f_story', 'Story', d.story, { textarea: true, full: true, minh: 90, ph: 'A short editorial bio of this site…' })}
+            ${field('f_story', 'Story', d.story, { textarea: true, full: true, minh: 70, ph: 'A short editorial bio (1-2 sentences)…' })}
+            ${field('f_profile', 'Profile (deep research)', d.profile, { textarea: true, full: true, minh: 170, ph: 'Run 🔬 Deep enrich to research this publisher (grounded in Moz signals + homepage)…' })}
           </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Authority &amp; reach <span style="font-weight:400;font-size:.8em;color:var(--muted,#8a7f72)">(Moz)</span></h3>
+          <div class="ed-form-grid">
+            ${field('f_brand_authority', 'Brand Authority (0-100)', d.brand_authority, { ph: '—' })}
+            ${field('f_referring_domains', 'Referring domains', d.referring_domains, { ph: '—' })}
+          </div>
+          <div id="rankingKw" class="ed-kw-wrap" style="margin-top:8px"></div>
+          <input type="hidden" id="f_ranking_keywords" value="${escapeHtml(typeof d.ranking_keywords === 'string' ? d.ranking_keywords : JSON.stringify(d.ranking_keywords || ''))}">
         </section>
 
         <section class="ed-block">
@@ -425,6 +436,7 @@
         <div class="ed-actions">
           <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
           <button type="button" class="ed-btn" id="enrichBtn" title="Profile this site with a quick LLM query (story, language, country, cuisine, logo)">✨ Enrich</button>
+          <button type="button" class="ed-btn" id="deepEnrichBtn" title="Deep research: Moz facts (Brand Authority, referring domains, ranking keywords) + a grounded LLM profile">🔬 Deep enrich</button>
           <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
@@ -436,6 +448,8 @@
       $('#saveBtn').addEventListener('click', () => doSave(d.domain));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
+      $('#deepEnrichBtn').addEventListener('click', () => doDeepEnrich(d.domain));
+      renderKeywords($('#f_ranking_keywords')?.value);
       $('#deleteBtn').addEventListener('click', () => doDelete(d.domain));
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
@@ -965,6 +979,59 @@
       }
     }
 
+    // Render the ranking-keywords JSON (what the site ranks for) as read-only chips.
+    function renderKeywords(json){
+      const wrap = $('#rankingKw'); if (!wrap) return;
+      let kws = [];
+      try { kws = typeof json === 'string' ? JSON.parse(json || '[]') : (json || []); } catch { kws = []; }
+      if (!Array.isArray(kws) || !kws.length){ wrap.innerHTML = ''; return; }
+      const fmt = (n) => n == null ? '' : (n >= 1000 ? (n/1000).toFixed(0) + 'k' : String(n));
+      const chip = 'display:inline-flex;align-items:baseline;gap:5px;margin:0 5px 5px 0;padding:2px 8px;'
+        + 'border:1px solid var(--line,#d8d2c8);border-radius:999px;background:var(--bg-alt,#f7f5f1);font-size:.76rem';
+      const meta = 'color:var(--muted,#8a7f72);font-variant-numeric:tabular-nums';
+      wrap.innerHTML = '<div style="font-size:.76rem;color:var(--muted,#8a7f72);margin-bottom:5px">Ranks on Google for (rank · monthly volume):</div>'
+        + kws.slice(0, 20).map(k =>
+            `<span style="${chip}" title="rank #${k.rank ?? '?'} · ${fmt(k.volume)}/mo">${escapeHtml(k.keyword || '')}`
+            + `<span style="${meta}">#${k.rank ?? '?'} · ${fmt(k.volume)}</span></span>`).join('');
+    }
+
+    // Deep enrich: Moz FACTS (Brand Authority, referring domains, ranking keywords) +
+    // a grounded LLM RESEARCH profile. Fills the form for review; does NOT save.
+    async function doDeepEnrich(domain){
+      const btn = $('#deepEnrichBtn'); const hint = $('#hint');
+      btn.disabled = true; const label = btn.textContent; btn.textContent = 'Researching…';
+      if (hint){ hint.style.color = ''; hint.textContent = 'Fetching Moz signals + researching the publisher (~15s)…'; }
+      try {
+        const r = await fetch(`/domains/${encodeURIComponent(domain)}/deep-enrich`, { method: 'POST' });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        const set = (id, v) => { if (v !== undefined && v !== null && v !== ''){ const el = $('#' + id); if (el) el.value = v; } };
+        set('f_profile', data.profile);
+        set('f_story', data.story);
+        set('f_language', normLang(data.language));
+        set('f_country', data.country);
+        set('f_cuisine_focus', data.cuisine_focus);
+        set('f_ethnicity', data.ethnicity);
+        set('f_logo_url', data.logo_url);
+        set('f_brand_authority', data.brand_authority);
+        set('f_referring_domains', data.referring_domains);
+        set('f_domain_authority', data.domain_authority);
+        const kwJson = JSON.stringify(data.ranking_keywords || []);
+        const kwEl = $('#f_ranking_keywords'); if (kwEl) kwEl.value = kwJson;
+        renderKeywords(kwJson);
+        $('#saveBtn').disabled = false;
+        if (hint){
+          hint.style.color = data.recognized ? '' : 'var(--ed-warn)';
+          const ba = data.brand_authority != null ? `BA ${data.brand_authority}` : 'no Moz data';
+          hint.textContent = `Researched (${ba}) — review the profile and Save.`;
+        }
+      } catch (e) {
+        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Deep enrich failed: ${e.message || e}`; }
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    }
+
     // Live per-domain recipe lists for the two browse dropdowns. The server
     // also stores the counts on the row as a side effect, so the next list
     // render shows them. Selecting an option opens that recipe in a new tab.
@@ -1013,6 +1080,10 @@
         language: $('#f_language').value.trim(),
         cuisine_focus: $('#f_cuisine_focus').value.trim(),
         ethnicity: ($('#f_ethnicity')?.value || '').trim(),
+        profile: ($('#f_profile')?.value || '').trim(),
+        brand_authority: numOrNull($('#f_brand_authority')?.value),
+        referring_domains: numOrNull($('#f_referring_domains')?.value),
+        ranking_keywords: ($('#f_ranking_keywords')?.value || '').trim(),
         fetch_strategy: $('#f_fetch_strategy').value,
         render_required: $('#f_render_required').checked ? 1 : 0,
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice

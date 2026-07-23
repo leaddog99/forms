@@ -213,3 +213,137 @@ def enrich_domain(domain: str, *, display_name: str = "",
         "logo_url": _logo_url_for(host),
         "recognized": bool(tool_input.get("recognized")),
     }
+
+
+# ---------------------------------------------------------------------------
+#  Deep enrich — Moz V3 FACTS + a stronger LLM RESEARCH call → a rich `profile`
+# ---------------------------------------------------------------------------
+_DEEP_MODEL = "claude-sonnet-4-6"   # a capable "research" call, not the quick Haiku blurb
+_DEEP_MAX_TOKENS = 1600
+
+_DEEP_PROFILE_TOOL = {
+    "name": "submit_domain_deep_profile",
+    "description": "Submit a rich, researched profile of a recipe/food publisher.",
+    "input_schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["profile", "story", "cuisineFocus", "country", "language", "recognized"],
+        "properties": {
+            "profile": {
+                "type": "string",
+                "description": (
+                    "A rich 2-4 PARAGRAPH editorial profile of this publisher: what it is "
+                    "and its history/origin, the people/chefs/editors behind it and their "
+                    "credentials, its editorial voice and approach, and the dishes/techniques "
+                    "it is genuinely KNOWN and authoritative for. GROUND every specific claim "
+                    "in the provided homepage content and the Moz signals (ranking keywords = "
+                    "what they actually rank #1 for; brand authority + referring domains = "
+                    "their reach). Do NOT invent specific founders, awards, dates, or history "
+                    "that the evidence does not support — if unknown, describe what IS "
+                    "supported. Factual and brand-neutral (no marketing superlatives). Plain "
+                    "prose, no headings."
+                ),
+            },
+            "story": {"type": "string",
+                      "description": "A 1-2 sentence distillation of `profile` (the short bio)."},
+            "cuisineFocus": {"type": "string",
+                             "description": "Niche/specialty cuisine or focus, or '' for general sites. "
+                                            "Infer from the ranking keywords + homepage."},
+            "ethnicity": {"type": "string",
+                          "description": "The publisher's cultural/culinary origin if clearly specialized "
+                                         "(e.g. 'Greek', 'Italian'), else ''."},
+            "country": {"type": "string", "description": "Home country of the publisher."},
+            "language": {"type": "string", "description": "Primary publishing language, ISO 639-1."},
+            "recognized": {"type": "boolean",
+                           "description": "True if you have real knowledge of this publisher (not "
+                                          "just guessing from the domain)."},
+        },
+    },
+}
+
+_DEEP_SYSTEM = (
+    "You are a food-media analyst writing a factual, brand-neutral profile of a recipe/food "
+    "publisher for an internal editorial database. You are given the site's homepage content "
+    "and hard Moz SEO signals — especially the keywords it ranks #1 for, which reveal what it "
+    "is genuinely authoritative on. Write a rich profile GROUNDED in that evidence. Never "
+    "fabricate specific people, awards, dates, or history the evidence doesn't support; when a "
+    "detail is unknown, stay with what IS supported. Call the submit_domain_deep_profile tool once."
+)
+
+
+def deep_enrich_domain(domain: str, *, display_name: str = "") -> Optional[dict]:
+    """Deep domain enrich: Moz V3 FACTS (brand authority, referring domains, ranking
+    keywords) + a stronger LLM RESEARCH call grounded on those facts + the homepage.
+    Returns suggested fields incl. a multi-paragraph `profile` and the Moz facts, or
+    None on LLM failure. Never raises. The Moz facts degrade gracefully to None/[] if
+    the V3 API is unavailable — the LLM profile still runs on the homepage alone."""
+    host = (domain or "").strip().lower()
+    if not host:
+        return None
+    root = root_domain("http://" + host) or host
+
+    # 1) Moz V3 facts (best-effort; each never raises).
+    from input.pipeline import moz_v3
+    ba = moz_v3.brand_authority(root)
+    metrics = moz_v3.site_metrics(root) or {}
+    keywords = moz_v3.ranking_keywords(root, limit=15)
+
+    # 2) Homepage grounding.
+    snippet = _homepage_snippet(host)
+
+    # 3) Build the grounded research prompt.
+    lines = [f"Domain: {host}", f"Registrable domain: {root}"]
+    if display_name:
+        lines.append(f"Known display name: {display_name}")
+    facts = []
+    if ba is not None:
+        facts.append(f"Brand Authority: {ba}/100 (how strongly people search this brand by name)")
+    if metrics.get("referring_domains") is not None:
+        facts.append(f"Referring domains: {metrics['referring_domains']:,} (sites linking here)")
+    if metrics.get("domain_authority") is not None:
+        facts.append(f"Domain Authority: {metrics['domain_authority']}/100")
+    if keywords:
+        kw = ", ".join(f"{k['keyword']} (#{k['rank']}, {k['volume']:,}/mo)"
+                       for k in keywords[:15] if k.get("keyword"))
+        facts.append(f"Ranks #1-ish on Google for: {kw}")
+    if facts:
+        lines.append("\n--- Moz SEO signals (hard data — GROUND the profile in these) ---")
+        lines.extend(facts)
+    if snippet:
+        lines.append("\n--- Homepage content (GROUND your profile in THIS, not memory) ---")
+        lines.append(snippet)
+    lines.append("\nWrite the researched profile of this food/recipe publisher.")
+
+    try:
+        response = llm.create(
+            operation="domain_deep_enrich", model=_DEEP_MODEL, max_tokens=_DEEP_MAX_TOKENS,
+            system=_DEEP_SYSTEM,
+            messages=[{"role": "user", "content": "\n".join(lines)}],
+            tools=[_DEEP_PROFILE_TOOL],
+            tool_choice={"type": "tool", "name": "submit_domain_deep_profile"},
+        )
+    except Exception as e:
+        print(f"[DOMAIN-DEEP-ENRICH] LLM call failed: {type(e).__name__}: {e}")
+        return None
+
+    ti = next((b.input for b in response.content
+               if getattr(b, "type", "") == "tool_use"
+               and getattr(b, "name", "") == "submit_domain_deep_profile"), None)
+    if not isinstance(ti, dict):
+        return None
+
+    return {
+        "profile": (ti.get("profile") or "").strip(),
+        "story": (ti.get("story") or "").strip(),
+        "cuisine_focus": (ti.get("cuisineFocus") or "").strip(),
+        "ethnicity": (ti.get("ethnicity") or "").strip(),
+        "country": (ti.get("country") or "").strip(),
+        "language": (ti.get("language") or "").strip(),
+        "logo_url": _logo_url_for(host),
+        "recognized": bool(ti.get("recognized")),
+        # Moz FACTS passed straight through (curator sees + saves them).
+        "brand_authority": ba,
+        "referring_domains": metrics.get("referring_domains"),
+        "domain_authority": metrics.get("domain_authority"),
+        "ranking_keywords": keywords,
+    }

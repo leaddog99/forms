@@ -4879,6 +4879,34 @@ def enrich_domain_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Enrich error: {e}")
 
 
+@app.post("/domains/{domain}/deep-enrich")
+def deep_enrich_domain_endpoint(domain: str):
+    """Deep domain enrich: Moz V3 FACTS (brand authority, referring domains, ranking
+    keywords) + a stronger LLM RESEARCH call grounded on them → a rich multi-paragraph
+    `profile`. Returns the SUGGESTED fields (does not save); the editor populates them
+    so the curator can review + Save. Token-journaled. ~16 Moz rows + one Sonnet call."""
+    from input.pipeline import domains_lib
+    from extract.domain_enrich import deep_enrich_domain
+    try:
+        with _db() as conn:
+            row = domains_lib.get_domain(conn, domain)
+        display_name = (row or {}).get("display_name") or ""
+        rid = f"domain:{domain.strip().lower()}"
+        usage_log: list = []
+        import llm  # gateway: attribute migrated-module usage to this domain
+        llm.enter(recipe_id=rid, user_id=0)
+        result = deep_enrich_domain(domain, display_name=display_name)
+        _journal_usage(usage_log, recipe_id=rid, user_id=0)
+        if result is None:
+            raise HTTPException(status_code=502, detail="Deep enrich failed — the model returned nothing.")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] deep_enrich_domain({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Deep enrich error: {e}")
+
+
 @app.patch("/domains/{domain}")
 def patch_domain_endpoint(domain: str, payload: dict = Body(...)):
     """Update editable fields on a domain row."""
