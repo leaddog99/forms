@@ -337,7 +337,7 @@
           <div class="src-groups" id="srcGroups">
             <div class="src-group" data-src="serp">
               <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${(d.harvest_source || 'serp') === 'serp' ? 'checked' : ''}>
-                Google — site: search <span class="src-sub">SerpAPI; depth set in pages of ~10 results</span></label>
+                Google — site: search <span class="src-sub">SERP; depth set in pages of ~10 results</span></label>
               <div class="ed-form-grid">
                 ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
                 ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}

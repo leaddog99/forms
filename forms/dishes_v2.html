@@ -219,7 +219,7 @@
         <div class="ed-kicker">
           <button type="button" class="ed-purpose-toggle" id="purposeToggle">Admin · Edit Dish <span id="purposeArrow">▾</span></button>
           <div class="ed-purpose-pop" id="purposePop" hidden>
-            <strong>Purpose:</strong> tune a dish’s search queries + cohort sizing, refresh it (re-runs SerpAPI → Moz → extract → save into the curated top set), and review its OU fit and current winners. Name is the immutable join key — delete + recreate to rename.
+            <strong>Purpose:</strong> tune a dish’s search queries + cohort sizing, refresh it (re-runs SERP → Moz → extract → save into the curated top set), and review its OU fit and current winners. Name is the immutable join key — delete + recreate to rename.
           </div>
         </div>
 
@@ -256,7 +256,7 @@
             <textarea id="f_queries" class="ed-notes" style="min-height:90px" placeholder='"banana bread" | "banana nut bread"'>${escapeHtml(queriesText)}</textarea>
           </div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="f_serp">SerpAPI candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
+            <div class="ed-field"><label for="f_serp">SERP candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
             <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" max="${_limits.final}" value="${d.top_n_final ?? ''}"></div>
             <div class="ed-field"><label for="f_ttl">Refresh TTL (days)</label><input id="f_ttl" type="number" min="1" value="${d.refresh_ttl_days == null ? '' : d.refresh_ttl_days}" placeholder="blank = manual only"></div>
             <div class="ed-field"><label>Auto-enrich on save</label>
@@ -650,7 +650,7 @@
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off"></div>
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim, one per line)</span></label><textarea id="n_queries" class="ed-notes" style="min-height:90px" placeholder='&quot;spaghetti and meat sauce&quot; | &quot;spaghetti with meat sauce&quot;'></textarea></div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="n_serp">SerpAPI candidates</label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="25"></div>
+            <div class="ed-field"><label for="n_serp">SERP candidates</label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="25"></div>
             <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="10"></div>
             <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only"></div>
           </div>

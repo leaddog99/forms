@@ -276,8 +276,36 @@ def _run_due_scheduled_jobs() -> int:
 def cmd_exec(args: argparse.Namespace) -> int:
     """Run an ALREADY-enqueued job by id, out-of-process. This is what the
     server's POST /jobs/{id}/spawn launches so a UI Refresh runs off the uvicorn
-    event loop — the enqueue already happened in-request; we just execute it."""
-    return _run_job_id(args.job_id)
+    event loop — the enqueue already happened in-request; we just execute it.
+
+    STDERR is captured to logs/job_<id>.stderr.log for the duration: the server
+    spawns us with stderr=DEVNULL, so an uncaught exception (outside the runner's
+    own try/except) or a faulthandler traceback (segfault) would otherwise vanish —
+    the reason a 'failed' job can show an empty error_detail. The file is deleted on
+    a clean exit, so it only survives when there's an actual crash to read."""
+    import faulthandler
+    err_path = api.LOGS_DIR / f"job_{args.job_id}.stderr.log"
+    prev_stderr = sys.stderr
+    f = None
+    try:
+        api.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        f = open(err_path, "w", encoding="utf-8", errors="replace")
+        sys.stderr = f
+        faulthandler.enable(file=f)          # segfault/fatal-signal traceback → same file
+    except Exception:
+        f = None
+    try:
+        return _run_job_id(args.job_id)
+    finally:
+        sys.stderr = prev_stderr
+        if f is not None:
+            try:
+                empty = f.tell() == 0
+                f.close()
+                if empty and err_path.exists():
+                    err_path.unlink()        # clean run → no clutter; keep only real crashes
+            except Exception:
+                pass
 
 
 def cmd_next(args: argparse.Namespace) -> int:
