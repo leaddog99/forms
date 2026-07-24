@@ -27,12 +27,28 @@ import llm  # central LLM gateway — auto-journals usage to bcc_token_journal
 _DATA_URL_IMG_RE = re.compile(r"!\[[^\]]*\]\(data:[^)]*\)")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 
-# host -> friendly retailer name (drives RetailerOffer.retailer when the LLM is unsure).
+# host (registrable domain) -> friendly retailer name. Drives RetailerOffer.retailer when
+# the LLM is unsure; unknown hosts still extract fine (the curator fills the name). Keyed on
+# root_domain() so www./locale subdomains match. Kitchen/gourmet-focused per the affiliate
+# catalog. Add a line to recognize a new retailer — a plain seed constant, not canonical data.
 _RETAILERS = {
-    "amazon.com": "Amazon", "williams-sonoma.com": "Williams Sonoma",
-    "surlatable.com": "Sur La Table", "surlatable.com": "Sur La Table",
-    "crateandbarrel.com": "Crate & Barrel", "target.com": "Target",
-    "wayfair.com": "Wayfair", "kingarthurbaking.com": "King Arthur",
+    # Marketplaces & big-box
+    "amazon.com": "Amazon", "target.com": "Target", "walmart.com": "Walmart",
+    "wayfair.com": "Wayfair", "costco.com": "Costco", "qvc.com": "QVC",
+    # Cookware / kitchen specialty retailers
+    "williams-sonoma.com": "Williams Sonoma", "surlatable.com": "Sur La Table",
+    "crateandbarrel.com": "Crate & Barrel", "cb2.com": "CB2",
+    "webstaurantstore.com": "WebstaurantStore", "cutleryandmore.com": "Cutlery and More",
+    "everythingkitchens.com": "Everything Kitchens", "kitchenwarehouse.com": "Kitchen Warehouse",
+    # Manufacturer / direct-to-consumer brands
+    "kingarthurbaking.com": "King Arthur", "kitchenaid.com": "KitchenAid",
+    "lodgecastiron.com": "Lodge", "le-creuset.com": "Le Creuset", "lecreuset.com": "Le Creuset",
+    "zwilling.com": "Zwilling", "staub-usa.com": "Staub", "allclad.com": "All-Clad",
+    "oxo.com": "OXO", "vitamix.com": "Vitamix", "breville.com": "Breville",
+    "cuisinart.com": "Cuisinart", "ninjakitchen.com": "Ninja", "usapan.com": "USA Pan",
+    "nordicware.com": "Nordic Ware", "calphalon.com": "Calphalon", "anolon.com": "Anolon",
+    "madeincookware.com": "Made In", "greenpan.us": "GreenPan", "carawayhome.com": "Caraway",
+    "our-place.com": "Our Place", "thermoworks.com": "ThermoWorks", "misen.com": "Misen",
 }
 
 
