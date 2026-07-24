@@ -117,7 +117,10 @@
       body: JSON.stringify({ markdown: markdown, source_url: url, title: title })
     }).then(function (r) { return r.json(); }).then(function (d) {
       if (!d || !d.token) throw new Error("stage failed");
-      var formUrl = API + "/forms/product_form.html?staged=" + encodeURIComponent(d.token) + "&url=" + encodeURIComponent(url);
+      // Land in the real product editor (ACDV shell + list in the menu), same as the recipe
+      // grabber lands in recipe_form_styled.html. products.html reads ?staged and auto-opens
+      // the prefilled Add form. (Was the standalone product_form.html, now retired.)
+      var formUrl = API + "/forms/products.html?staged=" + encodeURIComponent(d.token) + "&url=" + encodeURIComponent(url);
       if (popup && !popup.closed) popup.location.href = formUrl;
       else window.open(formUrl, "_blank", "noopener");
     }).catch(function (e) { note("Failed: " + (e.message || e)); });
