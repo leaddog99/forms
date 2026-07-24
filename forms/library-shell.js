@@ -923,10 +923,29 @@
     return '<span class="ls-url-ctl">' + text + (u ? open + copy : '') + '</span>';
   }
 
+  // Editable URL FIELD (memory/feedback_url_field_control): a labeled <input type=url>
+  // with the shared open/copy icons. Uses urlControl's inputId mode, so the ↗/⧉ act on the
+  // input's LIVE value via the ONE global delegated handler _ensureUrlCtl wires — no
+  // per-form click wiring. One call renders the whole `.ed-field`; the input keeps `id`, so
+  // existing save reads (`$('#id').value`) are unchanged. opts: {full, ph}. `label` is
+  // inserted as-is (callers may pass small inline markup, matching prior behavior).
+  function urlField(id, label, value, opts) {
+    opts = opts || {};
+    const v = value == null ? '' : String(value);
+    const full = opts.full ? ' full' : '';
+    const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : 'ex: ' + opts.ph) : '';
+    return '<div class="ed-field' + full + '"><label for="' + id + '">' + (label == null ? '' : label) + '</label>' +
+      '<div style="display:flex;gap:6px;align-items:stretch">' +
+        '<input id="' + id + '" type="url" value="' + escapeHtml(v) + '" placeholder="' + escapeHtml(ph) + '" style="flex:1 1 auto;min-width:0">' +
+        urlControl(v, { inputId: id }) +
+      '</div></div>';
+  }
+
   window.LibraryShell = {
     init,
     initNav,
     urlControl,
+    urlField,
     initEditorNav,
     initIdentityBadge,
     openSidebar,

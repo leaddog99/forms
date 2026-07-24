@@ -77,7 +77,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260714d"></script>
+  <script src="/forms/library-shell.js?v=20260723a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
     LibraryShell.initNav({ currentPage: 'products' });
@@ -85,25 +85,7 @@
       backButton: '#edBack', scrim: '#edScrim',
       listLabel: 'Products', listMode: 'docked', shellWidth: 1200,
     });
-    const { escapeHtml, flash } = LibraryShell;
-
-    // Shared URL-field component — any URL-valued field renders as an input plus
-    // ↗ open-in-new-tab and ⧉ copy icons (see feedback_url_field_control). The icons
-    // are wired once via a delegated .url-ic click handler on #page (below).
-    function urlField(id, label, value, opts = {}){
-      const v = value == null ? '' : String(value);
-      const full = opts.full ? ' full' : '';
-      const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : `ex: ${opts.ph}`) : '';
-      const ic = (act, glyph, title) =>
-        `<button type="button" class="url-ic" data-act="${act}" data-for="${id}" title="${title}" ` +
-        `style="flex:0 0 auto;width:30px;border:1px solid var(--line);background:var(--card);` +
-        `border-radius:6px;cursor:pointer;font-size:14px;color:var(--accent-dark)">${glyph}</button>`;
-      return `<div class="ed-field${full}"><label for="${id}">${label}</label>` +
-        `<div style="display:flex;gap:6px;align-items:stretch">` +
-          `<input id="${id}" type="url" value="${escapeHtml(v)}" placeholder="${escapeHtml(ph)}" style="flex:1 1 auto;min-width:0">` +
-          ic('open', '↗', 'Open in a new tab') + ic('copy', '⧉', 'Copy URL') +
-        `</div></div>`;
-    }
+    const { escapeHtml, flash, urlField } = LibraryShell;
 
     const PICKS = ['', 'Best Overall', 'Best Value', 'Premium'];
     let rows = [];          // light list rows
@@ -363,19 +345,8 @@
     $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
     $('#addToggle').addEventListener('click', () => { selected=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
 
-    // Open / Copy affordances for any urlField() — delegated on #page (survives re-renders),
-    // acts on the input's live value. Shared behavior across all editor forms.
-    $('#page').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.url-ic'); if (!btn) return;
-      const inp = document.getElementById(btn.dataset.for); const url = (inp?.value || '').trim();
-      if (!url){ flash && flash('No URL yet', true); return; }
-      if (btn.dataset.act === 'open'){ window.open(url, '_blank', 'noopener'); return; }
-      try { await navigator.clipboard.writeText(url); }
-      catch { inp.select(); document.execCommand('copy'); }   // fallback for non-secure contexts
-      const g = btn.textContent; btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = g; }, 1100);
-    });
-
+    // URL-field ↗/⧉ icons are wired globally by LibraryShell (urlControl/_ensureUrlCtl) —
+    // no per-form handler needed. See memory/feedback_url_field_control.
     load();
   </script>
 </body>
