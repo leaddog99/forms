@@ -2703,6 +2703,51 @@ def reviews_list_endpoint():
             "categories": categories, "tiers": review_store.TIERS}
 
 
+@app.post("/reviews/find")
+async def reviews_find_endpoint(request: Request):
+    """SERP for candidate review pages covering a product. Body: {product, extra_terms?, want?}.
+
+    Discovery ONLY — one SERP call, no target site is fetched and nothing is written. The
+    curator approves a subset from the returned list and those URLs come back through
+    /reviews/ingest-url. Registered BEFORE /reviews/{id} alongside the other static routes.
+    See intake/products/review_finder.
+    """
+    from intake.products import review_finder
+    body = await request.json()
+    product = (body.get("product") or "").strip() if isinstance(body, dict) else ""
+    if not product:
+        raise HTTPException(status_code=400, detail="product required")
+    try:
+        with _db() as conn:
+            return review_finder.find_candidates(
+                conn, product,
+                want=int(body.get("want") or 12),
+                extra_terms=(body.get("extra_terms") or ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"[ERROR] /reviews/find({product!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Search error: {e}")
+
+
+@app.post("/reviews/ingest-url")
+async def reviews_ingest_url_endpoint(request: Request):
+    """Fetch ONE curator-approved review URL through the unblocker and ingest it (same rails as
+    the bookmarklet's /extract-review). Body: {url}.
+
+    One URL per call on purpose — an unblocker fetch of a paywalled review takes tens of
+    seconds, so the UI walks the approved list sequentially and reports each row as it lands.
+    A page we can't fetch or decode fails as itself; we never substitute another source for it.
+    """
+    from intake.products import review_finder
+    body = await request.json()
+    url = (body.get("url") or "").strip() if isinstance(body, dict) else ""
+    if not url:
+        raise HTTPException(status_code=400, detail="url required")
+    with _db() as conn:
+        return review_finder.ingest_url(conn, url)
+
+
 @app.get("/reviews/{review_id}")
 def review_get_endpoint(review_id: str):
     """One review's metadata + its derived product roster (each with this reviewer's verdict)."""
@@ -5650,6 +5695,49 @@ async def _handle_semrush_ranks_refresh_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("semrush_ranks_refresh", _handle_semrush_ranks_refresh_job)
+
+
+async def _handle_realrank_research_job(job: dict) -> dict:
+    """RealRank: research ONE product across the named expert reviews + owner ratings and
+    write the attributed brief (docs/RealRank/realrank_research.py).
+
+    Long and costly — 8 SERP calls + 8 unblocker fetches + one research call with web search
+    — which is why it belongs here rather than in a request: the run is tracked, tailable via
+    the per-job log, and cooperatively cancellable between sources.
+
+    Params: product (required) — the product NAME, the identity, not a search string
+    (§3.1, same rule as --dish). Optional out_stem to override the output path.
+    """
+    params = job.get("params") or {}
+    product = (params.get("product") or "").strip()
+    if not product:
+        raise ValueError("realrank_research requires params.product")
+    job_id = job["id"]
+    print(f"[REALRANK] {product}")
+
+    def _should_cancel():
+        try:
+            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+                return jobs_lib.is_cancel_requested(conn, job_id)
+        except Exception:
+            return False
+
+    def _run():
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "docs" / "RealRank"))
+        import realrank_research as rr
+        rec = rr.research_product(product, out_stem=params.get("out_stem") or None,
+                                  should_cancel=_should_cancel)
+        return rr.job_summary(rec)
+
+    try:
+        summary = await asyncio.to_thread(_run)
+    except KeyboardInterrupt as e:      # raised by research_product's cancel checkpoint
+        raise jobs_lib.JobCancelled(str(e))
+    print(f"[REALRANK] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("realrank_research", _handle_realrank_research_job)
 
 
 async def _handle_domain_scoring_job(job: dict) -> dict:
