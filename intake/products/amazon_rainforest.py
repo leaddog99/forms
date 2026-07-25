@@ -76,10 +76,16 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
                 "rating": r.get("rating"),
                 "body": (r.get("body") or "").strip()[:1200]}
                for r in (p.get("top_reviews") or [])[:max_reviews]]
+    bb = p.get("buybox_winner") or {}
+    price = (bb.get("price") or {}) if isinstance(bb.get("price"), dict) else {}
     return {
         "asin": asin,
         "title": p.get("title", ""),
         "link": p.get("link", ""),
+        "brand": p.get("brand", ""),
+        # For the posting card: the listing photo and the current asking price.
+        "image": (p.get("main_image") or {}).get("link", ""),
+        "price": price.get("raw") or "",
         "rating": p.get("rating"),
         "ratings_total": p.get("ratings_total"),
         "histogram": hist,                       # counts, 5..1

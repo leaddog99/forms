@@ -128,3 +128,7 @@ identifier.sqlite
 # realrank_research job; the code is source, the briefs are results.
 docs/RealRank/out/
 docs/RealRank/realrank_out.*
+
+# RealRank posting preview (a copy dropped into forms/ so it can be viewed at
+# /forms/_realrank_preview.html; the real output lives in docs/RealRank/out/).
+forms/_realrank_preview.html

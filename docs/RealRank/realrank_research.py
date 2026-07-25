@@ -388,6 +388,8 @@ def apply_owner_data(record, owner):
         "asin": owner.get("asin"),
         "source": "rainforest/amazon",
     }
+    # The listing facts the posting card needs (photo, asking price, buy link).
+    record["listing"] = {k: owner.get(k) for k in ("image", "price", "link", "brand", "title")}
     return record
 
 
@@ -499,10 +501,15 @@ def research_product(product, out_stem=None, should_cancel=None):
         json.dump(record, f, indent=2)
     with open(f"{out_stem}.md", "w", encoding="utf-8") as f:
         f.write(to_markdown(record))
+    # The POSTING — the surface a reader actually sees (editorial note / full card /
+    # compact), rendered from the same record. See realrank_posting.
+    from realrank_posting import to_html
+    with open(f"{out_stem}.html", "w", encoding="utf-8") as f:
+        f.write(to_html(record))
     record["_files"] = {"json": f"{out_stem}.json", "md": f"{out_stem}.md",
-                        "raw": f"{out_stem}.raw.txt"}
+                        "html": f"{out_stem}.html", "raw": f"{out_stem}.raw.txt"}
     print(f"[realrank] {record.get('verdict')} · score {record.get('realrank_score')} "
-          f"· wrote {out_stem}.json/.md")
+          f"· wrote {out_stem}.json/.md/.html")
     return record
 
 
