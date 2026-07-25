@@ -73,6 +73,10 @@ Thumbs.db
 input/*.png
 input/*.jpg
 input/*.jpeg
+# SEMrush Top-Pages / Organic-Pages exports the curator drops here for the
+# publisher harvest (see project_backlinks_source). Pipeline inputs, not source.
+input/*.xlsx
+input/*.csv
 input/pipeline/__pycache__/
 input/__pycache__/
 extract/__pycache__/
@@ -96,6 +100,7 @@ backup.log
 # regenerated every restart, never source.
 uvicorn_stdout.log
 uvicorn_stderr.log
+uvicorn_stderr_new.log
 # Same, for detached agent-launched restarts.
 uvicorn_stdout_agent.log
 uvicorn_stderr_agent.log
