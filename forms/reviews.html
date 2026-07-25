@@ -378,7 +378,127 @@
       $('#page').innerHTML = `
         <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Review authority layer · ${rows.length} reviews</span></div>
         <h1 class="ed-title">Reviews</h1>
-        <p class="muted">${err?('Load error: '+escapeHtml(err.message||err)):'Pick a review (☰), or ＋ to add one. A review = one reviewer’s roundup of a product class; its items are the source of truth for verdicts and link dynamically to catalog products. Reviews <em>support</em> the picks (rank + trust copy) — they don’t select them. Set the reviewer to “Best Cooks Club” to author your own.'}</p>`;
+        <p class="muted">${err?('Load error: '+escapeHtml(err.message||err)):'Pick a review (☰), or ＋ to add one. A review = one reviewer’s roundup of a product class; its items are the source of truth for verdicts and link dynamically to catalog products. Reviews <em>support</em> the picks (rank + trust copy) — they don’t select them. Set the reviewer to “Best Cooks Club” to author your own.'}</p>
+        ${finderPanelHtml()}`;
+      wireFinder();
+    }
+
+    /* ---------------- find reviews (SERP → curator approves → fetch) ----------------
+       Discovery costs one SERP call and fetches nothing; YOU choose which sources count,
+       then we fetch our own copy of each approved page through the unblocker. A source we
+       can't fetch is reported as absent — never silently swapped for a mirror. */
+    let findResults = [];   // candidates from the last search
+    let finderOpen = false; // survives the re-render after a fetch refreshes the list
+
+    function finderPanelHtml(){
+      return `
+        <details class="ed-accordion" id="finderPanel"${finderOpen?' open':''}>
+          <summary>Find reviews for a product${findResults.length?` (${findResults.length} found)`:''}</summary>
+          <div style="padding:4px 2px 8px">
+            <p class="muted" style="margin:0 0 12px">Search the web for review pages, pick the sources worth trusting, then we fetch and store our own copy of each one. Nothing is fetched until you choose.</p>
+            <div class="pc-row2">
+              <div class="ed-field"><label>Product</label>
+                <input id="fd_product" placeholder="KitchenAid Artisan KSM150PS stand mixer"></div>
+              <div class="ed-field"><label>Extra terms (optional)</label>
+                <input id="fd_extra" placeholder="best · tested · 2026"></div>
+            </div>
+            <div class="pc-form-actions">
+              <button type="button" class="ed-btn primary" id="fd_search">Find review pages</button>
+              <span class="muted" id="fd_status"></span>
+            </div>
+            <div id="fd_results" style="margin-top:14px"></div>
+          </div>
+        </details>`;
+    }
+
+    function finderResultsHtml(){
+      if (!findResults.length) return '';
+      const row = (c, i) => {
+        const flags = [];
+        if (c.decoder) flags.push(`<span class="rv-src" title="We have a purpose-built decoder for this source">decoder: ${escapeHtml(c.decoder_label||c.decoder)}</span>`);
+        if (c.known_source) flags.push(`<span class="rv-src" title="This publisher is in our domains master">known publisher</span>`);
+        if (c.review_id) flags.push(`<span class="rv-src" title="Already ingested">already held</span>`);
+        return `<li style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--ed-rule,#eee)">
+          <input type="checkbox" class="fd-pick" data-i="${i}" ${c.review_id?'disabled':''} style="margin-top:4px">
+          <div style="flex:1;min-width:0">
+            <div><strong>${escapeHtml(c.domain)}</strong> ${LibraryShell.urlControl(c.url,{display:false})}</div>
+            <div style="font-size:.92em">${escapeHtml(c.title||'')}</div>
+            <div class="rv-srcs" style="margin-top:3px">${flags.join(' ')}</div>
+            <div class="muted fd-row-status" data-i="${i}" style="font-size:.86em"></div>
+          </div></li>`;
+      };
+      return `
+        <ul style="list-style:none;margin:0;padding:0">${findResults.map(row).join('')}</ul>
+        <div class="pc-form-actions" style="margin-top:12px">
+          <button type="button" class="ed-btn primary" id="fd_fetch">Fetch selected</button>
+          <span class="muted" id="fd_fetch_status"></span>
+        </div>`;
+    }
+
+    function wireFinder(){
+      const btn = $('#fd_search'); if (!btn) return;
+      $('#finderPanel')?.addEventListener('toggle', e => { finderOpen = e.target.open; });
+      btn.addEventListener('click', doFind);
+      $('#fd_product')?.addEventListener('keydown', e => { if (e.key === 'Enter') doFind(); });
+      if (findResults.length){ $('#fd_results').innerHTML = finderResultsHtml(); wireFetch(); }
+    }
+
+    async function doFind(){
+      const product = ($('#fd_product').value || '').trim();
+      if (!product){ $('#fd_status').textContent = 'Enter a product name.'; return; }
+      const btn = $('#fd_search');
+      btn.disabled = true; $('#fd_status').textContent = 'Searching…';
+      try {
+        const r = await fetch('/reviews/find', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ product, extra_terms: ($('#fd_extra').value||'').trim() }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'search failed');
+        findResults = d.candidates || [];
+        $('#fd_status').textContent = `${findResults.length} candidates · nothing fetched yet`;
+        $('#fd_results').innerHTML = finderResultsHtml();
+        wireFetch();
+      } catch (e) {
+        $('#fd_status').textContent = 'Error: ' + (e.message || e);
+      } finally { btn.disabled = false; }
+    }
+
+    function wireFetch(){ $('#fd_fetch')?.addEventListener('click', doFetchSelected); }
+
+    async function doFetchSelected(){
+      const picks = [...document.querySelectorAll('.fd-pick:checked')].map(el => +el.dataset.i);
+      if (!picks.length){ $('#fd_fetch_status').textContent = 'Nothing selected.'; return; }
+      const btn = $('#fd_fetch');
+      btn.disabled = true;
+      let ok = 0, failed = 0;
+      // Sequential on purpose: an unblocker fetch runs tens of seconds, and the curator
+      // watches each source land (or fail as itself) rather than staring at one spinner.
+      for (const [n, i] of picks.entries()){
+        const c = findResults[i];
+        const st = document.querySelector(`.fd-row-status[data-i="${i}"]`);
+        if (st) st.textContent = 'Fetching…';
+        $('#fd_fetch_status').textContent = `Fetching ${n+1} of ${picks.length}…`;
+        try {
+          const r = await fetch('/reviews/ingest-url', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ url: c.url }) });
+          const d = await r.json();
+          if (d.ok){
+            ok++;
+            c.review_id = d.review_id;
+            if (st) st.innerHTML = `✓ stored as <strong>${escapeHtml(d.reviewer||'review')}</strong> — ${d.product_count} product(s)`;
+          } else {
+            failed++;
+            if (st) st.textContent = '✕ ' + (d.error || d.detail || 'failed');
+          }
+        } catch (e) {
+          failed++;
+          if (st) st.textContent = '✕ ' + (e.message || e);
+        }
+      }
+      $('#fd_fetch_status').textContent = `Done — ${ok} stored${failed?`, ${failed} failed`:''}.`;
+      btn.disabled = false;
+      if (ok) await load(selected);   // refresh the sidebar with the new reviews
     }
 
     /* ---------------- add / edit review HEADER ---------------- */
