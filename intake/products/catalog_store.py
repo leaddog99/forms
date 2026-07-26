@@ -105,7 +105,8 @@ def ensure_product_tables(conn: sqlite3.Connection) -> None:
     # JSON on every row — "best in class" for the affiliate surface, and "what's stale".
     # Deliberately NOT folded into rank_score: different question, different evidence.
     for col, decl in (("realrank_score", "REAL"), ("realrank_at", "TEXT"),
-                      ("realrank_verdict", "TEXT")):
+                      ("realrank_verdict", "TEXT"),     # legacy: verdict is RealStory's now
+                      ("realstory_verdict", "TEXT"), ("realstory_at", "TEXT")):
         if col not in {r[1] for r in conn.execute("PRAGMA table_info(products)")}:
             conn.execute(f"ALTER TABLE products ADD COLUMN {col} {decl}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_products_realrank ON products(realrank_score)")
@@ -303,51 +304,72 @@ def update_product(conn: sqlite3.Connection, product_id: str, patch: dict) -> di
     return d
 
 
-def set_realrank(conn: sqlite3.Connection, product_id: str, realrank: dict) -> dict | None:
-    """Attach a completed RealRank analysis to a product.
-
-    Writes the whole block into the `data` blob and lifts score/verdict/timestamp into the
-    indexed columns. Does NOT touch `rank_score` (expert consensus — a different number),
-    does NOT re-embed: `compose_product_text` is an allow-list over brand/name/class/specs/
-    description/blurb, so review prose has never been part of product↔product similarity and
-    must not start being so now, or matching drifts from what a thing IS to how it reviewed.
-
-    Preserves any existing approval unless this run carries its own — a re-run produces new
-    evidence and should not silently inherit a human's sign-off on the OLD evidence.
-    """
-    ensure_product_tables(conn)
+def _load(conn: sqlite3.Connection, product_id: str) -> dict | None:
     row = conn.execute("SELECT data FROM products WHERE product_id = ?", (product_id,)).fetchone()
     if not row:
         return None
-    d = json.loads(row[0]) if row[0] else {}
-    prev = (d.get("realrank") or {})
+    return json.loads(row[0]) if row[0] else {}
+
+
+def set_realrank(conn: sqlite3.Connection, product_id: str, realrank: dict) -> dict | None:
+    """Attach the computed SCORE half. Cheap and re-runnable on its own — a ratings refresh
+    updates this without touching the write-up or its approval.
+
+    Does NOT touch `rank_score` (expert consensus — a different number), and does NOT
+    re-embed: `compose_product_text` is an allow-list over brand/name/class/specs/
+    description/blurb, so review prose has never been part of product↔product similarity and
+    must not start being so now, or matching drifts from what a thing IS to how it reviewed.
+    """
+    ensure_product_tables(conn)
+    d = _load(conn, product_id)
+    if d is None:
+        return None
     rr = dict(realrank or {})
-    rr.setdefault("generated_at", _now())
-    if not rr.get("approved_by") and prev.get("approved_by"):
-        rr["approved_by"], rr["approved_at"] = "", ""      # new evidence, approval resets
+    rr.setdefault("computed_at", _now())
     d["realrank"] = rr
     conn.execute(
-        "UPDATE products SET data=?, realrank_score=?, realrank_at=?, realrank_verdict=?, "
-        "updated_at=? WHERE product_id=?",
-        (json.dumps(d), rr.get("score"), rr.get("generated_at"), rr.get("verdict", ""),
-         _now(), product_id))
+        "UPDATE products SET data=?, realrank_score=?, realrank_at=?, updated_at=? "
+        "WHERE product_id=?",
+        (json.dumps(d), rr.get("score"), rr.get("computed_at"), _now(), product_id))
     conn.commit()
     d["product_id"] = product_id
     return d
 
 
-def approve_realrank(conn: sqlite3.Connection, product_id: str, who: str) -> dict | None:
-    """Staff sign-off: this analysis is fit to earn. Nothing feeds the consumer/affiliate
-    surface off an unreviewed automated run."""
+def set_realstory(conn: sqlite3.Connection, product_id: str, realstory: dict) -> dict | None:
+    """Attach the WRITTEN half — verdict, assessment, and the attributed findings.
+
+    A re-run RESETS approval: new evidence must not silently inherit a human's sign-off on
+    the old evidence. (The score half carries no approval — arithmetic needs none.)
+    """
     ensure_product_tables(conn)
-    row = conn.execute("SELECT data FROM products WHERE product_id = ?", (product_id,)).fetchone()
-    if not row:
+    d = _load(conn, product_id)
+    if d is None:
         return None
-    d = json.loads(row[0]) if row[0] else {}
-    if not d.get("realrank"):
+    prev = d.get("realstory") or {}
+    rs = dict(realstory or {})
+    rs.setdefault("generated_at", _now())
+    if not rs.get("approved_by") and prev.get("approved_by"):
+        rs["approved_by"], rs["approved_at"] = "", ""
+    d["realstory"] = rs
+    conn.execute(
+        "UPDATE products SET data=?, realstory_verdict=?, realstory_at=?, updated_at=? "
+        "WHERE product_id=?",
+        (json.dumps(d), rs.get("verdict", ""), rs.get("generated_at"), _now(), product_id))
+    conn.commit()
+    d["product_id"] = product_id
+    return d
+
+
+def approve_realstory(conn: sqlite3.Connection, product_id: str, who: str) -> dict | None:
+    """Staff sign-off on the WRITE-UP: fit to earn. Nothing feeds the consumer/affiliate
+    surface off an unreviewed automated assessment."""
+    ensure_product_tables(conn)
+    d = _load(conn, product_id)
+    if not d or not d.get("realstory"):
         return None
-    d["realrank"]["approved_by"] = who or "staff"
-    d["realrank"]["approved_at"] = _now()
+    d["realstory"]["approved_by"] = who or "staff"
+    d["realstory"]["approved_at"] = _now()
     conn.execute("UPDATE products SET data=?, updated_at=? WHERE product_id=?",
                  (json.dumps(d), _now(), product_id))
     conn.commit()

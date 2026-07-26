@@ -116,17 +116,35 @@ class ExpertFinding(BaseModel):
 
 
 class RealRank(BaseModel):
-    """One RealRank analysis run (docs/RealRank). A single coherent record with its own
-    provenance and freshness, rather than fields scattered across Product — so staleness,
-    re-runs and approval are unambiguous.
+    """**The number.** Owner-sentiment arithmetic and the evidence it was computed from.
 
-    `score` is owner-sentiment arithmetic (NPS-from-stars + confidence penalty) and is
-    DISTINCT from `Product.rank_score`, which is expert consensus × rating × value. They
-    can legitimately disagree — America's Test Kitchen ranks the Lodge skillet mid-pack
-    while 145,000 owners score it 86.8 — and conflating them would destroy the distinction.
+    Split from RealStory deliberately: these two halves have different trust bases and
+    different lifetimes. A score is reproducible from a histogram and goes stale monthly as
+    ratings move; a written assessment is editorial and barely ages. One name over both hid
+    that, and forced a cheap ratings refresh to re-run an expensive narrative.
+
+    `score` is NPS-from-stars with a confidence penalty, and is DISTINCT from
+    `Product.rank_score` (expert consensus × rating × value). They can legitimately
+    disagree — America's Test Kitchen ranks the Lodge skillet mid-pack while 145,000 owners
+    score it 86.8 — and conflating them would destroy the distinction.
     """
     score: Optional[float] = None
     score_basis: str = ""
+    owner: OwnerRatings = Field(default_factory=OwnerRatings)
+    computed_at: str = ""
+    job_id: Optional[int] = None
+
+
+class RealStory(BaseModel):
+    """**The words.** Our written assessment of the product, and the attributed evidence
+    behind it.
+
+    Clearly OUR voice — that is the safe side of the brand-safety line: `findings` are facts
+    attributed to sources we actually read, while verdict/one_liner/summary/pros/cons are
+    BCC's opinion and need no third-party attribution. Carries its own approval because a
+    human should read prose before it earns anything; a score needs no sign-off, it needs
+    arithmetic.
+    """
     verdict: str = ""                        # Top Pick | Highly Recommended | …
     one_liner: str = ""
     summary: str = ""
@@ -134,14 +152,13 @@ class RealRank(BaseModel):
     pros: List[str] = Field(default_factory=list)
     cons: List[str] = Field(default_factory=list)
     cheaper_alternative: Optional[dict] = None
-    owner: OwnerRatings = Field(default_factory=OwnerRatings)
     findings: List[ExpertFinding] = Field(default_factory=list)
     coverage: List[dict] = Field(default_factory=list)    # [{name, status, note}]
     generated_at: str = ""
     model: str = ""
     job_id: Optional[int] = None
     files: dict = Field(default_factory=dict)             # {json, md, html}
-    # Staff gate: nothing earns affiliate revenue off an unreviewed automated run.
+    # Staff gate: nothing earns affiliate revenue off an unreviewed automated write-up.
     approved_by: str = ""
     approved_at: str = ""
 
@@ -168,9 +185,12 @@ class Product(BaseModel):
     # ranking ("product OU"): review consensus × rating × value (TBOTB rank)
     rank_score: Optional[float] = None
     sources: List[str] = Field(default_factory=list)   # reviewer names covering this product
-    # Automated RealRank analysis — owner-sentiment score + attributed expert findings.
-    # Separate from rank_score above (different question, different evidence).
+    # The automated analysis, in two halves that age and are trusted differently:
+    # RealRank = the computed score (refreshes cheaply, monthly);
+    # RealStory = our written assessment + the attributed findings (rarely changes, needs a
+    # human read before it earns). Both separate from rank_score above.
     realrank: Optional[RealRank] = None
+    realstory: Optional[RealStory] = None
 
 
 class ProductClass(BaseModel):

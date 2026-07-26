@@ -316,7 +316,7 @@
         </div>
         <div style="display:flex;gap:8px;margin:6px 0 4px;align-items:center">
           <button type="button" class="ed-btn" id="editBtn">Edit</button>
-          <button type="button" class="ed-btn" id="rrBtn">${p.realrank ? 'Re-run RealRank' : 'Run RealRank'}</button>
+          <button type="button" class="ed-btn" id="rrBtn">${(p.realrank || p.realstory) ? 'Re-run analysis' : 'Run RealRank + RealStory'}</button>
           <span class="muted" id="rrStatus" style="font-size:.82rem"></span>
           <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
         </div>
@@ -333,7 +333,7 @@
       $('#rrApprove')?.addEventListener('click', async (e) => {
         e.target.disabled = true; e.target.textContent = 'Approving…';
         try {
-          const r = await fetch(`/products/${encodeURIComponent(selected)}/realrank/approve`, {
+          const r = await fetch(`/products/${encodeURIComponent(selected)}/realstory/approve`, {
             method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
           if (!r.ok) throw new Error('HTTP '+r.status);
           delete full[selected]; await renderDetail(); flash && flash('Approved');
@@ -382,11 +382,14 @@
     }
 
     function realrankBlock(p){
-      const r = p.realrank;
-      if (!r) return `<section class="ed-block"><h3 class="ed-block-label">RealRank</h3>
+      // Two halves, different lifetimes: realrank = the score (refreshes with ratings),
+      // realstory = our write-up + attributed findings (rarely changes, needs a human read).
+      const rr = p.realrank, rs = p.realstory;
+      const r = (rr || rs) ? Object.assign({}, rs || {}, rr || {}) : null;
+      if (!r) return `<section class="ed-block"><h3 class="ed-block-label">RealRank + RealStory</h3>
         <p class="muted">No analysis yet — <em>Run RealRank</em> gathers the named expert
         reviews plus Amazon owner ratings and attaches the result here.</p></section>`;
-      const age = daysSince(r.generated_at);
+      const age = daysSince((rs && rs.generated_at) || (rr && rr.computed_at));
       const stale = age != null && age > RR_TTL_DAYS;
       const owner = r.owner || {};
       const pol = owner.polarization || {};
@@ -411,7 +414,7 @@
 
       const alt = r.cheaper_alternative;
       return `
-        <section class="ed-block"><h3 class="ed-block-label">RealRank</h3>
+        <section class="ed-block"><h3 class="ed-block-label">RealRank <span class="muted" style="font-weight:400">score</span> + RealStory <span class="muted" style="font-weight:400">assessment</span></h3>
           <div class="rr-head">
             ${score}
             <div>
@@ -424,8 +427,8 @@
               </div>
             </div>
             <div style="margin-left:auto;text-align:right">
-              ${r.approved_by
-                ? `<span class="rr-ok">✔ approved</span><div class="muted" style="font-size:.75rem">${escapeHtml(r.approved_by)}</div>`
+              ${(rs && rs.approved_by)
+                ? `<span class="rr-ok">✔ approved</span><div class="muted" style="font-size:.75rem">${escapeHtml(rs.approved_by)}</div>`
                 : `<button type="button" class="ed-btn" id="rrApprove">Approve for use</button>`}
             </div>
           </div>

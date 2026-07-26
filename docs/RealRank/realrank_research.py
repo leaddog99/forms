@@ -567,13 +567,17 @@ def research_product(product, out_stem=None, should_cancel=None, extra_owner_sou
     return record
 
 
-def to_product_block(record, job_id=None):
-    """Map a run record onto product_model.RealRank for storage on a product row.
+def to_product_blocks(record, job_id=None):
+    """Map a run record onto the two product_model blocks: (realrank, realstory).
 
-    A translation, not a copy: the run calls them `sources`, the product model calls them
+    A translation, not a copy. The run calls them `sources`, the product model calls them
     `findings` (to keep them distinct from curator-ingested `verdicts`), and the per-source
     fetch rung from `fetch_log` is joined in so a finding read from a Wayback snapshot is
     visibly not current.
+
+    The split is by TRUST BASIS and LIFETIME, not by tidiness: RealRank is arithmetic that
+    goes stale as ratings move and needs no sign-off; RealStory is our prose, barely ages,
+    and must be read by a human before it earns.
     """
     o = record.get("owner_sentiment") or {}
     via_by_name = {f.get("label"): f.get("via") or ("failed" if f.get("error") else "")
@@ -604,16 +608,9 @@ def to_product_block(record, job_id=None):
             "count": ps.get("total"), "histogram": [], "fetched_at": now,
         })
 
-    return {
+    realrank = {
         "score": record.get("realrank_score"),
         "score_basis": record.get("realrank_score_basis", ""),
-        "verdict": record.get("verdict", ""),
-        "one_liner": record.get("one_liner", ""),
-        "summary": record.get("summary", ""),
-        "aspects": record.get("aspects") or [],
-        "pros": record.get("pros") or [],
-        "cons": record.get("cons") or [],
-        "cheaper_alternative": record.get("cheaper_alternative"),
         "owner": {
             "avg_rating": o.get("avg_rating"),
             "review_count": o.get("review_count"),
@@ -621,6 +618,17 @@ def to_product_block(record, job_id=None):
             "sources": rating_sources,
             "polarization": record.get("polarization") or {},
         },
+        "computed_at": now,
+        "job_id": job_id,
+    }
+    realstory = {
+        "verdict": record.get("verdict", ""),
+        "one_liner": record.get("one_liner", ""),
+        "summary": record.get("summary", ""),
+        "aspects": record.get("aspects") or [],
+        "pros": record.get("pros") or [],
+        "cons": record.get("cons") or [],
+        "cheaper_alternative": record.get("cheaper_alternative"),
         "findings": findings,
         "coverage": record.get("source_coverage") or [],
         "generated_at": now,
@@ -629,6 +637,7 @@ def to_product_block(record, job_id=None):
         "files": record.get("_files") or {},
         "approved_by": "", "approved_at": "",
     }
+    return realrank, realstory
 
 
 def job_summary(record):

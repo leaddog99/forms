@@ -2720,18 +2720,18 @@ def product_realrank_endpoint(product_id: str, payload: dict = Body(default={}))
     return {"job_id": job_id, "status": "queued", "product": name, "asin": asin}
 
 
-@app.post("/products/{product_id}/realrank/approve")
-def product_realrank_approve_endpoint(product_id: str, payload: dict = Body(default={})):
-    """Staff sign-off on an analysis. The gate between an automated run and anything that
-    earns affiliate revenue off it."""
+@app.post("/products/{product_id}/realstory/approve")
+def product_realstory_approve_endpoint(product_id: str, payload: dict = Body(default={})):
+    """Staff sign-off on the WRITE-UP. The gate between an automated assessment and anything
+    that earns affiliate revenue off it. The score half needs no sign-off — it's arithmetic."""
     from intake.products import catalog_store
     who = (payload.get("who") or "").strip() or "staff"
     with _db() as conn:
-        p = catalog_store.approve_realrank(conn, product_id, who)
+        p = catalog_store.approve_realstory(conn, product_id, who)
     if p is None:
-        raise HTTPException(status_code=404, detail="Product or RealRank analysis not found.")
+        raise HTTPException(status_code=404, detail="Product or RealStory assessment not found.")
     return {"product_id": product_id, "approved_by": who,
-            "approved_at": (p.get("realrank") or {}).get("approved_at")}
+            "approved_at": (p.get("realstory") or {}).get("approved_at")}
 
 
 # ---- Reviews ACDV editor (forms/reviews.html) -------------------------------------
@@ -5795,9 +5795,11 @@ async def _handle_realrank_research_job(job: dict) -> dict:
         if product_id:
             try:
                 from intake.products import catalog_store
-                block = rr.to_product_block(rec, job_id=job_id)
+                realrank, realstory = rr.to_product_blocks(rec, job_id=job_id)
                 with _db() as conn:
-                    saved = catalog_store.set_realrank(conn, product_id, block)
+                    saved = catalog_store.set_realrank(conn, product_id, realrank)
+                    if saved:
+                        saved = catalog_store.set_realstory(conn, product_id, realstory)
                 summary["attached_to"] = product_id if saved else None
                 if not saved:
                     print(f"[REALRANK] product {product_id} not found — analysis kept on disk only")
