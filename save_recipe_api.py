@@ -2682,6 +2682,58 @@ def product_delete_endpoint(product_id: str):
     return {"deleted": product_id}
 
 
+@app.post("/products/{product_id}/realrank")
+def product_realrank_endpoint(product_id: str, payload: dict = Body(default={})):
+    """Kick off a RealRank analysis FOR this product and attach the result to its row.
+
+    Enqueues the `realrank_research` job and returns {job_id} immediately — a full run is
+    minutes (8 SERP + 8 unblocker fetches + a research call), so the form polls /jobs/{id}
+    and tails the log rather than holding a request open. entity_ref locks the product, so
+    a second click can't double-run it.
+
+    The search identity comes from the DB ROW (brand + name) and, when we have one, the
+    ASIN — never a string typed into the form (§3.1, the --dish rule). A known ASIN also
+    lets Rainforest skip its search step.
+    """
+    from intake.products import catalog_store
+    with _db() as conn:
+        p = catalog_store.get_product(conn, product_id)
+        if p is None:
+            raise HTTPException(status_code=404, detail="Product not found.")
+        name = " ".join(x for x in ((p.get("brand") or ""), (p.get("name") or "")) if x).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Product has no brand/name to research.")
+        asin = next((o.get("asin") for o in (p.get("retailer_offers") or [])
+                     if (o.get("asin") or "").strip()), "")
+        entity_ref = f"product:{product_id}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return {"job_id": existing["id"], "status": existing["status"], "already_running": True}
+        params = {"product": name, "product_id": product_id}
+        if asin:
+            params["asin"] = asin
+        if payload.get("owner_sources"):
+            params["owner_sources"] = payload["owner_sources"]
+        job_id = jobs_lib.enqueue_job(conn, type="realrank_research", params=params,
+                                      entity_ref=entity_ref)
+    _spawn_job_process(job_id)
+    return {"job_id": job_id, "status": "queued", "product": name, "asin": asin}
+
+
+@app.post("/products/{product_id}/realrank/approve")
+def product_realrank_approve_endpoint(product_id: str, payload: dict = Body(default={})):
+    """Staff sign-off on an analysis. The gate between an automated run and anything that
+    earns affiliate revenue off it."""
+    from intake.products import catalog_store
+    who = (payload.get("who") or "").strip() or "staff"
+    with _db() as conn:
+        p = catalog_store.approve_realrank(conn, product_id, who)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Product or RealRank analysis not found.")
+    return {"product_id": product_id, "approved_by": who,
+            "approved_at": (p.get("realrank") or {}).get("approved_at")}
+
+
 # ---- Reviews ACDV editor (forms/reviews.html) -------------------------------------
 # Reviews as a first-class, curator-editable object: the AUTHORITY layer of the
 # monetization pipeline (memory/project_monetization_pipeline) — reviews SUPPORT product
@@ -5728,13 +5780,31 @@ async def _handle_realrank_research_job(job: dict) -> dict:
         except Exception:
             return False
 
+    product_id = (params.get("product_id") or "").strip()
+
     def _run():
         sys.path.insert(0, str(Path(__file__).resolve().parent / "docs" / "RealRank"))
         import realrank_research as rr
         rec = rr.research_product(product, out_stem=params.get("out_stem") or None,
                                   should_cancel=_should_cancel,
                                   extra_owner_sources=extra)
-        return rr.job_summary(rec)
+        summary = rr.job_summary(rec)
+        # Attach to the catalog row when the run was launched FROM a product. Storing the
+        # analysis is the point — the files are a by-product. Failure here must not lose
+        # the run: the record is already on disk, so we report and carry on.
+        if product_id:
+            try:
+                from intake.products import catalog_store
+                block = rr.to_product_block(rec, job_id=job_id)
+                with _db() as conn:
+                    saved = catalog_store.set_realrank(conn, product_id, block)
+                summary["attached_to"] = product_id if saved else None
+                if not saved:
+                    print(f"[REALRANK] product {product_id} not found — analysis kept on disk only")
+            except Exception as e:
+                summary["attach_error"] = str(e)
+                print(f"[REALRANK] attach to {product_id} failed: {e}")
+        return summary
 
     try:
         summary = await asyncio.to_thread(_run)
@@ -6398,6 +6468,14 @@ def spawn_job_endpoint(job_id: int, request: Request):
     if job["status"] not in ("queued", "running"):
         raise HTTPException(status_code=409,
                             detail=f"Job #{job_id} is {job['status']}, not runnable")
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "spawned": True, "stream_url": f"/jobs/{job_id}/stream"}
+
+
+def _spawn_job_runner(job_id: int) -> None:
+    """Popen `python -m jobs exec --job-id N`, detached. Shared by /jobs/{id}/spawn and by
+    the endpoints that enqueue-and-launch in one call (e.g. /products/{id}/realrank), so
+    there is ONE way a job reaches a runner process."""
     import subprocess
     proj = os.path.dirname(os.path.abspath(__file__))
     env = dict(os.environ)
@@ -6414,7 +6492,6 @@ def spawn_job_endpoint(job_id: int, request: Request):
     except Exception as e:
         print(f"[JOBSPAWN] failed to spawn runner for #{job_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
-    return {"job_id": job_id, "spawned": True, "stream_url": f"/jobs/{job_id}/stream"}
 
 
 @app.get("/jobs/{job_id}/stream")

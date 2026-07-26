@@ -74,6 +74,78 @@ class RetailerOffer(BaseModel):
     savings: Optional[float] = None
 
 
+class RatingSource(BaseModel):
+    """ONE retailer's star histogram for this product. Kept per-retailer even after
+    pooling, because a combined number is only honest if the split stays visible."""
+    source: str = ""                         # amazon | bestbuy | walmart | …
+    listing_id: str = ""                     # the ASIN/SKU we actually scored
+    url: str = ""
+    avg_rating: Optional[float] = None
+    count: Optional[int] = None
+    histogram: List[int] = Field(default_factory=list)   # 5..1 COUNTS
+    fetched_at: str = ""
+
+
+class OwnerRatings(BaseModel):
+    """Owner sentiment as arithmetic, never as prose. `histogram`/`review_count` are
+    POOLED across `sources` (counts summed, not scores averaged — see
+    realrank_index.pool_histograms); an empty or zero histogram is skipped, not counted."""
+    avg_rating: Optional[float] = None
+    review_count: Optional[int] = None       # pooled n
+    histogram: List[int] = Field(default_factory=list)   # pooled 5..1 counts
+    sources: List[RatingSource] = Field(default_factory=list)
+    polarization: dict = Field(default_factory=dict)     # {label, j_shaped, one_star_pct, …}
+
+
+class ExpertFinding(BaseModel):
+    """What ONE source said, as gathered by an automated RealRank run.
+
+    Deliberately NOT merged into `Product.verdicts`: a verdict comes from a page a curator
+    chose and ingested through the review store; a finding comes from the automated sweep.
+    Keeping them apart preserves which is which. `via` records the rung of the fetch ladder
+    that served it (unblocker / wayback / search / bookmarklet) — a finding read from a
+    years-old snapshot should not read as current."""
+    name: str = ""
+    url: str = ""
+    type: str = "expert"                     # expert | owner
+    verdict_or_award: str = ""
+    key_facts: List[str] = Field(default_factory=list)
+    short_quote: str = ""
+    via: str = ""
+    fetched_at: str = ""
+
+
+class RealRank(BaseModel):
+    """One RealRank analysis run (docs/RealRank). A single coherent record with its own
+    provenance and freshness, rather than fields scattered across Product — so staleness,
+    re-runs and approval are unambiguous.
+
+    `score` is owner-sentiment arithmetic (NPS-from-stars + confidence penalty) and is
+    DISTINCT from `Product.rank_score`, which is expert consensus × rating × value. They
+    can legitimately disagree — America's Test Kitchen ranks the Lodge skillet mid-pack
+    while 145,000 owners score it 86.8 — and conflating them would destroy the distinction.
+    """
+    score: Optional[float] = None
+    score_basis: str = ""
+    verdict: str = ""                        # Top Pick | Highly Recommended | …
+    one_liner: str = ""
+    summary: str = ""
+    aspects: List[dict] = Field(default_factory=list)     # [{name, sentiment}]
+    pros: List[str] = Field(default_factory=list)
+    cons: List[str] = Field(default_factory=list)
+    cheaper_alternative: Optional[dict] = None
+    owner: OwnerRatings = Field(default_factory=OwnerRatings)
+    findings: List[ExpertFinding] = Field(default_factory=list)
+    coverage: List[dict] = Field(default_factory=list)    # [{name, status, note}]
+    generated_at: str = ""
+    model: str = ""
+    job_id: Optional[int] = None
+    files: dict = Field(default_factory=dict)             # {json, md, html}
+    # Staff gate: nothing earns affiliate revenue off an unreviewed automated run.
+    approved_by: str = ""
+    approved_at: str = ""
+
+
 class Product(BaseModel):
     """One product — the master_recipe analog. Holds each source's verdict,
     specs, where-to-buy, and BCC's own homogenized editorial."""
@@ -96,6 +168,9 @@ class Product(BaseModel):
     # ranking ("product OU"): review consensus × rating × value (TBOTB rank)
     rank_score: Optional[float] = None
     sources: List[str] = Field(default_factory=list)   # reviewer names covering this product
+    # Automated RealRank analysis — owner-sentiment score + attributed expert findings.
+    # Separate from rank_score above (different question, different evidence).
+    realrank: Optional[RealRank] = None
 
 
 class ProductClass(BaseModel):

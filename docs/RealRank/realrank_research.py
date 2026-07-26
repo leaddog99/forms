@@ -29,6 +29,11 @@ import re
 import sys
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 import anthropic
 from realrank_index import realrank_index   # the scoring subroutine you built
@@ -345,8 +350,17 @@ def build_user_prompt(product, sources, docs=None, owner=None):
 
 
 def run_research(product, sources=DEFAULT_SOURCES, max_searches=8, docs=None, owner=None):
-    client = anthropic.Anthropic()
-    resp = client.messages.create(
+    # Through the gateway, not a raw client: llm.create journals token usage to
+    # bcc_token_journal automatically (memory/project_llm_gateway, docs/llm-gateway.md).
+    # This is the most expensive call we make — a big cached prefix plus up to 8 web
+    # searches — so it is exactly the kind that must not be invisible to the ledger.
+    # Falls back to the bare SDK only if the gateway can't be imported (standalone use).
+    try:
+        import llm
+        create = lambda **kw: llm.create(operation="realrank_research", **kw)
+    except ImportError:
+        create = lambda **kw: anthropic.Anthropic().messages.create(**kw)
+    resp = create(
         model=MODEL,
         # A full record for 6-8 sources (key_facts + quotes + histogram) overran 4000 and the
         # JSON came back truncated mid-object; the parse then failed on a half-written record.
@@ -542,6 +556,70 @@ def research_product(product, out_stem=None, should_cancel=None, extra_owner_sou
     print(f"[realrank] {record.get('verdict')} · score {record.get('realrank_score')} "
           f"· wrote {out_stem}.json/.md/.html")
     return record
+
+
+def to_product_block(record, job_id=None):
+    """Map a run record onto product_model.RealRank for storage on a product row.
+
+    A translation, not a copy: the run calls them `sources`, the product model calls them
+    `findings` (to keep them distinct from curator-ingested `verdicts`), and the per-source
+    fetch rung from `fetch_log` is joined in so a finding read from a Wayback snapshot is
+    visibly not current.
+    """
+    o = record.get("owner_sentiment") or {}
+    via_by_name = {f.get("label"): f.get("via") or ("failed" if f.get("error") else "")
+                   for f in (record.get("fetch_log") or [])}
+    now = _now_iso()
+
+    findings = []
+    for s in (record.get("sources") or []):
+        name = s.get("name", "")
+        # fetch_log keys on our source LABEL; the model may report a longer name
+        # ("Reviewed (USA Today)"), so match on prefix before falling back to 'search'.
+        via = next((v for k, v in via_by_name.items() if k and name.startswith(k)), "search")
+        findings.append({
+            "name": name, "url": s.get("url", ""), "type": s.get("type", "expert"),
+            "verdict_or_award": s.get("verdict_or_award", ""),
+            "key_facts": s.get("key_facts") or [],
+            "short_quote": s.get("short_quote") or "",
+            "via": via, "fetched_at": now,
+        })
+
+    rating_sources = []
+    for ps in (o.get("pooled_from") or []):
+        rating_sources.append({
+            "source": ps.get("source", ""),
+            "listing_id": o.get("asin", "") if ps.get("source") == "amazon" else "",
+            "url": o.get("source_url", "") if ps.get("source") == "amazon" else "",
+            "avg_rating": o.get("avg_rating") if ps.get("source") == "amazon" else None,
+            "count": ps.get("total"), "histogram": [], "fetched_at": now,
+        })
+
+    return {
+        "score": record.get("realrank_score"),
+        "score_basis": record.get("realrank_score_basis", ""),
+        "verdict": record.get("verdict", ""),
+        "one_liner": record.get("one_liner", ""),
+        "summary": record.get("summary", ""),
+        "aspects": record.get("aspects") or [],
+        "pros": record.get("pros") or [],
+        "cons": record.get("cons") or [],
+        "cheaper_alternative": record.get("cheaper_alternative"),
+        "owner": {
+            "avg_rating": o.get("avg_rating"),
+            "review_count": o.get("review_count"),
+            "histogram": o.get("distribution_counts") or [],
+            "sources": rating_sources,
+            "polarization": record.get("polarization") or {},
+        },
+        "findings": findings,
+        "coverage": record.get("source_coverage") or [],
+        "generated_at": now,
+        "model": MODEL,
+        "job_id": job_id,
+        "files": record.get("_files") or {},
+        "approved_by": "", "approved_at": "",
+    }
 
 
 def job_summary(record):
