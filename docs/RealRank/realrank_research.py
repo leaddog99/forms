@@ -283,17 +283,19 @@ honest gap is a correct answer; a silent substitution is not.
 """
 
 
-def fetch_owner_data(product):
-    """Amazon owner ratings via Rainforest — the structured feed the score depends on.
+def fetch_owner_data(product, asin=""):
+    """Amazon owner ratings + listing facts for the ENHANCEMENT stage (histogram, average,
+    total, photo, price, top review bodies) — one structured call per product.
 
-    Two runs came back "histogram not found" because web search can't reliably recover
-    Amazon's 5/4/3/2/1 breakdown (it's a widget, and ratings are split across colour/size
-    ASINs). Rainforest returns it as data. Best-effort: any failure just leaves the score
+    Deliberately NOT the rating-popover widget: that is a SELECTION-stage tool used to
+    screen a shortlist before any product is opened (intake/products/amazon_widget). By the
+    time a product reaches this function it has already been chosen, and we want the listing
+    facts the widget doesn't carry, in one call. Best-effort — any failure leaves the score
     pending rather than sinking the run.
     """
     try:
         from intake.products import amazon_rainforest as az
-        return az.owner_sentiment(product)
+        return az.owner_sentiment(product, asin=asin)
     except Exception as e:
         print(f"[realrank] Amazon owner data unavailable: {e}")
         return None
@@ -421,6 +423,10 @@ def apply_owner_data(record, owner, extra_sources=None):
         "source_url": (owner or {}).get("link") or "",
         "asin": (owner or {}).get("asin"),
         "source": "+".join(s["source"] for s in pooled["sources"]),
+        # Where the breakdown came from, and whether its counts are exact or derived from
+        # Amazon's whole-percent bars — so the score's basis line can say so honestly.
+        "histogram_source": (owner or {}).get("histogram_source", "rainforest"),
+        "counts_derived": bool((owner or {}).get("counts_derived")),
         "pooled_from": pooled["sources"],                # per-retailer split stays visible
     }
     # Shape, not just level: a 4.6 average can be a gentle taper or a barbell, and the
@@ -443,7 +449,10 @@ def attach_score(record):
     d = None
     if counts and len(counts) == 5:
         d = list(counts)
-        basis = "computed from owner histogram (exact counts, Rainforest)"
+        src = os_.get("histogram_source") or "rainforest"
+        basis = ("computed from owner histogram "
+                 + (f"(counts derived from {src} whole-percent bars)"
+                    if os_.get("counts_derived") else f"(exact counts, {src})"))
     elif dist and any(v for v in dist.values() if v):
         d = [dist.get("5", 0) or 0, dist.get("4", 0) or 0, dist.get("3", 0) or 0,
              dist.get("2", 0) or 0, dist.get("1", 0) or 0]
