@@ -43,6 +43,34 @@
     .pc-offer { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed var(--line); }
     .pc-offer:last-child { border-bottom: 0; }
     .pc-price { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent-dark); }
+    /* RealRank — an AUDIT surface, not a sales card. Coverage and freshness read first;
+       the prose is secondary. Staff are deciding whether to trust it, not whether to buy. */
+    .rr-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .rr-score { display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 46px; height: 46px; border-radius: 10px; background: #0f6e6a; color: #fff; flex: 0 0 auto; }
+    .rr-score.pending { background: #8fa3ab; }
+    .rr-score .n { font-size: 1.05rem; font-weight: 800; line-height: 1; }
+    .rr-score .l { font-size: .5rem; letter-spacing: .1em; text-transform: uppercase; opacity: .9; }
+    .rr-stale { color: #b4552f; font-weight: 700; }
+    .rr-ok { color: #1f8a54; font-weight: 700; }
+    .rr-cov { font-size: .84rem; line-height: 1.9; margin: 0 0 10px; }
+    .rr-cov .s { display: inline-block; margin-right: 12px; white-space: nowrap; }
+    .rr-cov .miss { color: #b4552f; font-weight: 700; }
+    .rr-hist { display: grid; grid-template-columns: 26px 1fr 40px; gap: 3px 8px;
+      align-items: center; font-size: .78rem; max-width: 320px; }
+    .rr-bar { height: 7px; background: #eef1f2; border-radius: 99px; overflow: hidden; }
+    .rr-bar span { display: block; height: 100%; background: #e6a817; }
+    .rr-find { border-top: 1px solid var(--line); padding: 8px 0; font-size: .88rem; }
+    .rr-find:first-child { border-top: 0; }
+    .rr-find .who { font-weight: 700; }
+    .rr-via { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--ed-ink-soft); background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: 1px 5px; margin-left: 6px; }
+    .rr-note { font-size: .8rem; color: var(--ed-ink-soft); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+    .rr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+    @media (max-width: 620px) { .rr-cols { grid-template-columns: 1fr; } }
+    .rr-cols ul { margin: 4px 0 0; padding-left: 18px; font-size: .86rem; }
     .muted { color: var(--ed-ink-soft); }
   </style>
 </head>
@@ -288,8 +316,11 @@
         </div>
         <div style="display:flex;gap:8px;margin:6px 0 4px;align-items:center">
           <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          <button type="button" class="ed-btn" id="rrBtn">${p.realrank ? 'Re-run RealRank' : 'Run RealRank'}</button>
+          <span class="muted" id="rrStatus" style="font-size:.82rem"></span>
           <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
         </div>
+        ${realrankBlock(p)}
         ${p.image_url?`<section class="ed-block"><img class="pc-hero" src="${escapeHtml(p.image_url)}" alt="" onerror="this.style.display='none'"></section>`:''}
         ${p.bcc_blurb?`<section class="ed-block"><h3 class="ed-block-label">BCC blurb</h3><p>${escapeHtml(p.bcc_blurb)}</p></section>`:''}
         ${p.description?`<section class="ed-block"><h3 class="ed-block-label">Description (embedding source)</h3><p>${escapeHtml(p.description)}</p></section>`:''}
@@ -298,6 +329,17 @@
         <section class="ed-block"><h3 class="ed-block-label">Offers</h3>${offers||'<p class="muted">— none —</p>'}</section>`;
       $('#backToIntro')?.addEventListener('click', () => { selected=null; mode='view'; renderList(); renderDetail(); });
       $('#editBtn')?.addEventListener('click', () => { mode='edit'; renderDetail(); });
+      $('#rrBtn')?.addEventListener('click', runRealRank);
+      $('#rrApprove')?.addEventListener('click', async (e) => {
+        e.target.disabled = true; e.target.textContent = 'Approving…';
+        try {
+          const r = await fetch(`/products/${encodeURIComponent(selected)}/realrank/approve`, {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          delete full[selected]; await renderDetail(); flash && flash('Approved');
+        } catch(err){ e.target.disabled=false; e.target.textContent='Approve for use';
+                      flash && flash('Approve failed: '+(err.message||err)); }
+      });
       const del = $('#delBtn');
       del?.addEventListener('click', async () => {
         if (del.dataset.armed !== '1'){
@@ -313,6 +355,132 @@
           await load(); flash && flash('Deleted');
         } catch(e){ del.disabled=false; del.textContent='Delete'; flash && flash('Delete failed: '+(e.message||e)); }
       });
+    }
+
+    /* ---------------- RealRank (audit surface) ----------------
+       Ordered by what a staff decision needs, which is the INVERSE of the consumer card:
+       can I trust it (coverage, freshness, how each source was fetched) comes first; the
+       verdict prose comes last. A ✕ in the coverage line is a to-do — that source needs a
+       bookmarklet capture. */
+    const RR_TTL_DAYS = 90;
+
+    function daysSince(iso){
+      if (!iso) return null;
+      const t = Date.parse(iso); if (isNaN(t)) return null;
+      return Math.floor((Date.now() - t) / 86400000);
+    }
+
+    function rrHistogram(owner){
+      const h = owner.histogram || [];
+      if (h.length !== 5) return '';
+      const total = h.reduce((a,b)=>a+b,0) || 1;
+      return `<div class="rr-hist">${h.map((c,i)=>{
+        const pct = 100*c/total;
+        return `<span>${5-i}★</span><span class="rr-bar"><span style="width:${pct.toFixed(0)}%"></span></span>`
+             + `<span>${pct.toFixed(0)}%</span>`;
+      }).join('')}</div>`;
+    }
+
+    function realrankBlock(p){
+      const r = p.realrank;
+      if (!r) return `<section class="ed-block"><h3 class="ed-block-label">RealRank</h3>
+        <p class="muted">No analysis yet — <em>Run RealRank</em> gathers the named expert
+        reviews plus Amazon owner ratings and attaches the result here.</p></section>`;
+      const age = daysSince(r.generated_at);
+      const stale = age != null && age > RR_TTL_DAYS;
+      const owner = r.owner || {};
+      const pol = owner.polarization || {};
+      const score = (r.score == null)
+        ? `<span class="rr-score pending"><span class="n">—</span><span class="l">score</span></span>`
+        : `<span class="rr-score"><span class="n">${escapeHtml(String(r.score))}</span><span class="l">score</span></span>`;
+
+      const mark = { fetched: '✔', searched: '·', unavailable: '✕' };
+      const cov = (r.coverage || []).map(c =>
+        `<span class="s ${c.status==='unavailable'?'miss':''}">${mark[c.status]||'·'} ${escapeHtml(c.name||'')}</span>`
+      ).join('');
+
+      const finds = (r.findings || []).map(f => `
+        <div class="rr-find">
+          <span class="who">${escapeHtml(f.name||'')}</span>
+          ${f.verdict_or_award?` — ${escapeHtml(f.verdict_or_award)}`:''}
+          <span class="rr-via">${escapeHtml(f.via||'?')}</span>
+          ${f.url?` <a href="${escapeHtml(f.url)}" target="_blank" rel="noopener">↗</a>`:''}
+          ${(f.key_facts||[]).length?`<div class="muted" style="margin-top:2px">${escapeHtml((f.key_facts||[]).join('; '))}</div>`:''}
+          ${f.short_quote?`<div class="muted" style="font-style:italic;margin-top:2px">“${escapeHtml(f.short_quote)}”</div>`:''}
+        </div>`).join('');
+
+      const alt = r.cheaper_alternative;
+      return `
+        <section class="ed-block"><h3 class="ed-block-label">RealRank</h3>
+          <div class="rr-head">
+            ${score}
+            <div>
+              <div><strong>${escapeHtml(r.verdict||'—')}</strong>${pol.label?` · ${escapeHtml(pol.label)}`:''}</div>
+              <div class="muted" style="font-size:.8rem">
+                ${age==null?'ran (date unknown)':`ran ${age===0?'today':age+'d ago'}`}
+                ${stale?`<span class="rr-stale">· STALE (&gt;${RR_TTL_DAYS}d)</span>`:''}
+                ${r.job_id?` · <a href="/forms/jobs_monitor.html" title="job #${r.job_id}">job #${r.job_id}</a>`:''}
+                ${r.model?` · ${escapeHtml(r.model)}`:''}
+              </div>
+            </div>
+            <div style="margin-left:auto;text-align:right">
+              ${r.approved_by
+                ? `<span class="rr-ok">✔ approved</span><div class="muted" style="font-size:.75rem">${escapeHtml(r.approved_by)}</div>`
+                : `<button type="button" class="ed-btn" id="rrApprove">Approve for use</button>`}
+            </div>
+          </div>
+          <p class="rr-cov">${cov || '<span class="muted">no coverage recorded</span>'}</p>
+          ${owner.review_count ? `
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+              ${rrHistogram(owner)}
+              <div class="muted" style="font-size:.84rem">
+                ${escapeHtml(String(owner.avg_rating||'—'))}★ · ${Number(owner.review_count).toLocaleString()} ratings<br>
+                ${(owner.sources||[]).map(s=>escapeHtml(`${s.source} ${s.count?Number(s.count).toLocaleString():''}`)).join(' + ')}
+              </div>
+            </div>
+            <div class="rr-note"><strong>${escapeHtml(r.score_basis||'')}</strong>${
+              pol.label?` — ${escapeHtml(pol.label)}: 1★ ${pol.one_star_pct}% vs ${pol.detractor_pct}% total detractors${pol.j_shaped?' (J-shaped)':''}.`:''
+            }</div>` : '<p class="muted">No owner histogram — score pending a ratings feed.</p>'}
+          ${(r.pros||[]).length||(r.cons||[]).length ? `<div class="rr-cols">
+            <div><strong>Pros</strong><ul>${(r.pros||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>
+            <div><strong>Cons</strong><ul>${(r.cons||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></div>
+          </div>`:''}
+          ${alt&&alt.name?`<div class="rr-note"><strong>Cheaper alternative:</strong>
+            ${escapeHtml(alt.name)} ${escapeHtml(alt.approx_price||'')} — ${escapeHtml(alt.why||'')}</div>`:''}
+          <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:.85rem">
+            Findings (${(r.findings||[]).length}) · one-liner · summary</summary>
+            <p style="font-size:.9rem"><em>${escapeHtml(r.one_liner||'')}</em></p>
+            ${finds}
+            <p class="muted" style="font-size:.86rem;margin-top:8px">${escapeHtml(r.summary||'')}</p>
+            ${r.files&&r.files.html?`<p style="font-size:.85rem">Posting: <code>${escapeHtml(r.files.html)}</code></p>`:''}
+          </details>
+        </section>`;
+    }
+
+    async function runRealRank(){
+      const btn = $('#rrBtn'), st = $('#rrStatus');
+      btn.disabled = true; st.textContent = 'Starting…';
+      try {
+        const r = await fetch(`/products/${encodeURIComponent(selected)}/realrank`, {
+          method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'HTTP '+r.status);
+        st.innerHTML = `job #${d.job_id} running — <a href="/forms/jobs_monitor.html" target="_blank">monitor</a>`;
+        // Poll rather than hold a connection: a full run is minutes (8 fetches + research).
+        const poll = setInterval(async () => {
+          try {
+            const j = await (await fetch(`/jobs/${d.job_id}`)).json();
+            if (['success','error','cancelled'].includes(j.status)){
+              clearInterval(poll);
+              btn.disabled = false;
+              st.textContent = `job #${d.job_id} ${j.status}`;
+              if (j.status === 'success'){ delete full[selected]; await renderDetail(); }
+            } else { st.textContent = `job #${d.job_id} ${j.status}…`; }
+          } catch(e){ /* keep polling; the job outlives a blip */ }
+        }, 5000);
+      } catch(e){
+        btn.disabled = false; st.textContent = 'Failed: ' + (e.message||e);
+      }
     }
 
     function renderIntro(err){

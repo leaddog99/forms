@@ -2716,7 +2716,7 @@ def product_realrank_endpoint(product_id: str, payload: dict = Body(default={}))
             params["owner_sources"] = payload["owner_sources"]
         job_id = jobs_lib.enqueue_job(conn, type="realrank_research", params=params,
                                       entity_ref=entity_ref)
-    _spawn_job_process(job_id)
+    _spawn_job_runner(job_id)
     return {"job_id": job_id, "status": "queued", "product": name, "asin": asin}
 
 
