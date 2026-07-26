@@ -154,6 +154,50 @@ def rating_histogram(asin: str, *, timeout: int = 20, allow_unblocker: bool = Fa
     return {"ok": False, "asin": asin, "error": last_err or "widget unavailable"}
 
 
+def verify_against_rainforest(asin: str) -> dict:
+    """CANARY: check the widget's histogram against Rainforest's independent one.
+
+    Why this exists. EasyParser's DETAIL operation returns `rating_breakdown` as all ZEROS
+    (verified on two ASINs, 2026-07-26), so it cannot validate this module — which leaves
+    the widget as the only histogram source we have. A single undocumented source with no
+    second opinion is the risk: `parse_widget` fails loudly if Amazon changes the widget's
+    STRUCTURE, but a change in MEANING (percentages silently becoming counts, say) would
+    parse cleanly and be wrong. Rainforest is therefore kept — not in the hot path, just as
+    an occasional second opinion. Costs 1 Rainforest credit per check.
+
+    Returns {ok, agree, asin, widget, rainforest, pct_deltas, note}. `agree` is False when
+    any star bucket differs by more than a point, which is the signal to go and look.
+    """
+    w = rating_histogram(asin)
+    if not w.get("ok"):
+        return {"ok": False, "asin": asin, "error": f"widget failed: {w.get('error')}"}
+    try:
+        from intake.products import amazon_rainforest as az
+        rf = az.product_ratings(asin)
+    except Exception as e:
+        return {"ok": False, "asin": asin, "error": f"rainforest failed: {e}"}
+
+    rf_counts = rf.get("histogram") or []
+    rf_total = rf.get("ratings_total") or 0
+    if len(rf_counts) != 5 or not rf_total:
+        return {"ok": False, "asin": asin, "error": "rainforest returned no usable histogram"}
+
+    rf_pct = [100.0 * c / sum(rf_counts) for c in rf_counts] if sum(rf_counts) else []
+    deltas = [round(a - b, 2) for a, b in zip(w["histogram_pct"], rf_pct)]
+    # Amazon rounds its bars to whole points, so a delta under 1 is expected, not drift.
+    agree = all(abs(d) <= 1.0 for d in deltas) and w.get("avg_rating") == rf.get("rating")
+    return {
+        "ok": True, "agree": agree, "asin": asin,
+        "widget": {"avg": w.get("avg_rating"), "total": w.get("ratings_total"),
+                   "pct": w["histogram_pct"]},
+        "rainforest": {"avg": rf.get("rating"), "total": rf_total,
+                       "pct": [round(p, 1) for p in rf_pct]},
+        "pct_deltas": deltas,
+        "note": ("" if agree else
+                 "MISMATCH — the widget parse may be stale; inspect before trusting scores"),
+    }
+
+
 def _finish(asin: str, parsed: dict, via: str) -> dict:
     pct = parsed["histogram_pct"]
     total = parsed.get("ratings_total")
