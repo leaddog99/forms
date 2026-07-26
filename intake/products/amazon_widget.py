@@ -85,14 +85,26 @@ def parse_widget(html: str) -> dict:
     }
 
 
-def rating_histogram(asin: str, *, timeout: int = 20, allow_unblocker: bool = True) -> dict:
+def rating_histogram(asin: str, *, timeout: int = 20, allow_unblocker: bool = False) -> dict:
     """The 5..1 star breakdown for one ASIN.
 
     Returns {ok, asin, avg_rating, ratings_total, histogram (COUNTS 5..1, derived),
     histogram_pct, counts_derived, via, error}. `via` is 'direct' or 'unblocker'.
 
-    A direct fetch is free; on a block (403 / 429 / CAPTCHA) we retry through BCC's
-    unblocker rather than giving up, because at collection volume Amazon will throttle.
+    THE LADDER, and why it stops early. A direct fetch is free — that is this module's whole
+    advantage. When it is blocked, the next step is the EasyParser PRODUCT api (which also
+    carries the breakdown), NOT the unblocker: an unblocker credit costs more than the API
+    call, and at selection volume we would be spending it on ~17 candidates we are about to
+    discard. And if EasyParser — a paid product API — cannot return the product either, then
+    something is genuinely wrong (dead ASIN, delisted item, outage, quota) and no amount of
+    anti-bot bypass fixes it. So: free direct -> EasyParser product -> STOP.
+
+    `allow_unblocker` is therefore OFF by default and kept only as an explicit escape hatch
+    for a caller that knows it wants one page badly enough to pay for it.
+
+    Callers should distinguish the failure SCALE: one ASIN failing is a bad candidate (drop
+    it, carry on); every ASIN failing is an outage or a credential/quota problem and the run
+    should stop and say so rather than emit a collection with no scores.
     """
     asin = (asin or "").strip().upper()
     if not _ASIN_RE.match(asin):
