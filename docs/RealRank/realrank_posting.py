@@ -158,6 +158,37 @@ CSS = """
 """
 
 _SENTIMENT_CLASS = {"good": "good", "mixed": "mid", "poor": "poor"}
+
+# How a rating SHAPE is described to a reader. The barbell case is the interesting one:
+# an average of 4.6 reads as "very good", but when 1-star outnumbers 2-star the real story
+# is "most people love it and a hard core don't" — usually a learning curve or QC variance,
+# not mediocrity. Worth saying out loud, because the average cannot.
+_POLARIZATION_COPY = {
+    "polarizing": ("Polarizing", "chip mid",
+                   "Most owners love it and a small hard core don't — {one}% rate it one "
+                   "star, more than the {det}% who land anywhere in between. A barbell like "
+                   "this usually means a learning curve or uneven quality control rather "
+                   "than a mediocre product, so read the cons before you buy."),
+    "clean": ("Consistent", "chip good",
+              "Almost no unhappy owners — {det}% rate it three stars or below, and the "
+              "curve tapers cleanly rather than splitting."),
+    "weak": ("Contested", "chip poor",
+             "{det}% of owners rate it three stars or below — a broad seam of "
+             "dissatisfaction, not a vocal minority."),
+}
+
+
+def _polarization_html(record):
+    pol = record.get("polarization") or {}
+    copy = _POLARIZATION_COPY.get(pol.get("label") or "")
+    if not copy:
+        return "", ""
+    label, cls, body = copy
+    text = body.format(one=pol.get("one_star_pct"), det=pol.get("detractor_pct"))
+    chip = f'<span class="{cls}"><span class="dot"></span>{label}</span>'
+    block = (f'<div class="scorecalc" style="margin-top:8px">'
+             f'<b>{label} ratings</b> — {_esc(text)}</div>')
+    return chip, block
 _DISCLOSURE = ("<b>How RealRank works:</b> verdicts and specs are reported as facts with "
                "attribution; Pros/Cons are AI-assisted and grounded in the cited sources. "
                "<b>Disclosure:</b> RealRank may earn a commission on purchases through these "
@@ -256,10 +287,11 @@ def _editorial(record):
 def _card(record):
     l = record.get("listing") or {}
     o = record.get("owner_sentiment") or {}
+    pol_chip, pol_block = _polarization_html(record)
     chips = "".join(
         f'<span class="chip {_SENTIMENT_CLASS.get(a.get("sentiment"), "mid")}">'
         f'<span class="dot"></span>{_esc(a.get("name",""))}</span>'
-        for a in (record.get("aspects") or [])[:6])
+        for a in (record.get("aspects") or [])[:6]) + pol_chip
     awards = "".join(
         f'<span class="abadge">{_esc(s.get("name",""))} '
         f'<span class="n">{_esc(s.get("verdict_or_award",""))}</span></span>'
@@ -295,13 +327,22 @@ def _card(record):
         # the badge at the top reads as an opinion instead of an arithmetic result.
         score_line = ""
         if score is not None:
+            pooled = o.get("pooled_from") or []
+            pool_note = ""
+            if len(pooled) > 1:
+                # Show the split. Pooling is only honest if you can see what went in.
+                pool_note = (" Pooled across "
+                             + ", ".join(f'{_esc(p["source"])} ({_esc(f"{p["total"]:,}")}, '
+                                         f'{_esc(str(p.get("share", 0)))}%)' for p in pooled)
+                             + " — the counts are summed, not the scores, so each retailer "
+                               "weighs by its evidence.")
             score_line = (
                 f'<div class="scorecalc"><b>RealRank {_esc(str(score))}</b> — '
                 f'NPS-from-stars with a Wilson-style confidence penalty: '
                 f'promoters (5★) minus detractors (3★ and below), 4★ passive, then '
                 f'discounted for sample size across these {_esc(f"{n:,}") if n else "?"} '
                 f'ratings. A 5.0 from nine reviews cannot outrank a 4.6 from '
-                f'{_esc(f"{n:,}") if n else "many"}.</div>')
+                f'{_esc(f"{n:,}") if n else "many"}.{pool_note}</div>')
         owner_block = (
             '<div class="sec-label">Owner sentiment <span class="tag">structured feed, not scraped prose</span></div>'
             f'<div class="owner"><div><div class="big">{_esc(str(o["avg_rating"]))}</div>'
@@ -310,7 +351,7 @@ def _card(record):
             f'<div class="note" style="border:none;background:none;padding:0">'
             f'{_esc(f"{n:,}") if n else "?"} ratings'
             f'{" · Amazon " + _esc(o.get("asin","")) if o.get("asin") else ""}</div></div>'
-            f'{score_line}')
+            f'{score_line}{pol_block}')
 
     cov = record.get("source_coverage") or []
     cov_html = ""

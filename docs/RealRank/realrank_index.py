@@ -73,6 +73,84 @@ def realrank_index(distribution, n_reviews, z=1.96, four_star_weight=0.0):
     return max(0.0, min(100.0, index))
 
 
+def _as_five(distribution):
+    """Normalize either accepted shape into a [five, four, three, two, one] list."""
+    if isinstance(distribution, dict):
+        return [float(distribution.get(k, 0) or 0) for k in (5, 4, 3, 2, 1)]
+    return [float(x or 0) for x in distribution]
+
+
+def pool_histograms(sources):
+    """Combine star histograms from SEVERAL retailers into one distribution.
+
+    `sources` = [{"source": "amazon", "histogram": [5,4,3,2,1 counts], "total": n}, ...].
+    Returns {"histogram": [...], "total": n, "sources": [{source, total, share}, ...]}.
+
+    Why pool the DISTRIBUTIONS rather than average the scores: the retailers use the same
+    5-point scale on the same product, so their ratings are two samples of one population.
+    Averaging two scores would weigh 3,642 Best Buy reviews equally against 145,000 Amazon
+    ones; summing the counts weighs them by evidence, and the confidence penalty in
+    realrank_index then reflects the true combined n.
+
+    Only pool listings that are genuinely the SAME product — a different size or generation
+    is a different thing, and merging them launders that away. Per-source totals are
+    returned so the split stays visible instead of disappearing into one number.
+    """
+    hist = [0.0] * 5
+    used = []
+    for s in sources or []:
+        h = s.get("histogram")
+        if not h or len(h) != 5:
+            continue
+        counts = _as_five(h)
+        if sum(counts) <= 0:
+            continue
+        for i, c in enumerate(counts):
+            hist[i] += c
+        used.append({"source": s.get("source", "?"),
+                     "total": s.get("total") or int(sum(counts))})
+    if not used:
+        return {"histogram": [], "total": 0, "sources": []}
+    total = sum(u["total"] for u in used)
+    for u in used:
+        u["share"] = round(100.0 * u["total"] / total, 1) if total else 0.0
+    return {"histogram": [int(round(x)) for x in hist], "total": total, "sources": used}
+
+
+def polarization(distribution):
+    """Is the rating curve J-SHAPED (a barbell) rather than a clean taper?
+
+    An average hides the shape: 4.6 stars can be a gentle slope or "most people love it,
+    a hard core hate it, nobody is mildly disappointed". The tell is **1-star outnumbering
+    2-star** — real on the Lodge skillet (3% vs 1%), and it usually means a learning curve
+    or quality-control variance rather than a mediocre product.
+
+    Returns {j_shaped, one_star_pct, hard_core_pct, detractor_pct, label}. `label` is
+    'polarizing' | 'clean' | 'weak' | None — the renderer decides the wording.
+    """
+    five, four, three, two, one = _as_five(distribution)
+    total = five + four + three + two + one
+    if total <= 0:
+        return {"j_shaped": False, "one_star_pct": None, "hard_core_pct": None,
+                "detractor_pct": None, "label": None}
+    p1, p2, p3, p5 = one / total, two / total, three / total, five / total
+    detr = p1 + p2 + p3
+    j = p1 > p2                       # the barbell tell
+    if j and p1 >= 0.02 and p5 >= 0.5:
+        label = "polarizing"          # loved by most, with a real hard core against
+    elif detr <= 0.05:
+        label = "clean"               # almost no detractors, no barbell
+    elif detr >= 0.25:
+        label = "weak"                # a quarter of buyers unhappy — not a shape story
+    else:
+        label = None
+    return {"j_shaped": j,
+            "one_star_pct": round(100 * p1, 1),
+            "hard_core_pct": round(100 * p1, 1),
+            "detractor_pct": round(100 * detr, 1),
+            "label": label}
+
+
 if __name__ == "__main__":
     print(round(realrank_index({5: 230, 4: 18, 3: 3, 2: 2, 1: 5}, 258), 1))   # KitchenAid -> 89.9
     print(round(realrank_index([89, 7, 1, 1, 2], 258), 1))                    # same, as %  -> 89.9

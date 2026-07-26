@@ -368,28 +368,54 @@ def parse_record(raw):
     return json.loads(m.group(1))
 
 
-def apply_owner_data(record, owner):
-    """Overwrite the model's owner_sentiment with the structured Rainforest figures.
+def apply_owner_data(record, owner, extra_sources=None):
+    """Overwrite the model's owner_sentiment with structured retailer figures.
 
     The model sees these numbers in its prompt, but the RECORD takes them from the feed
     directly — a rating average and a 144,676-count histogram are data, and nothing that
     drives a published score should be able to drift through a paraphrase.
+
+    `extra_sources` pools OTHER retailers' histograms with Amazon's:
+    [{"source": "bestbuy", "histogram": [5,4,3,2,1 counts], "total": n, "url": …}].
+    Same 5-point scale on the same product = more evidence, so the counts are SUMMED and
+    scored once (see realrank_index.pool_histograms — averaging two scores would weigh a
+    3,642-review retailer equally against a 145,000-review one). Best Buy is not reachable
+    through our fetch stack today, so this is how its numbers get in: another feed when we
+    have one, or the curator entering the histogram from a bookmarklet capture.
     """
-    if not owner or not owner.get("ratings_total"):
+    from realrank_index import pool_histograms, polarization
+
+    sources = []
+    if owner and owner.get("histogram") and owner.get("ratings_total"):
+        sources.append({"source": "amazon", "histogram": owner["histogram"],
+                        "total": owner["ratings_total"]})
+    for s in (extra_sources or []):
+        if s.get("histogram"):
+            sources.append(s)
+
+    if not sources:
         return record
+    pooled = pool_histograms(sources)
+
     record["owner_sentiment"] = {
-        "avg_rating": owner.get("rating"),
-        "review_count": owner.get("ratings_total"),
-        "distribution_pct": owner.get("distribution_pct"),
-        "distribution_counts": owner.get("histogram"),   # exact counts, 5..1
+        "avg_rating": (owner or {}).get("rating"),
+        "review_count": pooled["total"],
+        "distribution_pct": (owner or {}).get("distribution_pct"),
+        "distribution_counts": pooled["histogram"],      # POOLED exact counts, 5..1
         "is_proxy": False,
         "proxy_note": None,
-        "source_url": owner.get("link") or "",
-        "asin": owner.get("asin"),
-        "source": "rainforest/amazon",
+        "source_url": (owner or {}).get("link") or "",
+        "asin": (owner or {}).get("asin"),
+        "source": "+".join(s["source"] for s in pooled["sources"]),
+        "pooled_from": pooled["sources"],                # per-retailer split stays visible
     }
+    # Shape, not just level: a 4.6 average can be a gentle taper or a barbell, and the
+    # barbell (1★ outnumbering 2★) is a different product story. See realrank_index.
+    record["polarization"] = polarization(pooled["histogram"])
     # The listing facts the posting card needs (photo, asking price, buy link).
-    record["listing"] = {k: owner.get(k) for k in ("image", "price", "link", "brand", "title")}
+    if owner:
+        record["listing"] = {k: owner.get(k) for k in
+                             ("image", "price", "link", "brand", "title")}
     return record
 
 
@@ -458,7 +484,7 @@ def slugify(product):
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 
-def research_product(product, out_stem=None, should_cancel=None):
+def research_product(product, out_stem=None, should_cancel=None, extra_owner_sources=None):
     """Full run: fetch the named sources ourselves, distill, score, write the three files.
 
     `out_stem` defaults to out/<product-slug> so concurrent/repeat runs don't overwrite one
@@ -491,7 +517,12 @@ def research_product(product, out_stem=None, should_cancel=None):
     # parse failure must be diagnosable without paying for the whole run again.
     with open(f"{out_stem}.raw.txt", "w", encoding="utf-8") as f:
         f.write(raw)
-    record = attach_score(apply_owner_data(parse_record(raw), owner))
+    record = attach_score(apply_owner_data(parse_record(raw), owner, extra_owner_sources))
+    pol = record.get("polarization") or {}
+    if pol.get("label"):
+        print(f"[realrank] rating shape: {pol['label']} "
+              f"(1★ {pol.get('one_star_pct')}% vs detractors {pol.get('detractor_pct')}%"
+              f"{', J-shaped' if pol.get('j_shaped') else ''})")
     # Record what WE actually retrieved, independent of the model's own account of it — the
     # audit trail for every attributed fact, incl. the URL to bookmarklet if a fetch failed.
     record["fetch_log"] = [{k: d[k] for k in ("label", "url", "via", "error")} for d in docs]

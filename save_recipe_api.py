@@ -5706,12 +5706,18 @@ async def _handle_realrank_research_job(job: dict) -> dict:
     the per-job log, and cooperatively cancellable between sources.
 
     Params: product (required) — the product NAME, the identity, not a search string
-    (§3.1, same rule as --dish). Optional out_stem to override the output path.
+    (§3.1, same rule as --dish). Optional out_stem to override the output path. Optional
+    owner_sources — a JSON list of ADDITIONAL retailer histograms to pool with Amazon's,
+    [{"source":"bestbuy","histogram":[5,4,3,2,1 counts],"total":n}] — how a retailer we
+    can't fetch (Best Buy blocks our unblocker) gets its ratings into the score.
     """
     params = job.get("params") or {}
     product = (params.get("product") or "").strip()
     if not product:
         raise ValueError("realrank_research requires params.product")
+    extra = params.get("owner_sources") or None
+    if isinstance(extra, str):          # --param arrives as a string from the CLI
+        extra = json.loads(extra)
     job_id = job["id"]
     print(f"[REALRANK] {product}")
 
@@ -5726,7 +5732,8 @@ async def _handle_realrank_research_job(job: dict) -> dict:
         sys.path.insert(0, str(Path(__file__).resolve().parent / "docs" / "RealRank"))
         import realrank_research as rr
         rec = rr.research_product(product, out_stem=params.get("out_stem") or None,
-                                  should_cancel=_should_cancel)
+                                  should_cancel=_should_cancel,
+                                  extra_owner_sources=extra)
         return rr.job_summary(rec)
 
     try:
