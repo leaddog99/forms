@@ -1541,3 +1541,48 @@ SEMrush advanced-filter `fld`/`cri` codes are guesses ([[project_semrush_filter_
 
 ### Restart notes
 Static HTML/JS (products.html, reviews.html) live on next load. **`bcc_restart.bat` needed** for `POST /products/{id}/realrank` (a `_spawn_job_process` -> `_spawn_job_runner` rename fix; the endpoint 500s until then). `/reviews/find`, `/reviews/ingest-url` and `/realrank/approve` verified live post-restart. Jobs pick up Python changes automatically (fresh `python -m jobs` import).
+
+## Session log — 2026-07-26/27 — reviews as jobs · ASIN identity from affiliate links · RealRank/RealStory split · the curate experiment · the revenue path (buy links + affiliate settings)
+
+The commerce build. Started with a broken review grab, ended with a written brief whose every buy link earns us money.
+
+### Review acquisition hardened (be78e05, 3c70595, 209c449, c7c16a4)
+- **The ATK Dutch-oven grab reported "no products" — it had TRUNCATED.** 8192 max_tokens on a large roundup; the model was still emitting when it was cut, and a partial JSON parse fell through to an empty product list. Now 20000, products emitted FIRST (so a truncation loses prose, not picks), and an unclosed fence is reported as **TRUNCATION**, never as a JSONDecodeError. A silent zero is the failure mode to design against — it looks like "this page had no products."
+- **Bookmarklet grabs are now tracked jobs** — logged, cancellable, visible in the monitor (whose width now matches the shell). A grab that fails leaves a record instead of a shrug.
+- **Serious Eats award phrases** ("Best Overall", "Best Budget", "Also Great") decoded to our tiers, and the tier field constrained to the controlled vocabulary — the model was inventing tier names per publisher.
+- **Job #618**: two bugs behind one error. The JSON error was the truncation above; underneath it, `find_asin` picked the **most-rated** match, so an **Amazon Basics** Dutch oven was scored as the Le Creuset. Brand match now required. (First fix derived brand "Le" from "Le Creuset" and matched "**Le**akproof"/"Ename**le**d" — tokens must be >=4 chars, and the real brand is threaded through rather than guessed from the title.)
+
+### Product identity: the reviewers' own links are the answer (785e165, 7b4dc11, 2bd3233, 3394508)
+Curator's insight: *"nearly all the reviews have affiliate links — can't we use those to determine if we have the right product?"* Yes, and it beats name-matching outright.
+- **`asin_from` now URL-decodes first** — 46 of 50 ATK links carried the ASIN inside a percent-encoded `trx-hub.com?q=` wrapper and were invisible to a raw regex. Plus `asins_in` / `asins_near` / `consensus_asin` (the ASIN several reviewers independently linked).
+- **`asin` is a first-class indexed column** on `review_products`, populated on ingest and backfilled by `recover_asins_via_redirects()`. Exposed as its own field in the reviews editor — the curator asked for it explicitly, and it is the join key to everything Amazon.
+- **Variant FAMILY, not one ASIN**: `variant_asins()` returns the parent's children (Le Creuset: **61 ASINs**), so a reviewer who linked a different colour still matches. Colour and size do NOT split Amazon ratings — the family shares one histogram — so this is safe for identity *and* explains why the free widget's numbers agree across variants.
+- **`intake/products/product_types.py`** — one shared type vocabulary. `_verify_asin` had rejected a **Staub cocotte** as not-a-Dutch-oven (and earlier accepted a **bread oven** as one). Synonym groups (dutch oven = french oven = cocotte = coquette; bread oven = cloche), `AMBIGUOUS_TERMS` that resolve to nothing, and **fail-open**: a conflict is only declared when both sides resolve to disjoint groups. A verifier that cannot tell must not veto. (One more wrinkle: the brand check compared the whole string `"staub (zwilling)"` against `"STAUB"` — leading-token compare now.)
+
+### RealRank index: the small-sample collapse (e95bee7)
+**13 five-star ratings scored 100.0.** Agresti-Coull variance is `promoters + detractors - nps^2`, which at unanimity is `1 + 0 - 1 = ZERO` — the confidence penalty vanished exactly where it was most needed. Padding (`z^2/2` spread across five bins) and `n_eff = n + z^2` fix it: 13x5-star **100.0 -> 72.5**, 9x5-star **88.0 -> 64.5**, and the well-sampled products are untouched (7,823 ratings stays 92.5; 144,696 stays 86.8). A scoring bug that only fires on thin data is the one that ships — every test product had thousands of ratings.
+
+### RealRank / RealStory (eaf4334)
+Split while exactly one product had a block, at the curator's instruction. **RealRank = the number** (score/basis/owner/computed_at, no approval — arithmetic isn't approved). **RealStory = the words** (verdict/prose/findings/coverage/files/approval). They can legitimately disagree, and conflating them made the approval semantics incoherent.
+
+### `experiments/curate/` — the curator's ChatGPT loop, grounded (fde6329)
+Explicitly **isolated from production** at the curator's request. Adapts a curation loop they'd been running by hand, with three changes they asked for: **text, not a spreadsheet** (`render.py` — three worksheets become three sections, plus an owner-evidence line and a sources line a workbook couldn't carry); **typical price, not sale price** as the ranking input (a discount is news, not a ranking signal — a daily sale scan for winners is the follow-up); and our own grounding/verification on top.
+- Lessons re-learned the expensive way: **no doc cache** meant a re-run spent ~6 min re-fetching (curator: *"we are six minutes in… what's going on"*) — now cached under `experiments/curate/cache/`; and the **raw reply wasn't saved before parsing**, the exact lesson RealRank had already taught. Both fixed.
+
+### The revenue path (02bad9a, 5755a27, 1ada42a, 64445d6, 6818bf9)
+Curator: *"we need more buy-it links than just Amazon… this is important as this is our revenue source."*
+- **`intake/products/buy_links.py`**. The trap it exists for: **69 of the 139 buy links we hold carry someone else's affiliate tag** (`tag=atkequipland-20`, Wirecutter's `/out/link/` redirector). Republishing those doesn't merely fail to earn — **it pays a competitor on every sale we generate**. A harvested URL is therefore IDENTITY ONLY; `clean_url()` strips every tracking parameter, and returns **""** for an opaque redirector it cannot unwrap. Dropping an offer costs one placement; mis-emitting one costs the revenue *and* funds a rival.
+- **Multi-retailer** by design — `offers_from_reviews()` returns one offer per retailer, matched by **exact ASIN** (matching the 61-ASIN family gathered 48 "retailers" for a single pick). Le Creuset and Staub sell far better direct than on Amazon.
+- **Codes applied at CLICK time, not storage time** (curator's call). Stored rows keep clean destinations; `amazon_affiliate_url()` mints the link at render/click. `tag` is the ONLY parameter Amazon requires — SiteStripe's `linkCode`/`linkId`/`language`/`ref_` are its own reporting residue — and **`ascsubtag`** (which SiteStripe omits) carries the placement, so the Associates report says which surface earned the sale.
+- **Where the codes live: the system record, not `.env`, not code.** Not `.env` because they aren't secrets (they appear in every published link, and `.env` is for credentials); not code because they're per-instance business config — a self-hoster ships their own exactly as they ship their own `public_base_url`. Three settings under a new **Affiliate** section: `amazon_tracking_id` (mbg99-20), `amazon_store_id` (leaddogventur-20), `affiliate_subtag_enabled`. **SiteStripe exposes two ids and they are not interchangeable** — Store ID is the account, Tracking ID is a channel under it; we publish the Tracking ID because that's how Amazon reports *which property* earned a sale. Verified live in the System editor after restart.
+
+### Loaf Pans — the whole new pipeline, end to end
+Second category through, clean on the first run (Dutch ovens took three: a 32k truncation, then the cocotte rejection). 8/8 sources fetched, **15 picks** across 3 overall + 4 categories, 6 distinct ASINs. USA Pan 1140LF wins on four independent sources with 11,623 real ratings behind it; no identity rejections (the loaf pan / loaf tin / bread pan synonyms held); Williams Sonoma and OXO-direct links came through beside Amazon, all stripped of ATK's tag and re-minted with ours plus a per-placement subtag.
+
+**Measured cost — one `claude-sonnet-5` call, 237s: 55,117 in / 17,496 out = $0.285** at intro pricing ($0.43 at standard $3/$15). External APIs (~8 SERP, ~7 unblocker fetches, ~10-20 Rainforest) add an estimated $0.14-0.24 — **~$0.45-0.55 per product category, all in**. Amazon Kitchen & Dining pays **4.50%**, so a single $21 USA Pan sale (~$0.95) covers roughly two category builds. Worth noting because it decides how freely we can re-run: the doc cache plus the saved raw reply mean a retry now costs the LLM call only.
+
+### Restart notes
+Static HTML/JS lives on next load. The Affiliate settings needed a restart (new `system_config` rows) and were verified live afterwards. Jobs pick up Python changes automatically.
+
+### Parked / next
+Daily sale scan for winners (typical vs current price is already modelled). EasyParser histogram fix — code stays wired. SEMrush `fld`/`cri` codes still guesses. Six LLM-gateway bypasses still open. Reviews->purchase deep dive. The recipe-side bake-off/medals idea from the last session is still unbuilt.
