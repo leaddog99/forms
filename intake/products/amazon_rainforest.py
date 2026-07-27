@@ -125,6 +125,39 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
     }
 
 
+def variant_asins(asin: str, *, domain: str = DEFAULT_DOMAIN) -> dict:
+    """Every ASIN in this product's variation FAMILY — all colours, all sizes.
+
+    The identity set. A review links whichever variant its author happened to test (the White
+    4.5qt, say) while our catalog row is the Cerise 5.5qt; matching on one ASIN misses. Hold
+    the whole family and ANY reviewer link that lands inside it confirms the review is about
+    OUR product — a factual test rather than a guess from names.
+
+    It also rejects near-misses for free: a Le Creuset Signature Round BREAD oven sits under a
+    different parent, so it simply isn't in the set, no vocabulary of type nouns required.
+
+    Returns {asin, parent, family: set, titles: {asin: title}} — `family` always includes the
+    ASIN itself so callers can use it unconditionally.
+    """
+    out = {"asin": asin, "parent": "", "family": {asin}, "titles": {}}
+    try:
+        d = _get({"type": "product", "amazon_domain": domain, "asin": asin})
+    except Exception as e:
+        print(f"[rainforest] variant lookup failed for {asin}: {e}")
+        return out
+    p = (d.get("product") or {})
+    out["parent"] = p.get("parent_asin") or ""
+    if out["parent"]:
+        out["family"].add(out["parent"])
+    for v in (p.get("variants") or []):
+        a = (v.get("asin") or "").strip().upper()
+        if a:
+            out["family"].add(a)
+            if v.get("title"):
+                out["titles"][a] = v["title"]
+    return out
+
+
 def owner_sentiment(product: str, *, asin: str = "", domain: str = DEFAULT_DOMAIN,
                     brand: str = "") -> dict | None:
     """One call-site for "what do owners actually rate and say" — resolve the ASIN if

@@ -25,6 +25,17 @@ wrong star numbers and returned histograms totalling 410% and 445%. Broad fallba
 extraction on a page like this doesn't add robustness, it adds confident wrong answers —
 when the canonical pattern isn't there, the honest result is a FAILURE, not a guess.
 
+COLOUR AND SIZE DO NOT MATTER — measured 2026-07-27. Amazon reports FAMILY-AGGREGATED
+ratings on every child ASIN: Le Creuset Cerise 5.5qt, Riviera 5.5qt and White 4.5qt all
+return 4.8 x 7,823 under one parent (B0F1Z7W9HV). So there is no need to standardize on a
+colour, and picking any variant of the right product gives the same score.
+
+The flip side is a real precision limit worth remembering: because the family is pooled
+across SIZES too, the score describes the product LINE, not the specific size. A size that
+reviews badly is masked by its siblings, and Amazon gives us no way to separate them. What
+this does NOT excuse is landing on the wrong FAMILY — a Le Creuset bread oven is a different
+parent from a Le Creuset dutch oven (see realrank_research._verify_asin).
+
 Amazon rounds each bar to a whole percent, so counts here are DERIVED (pct x total) and
 flagged as such. They're needed in count form because pooling several retailers means
 summing counts (see realrank_index.pool_histograms) — percentages can't be summed.

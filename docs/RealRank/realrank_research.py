@@ -609,22 +609,43 @@ def research_product(product, out_stem=None, should_cancel=None, extra_owner_sou
     # But a roundup page links 20+ products, and proximity alone picks the wrong one: on the
     # ATK Dutch-oven page it chose a Le Creuset BREAD oven. So a candidate is only accepted
     # if the LISTING TITLE actually matches the product — the type noun has to agree.
-    if not asin:
-        try:
-            from intake.products.review_facts import consensus_asin
-            hit = consensus_asin(docs, _keywords(product) + ([brand] if brand else []))
-            cand = hit.get("asin")
+    family, coverage_by_family = set(), []
+    try:
+        from intake.products.review_facts import consensus_asin, asins_in
+        from intake.products import amazon_rainforest as az
+
+        if asin:
+            # We already know the product. Pull its whole variation FAMILY (all colours and
+            # sizes) so a reviewer who tested the White 4.5qt still counts as covering our
+            # Cerise 5.5qt — one ASIN would miss them.
+            fam = az.variant_asins(asin)
+            family = fam["family"]
+            print(f"[realrank] variant family: {len(family)} ASINs (parent {fam['parent'] or '—'})")
+        else:
+            cand = (consensus_asin(docs, _keywords(product)
+                                   + ([brand] if brand else [])) or {}).get("asin")
             if cand:
+                fam = az.variant_asins(cand)
                 ok, why = _verify_asin(cand, product)
                 if ok:
-                    asin = cand
+                    asin, family = cand, fam["family"]
                     print(f"[realrank] ASIN {asin} from the reviewers' own links "
-                          f"({', '.join(hit['sources']) or 'single source'})")
+                          f"(family of {len(family)})")
                 else:
                     print(f"[realrank] reviewer-link ASIN {cand} REJECTED — {why}; "
                           f"falling back to a brand-matched search")
-        except Exception as e:
-            print(f"[realrank] reviewer-link ASIN lookup skipped: {e}")
+
+        # Which sources actually reviewed THIS product, as opposed to merely mentioning the
+        # brand? A link into the family is proof; it's the same test that rejects the bread
+        # oven, but stated as evidence rather than a veto.
+        if family:
+            for d in docs:
+                if d.get("markdown") and (set(asins_in(d["markdown"])) & family):
+                    coverage_by_family.append(d["label"])
+            if coverage_by_family:
+                print(f"[realrank] linked this exact product: {', '.join(coverage_by_family)}")
+    except Exception as e:
+        print(f"[realrank] variant-family identity skipped: {e}")
 
     owner = fetch_owner_data(product, asin=asin, brand=brand)
     if owner:
