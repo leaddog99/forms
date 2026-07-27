@@ -124,6 +124,45 @@ def clean_url(url: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, "", urlencode(keep), ""))
 
 
+# Our Amazon Associates tag. Not a secret — it is visible in every link we publish — so it
+# lives here with an env override rather than in .env alongside API keys.
+AMAZON_TAG = "mbg99-20"
+
+
+def amazon_affiliate_url(url: str, *, subtag: str = "", tag: str = "") -> str:
+    """Mint OUR Amazon affiliate link from a clean destination.
+
+    MINIMUM REQUIRED IS `tag`. A SiteStripe link looks busy —
+    `?th=1&linkCode=ll2&tag=mbg99-20&linkId=17ee…&language=en_US&ref_=as_li_ss_tl` — but only
+    `tag` drives attribution. `linkCode`/`linkId` are SiteStripe's own reporting markers,
+    `language` and `ref_` are residue, and `th=1` merely preselects a variant.
+
+    `ascsubtag` is the one worth adding and the one SiteStripe omits: a free-form string
+    Amazon echoes back in the Associates report. That is precisely the per-placement,
+    click-time attribution the curator wants — pass the placement id (recipe, brief, rail)
+    and the report tells you which surface earned the sale.
+
+    Deliberately NOT applied at storage time. Stored rows keep the clean destination; this is
+    called at the click (or at render for a preview), so a change of tag or network never
+    means rewriting stored links.
+    """
+    clean = clean_url(url)
+    if not clean or "amazon." not in (urlparse(clean).hostname or ""):
+        return clean
+    params = [("tag", tag or AMAZON_TAG)]
+    if subtag:
+        # Amazon truncates around 100 chars and rejects some punctuation; keep it tame.
+        params.append(("ascsubtag", re.sub(r"[^A-Za-z0-9_.\-]", "-", subtag)[:100]))
+    return f"{clean}?{urlencode(params)}"
+
+
+def affiliate_url(url: str, *, subtag: str = "") -> str:
+    """Affiliate link for ANY retailer. Only Amazon is wired today — every other retailer
+    returns the clean destination unchanged, so a link is always usable even before its
+    network is set up, and never carries a foreign tag in the meantime."""
+    return amazon_affiliate_url(url, subtag=subtag) if "amazon." in (url or "") else clean_url(url)
+
+
 def retailer_name(url: str) -> str:
     host = (urlparse(url).hostname or "").lower().replace("www.", "") if url else ""
     if not host:

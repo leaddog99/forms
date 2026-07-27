@@ -17,6 +17,8 @@ is what separates a brief from an advertisement.
 """
 from __future__ import annotations
 
+import re
+
 
 def _money(v) -> str:
     try:
@@ -63,10 +65,19 @@ def _evidence(r: dict) -> list:
     # the reviewer's tag, which would pay them instead of us).
     offers = r.get("offers") or []
     if offers:
+        # Show the link AS A READER WOULD GET IT — Amazon minted with our tag and a
+        # placement subtag, everything else clean. The stored row keeps the bare
+        # destination; this is the click-time form, previewed.
+        try:
+            from intake.products.buy_links import affiliate_url
+        except Exception:
+            affiliate_url = None
+        slot = r.get("_slot") or "brief"
         lines.append(f"    Buy at ({len(offers)}):")
         for o in offers[:6]:
+            shown = affiliate_url(o["url"], subtag=slot) if affiliate_url else o["url"]
             seen = f"  [linked by {', '.join(o['seen_in'][:2])}]" if o.get("seen_in") else ""
-            lines.append(f"      {o['retailer']:<18} {o['url']}{seen}")
+            lines.append(f"      {o['retailer']:<18} {shown}{seen}")
     srcs = [s for s in (r.get("source_links") or []) if str(s).strip()]
     if srcs:
         lines.append("    Sources: " + " · ".join(str(s) for s in srcs[:4]))
@@ -104,7 +115,9 @@ def render(data: dict, report: dict | None = None) -> str:
              f"{data.get('currency','USD')} · ranked on TYPICAL price, not sale price", ""]
 
     lines += ["TOP THREE OVERALL", "-" * 17, ""]
+    slug = re.sub(r"[^a-z0-9]+", "-", pc.lower()).strip("-")[:32]
     for r in sorted(data.get("overall_top_three") or [], key=lambda x: int(x.get("place", 9))):
+        r["_slot"] = f"{slug}.overall.{r.get('place','')}"
         lines += [_row(r), ""]
 
     cats: dict[str, list] = {}
@@ -114,7 +127,9 @@ def render(data: dict, report: dict | None = None) -> str:
         lines += ["", "TOP THREE BY CATEGORY", "-" * 21, ""]
         for cat, rows in cats.items():
             lines += [f"{cat}", ""]
+            cslug = re.sub(r"[^a-z0-9]+", "-", cat.lower()).strip("-")[:24]
             for r in sorted(rows, key=lambda x: int(x.get("place", 9))):
+                r["_slot"] = f"{slug}.{cslug}.{r.get('place','')}"
                 lines += [_row(r), ""]
 
     crit = data.get("ranking_criteria") or []
@@ -130,7 +145,11 @@ def render(data: dict, report: dict | None = None) -> str:
         lines += ["", "NOTE", "-" * 4, "  " + data["methodology_note"], ""]
 
     lines += ["", "AFFILIATE NOTE", "-" * 14,
-              "  Buy links above are CLEAN destinations. Our affiliate codes are applied at",
+              "  Amazon links carry our tag plus an ascsubtag naming the placement, so the",
+              "  Associates report says WHICH surface earned the sale. `tag` is the only",
+              "  parameter Amazon requires; SiteStripe's linkCode/linkId/language/ref_ are",
+              "  reporting residue and are dropped.",
+              "  Stored rows keep CLEAN destinations. Codes are applied at",
               "  click time so attribution can be tracked per placement, and so a change of",
               "  network never requires rewriting stored links. No link here carries anyone",
               "  else's tag — a review's own buy link does, and republishing it would pay",
