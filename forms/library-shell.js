@@ -422,6 +422,7 @@
     // Kept in alphabetical order by label. `action` items run JS instead of
     // navigating (see initNav wiring).
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
+    { page: 'collections', label: 'Collections', href: '/forms/product_collections.html', group: 'admin' },
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
     { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', group: 'admin' },

@@ -1,0 +1,275 @@
+"""Product collections — a named Amazon search URL, and the cohort it returns.
+
+A *collection* is the unit of product selection: a NAME plus a saved Amazon search URL that
+the curator built by hand in Amazon's own UI until the result set was right. Amazon encodes
+every criterion in the URL, so the URL is the query. Unrestricted on purpose — it might be
+a product class ("12-inch cast iron skillets") or an occasion ("top 20 holiday gifts"). The
+only thing every collection has in common is that **it yields a list of ASINs**.
+
+Two tables:
+
+  product_collections            the saved search (the dish-equivalent — name + url)
+  product_collection_candidates  EVERY ASIN a run returned, kept
+
+The second one is the point. We keep the whole cohort — winners flagged, also-rans retained
+— not just the survivors, so a curator can see what the URL actually returned rather than
+only what came out the far end, and so a rubric can be re-tuned and re-scored against the
+same pool without paying to fetch it again.
+
+`wilson_score` and `realrank_score` are deliberately SEPARATE columns. The first is a cheap
+screen over an average and a count (`p = (mean-1)/4`, Wilson lower bound); the second is the
+real index computed from an actual star histogram. They answer different questions with
+different evidence and must never be read as the same number.
+
+Namespaced away from `collection_members`, which is the RECIPE side (publisher/dish/chef
+membership) and unrelated.
+"""
+from __future__ import annotations
+
+import json
+import math
+import sqlite3
+from datetime import datetime, timezone
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _dicts(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list:
+    """Rows as dicts WITHOUT touching the caller's connection.
+
+    The server's `_db()` deliberately returns a bare connection with no row_factory, and a
+    store has no business mutating a shared connection to suit itself — so we set the factory
+    on our own cursor. (Getting this wrong is how the first collection run died: `dict(row)`
+    on a plain tuple.)
+    """
+    cur = conn.cursor()
+    cur.row_factory = sqlite3.Row
+    return [dict(r) for r in cur.execute(sql, args).fetchall()]
+
+
+EDITABLE = ("url", "ws_category_id", "keep_top_n", "pages", "notes", "display_name")
+
+
+def ensure_tables(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS product_collections (
+            name            TEXT PRIMARY KEY,   -- identity/join key, immutable
+            display_name    TEXT,               -- cosmetic, editable
+            url             TEXT NOT NULL,      -- the Amazon search URL = the query
+            ws_category_id  INTEGER,            -- WS taxonomy leaf (auto-classified)
+            ws_path         TEXT,               -- denormalized for display/sort
+            keep_top_n      INTEGER DEFAULT 10, -- how many reach the bake-off
+            pages           INTEGER DEFAULT 1,  -- EasyParser pages, 1 credit each
+            notes           TEXT,
+            last_run_at     TEXT,
+            last_job_id     INTEGER,
+            last_count      INTEGER,            -- candidates returned by the last run
+            created_at      TEXT,
+            updated_at      TEXT
+        )""")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS product_collection_candidates (
+            collection      TEXT NOT NULL,
+            asin            TEXT NOT NULL,
+            run_at          TEXT,
+            position        INTEGER,            -- Amazon's own order, kept for comparison
+            title           TEXT,
+            brand           TEXT,
+            price           TEXT,
+            image           TEXT,
+            link            TEXT,
+            rating          REAL,
+            ratings_total   INTEGER,
+            wilson_score    REAL,               -- stage 1: cheap screen, average+count only
+            histogram       TEXT,               -- stage 2: JSON [5..1] counts, when screened
+            realrank_score  REAL,               -- stage 2: the real index
+            polarization    TEXT,               -- stage 2: shape label
+            screened        INTEGER DEFAULT 0,  -- did we spend a histogram fetch on it
+            selected        INTEGER DEFAULT 0,  -- survived to the shortlist
+            medal           TEXT,               -- gold | silver | bronze (curator-confirmed)
+            product_id      TEXT,               -- set once it materializes a catalog row
+            PRIMARY KEY (collection, asin)
+        )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pcc_collection "
+                 "ON product_collection_candidates(collection, wilson_score DESC)")
+    conn.commit()
+
+
+def wilson_from_mean(mean, n, z: float = 1.96) -> float:
+    """Stage-1 screen: a Wilson lower bound on the positive share implied by a star average.
+
+    Without a histogram you cannot compute NPS-from-stars — promoters and detractors don't
+    exist yet. Mapping the mean onto a proportion (`p = (mean-1)/4`) and taking the lower
+    bound at n gives the property stage 1 actually needs: 4.8★ from 22,754 ratings beats
+    4.9★ from 111, which Amazon's own "review-rank" ordering does not.
+    """
+    try:
+        mean = float(mean or 0)
+        n = int(n or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if mean <= 0 or n <= 0:
+        return 0.0
+    p = (mean - 1.0) / 4.0
+    p = min(max(p, 0.0), 1.0)
+    denom = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    margin = z * math.sqrt((p * (1 - p) + z * z / (4 * n)) / n)
+    return round(100.0 * (centre - margin) / denom, 1)
+
+
+# --------------------------------------------------------------------------- #
+#  Collections
+# --------------------------------------------------------------------------- #
+
+def list_collections(conn: sqlite3.Connection) -> list:
+    ensure_tables(conn)
+    return _dicts(conn,
+        "SELECT c.*, "
+        " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name) "
+        "   AS candidate_count, "
+        " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name "
+        "   AND x.selected = 1) AS selected_count "
+        "FROM product_collections c ORDER BY c.name")
+
+
+def get_collection(conn: sqlite3.Connection, name: str) -> dict | None:
+    ensure_tables(conn)
+    rows = _dicts(conn, "SELECT * FROM product_collections WHERE name = ?", (name,))
+    return rows[0] if rows else None
+
+
+def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
+    ensure_tables(conn)
+    name = (patch.get("name") or "").strip()
+    url = (patch.get("url") or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    if not url:
+        raise ValueError("url is required")
+    if get_collection(conn, name):
+        raise ValueError(f"collection {name!r} already exists")
+    now = _now()
+    conn.execute(
+        "INSERT INTO product_collections(name, display_name, url, ws_category_id, ws_path, "
+        "keep_top_n, pages, notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (name, (patch.get("display_name") or "").strip(), url,
+         patch.get("ws_category_id"), (patch.get("ws_path") or ""),
+         int(patch.get("keep_top_n") or 10), int(patch.get("pages") or 1),
+         (patch.get("notes") or ""), now, now))
+    conn.commit()
+    return get_collection(conn, name)
+
+
+def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict | None:
+    """Edit the editable fields. `name` is the immutable join key — candidates hang off it."""
+    ensure_tables(conn)
+    if not get_collection(conn, name):
+        return None
+    sets, vals = [], []
+    for f in EDITABLE:
+        if f in patch:
+            sets.append(f"{f} = ?")
+            vals.append(patch[f])
+    if "ws_path" in patch:
+        sets.append("ws_path = ?")
+        vals.append(patch["ws_path"])
+    if not sets:
+        return get_collection(conn, name)
+    sets.append("updated_at = ?")
+    vals.extend([_now(), name])
+    conn.execute(f"UPDATE product_collections SET {', '.join(sets)} WHERE name = ?", vals)
+    conn.commit()
+    return get_collection(conn, name)
+
+
+def delete_collection(conn: sqlite3.Connection, name: str) -> bool:
+    ensure_tables(conn)
+    cur = conn.execute("DELETE FROM product_collections WHERE name = ?", (name,))
+    conn.execute("DELETE FROM product_collection_candidates WHERE collection = ?", (name,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# --------------------------------------------------------------------------- #
+#  Candidates (the cohort)
+# --------------------------------------------------------------------------- #
+
+def replace_candidates(conn: sqlite3.Connection, name: str, items: list) -> int:
+    """Store a run's cohort. Delete-and-replace per run: the collection's URL defines the
+    pool, so a refreshed pool IS the answer — but a candidate's curator-set `medal` and its
+    `product_id` are carried over, because those are human decisions and a catalog link,
+    not search output."""
+    ensure_tables(conn)
+    keep = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT asin, medal, product_id FROM product_collection_candidates "
+        "WHERE collection = ? AND (medal IS NOT NULL OR product_id IS NOT NULL)",
+        (name,)).fetchall()}
+    conn.execute("DELETE FROM product_collection_candidates WHERE collection = ?", (name,))
+    now = _now()
+    for it in items:
+        asin = (it.get("asin") or "").strip()
+        if not asin:
+            continue
+        medal, pid = keep.get(asin, (None, None))
+        conn.execute(
+            "INSERT INTO product_collection_candidates(collection, asin, run_at, position, "
+            "title, brand, price, image, link, rating, ratings_total, wilson_score, medal, "
+            "product_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (name, asin, now, it.get("position"), it.get("title", ""), it.get("brand", ""),
+             it.get("price", ""), it.get("image", ""), it.get("link", ""),
+             it.get("rating"), it.get("ratings_total"),
+             wilson_from_mean(it.get("rating"), it.get("ratings_total")), medal, pid))
+    conn.execute("UPDATE product_collections SET last_run_at = ?, last_count = ?, "
+                 "updated_at = ? WHERE name = ?", (now, len(items), now, name))
+    conn.commit()
+    return len(items)
+
+
+def set_screen_result(conn: sqlite3.Connection, name: str, asin: str, *,
+                      histogram: list | None, realrank_score: float | None,
+                      polarization: str = "", selected: bool = True) -> None:
+    """Record a stage-2 rescore for one candidate. `screened` marks that we spent a fetch on
+    it, which is what distinguishes 'not good enough to screen' from 'screened and weak'."""
+    ensure_tables(conn)
+    conn.execute(
+        "UPDATE product_collection_candidates SET histogram = ?, realrank_score = ?, "
+        "polarization = ?, screened = 1, selected = ? WHERE collection = ? AND asin = ?",
+        (json.dumps(histogram) if histogram else None, realrank_score, polarization,
+         1 if selected else 0, name, asin))
+    conn.commit()
+
+
+def list_candidates(conn: sqlite3.Connection, name: str, *, order: str = "wilson") -> list:
+    """The whole cohort — screened winners AND the also-rans we didn't spend on."""
+    ensure_tables(conn)
+    col = {"wilson": "wilson_score DESC", "realrank": "realrank_score DESC, wilson_score DESC",
+           "position": "position ASC", "ratings": "ratings_total DESC",
+           "rating": "rating DESC"}.get(order, "wilson_score DESC")
+    rows = _dicts(conn,
+        f"SELECT * FROM product_collection_candidates WHERE collection = ? "
+        f"ORDER BY selected DESC, {col}", (name,))
+    out = []
+    for d in rows:
+        if d.get("histogram"):
+            try:
+                d["histogram"] = json.loads(d["histogram"])
+            except Exception:
+                d["histogram"] = None
+        out.append(d)
+    return out
+
+
+def set_medal(conn: sqlite3.Connection, name: str, asin: str, medal: str) -> bool:
+    """Curator-confirmed gold/silver/bronze. Survives a refresh (see replace_candidates)."""
+    ensure_tables(conn)
+    medal = (medal or "").strip().lower()
+    if medal not in ("gold", "silver", "bronze", ""):
+        raise ValueError("medal must be gold, silver, bronze or empty")
+    cur = conn.execute(
+        "UPDATE product_collection_candidates SET medal = ? WHERE collection = ? AND asin = ?",
+        (medal or None, name, asin))
+    conn.commit()
+    return cur.rowcount > 0

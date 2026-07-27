@@ -2734,6 +2734,120 @@ def product_realstory_approve_endpoint(product_id: str, payload: dict = Body(def
             "approved_at": (p.get("realstory") or {}).get("approved_at")}
 
 
+# ---- Product collections ACDV editor (forms/product_collections.html) --------------
+# A collection = a NAMED saved Amazon search URL. The curator builds the search by hand in
+# Amazon's own UI until the result set is right; the URL carries every criterion, so the URL
+# IS the query. A run keeps the WHOLE cohort (winners + also-rans) so selection is auditable.
+# See intake/products/collections_store + memory/project_amazon_collection_selection.
+
+@app.get("/product-collections")
+def collections_list_endpoint():
+    """Roster for the sidebar + the WS taxonomy options the form's category picker uses."""
+    from intake.products import collections_store as cst
+    with _db() as conn:
+        rows = cst.list_collections(conn)
+        try:
+            cats = [{"id": r[0], "path": r[1]} for r in conn.execute(
+                "SELECT id, ws_path FROM ws_categories ORDER BY ws_path")]
+        except sqlite3.OperationalError:
+            cats = []
+    return {"collections": rows, "ws_categories": cats}
+
+
+@app.get("/product-collections/{name}")
+def collection_get_endpoint(name: str, order: str = "wilson"):
+    """One collection + its full cohort (NOT just the winners — that's the point)."""
+    from intake.products import collections_store as cst
+    with _db() as conn:
+        c = cst.get_collection(conn, name)
+        if c is None:
+            raise HTTPException(status_code=404, detail="Collection not found.")
+        c["candidates"] = cst.list_candidates(conn, name, order=order)
+    return c
+
+
+@app.post("/product-collections")
+async def collection_create_endpoint(request: Request):
+    """Create a collection. Auto-classifies it against the WS taxonomy from its name+keyword
+    (the same matcher the commerce join uses) unless the curator pinned a category."""
+    from intake.products import collections_store as cst, easyparser as ep
+    body = await request.json()
+    try:
+        with _db() as conn:
+            c = cst.create_collection(conn, body)
+            if not c.get("ws_category_id"):
+                params, _ = ep.params_from_url(c["url"])
+                term = params.get("keyword") or c["name"]
+                try:
+                    from intake.products.equipment_match import classify_term
+                    hit = classify_term(term, conn)
+                    if hit.get("ws_category_id"):
+                        c = cst.update_collection(conn, c["name"], {
+                            "ws_category_id": hit["ws_category_id"],
+                            "ws_path": hit.get("ws_path") or ""})
+                except Exception as e:      # best-effort — never block creation
+                    print(f"[COLLECTION] taxonomy match skipped: {e}")
+        return c
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/product-collections/{name}")
+async def collection_update_endpoint(name: str, request: Request):
+    from intake.products import collections_store as cst
+    body = await request.json()
+    with _db() as conn:
+        c = cst.update_collection(conn, name, body)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    return c
+
+
+@app.delete("/product-collections/{name}")
+def collection_delete_endpoint(name: str):
+    from intake.products import collections_store as cst
+    with _db() as conn:
+        ok = cst.delete_collection(conn, name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    return {"deleted": name}
+
+
+@app.post("/product-collections/{name}/refresh")
+def collection_refresh_endpoint(name: str):
+    """Run the collection. Entity-locked, out-of-process, tailable — the URL never rides on
+    argv (identity only, §3.1); the handler reads it from the DB."""
+    from intake.products import collections_store as cst
+    with _db() as conn:
+        if cst.get_collection(conn, name) is None:
+            raise HTTPException(status_code=404, detail="Collection not found.")
+        entity_ref = f"collection:{name}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return {"job_id": existing["id"], "status": existing["status"],
+                    "already_running": True}
+        job_id = jobs_lib.enqueue_job(conn, type="collection_refresh",
+                                      params={"collection": name}, entity_ref=entity_ref)
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "status": "queued", "stream_url": f"/jobs/{job_id}/stream"}
+
+
+@app.post("/product-collections/{name}/medal")
+async def collection_medal_endpoint(name: str, request: Request):
+    """Curator-confirmed gold/silver/bronze on one candidate. Survives a refresh."""
+    from intake.products import collections_store as cst
+    body = await request.json()
+    try:
+        with _db() as conn:
+            ok = cst.set_medal(conn, name, (body.get("asin") or "").strip(),
+                               body.get("medal") or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+    return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
+
+
 # ---- Reviews ACDV editor (forms/reviews.html) -------------------------------------
 # Reviews as a first-class, curator-editable object: the AUTHORITY layer of the
 # monetization pipeline (memory/project_monetization_pipeline) — reviews SUPPORT product
@@ -5817,6 +5931,93 @@ async def _handle_realrank_research_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("realrank_research", _handle_realrank_research_job)
+
+
+async def _handle_collection_refresh_job(job: dict) -> dict:
+    """Run a product collection: the saved Amazon search URL -> the cohort -> a screened
+    shortlist (intake/products/collections_store).
+
+    Stage 1 — EasyParser SEARCH on the URL (1 credit per page). Every ASIN returned is KEPT,
+    each with a Wilson screen computed from its average and count. Stage 2 — the top
+    `keep_top_n` get a real star histogram from the free Amazon widget and are rescored with
+    the RealRank index. We deliberately do not spend a fetch on candidates we've already
+    screened out; `screened` records which ones we did.
+
+    Params: collection (required, the name — identity, never the URL off argv).
+    """
+    from intake.products import collections_store as cst, easyparser as ep, amazon_widget as aw
+    params = job.get("params") or {}
+    name = (params.get("collection") or "").strip()
+    if not name:
+        raise ValueError("collection_refresh requires params.collection")
+    job_id = job["id"]
+
+    def _should_cancel():
+        try:
+            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+                return jobs_lib.is_cancel_requested(conn, job_id)
+        except Exception:
+            return False
+
+    def _run():
+        sys.path.insert(0, str(Path(__file__).resolve().parent / "docs" / "RealRank"))
+        from realrank_index import realrank_index, polarization
+        with _db() as conn:
+            coll = cst.get_collection(conn, name)
+        if not coll:
+            raise ValueError(f"collection {name!r} not found")
+
+        print(f"[COLLECTION] {name} -> {coll['url']}")
+        res = ep.search_url(coll["url"], pages=int(coll.get("pages") or 1))
+        for w in (res.get("warnings") or []):
+            print(f"[COLLECTION] warning: {w}")
+        if not res.get("ok"):
+            raise ValueError(f"search failed: {res.get('error')}")
+        items = res["items"]
+        with _db() as conn:
+            cst.replace_candidates(conn, name, items)
+            cohort = cst.list_candidates(conn, name)
+        print(f"[COLLECTION] {len(items)} candidates kept "
+              f"(credits {res.get('credits')}) — screening top {coll.get('keep_top_n')}")
+
+        top = [c for c in cohort if c.get("wilson_score")][:int(coll.get("keep_top_n") or 10)]
+        screened, failed = 0, 0
+        for c in top:
+            if _should_cancel():
+                raise KeyboardInterrupt("cancelled during screening")
+            h = aw.rating_histogram(c["asin"])
+            if not h.get("ok") or not h.get("histogram"):
+                failed += 1
+                print(f"[COLLECTION]   {c['asin']} histogram unavailable: {h.get('error')}")
+                continue
+            score = round(realrank_index(h["histogram"], h["ratings_total"]), 1)
+            pol = (polarization(h["histogram"]) or {}).get("label") or ""
+            with _db() as conn:
+                cst.set_screen_result(conn, name, c["asin"], histogram=h["histogram"],
+                                      realrank_score=score, polarization=pol)
+            screened += 1
+            print(f"[COLLECTION]   {c['asin']} wilson {c['wilson_score']} -> real {score}"
+                  f"{' (' + pol + ')' if pol else ''}")
+        # Every histogram failing is systemic (throttled/endpoint moved), not a bad candidate.
+        if top and failed == len(top):
+            raise ValueError(f"all {failed} histogram fetches failed — widget may be blocked "
+                             f"or its endpoint moved; not publishing an unscored shortlist")
+        with _db() as conn:
+            conn.execute("UPDATE product_collections SET last_job_id = ? WHERE name = ?",
+                         (job_id, name))
+            conn.commit()
+        return {"collection": name, "candidates": len(items), "screened": screened,
+                "histogram_failures": failed, "credits": res.get("credits")}
+
+    try:
+        summary = await asyncio.to_thread(_run)
+    except KeyboardInterrupt as e:
+        raise jobs_lib.JobCancelled(str(e))
+    print(f"[COLLECTION] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("collection_refresh", _handle_collection_refresh_job)
 
 
 async def _handle_domain_scoring_job(job: dict) -> dict:
