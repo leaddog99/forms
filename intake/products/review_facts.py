@@ -16,6 +16,7 @@ import json
 import re
 import sqlite3
 from datetime import datetime, timezone
+from urllib.parse import unquote
 
 from input.pipeline.url_utils import normalize_url
 
@@ -28,13 +29,87 @@ _BARE_ASIN_RE = re.compile(r"^[A-Z0-9]{10}$")
 
 
 def asin_from(url: str) -> str:
-    """Extract an Amazon ASIN from a product URL (or accept a bare ASIN)."""
+    """Extract an Amazon ASIN from a product URL (or accept a bare ASIN).
+
+    URL-DECODES first: review sites almost always route buy links through an affiliate
+    redirector with the real Amazon URL percent-encoded in a query param — ATK uses
+    `clicks.trx-hub.com/xid/...?q=https%3A%2F%2Fwww.amazon.com%2Fdp%2FB01NARK346%3Ftag%3D...`.
+    Without decoding, 46 of the 50 buy links on a single ATK page yielded nothing.
+    """
     if not url:
         return ""
     if _BARE_ASIN_RE.match(url.strip()):
         return url.strip().upper()
     m = _ASIN_RE.search(url)
+    if m:
+        return m.group(1).upper()
+    try:
+        decoded = unquote(unquote(url))          # doubly-encoded redirects do occur
+    except Exception:
+        return ""
+    m = _ASIN_RE.search(decoded)
     return m.group(1).upper() if m else ""
+
+
+def asins_in(text: str) -> list:
+    """Every Amazon ASIN linked from a page, in order of first appearance, deduped.
+
+    Works on the raw markdown of a review: the reviewer's own buy links are the most direct
+    statement of WHICH product they tested — far better identity than searching Amazon by
+    product name, which returns competitors (see amazon_rainforest.find_asin, where the
+    most-reviewed hit for a Le Creuset query was an Amazon Basics pot).
+    """
+    if not text:
+        return []
+    hay = text
+    try:
+        hay = text + "\n" + unquote(text)        # catch encoded links without losing plain ones
+    except Exception:
+        pass
+    seen, out = set(), []
+    for m in _ASIN_RE.finditer(hay):
+        a = m.group(1).upper()
+        if a not in seen:
+            seen.add(a)
+            out.append(a)
+    return out
+
+
+def asins_near(text: str, keywords, window: int = 600) -> list:
+    """ASINs linked WITHIN `window` chars of a keyword mention, most-frequent first.
+
+    A roundup page links 20+ products; only some are the one we're researching. Proximity to
+    the product's distinctive tokens is what separates "the pot this review is about" from
+    "the other twenty pots on the page".
+    """
+    if not text or not keywords:
+        return []
+    try:
+        hay = text + "\n" + unquote(text)
+    except Exception:
+        hay = text
+    low = hay.lower()
+    spots = []
+    for k in keywords:
+        k = (k or "").lower().strip()
+        if len(k) < 3:
+            continue
+        start = 0
+        while True:
+            i = low.find(k, start)
+            if i < 0:
+                break
+            spots.append(i)
+            start = i + len(k)
+    if not spots:
+        return []
+    counts: dict[str, int] = {}
+    for m in _ASIN_RE.finditer(hay):
+        pos = m.start()
+        if any(abs(pos - s) <= window for s in spots):
+            a = m.group(1).upper()
+            counts[a] = counts.get(a, 0) + 1
+    return [a for a, _ in sorted(counts.items(), key=lambda kv: -kv[1])]
 
 
 def _norm(url: str) -> str:
@@ -62,6 +137,40 @@ def _fact_from_product(d: dict) -> dict:
         "verdict": v.get("summary", ""),           # verbatim (verified by construction)
         "capacity": (d.get("specs") or {}).get("capacity", ""),
     }
+
+
+def consensus_asin(docs, keywords) -> dict:
+    """Which ASIN do the REVIEWERS agree this product is?
+
+    `docs` = [{label, markdown}, ...] — the source pages we fetched. Each reviewer links to
+    the product they actually tested, so the ASIN appearing near the product's name across
+    the MOST INDEPENDENT SOURCES is the identity, established by people who had the thing in
+    their hands. That beats searching Amazon by name, which ranks by popularity and happily
+    returns a competitor.
+
+    Returns {asin, sources: [labels], candidates: {asin: [labels]}} — empty asin when the
+    sources don't agree or none link one, in which case the caller should fall back to a
+    brand-matched search rather than guess.
+    """
+    by_asin: dict[str, list] = {}
+    for d in docs or []:
+        md = d.get("markdown") or ""
+        if not md:
+            continue
+        near = asins_near(md, keywords)
+        # Fall back to every ASIN on the page only for SHORT pages (a single-product review);
+        # on a 20-product roundup that would make every rival look like agreement.
+        found = near or (asins_in(md) if len(md) < 8000 else [])
+        for a in found[:3]:                      # a page's top few, not its whole catalogue
+            by_asin.setdefault(a, [])
+            if d.get("label") and d["label"] not in by_asin[a]:
+                by_asin[a].append(d["label"])
+    if not by_asin:
+        return {"asin": "", "sources": [], "candidates": {}}
+    best, labels = max(by_asin.items(), key=lambda kv: (len(kv[1]), kv[0]))
+    # One lone source is a mention, not a consensus — but it is still better than nothing,
+    # so return it and let the caller weigh it against the brand-matched search.
+    return {"asin": best, "sources": labels, "candidates": by_asin}
 
 
 def build_reverse_index(conn: sqlite3.Connection) -> dict:

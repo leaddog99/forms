@@ -283,6 +283,45 @@ honest gap is a correct answer; a silent substitution is not.
 """
 
 
+# Words that name WHAT A THING IS. If the product says one of these and the listing says a
+# different one, they are different products however similar the brand and colour — a
+# "bread oven" is not a "dutch oven". Kitchen-scoped; extend as the catalog grows.
+_TYPE_NOUNS = (
+    "dutch oven", "bread oven", "french oven", "braiser", "cocotte", "stock pot", "stockpot",
+    "saucepan", "saucier", "skillet", "fry pan", "frying pan", "grill pan", "wok", "griddle",
+    "roasting pan", "casserole", "loaf pan", "cake pan", "sheet pan", "baking sheet",
+    "muffin pan", "pie dish", "tart pan", "ramekin", "mixing bowl", "cutting board",
+    "stand mixer", "hand mixer", "food processor", "blender", "kettle", "knife", "shears",
+)
+
+
+def _type_nouns(text):
+    low = (text or "").lower()
+    return {n for n in _TYPE_NOUNS if n in low}
+
+
+def _verify_asin(asin, product):
+    """Is this listing actually the product we're researching? -> (ok, reason).
+
+    Checks the TYPE NOUN, which is what proximity gets wrong: the ATK Dutch-oven page links
+    a Le Creuset bread oven, same brand and same colour, and nothing about the name or brand
+    distinguishes them. Best-effort — a lookup failure lets the candidate through rather than
+    blocking a run on a network blip.
+    """
+    try:
+        from intake.products import amazon_rainforest as az
+        title = (az.product_ratings(asin).get("title") or "")
+    except Exception as e:
+        return True, f"could not verify ({e})"
+    if not title:
+        return True, "no title to verify against"
+    want, got = _type_nouns(product), _type_nouns(title)
+    if want and got and not (want & got):
+        return False, (f"listing is a {'/'.join(sorted(got))} but the product is a "
+                       f"{'/'.join(sorted(want))} — {title[:60]}")
+    return True, "ok"
+
+
 def fetch_owner_data(product, asin="", brand=""):
     """Amazon owner ratings + listing facts for the ENHANCEMENT stage (histogram, average,
     total, photo, price, top review bodies) — one structured call per product.
@@ -561,6 +600,31 @@ def research_product(product, out_stem=None, should_cancel=None, extra_owner_sou
         print(f"  {d['label']:<24} {status}")
     got = sum(1 for d in docs if d["markdown"])
     print(f"[realrank] {got}/{len(docs)} named sources retrieved")
+
+    # IDENTITY FROM THE REVIEWERS. Every review links to the product it tested, so an ASIN
+    # taken from those links is stated by someone who had the thing in their hands — better
+    # than searching Amazon by name, which ranks by popularity and returns competitors (it
+    # once scored Amazon Basics, 52k ratings, as the Le Creuset).
+    #
+    # But a roundup page links 20+ products, and proximity alone picks the wrong one: on the
+    # ATK Dutch-oven page it chose a Le Creuset BREAD oven. So a candidate is only accepted
+    # if the LISTING TITLE actually matches the product — the type noun has to agree.
+    if not asin:
+        try:
+            from intake.products.review_facts import consensus_asin
+            hit = consensus_asin(docs, _keywords(product) + ([brand] if brand else []))
+            cand = hit.get("asin")
+            if cand:
+                ok, why = _verify_asin(cand, product)
+                if ok:
+                    asin = cand
+                    print(f"[realrank] ASIN {asin} from the reviewers' own links "
+                          f"({', '.join(hit['sources']) or 'single source'})")
+                else:
+                    print(f"[realrank] reviewer-link ASIN {cand} REJECTED — {why}; "
+                          f"falling back to a brand-matched search")
+        except Exception as e:
+            print(f"[realrank] reviewer-link ASIN lookup skipped: {e}")
 
     owner = fetch_owner_data(product, asin=asin, brand=brand)
     if owner:
