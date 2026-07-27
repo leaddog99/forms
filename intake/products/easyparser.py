@@ -110,6 +110,28 @@ def params_from_url(url: str, *, pages: int = 1, exclude_sponsored: bool = True)
     return params, warn
 
 
+def _abs_link(link: str, asin: str, host: str) -> str:
+    """A usable product URL.
+
+    SEARCH returns links RELATIVE ("/Petromax-.../dp/B077QGHRLL/ref=sr_1_1?dib=..."), which
+    a browser resolves against whatever page is displaying them — so they rendered as
+    localhost links and 404'd. Fixed here rather than in the form, so every consumer gets a
+    working URL from one place.
+
+    When we have the ASIN we prefer the canonical /dp/<asin> form: the returned href carries
+    a `ref=sr_1_N` search-position tag and a `dib=` blob that are noise, position-specific,
+    and will not survive the next run — none of which belongs in a stored product link.
+    """
+    if asin:
+        return f"{host}/dp/{asin}"
+    link = (link or "").strip()
+    if not link:
+        return ""
+    if link.startswith("http"):
+        return link
+    return host + ("" if link.startswith("/") else "/") + link
+
+
 def search_url(url: str, *, pages: int = 1, exclude_sponsored: bool = True) -> dict:
     """Run a collection URL. Returns {ok, items, count, credits, warnings, params, error}.
 
@@ -124,12 +146,14 @@ def search_url(url: str, *, pages: int = 1, exclude_sponsored: bool = True) -> d
     except Exception as e:
         return {"ok": False, "error": str(e), "warnings": warn, "params": params}
     raw = (d.get("result") or {}).get("search_results") or []
+    host = "https://www.amazon" + (params.get("domain") or ".com")
     items = [{
         "asin": p.get("asin"), "title": p.get("title", ""), "brand": p.get("brand", ""),
         "rating": p.get("rating"), "ratings_total": p.get("ratings_total"),
         "price": ((p.get("price") or {}) or {}).get("raw", ""),
         "image": p.get("image") or p.get("main_image", ""),
-        "link": p.get("link", ""), "position": p.get("position"),
+        "link": _abs_link(p.get("link"), p.get("asin"), host),
+        "position": p.get("position"),
         "is_sponsored": bool(p.get("is_sponsored")),
         "categories": p.get("categories") or [],
     } for p in raw if p.get("asin")]
