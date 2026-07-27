@@ -54,9 +54,23 @@ def realrank_index(distribution, n_reviews, z=1.96, four_star_weight=0.0):
     if total <= 0 or n_reviews <= 0:
         return 0.0
 
-    # --- normalize to fractions ---
-    p5, p4, p3, p2, p1 = (five / total, four / total,
-                          three / total, two / total, one / total)
+    # --- Agresti-Coull smoothing, then fractions ---
+    # WHY: the plug-in estimator collapses at the extremes. A unanimous sample gives
+    # promoters=1, detractors=0, so variance = 1 + 0 - 1² = EXACTLY ZERO — thirteen 5-star
+    # ratings then score 100.0, the same certainty as thirteen million. That is the precise
+    # case this penalty exists to prevent, and it was silently producing the top score
+    # (caught 2026-07-27 on a curation whose #1 pick had 13 ratings).
+    #
+    # The standard fix: add z²/2 pseudo-observations spread across the buckets and inflate
+    # the denominator to n + z². No share can then be exactly 0 or 1, the variance is always
+    # positive, and the correction vanishes as n grows — large samples move by ~0.1 points,
+    # thin ones are penalised as they should be.
+    pad = (z * z / 2.0) / 5.0
+    n_eff = float(n_reviews) + z * z
+    scale = total / float(n_reviews)                  # counts, percentages, fractions alike
+    p5, p4, p3, p2, p1 = ((five / scale + pad) / n_eff, (four / scale + pad) / n_eff,
+                          (three / scale + pad) / n_eff, (two / scale + pad) / n_eff,
+                          (one / scale + pad) / n_eff)
 
     # --- NPS-from-stars ---
     promoters = p5 + four_star_weight * p4
@@ -64,7 +78,7 @@ def realrank_index(distribution, n_reviews, z=1.96, four_star_weight=0.0):
     nps = promoters - detractors                      # -1 .. +1
 
     # --- confidence penalty (multinomial SE of a difference of shares) ---
-    variance = (promoters + detractors - nps * nps) / n_reviews
+    variance = (promoters + detractors - nps * nps) / n_eff
     se = math.sqrt(variance) if variance > 0 else 0.0
     nps_lower = nps - z * se                          # -1 .. +1
 
