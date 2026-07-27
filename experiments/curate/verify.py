@@ -64,12 +64,15 @@ def _check_requested(data: dict, grouped: dict) -> list:
     input binding: without it, a category the model renamed, quietly dropped for want of a
     third product, or invented for itself all render identically in the finished brief.
 
-    Skipped when the field is absent — a JSON produced by hand or in ChatGPT is still a valid
-    input to `brief`, it simply carries no record of the request to check against.
+    An EMPTY requested list is a request, not a missing one — it means "rank the whole class"
+    — so it is enforced too, and any category that turns up is one nobody asked for. Only an
+    ABSENT field skips the check: a JSON produced by hand or in ChatGPT is still a valid input
+    to `brief`, it simply carries no record of the request to check against.
     """
-    want = [str(c).strip() for c in (data.get("categories_requested") or []) if str(c).strip()]
-    if not want:
+    requested = data.get("categories_requested")
+    if requested is None:
         return []
+    want = [str(c).strip() for c in requested if str(c).strip()]
     by_key = {k.strip().lower(): k for k in grouped if str(k).strip()}
     missing = [c for c in want if c.lower() not in by_key]
     extra = [by_key[k] for k in by_key if k not in {c.lower() for c in want}]
@@ -98,9 +101,14 @@ def validate_shape(data: dict) -> list:
     elif sorted(int(r.get("place", 0)) for r in overall) != [1, 2, 3]:
         errs.append("overall places must be 1, 2 and 3")
 
+    # An EMPTY category_rankings is valid: no categories were asked for, so the brief is the
+    # overall three over the whole class. Whether that emptiness was REQUESTED is the separate
+    # question _check_requested answers.
     cats = data.get("category_rankings")
-    if not isinstance(cats, list) or not cats:
-        errs.append("category_rankings must be a non-empty list")
+    if not isinstance(cats, list):
+        errs.append("category_rankings must be a list")
+    elif not cats:
+        errs += _check_requested(data, {})
     else:
         grouped: dict[str, list] = {}
         for r in cats:

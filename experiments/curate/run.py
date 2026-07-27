@@ -2,12 +2,13 @@
 
 EXPERIMENTAL. Registered nowhere; touches no production table.
 
-    python -m experiments.curate.run research "Dutch ovens" --categories "Classic; Best value" [out.json]
+    python -m experiments.curate.run research "Dutch ovens"      # whole class -> top three
+    python -m experiments.curate.run research "Dutch ovens" --categories "Classic; Best value"
     python -m experiments.curate.run brief results.json          # validate + enrich -> text
 
-`--categories` is REQUIRED and has no default — see prompt.NO_CATEGORIES. Repeat
-`--category` instead if you prefer one flag per name. `--refresh` re-fetches the source
-documents instead of using the cache.
+Categories are OPTIONAL and have no default set: supplying none means rank the WHOLE class,
+not fall back to somebody else's subsets. Pass `--categories "A; B; C"` or repeat
+`--category`. `--refresh` re-fetches the source documents instead of using the cache.
 
 Split deliberately. `research` costs money and minutes; `brief` is cheap and re-runnable, so
 a result can be re-verified and re-rendered as often as you like without paying again. It
@@ -71,11 +72,11 @@ def fetch_docs(product_class: str, *, refresh: bool = False) -> list:
     return docs
 
 
-def research(product_class: str, categories, *, refresh: bool = False) -> dict:
+def research(product_class: str, categories=None, *, refresh: bool = False) -> dict:
     """Fetch the named authorities ourselves, then ask the model to curate from them.
 
-    `categories` is required — positional, not a keyword with a default, so that no call site
-    can reach the model without one. See prompt.normalize_categories.
+    No `categories` means the WHOLE CLASS — the overall three and nothing else. It does not
+    mean "pick some", which is what the deleted DEFAULT_CATEGORIES amounted to.
     """
     categories = P.normalize_categories(categories)
     _load_env()
@@ -85,7 +86,8 @@ def research(product_class: str, categories, *, refresh: bool = False) -> dict:
     # which is exactly where a live run truncated at 32k output. Warn rather than cap — a
     # class may genuinely warrant more, and a truncation now reports itself.
     rows = 3 + 3 * len(categories)
-    print(f"[curate] {len(categories)} categories: " + ", ".join(categories))
+    print(f"[curate] categories: " + (", ".join(categories) if categories
+                                      else "NONE — ranking the whole class"))
     if rows >= 24:
         print(f"[curate] WARNING: that is {rows} rich rows; 24 truncated a run at 32k output. "
               f"If the reply comes back TRUNCATED, ask for fewer.")
@@ -133,7 +135,8 @@ def brief(path: str, *, use_network: bool = True) -> str:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
-    if not data.get("categories_requested"):
+    # `[]` is a record (whole class); only a MISSING key leaves nothing to check against.
+    if data.get("categories_requested") is None:
         print("[curate] NOTE: this file records no categories_requested, so the categories it "
               "delivered cannot be checked against the ones asked for.", file=sys.stderr)
 
@@ -193,8 +196,9 @@ def main(argv=None) -> int:
             positional, cats, refresh = _parse_research_argv(argv[1:])
             if not positional:
                 raise ValueError("usage: research \"<product class>\" "
-                                 "--categories \"A; B; C\" [out.json]")
-            # Validated BEFORE any fetching or spending, so a missing list costs nothing.
+                                 "[--categories \"A; B; C\"] [out.json]")
+            # Parsed BEFORE any fetching or spending, so a bad list costs nothing. An EMPTY
+            # list is not a failure here — it means the whole class.
             cats = P.normalize_categories(cats)
         except ValueError as e:
             print(f"[curate] REFUSING TO RUN — {e}", file=sys.stderr)

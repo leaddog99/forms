@@ -34,43 +34,39 @@ from __future__ import annotations
 import re
 
 # --------------------------------------------------------------------------- #
-#  Categories — a staff input, never a default
+#  Categories — a staff input; absent means the WHOLE CLASS
 # --------------------------------------------------------------------------- #
-
-NO_CATEGORIES = """\
-no categories supplied — this run needs them and must not invent them.
-
-A category is not a label on the output, it is a THREE-PRODUCT SECTION that a
-product can win by being the only candidate in it. Deciding that "Best budget"
-or "Best for bread" is a slot worth filling decides what gets recommended at
-all, so it is a staff call, per class, every time.
-
-This runner used to carry four defaults. Two of them were Dutch-oven concepts,
-they applied silently to any class that did not pass its own, and on the loaf-pan
-run the categories were invented rather than asked for. Nothing in the output
-said so either way. Hence: required, and loud when missing.
-
-    python -m experiments.curate.run research "Loaf pans" --categories "Classic 1lb; Best value; Nonstick; Pullman"
-    python -m experiments.curate.run research "Loaf pans" --category "Classic 1lb" --category "Best value"
-"""
+#
+# A category is a SUBSET somebody chose to carve out of the class — "Best budget",
+# "Best for bread" — and each one is a three-product section a product can win by
+# being the only candidate in it. Choosing to carve one out therefore decides what
+# gets recommended at all, which makes it a staff call.
+#
+# So the default is NOT a set of categories, it is NO categories: rank the whole
+# class and return the overall three. This runner used to carry four defaults, two
+# of them Dutch-oven concepts, applied silently to any class that passed none — and
+# on the loaf-pan run the categories were invented rather than asked for. Nothing in
+# the output said so either way. An empty list is now an honest, complete answer;
+# an invented subset never was.
 
 
 def normalize_categories(categories) -> list:
-    """The single gate every category list passes through. Raises on anything unusable.
+    """The single gate every category list passes through. `[]` is a valid answer.
 
-    Accepts a list of names or one delimited string and converts either to the canonical
-    form, so the CLI, a future collection record and a direct call cannot diverge. Names are
-    split on `;` `,` and newlines — a category name may therefore not contain those.
+    Accepts a list of names, one delimited string, or nothing, and converts all three to the
+    canonical form, so the CLI, a future collection record and a direct call cannot diverge.
+    Names are split on `;` `,` and newlines — a category name may therefore not contain
+    those. Raises only on input that cannot be meant: a non-iterable, or a duplicate.
     """
     if categories is None:
-        raise ValueError(NO_CATEGORIES)
+        return []
     if isinstance(categories, str):
         categories = [categories]
     try:
         parts = [p for c in categories for p in re.split(r"[;,\n]", str(c))]
     except TypeError:
-        raise ValueError(f"categories must be a list of names, got "
-                         f"{type(categories).__name__}\n\n{NO_CATEGORIES}") from None
+        raise ValueError(f"categories must be a list of names or a delimited string, got "
+                         f"{type(categories).__name__}") from None
 
     names, seen, dupes = [], {}, []
     for p in (p.strip() for p in parts):
@@ -81,8 +77,6 @@ def normalize_categories(categories) -> list:
         else:
             seen[p.lower()] = p
             names.append(p)
-    if not names:
-        raise ValueError(NO_CATEGORIES)
     if dupes:
         raise ValueError(
             "duplicate categories: " + ", ".join(repr(d) for d in dupes)
@@ -97,12 +91,8 @@ product database and a written buyer's brief.
 
 OBJECTIVE
 Research and rank:
-1. The top three {product_class} overall.
-2. The top three products in each requested category.
-3. A normal retailer purchase link.
-4. A separate Amazon link and Amazon ASIN when an exact matching Amazon listing can be verified.
+{objective}
 
-CATEGORIES
 {categories}
 
 RESEARCH RULES
@@ -149,14 +139,31 @@ Return valid JSON only. No Markdown, no commentary outside the JSON, no code fen
 VALIDATION CHECKLIST
 Before returning the JSON, confirm internally that:
 - overall_top_three contains exactly three entries with places 1, 2 and 3.
-- Every category contains exactly three entries with places 1, 2 and 3.
+{checklist_categories}
 - No Amazon ASIN appears without an Amazon link, and none is invented.
 - Every Amazon link is https://www.amazon.com/dp/ASIN and every ASIN is exactly 10 characters.
 - Every typical_price is numeric, not text.
 - Every row's source_links is a non-empty list of URLs you actually used.
 - Every row's edge_over_next names a specific competing product, not a generic quality.
-- The category rankings are logically independent of the overall ranking.
 """
+
+# The two shapes this prompt takes. Written out rather than assembled from fragments so each
+# can be read as the model receives it.
+CATEGORIES_ASKED = """\
+CATEGORIES
+Also rank the top three in each of these, independently of the overall ranking:
+{categories}"""
+
+CATEGORIES_NONE = """\
+CATEGORIES
+None. Rank the class AS A WHOLE and return `category_rankings` as an empty list.
+
+Do not invent categories. A category is a subset somebody chose to carve out, and
+nobody carved one out here — so the overall three must be the best of the ENTIRE
+class rather than the best of some niche you selected for yourself. If the class
+genuinely splits (a size, a material, a use that changes the answer), say so in
+`methodology_note` so a curator can decide whether to ask for those categories;
+do not answer the question by inventing them."""
 
 DEFAULT_WEIGHTS = [
     ("Cooking performance", 0.25,
@@ -236,16 +243,32 @@ def build_prompt(product_class: str, categories: list, docs: list | None = None,
     difference between "reputable independent testing sources" as an instruction and as a
     fact — the model cannot reach ATK, Serious Eats or Wirecutter on its own.
 
-    `categories` is REQUIRED and validated here as well as at the caller: this is the last
-    point at which a bad list is still cheap. Weights stay defaultable — the curator judged
-    the seven universal, and unlike categories they rank what was already chosen rather than
-    deciding what gets considered.
+    `categories` is optional, and EMPTY IS A REAL ANSWER — the prompt then asks for the whole
+    class and forbids inventing subsets, rather than falling back to somebody else's. The
+    objective list and the checklist change with it, so the model is never asked to fill a
+    section that was not requested.
     """
     categories = normalize_categories(categories)
     weights = weights or DEFAULT_WEIGHTS
+
+    objective = [f"The top three {product_class} overall."]
+    if categories:
+        objective.append("The top three products in each requested category.")
+    objective += ["A normal retailer purchase link.",
+                  "A separate Amazon link and Amazon ASIN when an exact matching Amazon "
+                  "listing can be verified."]
+
     parts = [BASE_RULES.format(
         product_class=product_class,
-        categories="\n".join(f"- {c}" for c in categories),
+        objective="\n".join(f"{i}. {t}" for i, t in enumerate(objective, 1)),
+        categories=(CATEGORIES_ASKED.format(
+            categories="\n".join(f"- {c}" for c in categories)) if categories
+            else CATEGORIES_NONE),
+        checklist_categories=(
+            "- Every category contains exactly three entries with places 1, 2 and 3.\n"
+            "- The category rankings are logically independent of the overall ranking."
+            if categories else
+            "- category_rankings is an empty list; no categories were invented."),
         weights="\n".join(f"- {n}: {int(w*100)}%   ({what})" for n, w, what in weights),
         schema=SCHEMA,
     )]
