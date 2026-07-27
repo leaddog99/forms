@@ -380,7 +380,7 @@ def _insert_review_product(conn: sqlite3.Connection, review_id: str, item: dict,
     asin = resolve_asin(item)
     data = {
         "specs": item.get("specs") or {},
-        "retailer_offers": item.get("retailer_offers") or [],
+        "retailer_offers": clean_offers(item),
         "ratings": item.get("ratings") or {},
         "asin": asin,
         "url": (item.get("url") or "").strip(),
@@ -398,6 +398,35 @@ def _insert_review_product(conn: sqlite3.Connection, review_id: str, item: dict,
          item.get("summary", ""), price, json.dumps(data), asin, product_id, linked_by,
          now, now))
     return rpid
+
+
+def clean_offers(item: dict) -> list:
+    """Normalize a reviewed item's buy links into PUBLISHABLE offers.
+
+    A review's buy link is evidence of WHICH product was tested — and it is also, usually,
+    the reviewer's own affiliate link (69 of the 139 we hold carry tags like
+    `tag=atkequipland-20`). Republishing one pays that publisher on our sale, so:
+
+      source_url  the link EXACTLY as the review carried it — kept, untouched, as provenance
+      buy_url     a clean destination with all tracking stripped — what we may publish
+      affiliate_url  stays EMPTY; our codes are applied at click time (see buy_links)
+
+    An offer whose link is an opaque redirector we cannot unwrap offline gets buy_url = ""
+    and is simply not publishable — we keep the row as evidence but never render it.
+    """
+    from intake.products.buy_links import clean_url, retailer_name
+    out = []
+    for o in (item.get("retailer_offers") or []):
+        if not isinstance(o, dict):
+            continue
+        o = dict(o)
+        raw = (o.get("source_url") or "").strip()
+        o["buy_url"] = clean_url(raw or o.get("affiliate_url") or "")
+        o["affiliate_url"] = ""          # never store a pre-tagged link
+        if not (o.get("retailer") or "").strip() and o["buy_url"]:
+            o["retailer"] = retailer_name(o["buy_url"])
+        out.append(o)
+    return out
 
 
 def resolve_asin(item: dict) -> str:
@@ -533,7 +562,9 @@ def update_review_product(conn: sqlite3.Connection, rpid: str, patch: dict) -> b
         sets.append("price_at_test=?"); params.append(pr)
     for f in ("asin", "url", "specs", "retailer_offers", "ratings"):
         if f in patch:
-            data[f] = patch[f]
+            # Offers are cleaned on the way in, never on the way out — so a link is safe to
+            # publish wherever it is read from, not only where someone remembered to strip it.
+            data[f] = clean_offers(patch) if f == "retailer_offers" else patch[f]
             if f in ("asin", "url", "retailer_offers", "specs"):
                 ident_changed = True
     if "asin" in patch:

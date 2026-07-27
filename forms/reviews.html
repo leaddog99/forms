@@ -52,6 +52,7 @@
       border: 1px solid #d3e7e5; white-space: nowrap; }
     .rv-asin a { color: inherit; text-decoration: none; }
     .rv-asin.none { background: #fbefe8; color: #b4552f; border-color: #f0d8cb; font-family: inherit; }
+    .rv-nolink { font-size: .7rem; color: #b4552f; font-style: italic; }
     .muted { color: var(--ed-ink-soft); }
     .rv-toolbar { display:flex; gap:8px; margin:6px 0 4px; align-items:center; flex-wrap:wrap; }
   </style>
@@ -222,10 +223,17 @@
         : `<div class="rv-link off">⚠ unlinked — no catalog product matches its identity yet</div>`;
       // Product sources = the item's retailer offers (where to buy). Buy-links are
       // the only outbound links we surface (brand-safe). Mirrors products.html chips.
+      // Buy links: publish the CLEAN destination (buy_url), never the raw one. A review's own
+      // link usually carries ITS affiliate tag — republishing it would pay that publisher on
+      // our sale. An offer we could not clean (an opaque redirector) has no buy_url and is
+      // shown as unusable rather than silently emitted. Our codes are applied at click time.
       const offers = (p.retailer_offers||[]).map(o => {
-        const url = o.affiliate_url || o.source_url || '';
+        const url = o.buy_url || '';
         const price = (o.price != null) ? ` <span class="rv-price">$${Number(o.price).toFixed(2)}</span>` : '';
-        return `<span class="rv-src">${escapeHtml(o.retailer||'source')}${price}${url?` ${LibraryShell.urlControl(url,{display:false})}`:''}</span>`;
+        const link = url
+          ? ` ${LibraryShell.urlControl(url,{display:false})}`
+          : ` <span class="rv-nolink" title="The review's link is an opaque affiliate redirector — not publishable">no clean link</span>`;
+        return `<span class="rv-src">${escapeHtml(o.retailer||'source')}${price}${link}</span>`;
       }).join('');
       const sources = offers
         ? `<div class="rv-srcs"><span class="rv-srcs-lbl">Sources:</span> ${offers}</div>`
