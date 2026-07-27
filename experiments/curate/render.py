@@ -57,6 +57,16 @@ def _evidence(r: dict) -> list:
     if r.get("amazon_asin"):
         src = f" [{r['asin_source']}]" if r.get("asin_source") else ""
         lines.append(f"    ASIN {r['amazon_asin']}{src} · {r.get('amazon_link','')}")
+    # WHERE TO BUY — every retailer we can offer, because a single-retailer pick earns
+    # nothing from a reader who shops elsewhere. Links are clean destinations: the affiliate
+    # code is applied at CLICK time, so nothing here is pre-tagged (and nothing here carries
+    # the reviewer's tag, which would pay them instead of us).
+    offers = r.get("offers") or []
+    if offers:
+        lines.append(f"    Buy at ({len(offers)}):")
+        for o in offers[:6]:
+            seen = f"  [linked by {', '.join(o['seen_in'][:2])}]" if o.get("seen_in") else ""
+            lines.append(f"      {o['retailer']:<18} {o['url']}{seen}")
     srcs = [s for s in (r.get("source_links") or []) if str(s).strip()]
     if srcs:
         lines.append("    Sources: " + " · ".join(str(s) for s in srcs[:4]))
@@ -119,11 +129,18 @@ def render(data: dict, report: dict | None = None) -> str:
     if data.get("methodology_note"):
         lines += ["", "NOTE", "-" * 4, "  " + data["methodology_note"], ""]
 
+    lines += ["", "AFFILIATE NOTE", "-" * 14,
+              "  Buy links above are CLEAN destinations. Our affiliate codes are applied at",
+              "  click time so attribution can be tracked per placement, and so a change of",
+              "  network never requires rewriting stored links. No link here carries anyone",
+              "  else's tag — a review's own buy link does, and republishing it would pay",
+              "  that publisher on our sale.", ""]
+
     if report:
         lines += ["", "VERIFICATION", "-" * 12, ""]
         for key, head in (("verified", "Identity confirmed"), ("filled", "ASIN recovered"),
-                          ("scored", "Owner evidence"), ("rejected", "REJECTED"),
-                          ("notes", "Notes")):
+                          ("offers", "Buy links"), ("scored", "Owner evidence"),
+                          ("rejected", "REJECTED"), ("notes", "Notes")):
             for item in report.get(key) or []:
                 lines.append(f"  [{head}] {item}")
         lines.append("")

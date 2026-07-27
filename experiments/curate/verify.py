@@ -195,6 +195,42 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
         r["verified_title"] = ltitle
         report["verified"].append(f"{label}: {asin} — {ltitle[:56]}")
 
+        # 2b. WHERE TO BUY — every retailer the reviews link, not just Amazon. A pick with
+        # only an Amazon link earns nothing from a reader who buys at Williams-Sonoma, and
+        # premium brands sell heavily direct. Tracking is stripped (a harvested link carries
+        # the REVIEWER's affiliate tag — republished, it would pay them, not us) and
+        # affiliate_url is left blank because our codes are applied at click time.
+        try:
+            from intake.products import buy_links as BL
+            fam = {asin}
+            try:
+                pass  # offers match the EXACT asin; the family is for identity, not links
+            except Exception:
+                pass
+            offers = BL.offers_from_reviews(conn, asins=fam,
+                                            name_like=r.get("product_title", ""))
+            # The model's own buy_link counts too, once cleaned — merged BY RETAILER so it
+            # doesn't produce a second "Williams Sonoma" row differing only by a trailing
+            # slash. The model's link wins for that retailer: it points at the exact size and
+            # colour it ranked, where a review may link a sibling.
+            own = BL.clean_url(r.get("buy_link") or "")
+            if own:
+                name = BL.retailer_name(own) or "source"
+                existing = next((o for o in offers if o["retailer"] == name), None)
+                if existing:
+                    existing["url"] = own
+                else:
+                    offers.insert(0, {"retailer": name, "url": own,
+                                      "affiliate_url": "", "seen_in": []})
+            if offers:
+                r["offers"] = offers
+                report["offers"] = report.get("offers", [])
+                report["offers"].append(
+                    f"{label}: {len(offers)} retailer(s) — "
+                    + ", ".join(o["retailer"] for o in offers[:5]))
+        except Exception as e:
+            report["notes"].append(f"{label}: buy-link gathering failed ({e})")
+
         # 3. Owner evidence: the real histogram, free, plus the index.
         try:
             h = aw.rating_histogram(asin)
