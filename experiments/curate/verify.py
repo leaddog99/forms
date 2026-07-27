@@ -37,19 +37,9 @@ for p in (_ROOT, os.path.join(_ROOT, "docs", "RealRank")):
 ASIN_RE = re.compile(r"^[A-Z0-9]{10}$")
 DB = os.path.join(_ROOT, "recipes.db")
 
-# Type nouns: same idea as realrank_research, kept local so the experiment stands alone.
-TYPE_NOUNS = (
-    "dutch oven", "bread oven", "french oven", "braiser", "cocotte", "stock pot", "stockpot",
-    "saucepan", "saucier", "skillet", "fry pan", "frying pan", "grill pan", "wok", "griddle",
-    "roasting pan", "casserole", "loaf pan", "cake pan", "sheet pan", "baking sheet",
-    "muffin pan", "pie dish", "tart pan", "ramekin", "mixing bowl", "cutting board",
-    "stand mixer", "hand mixer", "food processor", "blender", "kettle", "knife", "shears",
-)
-
-
-def _types(text: str) -> set:
-    low = (text or "").lower()
-    return {n for n in TYPE_NOUNS if n in low}
+# Product-type vocabulary is SHARED with realrank (intake/products/product_types) so the two
+# cannot drift — and so both know that a cocotte is a dutch oven.
+from intake.products.product_types import same_type  # noqa: E402
 
 
 def rows_of(data: dict) -> list:
@@ -185,14 +175,21 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
             report["notes"].append(f"{label}: listing lookup failed ({e})")
             continue
         ltitle = listing.get("title") or ""
-        want_t, got_t = _types(title + " " + str(r.get("capacity", ""))), _types(ltitle)
-        brand = (r.get("manufacturer") or "").strip().lower()
-        brand_ok = (not brand) or brand in (listing.get("brand") or "").lower() \
-            or brand in ltitle.lower()
-        type_ok = not (want_t and got_t) or bool(want_t & got_t)
+        # Compare on the manufacturer's LEADING TOKEN, not the whole string. Publishers write
+        # parent companies and sub-brands in ("Staub (Zwilling)", "Lodge Cast Iron"), and
+        # asking whether "staub (zwilling)" appears inside the listing's "STAUB" is backwards
+        # — it flagged four correct rows.
+        brand_raw = (r.get("manufacturer") or "").split("(")[0].strip().lower()
+        brand = next((w for w in brand_raw.split() if len(w) >= 3), brand_raw)
+        hay = f"{(listing.get('brand') or '').lower()} {ltitle.lower()}"
+        brand_ok = (not brand) or brand in hay
+        # Shared vocabulary: knows a cocotte IS a dutch oven while a bread oven is not, and
+        # fails OPEN on anything ambiguous rather than dropping a legitimate product.
+        type_ok, type_why = same_type(f"{title} {r.get('capacity','')}", ltitle)
         if not (brand_ok and type_ok):
+            why = type_why if not type_ok else "brand does not match"
             r["identity_warning"] = (
-                f"ASIN {asin} looks like a different product: {ltitle[:70]}")
+                f"ASIN {asin} looks like a different product ({why}): {ltitle[:60]}")
             report["rejected"].append(f"{label}: {r['identity_warning']}")
             continue
         r["verified_title"] = ltitle

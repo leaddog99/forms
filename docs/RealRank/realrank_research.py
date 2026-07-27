@@ -283,43 +283,25 @@ honest gap is a correct answer; a silent substitution is not.
 """
 
 
-# Words that name WHAT A THING IS. If the product says one of these and the listing says a
-# different one, they are different products however similar the brand and colour — a
-# "bread oven" is not a "dutch oven". Kitchen-scoped; extend as the catalog grows.
-_TYPE_NOUNS = (
-    "dutch oven", "bread oven", "french oven", "braiser", "cocotte", "stock pot", "stockpot",
-    "saucepan", "saucier", "skillet", "fry pan", "frying pan", "grill pan", "wok", "griddle",
-    "roasting pan", "casserole", "loaf pan", "cake pan", "sheet pan", "baking sheet",
-    "muffin pan", "pie dish", "tart pan", "ramekin", "mixing bowl", "cutting board",
-    "stand mixer", "hand mixer", "food processor", "blender", "kettle", "knife", "shears",
-)
-
-
-def _type_nouns(text):
-    low = (text or "").lower()
-    return {n for n in _TYPE_NOUNS if n in low}
-
-
 def _verify_asin(asin, product):
     """Is this listing actually the product we're researching? -> (ok, reason).
 
-    Checks the TYPE NOUN, which is what proximity gets wrong: the ATK Dutch-oven page links
-    a Le Creuset bread oven, same brand and same colour, and nothing about the name or brand
-    distinguishes them. Best-effort — a lookup failure lets the candidate through rather than
-    blocking a run on a network blip.
+    Checks the product TYPE via the shared vocabulary (intake/products/product_types), which
+    knows that a cocotte IS a dutch oven while a bread oven is not — the first version got
+    the bread oven right and then falsely rejected Staub's "Dutch Oven 5.5-qt Round Cocotte".
+    Fail-open by design: a lookup failure or an ambiguous name lets the candidate through
+    rather than dropping a legitimate product out of a ranking.
     """
     try:
         from intake.products import amazon_rainforest as az
+        from intake.products.product_types import same_type
         title = (az.product_ratings(asin).get("title") or "")
     except Exception as e:
         return True, f"could not verify ({e})"
     if not title:
         return True, "no title to verify against"
-    want, got = _type_nouns(product), _type_nouns(title)
-    if want and got and not (want & got):
-        return False, (f"listing is a {'/'.join(sorted(got))} but the product is a "
-                       f"{'/'.join(sorted(want))} — {title[:60]}")
-    return True, "ok"
+    ok, why = same_type(product, title)
+    return (True, "ok") if ok else (False, f"listing is a {why} — {title[:60]}")
 
 
 def fetch_owner_data(product, asin="", brand=""):

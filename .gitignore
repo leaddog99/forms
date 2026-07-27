@@ -135,3 +135,4 @@ forms/_realrank_preview.html
 
 # Curation experiment: cached source docs + raw replies (regenerable)
 experiments/curate/cache/
+experiments/curate/out/
