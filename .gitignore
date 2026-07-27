@@ -132,3 +132,6 @@ docs/RealRank/realrank_out.*
 # RealRank posting preview (a copy dropped into forms/ so it can be viewed at
 # /forms/_realrank_preview.html; the real output lives in docs/RealRank/out/).
 forms/_realrank_preview.html
+
+# Curation experiment: cached source docs + raw replies (regenerable)
+experiments/curate/cache/
