@@ -31,6 +31,66 @@ Four changes, each earning its place:
 """
 from __future__ import annotations
 
+import re
+
+# --------------------------------------------------------------------------- #
+#  Categories — a staff input, never a default
+# --------------------------------------------------------------------------- #
+
+NO_CATEGORIES = """\
+no categories supplied — this run needs them and must not invent them.
+
+A category is not a label on the output, it is a THREE-PRODUCT SECTION that a
+product can win by being the only candidate in it. Deciding that "Best budget"
+or "Best for bread" is a slot worth filling decides what gets recommended at
+all, so it is a staff call, per class, every time.
+
+This runner used to carry four defaults. Two of them were Dutch-oven concepts,
+they applied silently to any class that did not pass its own, and on the loaf-pan
+run the categories were invented rather than asked for. Nothing in the output
+said so either way. Hence: required, and loud when missing.
+
+    python -m experiments.curate.run research "Loaf pans" --categories "Classic 1lb; Best value; Nonstick; Pullman"
+    python -m experiments.curate.run research "Loaf pans" --category "Classic 1lb" --category "Best value"
+"""
+
+
+def normalize_categories(categories) -> list:
+    """The single gate every category list passes through. Raises on anything unusable.
+
+    Accepts a list of names or one delimited string and converts either to the canonical
+    form, so the CLI, a future collection record and a direct call cannot diverge. Names are
+    split on `;` `,` and newlines — a category name may therefore not contain those.
+    """
+    if categories is None:
+        raise ValueError(NO_CATEGORIES)
+    if isinstance(categories, str):
+        categories = [categories]
+    try:
+        parts = [p for c in categories for p in re.split(r"[;,\n]", str(c))]
+    except TypeError:
+        raise ValueError(f"categories must be a list of names, got "
+                         f"{type(categories).__name__}\n\n{NO_CATEGORIES}") from None
+
+    names, seen, dupes = [], {}, []
+    for p in (p.strip() for p in parts):
+        if not p:
+            continue
+        if p.lower() in seen:
+            dupes.append(p)
+        else:
+            seen[p.lower()] = p
+            names.append(p)
+    if not names:
+        raise ValueError(NO_CATEGORIES)
+    if dupes:
+        raise ValueError(
+            "duplicate categories: " + ", ".join(repr(d) for d in dupes)
+            + " — each category is its own three-product section, so a repeat is a typo "
+              "rather than a request.")
+    return names
+
+
 BASE_RULES = """\
 You are producing a current, evidence-based {product_class} comparison for a consumer
 product database and a written buyer's brief.
@@ -175,7 +235,13 @@ def build_prompt(product_class: str, categories: list, docs: list | None = None,
     `docs` = [{label, url, markdown, via}] from BCC's fetch stack. Supplying them is the
     difference between "reputable independent testing sources" as an instruction and as a
     fact — the model cannot reach ATK, Serious Eats or Wirecutter on its own.
+
+    `categories` is REQUIRED and validated here as well as at the caller: this is the last
+    point at which a bad list is still cheap. Weights stay defaultable — the curator judged
+    the seven universal, and unlike categories they rank what was already chosen rather than
+    deciding what gets considered.
     """
+    categories = normalize_categories(categories)
     weights = weights or DEFAULT_WEIGHTS
     parts = [BASE_RULES.format(
         product_class=product_class,

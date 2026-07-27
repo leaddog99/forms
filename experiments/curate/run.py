@@ -2,8 +2,12 @@
 
 EXPERIMENTAL. Registered nowhere; touches no production table.
 
-    python -m experiments.curate.run research "Dutch ovens"      # grounded research -> JSON
+    python -m experiments.curate.run research "Dutch ovens" --categories "Classic; Best value" [out.json]
     python -m experiments.curate.run brief results.json          # validate + enrich -> text
+
+`--categories` is REQUIRED and has no default — see prompt.NO_CATEGORIES. Repeat
+`--category` instead if you prefer one flag per name. `--refresh` re-fetches the source
+documents instead of using the cache.
 
 Split deliberately. `research` costs money and minutes; `brief` is cheap and re-runnable, so
 a result can be re-verified and re-rendered as often as you like without paying again. It
@@ -23,12 +27,6 @@ for p in (_ROOT, os.path.join(_ROOT, "docs", "RealRank")):
         sys.path.insert(0, p)
 
 from experiments.curate import prompt as P, render as R, verify as V  # noqa: E402
-
-# Seven categories x 3 rows + 3 overall = 24 rich rows, and the first live run truncated
-# at 32k output. Four is a comfortable ask; pass more explicitly when a class warrants it.
-DEFAULT_CATEGORIES = [
-    "Classic all-purpose", "Best value", "Best for braising", "Bread baking",
-]
 
 
 def _load_env():
@@ -73,16 +71,30 @@ def fetch_docs(product_class: str, *, refresh: bool = False) -> list:
     return docs
 
 
-def research(product_class: str, categories=None, *, refresh: bool = False) -> dict:
-    """Fetch the named authorities ourselves, then ask the model to curate from them."""
+def research(product_class: str, categories, *, refresh: bool = False) -> dict:
+    """Fetch the named authorities ourselves, then ask the model to curate from them.
+
+    `categories` is required — positional, not a keyword with a default, so that no call site
+    can reach the model without one. See prompt.normalize_categories.
+    """
+    categories = P.normalize_categories(categories)
     _load_env()
     import realrank_research as rr
+
+    # The dropped default carried one fact worth keeping: seven categories = 24 rich rows,
+    # which is exactly where a live run truncated at 32k output. Warn rather than cap — a
+    # class may genuinely warrant more, and a truncation now reports itself.
+    rows = 3 + 3 * len(categories)
+    print(f"[curate] {len(categories)} categories: " + ", ".join(categories))
+    if rows >= 24:
+        print(f"[curate] WARNING: that is {rows} rich rows; 24 truncated a run at 32k output. "
+              f"If the reply comes back TRUNCATED, ask for fewer.")
 
     docs = fetch_docs(product_class, refresh=refresh)
     got = sum(1 for d in docs if d["markdown"])
     print(f"[curate] {got}/{len(docs)} sources; curating…")
 
-    text = P.build_prompt(product_class, categories or DEFAULT_CATEGORIES, docs)
+    text = P.build_prompt(product_class, categories, docs)
     import llm
     # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
     with llm.stream(operation="curate_research", model=rr.MODEL, max_tokens=32000,
@@ -107,6 +119,10 @@ def research(product_class: str, categories=None, *, refresh: bool = False) -> d
         raise ValueError("no JSON in the model reply:\n" + raw[:400])
     data = json.loads(m.group(1))
     data.setdefault("product_class", product_class)
+    # Record what was ASKED FOR, not merely what came back. Without it a renamed, dropped or
+    # invented category is indistinguishable from one that was requested — which is the whole
+    # failure this change exists to close. `brief` checks the delivered set against it.
+    data["categories_requested"] = categories
     return data
 
 
@@ -116,6 +132,10 @@ def brief(path: str, *, use_network: bool = True) -> str:
                          # degraded to "listing lookup failed" and the brief lost its evidence
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
+
+    if not data.get("categories_requested"):
+        print("[curate] NOTE: this file records no categories_requested, so the categories it "
+              "delivered cannot be checked against the ones asked for.", file=sys.stderr)
 
     errs = V.validate_shape(data)
     if errs:
@@ -129,6 +149,39 @@ def brief(path: str, *, use_network: bool = True) -> str:
     return R.render(data, report)
 
 
+_CATEGORY_FLAGS = ("--category", "--categories")
+
+
+def _parse_research_argv(argv: list) -> tuple:
+    """-> (positionals, [raw category strings], refresh). Flags may appear in any position.
+
+    Hand-written rather than argparse'd because a mis-read flag here is not a usage error:
+    `research "Dutch ovens" --refresh` previously took "--refresh" as the OUTPUT PATH, and a
+    flag swallowed silently is a paid run against the wrong input.
+    """
+    positional, cats, refresh = [], [], False
+    i = 0
+    while i < len(argv):
+        a, head = argv[i], argv[i].split("=", 1)[0]
+        if a == "--refresh":
+            refresh = True
+        elif head in _CATEGORY_FLAGS:
+            if "=" in a:
+                cats.append(a.split("=", 1)[1])
+            elif i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                cats.append(argv[i + 1])
+                i += 1
+            else:
+                raise ValueError(f"{head} needs a value")
+        elif a.startswith("--"):
+            raise ValueError(f"unknown flag {a!r} — expected --category, --categories "
+                             f"or --refresh")
+        else:
+            positional.append(a)
+        i += 1
+    return positional, cats, refresh
+
+
 def main(argv=None) -> int:
     argv = argv or sys.argv[1:]
     if not argv:
@@ -136,11 +189,18 @@ def main(argv=None) -> int:
         return 1
     cmd = argv[0]
     if cmd == "research":
-        if len(argv) < 2:
-            print("usage: research \"<product class>\" [out.json]")
-            return 1
-        data = research(argv[1], refresh="--refresh" in argv)
-        out = argv[2] if len(argv) > 2 else "curate_results.json"
+        try:
+            positional, cats, refresh = _parse_research_argv(argv[1:])
+            if not positional:
+                raise ValueError("usage: research \"<product class>\" "
+                                 "--categories \"A; B; C\" [out.json]")
+            # Validated BEFORE any fetching or spending, so a missing list costs nothing.
+            cats = P.normalize_categories(cats)
+        except ValueError as e:
+            print(f"[curate] REFUSING TO RUN — {e}", file=sys.stderr)
+            return 2
+        data = research(positional[0], cats, refresh=refresh)
+        out = positional[1] if len(positional) > 1 else "curate_results.json"
         with open(out, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         print(f"wrote {out}")

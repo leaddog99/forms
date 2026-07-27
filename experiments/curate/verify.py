@@ -56,6 +56,39 @@ def rows_of(data: dict) -> list:
 #  Shape — the curator's original contract
 # --------------------------------------------------------------------------- #
 
+def _check_requested(data: dict, grouped: dict) -> list:
+    """Did we get back the categories that were ASKED FOR?
+
+    Categories are a staff input (prompt.normalize_categories), and `research` stamps the
+    requested list onto the result. Checking the delivered set against it is what makes that
+    input binding: without it, a category the model renamed, quietly dropped for want of a
+    third product, or invented for itself all render identically in the finished brief.
+
+    Skipped when the field is absent — a JSON produced by hand or in ChatGPT is still a valid
+    input to `brief`, it simply carries no record of the request to check against.
+    """
+    want = [str(c).strip() for c in (data.get("categories_requested") or []) if str(c).strip()]
+    if not want:
+        return []
+    by_key = {k.strip().lower(): k for k in grouped if str(k).strip()}
+    missing = [c for c in want if c.lower() not in by_key]
+    extra = [by_key[k] for k in by_key if k not in {c.lower() for c in want}]
+
+    errs = []
+    if missing:
+        errs.append("requested categories missing from the result: "
+                    + ", ".join(repr(c) for c in missing))
+    if extra:
+        errs.append("categories nobody asked for: " + ", ".join(repr(c) for c in extra))
+    # Same category, different spelling — take the staff wording, which is what gets printed.
+    for c in want:
+        delivered = by_key.get(c.lower())
+        if delivered and delivered != c:
+            for r in grouped[delivered]:
+                r["category"] = c
+    return errs
+
+
 def validate_shape(data: dict) -> list:
     """Structural errors. Empty list = the artifact may be built."""
     errs = []
@@ -77,6 +110,7 @@ def validate_shape(data: dict) -> list:
                 errs.append("a category row is missing its category name")
             elif sorted(int(r.get("place", 0)) for r in rows) != [1, 2, 3]:
                 errs.append(f"category {cat!r} must have exactly places 1, 2 and 3")
+        errs += _check_requested(data, grouped)
 
     for label, r in rows_of(data):
         price = r.get("typical_price", r.get("price"))
