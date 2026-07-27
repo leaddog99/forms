@@ -50,6 +50,48 @@ def _as_origin(host: str) -> str:
 # ============================================================
 
 SYSTEM_DEFAULTS: list[dict] = [
+    # --- Affiliate ------------------------------------------------------------------
+    # These live HERE, not in .env, and not in code. They are not secrets — every one of
+    # them is visible in every link we publish — so .env, which exists for credentials and
+    # is gitignored, is the wrong home semantically. They are per-INSTANCE business config:
+    # a self-hoster ships their own tags exactly as they ship their own public_base_url
+    # (memory/project_portable_package — the code never changes, the system record defines
+    # the instance). And they are the curator's to edit in the admin UI, not a developer's
+    # to edit in a file.
+    {
+        "key": "amazon_tracking_id",
+        "value": "mbg99-20",
+        "type": "string",
+        "category": "Affiliate",
+        "label": "Amazon Associates tracking ID (this property)",
+        "description": "The tag applied to Amazon buy links. Amazon exposes TWO ids in "
+                       "SiteStripe: the Store ID (the account) and a Tracking ID (a channel "
+                       "under it). Both credit the same account, but the tracking ID is how "
+                       "Amazon reports WHICH PROPERTY earned a sale — so each property uses "
+                       "its own, and `ascsubtag` identifies the placement within it. Public "
+                       "by nature: it appears in every published link.",
+    },
+    {
+        "key": "amazon_store_id",
+        "value": "leaddogventur-20",
+        "type": "string",
+        "category": "Affiliate",
+        "label": "Amazon Associates store ID (account default)",
+        "description": "The account's primary tag. Recorded for reference and as a fallback; "
+                       "published links normally use the per-property tracking ID instead, "
+                       "so revenue stays attributable to a property.",
+    },
+    {
+        "key": "affiliate_subtag_enabled",
+        "value": True,
+        "type": "bool",
+        "category": "Affiliate",
+        "label": "Add a placement subtag to affiliate links",
+        "description": "Appends `ascsubtag=<placement>` to Amazon links — a free-form string "
+                       "Amazon echoes back in the Associates report, so a sale can be traced "
+                       "to the surface that earned it (brief, recipe, rail) rather than only "
+                       "to Amazon. Off = links carry the tag alone.",
+    },
     {
         "key": "public_base_url",
         "value": _as_origin(_PUBLIC_HOST_SEED),

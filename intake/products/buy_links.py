@@ -124,22 +124,42 @@ def clean_url(url: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, "", urlencode(keep), ""))
 
 
-# Amazon Associates identifiers. Not secrets — they are visible in every link we publish —
-# so they live here rather than in .env alongside API keys.
+# Amazon Associates identifiers live in SYSTEM_CONFIG, not here and not in .env.
 #
-# SiteStripe exposes TWO fields and they are not interchangeable:
-#   Store ID     leaddogventur-20   the account's primary tag
-#   Tracking ID  mbg99-20           a channel tag created under that account
-# Both credit the same account; the tracking ID is how Amazon segments WHICH PROPERTY earned
-# the sale. So the right model is one tracking ID per property (BCC vs TBOTB vs a partner
-# site) and `ascsubtag` for the placement WITHIN a property — channel from the tag, position
-# from the subtag. Using the Store ID everywhere would collapse that first distinction.
-AMAZON_STORE_ID = "leaddogventur-20"     # account default; rarely what we want to publish
-AMAZON_TAG = "mbg99-20"                  # this property's tracking ID — the one we emit
+# Not in .env: they are not secrets — every one appears in every link we publish — and .env
+# exists for credentials. Not in code: they are per-INSTANCE business config, so a
+# self-hoster ships their own exactly as they ship their own public_base_url
+# (memory/project_portable_package), and the curator edits them in the admin UI rather than
+# asking a developer to change a constant.
+#
+# SiteStripe exposes TWO ids and they are not interchangeable: the Store ID is the account,
+# the Tracking ID is a channel under it. Both credit the same account, but the tracking ID is
+# how Amazon reports WHICH PROPERTY earned a sale — so we publish the tracking ID and use
+# `ascsubtag` for the placement within that property.
+#
+# Fallbacks below apply only when system_config is unreachable (a standalone script, a test).
+_FALLBACK_TAG = "mbg99-20"
 
-# Kitchen & Dining pays 4.50% (SiteStripe, 2026-07-27). Kept for revenue modelling; not used
-# in any link.
+# Kitchen & Dining pays 4.50% (SiteStripe, 2026-07-27). Reference for revenue modelling;
+# not used in any link.
 AMAZON_COMMISSION = {"Kitchen & Dining": 0.045}
+
+
+def amazon_tag() -> str:
+    """This property's Amazon tag, from the system record."""
+    try:
+        from input.pipeline.system_config import get_setting
+        return (get_setting("amazon_tracking_id", _FALLBACK_TAG) or _FALLBACK_TAG).strip()
+    except Exception:
+        return _FALLBACK_TAG
+
+
+def subtag_enabled() -> bool:
+    try:
+        from input.pipeline.system_config import get_setting
+        return bool(get_setting("affiliate_subtag_enabled", True))
+    except Exception:
+        return True
 
 
 def amazon_affiliate_url(url: str, *, subtag: str = "", tag: str = "") -> str:
@@ -162,8 +182,8 @@ def amazon_affiliate_url(url: str, *, subtag: str = "", tag: str = "") -> str:
     clean = clean_url(url)
     if not clean or "amazon." not in (urlparse(clean).hostname or ""):
         return clean
-    params = [("tag", tag or AMAZON_TAG)]
-    if subtag:
+    params = [("tag", tag or amazon_tag())]
+    if subtag and subtag_enabled():
         # Amazon truncates around 100 chars and rejects some punctuation; keep it tame.
         params.append(("ascsubtag", re.sub(r"[^A-Za-z0-9_.\-]", "-", subtag)[:100]))
     return f"{clean}?{urlencode(params)}"
