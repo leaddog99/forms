@@ -283,7 +283,7 @@ honest gap is a correct answer; a silent substitution is not.
 """
 
 
-def fetch_owner_data(product, asin=""):
+def fetch_owner_data(product, asin="", brand=""):
     """Amazon owner ratings + listing facts for the ENHANCEMENT stage (histogram, average,
     total, photo, price, top review bodies) — one structured call per product.
 
@@ -295,7 +295,7 @@ def fetch_owner_data(product, asin=""):
     """
     try:
         from intake.products import amazon_rainforest as az
-        return az.owner_sentiment(product, asin=asin)
+        return az.owner_sentiment(product, asin=asin, brand=brand)
     except Exception as e:
         print(f"[realrank] Amazon owner data unavailable: {e}")
         return None
@@ -357,28 +357,63 @@ def run_research(product, sources=DEFAULT_SOURCES, max_searches=8, docs=None, ow
     # This is the most expensive call we make — a big cached prefix plus up to 8 web
     # searches — so it is exactly the kind that must not be invisible to the ledger.
     # Falls back to the bare SDK only if the gateway can't be imported (standalone use).
+    # STREAM, don't create: at a 32k budget the SDK refuses a non-streaming call outright
+    # ("Streaming is required for operations that may take longer than 10 minutes"), which is
+    # how job #619 died after doing all the expensive fetching. markdown_to_review already
+    # streams for the same reason. llm.stream journals the final message's usage for us.
     try:
         import llm
-        create = lambda **kw: llm.create(operation="realrank_research", **kw)
+
+        def _run(**kw):
+            with llm.stream(operation="realrank_research", **kw) as s:
+                return s.get_final_message()
     except ImportError:
-        create = lambda **kw: anthropic.Anthropic().messages.create(**kw)
-    resp = create(
+        def _run(**kw):
+            with anthropic.Anthropic().messages.stream(**kw) as s:
+                return s.get_final_message()
+
+    resp = _run(
         model=MODEL,
-        # A full record for 6-8 sources (key_facts + quotes + histogram) overran 4000 and the
-        # JSON came back truncated mid-object; the parse then failed on a half-written record.
-        max_tokens=12000,
+        # A full record for 6-8 sources (key_facts + quotes + histogram) overran 4000, then
+        # overran 12000 on a rich product (job #618, Le Creuset — cut off mid-word). The
+        # web_search tool's own turns share this budget, so headroom matters more than it
+        # looks from the size of the finished record.
+        max_tokens=32000,
         system=SYSTEM_PROMPT,
         tools=[{"type": "web_search_20250305", "name": "web_search",
                 "max_uses": max_searches}],
         messages=[{"role": "user",
                    "content": build_user_prompt(product, sources, docs, owner)}],
     )
+    # Say it out loud at the moment it happens, rather than leaving a JSONDecodeError to be
+    # reverse-engineered from the raw file later.
+    if getattr(resp, "stop_reason", None) == "max_tokens":
+        print(f"[realrank] WARNING: hit max_tokens — the record is truncated and will not "
+              f"parse. Raise max_tokens (currently 32000) or send fewer/shorter documents.")
     return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
 
 
 def parse_record(raw):
-    m = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.DOTALL) or \
-        re.search(r"(\{.*\})", raw, re.DOTALL)
+    """Pull the fenced JSON record out of the reply.
+
+    TRUNCATION IS THE COMMON FAILURE, so detect it before parsing. When the model runs out
+    of room the reply has an OPENING ``` and no closing one, and the greedy fallback below
+    would then match from the first `{` to whatever `}` happens to be last — handing
+    json.loads a fragment that fails with a bewildering "Expecting ',' delimiter" deep inside
+    a perfectly valid line. That's how job #618 read as a syntax error when it was simply
+    cut off (the raw ended mid-word: "Consumer Reports' most recent l").
+    """
+    fenced = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    if fenced:
+        return json.loads(fenced.group(1))
+
+    if "```" in raw and raw.count("```") == 1:
+        raise ValueError(
+            f"Model reply was TRUNCATED — opening ``` with no closing fence, "
+            f"{len(raw)} chars, ends: ...{raw[-90:]!r}. Raise max_tokens or trim the "
+            f"source documents; the JSON is incomplete, not malformed.")
+
+    m = re.search(r"(\{.*\})", raw, re.DOTALL)
     if not m:
         raise ValueError("No JSON record found in model output:\n" + raw[:500])
     return json.loads(m.group(1))
@@ -507,7 +542,8 @@ def slugify(product):
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 
-def research_product(product, out_stem=None, should_cancel=None, extra_owner_sources=None):
+def research_product(product, out_stem=None, should_cancel=None, extra_owner_sources=None,
+                     brand="", asin=""):
     """Full run: fetch the named sources ourselves, distill, score, write the three files.
 
     `out_stem` defaults to out/<product-slug> so concurrent/repeat runs don't overwrite one
@@ -526,7 +562,7 @@ def research_product(product, out_stem=None, should_cancel=None, extra_owner_sou
     got = sum(1 for d in docs if d["markdown"])
     print(f"[realrank] {got}/{len(docs)} named sources retrieved")
 
-    owner = fetch_owner_data(product)
+    owner = fetch_owner_data(product, asin=asin, brand=brand)
     if owner:
         print(f"[realrank] amazon {owner.get('asin')}: {owner.get('rating')}★ × "
               f"{owner.get('ratings_total')} ratings, histogram {owner.get('histogram')}")

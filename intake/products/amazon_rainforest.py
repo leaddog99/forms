@@ -42,20 +42,50 @@ def _get(params: dict) -> dict:
     return r.json()
 
 
-def find_asin(product: str, *, domain: str = DEFAULT_DOMAIN) -> dict | None:
+def find_asin(product: str, *, domain: str = DEFAULT_DOMAIN,
+              brand: str = "") -> dict | None:
     """Best-matching Amazon listing for a product name.
 
-    Picks the hit with the MOST ratings rather than the top-ranked one: Amazon's first
-    result is often a newer or sponsored variant with a handful of reviews, while the
-    canonical listing carries the deep rating history we actually want to score
-    (Lodge 12": the #1 hit had 21k ratings, the real classic listing had 145k).
+    Among listings that are PLAUSIBLY THE SAME PRODUCT, pick the one with the most ratings:
+    Amazon's first result is often a newer or sponsored variant with a handful of reviews
+    while the canonical listing carries the deep rating history we want to score (Lodge 12":
+    the #1 hit had 21k ratings, the real listing had 145k).
+
+    "Plausibly the same product" is the part that bit us. Ranking on ratings alone picked
+    **Amazon Basics (52,003 ratings) for a Le Creuset query** and scored a $60 pot as if it
+    were the $400 one (job #618). A search returns COMPETITORS, not just variants, and the
+    most-reviewed competitor is usually the cheap one. So the brand must match: we take the
+    brand from the caller or the leading word(s) of the query, and only consider hits whose
+    brand or title carries it. No brand match => None, and the caller reports the score as
+    unavailable rather than borrowing a rival's ratings.
     """
     d = _get({"type": "search", "amazon_domain": domain, "search_term": product})
     hits = [h for h in (d.get("search_results") or []) if h.get("asin")]
     if not hits:
         return None
+
+    # Prefer the brand the CALLER knows (it comes off the catalog row). Deriving one from
+    # the query is a last resort and must not use a single leading word: "Le Creuset ..."
+    # yields "Le", and "le" is a substring of "Enameled" — which matched Amazon Basics and
+    # is precisely how this went wrong. Require a token with enough substance to mean
+    # something.
+    want = (brand or "").strip().lower()
+    if not want:
+        head = product.split(",")[0].split()
+        want = next((w.lower() for w in head if len(w) >= 4), "")
+    if want:
+        matched = [h for h in hits
+                   if want in (h.get("brand") or "").lower()
+                   or (h.get("title") or "").lower().startswith(want)]
+        if not matched:
+            print(f"[rainforest] no listing matching brand {want!r} for {product!r} — "
+                  f"refusing to score a different manufacturer's product")
+            return None
+        hits = matched
+
     best = max(hits, key=lambda h: (h.get("ratings_total") or 0))
     return {"asin": best["asin"], "title": best.get("title", ""),
+            "brand": best.get("brand", ""),
             "rating": best.get("rating"), "ratings_total": best.get("ratings_total"),
             "link": best.get("link", "")}
 
@@ -95,7 +125,8 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
     }
 
 
-def owner_sentiment(product: str, *, asin: str = "", domain: str = DEFAULT_DOMAIN) -> dict | None:
+def owner_sentiment(product: str, *, asin: str = "", domain: str = DEFAULT_DOMAIN,
+                    brand: str = "") -> dict | None:
     """One call-site for "what do owners actually rate and say" — resolve the ASIN if
     needed, then pull the ratings.
 
@@ -107,7 +138,7 @@ def owner_sentiment(product: str, *, asin: str = "", domain: str = DEFAULT_DOMAI
     Returns None when the product can't be found on Amazon at all; the caller should then
     report the score as unavailable rather than guessing a distribution.
     """
-    hit = {"asin": asin} if asin else find_asin(product, domain=domain)
+    hit = {"asin": asin} if asin else find_asin(product, domain=domain, brand=brand)
     if not hit:
         return None
     return product_ratings(hit["asin"], domain=domain)

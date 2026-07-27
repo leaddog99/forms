@@ -2700,7 +2700,13 @@ def product_realrank_endpoint(product_id: str, payload: dict = Body(default={}))
         p = catalog_store.get_product(conn, product_id)
         if p is None:
             raise HTTPException(status_code=404, detail="Product not found.")
-        name = " ".join(x for x in ((p.get("brand") or ""), (p.get("name") or "")) if x).strip()
+        # Most stored names already lead with the brand, so a naive brand + name gave
+        # "Le Creuset Le Creuset Enameled Cast Iron..." — a worse search string and a worse
+        # output filename. Only prepend when it isn't already there.
+        brand = (p.get("brand") or "").strip()
+        pname = (p.get("name") or "").strip()
+        name = pname if (not brand or pname.lower().startswith(brand.lower())) \
+            else f"{brand} {pname}".strip()
         if not name:
             raise HTTPException(status_code=400, detail="Product has no brand/name to research.")
         asin = next((o.get("asin") for o in (p.get("retailer_offers") or [])
@@ -2710,6 +2716,8 @@ def product_realrank_endpoint(product_id: str, payload: dict = Body(default={}))
         if existing:
             return {"job_id": existing["id"], "status": existing["status"], "already_running": True}
         params = {"product": name, "product_id": product_id}
+        if brand:
+            params["brand"] = brand
         if asin:
             params["asin"] = asin
         if payload.get("owner_sources"):
@@ -5923,7 +5931,9 @@ async def _handle_realrank_research_job(job: dict) -> dict:
         import realrank_research as rr
         rec = rr.research_product(product, out_stem=params.get("out_stem") or None,
                                   should_cancel=_should_cancel,
-                                  extra_owner_sources=extra)
+                                  extra_owner_sources=extra,
+                                  brand=params.get("brand", ""),
+                                  asin=params.get("asin", ""))
         summary = rr.job_summary(rec)
         # Attach to the catalog row when the run was launched FROM a product. Storing the
         # analysis is the point — the files are a by-product. Failure here must not lose
