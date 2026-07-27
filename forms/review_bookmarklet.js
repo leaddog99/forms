@@ -56,6 +56,9 @@
     note("Capturing review…");
     var url = location.href, title = document.title || "";
     var markdown = ["# " + title, "*Source: " + url + "*", "---", bodyMarkdown()].join("\n\n");
+    // /extract-review enqueues a `review_ingest` job and returns immediately; we poll it.
+    // A big roundup takes ~30s of LLM time, and as a job the run is tracked, logged and
+    // retryable instead of vanishing into a request that either worked or didn't.
     fetch(API + "/extract-review", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markdown: markdown, url: url })
@@ -63,13 +66,38 @@
       return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; });
     }).then(function (res) {
       if (!res.ok) { note("Couldn’t import: " + ((res.d && res.d.detail) || res.status)); return; }
-      var rid = res.d && res.d.review_id;
-      var n = (res.d && res.d.products && res.d.products.length) || 0;
-      note("Imported " + n + " product rec" + (n === 1 ? "" : "s") + " — opening editor…");
-      var edUrl = API + "/forms/reviews.html" + (rid ? "?review=" + encodeURIComponent(rid) : "");
-      if (popup && !popup.closed) popup.location.href = edUrl;
-      else window.open(edUrl, "_blank", "noopener");
+      var jobId = res.d && res.d.job_id;
+      if (!jobId) {                       // sync fallback (older server): result is the review
+        return openEditor(res.d && res.d.review_id, (res.d && res.d.products || []).length);
+      }
+      note("Reading the review… (job #" + jobId + ")");
+      var tries = 0;
+      var poll = setInterval(function () {
+        tries++;
+        fetch(API + "/jobs/" + jobId).then(function (r) { return r.json(); }).then(function (j) {
+          if (j.status === "success") {
+            clearInterval(poll);
+            var out = j.result || {};
+            openEditor(out.review_id, out.product_count || 0);
+          } else if (j.status === "error" || j.status === "cancelled") {
+            clearInterval(poll);
+            note("Import " + j.status + ": " + (j.error_detail || "see job #" + jobId));
+          } else if (tries > 90) {        // 3 min — the job outlives us; go look at it
+            clearInterval(poll);
+            note("Still running — check job #" + jobId + " in Jobs/Monitor.");
+          } else {
+            note("Reading the review… " + j.status + " (" + tries * 2 + "s)");
+          }
+        }).catch(function () { /* transient — keep polling */ });
+      }, 2000);
     }).catch(function (e) { note("Failed: " + (e.message || e)); });
+  }
+
+  function openEditor(rid, n) {
+    note("Imported " + n + " product rec" + (n === 1 ? "" : "s") + " — opening editor…");
+    var edUrl = API + "/forms/reviews.html" + (rid ? "?review=" + encodeURIComponent(rid) : "");
+    if (popup && !popup.closed) popup.location.href = edUrl;
+    else window.open(edUrl, "_blank", "noopener");
   }
   run();
 })();

@@ -3025,9 +3025,15 @@ async def review_product_link_endpoint(rpid: str, request: Request):
 
 @app.post("/extract-review")
 async def extract_review_endpoint(request: Request):
-    """Bookmarklet entry: a captured review page (markdown + url) -> decoded by its per-source
-    parser -> ingested into the review header + its review_products (idempotent), with dynamic
-    links resolved. Returns the stored review. See intake/products/review_sources.ingest_review."""
+    """Bookmarklet entry: a captured review page (markdown + url) -> a tracked `review_ingest`
+    JOB that decodes it and writes the review header + its review_products.
+
+    Returns {job_id, stream_url} immediately; the caller polls /jobs/{id} and reads
+    `result.review_id`. It ran inline until 2026-07-27, which left the only ingestion path in
+    the system with no job record — a 30s LLM call whose failures existed nowhere but the raw
+    stdout log, and which could not be retried. Pass `sync: true` to force the old blocking
+    behaviour (useful for scripts and fixtures).
+    """
     from intake.products import review_sources
     body = await request.json()
     md = (body.get("markdown") or body.get("md") or "") if isinstance(body, dict) else ""
@@ -3035,14 +3041,30 @@ async def extract_review_endpoint(request: Request):
     captured_at = (body.get("captured_at") or "") if isinstance(body, dict) else ""
     if not md.strip():
         raise HTTPException(status_code=400, detail="markdown required")
-    try:
-        with _db() as conn:
-            review = review_sources.ingest_review(conn, md, url=url, captured_at=captured_at)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except NotImplementedError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return review
+
+    if body.get("sync"):
+        try:
+            with _db() as conn:
+                return review_sources.ingest_review(conn, md, url=url, captured_at=captured_at)
+        except (ValueError, NotImplementedError) as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+    # Entity-locked on the page: re-tapping the bookmarklet on a page already being
+    # ingested joins the run in flight rather than paying for a second extraction.
+    entity_ref = f"review:{url}" if url else None
+    with _db() as conn:
+        if entity_ref:
+            existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+            if existing:
+                return {"job_id": existing["id"], "status": existing["status"],
+                        "already_running": True,
+                        "stream_url": f"/jobs/{existing['id']}/stream"}
+        job_id = jobs_lib.enqueue_job(
+            conn, type="review_ingest",
+            params={"markdown": md, "url": url, "captured_at": captured_at},
+            entity_ref=entity_ref)
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "status": "queued", "stream_url": f"/jobs/{job_id}/stream"}
 
 
 @app.get("/review-sources")
@@ -6018,6 +6040,40 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("collection_refresh", _handle_collection_refresh_job)
+
+
+async def _handle_review_ingest_job(job: dict) -> dict:
+    """Ingest one captured review page (bookmarklet or paste) into the review store.
+
+    This used to run inline in POST /extract-review, which made it the ONE ingestion path
+    with no job behind it: ~30s of LLM time with no tracked record, nothing to find in the
+    job list afterwards, and no retry. Four silent truncation failures on 2026-07-27 were
+    only recoverable from the raw stdout log. Now it's a job like everything else.
+
+    Params: markdown (required), url, captured_at.
+    """
+    from intake.products import review_sources
+    params = job.get("params") or {}
+    md = params.get("markdown") or ""
+    url = (params.get("url") or "").strip()
+    if not md.strip():
+        raise ValueError("review_ingest requires params.markdown")
+    print(f"[REVIEW-INGEST] {url or '(no url)'} — {len(md)} chars")
+
+    def _run():
+        with _db() as conn:
+            return review_sources.ingest_review(
+                conn, md, url=url, captured_at=params.get("captured_at") or "")
+
+    review = await asyncio.to_thread(_run)
+    summary = {"review_id": review.get("review_id"), "reviewer": review.get("reviewer", ""),
+               "title": review.get("title", ""), "url": url,
+               "product_count": len(review.get("products") or [])}
+    print(f"[REVIEW-INGEST] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("review_ingest", _handle_review_ingest_job)
 
 
 async def _handle_domain_scoring_job(job: dict) -> dict:
