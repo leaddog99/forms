@@ -29,7 +29,8 @@ import sqlite3
 import sys
 from typing import Any
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "..", "..", ".."))
 for p in (_ROOT, os.path.join(_ROOT, "docs", "RealRank")):
     if p not in sys.path:
         sys.path.insert(0, p)

@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Curated Collections</title>
+  <!-- The REVIEW-SOURCED selection surface, beside product_collections.html rather than
+       replacing it. A curated collection is a product CLASS ("Loaf pans"); Run fetches what
+       the named authorities published about it, ranks it against the stated weights, verifies
+       every pick against our own data (ASIN identity, owner histograms, buy links stripped of
+       the reviewer's tag) and materializes product records.
+
+       The picks pane shows the REASONING, not just the winners: ranking here is model
+       judgment rather than arithmetic, so "ahead of the next" is the audit trail — without it
+       a rank can only be accepted, never challenged.
+
+       Cloned from product_collections.html per memory/feedback_editor_template_not_runtime;
+       typography and controls deliberately identical. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    .pc-form .ed-field { margin-bottom: 10px; }
+    .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .pc-form input, .pc-form textarea, .pc-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .muted { color: var(--ed-ink-soft); }
+    /* One placement. */
+    .pk { display: flex; gap: 11px; align-items: flex-start; padding: 11px 0;
+      border-top: 1px solid var(--line); font-size: .88rem; }
+    .pk:first-child { border-top: 0; }
+    .pk-place { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid;
+      place-items: center; font-size: .8rem; font-weight: 800; background: var(--bg);
+      border: 1px solid var(--line); color: var(--ed-ink-soft); }
+    .pk-place.p1 { background: #fbf1d4; color: #96700c; border-color: #eedfb4; }
+    .pk-main { flex: 1; min-width: 0; }
+    .pk-t { font-weight: 600; }
+    .pk-why { margin: 4px 0 0; }
+    .pk-line { margin: 3px 0 0; font-size: .82rem; }
+    .pk-line b { font-weight: 600; color: var(--ed-ink-soft); }
+    .pk-meta { font-size: .78rem; color: var(--ed-ink-soft); margin-top: 5px; }
+    .pk-sc { flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; min-width: 92px; }
+    .pk-sc b { font-size: 1rem; }
+    .sec-h { font-size: .74rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--ed-ink-soft); margin: 16px 0 2px; }
+    .sec-h:first-of-type { margin-top: 0; }
+    .warn { color: #b23b3b; }
+    .pill-w { display: inline-block; font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+      text-transform: uppercase; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--ed-ink-soft); margin-left: 5px; }
+    .pill-w.ok { color: #1f8a54; border-color: #cfe9da; background: #eaf6ef; }
+    .pill-w.bad { color: #b4552f; border-color: #f0d8cb; background: #fbefe8; }
+    .banner { border: 1px solid #f0d8cb; background: #fbefe8; color: #8a3b21; border-radius: 8px;
+      padding: 9px 11px; font-size: .84rem; margin: 8px 0; }
+    #joblog { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .74rem;
+      white-space: pre-wrap; max-height: 260px; overflow: auto; background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; margin-top: 8px; }
+    #brief { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .76rem;
+      white-space: pre-wrap; max-height: 460px; overflow: auto; background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Curated <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="searchToggle" title="Search" aria-label="Search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+          <button class="ed-icon-btn" id="addToggle" title="Add a class" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ed-controls" id="controls" hidden>
+        <input type="search" id="search" placeholder="Search classes…">
+        <select id="sort">
+          <option value="name">Sort: name (A–Z)</option>
+          <option value="category">Sort: category</option>
+          <option value="recent">Sort: recently run</option>
+          <option value="stale">Sort: least recently run</option>
+          <option value="size">Sort: most picks</option>
+        </select>
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260727a"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'curated-collections' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Curated', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, flash } = LibraryShell;
+
+    let rows = [], byName = {}, cats = [];
+    let selected = null, term = '', sortBy = 'name';
+    let mode = 'view';            // 'view' | 'add' | 'edit'
+    let detail = null;            // full collection + picks
+    let es = null;                // job SSE
+
+    async function load(keep){
+      try {
+        const d = await (await fetch('/curated-collections')).json();
+        rows = d.collections || []; cats = d.ws_categories || [];
+        byName = Object.fromEntries(rows.map(r => [r.name, r]));
+        $('#count').textContent = rows.length ? `(${rows.length})` : '';
+        if (keep && byName[keep]) selected = keep;
+        renderList(); await renderDetail();
+      } catch(e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; }
+    }
+
+    /* ---------------- list ---------------- */
+    function sorted(list){
+      const by = {
+        name:     (a,b) => a.name.localeCompare(b.name),
+        category: (a,b) => (a.ws_path||'~').localeCompare(b.ws_path||'~') || a.name.localeCompare(b.name),
+        recent:   (a,b) => (b.last_run_at||'').localeCompare(a.last_run_at||''),
+        stale:    (a,b) => (a.last_run_at||'').localeCompare(b.last_run_at||''),
+        size:     (a,b) => (b.pick_count||0) - (a.pick_count||0),
+      }[sortBy] || ((a,b)=>a.name.localeCompare(b.name));
+      return [...list].sort(by);
+    }
+
+    function renderList(){
+      const t = term.trim().toLowerCase();
+      const list = sorted(rows.filter(r => !t ||
+        (r.name+' '+(r.display_name||'')+' '+(r.product_class||'')+' '+(r.ws_path||'')).toLowerCase().includes(t)));
+      $('#list').innerHTML = list.length ? list.map(r => `
+        <li class="${r.name===selected?'active':''}" data-name="${escapeHtml(r.name)}">
+          <div>${escapeHtml(r.display_name || r.name)}</div>
+          <div class="ed-sub">${escapeHtml(r.product_class || '')}${
+            (r.categories||[]).length ? ` · ${(r.categories||[]).length} categories` : ' · whole class'}</div>
+          <div class="ed-sub">${r.last_error ? '⚠ last run failed'
+            : `${r.pick_count||0} picks${r.product_count?` · ${r.product_count} products`:''}${
+                r.last_run_at?` · ${ago(r.last_run_at)}`:' · never run'}`}</div>
+        </li>`).join('') : '<li class="ed-empty">No classes yet</li>';
+      $('#list').querySelectorAll('li[data-name]').forEach(li =>
+        li.addEventListener('click', async () => {
+          selected = li.dataset.name; mode='view'; detail=null;
+          renderList(); await renderDetail(); nav.afterSelect();
+        }));
+    }
+
+    function ago(iso){
+      const d = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+      return isNaN(d) ? '' : (d<=0 ? 'today' : d===1 ? '1d ago' : d+'d ago');
+    }
+
+    /* ---------------- detail ---------------- */
+    async function ensureDetail(){
+      if (detail && detail.name === selected) return detail;
+      detail = await (await fetch(`/curated-collections/${encodeURIComponent(selected)}`)).json();
+      return detail;
+    }
+
+    async function renderDetail(){
+      if (mode === 'add') return renderForm(null);
+      if (mode === 'edit' && selected) return renderForm(await ensureDetail());
+      if (!selected || !byName[selected]) return renderIntro();
+      let c;
+      try { c = await ensureDetail(); }
+      catch(e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; return; }
+
+      const picks = c.picks || [];
+      const withProduct = picks.filter(p => p.product_id);
+      const cats_ = c.categories || [];
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="back">← Curated collections</button></div>
+        <h1 class="ed-title">${escapeHtml(c.display_name || c.name)}</h1>
+        <div class="ed-status-strip">
+          <span class="ed-pill"><i class="d"></i>${escapeHtml(c.product_class||'')}</span>
+          <span class="ed-pill"><i class="d"></i>${cats_.length ? cats_.length+' categories' : 'whole class'}</span>
+          <span class="ed-pill"><i class="d"></i>${picks.length} picks</span>
+          <span class="ed-pill"><i class="d"></i>${withProduct.length} product records</span>
+          <span class="ed-pill"><i class="d"></i>${c.last_run_at ? 'run '+ago(c.last_run_at) : 'never run'}</span>
+          ${c.approved_by ? `<span class="ed-pill"><i class="d"></i>approved by ${escapeHtml(c.approved_by)}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;margin:6px 0 4px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="ed-btn primary" id="runBtn">▶ Run</button>
+          <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          ${picks.length && !c.approved_by ? '<button type="button" class="ed-btn" id="approveBtn">Approve brief</button>' : ''}
+          <label class="muted" style="font-size:.8rem;display:flex;gap:5px;align-items:center">
+            <input type="checkbox" id="refreshDocs" style="width:auto"> re-fetch sources</label>
+          <span class="muted" id="jobStatus" style="font-size:.82rem"></span>
+          <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
+        </div>
+        ${c.last_error ? `<div class="banner"><b>Last run failed.</b> ${escapeHtml(c.last_error)}</div>` : ''}
+        <div id="joblog" hidden></div>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">The class</h3>
+          <p style="margin:0"><b>${escapeHtml(c.product_class||'')}</b>${
+            c.ws_path?` <span class="muted">· ${escapeHtml(c.ws_path)}</span>`:''}</p>
+          <p class="muted" style="font-size:.82rem;margin:6px 0 0">${
+            cats_.length
+              ? 'Categories asked for: ' + cats_.map(x=>escapeHtml(x)).join(' · ')
+              : 'No categories — the whole class is ranked and the run is told not to invent any.'}</p>
+          ${c.notes?`<p style="margin-top:8px">${escapeHtml(c.notes)}</p>`:''}
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Picks
+            <span class="muted" style="font-weight:400">— and why each one placed where it did</span></h3>
+          ${picks.length ? renderPicks(picks) : '<p class="muted">— no run yet —</p>'}
+        </section>
+
+        ${c.brief_text ? `
+        <section class="ed-block">
+          <h3 class="ed-block-label">The brief</h3>
+          <details><summary class="muted" style="cursor:pointer;font-size:.84rem">Show the written brief (${c.brief_text.length.toLocaleString()} chars)</summary>
+            <div id="brief">${escapeHtml(c.brief_text)}</div></details>
+        </section>` : ''}`;
+
+      $('#back').addEventListener('click', () => { selected=null; detail=null; renderList(); renderDetail(); });
+      $('#editBtn').addEventListener('click', () => { mode='edit'; renderDetail(); });
+      $('#runBtn').addEventListener('click', doRun);
+      $('#approveBtn')?.addEventListener('click', doApprove);
+      wireDelete();
+    }
+
+    function renderPicks(picks){
+      // Overall first, then each category — publication order, which is also the order the
+      // server returns them in.
+      const groups = [];
+      for (const p of picks){
+        const key = p.section || '';
+        const g = groups.find(x => x.key === key);
+        (g || (groups.push({key, rows:[]}), groups[groups.length-1])).rows.push(p);
+      }
+      return groups.map(g => `
+        <div class="sec-h">${g.key ? escapeHtml(g.key) : 'Top three overall'}</div>
+        ${g.rows.map(pickRow).join('')}`).join('');
+    }
+
+    function money(v){ return (v==null || isNaN(v)) ? '—' : '$' + Number(v).toFixed(2); }
+
+    function pickRow(p){
+      const offers = p.offers || [];
+      const srcs = p.source_links || [];
+      return `
+        <div class="pk">
+          <div class="pk-place ${p.place===1?'p1':''}">${p.place ?? '?'}</div>
+          <div class="pk-main">
+            <div class="pk-t">${escapeHtml([p.manufacturer, p.product_title].filter(Boolean).join(' ').trim() || '—')}
+              ${p.capacity?`<span class="muted" style="font-weight:400"> · ${escapeHtml(p.capacity)}</span>`:''}
+              ${p.identity_warning ? '<span class="pill-w bad">identity</span>'
+                : (p.verified_title ? '<span class="pill-w ok">verified</span>' : '')}</div>
+            ${p.best_for?`<div class="pk-line"><b>Best for:</b> ${escapeHtml(p.best_for)}</div>`:''}
+            ${p.why_it_ranks_here?`<p class="pk-why">${escapeHtml(p.why_it_ranks_here)}</p>`:''}
+            ${p.edge_over_next?`<div class="pk-line"><b>Ahead of the next:</b> ${escapeHtml(p.edge_over_next)}</div>`:''}
+            ${p.important_tradeoff?`<div class="pk-line"><b>The catch:</b> ${escapeHtml(p.important_tradeoff)}</div>`:''}
+            ${p.identity_warning?`<div class="pk-line warn"><b>⚠</b> ${escapeHtml(p.identity_warning)} — no Amazon buy link was published for this pick.</div>`:''}
+            <div class="pk-meta">
+              ${money(p.typical_price)} typical${p.price_type==='sale'&&p.current_price?` · on sale ${money(p.current_price)}`:''}
+              ${p.asin?` · ASIN ${escapeHtml(p.asin)}${p.asin_source?` <span class="muted">(${escapeHtml(p.asin_source)})</span>`:''}`:' · no verified ASIN'}
+              ${offers.length?` · buy at ${offers.map(o=>escapeHtml(o.retailer||'?')).join(', ')}`:''}
+            </div>
+            <div class="pk-meta">
+              ${p.product_id
+                ? `<a href="/forms/products.html?product=${encodeURIComponent(p.product_id)}">product record ↗</a>
+                   ${p.product_action?`<span class="muted"> (${escapeHtml(p.product_action)})</span>`:''}`
+                : '<span class="muted">no product record</span>'}
+              ${srcs.length?` · <span class="muted">sources:</span> ${srcs.slice(0,4).map((u,i)=>
+                  `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${i+1}</a>`).join(' ')}`:''}
+            </div>
+          </div>
+          <div class="pk-sc">
+            ${p.realrank_score!=null
+              ? `<b>${p.realrank_score}</b><div class="muted" style="font-size:.7rem">RealRank</div>`
+              : '<b class="muted">—</b><div class="muted" style="font-size:.7rem">no histogram</div>'}
+            ${p.owner_count?`<div class="muted" style="font-size:.7rem;margin-top:3px">${
+              p.owner_rating??'—'}★ · ${Number(p.owner_count).toLocaleString()}</div>`:''}
+          </div>
+        </div>`;
+    }
+
+    /* ---------------- run + job window ---------------- */
+    async function doRun(){
+      const btn = $('#runBtn'), st = $('#jobStatus'), log = $('#joblog');
+      btn.disabled = true; st.textContent = 'Starting…'; log.hidden = false; log.textContent = '';
+      try {
+        const r = await fetch(`/curated-collections/${encodeURIComponent(selected)}/run`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ refresh: !!$('#refreshDocs')?.checked }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'HTTP '+r.status);
+        st.textContent = d.already_running ? `job #${d.job_id} already running…` : `job #${d.job_id} running…`;
+        if (es) es.close();
+        es = new EventSource(`/jobs/${d.job_id}/stream`);
+        es.addEventListener('log', e => {
+          log.textContent += (e.data || '') + '\n'; log.scrollTop = log.scrollHeight;
+        });
+        es.addEventListener('status', e => { st.textContent = `job #${d.job_id} ${e.data}`; });
+        es.addEventListener('done', async () => {
+          es.close(); es = null; btn.disabled = false;
+          detail = null; await load(selected);
+        });
+        es.onerror = () => { es && es.close(); es = null; btn.disabled = false; };
+      } catch(e){ btn.disabled = false; st.textContent = 'Failed: ' + (e.message||e); }
+    }
+
+    async function doApprove(){
+      const b = $('#approveBtn'); b.disabled = true;
+      try {
+        const r = await fetch(`/curated-collections/${encodeURIComponent(selected)}/approve`, {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+        if (!r.ok) throw new Error('HTTP '+r.status);
+        detail = null; await load(selected); flash && flash('Approved');
+      } catch(e){ b.disabled = false; flash && flash('Approve failed: '+(e.message||e)); }
+    }
+
+    /* ---------------- add / edit ---------------- */
+    function renderIntro(){
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Product selection · ${rows.length} classes</span></div>
+        <h1 class="ed-title">Curated collections</h1>
+        <p class="muted">Name a product class — "Loaf pans" — and Run reads what the named
+          authorities published about it, ranks it, checks every pick against our own data, and
+          writes the winners into the product catalog. The sibling of Collections/Search, which
+          starts from a saved Amazon search instead. Pick one (☰) or ＋ to add.</p>`;
+    }
+
+    function renderForm(c){
+      const isEdit = !!c;
+      const v = c || {};
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancel">← Cancel</button></div>
+        <h1 class="ed-title">${isEdit ? 'Edit class' : 'Add a class'}</h1>
+        <div class="pc-form">
+          <div class="pc-row2">
+            <div class="ed-field"><label>Name ${isEdit?'(locked — the join key)':'(defaults to the class)'}</label>
+              <input id="f_name" value="${escapeHtml(v.name||'')}" ${isEdit?'disabled':''} placeholder="loaf-pans"></div>
+            <div class="ed-field"><label>Display name</label>
+              <input id="f_display" value="${escapeHtml(v.display_name||'')}" placeholder="optional"></div>
+          </div>
+          <div class="ed-field"><label>Product class *</label>
+            <input id="f_class" value="${escapeHtml(v.product_class||'')}" placeholder="Loaf pans">
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">What gets researched. Write it
+              the way a reviewer would title a roundup.</p></div>
+          <div class="ed-field"><label>Categories — one per line (optional)</label>
+            <textarea id="f_cats" style="min-height:84px" placeholder="Best value&#10;Nonstick&#10;Pullman">${escapeHtml((v.categories||[]).join('\n'))}</textarea>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">Each one is a three-product
+              section a product can win by being the only candidate in it, so they decide what
+              gets recommended at all — a staff call, never the run's. <b>Leave blank to rank the
+              whole class</b>; the run is then told explicitly not to invent any.</p></div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Category (WS taxonomy)</label>
+              <input id="f_cat" list="dl_cat" value="${escapeHtml(v.ws_path||'')}" placeholder="auto on create">
+              <datalist id="dl_cat">${cats.map(x=>`<option value="${escapeHtml(x.path)}">`).join('')}</datalist></div>
+            <div class="ed-field"><label>Verification</label>
+              <label class="muted" style="font-weight:400;display:flex;gap:6px;align-items:center;padding-top:7px">
+                <input type="checkbox" id="f_net" style="width:auto" ${v.use_network===0?'':'checked'}>
+                check listings + owner ratings online</label></div>
+          </div>
+          <div class="ed-field"><label>Notes</label>
+            <textarea id="f_notes" style="min-height:70px">${escapeHtml(v.notes||'')}</textarea></div>
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="save">${isEdit?'Save':'Create'}</button>
+            <span class="muted" id="formStatus"></span>
+          </div>
+        </div>`;
+      $('#cancel').addEventListener('click', () => { mode='view'; renderDetail(); });
+      $('#save').addEventListener('click', () => saveForm(isEdit ? c : null));
+      (isEdit ? $('#f_class') : $('#f_class')).focus();
+    }
+
+    async function saveForm(existing){
+      const catPath = ($('#f_cat').value||'').trim();
+      const cat = cats.find(x => x.path === catPath);
+      const body = {
+        display_name: ($('#f_display').value||'').trim(),
+        product_class: ($('#f_class').value||'').trim(),
+        categories: ($('#f_cats').value||''),
+        use_network: !!$('#f_net').checked,
+        notes: ($('#f_notes').value||'').trim(),
+      };
+      if (cat) { body.ws_category_id = cat.id; body.ws_path = cat.path; }
+      const st = $('#formStatus'); st.textContent = 'Saving…';
+      try {
+        let r;
+        if (existing) {
+          r = await fetch(`/curated-collections/${encodeURIComponent(existing.name)}`, {
+            method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        } else {
+          body.name = ($('#f_name').value||'').trim();
+          r = await fetch('/curated-collections', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        }
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || 'HTTP '+r.status);
+        mode='view'; detail=null; await load(d.name || (existing && existing.name));
+        flash && flash('Saved');
+      } catch(e){ st.textContent = 'Failed: ' + (e.message||e); }
+    }
+
+    function wireDelete(){
+      const del = $('#delBtn');
+      del?.addEventListener('click', async () => {
+        if (del.dataset.armed !== '1'){
+          del.dataset.armed='1'; del.textContent='Confirm delete?';
+          setTimeout(()=>{ if(del.isConnected){ del.dataset.armed=''; del.textContent='Delete'; } }, 3000);
+          return;
+        }
+        del.disabled = true; del.textContent = 'Deleting…';
+        try {
+          const r = await fetch(`/curated-collections/${encodeURIComponent(selected)}`, { method:'DELETE' });
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          selected=null; detail=null; await load(); flash && flash('Deleted');
+        } catch(e){ del.disabled=false; del.textContent='Delete'; flash && flash('Delete failed: '+(e.message||e)); }
+      });
+    }
+
+    /* ---------------- controls ---------------- */
+    $('#searchToggle').addEventListener('click', () => {
+      const c = $('#controls'); c.hidden = !c.hidden; if (!c.hidden) $('#search').focus();
+    });
+    $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
+    $('#sort').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
+    $('#addToggle').addEventListener('click', () => { selected=null; detail=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
+
+    load();
+  </script>
+</body>
+</html>

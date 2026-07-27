@@ -361,6 +361,105 @@ def set_realstory(conn: sqlite3.Connection, product_id: str, realstory: dict) ->
     return d
 
 
+def find_by_asin(conn: sqlite3.Connection, asin: str) -> str | None:
+    """The product carrying this ASIN in any of its retailer offers, or None.
+
+    `_mfg_key` identity is brand + GTIN/MPN/model number, none of which a review roundup
+    reliably states — so a curated pick would MISS every time and create a duplicate product
+    on every re-run. An ASIN is the identity those picks actually carry (it comes from the
+    reviewer's own buy link, project_buy_links_revenue), and it is exact: no fuzzy match, no
+    embedding, no judgment. Colour/size variants are separate ASINs, which is why this is a
+    lookup for merging rather than a claim that two ASINs are the same product.
+    """
+    ensure_product_tables(conn)
+    asin = (asin or "").strip().upper()
+    if not asin:
+        return None
+    for pid, dj in conn.execute("SELECT product_id, data FROM products"):
+        try:
+            for o in (json.loads(dj).get("retailer_offers") or []):
+                if (o.get("asin") or "").strip().upper() == asin:
+                    return pid
+        except Exception:
+            continue
+    return None
+
+
+def find_by_name(conn: sqlite3.Connection, brand: str, name: str) -> str | None:
+    """The product with exactly this brand and name, or None.
+
+    The last identity resort for a pick that carries no ASIN and no manufacturer id — a
+    premium brand that sells direct (Williams Sonoma, Le Creuset) has neither, and without
+    this every re-run creates a second copy of it.
+
+    EXACT, case- and space-insensitive only. No fuzzy match and no embedding: a wrong merge
+    silently fuses two products and their offers, which is far more expensive to discover than
+    a duplicate. If the reviewer rewords the title between runs this misses and we duplicate —
+    the honest limit of a product with no vendor-agnostic identity.
+    """
+    ensure_product_tables(conn)
+    b, n = " ".join((brand or "").split()).lower(), " ".join((name or "").split()).lower()
+    if not n:
+        return None
+    row = conn.execute(
+        "SELECT product_id FROM products "
+        "WHERE lower(trim(name)) = ? AND lower(trim(COALESCE(brand,''))) = ? LIMIT 1",
+        (n, b)).fetchone()
+    return row[0] if row else None
+
+
+def set_curation(conn: sqlite3.Connection, product_id: str, curation: dict) -> dict | None:
+    """Attach/refresh the class-ranking block.
+
+    Like set_realstory this RESETS approval on a re-run, and like set_realrank it does NOT
+    re-embed — `compose_product_text` is an allow-list, and a placement is a statement about
+    the competing set rather than about what this product IS. Letting it feed similarity would
+    make two products match because they placed alike, which is not a resemblance.
+
+    Placements REPLACE rather than accumulate: a run re-ranks the whole class, so last run's
+    "Best value #1" is not evidence once this run put something else there. Placements from
+    OTHER collections are kept — they ranked a different set and this run says nothing about
+    them.
+    """
+    ensure_product_tables(conn)
+    d = _load(conn, product_id)
+    if d is None:
+        return None
+    prev = d.get("curation") or {}
+    cur = dict(curation or {})
+    cur.setdefault("ranked_at", _now())
+    coll = cur.get("collection") or ""
+    kept = [p for p in (prev.get("placements") or [])
+            if (p.get("collection") or "") != coll]
+    cur["placements"] = kept + list(cur.get("placements") or [])
+    # Always present and always empty on a fresh run — an absent key and a cleared one must
+    # not read differently to the surfaces that gate on approval.
+    cur["approved_by"] = "" if not cur.get("approved_by") else cur["approved_by"]
+    cur["approved_at"] = "" if not cur.get("approved_at") else cur["approved_at"]
+    d["curation"] = cur
+    conn.execute("UPDATE products SET data=?, updated_at=? WHERE product_id=?",
+                 (json.dumps(d), _now(), product_id))
+    conn.commit()
+    d["product_id"] = product_id
+    return d
+
+
+def approve_curation(conn: sqlite3.Connection, product_id: str, who: str) -> dict | None:
+    """Staff sign-off on the placement — the same gate RealStory carries, for the same
+    reason: a ranking that drives a buy link must be read by a human before it earns."""
+    ensure_product_tables(conn)
+    d = _load(conn, product_id)
+    if not d or not d.get("curation"):
+        return None
+    d["curation"]["approved_by"] = who or "staff"
+    d["curation"]["approved_at"] = _now()
+    conn.execute("UPDATE products SET data=?, updated_at=? WHERE product_id=?",
+                 (json.dumps(d), _now(), product_id))
+    conn.commit()
+    d["product_id"] = product_id
+    return d
+
+
 def approve_realstory(conn: sqlite3.Connection, product_id: str, who: str) -> dict | None:
     """Staff sign-off on the WRITE-UP: fit to earn. Nothing feeds the consumer/affiliate
     surface off an unreviewed automated assessment."""

@@ -1,25 +1,32 @@
-"""Curation runner — research, validate, enrich, render.
-
-EXPERIMENTAL. Registered nowhere; touches no production table.
+"""Curation CLI — research, validate, enrich, render, from a terminal.
 
     python -m experiments.curate.run research "Dutch ovens"      # whole class -> top three
     python -m experiments.curate.run research "Dutch ovens" --categories "Classic; Best value"
     python -m experiments.curate.run brief results.json          # validate + enrich -> text
 
-Categories are OPTIONAL and have no default set: supplying none means rank the WHOLE class,
-not fall back to somebody else's subsets. Pass `--categories "A; B; C"` or repeat
-`--category`. `--refresh` re-fetches the source documents instead of using the cache.
+The engine has MOVED into the application: `intake/products/curate/` (prompt, verify, render,
+pipeline) and `intake/products/curated_collections.py`, run as the `curated_collection_run`
+job. This file is now a thin CLI over that same code rather than a second copy of it, so a
+fix reaches both surfaces — and it stays, because a terminal is still the fastest way to try
+a class, re-verify a JSON, or re-render a brief without creating a collection first.
+
+What it does NOT do, deliberately: touch a table. `research` writes a JSON file and `brief`
+writes text. Materializing product records is the job's business, where it is tracked and
+cancellable.
 
 Split deliberately. `research` costs money and minutes; `brief` is cheap and re-runnable, so
 a result can be re-verified and re-rendered as often as you like without paying again. It
 also means a JSON produced ANYWHERE — ChatGPT, Claude, by hand — can be run through our
 verification and come out the far side as a grounded brief.
+
+Categories are OPTIONAL and have no default set: supplying none means rank the WHOLE class,
+not fall back to somebody else's subsets. Pass `--categories "A; B; C"` or repeat
+`--category`. `--refresh` re-fetches the source documents instead of using the cache.
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -27,7 +34,8 @@ for p in (_ROOT, os.path.join(_ROOT, "docs", "RealRank")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from experiments.curate import prompt as P, render as R, verify as V  # noqa: E402
+from intake.products.curate import prompt as P, render as R, verify as V  # noqa: E402
+from intake.products.curate import pipeline  # noqa: E402
 
 
 def _load_env():
@@ -38,94 +46,9 @@ def _load_env():
         pass
 
 
-def _doc_cache_path(product_class: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", product_class.lower()).strip("-")
-    os.makedirs(os.path.join(_ROOT, "experiments", "curate", "cache"), exist_ok=True)
-    return os.path.join(_ROOT, "experiments", "curate", "cache", f"{slug}.docs.json")
-
-
-def fetch_docs(product_class: str, *, refresh: bool = False) -> list:
-    """The named sources, CACHED.
-
-    Fetching eight publishers through the unblocker costs ~2 minutes. Without a cache every
-    retry — a deprecated parameter, a truncated reply, a schema tweak — re-pays it in full.
-    Six minutes of a failed session went on re-fetching identical pages.
-    """
-    path = _doc_cache_path(product_class)
-    if not refresh and os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            docs = json.load(f)
-        got = sum(1 for d in docs if d.get("markdown"))
-        print(f"[curate] {got}/{len(docs)} sources from cache ({os.path.basename(path)}) "
-              f"— delete it or pass --refresh to re-fetch")
-        return docs
-
-    import realrank_research as rr
-    print(f"[curate] fetching named sources for: {product_class}")
-    docs = rr.fetch_source_docs(product_class)
-    for d in docs:
-        state = f"{len(d['markdown']):>6} chars via {d['via']}" if d["markdown"] \
-            else f"FAILED — {d['error']}"
-        print(f"  {d['label']:<24} {state}")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(docs, f)
-    return docs
-
-
 def research(product_class: str, categories=None, *, refresh: bool = False) -> dict:
-    """Fetch the named authorities ourselves, then ask the model to curate from them.
-
-    No `categories` means the WHOLE CLASS — the overall three and nothing else. It does not
-    mean "pick some", which is what the deleted DEFAULT_CATEGORIES amounted to.
-    """
-    categories = P.normalize_categories(categories)
     _load_env()
-    import realrank_research as rr
-
-    # The dropped default carried one fact worth keeping: seven categories = 24 rich rows,
-    # which is exactly where a live run truncated at 32k output. Warn rather than cap — a
-    # class may genuinely warrant more, and a truncation now reports itself.
-    rows = 3 + 3 * len(categories)
-    print(f"[curate] categories: " + (", ".join(categories) if categories
-                                      else "NONE — ranking the whole class"))
-    if rows >= 24:
-        print(f"[curate] WARNING: that is {rows} rich rows; 24 truncated a run at 32k output. "
-              f"If the reply comes back TRUNCATED, ask for fewer.")
-
-    docs = fetch_docs(product_class, refresh=refresh)
-    got = sum(1 for d in docs if d["markdown"])
-    print(f"[curate] {got}/{len(docs)} sources; curating…")
-
-    text = P.build_prompt(product_class, categories, docs)
-    import llm
-    # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
-    with llm.stream(operation="curate_research", model=rr.MODEL, max_tokens=32000,
-                    messages=[{"role": "user", "content": text}]) as s:
-        msg = s.get_final_message()
-    raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-    # SAVE BEFORE PARSING. A research call costs minutes and money; losing the reply to a
-    # parse error means paying for it twice. (Learned in realrank_research, then promptly
-    # not carried into this file — which is how the first two runs left nothing behind.)
-    rawpath = _doc_cache_path(product_class).replace(".docs.json", ".raw.txt")
-    with open(rawpath, "w", encoding="utf-8") as f:
-        f.write(raw)
-    print(f"[curate] raw reply saved to {os.path.basename(rawpath)} ({len(raw)} chars)")
-
-    if getattr(msg, "stop_reason", None) == "max_tokens":
-        raise ValueError(
-            f"model hit max_tokens — the JSON is TRUNCATED, not malformed. {len(raw)} chars "
-            f"written to {rawpath}. Ask for fewer categories, or raise max_tokens.")
-
-    m = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.S) or re.search(r"(\{.*\})", raw, re.S)
-    if not m:
-        raise ValueError("no JSON in the model reply:\n" + raw[:400])
-    data = json.loads(m.group(1))
-    data.setdefault("product_class", product_class)
-    # Record what was ASKED FOR, not merely what came back. Without it a renamed, dropped or
-    # invented category is indistinguishable from one that was requested — which is the whole
-    # failure this change exists to close. `brief` checks the delivered set against it.
-    data["categories_requested"] = categories
-    return data
+    return pipeline.research(product_class, categories, refresh=refresh)
 
 
 def brief(path: str, *, use_network: bool = True) -> str:

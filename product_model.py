@@ -163,6 +163,55 @@ class RealStory(BaseModel):
     approved_at: str = ""
 
 
+class CuratedPlacement(BaseModel):
+    """Where this product placed in ONE section of a curated class ranking, and why.
+
+    A product holds several of these at once: overall #2 and "Best value" #1 are separate
+    judgments about the same object, made in the same run, and each carries its own reasoning.
+
+    `edge_over_next` is the field that makes a placement auditable. Ranking here is model
+    judgment against the stated weights, not arithmetic — no weighted score is computed — so
+    the stated reason IS the audit trail. Without it a rank can only be accepted, never
+    challenged. For the last place in a section it names the strongest product that did NOT
+    make the list, and what kept it out.
+
+    Prices are recorded per placement because they are the EVIDENCE FOR THIS RANKING: the
+    ranking input is `typical_price` (a sale is news, not a ranking signal), and a later price
+    change does not retroactively change what was ranked on.
+    """
+    collection: str = ""                     # the curated_collections run that placed it
+    section: str = ""                        # "" = overall; otherwise the category name
+    place: Optional[int] = None              # 1 | 2 | 3 within the section
+    best_for: str = ""
+    why_it_ranks_here: str = ""              # why this product is good, on its own
+    edge_over_next: str = ""                 # why it beat the one BELOW it — names that product
+    important_tradeoff: str = ""             # the required "here is the catch"
+    typical_price: Optional[float] = None    # what it was RANKED on
+    current_price: Optional[float] = None    # perishable
+    price_type: str = ""                     # regular | sale
+    source_links: List[str] = Field(default_factory=list)   # what was actually read for this row
+    ranked_at: str = ""
+
+
+class Curation(BaseModel):
+    """The class-ranking half of our editorial: where this product stands AGAINST THE OTHERS.
+
+    Deliberately not folded into RealStory. RealStory judges one product on its own evidence
+    and stays true whatever else exists; a placement is meaningless without the competing set
+    and is invalidated the moment that set changes. They also refresh on different triggers —
+    a new rival re-ranks everything and rewrites nothing.
+    """
+    placements: List[CuratedPlacement] = Field(default_factory=list)
+    collection: str = ""                     # the run that last placed this product
+    product_class: str = ""                  # the class it was ranked within
+    ranked_at: str = ""
+    job_id: Optional[int] = None
+    # Staff gate, same as RealStory: an automated ranking must not earn until a human has read
+    # it. A re-run resets this — new evidence does not inherit sign-off on the old.
+    approved_by: str = ""
+    approved_at: str = ""
+
+
 class Product(BaseModel):
     """One product — the master_recipe analog. Holds each source's verdict,
     specs, where-to-buy, and BCC's own homogenized editorial."""
@@ -191,6 +240,10 @@ class Product(BaseModel):
     # human read before it earns). Both separate from rank_score above.
     realrank: Optional[RealRank] = None
     realstory: Optional[RealStory] = None
+    # Where it placed when the whole class was ranked from the expert reviews. Third of the
+    # trio and the only RELATIVE one: RealRank scores the owners' verdict, RealStory writes
+    # ours, Curation says where it came in against its rivals.
+    curation: Optional[Curation] = None
 
 
 class ProductClass(BaseModel):

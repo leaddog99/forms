@@ -2856,6 +2856,124 @@ async def collection_medal_endpoint(name: str, request: Request):
     return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
 
 
+# ---- Curated collections ACDV editor (forms/curated_collections.html) --------------
+# The SECOND selection technique, beside the Amazon-search one above. A curated collection is
+# a product CLASS ("Loaf pans"); the run reads what the named authorities published about it,
+# ranks it, verifies the picks against our own data, and materializes product records.
+# See intake/products/curated_collections + intake/products/curate/.
+
+@app.get("/curated-collections")
+def curated_list_endpoint():
+    """Roster for the sidebar + the WS taxonomy options the form's category picker uses."""
+    from intake.products import curated_collections as ccs
+    with _db() as conn:
+        rows = ccs.list_collections(conn)
+        try:
+            cats = [{"id": r[0], "path": r[1]} for r in conn.execute(
+                "SELECT id, ws_path FROM ws_categories ORDER BY ws_path")]
+        except sqlite3.OperationalError:
+            cats = []
+    return {"collections": rows, "ws_categories": cats}
+
+
+@app.get("/curated-collections/{name}")
+def curated_get_endpoint(name: str):
+    """One collection + every placement it produced, with the reasoning attached."""
+    from intake.products import curated_collections as ccs
+    with _db() as conn:
+        c = ccs.get_collection(conn, name)
+        if c is None:
+            raise HTTPException(status_code=404, detail="Curated collection not found.")
+        c["picks"] = ccs.list_picks(conn, name)
+    return c
+
+
+@app.post("/curated-collections")
+async def curated_create_endpoint(request: Request):
+    """Create one. Auto-classifies against the WS taxonomy from the class name (the same
+    matcher the commerce join uses) unless the curator pinned a category."""
+    from intake.products import curated_collections as ccs
+    body = await request.json()
+    try:
+        with _db() as conn:
+            c = ccs.create_collection(conn, body)
+            if not c.get("ws_category_id"):
+                try:
+                    from intake.products.equipment_match import classify_term
+                    hit = classify_term(c["product_class"], conn)
+                    if hit.get("ws_category_id"):
+                        c = ccs.update_collection(conn, c["name"], {
+                            "ws_category_id": hit["ws_category_id"],
+                            "ws_path": hit.get("ws_path") or ""})
+                except Exception as e:      # best-effort — never block creation
+                    print(f"[CURATE] taxonomy match skipped: {e}")
+        return c
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/curated-collections/{name}")
+async def curated_update_endpoint(name: str, request: Request):
+    from intake.products import curated_collections as ccs
+    body = await request.json()
+    try:
+        with _db() as conn:
+            c = ccs.update_collection(conn, name, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if c is None:
+        raise HTTPException(status_code=404, detail="Curated collection not found.")
+    return c
+
+
+@app.delete("/curated-collections/{name}")
+def curated_delete_endpoint(name: str):
+    from intake.products import curated_collections as ccs
+    with _db() as conn:
+        ok = ccs.delete_collection(conn, name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Curated collection not found.")
+    return {"deleted": name}
+
+
+@app.post("/curated-collections/{name}/run")
+def curated_run_endpoint(name: str, payload: dict = Body(default={})):
+    """THE BUTTON. Research -> verify -> picks -> product records, as one tracked job.
+
+    Entity-locked so a second click can't double-run it, out-of-process and tailable because
+    a full run is minutes. The class never rides on argv — the handler reads it from the DB.
+    """
+    from intake.products import curated_collections as ccs
+    with _db() as conn:
+        if ccs.get_collection(conn, name) is None:
+            raise HTTPException(status_code=404, detail="Curated collection not found.")
+        entity_ref = f"curated_collection:{name}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return {"job_id": existing["id"], "status": existing["status"],
+                    "already_running": True}
+        params = {"collection": name}
+        if payload.get("refresh"):
+            params["refresh"] = True
+        job_id = jobs_lib.enqueue_job(conn, type="curated_collection_run", params=params,
+                                      entity_ref=entity_ref)
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "status": "queued", "stream_url": f"/jobs/{job_id}/stream"}
+
+
+@app.post("/curated-collections/{name}/approve")
+async def curated_approve_endpoint(name: str, request: Request):
+    """Staff sign-off on the brief — the gate before an automated ranking earns anything."""
+    from intake.products import curated_collections as ccs
+    body = await request.json() if await request.body() else {}
+    who = (body.get("who") or "").strip() or "staff"
+    with _db() as conn:
+        c = ccs.approve(conn, name, who)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Curated collection not found.")
+    return {"collection": name, "approved_by": who, "approved_at": c.get("approved_at")}
+
+
 # ---- Reviews ACDV editor (forms/reviews.html) -------------------------------------
 # Reviews as a first-class, curator-editable object: the AUTHORITY layer of the
 # monetization pipeline (memory/project_monetization_pipeline) — reviews SUPPORT product
@@ -6050,6 +6168,102 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("collection_refresh", _handle_collection_refresh_job)
+
+
+async def _handle_curated_collection_run_job(job: dict) -> dict:
+    """The review-sourced selection run: a product CLASS -> the expert reviews -> ranked,
+    evidenced picks -> catalog product records.
+
+    The sibling of `collection_refresh`. That one starts from a saved Amazon search URL and
+    screens the cohort on owner ratings; this one starts from a class name and the reviews the
+    named authorities published, then verifies those picks against our own data. Both end in
+    products, which is the point of having two — expert consensus and owner arithmetic
+    disagree usefully and neither is folded into the other.
+
+    Long and costly — ~8 SERP + ~8 unblocker fetches + one research call, minutes — so it
+    belongs here: tracked, tailable, cancellable between stages.
+
+    Params: collection (required, the NAME — identity, never the class string off argv;
+    §3.1, the --dish rule). Optional refresh to re-fetch the cached source documents.
+    """
+    from intake.products import curated_collections as ccs
+    from intake.products.curate import pipeline, to_products
+    params = job.get("params") or {}
+    name = (params.get("collection") or "").strip()
+    if not name:
+        raise ValueError("curated_collection_run requires params.collection")
+    job_id = job["id"]
+
+    def _should_cancel():
+        try:
+            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+                return jobs_lib.is_cancel_requested(conn, job_id)
+        except Exception:
+            return False
+
+    def _run():
+        with _db() as conn:
+            coll = ccs.get_collection(conn, name)
+        if not coll:
+            raise ValueError(f"curated collection {name!r} not found")
+        pclass = coll["product_class"]
+        cats = coll.get("categories") or []
+        print(f"[CURATE] {name} -> {pclass}")
+
+        out = pipeline.run(pclass, cats, refresh=bool(params.get("refresh")),
+                           use_network=bool(coll.get("use_network", 1)),
+                           should_cancel=_should_cancel)
+        record, report, brief_text = out["record"], out["report"], out["brief_text"]
+
+        picks = pipeline.picks_from(record)
+        with _db() as conn:
+            ccs.replace_picks(conn, name, picks)
+            ccs.set_run_result(conn, name, record=record, report=report,
+                               brief_text=brief_text, job_id=job_id, pick_count=len(picks))
+            stored = ccs.list_picks(conn, name)
+
+        if _should_cancel():
+            raise KeyboardInterrupt("cancelled before materializing products")
+
+        # The deliverable. Failure here must not lose the run — the brief and its picks are
+        # already stored, so we report and carry on rather than raising over the top of them.
+        print(f"[CURATE] materializing {len(stored)} placements into product records…")
+        try:
+            with _db() as conn:
+                def _link(slot, pid, action):
+                    ccs.set_pick_product(conn, name, slot, pid, action)
+                summary = to_products.materialize(
+                    conn, collection=name, product_class=pclass, picks=stored,
+                    job_id=job_id, on_result=_link)
+        except Exception as e:
+            print(f"[CURATE] materialization failed: {e}")
+            summary = {"materialize_error": str(e)}
+
+        summary.update({"collection": name, "product_class": pclass,
+                        "categories": cats, "picks": len(picks),
+                        "sources": len([c for c in (report.get("verified") or [])]),
+                        "brief_chars": len(brief_text)})
+        return summary
+
+    try:
+        summary = await asyncio.to_thread(_run)
+    except KeyboardInterrupt as e:
+        raise jobs_lib.JobCancelled(str(e))
+    except Exception as e:
+        # A failed run leaves a record on the collection, not just a job row: the editor is
+        # where the curator looks, and "nothing happened" is the worst thing it can say.
+        try:
+            with _db() as conn:
+                from intake.products import curated_collections as _ccs
+                _ccs.set_run_error(conn, name, str(e), job_id)
+        except Exception:
+            pass
+        raise
+    print(f"[CURATE] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("curated_collection_run", _handle_curated_collection_run_job)
 
 
 async def _handle_review_ingest_job(job: dict) -> dict:

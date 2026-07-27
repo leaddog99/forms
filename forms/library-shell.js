@@ -422,7 +422,11 @@
     // Kept in alphabetical order by label. `action` items run JS instead of
     // navigating (see initNav wiring).
     { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
-    { page: 'collections', label: 'Collections', href: '/forms/product_collections.html', group: 'admin' },
+    // Two selection techniques, both live. Slash-grouped like the Jobs trio: /Search starts
+    // from a saved Amazon search URL and screens the cohort on owner ratings; /Curated starts
+    // from a class name and the expert reviews. Both end in product records.
+    { page: 'collections', label: 'Collections/Search', href: '/forms/product_collections.html', group: 'admin' },
+    { page: 'curated-collections', label: 'Collections/Curated', href: '/forms/curated_collections.html', group: 'admin' },
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
     { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', group: 'admin' },
