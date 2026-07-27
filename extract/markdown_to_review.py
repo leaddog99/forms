@@ -126,6 +126,10 @@ CAPTURE THE EDITORIAL HEADER (`product_class.buying_guide`) — THIS IS IMPORTAN
   `product_class.criteria` = the short list of testing/what-to-look-for headings (e.g. ["Golden color",
   "Nonstick coating", "Straight walls", "Crisp corners", "Handles"]).
 
+OUTPUT ORDER — emit `products` BEFORE `product_class` in the JSON object. The products are the
+part we cannot reconstruct later; the buying guide is prose that can be re-captured. On a big
+roundup (50+ products) writing the guide first has cost us the product list entirely.
+
 PRODUCTS — extract EVERY product tested:
 - The "Everything We Tested" section lists each product under a tier heading. Capture ALL of them (a
   roundup usually has 10-20). If a "Top Pick"/"Winner" block repeats the top product at the very top of
@@ -172,7 +176,11 @@ def markdown_to_review(
     title: str = "",
     source_hints: str = "",
     model: str = "claude-sonnet-4-6",
-    max_tokens: int = 8192,
+    # 8192 was not enough for a big roundup. ATK's large-Dutch-ovens review tests ~50
+    # products; the model spent its budget on the editorial header and was cut off
+    # mid-string, so the JSON never parsed and the caller reported "no product
+    # recommendations" — a truncation reported as an empty page.
+    max_tokens: int = 20000,
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
 ) -> Optional[dict]:
@@ -207,6 +215,12 @@ def markdown_to_review(
         response = stream.get_final_message()
 
     content = next((b.text for b in response.content if b.type == "text"), "")
+    # Say WHY when the model ran out of room. Truncated JSON fails to parse a few lines
+    # below, and without this the caller only learns "no products found" — which sends you
+    # looking at the page instead of at the token budget.
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        print(f"     ERROR: review extraction hit max_tokens ({max_tokens}) — the JSON is "
+              f"truncated. Raise max_tokens or trim the page; this is NOT an empty page.")
     stripped = content.strip()
     if stripped.startswith("```"):
         stripped = re.sub(r"^```(?:json)?\s*\n?", "", stripped)
