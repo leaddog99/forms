@@ -134,10 +134,18 @@ PRODUCTS — extract EVERY product tested:
 - The "Everything We Tested" section lists each product under a tier heading. Capture ALL of them (a
   roundup usually has 10-20). If a "Top Pick"/"Winner" block repeats the top product at the very top of
   the page, DEDUPE it — include that product once.
-- `verdict.tier`: the tier from the section heading (Highly Recommended / Recommended / Recommended with
-  Reservations / Not Recommended / Discontinued) COMBINED with any per-product badge (Winner / Co-Winner).
+- `verdict.tier` MUST be one of this CONTROLLED VOCABULARY, exactly — never the site's own wording:
+      Winner | Co-Winner | Highly Recommended | Recommended | Recommended with Reservations |
+      Not Recommended | Discontinued
   Prefer the most specific: a "Winner" badge under "Highly Recommended" => tier "Winner".
-- `verdict.summary`: the product's verdict paragraph, close to verbatim (light cleanup only).
+  Many sites head their picks with an AWARD PHRASE instead of a tier — "The Best Dutch Oven (Ever!)",
+  "The Best Budget Dutch Oven Under $80", "Also Good", "Our pick", "Upgrade pick". MAP those onto the
+  vocabulary (a single overall best => "Winner"; a category/budget/upgrade best => "Highly Recommended";
+  a runner-up or "Also Good" => "Recommended"), and PRESERVE the site's exact award phrase by starting
+  `verdict.summary` with it, e.g. "Best Budget Dutch Oven Under $80 — ...". The tier is what we filter
+  and rank on, so a free-text tier makes every winner its own unique category and is useless.
+- `verdict.summary`: the product's verdict paragraph, close to verbatim (light cleanup only), prefixed
+  with the award phrase when the page gave one.
 - `verdict.price_at_test`: the tested price ONLY if the page shows one; else null.
 - `name`: the FULL product name exactly as written on the page, INCLUDING the brand (e.g. "Williams
   Sonoma Goldtouch Nonstick Cake Pan", "USA Pan Rectangular Cake Pan"). Only strip a leading tier/badge

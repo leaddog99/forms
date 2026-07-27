@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import sqlite3
 
-from . import atk, wirecutter, williams_sonoma, wsj, base  # noqa: F401
+from . import atk, seriouseats, wirecutter, williams_sonoma, wsj, base  # noqa: F401
 
 # Registry (order = detection priority). Add a module here to support a new source.
-SOURCES = [atk, wirecutter, williams_sonoma, wsj]
+# A source MISSING from this list still works — it just falls through to the generic prompt,
+# which reads the page's own wording for tiers. That is how Serious Eats produced nine
+# unique one-off "tiers" from its award headlines (2026-07-27). Absence is silent.
+SOURCES = [atk, seriouseats, wirecutter, williams_sonoma, wsj]
 
 
 def detect_source(url: str, head: str = "") -> str | None:
