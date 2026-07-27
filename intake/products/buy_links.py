@@ -124,9 +124,22 @@ def clean_url(url: str) -> str:
     return urlunparse((u.scheme, u.netloc, u.path, "", urlencode(keep), ""))
 
 
-# Our Amazon Associates tag. Not a secret — it is visible in every link we publish — so it
-# lives here with an env override rather than in .env alongside API keys.
-AMAZON_TAG = "mbg99-20"
+# Amazon Associates identifiers. Not secrets — they are visible in every link we publish —
+# so they live here rather than in .env alongside API keys.
+#
+# SiteStripe exposes TWO fields and they are not interchangeable:
+#   Store ID     leaddogventur-20   the account's primary tag
+#   Tracking ID  mbg99-20           a channel tag created under that account
+# Both credit the same account; the tracking ID is how Amazon segments WHICH PROPERTY earned
+# the sale. So the right model is one tracking ID per property (BCC vs TBOTB vs a partner
+# site) and `ascsubtag` for the placement WITHIN a property — channel from the tag, position
+# from the subtag. Using the Store ID everywhere would collapse that first distinction.
+AMAZON_STORE_ID = "leaddogventur-20"     # account default; rarely what we want to publish
+AMAZON_TAG = "mbg99-20"                  # this property's tracking ID — the one we emit
+
+# Kitchen & Dining pays 4.50% (SiteStripe, 2026-07-27). Kept for revenue modelling; not used
+# in any link.
+AMAZON_COMMISSION = {"Kitchen & Dining": 0.045}
 
 
 def amazon_affiliate_url(url: str, *, subtag: str = "", tag: str = "") -> str:
