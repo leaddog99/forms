@@ -96,6 +96,15 @@ def ensure_reviews_table(conn: sqlite3.Connection) -> None:
         )""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_rp_review ON review_products(review_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_rp_product ON review_products(product_id)")
+    # ASIN as a FIRST-CLASS column, not a key inside the JSON blob. It is the strongest
+    # identity we get from a review — the reviewer's own buy link naming the exact product
+    # they tested — and it drives the catalog match, the variant-family lookup, and the
+    # "which sources actually reviewed this" evidence. Buried in `data` it could not be
+    # queried, indexed, displayed or corrected. Additive + idempotent.
+    rp_have = {r[1] for r in conn.execute("PRAGMA table_info(review_products)")}
+    if "asin" not in rp_have:
+        conn.execute("ALTER TABLE review_products ADD COLUMN asin TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rp_asin ON review_products(asin)")
     # WS-taxonomy classification (the curator's single type-ahead pick): the review's place in the
     # 4-level ws_categories tree (headline > section > subcategory > leaf), stored as the id + cached
     # path. Additive columns (idempotent).
@@ -368,11 +377,12 @@ def _reproject_product(conn: sqlite3.Connection, product_id: str) -> None:
 def _insert_review_product(conn: sqlite3.Connection, review_id: str, item: dict,
                            *, product_id: str | None = None, linked_by: str = "") -> str:
     rpid, now = str(uuid.uuid4()), _now()
+    asin = resolve_asin(item)
     data = {
         "specs": item.get("specs") or {},
         "retailer_offers": item.get("retailer_offers") or [],
         "ratings": item.get("ratings") or {},
-        "asin": (item.get("asin") or "").strip(),
+        "asin": asin,
         "url": (item.get("url") or "").strip(),
     }
     price = item.get("price_at_test")
@@ -382,11 +392,83 @@ def _insert_review_product(conn: sqlite3.Connection, review_id: str, item: dict,
         price = None
     conn.execute(
         "INSERT INTO review_products(review_product_id, review_id, name, brand, tier, summary, "
-        "price_at_test, data, product_id, linked_by, created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        "price_at_test, data, asin, product_id, linked_by, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (rpid, review_id, item.get("name", ""), item.get("brand", ""), item.get("tier", ""),
-         item.get("summary", ""), price, json.dumps(data), product_id, linked_by, now, now))
+         item.get("summary", ""), price, json.dumps(data), asin, product_id, linked_by,
+         now, now))
     return rpid
+
+
+def resolve_asin(item: dict) -> str:
+    """The ASIN for one reviewed item — stated, or recovered from its buy links.
+
+    Reviews almost always carry an affiliate link to the exact product tested, so the ASIN is
+    usually THERE even when the extractor didn't lift it into a field. `asin_from` decodes
+    redirector wrappers (ATK routes through clicks.trx-hub.com with the Amazon URL
+    percent-encoded), which is why this recovers ASINs a plain field read misses.
+    """
+    from intake.products.review_facts import asin_from
+    direct = (item.get("asin") or "").strip().upper()
+    if len(direct) == 10:
+        return direct
+    for o in (item.get("retailer_offers") or []):
+        if not isinstance(o, dict):
+            continue
+        for key in ("asin", "source_url", "affiliate_url"):
+            a = asin_from(str(o.get(key) or ""))
+            if a:
+                return a
+    return asin_from(str(item.get("url") or ""))
+
+
+def recover_asins_via_redirects(conn: sqlite3.Connection, *, limit: int = 200,
+                                timeout: int = 25) -> dict:
+    """Second pass: follow OPAQUE affiliate redirects to recover the ASIN behind them.
+
+    Publishers wrap buy links two ways. ATK embeds the Amazon URL percent-encoded in a query
+    param, so `asin_from` reads it for free. Wirecutter (and others) issue an opaque server
+    redirect — `nytimes.com/wirecutter/out/link/7492/22112/4/112744?merchant=Amazon` — where
+    the ASIN exists only at the far end: 4 hops later it lands on /dp/B000N501BK.
+
+    Kept OUT of the ingest path deliberately. It is network I/O per item, and a review grab
+    should not hang or double in length because a publisher's redirector is slow. Run it as
+    a maintenance pass over rows still missing an ASIN.
+
+    Rows whose buy links point somewhere other than Amazon (Williams-Sonoma, a reviewer's own
+    site) have no ASIN to find — they are skipped, not retried.
+    """
+    import requests
+    from intake.products.review_facts import asin_from
+    ensure_reviews_table(conn)
+    ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+    rows = conn.execute(
+        "SELECT review_product_id, data FROM review_products "
+        "WHERE COALESCE(asin,'') = '' LIMIT ?", (limit,)).fetchall()
+    checked = found = 0
+    for rpid, dj in rows:
+        d = json.loads(dj or "{}")
+        urls = [str(o.get(k) or "") for o in (d.get("retailer_offers") or [])
+                if isinstance(o, dict) for k in ("source_url", "affiliate_url")]
+        # Only chase links that plausibly END at Amazon; anything else is not an ASIN miss.
+        cands = [u for u in urls if u and ("amazon" in u.lower() or "/out/link/" in u.lower())]
+        for u in cands:
+            checked += 1
+            try:
+                r = requests.get(u, timeout=timeout, allow_redirects=True,
+                                 headers={"User-Agent": ua})
+                a = asin_from(r.url)
+            except Exception:
+                continue
+            if a:
+                d["asin"] = a
+                conn.execute("UPDATE review_products SET asin=?, data=?, updated_at=? "
+                             "WHERE review_product_id=?", (a, json.dumps(d), _now(), rpid))
+                found += 1
+                break
+    conn.commit()
+    return {"rows_missing": len(rows), "links_followed": checked, "asins_recovered": found}
 
 
 def add_review_product(conn: sqlite3.Connection, review_id: str, item: dict) -> dict | None:
@@ -406,7 +488,11 @@ def upsert_review_product(conn: sqlite3.Connection, review_id: str, item: dict) 
     items. Does NOT resolve/reproject — the caller does that once after the batch."""
     if not conn.execute("SELECT 1 FROM reviews WHERE review_id=?", (review_id,)).fetchone():
         return None
-    asin = (item.get("asin") or "").strip().upper()
+    # Resolve from the buy links too, so a re-ingest matches on the SAME identity the row was
+    # stored under — matching on a raw (often empty) field would insert a duplicate instead.
+    asin = resolve_asin(item)
+    if asin:
+        item = {**item, "asin": asin}
     existing = None
     for rpid, data in conn.execute(
             "SELECT review_product_id, data FROM review_products WHERE review_id=?", (review_id,)):
@@ -450,6 +536,11 @@ def update_review_product(conn: sqlite3.Connection, rpid: str, patch: dict) -> b
             data[f] = patch[f]
             if f in ("asin", "url", "retailer_offers", "specs"):
                 ident_changed = True
+    if "asin" in patch:
+        # Keep the first-class column in step with the blob — it's the field the curator
+        # edits when a match is wrong, and the one every lookup reads.
+        sets.append("asin=?")
+        params.append(str(patch.get("asin") or "").strip().upper() or None)
     sets.append("data=?"); params.append(json.dumps(data))
     sets.append("updated_at=?"); params.append(_now())
     params.append(rpid)

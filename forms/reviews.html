@@ -47,6 +47,11 @@
     .rv-verd { display: grid; grid-template-columns: 150px 1fr 90px; gap: 8px; align-items: start; margin-top: 6px; }
     .rv-verd label { display:block; font-size:.68rem; font-weight:600; color:var(--ed-ink-soft); margin-bottom:2px; }
     .rv-prov { font-family: ui-monospace, monospace; font-size: .78rem; word-break: break-all; color: var(--ed-ink-soft); }
+    .rv-asin { font-family: ui-monospace, monospace; font-size: .7rem; font-weight: 700;
+      padding: 1px 7px; border-radius: 6px; background: #eef3f2; color: #0f6e6a;
+      border: 1px solid #d3e7e5; white-space: nowrap; }
+    .rv-asin a { color: inherit; text-decoration: none; }
+    .rv-asin.none { background: #fbefe8; color: #b4552f; border-color: #f0d8cb; font-family: inherit; }
     .muted { color: var(--ed-ink-soft); }
     .rv-toolbar { display:flex; gap:8px; margin:6px 0 4px; align-items:center; flex-wrap:wrap; }
   </style>
@@ -225,9 +230,17 @@
       const sources = offers
         ? `<div class="rv-srcs"><span class="rv-srcs-lbl">Sources:</span> ${offers}</div>`
         : (p.url ? `<div class="rv-srcs"><span class="rv-srcs-lbl">Source:</span> ${LibraryShell.urlControl(p.url,{display:false})}</div>` : '');
+      // ASIN up front, as its own field. It is the strongest identity a review gives us —
+      // the reviewer's own buy link naming the exact product they tested — and it drives the
+      // catalog match and the variant-family lookup. A missing one is a to-do, so say so.
+      const asin = (p.asin||'').trim();
+      const asinChip = asin
+        ? `<span class="rv-asin" title="Amazon identity from the reviewer's buy link">ASIN ${escapeHtml(asin)}
+             <a href="https://www.amazon.com/dp/${encodeURIComponent(asin)}" target="_blank" rel="noopener">↗</a></span>`
+        : `<span class="rv-asin none" title="No Amazon buy link found on the review — identity unresolved">no ASIN</span>`;
       return `<div class="rv-prod" data-rpid="${escapeHtml(rpid)}">
         <div class="top"><span class="nm">${escapeHtml(p.brand?p.brand+' · ':'')}${escapeHtml(p.name||'(unnamed)')}</span>
-          ${p.tier?`<span class="rv-tier">${escapeHtml(p.tier)}</span>`:''}${price}</div>
+          ${p.tier?`<span class="rv-tier">${escapeHtml(p.tier)}</span>`:''}${asinChip}${price}</div>
         ${p.summary?`<div class="muted" style="margin-top:4px">${escapeHtml(p.summary)}</div>`:''}
         ${link}
         ${sources}

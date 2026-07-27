@@ -121,7 +121,7 @@ def ingest_review(conn: sqlite3.Connection, md: str, *, url: str = "",
         verd = p.get("verdict") or {}
         offers = p.get("retailer_offers") or []
         amz = next((o for o in offers if (o.get("asin") or "")), offers[0] if offers else {})
-        review_store.upsert_review_product(conn, rid, {
+        item = {
             "name": p.get("name", ""),
             "brand": p.get("brand") or catalog_store._guess_brand(p.get("name", "")),
             "tier": verd.get("tier", ""),
@@ -131,7 +131,13 @@ def ingest_review(conn: sqlite3.Connection, md: str, *, url: str = "",
             "retailer_offers": offers,
             "asin": (amz.get("asin") or "").strip(),
             "url": (amz.get("source_url") or "").strip(),
-        })
+        }
+        # The extractor often leaves `asin` empty even when the buy link contains one — ATK
+        # percent-encodes the Amazon URL inside a redirector, so it isn't visible as a field.
+        # resolve_asin digs it out of the links, which is where the reviewer actually stated
+        # which product they tested.
+        item["asin"] = review_store.resolve_asin(item)
+        review_store.upsert_review_product(conn, rid, item)
     conn.commit()
     review_store.resolve_links(conn, rid, force=True)
     return review_store.get_review(conn, rid)
