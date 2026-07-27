@@ -1586,3 +1586,20 @@ Static HTML/JS lives on next load. The Affiliate settings needed a restart (new 
 
 ### Parked / next
 Daily sale scan for winners (typical vs current price is already modelled). EasyParser histogram fix — code stays wired. SEMrush `fld`/`cri` codes still guesses. Six LLM-gateway bypasses still open. Reviews->purchase deep dive. The recipe-side bake-off/medals idea from the last session is still unbuilt.
+
+### Addendum — how the curate ranking actually works, and `edge_over_next`
+
+Traced on the curator's question "where do the weights influence the scoring, if at all". Answer: **nowhere in code.**
+
+- `prompt.py:DEFAULT_WEIGHTS` — the seven scoring attributes from the curator's original ChatGPT prompt (Cooking performance 25 / Durability 20 / Ease of use 15 / Versatility 15 / Value at typical price 15 / Capacity and shape 5 / Brand support 5) — came over intact and go into the prompt under RANKING WEIGHTS. They are **prose**. Nothing multiplies them; the only numeric check is that they total 1.0 (`verify.py:105`).
+- **The model writes `place: 1/2/3` directly**, like any other field. Code only validates that the three places are 1-2-3, never why.
+- **RealRank is attached afterward** (`verify.py:244`) as evidence and never reorders — which is why a #3 can outscore a #2 (loaf pans: #2 = 89.3, #3 = 90.7).
+
+So: expert consensus ranks, owner arithmetic rides alongside, and the two are never reconciled. Defensible — it is the same split as `rank_score` vs `realrank.score` on the product record — but it was undocumented.
+
+**Curator's call: explanation, not arithmetic.** Per-criterion numeric scoring was offered and **rejected** — *"it might ask more questions than it answers"*. Instead, new field **`edge_over_next`**: name the product immediately below you and the criterion from RANKING WEIGHTS that separated you; for the LAST place, name the strongest product that did NOT make the list and what kept it out; if two are genuinely close, say so rather than inventing a difference. Since ranking is judgment rather than arithmetic, the reasoning IS the audit trail — without it a rank can only be accepted, not challenged.
+
+**Verified on Loaf Pans (re-run on cached docs — LLM call only, ~$0.29): asking the model to defend the cut line CHANGED the cut.** #3 went OXO → Lodge cast iron, with the exclusion argued explicitly ("TechGearLab found its thin walls gave less even heat distribution and it lacks handles or a lip"). #1 vs #2 is now crisp folded corners vs rounded molded ones, "the meaningful performance difference between the two co-winners."
+
+### NEXT UP — categories must be staff-supplied ([[project_curate_staff_inputs]])
+`run.py:29` hardcodes `DEFAULT_CATEGORIES` (two of the four are Dutch-oven concepts) and will silently apply them to any product class run without explicit ones — and on the Loaf Pans run **the assistant invented the four categories**. Categories decide what gets recommended at all, so nothing automated should be inventing them. Fix: delete the constant, make categories a REQUIRED input that fails loudly; CLI arg now, the collection record once that editor exists. Same shape applies to `DEFAULT_WEIGHTS`, lower stakes — the curator judged the seven universal, and `build_prompt()` already accepts `weights`.

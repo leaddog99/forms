@@ -71,6 +71,12 @@ RESEARCH RULES
 13. Prefer the SUPPLIED SOURCE DOCUMENTS below over anything you find by searching. They were
     retrieved directly from the publishers named in them. If a supplied document contradicts
     a search result, the supplied document wins, and say so in `why_it_ranks_here`.
+14. EXPLAIN THE ORDER, not just the picks. `why_it_ranks_here` says why a product is good;
+    `edge_over_next` must say why it beat the one below it — name that product and name the
+    criterion from RANKING WEIGHTS that separated them. For the LAST place in a list, name the
+    strongest product that did NOT make the list and say what kept it out. If two picks are
+    genuinely close, say that rather than inventing a difference: "essentially tied with X;
+    placed ahead on price alone" is a better answer than a manufactured one.
 
 RANKING WEIGHTS
 {weights}
@@ -88,6 +94,7 @@ Before returning the JSON, confirm internally that:
 - Every Amazon link is https://www.amazon.com/dp/ASIN and every ASIN is exactly 10 characters.
 - Every typical_price is numeric, not text.
 - Every row's source_links is a non-empty list of URLs you actually used.
+- Every row's edge_over_next names a specific competing product, not a generic quality.
 - The category rankings are logically independent of the overall ranking.
 """
 
@@ -126,6 +133,7 @@ Use this exact structure:
       "price_type": "regular",
       "best_for": "",
       "why_it_ranks_here": "",
+      "edge_over_next": "",
       "important_tradeoff": "",
       "buy_link": "",
       "amazon_link": "",
@@ -144,6 +152,7 @@ Use this exact structure:
       "current_price": 0.00,
       "price_type": "regular",
       "why_it_ranks_here": "",
+      "edge_over_next": "",
       "important_tradeoff": "",
       "buy_link": "",
       "amazon_link": "",

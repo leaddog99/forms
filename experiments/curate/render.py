@@ -102,6 +102,12 @@ def _row(r: dict, *, show_place: bool = True) -> str:
         out.append(f"     Best for: {r['best_for']}")
     if r.get("why_it_ranks_here"):
         out.append(f"     {r['why_it_ranks_here']}")
+    # Why it beat the one below it. `why_it_ranks_here` justifies a pick in isolation, which
+    # left the ORDER unexplained — nothing ever said why #1 outranked #2. Ranking here is a
+    # model judgment, not arithmetic (no weighted score is computed), so the reasoning IS the
+    # audit trail; without it a rank can't be challenged, only accepted.
+    if r.get("edge_over_next"):
+        out.append(f"     Ahead of the next: {r['edge_over_next']}")
     if r.get("important_tradeoff"):
         out.append(f"     The catch: {r['important_tradeoff']}")
     out += _evidence(r)
