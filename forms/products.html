@@ -72,6 +72,24 @@
     @media (max-width: 620px) { .rr-cols { grid-template-columns: 1fr; } }
     .rr-cols ul { margin: 4px 0 0; padding-left: 18px; font-size: .86rem; }
     .muted { color: var(--ed-ink-soft); }
+    /* Curation — where it placed against its rivals. */
+    .cu-p { display: flex; gap: 10px; align-items: flex-start; border-top: 1px solid var(--line);
+      padding: 9px 0; font-size: .88rem; }
+    .cu-p:first-child { border-top: 0; }
+    .cu-badge { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid;
+      place-items: center; font-size: .8rem; font-weight: 800; background: var(--bg);
+      border: 1px solid var(--line); color: var(--ed-ink-soft); }
+    .cu-badge.p1 { background: #fbf1d4; color: #96700c; border-color: #eedfb4; }
+    .cu-sec { font-weight: 700; }
+    .cu-line { margin: 3px 0 0; font-size: .83rem; }
+    .cu-line b { font-weight: 600; color: var(--ed-ink-soft); }
+    .cu-meta { font-size: .78rem; color: var(--ed-ink-soft); margin-top: 5px; }
+    .cu-pend { font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+      padding: 1px 6px; border-radius: 999px; color: #8a5a12; background: #fbf1d4;
+      border: 1px solid #eedfb4; margin-left: 6px; }
+    .cu-ok { font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+      padding: 1px 6px; border-radius: 999px; color: #1f8a54; background: #eaf6ef;
+      border: 1px solid #cfe9da; margin-left: 6px; }
   </style>
 </head>
 <body>
@@ -262,6 +280,9 @@
             li.className = 'ed-item' + (p.product_id === selected && mode==='view' ? ' selected' : '');
             const pick = p.bcc_pick ? `<span class="pc-tag">${escapeHtml(p.bcc_pick)}</span>` : '';
             const meta = [];
+            // The curated placement leads: it is why this row exists at all when a
+            // Collections/Curated run created it.
+            if (p.placement) meta.push(`<b>${escapeHtml(p.placement)}</b>`);
             if (p.tier) meta.push(escapeHtml(p.tier));
             meta.push(p.has_image ? '🖼' : 'no image');
             meta.push(`${p.offers} offer${p.offers===1?'':'s'}`);
@@ -320,6 +341,7 @@
           <span class="muted" id="rrStatus" style="font-size:.82rem"></span>
           <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
         </div>
+        ${curationBlock(p)}
         ${realrankBlock(p)}
         ${p.image_url?`<section class="ed-block"><img class="pc-hero" src="${escapeHtml(p.image_url)}" alt="" onerror="this.style.display='none'"></section>`:''}
         ${p.bcc_blurb?`<section class="ed-block"><h3 class="ed-block-label">BCC blurb</h3><p>${escapeHtml(p.bcc_blurb)}</p></section>`:''}
@@ -330,6 +352,16 @@
       $('#backToIntro')?.addEventListener('click', () => { selected=null; mode='view'; renderList(); renderDetail(); });
       $('#editBtn')?.addEventListener('click', () => { mode='edit'; renderDetail(); });
       $('#rrBtn')?.addEventListener('click', runRealRank);
+      $('#cuApprove')?.addEventListener('click', async (e) => {
+        e.target.disabled = true; e.target.textContent = 'Approving…';
+        try {
+          const r = await fetch(`/products/${encodeURIComponent(selected)}/curation/approve`, {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          delete full[selected]; await renderDetail(); flash && flash('Placement approved');
+        } catch(err){ e.target.disabled=false; e.target.textContent='Approve placement';
+                      flash && flash('Approve failed: '+(err.message||err)); }
+      });
       $('#rrApprove')?.addEventListener('click', async (e) => {
         e.target.disabled = true; e.target.textContent = 'Approving…';
         try {
@@ -355,6 +387,75 @@
           await load(); flash && flash('Deleted');
         } catch(e){ del.disabled=false; del.textContent='Delete'; flash && flash('Delete failed: '+(e.message||e)); }
       });
+    }
+
+    /* ---------------- Curation (where it placed against its rivals) ----------------
+       The third block of the trio and the only RELATIVE one: RealRank scores what owners
+       think, RealStory says what we think of the product alone, this says where it came in
+       against the others. Written by a Collections/Curated run.
+
+       `edge_over_next` leads each placement after the reasoning, because ranking here is
+       model judgment against stated weights rather than arithmetic — no weighted score is
+       computed — so that sentence IS the audit trail. Without it a rank can only be
+       accepted, never challenged. */
+    function curationBlock(p){
+      const cu = p.curation;
+      const pls = (cu && cu.placements) || [];
+      if (!pls.length) return `<section class="ed-block">
+        <h3 class="ed-block-label">Curation <span class="muted" style="font-weight:400">placement</span></h3>
+        <p class="muted">Not placed in a curated ranking. A
+          <a href="/forms/curated_collections.html">Collections/Curated</a> run ranks a whole
+          class from the expert reviews and records each pick's placement here.</p></section>`;
+
+      const age = daysSince(cu.ranked_at);
+      const approved = !!cu.approved_by;
+      // Overall first, then categories — the order it would be published in.
+      const sorted = [...pls].sort((a,b) =>
+        ((a.section?1:0) - (b.section?1:0)) ||
+        String(a.section||'').localeCompare(String(b.section||'')) ||
+        ((a.place||9) - (b.place||9)));
+
+      const rows = sorted.map(x => {
+        const srcs = (x.source_links||[]).filter(Boolean);
+        const price = (x.typical_price != null)
+          ? `$${Number(x.typical_price).toFixed(2)} typical${
+              x.price_type==='sale' && x.current_price!=null
+                ? ` · on sale ${'$'+Number(x.current_price).toFixed(2)}` : ''}`
+          : '';
+        return `
+          <div class="cu-p">
+            <div class="cu-badge ${x.place===1?'p1':''}">${x.place ?? '?'}</div>
+            <div style="flex:1;min-width:0">
+              <div class="cu-sec">${escapeHtml(x.section || 'Overall')}</div>
+              ${x.best_for?`<div class="cu-line"><b>Best for:</b> ${escapeHtml(x.best_for)}</div>`:''}
+              ${x.why_it_ranks_here?`<p style="margin:4px 0 0">${escapeHtml(x.why_it_ranks_here)}</p>`:''}
+              ${x.edge_over_next?`<div class="cu-line"><b>Ahead of the next:</b> ${escapeHtml(x.edge_over_next)}</div>`:''}
+              ${x.important_tradeoff?`<div class="cu-line"><b>The catch:</b> ${escapeHtml(x.important_tradeoff)}</div>`:''}
+              <div class="cu-meta">${price}${
+                srcs.length?`${price?' · ':''}sources: ${srcs.slice(0,4).map((u,i)=>
+                  `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${i+1}</a>`).join(' ')}`:''}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+      return `
+        <section class="ed-block">
+          <h3 class="ed-block-label">Curation <span class="muted" style="font-weight:400">placement</span>
+            ${approved ? `<span class="cu-ok">approved</span>`
+                       : `<span class="cu-pend">unapproved</span>`}</h3>
+          <div class="cu-meta" style="margin:0 0 8px">
+            Ranked within <b>${escapeHtml(cu.product_class || p.product_class || '—')}</b>
+            by <a href="/forms/curated_collections.html">${escapeHtml(cu.collection||'—')}</a>
+            ${age!=null?` · ${age===0?'today':age+'d ago'}`:''}
+            ${cu.job_id?` · job #${cu.job_id}`:''}
+            ${approved?` · by ${escapeHtml(cu.approved_by)}`:''}
+          </div>
+          ${rows}
+          ${approved ? '' : `<div style="margin-top:10px">
+            <button type="button" class="ed-btn" id="cuApprove">Approve placement</button>
+            <span class="muted" style="font-size:.8rem;margin-left:8px">A placement drives a buy
+              link — nothing earns off an unread automated ranking.</span></div>`}
+        </section>`;
     }
 
     /* ---------------- RealRank (audit surface) ----------------

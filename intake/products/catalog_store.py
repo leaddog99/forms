@@ -199,6 +199,28 @@ def list_catalog(conn: sqlite3.Connection) -> dict:
 #  the match-or-create save path below (which is the extraction workflow).
 # ============================================================================
 
+def _best_placement(d: dict) -> str:
+    """The strongest curated placement, as a short roster label ("#1 overall", "#2 Best value").
+
+    Overall outranks a category at the same place — winning the class is a bigger claim than
+    winning a slice of it.
+    """
+    pls = (d.get("curation") or {}).get("placements") or []
+    best = None
+    for p in pls:
+        try:
+            place = int(p.get("place"))
+        except (TypeError, ValueError):
+            continue
+        key = (place, 0 if not (p.get("section") or "").strip() else 1)
+        if best is None or key < best[0]:
+            best = (key, p)
+    if not best:
+        return ""
+    sec = (best[1].get("section") or "").strip()
+    return f"#{best[0][0]} {sec or 'overall'}"
+
+
 def list_products(conn: sqlite3.Connection) -> list:
     """Flat admin roster of every product (for the editor sidebar), grouped/sorted
     category -> class -> best-tier -> name. Lightweight per row (no embedding blob)."""
@@ -218,6 +240,8 @@ def list_products(conn: sqlite3.Connection) -> list:
             "bcc_pick": d.get("bcc_pick") or "",
             "has_image": bool(d.get("image_url")),
             "offers": len(d.get("retailer_offers") or []),
+            # Best curated placement, so the roster shows which rows a ranking put there.
+            "placement": _best_placement(d),
         })
     out.sort(key=lambda p: (p["category"], p["product_class"],
                             _tier_rank({"verdicts": [{"tier": p["tier"]}]}), p["name"]))

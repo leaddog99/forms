@@ -1,0 +1,112 @@
+{
+  "date_checked": "2026-02-20",
+  "currency": "USD",
+  "product_class": "Fine Mesh Strainer (household kitchen sieve, ~6.5–8 in. basket diameter)",
+  "overall_top_three": [
+    {
+      "place": 1,
+      "product_title": "Rösle Fine Mesh Strainer / Stainless Steel Round Handle Kitchen Strainer, 7.9 inches",
+      "manufacturer": "Rösle",
+      "capacity": "5.5 cups (7.9-in. diameter basket, ~3–3.5 in. deep)",
+      "typical_price": 89.00,
+      "current_price": 80.00,
+      "price_type": "sale",
+      "best_for": "Cooks who want a buy-it-for-life strainer for purées, stocks, and bread flour sifting",
+      "why_it_ranks_here": "Independently named the top pick by both America's Test Kitchen and Serious Eats. Very fine, stiff mesh removed the most bran and produced the smoothest purées among ATK's finalists, and it was the only model in both tests to show zero visible wear after repeated impact and dishwasher abuse. A long, wide, curved pot hook made it the most stable strainer tested on bowls and pots.",
+      "edge_over_next": "Beats the OXO Good Grips 8-Inch Double Rod Strainer on cooking performance and durability (finer, stiffer mesh; proven long-term wear resistance in ATK's abuse tests), though OXO wins clearly on value.",
+      "important_tradeoff": "Premium price (roughly 3–4x the OXO) for a moderately deep basket; its rounded steel handle, while comfortable, was rated slightly less ergonomic than OXO's grippy handle.",
+      "buy_link": "https://www.surlatable.com/sieve-barrel-handle-rosle/PRO-987453.html",
+      "amazon_link": "https://www.amazon.com/dp/B007426KZG",
+      "amazon_asin": "B007426KZG",
+      "source_links": [
+        "https://www.americastestkitchen.com/equipment_reviews/1744-fine-mesh-strainers",
+        "https://www.seriouseats.com/best-fine-mesh-strainers-5509281"
+      ]
+    },
+    {
+      "place": 2,
+      "product_title": "OXO Good Grips 8-Inch Double Rod Strainer",
+      "manufacturer": "OXO",
+      "capacity": "8-in. diameter basket",
+      "typical_price": 25.00,
+      "current_price": 25.00,
+      "price_type": "regular",
+      "best_for": "Everyday straining, rinsing, and sifting on a budget",
+      "why_it_ranks_here": "Serious Eats' budget winner: sturdy mesh basket, a large curved bowl hook for stability, and the most comfortable (grippy, rounded) handle of all ten strainers tested. Sifted a respectable quarter-teaspoon of bran from whole-wheat flour and produced seed-free strawberry sauce, putting its everyday performance close to the pricier Rösle.",
+      "edge_over_next": "Edges out the All-Clad Stainless-Steel Strainer Set on value at typical price — comparable everyday straining performance for roughly one-fifth the cost of the All-Clad set, even though All-Clad's mesh proved marginally finer in lab testing.",
+      "important_tradeoff": "Basket is shallower than the Rösle's, so it holds slightly less and requires more batches for large-volume straining or stock work; mesh is very good but not quite as fine as the Rösle or All-Clad for ultra-silky purées.",
+      "buy_link": "https://www.surlatable.com/pro-1496975-sieve-6in-gg-oxo/PRO-1496975.html?dwvar_PRO-1496975_size=8in",
+      "amazon_link": "https://www.amazon.com/dp/B00004OCLX",
+      "amazon_asin": "B00004OCLX",
+      "source_links": [
+        "https://www.seriouseats.com/best-fine-mesh-strainers-5509281"
+      ]
+    },
+    {
+      "place": 3,
+      "product_title": "All-Clad Stainless-Steel Strainer, Set of 3",
+      "manufacturer": "All-Clad",
+      "capacity": "Set of 3 strainers, assorted basket diameters (exact sizes not published by retailer)",
+      "typical_price": 130.00,
+      "current_price": 130.00,
+      "price_type": "regular",
+      "best_for": "Cooks who want one purchase to cover small, medium, and large straining tasks with lab-tested fine mesh",
+      "why_it_ranks_here": "Serious Eats' 'Best Set' pick: the finest mesh of all ten strainers tested, sifting nearly a full teaspoon of bran from whole-wheat flour (more than the Rösle), plus a deep, sturdy basket and a comfortable handle. Covering three sizes in one purchase adds versatility that single strainers can't match.",
+      "edge_over_next": "This is the last spot on the list; the strongest product left out was the KitchenAid Classic 7-Inch Strainer, which was kept out by weaker versatility and capacity — it's a single small (7-in.) basket versus All-Clad's three-size set, and it placed as only a secondary budget option in Serious Eats' own testing, behind both OXO and this set.",
+      "important_tradeoff": "At $130 for the set, per-piece cost is high relative to the OXO or KitchenAid singles, and its bowl hook is flat rather than curved, making it less secure on the rim of a bowl than the Rösle or OXO during vigorous pressing/straining.",
+      "buy_link": "https://www.williams-sonoma.com/products/all-clad-stainless-steel-strainer-set/",
+      "amazon_link": "",
+      "amazon_asin": "",
+      "source_links": [
+        "https://www.seriouseats.com/best-fine-mesh-strainers-5509281",
+        "https://www.williams-sonoma.com/products/all-clad-stainless-steel-strainer-set/"
+      ]
+    }
+  ],
+  "category_rankings": [],
+  "ranking_criteria": [
+    {
+      "criterion": "Cooking performance",
+      "weight": 0.25,
+      "what_was_considered": "Fineness/stiffness of mesh, ability to sift bran from whole-wheat flour, smoothness of purées/sauces produced (per ATK and Serious Eats standardized tests).",
+      "effect_on_ranking": "Rösle and All-Clad tested as the two finest-mesh performers; Rösle's edge in overall build quality kept it ahead despite All-Clad sifting marginally more bran."
+    },
+    {
+      "criterion": "Durability and construction",
+      "weight": 0.20,
+      "what_was_considered": "Resistance to warping/denting under impact and repeated dishwasher cycles, handle and hook attachment strength.",
+      "effect_on_ranking": "Rösle showed zero visible wear after ATK's counter-impact and mortar-suspension tests, reinforcing its #1 spot; OXO's sturdy but simpler construction placed it solidly second."
+    },
+    {
+      "criterion": "Ease of use",
+      "weight": 0.15,
+      "what_was_considered": "Handle comfort/grip, basket weight when loaded, hook stability on bowls and pots.",
+      "effect_on_ranking": "OXO's grippy rounded handle and Rösle/OXO's curved hooks scored best; All-Clad's flat hook was a noted weakness that helped push it to third."
+    },
+    {
+      "criterion": "Versatility",
+      "weight": 0.15,
+      "what_was_considered": "Suitability across rinsing, sifting, straining sauces/stocks/custards, and covering multiple task sizes.",
+      "effect_on_ranking": "All-Clad's 3-piece set covers more use-cases size-wise, which is its main strength and kept it in the top three despite price and hook drawbacks."
+    },
+    {
+      "criterion": "Value at typical price",
+      "weight": 0.15,
+      "what_was_considered": "Typical (non-sale) price relative to performance and expected lifespan.",
+      "effect_on_ranking": "OXO's $25 typical price against near-flagship performance is the strongest value in the category and is why it holds #2 over the pricier All-Clad set."
+    },
+    {
+      "criterion": "Capacity and shape",
+      "weight": 0.05,
+      "what_was_considered": "Basket depth/diameter and resulting useful volume for batch straining.",
+      "effect_on_ranking": "Rösle's deep 5.5-cup basket was rated ideal by ATK; this was a minor factor since all finalists had broadly similar footprints."
+    },
+    {
+      "criterion": "Brand support and warranty",
+      "weight": 0.05,
+      "what_was_considered": "Manufacturer reputation and long-term parts/support history.",
+      "effect_on_ranking": "All three brands (Rösle, OXO, All-Clad) are well-established kitchenware makers; this criterion did not meaningfully separate the finalists."
+    }
+  ],
+  "methodology_note": "This is a single, ungenerated class as instructed. Note for a future curator: testers consistently treat 'fine-mesh strainers' as roughly 6.5–8-inch basket models used for purées, sauces, stocks, and sifting; both ATK and Serious Eats explicitly review small strainers (for tea, citrus juice, dusting) as a SEPARATE class with different winners, so a 'small/mini strainer' category would be a legitimate future split if requested. Similarly, single-strainer vs. multi-piece nesting-set formats (e.g., the All-Clad 3-piece set vs. single Rösle/OXO units) could reasonably be split into their own category, since sets change the value and versatility calculus; we did not create that split here per instructions, but flagged the All-Clad set's different value proposition in its entry. Pricing for the Rösle listing reflects Serious Eats' more recent (Feb 2026) Amazon price check; ATK's older $45 test-time price appears stale and was not used for typical_price."
+}

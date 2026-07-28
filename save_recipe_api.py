@@ -2728,6 +2728,24 @@ def product_realrank_endpoint(product_id: str, payload: dict = Body(default={}))
     return {"job_id": job_id, "status": "queued", "product": name, "asin": asin}
 
 
+@app.post("/products/{product_id}/curation/approve")
+def product_curation_approve_endpoint(product_id: str, payload: dict = Body(default={})):
+    """Staff sign-off on the PLACEMENT — where this product came in against its rivals.
+
+    Separate from the RealStory gate on purpose: that approves what we said about the product
+    on its own, this approves where we ranked it, and a curator can agree with one and not the
+    other. Both reset on a re-run.
+    """
+    from intake.products import catalog_store
+    who = (payload.get("who") or "").strip() or "staff"
+    with _db() as conn:
+        p = catalog_store.approve_curation(conn, product_id, who)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Product or curation not found.")
+    return {"product_id": product_id, "approved_by": who,
+            "approved_at": (p.get("curation") or {}).get("approved_at")}
+
+
 @app.post("/products/{product_id}/realstory/approve")
 def product_realstory_approve_endpoint(product_id: str, payload: dict = Body(default={})):
     """Staff sign-off on the WRITE-UP. The gate between an automated assessment and anything
