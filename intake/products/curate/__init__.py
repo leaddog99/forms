@@ -13,4 +13,18 @@ from a product CLASS NAME and the reviews the named authorities published about 
 Lifted out of `experiments/curate/` once it had run two classes end to end. The experimental
 CLI still imports from here rather than keeping a copy — one canonical path, so a fix reaches
 both surfaces.
+
+The package puts the repo root and `docs/RealRank` on `sys.path` itself. Each module used to
+do its own, which meant `to_products` only found `realrank_research` when `pipeline` happened
+to have been imported first — and its reviewer lookup failed CLOSED, returning "no reviewers"
+rather than raising. A dependency that resolves by import order is one that works until it is
+used on its own.
 """
+import os
+import sys
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "..", "..", ".."))
+for _p in (_ROOT, os.path.join(_ROOT, "docs", "RealRank")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)

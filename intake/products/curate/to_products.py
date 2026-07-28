@@ -213,15 +213,28 @@ def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str
 
 
 def _sources_of(p: dict) -> list:
-    """Reviewer names we can name for a pick. The links are the provenance; the hostnames are
-    the closest thing to a reviewer list this stage has without re-reading the corpus."""
+    """The REVIEWERS covering this pick, by name.
+
+    `Product.sources` means "reviewer names covering this product", so only the named
+    authorities count. A pick's `source_links` are whatever was read to verify the row, which
+    includes retailer product pages — the first cut derived hostnames from them and wrote
+    `walmart.com` and `nordstrom.com` into the reviewer list, turning a buy link into an
+    apparent review. An unrecognized host now yields nothing rather than a guess.
+
+    Matching reuses the fetcher's own `_host_ok`, which already knows that Wirecutter is a
+    PATH under nytimes.com — two copies of that rule would eventually disagree.
+    """
+    try:
+        import realrank_research as rr
+    except Exception:
+        return []
     out = []
     for u in (p.get("source_links") or []):
-        try:
-            host = str(u).split("//", 1)[-1].split("/", 1)[0].lower()
-            host = host[4:] if host.startswith("www.") else host
-            if host:
-                out.append(host)
-        except Exception:
-            continue
+        for label, site in rr.SOURCE_SITES:
+            try:
+                if rr._host_ok(str(u), site):
+                    out.append(label)
+                    break
+            except Exception:
+                continue
     return out

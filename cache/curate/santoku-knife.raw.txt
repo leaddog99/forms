@@ -1,0 +1,114 @@
+{
+  "date_checked": "2026-06-15",
+  "currency": "USD",
+  "product_class": "Santoku Knife",
+  "overall_top_three": [
+    {
+      "place": 1,
+      "product_title": "Mac Knife MSK-65 Professional Series 6.5-Inch Hollow Edge Santoku",
+      "manufacturer": "Mac Knife",
+      "capacity": "6.5-inch blade",
+      "typical_price": 129.00,
+      "current_price": 129.00,
+      "price_type": "regular",
+      "best_for": "Everyday home cooks who want an agile, well-balanced daily-driver santoku at a fair price.",
+      "why_it_ranks_here": "Serious Eats' 2026 test of 19 santoku knives named this the best overall, citing a balanced handle, razor-sharp hollow-ground edge, and clean performance across tomatoes, chives, carrots, and whole-chicken breakdown. At 6oz it sits in the ideal weight window testers preferred (6-7oz), and it has held the top spot across multiple test cycles, indicating a consistent, reliable design rather than a one-time fluke. Widely stocked at Amazon, Walmart, and Bed Bath & Beyond at a stable $129, it delivers professional-level cutting performance without the premium-brand markup.",
+      "edge_over_next": "Essentially tied with the Wüsthof Classic 4183 on raw cutting performance and sharpness, but the Mac costs $41 less at typical price and is about 0.6oz lighter (6oz vs 6.6oz), giving it the edge on Value at typical price and Ease of use.",
+      "important_tradeoff": "The plastic handle and bolster are functional but less refined-feeling than forged-metal options, and the 6.5-inch blade is on the shorter end for cooks who regularly break down large produce like whole squash.",
+      "buy_link": "https://www.walmart.com/ip/Mac-Knife-MSK-65-Professional-Hollow-Edge-Santoku-Knife-6-1-2-Inch-Silver/187215880",
+      "amazon_link": "https://www.amazon.com/dp/B000N5BV5K",
+      "amazon_asin": "B000N5BV5K",
+      "source_links": [
+        "https://www.seriouseats.com/best-santoku-knives",
+        "https://www.walmart.com/ip/Mac-Knife-MSK-65-Professional-Hollow-Edge-Santoku-Knife-6-1-2-Inch-Silver/187215880"
+      ]
+    },
+    {
+      "place": 2,
+      "product_title": "Wüsthof 4183 Classic Hollow Edge Santoku Knife, 7-Inch",
+      "manufacturer": "Wüsthof",
+      "capacity": "7-inch blade",
+      "typical_price": 170.00,
+      "current_price": 170.00,
+      "price_type": "regular",
+      "best_for": "Cooks who want German-forged durability and strong brand-backed warranty support in a santoku.",
+      "why_it_ranks_here": "Part of the same Classic line as Wüsthof's top-rated Western chef's knife, this santoku earned praise from Serious Eats for its petite, balanced handle and 'super sharp and precise' hollow-edge blade. Wüsthof's 300-year Solingen manufacturing history and long-standing warranty support give it strong Brand support and durability credentials, and its forged full-tang construction is built for decades of daily use.",
+      "edge_over_next": "Outperforms the Made In Japanese Damascus Steel Santoku on Value at typical price ($170 vs $199) and Brand support and warranty, backed by Wüsthof's multi-century manufacturing track record versus Made In's newer direct-to-consumer history.",
+      "important_tradeoff": "At $170 it costs appreciably more than the Mac for a similar performance tier, and like most German stainless steel, its edge is softer than Japanese VG-10-style steels, requiring more frequent honing.",
+      "buy_link": "https://www.nordstrom.com/s/wusthof-wsthof-classic-santoku-knife/4240410",
+      "amazon_link": "https://www.amazon.com/dp/B00005MEGX",
+      "amazon_asin": "B00005MEGX",
+      "source_links": [
+        "https://www.seriouseats.com/best-santoku-knives",
+        "https://www.nordstrom.com/s/wusthof-wsthof-classic-santoku-knife/4240410"
+      ]
+    },
+    {
+      "place": 3,
+      "product_title": "Made In Japanese Damascus Steel Santoku, 6-Inch",
+      "manufacturer": "Made In",
+      "capacity": "6-inch blade",
+      "typical_price": 199.00,
+      "current_price": 179.00,
+      "price_type": "sale",
+      "best_for": "Cooks who want premium Damascus-steel construction and restaurant-grade edge retention and don't mind paying more.",
+      "why_it_ranks_here": "Independently reviewed by both The Kitchn and Serious Eats, this santoku uses a 33-layer Damascus-clad VG-10 core for a hard, long-lasting edge. The Kitchn's tester (a professional grill cook) called it able to cut through broccoli, potatoes, onions, and carrots 'with no resistance,' and Serious Eats named it the category's best Damascus option, praising its compact handle and easy chopping and dicing. Full-tang construction and an ergonomic handle support long service life.",
+      "edge_over_next": "The strongest omitted product is the Tojiro 6.7-Inch Santoku, Serious Eats' Best Budget pick at $123 with comparable sharpness. It was kept out of the top three because it lacks a verifiable non-Amazon retail listing and the manufacturer-backed warranty infrastructure that Made In provides, weakening its score on Brand support and warranty versus Made In's direct-to-consumer support and documented independent reviews.",
+      "important_tradeoff": "At $199 typical price it's the priciest of the three, only available in a single 6-inch length, and at 7.1oz it's heavier than the featherweight competitors in this class, slightly reducing agility for delicate mincing tasks.",
+      "buy_link": "https://madeincookware.com/products/japanese-santoku-knife/6-inch",
+      "amazon_link": "https://www.amazon.com/dp/B0DBRYZHK7",
+      "amazon_asin": "B0DBRYZHK7",
+      "source_links": [
+        "https://www.thekitchn.com/made-in-japanese-damascus-steel-santoku-knife-review-ll-23680822",
+        "https://www.seriouseats.com/best-santoku-knives",
+        "https://madeincookware.com/products/japanese-santoku-knife/6-inch"
+      ]
+    }
+  ],
+  "category_rankings": [],
+  "ranking_criteria": [
+    {
+      "criterion": "Cooking performance",
+      "weight": 0.25,
+      "what_was_considered": "Sharpness out of the box and after use, clean cuts on tomatoes, herbs, carrots, and chicken skin/joints as measured by Serious Eats' controlled tests and edge-force readings.",
+      "effect_on_ranking": "Favored the Mac, Wüsthof, and Made In, all of which were singled out by independent testers for clean, resistance-free cuts across produce types; knives with drag or crushing issues (e.g., Mosfiata, Lamson) were excluded."
+    },
+    {
+      "criterion": "Durability and construction",
+      "weight": 0.20,
+      "what_was_considered": "Full-tang construction, steel quality (VG-10, Damascus cladding, German high-carbon stainless), bolster design, and expected edge life between sharpenings.",
+      "effect_on_ranking": "Wüsthof's forged German steel and Made In's Damascus-clad VG-10 core scored strongly here; this criterion helped keep Wüsthof and Made In in the top three over cheaper stamped-blade options."
+    },
+    {
+      "criterion": "Ease of use",
+      "weight": 0.15,
+      "what_was_considered": "Weight (ideal 6-7oz per Serious Eats testing), handle balance, grip comfort, and control during precision tasks.",
+      "effect_on_ranking": "The Mac's 6oz weight and balanced handle gave it a slight edge over heavier options; this criterion penalized knives like the All-Clad (8.9oz) and Lamson (9.8oz), which were excluded from the top three."
+    },
+    {
+      "criterion": "Versatility",
+      "weight": 0.15,
+      "what_was_considered": "Ability to handle slicing, dicing, mincing, and breaking down proteins in addition to standard vegetable prep.",
+      "effect_on_ranking": "All three finalists performed well across the full range of Serious Eats' test tasks (produce and chicken breakdown), supporting their inclusion over narrower-use models like the ceramic Kyocera, which struggled with large or dense produce."
+    },
+    {
+      "criterion": "Value at typical price",
+      "weight": 0.15,
+      "what_was_considered": "Typical (non-sale) price weighed against measured performance and expected lifespan.",
+      "effect_on_ranking": "This criterion is the primary reason the Mac ranks above the Wüsthof and Made In: near-identical performance at a meaningfully lower typical price."
+    },
+    {
+      "criterion": "Capacity and shape",
+      "weight": 0.05,
+      "what_was_considered": "Blade length (6-7 inches typical for this class) and blade curvature/sheep's-foot profile suited to push-cutting.",
+      "effect_on_ranking": "Minor differentiator among the top three since all fall within the standard 6-7-inch santoku range; not a deciding factor in final order."
+    },
+    {
+      "criterion": "Brand support and warranty",
+      "weight": 0.05,
+      "what_was_considered": "Manufacturer history, warranty terms, and availability of authorized-seller guidance.",
+      "effect_on_ranking": "Wüsthof's long manufacturing history and Made In's active direct-to-consumer support and warranty helped both edge out otherwise comparable budget alternatives like the Tojiro, which lacks the same documented support infrastructure."
+    }
+  ],
+  "methodology_note": "Santoku knives as a class genuinely split along several axes that could change the ranking: blade material (stainless vs. carbon vs. ceramic vs. Damascus-clad), blade length (5.5\" ceramic/compact models vs. 7\"+ models), and price tier (sub-$40 budget knives like the Kai Pure Komachi 2 or Mercer Genesis vs. $150-$230 premium knives like the Misono UX10 or Shun Classic). A dedicated 'budget santoku' or 'carbon steel santoku' category would very plausibly produce a different top three (e.g., Tojiro or Mercer Genesis for budget, Morihei Hisamoto for carbon steel). Because no categories were requested, this ranking selects the three knives that best satisfy the full weighted criteria across the general-purpose mainstream of the class, drawing most heavily on Serious Eats' controlled multi-knife testing (the most rigorous supplied source) supplemented by The Kitchn's hands-on review. A curator may want to request 'budget' and 'carbon steel/Damascus' as separate categories given how differently they perform against the weights above."
+}

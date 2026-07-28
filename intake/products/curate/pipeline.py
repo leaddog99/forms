@@ -73,7 +73,8 @@ def fetch_docs(product_class: str, *, refresh: bool = False,
     return docs
 
 
-def research(product_class: str, categories=None, *, refresh: bool = False,
+def research(product_class: str, categories=None, *, docs: list | None = None,
+             refresh: bool = False,
              should_cancel: Callable[[], bool] | None = None) -> dict:
     """Fetch the authorities ourselves, then ask the model to curate FROM THEM.
 
@@ -92,7 +93,8 @@ def research(product_class: str, categories=None, *, refresh: bool = False,
         print(f"[CURATE] WARNING: {rows} rich rows; 24 truncated a run at {MAX_TOKENS} output. "
               f"If the reply comes back TRUNCATED, ask for fewer categories.")
 
-    docs = fetch_docs(product_class, refresh=refresh, should_cancel=should_cancel)
+    if docs is None:
+        docs = fetch_docs(product_class, refresh=refresh, should_cancel=should_cancel)
     got = sum(1 for d in docs if d.get("markdown"))
     print(f"[CURATE] {got}/{len(docs)} sources retrieved; curating…")
 
@@ -146,12 +148,20 @@ def verify_and_render(data: dict, *, use_network: bool = True) -> tuple:
 def run(product_class: str, categories=None, *, refresh: bool = False,
         use_network: bool = True,
         should_cancel: Callable[[], bool] | None = None) -> dict:
-    """The whole pass. Returns {record, report, brief_text}."""
-    data = research(product_class, categories, refresh=refresh, should_cancel=should_cancel)
+    """The whole pass. Returns {record, report, brief_text, sources}.
+
+    Fetches here rather than inside `research` so the caller can report WHICH authorities
+    answered — a run grounded in three publishers and one grounded in eight are not the same
+    artifact, and the summary is what a curator reads without opening the log.
+    """
+    docs = fetch_docs(product_class, refresh=refresh, should_cancel=should_cancel)
+    sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
+               "missing": [d["label"] for d in docs if not d.get("markdown")]}
+    data = research(product_class, categories, docs=docs, should_cancel=should_cancel)
     if should_cancel and should_cancel():
         raise KeyboardInterrupt("cancelled before verification")
     report, brief_text = verify_and_render(data, use_network=use_network)
-    return {"record": data, "report": report, "brief_text": brief_text}
+    return {"record": data, "report": report, "brief_text": brief_text, "sources": sources}
 
 
 def picks_from(data: dict) -> list:

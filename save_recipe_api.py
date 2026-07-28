@@ -6239,9 +6239,17 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
             print(f"[CURATE] materialization failed: {e}")
             summary = {"materialize_error": str(e)}
 
+        # Report what each number IS. The first cut labelled the verified-pick count
+        # "sources", which read as "3 of 8 publishers answered" when it meant "3 picks had
+        # their listing confirmed" — the summary is what a curator sees without opening a log.
         summary.update({"collection": name, "product_class": pclass,
                         "categories": cats, "picks": len(picks),
-                        "sources": len([c for c in (report.get("verified") or [])]),
+                        "sources_retrieved": len((out.get("sources") or {}).get("retrieved") or []),
+                        "sources_missing": (out.get("sources") or {}).get("missing") or [],
+                        "identity_verified": len(report.get("verified") or []),
+                        "identity_rejected": len(report.get("rejected") or []),
+                        "asins_recovered": len(report.get("filled") or []),
+                        "owner_scored": len(report.get("scored") or []),
                         "brief_chars": len(brief_text)})
         return summary
 
