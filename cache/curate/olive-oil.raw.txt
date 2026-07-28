@@ -1,0 +1,111 @@
+{
+  "date_checked": "2025-06-25",
+  "currency": "USD",
+  "product_class": "Extra Virgin Olive Oil (supermarket/widely available, all-purpose)",
+  "overall_top_three": [
+    {
+      "place": 1,
+      "product_title": "Carapelli Original Extra Virgin Olive Oil",
+      "manufacturer": "Carapelli (Deoleo)",
+      "capacity": "16.9 fl oz (500 mL)",
+      "typical_price": 10.39,
+      "current_price": 10.39,
+      "price_type": "regular",
+      "best_for": "Everyday all-purpose use — dipping, dressing, and light sautéing — where fresh, balanced flavor matters most",
+      "why_it_ranks_here": "In America's Test Kitchen's blind tasting of 10 top-selling national EVOO brands, Carapelli was the clear favorite: tasters called it 'buttery and sweet' with a 'grassy aroma,' 'fruity, olive-y flavor,' and balanced bitterness. Its key advantage was a genuinely recent harvest date at time of purchase — freshness that most competing supermarket bottles lacked. This is a supplied, directly-retrieved source and is treated as authoritative per our sourcing rules.",
+      "edge_over_next": "Edges out Cobram Estate California Select on raw flavor freshness and price per ounce in ATK's controlled blind tasting (harvest date several months old vs. a full year for many competitors); Cobram Estate remains excellent but scored as milder and less vivid on tasted fruitiness/pungency in independent comparisons.",
+      "important_tradeoff": "Not included in Wirecutter's, Consumer Reports', or Serious Eats' independent tasting panels, so its lead is corroborated by only one (highly rigorous) test; no verifiable Amazon listing could be confirmed, so online buyers must rely on Walmart or other grocery retailers and should check the in-store harvest date themselves, since bottle freshness varies by batch.",
+      "buy_link": "https://www.walmart.com/ip/Carapelli-Original-Extra-Virgin-Olive-Oil-16-9-fl-oz/649662280",
+      "amazon_link": "",
+      "amazon_asin": "",
+      "source_links": ["https://www.americastestkitchen.com/taste_tests/2649-the-best-supermarket-extra-virgin-olive-oil"]
+    },
+    {
+      "place": 2,
+      "product_title": "Cobram Estate California Select Extra Virgin Olive Oil",
+      "manufacturer": "Cobram Estate",
+      "capacity": "12.7 fl oz (375 mL); also sold on Amazon as a 2-pack (750 mL total)",
+      "typical_price": 13.00,
+      "current_price": 13.00,
+      "price_type": "regular",
+      "best_for": "Shoppers who want a nationally-corroborated, certified, harvest-dated EVOO available at mainstream retailers",
+      "why_it_ranks_here": "Unlike Carapelli, this oil is independently corroborated across three separate test panels — Wirecutter ('herbaceous and peppery,' top pick), Consumer Reports (4/5, 'nutty, with both fruit and herbal flavors'), and Serious Eats ('balanced finishing oil,' complex and fruity). It carries a printed harvest date, is certified by the California Olive Oil Council, and has a convenient built-in pop-up pour spout — a detail multiple reviewers called out.",
+      "edge_over_next": "Beats Graza Sizzle on durability/construction: Cobram Estate is sold in dark glass with COOC/Olive Oil Commission of California certification, which protects against light-driven oxidation better than Graza's plastic squeeze bottle, and gives more assurance of tested chemistry. Graza still edges it slightly on raw tasted flavor intensity in Wirecutter's panel.",
+      "important_tradeoff": "Amazon sells this specific line in a 2-bottle multipack rather than as a single bottle, so per-unit pricing/quantity varies from single-bottle retail listings; buyers should confirm pack size before ordering.",
+      "buy_link": "https://www.walmart.com/ip/Cobram-Estate-100-California-Select-Extra-Virgin-Olive-Oil-12-7-fl-oz-Glass-Bottle/486280096",
+      "amazon_link": "https://www.amazon.com/dp/B078HPGCQB",
+      "amazon_asin": "B078HPGCQB",
+      "source_links": [
+        "https://www.nytimes.com/wirecutter/reviews/best-olive-oil/",
+        "https://www.consumerreports.org/health/cooking-oils/how-to-choose-a-good-extra-virgin-olive-oil-a8557720032/",
+        "https://www.seriouseats.com/best-extra-virgin-olive-oil-7964587"
+      ]
+    },
+    {
+      "place": 3,
+      "product_title": "Graza Sizzle Extra Virgin Olive Oil",
+      "manufacturer": "Graza",
+      "capacity": "25.3 fl oz (750 mL)",
+      "typical_price": 15.00,
+      "current_price": 15.00,
+      "price_type": "regular",
+      "best_for": "An affordable, widely-available squeeze-bottle EVOO for everyday cooking, roasting, and pasta",
+      "why_it_ranks_here": "Wirecutter's overall top pick among 28 tested oils — testers described it as 'balanced, green, and peppery' with a grassy, tomato-plant aroma and a pleasant piquant finish. Consumer Reports also rated it 4/5 ('pungent and bitter, with big, grassy flavor'). Made from 100% Picual olives from Jaén, Spain, single-origin sourcing, and priced competitively (~59¢/oz).",
+      "edge_over_next": "Edges out Bertolli Extra Virgin Olive Oil Rich Taste — the strongest product left off this list — on cooking performance and freshness: Graza uses a single-origin Spanish Picual olive with more consistent sourcing, versus Bertolli's variable global blend (Spain, Tunisia, Portugal, etc., which Wirecutter noted causes batch-to-batch flavor variance). Bertolli wins decisively on price (about half Graza's cost per ounce) but that value edge isn't enough to overcome the flavor/consistency gap at the weights used here.",
+      "important_tradeoff": "Sold in a plastic bottle, so Graza recommends finishing within about three months to avoid quality loss; Reviewed's most recent tasting round found a decline in quality/color in Graza's sibling Drizzle product compared to its launch batches, a signal that batch consistency should be monitored even though Sizzle itself wasn't the oil flagged.",
+      "buy_link": "https://www.graza.co/products/sizzle",
+      "amazon_link": "https://www.amazon.com/dp/B09WV8DBPV",
+      "amazon_asin": "B09WV8DBPV",
+      "source_links": [
+        "https://www.nytimes.com/wirecutter/reviews/best-olive-oil/",
+        "https://www.consumerreports.org/health/cooking-oils/how-to-choose-a-good-extra-virgin-olive-oil-a8557720032/"
+      ]
+    }
+  ],
+  "category_rankings": [],
+  "ranking_criteria": [
+    {
+      "criterion": "Cooking performance",
+      "weight": 0.25,
+      "what_was_considered": "Blind-tasting results for flavor (fruitiness, grassiness, bitterness, pungency), freshness at harvest, and suitability for sautéing, dipping, and finishing, as reported by ATK, Wirecutter, Consumer Reports, and Serious Eats panels.",
+      "effect_on_ranking": "Drove the top-3 selection: Carapelli's fresher harvest date and balanced flavor won ATK's blind test outright, while Cobram Estate and Graza's consistently strong tasting scores across multiple independent panels kept them ahead of oils that scored well in only one test or had documented flavor defects."
+    },
+    {
+      "criterion": "Durability and construction",
+      "weight": 0.20,
+      "what_was_considered": "Bottle/packaging material (dark glass vs. clear glass vs. plastic), resistance to light and oxygen exposure, and presence of harvest-date labeling as an oxidation/freshness indicator.",
+      "effect_on_ranking": "Favored glass-bottled, harvest-dated oils (Carapelli, Cobram Estate) over plastic-bottled Graza and Bertolli, which testers and manufacturers themselves say should be used up within about three months to avoid degradation."
+    },
+    {
+      "criterion": "Ease of use",
+      "weight": 0.15,
+      "what_was_considered": "Pour-spout design, drip control, cap/dispenser convenience, and clarity of harvest-date labeling for at-a-glance freshness checks.",
+      "effect_on_ranking": "Cobram Estate's built-in pop-up spout was repeatedly praised and contributed to its #2 placement; Graza's squeeze bottle was also noted as convenient for cooking use."
+    },
+    {
+      "criterion": "Versatility",
+      "weight": 0.15,
+      "what_was_considered": "Suitability across dipping, salad dressing, finishing, and light stovetop cooking, since all three picks are marketed and tested as all-purpose oils.",
+      "effect_on_ranking": "All three finalists perform well across these uses; Graza's 'Sizzle' formulation is explicitly tuned for higher-heat cooking, keeping it competitive despite ranking third overall."
+    },
+    {
+      "criterion": "Value at typical price",
+      "weight": 0.15,
+      "what_was_considered": "Regular (non-sale) price per ounce weighed against tasted quality and freshness, using prices reported by ATK, Wirecutter, and Consumer Reports.",
+      "effect_on_ranking": "Kept ultra-premium boutique oils (e.g., Wonder Valley, Brightland, kyoord, at $2.80–$3.00+/oz) out of the top three despite good flavor scores, since none decisively outperformed the finalists enough to justify 3–5x the price per ounce."
+    },
+    {
+      "criterion": "Capacity and shape",
+      "weight": 0.05,
+      "what_was_considered": "Bottle size relative to realistic use-before-oxidation windows (experts recommend roughly 12–25 oz bottles for households that won't finish oil within weeks).",
+      "effect_on_ranking": "Minor factor since all three finalists fall within a sensible 12.7–25.3 oz range; not a differentiator among them."
+    },
+    {
+      "criterion": "Brand support and warranty",
+      "weight": 0.05,
+      "what_was_considered": "Producer transparency (single-origin vs. blended sourcing), third-party certifications (California Olive Oil Council, PDO/PGI), and consistency of supply.",
+      "effect_on_ranking": "Gave Cobram Estate a slight edge over Graza due to COOC/Olive Oil Commission of California certification and single-region sourcing; a minor tie-breaker rather than a decisive factor."
+    }
+  ],
+  "methodology_note": "The supplied RANKING WEIGHTS rubric (enamel quality, lid fit, handle construction, etc.) is written for cookware, not a consumable liquid product, so criteria were reinterpreted in olive-oil terms (packaging/oxidation resistance in place of 'durability,' pour-spout/labeling in place of 'ease of use,' etc.) while preserving the stated weights. Olive oil as a class genuinely could be split into meaningful sub-groups — everyday supermarket EVOO versus ultra-premium/boutique finishing oil versus bulk bag-in-box cooking oil — since price per ounce and use-case differ enormously (roughly $0.35–$3.00+ per ounce across the sources reviewed). Per instructions, no such categories were invented; the three picks above represent the best all-purpose, widely-purchasable extra-virgin olive oils across the entire class based on convergence of independent blind tastings (ATK, Wirecutter, Consumer Reports, Serious Eats), with the ATK-supplied source given priority for the #1 slot per sourcing rules. A curator may want to ask for 'everyday' vs. 'premium/finishing' oil categories given how differently priced and used these two segments are."
+}

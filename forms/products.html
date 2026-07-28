@@ -453,8 +453,9 @@
           ${rows}
           ${approved ? '' : `<div style="margin-top:10px">
             <button type="button" class="ed-btn" id="cuApprove">Approve placement</button>
-            <span class="muted" style="font-size:.8rem;margin-left:8px">A placement drives a buy
-              link — nothing earns off an unread automated ranking.</span></div>`}
+            <span class="muted" style="font-size:.8rem;margin-left:8px">Confirms this product
+              really belongs where the ranking put it. A placement drives a buy link, so
+              nothing earns off an automated ranking no one has read.</span></div>`}
         </section>`;
     }
 
@@ -516,6 +517,10 @@
       const alt = r.cheaper_alternative;
       return `
         <section class="ed-block"><h3 class="ed-block-label">RealRank <span class="muted" style="font-weight:400">score</span> + RealStory <span class="muted" style="font-weight:400">assessment</span></h3>
+          ${!rs ? `<p class="muted" style="font-size:.82rem;margin:0 0 8px">Owner score only —
+            computed from the real star histogram, which is arithmetic and needs no sign-off.
+            The written assessment (verdict, pros/cons, attributed findings) comes from
+            <em>Run RealRank + RealStory</em> above and is what gets approved.</p>` : ''}
           <div class="rr-head">
             ${score}
             <div>
@@ -528,9 +533,16 @@
               </div>
             </div>
             <div style="margin-left:auto;text-align:right">
-              ${(rs && rs.approved_by)
+              ${!rs
+                // Score WITHOUT a write-up — the state a curated-collection run leaves, since
+                // it computes the owner score but never writes a RealStory. Offering "approve"
+                // here asked to sign off on something that does not exist, and 404'd.
+                ? `<span class="muted" style="font-size:.78rem">score only —<br>no write-up yet</span>`
+                : rs.approved_by
                 ? `<span class="rr-ok">✔ approved</span><div class="muted" style="font-size:.75rem">${escapeHtml(rs.approved_by)}</div>`
-                : `<button type="button" class="ed-btn" id="rrApprove">Approve for use</button>`}
+                : `<button type="button" class="ed-btn" id="rrApprove">Approve write-up</button>
+                   <div class="muted" style="font-size:.7rem;max-width:150px;margin-top:3px">
+                     Clears the write-up below to be published.</div>`}
             </div>
           </div>
           <p class="rr-cov">${cov || '<span class="muted">no coverage recorded</span>'}</p>
