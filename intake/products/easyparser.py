@@ -13,11 +13,16 @@ applies retroactively to every stored collection, which storing decomposed param
 
 **DETAIL's `rating_breakdown`: the zeros are fixed, but it is STILL NOT USABLE (2026-07-28).**
 
-Originally it returned all zeros on every bucket. EasyParser has since shipped real counts —
-and four of the five buckets are exact against the widget — but `two_star` comes back as a
-copy of `five_star` (measured on B0029JQEIC, 4/4 identical calls: 2★ = 10,345/89% where the
-truth is 0). The response contradicts itself, percentages summing to 189 and counts to 21,969
-against its own stated `ratings_total` of 11,624.
+Originally it returned all zeros on every bucket. EasyParser has since shipped real counts,
+and where every star has ratings the result is EXACT: B00006JSUB matches the widget on all
+five buckets and sums to 100% / its own ratings_total.
+
+The remaining fault is narrow: **a bucket whose true count is ZERO comes back carrying another
+bucket's value.** On B0029JQEIC (2★ genuinely 0) it returns 10,345 / 89% — a copy of
+`five_star` — over 4/4 identical calls, while the other four buckets are exact. Reads like an
+extractor that skips the empty bar in Amazon's markup and leaves a previous value in place,
+rather than emitting 0. The response then contradicts itself: percentages sum to 189 and
+counts to 21,969 against its own stated `ratings_total` of 11,624.
 
 That is a WORSE shape than the zeros it replaced. Zeros announce their own absence; plausible
 counts do not. 2-star ratings are detractors in `realrank_index`, so believing this scores the
@@ -184,10 +189,14 @@ def _breakdown_fault(bd: dict, counts: list, ratings_total) -> str:
       * the five percentages must sum to ~100;
       * the five counts must sum to ~`ratings_total`, which the SAME response states.
 
-    Measured 2026-07-28 on B0029JQEIC, four consecutive calls, identical every time:
-    `two_star` came back as a byte-copy of `five_star` (10,345 / 89%) where the truth is 0.
-    Percentages summed to 189 and counts to 21,969 against a stated total of 11,624 — the
-    response contradicts itself, which is what makes it catchable without knowing the answer.
+    Measured 2026-07-28. B00006JSUB (every star has ratings) is EXACT on all five buckets and
+    passes cleanly. B0029JQEIC has a genuinely-zero 2★ bucket and returns 10,345 / 89% there —
+    a copy of `five_star` — 4/4 identical calls. Percentages then sum to 189 and counts to
+    21,969 against a stated total of 11,624: the response contradicts itself, which is what
+    makes it catchable without knowing the answer.
+
+    Note what this does NOT catch: a corruption that happens to preserve both sums. The check
+    is a smoke alarm, not a proof of correctness.
 
     This shape is more dangerous than the all-zeros it replaced. Zeros announce their own
     absence; plausible counts do not, and 2-star ratings are DETRACTORS in the index — the
