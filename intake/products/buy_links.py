@@ -146,7 +146,21 @@ AMAZON_COMMISSION = {"Kitchen & Dining": 0.045}
 
 
 def amazon_tag() -> str:
-    """This property's Amazon tag, from the system record."""
+    """This property's Amazon tag.
+
+    Read order: the `amazon` affiliate PROGRAM row (canonical — an Associates id is
+    per-program membership), then the system record it was seeded from, then the constant
+    above. The system_config keys stay as seed + fallback until the program row is
+    confirmed in use; retiring them early would leave a fresh install with no tag at all.
+    """
+    try:
+        from intake.products import affiliate_programs as ap
+        prog = ap.program_named("amazon") or {}
+        tag = (prog.get("tracking_id") or prog.get("account_ref") or "").strip()
+        if tag:
+            return tag
+    except Exception:
+        pass
     try:
         from input.pipeline.system_config import get_setting
         return (get_setting("amazon_tracking_id", _FALLBACK_TAG) or _FALLBACK_TAG).strip()
@@ -189,11 +203,41 @@ def amazon_affiliate_url(url: str, *, subtag: str = "", tag: str = "") -> str:
     return f"{clean}?{urlencode(params)}"
 
 
-def affiliate_url(url: str, *, subtag: str = "") -> str:
-    """Affiliate link for ANY retailer. Only Amazon is wired today — every other retailer
-    returns the clean destination unchanged, so a link is always usable even before its
-    network is set up, and never carries a foreign tag in the meantime."""
-    return amazon_affiliate_url(url, subtag=subtag) if "amazon." in (url or "") else clean_url(url)
+def affiliate_url(url: str, *, subtag: str = "", click_id: str = "",
+                  conn: sqlite3.Connection | None = None) -> str:
+    """Affiliate link for ANY retailer, from the `affiliate_programs` table.
+
+    Was hard-wired to Amazon, which meant 60% of the offers we hold earned nothing (35 of
+    58, measured 2026-07-28 — Sur La Table 8, Williams Sonoma 8, Walmart 7). A retailer is
+    monetized by adding a row, not by editing this function.
+
+    **A retailer with no usable program gets the CLEAN DESTINATION.** That is the same
+    answer as before and it is deliberate: a link is always usable before its network is
+    set up, never carries a foreign tag in the meantime, and a half-built affiliate URL —
+    blank publisher id, unrendered placeholder — would lose the sale and the attribution
+    while looking broken. `affiliate_programs.link_fault()` names the reason for anyone
+    asking why a retailer isn't earning.
+
+    Amazon keeps its own branch: `tag`/`ascsubtag` are Amazon-specific knowledge and live
+    here with the rest of it, while the programs module stays generic.
+    """
+    clean = clean_url(url)
+    if not clean:
+        return ""
+    try:
+        from intake.products import affiliate_programs as ap
+        prog = ap.program_for_url(clean, conn)
+    except Exception:                                          # pragma: no cover
+        prog = None
+    if not prog:
+        return clean
+    if (prog.get("link_strategy") or "").strip().lower() == "amazon_tag":
+        if ap.link_fault(prog, clean, subtag, click_id):
+            return clean
+        return amazon_affiliate_url(
+            clean, subtag=subtag,
+            tag=(prog.get("tracking_id") or prog.get("account_ref") or "").strip())
+    return ap.build_link(prog, clean, subtag=subtag, click_id=click_id) or clean
 
 
 def retailer_name(url: str) -> str:
