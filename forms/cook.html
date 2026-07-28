@@ -1584,6 +1584,28 @@
   // listen, never send to the LLM (which would narrate the step).
   var _BARE_WAKE_RESIDUE = /^(he's|hes|hey|hi|yo|hello|hay|may|my|a|an|the|and|so|well|ok|okay|um+|uh+|hmm+|er|ah|yes|yeah|there|now|please|chef|chefs)$/i;
 
+  // ANOTHER ASSISTANT IS BEING ADDRESSED. A kitchen usually has more than one, and the
+  // 2026-07-28 cook log caught both directions of the confusion: "Alexa set a timer for
+  // three minutes" (with Alexa's own reply captured right after), and "relax instead of
+  // timer for one minute" / "relax the next" — which is "Alexa…" mis-transcribed, since
+  // a-LEX-a and re-LAX are near-homophones to base.en.
+  //
+  // Those were ignored only by luck: no wake word happened to match. Detect them on
+  // PURPOSE instead, for two reasons. A near-miss like "hey Siri" could otherwise trip
+  // our own wake, so Chef would answer a question meant for another device. And the cook
+  // deserves to know WHY nothing happened — silence looks identical to a failed wake,
+  // which is what makes you repeat yourself.
+  //
+  // Deliberately LEADING-anchored: "Alexa, next" is for Alexa, but "hey chef, what did
+  // Alexa say" is a question for us that merely mentions her.
+  var _OTHER_ASSISTANT = new RegExp(
+    "^[\\s,.:;!?-]*(" +
+      "alexa|elexa|alexis|a lexus|relax|the lax|lexa|" +          // Alexa + its mis-hears
+      "(?:hey |hay |ay |a )?siri|hey siri|siri|sirius|syria|" +   // Siri + its mis-hears
+      "(?:hey |ok |okay )?google|hey google|" +
+      "computer" +
+    ")\\b", "i");
+
   // FORGIVING command matcher (was: exact ^anchored$ — rejected "go to the next
   // step", "say that again", "go back one"…, which then silently dead-ended). Now
   // a keyword can sit inside a short utterance with filler around it. Still DELIBERATE:
@@ -1739,6 +1761,15 @@
     }
 
     if(t.length < 2){ vlog('ignored', '(too short)'); setVoiceStatus('listening', _listenHint()); return; }
+
+    // Addressed to Alexa/Siri/Google, not to us. Checked BEFORE the wake test so a
+    // mis-heard "hey Siri" can never trip our own wake word — and say so, because an
+    // unexplained silence is what makes a cook repeat themselves.
+    if(_OTHER_ASSISTANT.test(t)){
+      vlog('ignored', '(that was for another assistant)');
+      setVoiceStatus('listening', '🔇 That one was for your other assistant — say “hey chef” for me');
+      return;
+    }
 
     var hadWake = _WAKE.test(t);
     var cmd = t.replace(_WAKE_G,' ').replace(/\s+/g,' ')
