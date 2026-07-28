@@ -11,12 +11,23 @@ already encodes exactly those in its own query string, so `params_from_url()` tr
 call time and THE CURATOR'S SAVED URL REMAINS THE ARTIFACT — a parser improvement then
 applies retroactively to every stored collection, which storing decomposed params would not.
 
-**DETAIL's `rating_breakdown` comes back ALL ZEROS** — verified on two ASINs whose `rating`
-and `ratings_total` were exactly right. Zeros are the dangerous shape: they read as data
-rather than absence. So `detail()` treats an all-zero breakdown as MISSING and says so, and
-the histogram is sourced from `amazon_widget` instead. The parsing here is kept and wired
-because EasyParser has been asked to fix it — when they do, it lights up with no code
-change.
+**DETAIL's `rating_breakdown`: the zeros are fixed, but it is STILL NOT USABLE (2026-07-28).**
+
+Originally it returned all zeros on every bucket. EasyParser has since shipped real counts —
+and four of the five buckets are exact against the widget — but `two_star` comes back as a
+copy of `five_star` (measured on B0029JQEIC, 4/4 identical calls: 2★ = 10,345/89% where the
+truth is 0). The response contradicts itself, percentages summing to 189 and counts to 21,969
+against its own stated `ratings_total` of 11,624.
+
+That is a WORSE shape than the zeros it replaced. Zeros announce their own absence; plausible
+counts do not. 2-star ratings are detractors in `realrank_index`, so believing this scores the
+USA Pan 1140LF at 48.0 where the truth is 92.1.
+
+So `detail()` now validates the breakdown against the rest of its own response
+(`_breakdown_fault`) and reports `histogram_missing` + `histogram_fault` rather than passing
+it on. The histogram still comes from `amazon_widget`. The parsing stays wired: when the
+two_star bucket is fixed the guard stops firing and it lights up with no further change —
+which is the same standing plan as before, now with a check in front of it.
 
 Key: `EASYPARSER` in the repo-root .env.
 """
@@ -165,11 +176,44 @@ def search_url(url: str, *, pages: int = 1, exclude_sponsored: bool = True) -> d
 #  DETAIL
 # --------------------------------------------------------------------------- #
 
+def _breakdown_fault(bd: dict, counts: list, ratings_total) -> str:
+    """Why this breakdown must not be believed, or "" if it holds together.
+
+    Two checks, both internal to the response — no second vendor required:
+
+      * the five percentages must sum to ~100;
+      * the five counts must sum to ~`ratings_total`, which the SAME response states.
+
+    Measured 2026-07-28 on B0029JQEIC, four consecutive calls, identical every time:
+    `two_star` came back as a byte-copy of `five_star` (10,345 / 89%) where the truth is 0.
+    Percentages summed to 189 and counts to 21,969 against a stated total of 11,624 — the
+    response contradicts itself, which is what makes it catchable without knowing the answer.
+
+    This shape is more dangerous than the all-zeros it replaced. Zeros announce their own
+    absence; plausible counts do not, and 2-star ratings are DETRACTORS in the index — the
+    corrupt histogram scores that pan 48.0 where the truth is 92.1.
+    """
+    if not any(counts):
+        return "all zeros"
+    pct = sum(float((bd.get(k) or {}).get("percentage") or 0) for k in _STAR_KEYS)
+    if pct and abs(pct - 100.0) > 6.0:
+        return f"percentages sum to {pct:.0f}, not ~100"
+    try:
+        total = int(ratings_total or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total and abs(sum(counts) - total) > max(50, 0.10 * total):
+        return f"counts sum to {sum(counts):,} but ratings_total says {total:,}"
+    return ""
+
+
 def detail(asin: str, *, domain: str = ".com") -> dict:
     """Full product detail for one ASIN.
 
-    `histogram` is [] and `histogram_missing` True whenever the breakdown is absent OR all
-    zeros — see the module docstring. Never return zeros as though they were measurements.
+    `histogram` is [] and `histogram_missing` True whenever the breakdown is absent, all
+    zeros, or SELF-CONTRADICTORY (see `_breakdown_fault`); `histogram_fault` says which.
+    Never return a breakdown as though it were a measurement when the response itself
+    disagrees with it.
     """
     try:
         d = _call({"operation": "DETAIL", "domain": domain, "asin": asin,
@@ -179,7 +223,8 @@ def detail(asin: str, *, domain: str = ".com") -> dict:
     p = (d.get("result") or {}).get("detail") or {}
     bd = p.get("rating_breakdown") or {}
     counts = [int((bd.get(k) or {}).get("count") or 0) for k in _STAR_KEYS]
-    missing = not any(counts)
+    fault = _breakdown_fault(bd, counts, p.get("ratings_total"))
+    missing = bool(fault)
     bb = p.get("buybox_winner") or {}
     price = bb.get("price") if isinstance(bb.get("price"), dict) else {}
     return {
@@ -193,6 +238,7 @@ def detail(asin: str, *, domain: str = ".com") -> dict:
         "ratings_total": p.get("ratings_total"),
         "histogram": [] if missing else counts,       # 5..1 counts
         "histogram_missing": missing,
+        "histogram_fault": fault,                     # why, when it was rejected
         "top_reviews": [{"title": (r.get("title") or "").strip(),
                          "rating": r.get("rating"),
                          "body": (r.get("body") or "").strip()[:1200]}

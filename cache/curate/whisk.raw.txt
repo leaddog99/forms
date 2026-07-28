@@ -1,0 +1,116 @@
+{
+  "date_checked": "2025-12-15",
+  "currency": "USD",
+  "product_class": "Whisk (all-purpose kitchen whisk)",
+  "overall_top_three": [
+    {
+      "place": 1,
+      "product_title": "Good Grips 11-Inch Balloon Whisk",
+      "manufacturer": "OXO",
+      "capacity": "11.5 in length, 8.25 in head circumference (not volume-based)",
+      "typical_price": 12.99,
+      "current_price": 12.99,
+      "price_type": "regular",
+      "best_for": "Everyday all-purpose mixing, whipping, sauce-making for most home cooks",
+      "why_it_ranks_here": "America's Test Kitchen's longtime, repeatedly re-confirmed winner (most recently June 2025), and also a top-tier finisher in Serious Eats, Reviewed, TechGearLab, and The Kitchn round-ups — the most consistently top-rated all-purpose whisk across independent testers. Its 10 moderately flexible stainless wires and 'skinny balloon' head give both coverage and agility, and the long, grippy silicone handle keeps it comfortable through long whipping sessions.",
+      "edge_over_next": "Beats the GIR Ultimate Whisk on value and brand track record: OXO has a decades-long reputation and is stocked at more national retailers at a lower typical price (~$13 vs ~$18), while performing equivalently well on cooking tasks in side-by-side tests.",
+      "important_tradeoff": "Bare stainless wires can scratch enameled cast iron or nonstick cookware over time; those users should reach for a silicone-coated whisk instead.",
+      "buy_link": "https://www.oxo.com/11-in-balloon-whisk.html",
+      "amazon_link": "https://www.amazon.com/dp/B00004OCNS",
+      "amazon_asin": "B00004OCNS",
+      "source_links": [
+        "https://www.americastestkitchen.com/equipment_reviews/2449-all-purpose-whisks",
+        "https://www.seriouseats.com/best-whisks-11728337",
+        "https://www.reviewed.com/cooking/best-right-now/best-whisks",
+        "https://www.techgearlab.com/topics/kitchen/best-whisk",
+        "https://www.thekitchn.com/differents-kinds-of-whisks-23186616"
+      ]
+    },
+    {
+      "place": 2,
+      "product_title": "Ultimate Whisk",
+      "manufacturer": "GIR (Get It Right)",
+      "capacity": "11 in length (not volume-based)",
+      "typical_price": 18.00,
+      "current_price": 18.00,
+      "price_type": "regular",
+      "best_for": "Cooks who whip cream or eggs frequently and want maximum wrist comfort",
+      "why_it_ranks_here": "Wirecutter's current top pick after more than 10 hours of testing against 10 competitors, and also singled out by Serious Eats ('Best Ergonomic Whisk') and Reviewed ('Best Overall'). Its springy, plentiful wires whip quickly, and the silicone-coated, counterweighted handle is the most comfortable design tested, reducing wrist fatigue and preventing the whisk from tipping out of a bowl.",
+      "edge_over_next": "Edges out the Misen Stainless Steel Whisk on ease of use and versatility: GIR's silicone-wrapped wires are safe on nonstick and enameled cookware and its handle is rated more comfortable for sustained use, while Misen's bare-steel wires are faster in raw aeration speed but cannot be used on delicate cookware surfaces.",
+      "important_tradeoff": "Costs roughly 40-50% more than the OXO pick with no clear speed advantage in whipping tests, and stock has been intermittent at some retailers.",
+      "buy_link": "https://www.gir.co/products/ultimate-whisk",
+      "amazon_link": "https://www.amazon.com/dp/B07D8PN4R9",
+      "amazon_asin": "B07D8PN4R9",
+      "source_links": [
+        "https://www.nytimes.com/wirecutter/reviews/best-whisk/",
+        "https://www.seriouseats.com/best-whisks-11728337",
+        "https://www.reviewed.com/cooking/best-right-now/best-whisks"
+      ]
+    },
+    {
+      "place": 3,
+      "product_title": "Stainless Steel Whisk",
+      "manufacturer": "Misen",
+      "capacity": "11 in length, 3 in balloon width",
+      "typical_price": 19.99,
+      "current_price": 19.99,
+      "price_type": "regular",
+      "best_for": "Cooks prioritizing raw whipping/aeration speed over nonstick-cookware safety",
+      "why_it_ranks_here": "Serious Eats' most recent and most rigorous head-to-head test (18 whisks compared in 2025) named this the single fastest and most effective performer, producing whipped cream in about 1 minute 20 seconds and handling pastry cream and roux cleanly. Its 5-inch silicone handle keeps it comfortable during vigorous whisking.",
+      "edge_over_next": "Placed ahead of the Winco 12-Inch Piano Wire Whip (Wirecutter's budget pick, Reviewed's Best Value) on cooking performance and ease of use: Misen's silicone-cushioned handle is markedly more comfortable for extended sessions than Winco's bare metal handle, even though Winco is cheaper and prized by professionals for sheer durability.",
+      "important_tradeoff": "Uncoated stainless wires cannot be used safely on enameled or nonstick cookware, and its listed retail price varies widely by seller (near $43 list at some stores vs ~$19-20 at Amazon), making the true 'typical' price less stable than the OXO or GIR picks.",
+      "buy_link": "https://www.sears.com/misen-deluxe-stainless-steel-balloon-whisk-ergonomic-silicone-grip-versatile-cooking-whisk-for-eggs-cream-dishwasher-safe-du/p-A128401818",
+      "amazon_link": "https://www.amazon.com/dp/B09WGTDPN5",
+      "amazon_asin": "B09WGTDPN5",
+      "source_links": [
+        "https://www.seriouseats.com/best-whisks-11728337"
+      ]
+    }
+  ],
+  "category_rankings": [],
+  "ranking_criteria": [
+    {
+      "criterion": "Cooking performance",
+      "weight": 0.25,
+      "what_was_considered": "Speed and quality of whipping cream/eggs, ability to emulsify, scrape fond, and blend batters/sauces as reported in controlled tests (ATK, Serious Eats, Wirecutter).",
+      "effect_on_ranking": "Misen's documented fastest whipping time and OXO/GIR's consistently strong all-task performance kept all three in the top tier; whisks that struggled with aeration (e.g., very wide balloon or flat whisks) were excluded from the overall top three."
+    },
+    {
+      "criterion": "Durability and construction",
+      "weight": 0.20,
+      "what_was_considered": "Wire gauge, epoxy seal at the handle, resistance to splaying, handle construction quality, and reviewer longevity notes.",
+      "effect_on_ranking": "OXO and GIR's sealed, well-built construction supported top placement; this criterion also kept the metal-handled Winco as a near-miss rather than a top-three pick despite its legendary toughness, since ease-of-use losses offset its durability edge."
+    },
+    {
+      "criterion": "Ease of use",
+      "weight": 0.15,
+      "what_was_considered": "Handle grip comfort, weight, length, and fatigue over long whisking sessions.",
+      "effect_on_ranking": "GIR's counterweighted silicone handle and OXO's cushioned grip were decisive advantages over stiffer or metal-handled competitors like Winco."
+    },
+    {
+      "criterion": "Versatility",
+      "weight": 0.15,
+      "what_was_considered": "Suitability across whipping, sauces, batters, roux, and cookware types (including nonstick/enameled safety).",
+      "effect_on_ranking": "GIR's silicone-coated wires gave it a versatility edge over Misen's bare-steel wires, which are restricted from nonstick/enameled use."
+    },
+    {
+      "criterion": "Value at typical price",
+      "weight": 0.15,
+      "what_was_considered": "Typical (non-sale) price relative to performance and expected lifespan.",
+      "effect_on_ranking": "OXO's lower typical price with equivalent performance secured the top spot over pricier GIR and Misen; Winco's rock-bottom price nearly displaced Misen for third but was outweighed by lower ease-of-use scores."
+    },
+    {
+      "criterion": "Capacity and shape",
+      "weight": 0.05,
+      "what_was_considered": "Overall length (11-12 in ideal) and 'skinny balloon' head shape for reaching pan corners while still aerating well.",
+      "effect_on_ranking": "All three finalists fall within the tester-preferred 11-12 inch, moderate-balloon geometry, so this criterion did not separate them significantly."
+    },
+    {
+      "criterion": "Brand support and warranty",
+      "weight": 0.05,
+      "what_was_considered": "Manufacturer history, availability of replacements, and warranty confidence.",
+      "effect_on_ranking": "OXO's decades-long reputation and wide retail distribution gave it a slight edge in this category over the newer GIR and Misen brands."
+    }
+  ],
+  "methodology_note": "The whisk class does contain one meaningful functional split that a curator may want to break out separately: bare stainless-steel whisks (best raw aeration/whipping performance, e.g., OXO, GIR, Misen, Winco) versus silicone-coated whisks (required for nonstick/enameled cookware, e.g., GreenPan, OXO Silicone, but consistently slower and less efficient per Wirecutter and Serious Eats testing). Because no such category was requested, this ranking evaluates the class as a whole and did not select a dedicated nonstick-safe pick; a silicone-coated whisk should be considered as a separate category if the curator serves customers who cook primarily on nonstick/enameled surfaces. The Winco 12-Inch Piano Wire Whip (Wirecutter budget pick, Reviewed Best Value, Serious Eats Best Metal-Handled) was the strongest whisk left out of the overall top three, kept out by lower ease-of-use scores from its uncushioned metal handle despite excellent durability and value."
+}
