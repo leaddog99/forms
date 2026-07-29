@@ -47,7 +47,26 @@ def _read_password() -> str:
         if not pw:
             sys.exit("No password on stdin.")
         return pw
+    if not sys.stdin.isatty():
+        # Best-effort only. On Windows getpass reads the console directly via
+        # msvcrt, so redirected stdin can neither feed it nor signal EOF — it
+        # simply blocks with no console. And sys.stdin.isatty() proved
+        # unreliable under Git Bash (reported True with `< /dev/null`, and
+        # inconsistently across identical runs), so this catches some cases and
+        # not others. The real rule: run it from a real terminal. That also
+        # keeps the password out of any agent transcript.
+        sys.exit(
+            "No terminal attached, so the password can't be prompted for.\n"
+            "Run this directly in PowerShell or cmd on the server:\n"
+            "    python set_master_password.py\n"
+            "Or pipe it (goes into shell history — rotate afterwards):\n"
+            "    echo <password> | python set_master_password.py --stdin"
+        )
+    tries = 0
     while True:
+        tries += 1
+        if tries > 5:
+            sys.exit("Too many attempts — nothing was written.")
         pw = getpass.getpass("New Master password: ")
         if len(pw) < 12:
             print("  Too short — use at least 12 characters. This is the only")
