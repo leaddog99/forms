@@ -29,15 +29,26 @@ RESTART THE SERVICE afterwards (the process reads .env at import):
 from __future__ import annotations
 
 import getpass
+import importlib.util
 import os
 import secrets
 import shutil
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from input.pipeline import auth  # noqa: E402
+_HERE = os.path.dirname(os.path.abspath(__file__))
 
-ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+# Load input/pipeline/auth.py BY PATH rather than `from input.pipeline import
+# auth`. The package __init__ pulls in url_scoring -> dotenv, so the normal
+# import needs the full venv — and this script must run on a bare system python.
+# Setting the admin password is the first thing a fresh install does, possibly
+# before any dependencies exist; auth.py itself is stdlib-only (dotenv is
+# optional inside it), so importing the single file has no requirements at all.
+_spec = importlib.util.spec_from_file_location(
+    "_bcc_auth", os.path.join(_HERE, "input", "pipeline", "auth.py"))
+auth = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(auth)
+
+ENV_PATH = os.path.join(_HERE, ".env")
 KEYS = ("BCC_MASTER_PASSWORD", "BCC_MASTER_TOKEN_SECRET")
 
 
