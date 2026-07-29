@@ -1250,8 +1250,14 @@ async def cook_listen(audio: UploadFile = File(...)):
     host. Degrades to a friendly 503 if the model can't load/transcribe."""
     data = await audio.read()
     try:
+        from starlette.concurrency import run_in_threadpool
         from cook_stt import transcribe
-        text = transcribe(data)
+        # OFF the event loop. transcribe() is ~420ms of CPU-bound work behind a
+        # global model lock (measured 2026-07-29, base.en/int8: 414-478ms, flat
+        # across 1-3s clips because Whisper pads to a 30s window). Called inline
+        # in an `async def` it froze EVERY endpoint for that whole window — one
+        # user never sees it, three concurrent cooks do.
+        text = await run_in_threadpool(transcribe, data)
     except Exception as e:
         print(f"[ERROR] /cook/listen: {e}")
         raise HTTPException(status_code=503, detail="Speech recognition is unavailable.")
