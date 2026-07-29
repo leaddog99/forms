@@ -230,8 +230,48 @@
       try {
         localStorage.setItem('app:self_user_id', String(uid));
         localStorage.setItem('sidebar:user_id', String(uid));
+        // Switching to a member drops any curator token — don't leave an owner
+        // grant lying in localStorage after logging out of Master.
+        if (String(uid) !== '0') localStorage.removeItem('app:master_token');
       } catch (e) { /* private mode */ }
       window.location.href = '/forms/recipe_form_styled.html';
+    }
+
+    async function loginAsMaster(){
+      // Master (uid 0) is password-gated as of 2026-07-29. The header alone used
+      // to grant owner — admin_ui/edit_master/delete_master/manage_users — which
+      // on a public hostname was a full admin bypass. Exchange the password for
+      // a short-lived token, then log in normally.
+      const hint = $('#masterHint');
+      const pw = $('#masterPw');
+      const show = (msg, bad) => {
+        if (!hint) return;
+        hint.textContent = msg;
+        hint.style.color = bad ? 'var(--danger, #c0392b)' : 'var(--muted, #666)';
+      };
+      if (!pw || !pw.value) { show('Enter the Master password.', true); pw && pw.focus(); return; }
+      show('Checking…');
+      try {
+        const r = await fetch('/auth/master', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw.value })
+        });
+        if (r.status === 503) {
+          const d = await r.json().catch(() => ({}));
+          show(d.detail || 'No master password is configured. Run: python set_master_password.py', true);
+          return;
+        }
+        if (r.status === 429) { show('Too many attempts. Wait 15 minutes.', true); return; }
+        if (!r.ok) { show('Incorrect password.', true); pw.value = ''; pw.focus(); return; }
+        const { token } = await r.json();
+        if (!token) { show('Server returned no token.', true); return; }
+        try { localStorage.setItem('app:master_token', token); } catch (e) { /* private mode */ }
+        pw.value = '';
+        login(0);
+      } catch (e) {
+        show('Could not reach the server: ' + e.message, true);
+      }
     }
 
     async function doSave(u){
@@ -285,12 +325,20 @@
         <p class="ed-submeta">The curator identity — works like any user, but saves to the master collection and unlocks the admin tools.</p>
         <section class="ed-block">
           <h3 class="ed-block-label">Access</h3>
-          <div class="ed-callout info"><span class="mark">○</span><span>Log in as <strong>Master</strong> to curate. It behaves exactly like a normal login (same recipe form), except saves land in the <strong>master collection</strong> and the <strong>admin pages</strong> (Domains, Dishes, Chapters, Jobs, System…) become available. It’s a reserved identity (user&nbsp;0), not a row in this table, so there’s nothing to edit here.</span></div>
+          <div class="ed-callout info"><span class="mark">○</span><span>Log in as <strong>Master</strong> to curate. Saves land in the <strong>master collection</strong> and the <strong>admin pages</strong> (Domains, Dishes, Chapters, Jobs, System…) become available. It’s a reserved identity (user&nbsp;0), not a row in this table, so there’s nothing to edit here. <strong>Password required</strong> — unlike a member login, which only needs picking a name. If it reports that no password is configured, run <code>python set_master_password.py</code> on the server and restart.</span></div>
         </section>
         <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
+          <div class="ed-field" style="max-width:340px;margin:0 0 14px">
+            <label for="masterPw">Master password</label>
+            <input id="masterPw" type="password" autocomplete="current-password"
+                   placeholder="Required" spellcheck="false">
+            <div id="masterHint" style="margin-top:6px;font-size:13px;color:var(--muted,#666)"></div>
+          </div>
           <button type="button" class="ed-btn primary" id="masterLoginBtn">Log in as Master</button>
         </div>`;
-      $('#masterLoginBtn').addEventListener('click', () => login(0));
+      $('#masterLoginBtn').addEventListener('click', loginAsMaster);
+      const pwEl = $('#masterPw');
+      if (pwEl) pwEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') loginAsMaster(); });
     }
 
     function renderCreate(){

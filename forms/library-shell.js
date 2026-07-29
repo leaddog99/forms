@@ -77,6 +77,15 @@
         init = init ? Object.assign({}, init) : {};
         const h = new Headers(init.headers || {});
         if (!h.has('X-Self-User-Id')) h.set('X-Self-User-Id', uid);
+        // Master (uid 0) needs a token as well as the id — the header alone no
+        // longer grants owner (it used to, which on a public hostname was a
+        // full admin bypass). Minted by POST /auth/master, see users.html.
+        if (uid === '0' && !h.has('X-Master-Token')) {
+          try {
+            const t = localStorage.getItem('app:master_token');
+            if (t) h.set('X-Master-Token', t);
+          } catch (e) { /* private mode */ }
+        }
         init.headers = h;
       }
       return _origFetch(input, init);

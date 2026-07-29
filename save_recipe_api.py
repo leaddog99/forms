@@ -2096,10 +2096,66 @@ from input.pipeline import auth as auth_lib  # noqa: E402
 def _resolve_caller(request: Request) -> Optional[dict]:
     """Return the user dict for the caller, or None if no/invalid
     self-user-id header. Helper for endpoints that need to know who's
-    calling."""
+    calling.
+
+    uid 0 (Master/curator) ALSO requires a valid X-Master-Token — see
+    input/pipeline/auth.py. The header by itself used to be enough, which on a
+    public hostname was a complete admin bypass."""
     header = request.headers.get("x-self-user-id")
+    master_token = request.headers.get("x-master-token")
     with _db() as conn:
-        return auth_lib.resolve_user(conn, header)
+        return auth_lib.resolve_user(conn, header, master_token)
+
+
+# Brute-force throttle for POST /auth/master. scrypt already costs ~100ms per
+# attempt, but a password endpoint reachable from the internet deserves an
+# explicit ceiling. In-process is sufficient: one uvicorn worker today, and the
+# real perimeter is Cloudflare Access.
+_MASTER_FAILS: dict[str, list[float]] = {}
+_MASTER_FAIL_WINDOW = 900     # 15 min
+_MASTER_FAIL_MAX = 8
+
+
+def _master_throttled(ip: str) -> bool:
+    now = time.time()
+    hits = [t for t in _MASTER_FAILS.get(ip, []) if now - t < _MASTER_FAIL_WINDOW]
+    _MASTER_FAILS[ip] = hits
+    return len(hits) >= _MASTER_FAIL_MAX
+
+
+@app.post("/auth/master")
+async def auth_master(request: Request):
+    """Exchange the master password for a short-lived curator token.
+
+    Body: {password}. Returns {token, expires_in} on success. The client stores
+    the token and sends it as X-Master-Token alongside X-Self-User-Id: 0.
+
+    Returns 503 when no password is configured — that is the fail-closed state,
+    not an error to route around. Set one with: python set_master_password.py"""
+    ip = (request.client.host if request.client else "?") or "?"
+    if _master_throttled(ip):
+        raise HTTPException(status_code=429,
+                            detail="Too many attempts. Wait 15 minutes and try again.")
+    if not auth_lib.master_password_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="No master password is configured on this instance. "
+                   "Run: python set_master_password.py")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    password = (payload or {}).get("password") or ""
+    if not auth_lib.verify_master_password(password):
+        _MASTER_FAILS.setdefault(ip, []).append(time.time())
+        print(f"[AUTH] master login FAILED from {ip}")
+        raise HTTPException(status_code=401, detail="Incorrect password.")
+    token = auth_lib.mint_master_token()
+    if not token:
+        raise HTTPException(status_code=503, detail="Master token secret unavailable.")
+    _MASTER_FAILS.pop(ip, None)
+    print(f"[AUTH] master login OK from {ip}")
+    return {"token": token, "expires_in": auth_lib.MASTER_TOKEN_TTL}
 
 
 def _require_perm(request: Request, perm: str) -> dict:
@@ -3872,11 +3928,15 @@ def list_system_config_endpoint():
 
 
 @app.post("/system-config")
-def update_system_config_endpoint(payload: dict = Body(...)):
+def update_system_config_endpoint(request: Request, payload: dict = Body(...)):
     """Update setting value(s). Accepts either a single {key, value} or a bulk
     {updates: {key: value, ...}}. Unknown keys are rejected; read-only keys are
     refused. Returns the full settings list so the UI re-renders fresh."""
-    # TODO: gate with _require_perm(request, "edit_master") before public exposure.
+    # GATED 2026-07-29 (was a TODO while this was dev-only). `configure_system`
+    # rather than the TODO's `edit_master`: this writes the instance record —
+    # including the Amazon Associates tracking IDs — which is owner-level, not
+    # curator-level. See input/pipeline/auth.py ROLE_PERMISSIONS.
+    _require_perm(request, "configure_system")
     from input.pipeline.system_config import (
         ensure_system_config_table, set_setting, list_settings,
     )
@@ -4120,10 +4180,11 @@ def list_domains_endpoint():
 
 
 @app.post("/domains")
-def create_domain_endpoint(payload: dict = Body(...)):
+def create_domain_endpoint(request: Request, payload: dict = Body(...)):
     """Create a curator-defined domain row (host is the key)."""
-    # TODO: gate with _require_perm(request, "edit_master") when the admin
-    # surface is exposed publicly — ungated in dev to match the chapters editor.
+    # GATED 2026-07-29. The "when exposed publicly" condition in the old TODO
+    # was already true — the app has been on recipes.tbotb.com.
+    _require_perm(request, "edit_master")
     from input.pipeline import domains_lib
     host = (payload.get("domain") or "").strip()
     if not host:
@@ -5236,11 +5297,13 @@ def cancel_job_endpoint(job_id: int):
 
 
 @app.post("/domains/{domain}/enrich")
-def enrich_domain_endpoint(domain: str):
+def enrich_domain_endpoint(request: Request, domain: str):
     """Quick Haiku profile of a domain — story, language, country, cuisine
     focus, logo. Returns the SUGGESTED fields (does not save); the editor
     populates them so the curator can review + Save. Token-journaled."""
-    # TODO: gate with _require_perm when exposed publicly (see POST /domains).
+    # GATED 2026-07-29. Doubly warranted: curator surface AND it spends LLM
+    # tokens on our account, so an open version is a billable endpoint.
+    _require_perm(request, "edit_master")
     from input.pipeline import domains_lib
     from extract.domain_enrich import enrich_domain
     try:
@@ -5291,9 +5354,10 @@ def deep_enrich_domain_endpoint(domain: str):
 
 
 @app.patch("/domains/{domain}")
-def patch_domain_endpoint(domain: str, payload: dict = Body(...)):
+def patch_domain_endpoint(request: Request, domain: str, payload: dict = Body(...)):
     """Update editable fields on a domain row."""
-    # TODO: gate with _require_perm when exposed publicly (see POST /domains).
+    # GATED 2026-07-29 (see POST /domains).
+    _require_perm(request, "edit_master")
     try:
         from input.pipeline import domains_lib
         with _db() as conn:
