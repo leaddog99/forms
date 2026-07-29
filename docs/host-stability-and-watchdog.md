@@ -54,15 +54,20 @@ Everything points one way:
 
 ### Frequency, and it is accelerating
 
-14 unexpected shutdowns since 2026-04-14:
+11 spontaneous shutdowns between 2026-05-10 and 2026-07-29. The log holds 13
+Kernel-Power Event 41 records; 2026-04-14 and 2026-05-21 carry a real
+`PowerButtonTimestamp` (the power button was pressed) and are excluded:
 
 ```
 4/14 16:19 · 5/10 13:12 · 5/21 12:02 · 5/30 12:51 · 6/8 00:29 · 6/12 01:34
 6/16 20:34 · 6/22 21:36 · 6/23 04:18 · 6/25 14:06 · 7/10 11:25 · 7/24 22:04 · 7/29 01:28
 ```
 
-Only **two** recorded a bugcheck code (6/12 and 7/29, both `0x101`). The other twelve
+Only **two** recorded a bugcheck code (6/12 and 7/29, both `0x101`). The other eleven
 logged `BugcheckCode = 0` — a total hang with nothing written at all.
+
+Run `kernel_power_check.bat` for the live table; the generated exhibit is
+`warranty-evidence/crash-evidence.txt`.
 
 ### Why it never restarted by itself
 

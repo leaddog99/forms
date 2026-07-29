@@ -5,7 +5,7 @@ the Intel claim that follows it. Technical backing and the full crash history li
 [host-stability-and-watchdog.md](host-stability-and-watchdog.md).
 
 **Be straight about the coverage dates.** Best Buy Protection lapsed 2025-11-21 and the
-documented crash history starts 2026-04-14. Saying so up front costs nothing — they will
+documented crash history starts 2026-05-10. Saying so up front costs nothing — they will
 see the dates anyway — and everything else in the submission is verifiable, which is
 what makes the argument worth reading. Do not imply an in-window failure.
 
@@ -23,7 +23,7 @@ what makes the argument worth reading. Do not imply an in-window failure.
 | Protection | Monthly Best Buy Protection, up to 24 mo., SKU `6420466` — lapsed **2025-11-21** |
 | Membership | My Best Buy Total, ~$200/yr, **active and continuously paid since purchase** |
 
-**Fault:** 14 unexpected shutdowns since 2026-04-14, now roughly every 5 days, always at
+**Fault:** 11 spontaneous shutdowns between 2026-05-10 and 2026-07-29, now roughly every 5 days, always at
 idle. Windows recorded bugcheck **`0x101 CLOCK_WATCHDOG_TIMEOUT`** (a CPU core ceasing to
 respond to interrupts) on **2026-06-12** and **2026-07-29**. On 2026-07-29 the machine
 crashed at 01:28 and could not restart itself — it stayed dead ~12 hours until powered on
@@ -49,7 +49,7 @@ firmware throughout.
 > Shift Instability" defect affecting Intel 13th/14th Gen desktop processors — the defect
 > Intel extended its CPU warranty from 3 to 5 years to cover.
 >
-> The machine has had 14 unexpected shutdowns since April 2026, now about every 5 days,
+> The machine has had 11 spontaneous shutdowns since May 2026, now about every 5 days,
 > always while idle. Windows recorded bugcheck 0x101 CLOCK_WATCHDOG_TIMEOUT — a CPU core
 > ceasing to respond — on 6/12/2026 and 7/29/2026. On 7/29 it crashed at 1:28 AM and
 > could not restart itself; it sat dead for 12 hours.
@@ -61,7 +61,7 @@ firmware throughout.
 > overclocking involved.
 >
 > I understand my Best Buy Protection (up to 24 months) lapsed on 11/21/2025, and my
-> documented crash log begins April 2026. I raise it because this is a progressive latent
+> documented crash log begins May 2026. I raise it because this is a progressive latent
 > defect — the degradation accumulates over the life of the chip and only becomes
 > symptomatic once it crosses a threshold, so the damage was building during the covered
 > period. I have been a continuously paying My Best Buy Total member since the purchase.
@@ -77,7 +77,7 @@ firmware throughout.
 > November 21, 2023. I've been a My Best Buy Total member continuously since then.
 >
 > **The failure.** The system shuts down without warning, always while idle, and has done
-> so 14 times since April 2026 — currently about every five days. On July 29 it crashed at
+> so 11 times since May 2026 — currently about every five days. On July 29 it crashed at
 > 1:28 AM and could not restart itself; it sat dead until I powered it on by hand twelve
 > hours later. Windows recorded the crash as bugcheck 0x101 CLOCK_WATCHDOG_TIMEOUT, which
 > means a processor core stopped responding to interrupts.
@@ -102,7 +102,7 @@ firmware throughout.
 >
 > **On coverage.** I'm aware the Monthly Best Buy Protection on this order ran up to 24
 > months and lapsed on November 21, 2025, and that my documented crash history begins in
-> April 2026. I'm raising it anyway because of how this particular defect works: the
+> May 2026. I'm raising it anyway because of how this particular defect works: the
 > degradation is cumulative across the life of the chip and only produces visible symptoms
 > once it passes a threshold. The damage was accumulating throughout the covered period —
 > what changed afterward was only that it became severe enough to crash the machine. This
