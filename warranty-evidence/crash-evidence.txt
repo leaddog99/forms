@@ -1,0 +1,53 @@
+CRASH EVIDENCE - MARLEY_SVR
+Generated 2026-07-29 14:44 from the Windows System event log
+
+SYSTEM
+  Model / SKU  : HP ENVY TE01-4xxx / 7H0U6AA#ABA
+  Serial       : 2MO334319K
+  Processor    : 13th Gen Intel(R) Core(TM) i7-13700
+  BIOS         : F.45 dated 2025-10-14
+  Microcode    : 0x12F  (Intel's latest Vmin-shift revision)
+  Purchased    : 2023-11-21, Best Buy Framingham MA, order BBY01-806817898714
+
+SUMMARY
+  Kernel-Power Event 41 records in log : 13
+  Excluded (power button was pressed)  : 2
+  SPONTANEOUS shutdowns                : 11
+  Spontaneous AFTER the BIOS fix       : 4   <-- proves the fix did not hold
+  Range                                : 2026-05-10 to 2026-07-29
+
+BIOS F.40 -> F.45 applied 2026-06-23 (Intel microcode 0x12F, the vendor fix for this defect)
+
+ALL KERNEL-POWER EVENT 41 RECORDS
+
+When                BugcheckCode Meaning                PowerButton        Phase
+----                ------------ -------                -----------        -----
+2026-07-29 13:40:53 0x101        CLOCK_WATCHDOG_TIMEOUT no                 POST-FIX
+2026-07-24 22:25:44 0 (none)     hard hang - no dump    no                 POST-FIX
+2026-07-10 11:38:19 0 (none)     hard hang - no dump    no                 POST-FIX
+2026-06-25 14:22:36 0 (none)     hard hang - no dump    no                 POST-FIX
+2026-06-23 09:44:13 0 (none)     hard hang - no dump    no                 pre-fix
+2026-06-22 22:47:54 0 (none)     hard hang - no dump    no                 pre-fix
+2026-06-16 21:37:19 0 (none)     hard hang - no dump    no                 pre-fix
+2026-06-12 05:00:56 0x101        CLOCK_WATCHDOG_TIMEOUT no                 pre-fix
+2026-06-08 08:34:08 0 (none)     hard hang - no dump    no                 pre-fix
+2026-05-30 12:59:13 0 (none)     hard hang - no dump    no                 pre-fix
+2026-05-21 12:10:19 0 (none)     hard hang - no dump    PRESSED - excluded pre-fix
+2026-05-10 13:41:40 0 (none)     hard hang - no dump    no                 pre-fix
+2026-04-14 16:36:04 0 (none)     hard hang - no dump    PRESSED - excluded pre-fix
+
+
+RECORDED BUGCHECKS (Event ID 1001)
+
+When   : 2026-07-29 13:41:01
+Detail : The computer has rebooted from a bugcheck.  The bugcheck was: 0x00000101 (0x0000000000000008, 
+         0x0000000000000000, 0xffffc481f1817180, 0x0000000000000017). A dump was saved in: 
+         C:\WINDOWS\Minidump\072926-10687-01.dmp. Report Id: 87b4c2ab-1782-4477-a990-305436a054ca.
+
+When   : 2026-06-12 05:01:03
+Detail : The computer has rebooted from a bugcheck.  The bugcheck was: 0x00000101 (0x0000000000000008, 
+         0x0000000000000000, 0xffff9c00da8a2180, 0x0000000000000004). A dump was saved in: 
+         C:\WINDOWS\Minidump\061226-10906-01.dmp. Report Id: f3173090-ab2c-4e13-bfc2-589d977d7f83.
+
+
+
