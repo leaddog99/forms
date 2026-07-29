@@ -268,76 +268,55 @@ ADAM copy `recipes_2026-07-29_135240`.
 
 ### The actual fix — claim it. Best Buy FIRST.
 
-**Purchase:** bought at **Best Buy**, first set up **2025-01-11 13:53** (the `john`
-profile creation time; factory image dates 2024-04-01). Confirm the exact order date in
-Best Buy account order history — purchase was on or shortly before that.
-System: HP ENVY TE01-4xxx, SKU `7H0U6AA#ABA`, serial **`2MO334319K`**.
+**Purchase — from the Best Buy receipt (authoritative):**
 
-Three avenues, in the order worth pursuing:
+| | |
+|---|---|
+| Purchase date | **2023-11-21** (picked up 11-22, Framingham MA) |
+| Order number | `BBY01-806817898714` |
+| Product | HP Envy Desktop i7 / 16GB / 1TB SSD — $749.99 (total $934.98) |
+| Model / BBY SKU | `7H0U6AA#ABA` / `6532244` |
+| Serial | **`2MO334319K`** |
+| Protection purchased | Monthly Best Buy Protection, **up to 24 mo.**, SKU `6420466` |
 
-| route | status | window |
+> **Correction:** an earlier revision of this doc put the purchase at 2025-01 based on
+> the `john` profile creation time (2025-01-11). That was a **Windows reinstall**, not
+> first setup — which is why the factory image dates 2024-04-01, *after* the real
+> purchase. Do not date this machine from the filesystem; use the receipt.
+
+Coverage, measured from 2023-11-21:
+
+| route | window | status |
 |---|---|---|
-| **Best Buy Protection** (via My Best Buy Total, ~$200/yr) | **BEST — pursue first** | up to 24 mo from purchase → **~2027-01** |
-| Intel Vmin-shift extended warranty (CPU only) | fallback | 5 yr from purchase → ~2030-01 |
-| HP system warranty | **expired** (confirmed 2026-06-23) | — |
+| HP system warranty (1 yr) | → 2024-11 | expired |
+| Best Buy Protection (up to 24 mo.) | → **2025-11-21** | **EXPIRED ~8 months ago** |
+| **Intel Vmin-shift extended (5 yr)** | → **2028-11-21** | **OPEN — the only live route** |
 
-**Why Best Buy wins:** it covers the **whole system**, not just the processor. Repair,
-replacement, **or store credit** — and no need to argue Vmin-shift metallurgy with
-anyone. The machine crashes; that is a covered mechanical failure through normal use.
-The Intel route by contrast yields a bare CPU that someone must physically fit.
+**Best Buy is out.** The 24-month cap ran out 2025-11. There is also no
+"fault arose during coverage" argument available: the documented crash history starts
+2026-04-14, after the window closed. Worth one phone call to confirm the exact expiry on
+the `Monthly Best Buy Protection` line, but do not plan around it.
 
-Terms that matter:
+Note the My Best Buy Total membership (~$200/yr) still covers **future** purchases for
+24 months — relevant if this ends in buying a replacement machine, not in saving this one.
 
-- Up to **24 months** of Best Buy Protection on computers bought while the membership is
-  active. Bought 2025-01 → runs to roughly **2027-01**. Roughly six months left as of
-  this writing. **This is the deadline that matters.**
-- *"During the original manufacturer's warranty period, most repairs will be handled by
-  the manufacturer."* HP's is already expired, so Best Buy Protection handles it directly.
-- Up to **two covered claims per 12 months**, each subject to a service fee, once outside
-  the manufacturer warranty.
-- ⚠️ **"Canceling your membership will cancel any remaining months of protection."**
-  **Do not let the $200/yr membership lapse until this is resolved.**
-
-**Best Buy listing (confirmed the same unit):** *HP - Envy Desktop - Intel Core i7 -
-16GB Memory - 1TB SSD - Black*, Model `7H0U6AA#ABA`, Best Buy SKU `6532244`. The model
-number is an exact match to this system's SMBIOS `SystemSKUNumber`.
-
-⚠️ **The RAM is not as-sold — 64 GB (2×32 GB Crucial) against the listed 16 GB.**
-Handle this *before* the counter, not at it:
+⚠️ **The RAM is not as-sold — 64 GB (2×32 GB Crucial) against the 16 GB on the
+receipt.** Expect it to be raised as a cause, and close the door first:
 
 - Magnuson-Moss means a user-installed part cannot void coverage unless it caused the
   failure — but it is the easiest available deflection, and crashes are the exact
   symptom people pin on memory.
 - **Best fix: refit the original HP sticks** so the machine presents as-sold.
-- Otherwise run **MemTest86** overnight and bring a clean pass. Caveat: a degraded CPU
-  can crash MemTest itself, and that result would be misread as a RAM fault — do not
-  hand over a test that died mid-run.
+- Otherwise run **MemTest86** overnight and keep a clean pass on file. Caveat: a degraded
+  CPU can crash MemTest itself, and that result would be misread as a RAM fault — do not
+  submit a test that died mid-run.
 - The RAM is almost certainly not the cause: `0x101` is a *core hang*. Real memory
   faults surface as `0x1A` / `0x50` / `0x4E` / WHEA `0x124`, none of which appear here,
   and the Crucial runs at JEDEC 3200 on a locked HP board (no XMP).
-- **On replacement/store credit, pull the 64 GB first** — the claim is valued on the
-  as-sold 16 GB config, so the upgrade is yours to keep. Same for the PNY USB drive.
 
-**Tactics:**
+### The only live route — RMA the CPU via Intel (open to 2028-11-21)
 
-- **Bring the evidence, do not rely on their diagnostics.** Crashes are ~5 days apart at
-  idle. A bench test will pass and the box will be handed back. Run
-  `kernel_power_check.bat`, print the Event 41 / `0x101` history from §2, and lead with it.
-- **Push toward replacement or store credit rather than repair.** The entire Raptor Lake
-  13th-gen line carries this defect — a repaired box with another 13th-gen chip inherits
-  the same problem. Store credit toward a current-generation machine is the outcome to
-  aim for. The "no lemon" provisions in these plans (replacement after repeated failed
-  repairs for the same fault) point the same way.
-- **Plan the downtime.** This host runs the app; a service-center visit means days to
-  weeks dark. Back up first — ADAM already holds `recipes_*.db` + `recipes.sql.gz` (§6) —
-  and ask whether in-home Geek Squad service is available before surrendering the box.
-
-Keep the Intel path below as the fallback if Best Buy declines, and note its window runs
-years longer.
-
-### Fallback — RMA the CPU via Intel
-
-**The F.45 microcode test has now failed, and that is the whole argument.** BIOS was
+**The F.45 microcode test has failed, and that is the whole argument.** BIOS was
 flashed F.40 → F.45 (microcode ≥0x12B, now 0x12F) on **2026-06-23** specifically to see
 whether the idle-shutdown cadence would stop. It did not — **four** further crashes
 followed: 6/25, 7/10, 7/24, 7/29, one of them a recorded `0x101`. Per the plan recorded
@@ -345,9 +324,10 @@ at the time, that outcome escalates to a hardware claim.
 
 Intel extended the 13th/14th-Gen warranty on the **processor** by 2 years
 (3 → cumulative **5 years**), and the extension explicitly covers **boxed, tray, AND
-OEM/system-integrator** chips. The i7-13700 launched early 2023, so the window runs to
-roughly early 2028 — still open. Confirm the actual HP system purchase date; the clock
-runs from purchase, not launch.
+OEM/system-integrator** chips. Purchased 2023-11-21 → **open until 2028-11-21**, about
+two years and four months of runway. The clock runs from purchase, and the Best Buy
+receipt (order `BBY01-806817898714`) is the proof — the single document this claim most
+needs, already in hand.
 
 **Routing — verified 2026-07-29. This corrects an earlier note in
 `memory/project_host_thermal_shutdowns.md` that said to go to Intel directly.**
