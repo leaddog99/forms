@@ -244,6 +244,24 @@ def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str],
     ).fetchone()
     if not row:
         return None
+
+    # STAFF PERMISSIONS REQUIRE THE CURATOR PASSWORD — not just uid 0.
+    # Gating only uid 0 left an identical bypass one number away: user 5 carries
+    # role='owner' in the users table, so `X-Self-User-Id: 5` alone granted all
+    # ten permissions, configure_system included. Any staff role now needs the
+    # same X-Master-Token.
+    #
+    # IDENTITY IS PRESERVED, ONLY THE ROLE IS LOCKED. A staff member without a
+    # token stays themselves — own recipes, own history — and simply reads as
+    # 'member'. Admins are customers too; browsing your own recipes shouldn't
+    # require unlocking admin. `staff_locked` lets the UI offer an unlock prompt
+    # instead of silently hiding the admin nav.
+    role = row[6] or "member"
+    staff_locked = False
+    if role != "member" and not verify_master_token(master_token):
+        staff_locked = True
+        role = "member"
+
     return {
         "user_id": row[0],
         "ghost_uuid": row[1],
@@ -251,7 +269,9 @@ def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str],
         "name": row[3],
         "status": row[4],
         "subscription_tier": row[5],
-        "role": row[6] or "member",
+        "role": role,
+        "actual_role": row[6] or "member",
+        "staff_locked": staff_locked,
         "created_at": row[7],
         "updated_at": row[8],
     }

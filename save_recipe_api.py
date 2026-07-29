@@ -2192,6 +2192,12 @@ def auth_me(request: Request):
         "role": role,
         "permissions": auth_lib.permissions_for(role),
         "is_staff": auth_lib.is_staff(user),
+        # True when this account HAS a staff role but hasn't presented the
+        # curator password, so `role` above has been locked down to 'member'.
+        # The UI can offer an unlock prompt rather than pretending the account
+        # was never staff.
+        "staff_locked": bool(user.get("staff_locked")),
+        "actual_role": user.get("actual_role") or role,
     }
 
 
