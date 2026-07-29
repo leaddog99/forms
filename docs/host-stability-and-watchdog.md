@@ -298,6 +298,26 @@ Terms that matter:
 - ⚠️ **"Canceling your membership will cancel any remaining months of protection."**
   **Do not let the $200/yr membership lapse until this is resolved.**
 
+**Best Buy listing (confirmed the same unit):** *HP - Envy Desktop - Intel Core i7 -
+16GB Memory - 1TB SSD - Black*, Model `7H0U6AA#ABA`, Best Buy SKU `6532244`. The model
+number is an exact match to this system's SMBIOS `SystemSKUNumber`.
+
+⚠️ **The RAM is not as-sold — 64 GB (2×32 GB Crucial) against the listed 16 GB.**
+Handle this *before* the counter, not at it:
+
+- Magnuson-Moss means a user-installed part cannot void coverage unless it caused the
+  failure — but it is the easiest available deflection, and crashes are the exact
+  symptom people pin on memory.
+- **Best fix: refit the original HP sticks** so the machine presents as-sold.
+- Otherwise run **MemTest86** overnight and bring a clean pass. Caveat: a degraded CPU
+  can crash MemTest itself, and that result would be misread as a RAM fault — do not
+  hand over a test that died mid-run.
+- The RAM is almost certainly not the cause: `0x101` is a *core hang*. Real memory
+  faults surface as `0x1A` / `0x50` / `0x4E` / WHEA `0x124`, none of which appear here,
+  and the Crucial runs at JEDEC 3200 on a locked HP board (no XMP).
+- **On replacement/store credit, pull the 64 GB first** — the claim is valued on the
+  as-sold 16 GB config, so the upgrade is yours to keep. Same for the PNY USB drive.
+
 **Tactics:**
 
 - **Bring the evidence, do not rely on their diagnostics.** Crashes are ~5 days apart at
