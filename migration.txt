@@ -1,0 +1,287 @@
+================================================================================
+MIGRATION RUNBOOK  —  MARLEY_SVR  ->  new host
+Written 2026-07-29.  Verified against the live machine, not from memory.
+Companion docs: docs/host-stability-and-watchdog.md (why we are moving)
+                docs/warranty-claim-submissions.md (the CPU claim)
+================================================================================
+
+WHY: the i7-13700 has Raptor Lake Vmin-shift degradation. 11 spontaneous crashes
+May-July 2026, accelerating. Intel's microcode fix (0x12F) is already applied and
+did NOT hold. See the host-stability doc.
+
+DO NOT SCRAP THE OLD BOX. The Intel RMA (open to 2028-11-21) yields a free
+replacement CPU, after which the Envy becomes a working spare -> run it as the
+dev/test + batch host and keep the new machine for production. Best Buy offered
+$100 in trade; a second server is worth far more than that to you.
+
+
+--------------------------------------------------------------------------------
+0.  BUYING THE NEW MACHINE  —  two hard rules
+--------------------------------------------------------------------------------
+
+  [ ] NOT Intel Core i5/i7/i9 13xxx or 14xxx. Same defect family. Best Buy still
+      sells them (e.g. Acer Nitro 60 / i7-14700F). Intel "Core Ultra" is fine.
+      AMD Ryzen 7000/9000 is fine.
+
+  [ ] Your 64 GB of DDR4 does NOT transfer. AM5 and Arrow Lake are DDR5-only.
+      Buy 32 GB DDR5 with two slots free.
+
+  Also worth having: 16 GB VRAM if you take a GPU (matters more than GPU tier for
+  local models), 2 TB NVMe, and a named-brand 650W+ PSU — the spec prebuilt
+  listings hide, and the part that kills always-on machines.
+
+
+--------------------------------------------------------------------------------
+1.  THE BIG TIME-SAVER  —  replicate the paths EXACTLY
+--------------------------------------------------------------------------------
+
+Use the same Windows username (john) and the same absolute paths:
+
+    C:\Users\john\PycharmProjects\forms          <- the project
+    C:\Users\john\PyCharm\venv                   <- the venv the service runs
+    C:\tools\nssm\nssm-2.24-101-g897c7ad\win64   <- nssm.exe
+    C:\Users\john\.cloudflared                   <- tunnel credentials
+
+Do this and the .bat files, the exported scheduled-task XML, the NSSM service
+config and PyCharm's .idea interpreter setting ALL work unchanged. Change the
+paths and you are hand-editing four separate things.
+
+
+--------------------------------------------------------------------------------
+2.  WHAT MOVES, WHAT GETS REBUILT
+--------------------------------------------------------------------------------
+
+COPY the whole project folder. It carries .git, the databases, .env,
+bcc_config.json, input/, generated/, enrich/data/, cache/ — everything. This is
+better than a fresh git clone, which would not bring the untracked data.
+
+    Inside the folder, the heavy items (all git-ignored, all irreplaceable
+    except where noted):
+        recipes.db        229 MB   THE CROWN JEWEL
+        page_cache.db     620 MB   regenerable but expensive to refill
+        training.db       320 MB   corpus ML
+        media.db          195 MB
+        .env              923 B    ALL YOUR API KEYS - never commit this
+        bcc_config.json   4.3 KB
+
+ALSO COPY (these live OUTSIDE the project folder):
+        C:\Users\john\.cloudflared\           tiny   cert.pem + tunnel JSON
+        C:\Users\john\.cache\huggingface\     381 MB whisper models (saves a
+                                                     re-download; optional)
+        C:\tools\nssm\...\win64\nssm.exe      tiny
+
+REBUILD, do not copy:
+        C:\Users\john\PyCharm\venv            1,136 MB
+            Venvs hardcode their own path in pyvenv.cfg and contain compiled
+            binaries (ctranslate2, numpy, sqlite-vec). Copying is unreliable.
+        %LOCALAPPDATA%\ms-playwright          3,360 MB
+            One command re-downloads it; copying risks version drift.
+
+REGISTER (these live in the registry / Task Scheduler, not in any folder):
+        the NSSM "BCC" service
+        scheduled task "BCC Recipes DB Backup"
+        scheduled task "BCC Dish Schedule"
+        the Cloudflared service
+
+
+--------------------------------------------------------------------------------
+3.  BEFORE YOU TOUCH ANYTHING  —  on the OLD machine
+--------------------------------------------------------------------------------
+
+  [ ] Push all work:            git status -sb   (must be level with origin)
+
+  [ ] Export the scheduled tasks so you do not rebuild them by hand:
+        schtasks /query /tn "BCC Recipes DB Backup" /xml > bcc-backup-task.xml
+        schtasks /query /tn "BCC Dish Schedule"     /xml > bcc-dish-task.xml
+
+  [ ] Save the cloudflared token. It is in the service command line:
+        (Get-CimInstance Win32_Service -Filter "Name='Cloudflared'").PathName
+      Copy the whole "--token eyJ..." string somewhere safe. You reuse it verbatim.
+
+  [ ] Run a fresh backup to ADAM (belt and braces):
+        & "C:\Users\john\PyCharm\venv\Scripts\python.exe" backup_db.py `
+              --dest "\\Adam\tbotb\Backups\recipes-db"
+
+  [ ] Verify the dump is not truncated:   gzip -t recipes.sql.gz
+
+  *** NOTE: bcc_backup_scheduled.bat does NOT work when invoked from Git Bash —
+      the venv activate.bat swallows the rest and it still exits 0. Call the
+      interpreter directly, as above. ***
+
+
+--------------------------------------------------------------------------------
+4.  ON THE NEW MACHINE  —  install the base
+--------------------------------------------------------------------------------
+
+  [ ] Windows Update to current, then:
+
+  [ ] Python 3.13.1 EXACTLY  (https://www.python.org/downloads/)
+      Version must match. sqlite-vec 0.1.9, ctranslate2 4.8.0 and numpy 2.1.3 are
+      compiled extensions; a different minor version means rebuilding them.
+      Install to the same location, tick "Add to PATH".
+
+  [ ] Git for Windows
+  [ ] PyCharm  (optional — .idea comes with the project folder)
+  [ ] cloudflared  (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+
+  [ ] BIOS, while you are in there:  "After Power Loss" = Power On.
+      Costs nothing, and it is a prerequisite if you ever add the smart-plug
+      watchdog from the host-stability doc.
+
+  [ ] Turn OFF Fast Startup (an always-on server should not hibernate):
+        Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' `
+          -Name HiberbootEnabled -Value 0
+      (Needs an elevated PowerShell.)
+
+
+--------------------------------------------------------------------------------
+5.  COPY THE DATA
+--------------------------------------------------------------------------------
+
+  *** HAZARD 1 — STOP THE APP FIRST. ***
+  recipes.db is in WAL mode. Copying it while the service is writing gives you a
+  torn database. On the OLD machine:
+
+        Stop-Service BCC            (needs admin)
+
+  Then copy. Make sure recipes.db, recipes.db-wal and recipes.db-shm all travel
+  together, or none of them are consistent.
+
+  [ ] Copy C:\Users\john\PycharmProjects\forms  ->  same path on the new box
+      Route: straight SMB between the machines, or via \\Adam\tbotb. Roughly
+      1.5 GB+; a couple of minutes over gigabit.
+
+  [ ] Copy C:\Users\john\.cloudflared\
+  [ ] Copy C:\Users\john\.cache\huggingface\     (optional, saves a re-download)
+  [ ] Copy C:\tools\nssm\...
+
+  *** DO NOT RESTORE FROM recipes.sql.gz. ***
+  That dump is a diffable git-side artifact, NOT a restore path — it was found
+  silently non-restorable once (generated columns, session log 2026-07-22), and
+  backup_db.py deliberately excludes the vec tables from it. Migrate the .db file.
+
+  [ ] Restart the old box's service if you are keeping it alive during cutover:
+        Start-Service BCC
+
+
+--------------------------------------------------------------------------------
+6.  REBUILD THE ENVIRONMENT
+--------------------------------------------------------------------------------
+
+  [ ] Create the venv at the SAME path:
+        python -m venv C:\Users\john\PyCharm\venv
+
+  [ ] Install the dependencies (148 packages, captured 2026-07-29):
+        C:\Users\john\PyCharm\venv\Scripts\python.exe -m pip install --upgrade pip
+        C:\Users\john\PyCharm\venv\Scripts\python.exe -m pip install -r requirements-frozen.txt
+
+  [ ] Playwright browsers — pip does NOT install these:
+        C:\Users\john\PyCharm\venv\Scripts\python.exe -m playwright install
+
+  [ ] Smoke-test before going near the service:
+        cd C:\Users\john\PycharmProjects\forms
+        C:\Users\john\PyCharm\venv\Scripts\python.exe -c "import sqlite3; c=sqlite3.connect('recipes.db'); print(c.execute('pragma quick_check').fetchone()); print(c.execute('select count(*) from recipes').fetchone())"
+      Expect: ('ok',) and a recipe count (353 as of 2026-07-29).
+
+
+--------------------------------------------------------------------------------
+7.  REGISTER THE SERVICE
+--------------------------------------------------------------------------------
+
+Exact config read off the running machine:
+
+  [ ] nssm.exe install BCC C:\Users\john\PyCharm\venv\Scripts\python.exe
+  [ ] nssm.exe set BCC AppParameters "-m uvicorn save_recipe_api:app --host 127.0.0.1 --port 8009"
+  [ ] nssm.exe set BCC AppDirectory  C:\Users\john\PycharmProjects\forms
+  [ ] nssm.exe set BCC AppStdout     C:\Users\john\PycharmProjects\forms\uvicorn_stdout.log
+  [ ] nssm.exe set BCC AppStderr     C:\Users\john\PycharmProjects\forms\uvicorn_stderr.log
+  [ ] nssm.exe set BCC Start SERVICE_AUTO_START
+      (runs as LocalSystem, which is the default)
+
+  [ ] Start-Service BCC
+
+  [ ] TEST LOCALLY, before touching the tunnel:
+        Invoke-WebRequest http://localhost:8009/ -UseBasicParsing
+      Expect HTTP 200. If this fails, fix it here — do not move on.
+
+  [ ] Import the scheduled tasks:
+        schtasks /create /tn "BCC Recipes DB Backup" /xml bcc-backup-task.xml
+        schtasks /create /tn "BCC Dish Schedule"     /xml bcc-dish-task.xml
+
+
+--------------------------------------------------------------------------------
+8.  CUT OVER THE TUNNEL   (the sharpest edge in the whole migration)
+--------------------------------------------------------------------------------
+
+  *** HAZARD 2 — NEVER RUN BOTH TUNNELS AT ONCE. ***
+  Two replicas of one Cloudflare tunnel LOAD-BALANCE. If both run, roughly half
+  your traffic hits the old machine's database and you will be chasing ghosts.
+
+  [ ] On the OLD machine, stop it first:
+        Stop-Service Cloudflared
+        Set-Service  Cloudflared -StartupType Disabled
+
+  [ ] On the NEW machine, install with the SAME token you saved in step 3:
+        cloudflared.exe service install eyJ...<the token>...
+
+  [ ] Verify from OUTSIDE the LAN (phone on cellular is the honest test):
+        https://recipes.tbotb.com
+
+  [ ] Check the app is serving real data, not an error page — open a recipe,
+      open a dish list, run one small job.
+
+
+--------------------------------------------------------------------------------
+9.  VERIFY  —  do not declare victory early
+--------------------------------------------------------------------------------
+
+  [ ] http://localhost:8009/ returns 200
+  [ ] https://recipes.tbotb.com reachable from off-LAN
+  [ ] Recipe count matches the old box (353 as of 2026-07-29)
+  [ ] PRAGMA quick_check -> ok ; journal_mode -> wal
+  [ ] A job runs end to end (jobs pick up Python changes on a fresh import)
+  [ ] Cook view loads and the voice loop transcribes  (/cook/{id})
+  [ ] Bookmarklet still reaches the tunnel host
+  [ ] Run backup_db.py manually once — confirm it writes to \\Adam\tbotb
+  [ ] Let the 03:00 backup fire once and check backup.log says "exit code: 0"
+  [ ] git status -sb  -> level with origin, no surprise modifications
+
+
+--------------------------------------------------------------------------------
+10.  ROLLBACK
+--------------------------------------------------------------------------------
+
+Keep the old machine intact and untouched until the new one has run clean for a
+week. Rollback is then simply:
+
+  [ ] Stop-Service BCC and Cloudflared on the new box
+  [ ] Set-Service Cloudflared -StartupType Automatic on the old box, start it
+  [ ] Start-Service BCC on the old box
+
+The only thing that does NOT roll back is data written on the new machine after
+cutover. If you need to go back after real use, copy recipes.db the other way —
+with the service stopped, same as step 5.
+
+
+--------------------------------------------------------------------------------
+11.  AFTERWARDS
+--------------------------------------------------------------------------------
+
+  [ ] Pull the 64 GB of Crucial DDR4 out of the old box before it goes anywhere,
+      and the PNY USB drive. (Also refit the stock HP sticks before any warranty
+      claim — non-stock RAM is the easiest deflection they have.)
+
+  [ ] File the Intel claim — docs/warranty-claim-submissions.md. Window is open
+      until 2028-11-21, so there is no rush, but the evidence is assembled now
+      and warranty-evidence/crash-evidence.txt is ready to attach.
+
+  [ ] Once the RMA chip arrives: rebuild the Envy as the dev/test + batch host.
+      Two machines is the redundancy this setup has never had, and it solves the
+      12-hours-dead problem far better than the smart-plug watchdog does.
+
+  [ ] Consider a UPS for both boxes (~$100). Pairs with the BIOS power-on setting.
+
+  [ ] requirements-frozen.txt is a pip freeze, not a curated manifest — worth
+      splitting direct dependencies from transitive ones at some point.
+
+================================================================================
