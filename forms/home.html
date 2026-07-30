@@ -48,6 +48,70 @@
     .quiet { color:var(--muted,#6b5b4f); font-size:.88rem; }
     a.tilelink { text-decoration:none; color:inherit; display:block; }
     [hidden] { display:none !important; }
+
+    /* ---------- Right-side cross-page nav (⋮) ---------- */
+    /* No library-shell header on this page — initNav() mounts the
+       toggle as a fixed top-right button. Uses install.html's own
+       palette (var(--accent) etc.), not the forms.css tokens. */
+    .nav-toggle {
+      background: var(--accent); color: #fff; border: none;
+      width: 36px; height: 36px; border-radius: 8px;
+      cursor: pointer; font-size: 1.3em; line-height: 1;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    .nav-toggle:hover { background: var(--accent-dark); }
+    .nav-menu {
+      position: fixed; top: 60px; right: 16px;
+      background: var(--card);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 6px; min-width: 220px;
+      box-shadow: 0 6px 20px rgba(60,40,20,.18);
+      z-index: 101;
+      display: none;
+    }
+    .nav-menu.open { display: block; }
+    .nav-menu .nav-item {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%;
+      padding: 9px 12px; border-radius: 6px;
+      color: var(--text); text-decoration: none;
+      background: transparent; border: none;
+      font: inherit; font-size: 0.95em; text-align: left;
+      cursor: pointer; box-sizing: border-box;
+    }
+    .nav-menu .nav-item:hover { background: #f4ebdd; }
+    .nav-menu .nav-item.active {
+      background: #f4ebdd; color: var(--accent-dark); font-weight: 600;
+    }
+    .nav-menu .badge-soon {
+      font-size: 0.72em; color: var(--muted);
+      font-style: italic; margin-left: 8px;
+    }
+    .coming-soon-overlay {
+      position: fixed; inset: 0;
+      background: rgba(42, 33, 27, 0.45);
+      z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .coming-soon-card {
+      background: var(--card);
+      border-radius: 14px; padding: 28px 32px;
+      max-width: 400px; text-align: center;
+      box-shadow: 0 12px 36px rgba(60,40,20,.3);
+    }
+    .coming-soon-card h2 {
+      font-size: 1.4em; margin: 0 0 8px; color: var(--text);
+    }
+    .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
+    .coming-soon-card button {
+      background: var(--accent); color: #fff; border: none;
+      padding: 9px 22px; border-radius: 8px;
+      font-weight: 600; cursor: pointer; font-size: 0.95em;
+    }
+    .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
   <script src="/forms/library-shell.js?v=20260730d"></script>
 </head>
@@ -177,7 +241,13 @@
         (me.staff_locked ? ' · staff permissions locked' : '');
       if (IS_ADMIN_HOST && me.is_staff) await renderAdmin();
       else $('#news').textContent = 'Nothing to report yet.';
-      LibraryShell.initNav({ currentPage: 'home' });
+      // Only the customer burger on the public host: every admin page 404s
+      // there by design, so offering them would be a menu that lies.
+      LibraryShell.initNav({
+        currentPage: 'home',
+        items: IS_ADMIN_HOST ? undefined
+             : LibraryShell.NAV_ITEMS.filter(i => (i.group || 'admin') === 'user'),
+      });
     })();
   </script>
 </body>
