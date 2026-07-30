@@ -390,6 +390,101 @@ def verify_user_token(token: Optional[str], user_id: int) -> bool:
     return hmac.compare_digest(sig, want)
 
 
+# === Purpose tokens (email links) ============================================
+# A token that travels by EMAIL is not a session token, and the distinction is
+# load-bearing. `mint_user_token` returns a 30-day credential: mail one and
+# anyone who reads the mailbox, a forwarded copy, a proxy log or a Referer
+# header holds a logged-in account. So these are signed over a different
+# payload and cannot be presented as a session.
+#
+# The payload binds THREE things:
+#   purpose  — a verify token cannot be replayed as a reset token
+#   user_id  — inside the signature, so it cannot be replayed as another account
+#   bound    — a value the endpoint re-reads from the DB at redemption time
+#
+# `bound` is what makes these single-purpose in practice. For verification it is
+# the email address: a token minted for the old address stops verifying once the
+# address changes, because the signature no longer reproduces. For a reset it
+# would be the current password hash, which makes the link die the moment the
+# password is used or changed — no revocation table needed.
+
+VERIFY_TOKEN_TTL = 24 * 3600           # long enough to find the mail tomorrow
+RESET_TOKEN_TTL = 2 * 3600             # short: it changes a credential
+
+
+def mint_purpose_token(purpose: str, user_id: int, bound: str,
+                       ttl: int) -> Optional[str]:
+    """`<uid>.<expiry>.<hex sig>` for a one-shot emailed link."""
+    secret = _token_secret()
+    if not secret:
+        return None
+    exp = int(time.time()) + ttl
+    msg = f"{purpose}:{user_id}:{bound}:{exp}".encode("utf-8")
+    sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+    return f"{user_id}.{exp}.{sig}"
+
+
+def read_purpose_token(token: Optional[str]) -> Optional[tuple[int, int]]:
+    """(user_id, expiry) if the SHAPE parses and it hasn't expired — signature
+    NOT checked, because verifying it needs `bound`, which the caller must look
+    up by user_id first. Never trust this alone."""
+    if not token:
+        return None
+    try:
+        uid_s, exp_s, _sig = token.split(".", 2)
+        uid, exp = int(uid_s), int(exp_s)
+    except Exception:
+        return None
+    if exp < time.time():
+        return None
+    return uid, exp
+
+
+def verify_purpose_token(token: Optional[str], purpose: str, user_id: int,
+                         bound: str) -> bool:
+    """True only for an unexpired token signed for exactly this purpose, user
+    and bound value. Any parse problem, missing secret, or mismatch is False."""
+    secret = _token_secret()
+    parsed = read_purpose_token(token)
+    if not secret or not parsed:
+        return False
+    uid, exp = parsed
+    if uid != int(user_id):
+        return False
+    try:
+        sig = token.split(".", 2)[2]
+    except Exception:
+        return False
+    msg = f"{purpose}:{uid}:{bound}:{exp}".encode("utf-8")
+    want = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, want)
+
+
+def ensure_email_verification_columns(conn: sqlite3.Connection) -> None:
+    """`email_verified` / `email_verified_at`. Auto-migrated like the rest.
+
+    Deliberately NOT enforced anywhere yet: existing accounts predate mail
+    entirely, and a flag day that locks six real users out of an app on a public
+    hostname is a worse outcome than an unproven address. Verification is
+    recorded first; anything that depends on it comes later, one surface at a
+    time."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    if "email_verified" not in have:
+        conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0")
+    if "email_verified_at" not in have:
+        conn.execute("ALTER TABLE users ADD COLUMN email_verified_at TEXT")
+    conn.commit()
+
+
+def mark_email_verified(conn: sqlite3.Connection, user_id: int) -> bool:
+    ensure_email_verification_columns(conn)
+    cur = conn.execute(
+        "UPDATE users SET email_verified = 1, email_verified_at = ? WHERE user_id = ?",
+        (_utc_now(), user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def ensure_password_column(conn: sqlite3.Connection) -> None:
     have = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
     for col in ("password_hash", "password_set_at"):

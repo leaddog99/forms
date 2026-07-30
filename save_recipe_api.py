@@ -2038,9 +2038,11 @@ def list_users():
     try:
         with _db() as conn:
             auth_lib.ensure_password_column(conn)
+            auth_lib.ensure_email_verification_columns(conn)
             rows = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
-                "subscription_tier, role, created_at, updated_at, password_hash "
+                "subscription_tier, role, created_at, updated_at, password_hash, "
+                "COALESCE(email_verified, 0), email_verified_at "
                 "FROM users ORDER BY user_id"
             ).fetchall()
             return [
@@ -2057,6 +2059,10 @@ def list_users():
                     # Presence flag only — never the hash. Device keys live in
                     # user_api_keys and are read via /users/{id}/api-keys.
                     "has_password": bool(r[9]),
+                    # Claimed vs proven. Every account predating mail reads
+                    # false, which is accurate rather than a problem to fix.
+                    "email_verified": bool(r[10]),
+                    "email_verified_at": r[11],
                 }
                 for r in rows
             ]
@@ -2072,6 +2078,9 @@ def list_users():
 # swaps to validating a session JWT. Either way, callers get back the
 # same shape: {user, permissions, is_staff}.
 from input.pipeline import auth as auth_lib  # noqa: E402
+from input.pipeline import mailer  # noqa: E402
+from input.pipeline import mail_messages  # noqa: E402
+from html import escape as html_escape  # noqa: E402
 
 
 def _resolve_caller(request: Request) -> Optional[dict]:
@@ -2401,11 +2410,146 @@ async def auth_signup(request: Request):
             "VALUES (?, ?, 'free', 'member', ?, ?)", (email, name, now, now))
         uid = cur.lastrowid
         auth_lib.set_user_password(conn, uid, password)   # commits
+        auth_lib.ensure_email_verification_columns(conn)
     token = auth_lib.mint_user_token(uid)
     _MASTER_FAILS.pop(ip, None)
     print(f"[AUTH] signup: user {uid} <{email}> from {ip}")
+
+    # Send the confirmation, but do NOT fail the signup if mail is down. The
+    # account exists and the person is already signed in; a mail outage should
+    # cost them a confirmation they can request again, not the account they just
+    # made. The result is reported so the UI can say "check your email" or
+    # "we couldn't send that — try again later" honestly.
+    from starlette.concurrency import run_in_threadpool
+    sent = await run_in_threadpool(_send_verification_email, uid, email, name)
+    if not sent.get("ok"):
+        print(f"[AUTH] signup verification mail FAILED for {uid}: {sent.get('error')}")
+
     return {"user_id": uid, "email": email, "name": name, "role": "member",
-            "token": token, "expires_in": auth_lib.USER_TOKEN_TTL}
+            "token": token, "expires_in": auth_lib.USER_TOKEN_TTL,
+            "verification_sent": bool(sent.get("ok"))}
+
+
+# === Email verification ======================================================
+# The address on a signup is CLAIMED, not proven. Verification is what turns it
+# into something we can send a password reset to — which is why it comes first:
+# a reset link mailed to an unproven address is an account takeover with extra
+# steps.
+#
+# Not enforced anywhere yet, on purpose. See auth_lib.ensure_email_verification_
+# columns: six real accounts predate mail entirely and a flag day would lock
+# them out of a public site. Record first, enforce later, one surface at a time.
+
+def _send_verification_email(user_id: int, email: str, name: str) -> dict:
+    """Mint a token bound to THIS address and mail the link. Sync — callers in
+    the request path must wrap it in run_in_threadpool."""
+    token = auth_lib.mint_purpose_token("verify", user_id, email.strip().lower(),
+                                        auth_lib.VERIFY_TOKEN_TTL)
+    if not token:
+        return {"ok": False, "error": "No token secret configured "
+                                      "(BCC_MASTER_TOKEN_SECRET)."}
+    subject, text, html = mail_messages.verification(name, token)
+    return mailer.send_mail(email, subject, text, html=html,
+                            stream=mailer.TRANSACTIONAL)
+
+
+@app.post("/auth/send-verification")
+async def auth_send_verification(request: Request):
+    """(Re)send the confirmation link for an account's own address.
+
+    Self-service or manage_users — the same rule as setting a password. Rate
+    limited on the shared per-IP ceiling, because an unauthenticated-feeling
+    endpoint that sends mail is a way to use us to spam a third party."""
+    ip = (request.client.host if request.client else "?") or "?"
+    if _master_throttled(ip):
+        raise HTTPException(status_code=429,
+                            detail="Too many attempts. Wait 15 minutes and try again.")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    uid = (payload or {}).get("user_id")
+    if uid is None:
+        raise HTTPException(status_code=400, detail="user_id required.")
+    uid = int(uid)
+    _require_self_or_perm(request, uid, "manage_users")
+
+    with _db() as conn:
+        auth_lib.ensure_email_verification_columns(conn)
+        row = conn.execute(
+            "SELECT email, name, COALESCE(email_verified, 0) FROM users WHERE user_id = ?",
+            (uid,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No user {uid}.")
+    email, name, verified = row[0], row[1], bool(row[2])
+    if not email:
+        raise HTTPException(status_code=400, detail="That account has no email address.")
+    if verified:
+        return {"user_id": uid, "sent": False, "already_verified": True}
+
+    from starlette.concurrency import run_in_threadpool
+    result = await run_in_threadpool(_send_verification_email, uid, email, name)
+    if not result.get("ok"):
+        # Surfaced, not swallowed: someone is waiting on this mail, and a silent
+        # zero reads as "sent" to every caller upstream.
+        raise HTTPException(status_code=502,
+                            detail=f"Could not send the email: {result.get('error')}")
+    return {"user_id": uid, "sent": True}
+
+
+@app.get("/auth/verify")
+def auth_verify(request: Request, token: str = ""):
+    """Redeem a verification link. GET because it is clicked in a mail client.
+
+    Returns a PAGE, not JSON — the only thing that ever calls this is a browser
+    following a link out of an email."""
+    def page(title: str, message: str, ok: bool) -> HTMLResponse:
+        colour = "#2f7a3a" if ok else "#a3382b"
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            f"<title>{html_escape(title)}</title>"
+            "<div style=\"font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;"
+            "max-width:32rem;margin:14vh auto;padding:0 20px;line-height:1.55;color:#2a211b\">"
+            f"<h1 style='font-size:1.4rem;color:{colour};margin:0 0 12px'>{html_escape(title)}</h1>"
+            f"<p>{html_escape(message)}</p>"
+            "<p style='margin-top:26px'><a href='/' "
+            "style=\"background:#b8602a;color:#fff;text-decoration:none;padding:11px 20px;"
+            "border-radius:8px;display:inline-block\">Go to Best Cooks Club</a></p></div>",
+            status_code=200 if ok else 400)
+
+    parsed = auth_lib.read_purpose_token(token)
+    if not parsed:
+        # One message for malformed AND expired: a link that tells a stranger
+        # whether a token was ever real is a link that helps them guess.
+        return page("That link has expired",
+                    "Verification links last 24 hours. Sign in and ask for a new "
+                    "one — it takes a moment.", False)
+    uid, _exp = parsed
+    with _db() as conn:
+        auth_lib.ensure_email_verification_columns(conn)
+        row = conn.execute(
+            "SELECT email, COALESCE(email_verified, 0) FROM users WHERE user_id = ?",
+            (uid,)).fetchone()
+        if not row or not row[0]:
+            return page("That link has expired",
+                        "Verification links last 24 hours. Sign in and ask for a "
+                        "new one — it takes a moment.", False)
+        email, already = row[0], bool(row[1])
+        # Signed over the address CURRENTLY on the row, so a token minted for a
+        # previous address stops working the moment the address changes.
+        if not auth_lib.verify_purpose_token(token, "verify", uid,
+                                             email.strip().lower()):
+            return page("That link has expired",
+                        "Verification links last 24 hours. Sign in and ask for a "
+                        "new one — it takes a moment.", False)
+        if already:
+            return page("Already confirmed",
+                        f"{email} was confirmed earlier. Nothing else to do.", True)
+        auth_lib.mark_email_verified(conn, uid)
+    print(f"[AUTH] email verified for user {uid} <{email}>")
+    return page("Email confirmed",
+                f"Thanks — {email} is confirmed.", True)
 
 
 @app.post("/users/{user_id}/password")

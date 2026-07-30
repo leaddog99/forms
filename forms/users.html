@@ -70,7 +70,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260730k"></script>
+  <script src="/forms/library-shell.js?v=20260730l"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -160,6 +160,12 @@
       out.push(`<span class="ed-pill ${isStaff(u) ? 'ok' : ''}"><i class="d"></i>${escapeHtml(u.role)}</span>`);
       out.push(`<span class="ed-pill ${u.status === 'paid' ? 'good' : ''}"><i class="d"></i>${escapeHtml(u.status || 'test')}${u.subscription_tier ? ' · ' + escapeHtml(u.subscription_tier) : ''}</span>`);
       if (incomplete(u)) out.push(`<span class="ed-pill warn"><i class="d"></i>No email</span>`);
+      // Claimed vs proven. Every account created before mail existed reads
+      // unverified, which is the truth rather than a defect — nothing enforces
+      // it yet, so this is a status, not an alarm.
+      else out.push(u.email_verified
+        ? `<span class="ed-pill good"><i class="d"></i>email verified</span>`
+        : `<span class="ed-pill"><i class="d"></i>email unverified</span>`);
       return out.join('');
     }
 
@@ -210,6 +216,17 @@
         </section>
 
         <section class="ed-block">
+          <h3 class="ed-block-label">Email address</h3>
+          <div class="ed-callout info"><span class="mark">○</span><span>${u.email_verified
+            ? `Confirmed <strong>${escapeHtml(fmtDate(u.email_verified_at))}</strong> — this person clicked a link we sent to <strong>${escapeHtml(u.email || '')}</strong>, so the address is proven rather than claimed.`
+            : 'This address is <strong>claimed, not proven</strong> — nobody has clicked a link sent to it. Nothing enforces verification yet, so this is a status rather than a fault; accounts made before we could send mail all read this way. It matters most before a password reset exists, since a reset mailed to an unproven address is a way into the account.'}</span></div>
+          <div class="ed-actions" style="margin-top:8px">
+            <button type="button" class="ed-btn" id="sendVerifyBtn"${u.email_verified || !u.email ? ' disabled' : ''}>Send confirmation email</button>
+          </div>
+          <div class="warn-hint" id="verifyHint"></div>
+        </section>
+
+        <section class="ed-block">
           <h3 class="ed-block-label">Bookmarklet key</h3>
           <div class="ed-callout info"><span class="mark">○</span><span>One key <strong>per device</strong> — phone, tablet, desktop each get their own, so adding one never breaks the others, and losing a device means revoking just that row. The key proves <em>who</em> is grabbing; what they may grab follows from their role, so a member's bookmarklet saves recipes while the product and review grabbers stay with staff. Shown <strong>once</strong>: only a hash is stored, so a lost key is replaced, never recovered.</span></div>
           <div id="keyList" class="ed-kv" style="margin-bottom:10px"><div class="k">Devices</div><div class="v">loading…</div></div>
@@ -249,7 +266,39 @@
       $('#deleteBtn').addEventListener('click', () => doDelete(u));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       wirePassword(u);
+      wireEmailVerification(u);
       wireApiKey(u);
+    }
+
+    /* ------------------------ email verification ------------------------ */
+
+    function wireEmailVerification(u){
+      const btn = $('#sendVerifyBtn'), hint = $('#verifyHint');
+      if (!btn || btn.disabled) return;
+      btn.addEventListener('click', async () => {
+        const say = (m, bad) => { hint.textContent = m; hint.style.color = bad ? '' : 'var(--muted,#8a7f72)'; };
+        btn.disabled = true; say('Sending…');
+        try {
+          const r = await fetch('/auth/send-verification', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: u.user_id })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            // A mail failure has to say so. Reporting "sent" when nothing left
+            // the building is the failure mode this whole surface exists to
+            // avoid — the person waits for a message that will never arrive.
+            say(d.detail || `Could not send (HTTP ${r.status}).`, true);
+            btn.disabled = false;
+            return;
+          }
+          if (d.already_verified) { say('Already confirmed.'); return; }
+          say(`Sent to ${u.email}. The link works for 24 hours.`);
+        } catch (e) {
+          say('Could not reach the server: ' + e.message, true);
+          btn.disabled = false;
+        }
+      });
     }
 
     /* ------------------- password + bookmarklet key ------------------- */

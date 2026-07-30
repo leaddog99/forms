@@ -90,6 +90,13 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     # host. POST /users is the admin create — it takes a role — and is absent
     # here on purpose.
     (r"/auth/signup", frozenset({"POST"})),
+    # Verification links are CLICKED FROM A MAIL CLIENT, so they must resolve on
+    # the customer hostname — the one the address belongs to. A link built from
+    # public_base_url would point at the admin host and 404 for the person it was
+    # sent to. Any path that appears in customer email needs an entry here;
+    # otherwise the mail is fine and the link is dead on arrival.
+    (r"/auth/verify", frozenset({"GET"})),
+    (r"/auth/send-verification", frozenset({"POST"})),
 
     # --- a customer's own recipes ------------------------------------------
     (r"/recipes", frozenset({"GET", "POST"})),

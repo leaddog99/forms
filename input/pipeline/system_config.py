@@ -687,6 +687,19 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "address.",
     },
     {
+        "key": "customer_base_url",
+        "value": "https://bestcooksclub.com",
+        "type": "string",
+        "category": "Mail",
+        "label": "Customer-facing base URL (for emailed links)",
+        "description": "Where links in customer email point. NOT public_base_url — that is "
+                       "the admin/curator host (recipes.tbotb.com), and a verification link "
+                       "sent there would 404 for the customer it was sent to, because "
+                       "host_gate serves the admin surface on one hostname and the customer "
+                       "surface on the other. Any path used in an email must also be "
+                       "allowlisted in host_gate.py or the link is dead on arrival.",
+    },
+    {
         "key": "mail_daily_cap",
         "value": 5000,
         "type": "int",
