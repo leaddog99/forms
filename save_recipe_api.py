@@ -2408,7 +2408,16 @@ async def create_user(request: Request):
     user_id is auto-assigned by SQLite (AUTOINCREMENT). Returns the full
     row including the assigned user_id so the picker UI can navigate the
     user straight to the form as that user. Email uniqueness is enforced
-    by a partial index — duplicate email returns 409."""
+    by a partial index — duplicate email returns 409.
+
+    STAFF ONLY. This is the ADMIN create — it accepts `role` from the payload,
+    so an open version lets a caller mint themselves an owner. It was reachable
+    unauthenticated until 2026-07-30; the host gate kept it off the customer
+    domain, but nothing guarded it on the admin host.
+
+    Public self-signup must NOT reuse this. It needs its own endpoint that
+    forces role='member' and cannot be talked into anything else."""
+    _require_perm(request, "manage_users")
     try:
         payload = await request.json()
     except Exception as e:
