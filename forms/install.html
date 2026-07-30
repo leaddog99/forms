@@ -139,7 +139,9 @@
         This bookmarklet is personal to <strong id="keyWho">…</strong>. The code below
         carries a key identifying you, so imported recipes land in your collection.
       </p>
-      <button id="genKey" class="copy" type="button" style="margin-top:6px">Generate my key</button>
+      <input id="keyLabel" type="text" maxlength="60" placeholder="Name this device — Desktop, Phone, iPad…"
+             style="width:100%;padding:10px 12px;font:inherit;border:1px solid var(--border);border-radius:9px;margin-bottom:8px">
+      <button id="genKey" class="copy" type="button">Generate my key</button>
       <p class="note key-status" id="keyStatus" aria-live="polite">Checking…</p>
     </div>
 
@@ -256,6 +258,16 @@
     // the one-liner, and only ever displayed here. Re-minting invalidates the
     // previously installed bookmarklet, so the button says so.
     var USER_KEY = '';
+    // A sensible default so the field is never blank — the user can override it.
+    function guessDevice(){
+      var ua = navigator.userAgent || '';
+      if (/iPhone/.test(ua)) return 'iPhone';
+      if (/iPad/.test(ua)) return 'iPad';
+      if (/Android/.test(ua)) return 'Android';
+      if (/Macintosh/.test(ua)) return 'Mac';
+      if (/Windows/.test(ua)) return 'Windows PC';
+      return 'This device';
+    }
     var keyUserId = null;
 
     function keyStatus(msg, cls) {
@@ -287,7 +299,14 @@
       if (USER_KEY && !confirm('Generate a new key? Any bookmarklet already installed stops working.')) return;
       b.disabled = true;
       keyStatus('Generating…', '');
-      fetch('/users/' + keyUserId + '/api-key', { method: 'POST' })
+      // Name it after the device you're installing on — that label is the only
+      // way to tell your keys apart later, and to know which one to revoke.
+      var label = (document.getElementById('keyLabel') || {}).value || '';
+      label = label.trim() || guessDevice();
+      fetch('/users/' + keyUserId + '/api-keys', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: label })
+      })
         .then(function (r) { return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.detail || r.status); }); })
         .then(function (d) {
           USER_KEY = d.api_key;

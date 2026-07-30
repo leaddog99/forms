@@ -211,16 +211,15 @@
 
         <section class="ed-block">
           <h3 class="ed-block-label">Bookmarklet key</h3>
-          <div class="ed-callout info"><span class="mark">○</span><span>Each user gets their own key, and their bookmarklet carries it. The key proves <em>who</em> is grabbing — what they may grab follows from their role, so a member's bookmarklet saves recipes while the product and review grabbers stay with staff. Shown <strong>once</strong>: only a hash is stored, so a lost key is regenerated, never recovered.</span></div>
-          <div class="ed-kv">
-            <div class="k">Status</div><div class="v" id="keyStatus">${u.has_api_key ? 'active' : '— none —'}</div>
-            <div class="k">Created</div><div class="v">${u.api_key_created_at ? fmtDate(u.api_key_created_at) : '—'}</div>
-            <div class="k">Last used</div><div class="v">${u.api_key_last_used_at ? fmtDate(u.api_key_last_used_at) : (u.has_api_key ? 'never' : '—')}</div>
+          <div class="ed-callout info"><span class="mark">○</span><span>One key <strong>per device</strong> — phone, tablet, desktop each get their own, so adding one never breaks the others, and losing a device means revoking just that row. The key proves <em>who</em> is grabbing; what they may grab follows from their role, so a member's bookmarklet saves recipes while the product and review grabbers stay with staff. Shown <strong>once</strong>: only a hash is stored, so a lost key is replaced, never recovered.</span></div>
+          <div id="keyList" class="ed-kv" style="margin-bottom:10px"><div class="k">Devices</div><div class="v">loading…</div></div>
+          <div id="keyReveal" hidden style="margin-bottom:10px"></div>
+          <div class="ed-form-grid">
+            <div class="ed-field"><label for="keyLabel">New device name</label>
+              <input id="keyLabel" type="text" placeholder="Desktop, Phone, iPad…" maxlength="60"></div>
           </div>
-          <div id="keyReveal" hidden style="margin-top:10px"></div>
           <div class="ed-actions" style="margin-top:8px">
-            <button type="button" class="ed-btn" id="genKeyBtn">${u.has_api_key ? 'Regenerate key' : 'Generate key'}</button>
-            ${u.has_api_key ? '<button type="button" class="ed-btn" id="revokeKeyBtn">Revoke</button>' : ''}
+            <button type="button" class="ed-btn" id="genKeyBtn">Add device</button>
           </div>
         </section>
 
@@ -291,40 +290,84 @@
     }
 
     function wireApiKey(u){
-      const gen = $('#genKeyBtn'), revoke = $('#revokeKeyBtn'), reveal = $('#keyReveal');
+      const gen = $('#genKeyBtn'), reveal = $('#keyReveal'), list = $('#keyList');
       if (!gen) return;
-      gen.addEventListener('click', async () => {
-        if (u.has_api_key && !confirm('Regenerate? The current bookmarklet stops working immediately.')) return;
+
+      function shortUA(ua){
+        const b = /(Edg|Chrome|Firefox|Safari)\//.exec(ua || '');
+        const o = /(Windows|Android|iPhone|iPad|Macintosh|Linux)/.exec(ua || '');
+        return [b && b[1], o && o[1]].filter(Boolean).join(' on ');
+      }
+
+      function renderKeys(keys){
+        if (!keys || !keys.length){
+          list.innerHTML = '<div class="k">Devices</div><div class="v">— none yet —</div>';
+          return;
+        }
+        // Metadata only; the server never returns a hash. last_seen_ua is a
+        // recognition hint, not identity — a browser offers nothing better.
+        list.innerHTML = keys.map(function(k){
+          const ua = shortUA(k.last_seen_ua);
+          return '<div class="k">' + escapeHtml(k.label || 'Unnamed device') + '</div>' +
+            '<div class="v" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">' +
+              '<span>' + (k.last_used_at ? 'used ' + escapeHtml(fmtDate(k.last_used_at)) : 'never used') + '</span>' +
+              '<span style="font-size:.8em;color:var(--muted,#8a7f72)">added ' + escapeHtml(fmtDate(k.created_at)) +
+                (ua ? ' · ' + escapeHtml(ua) : '') + '</span>' +
+              '<button type="button" class="ed-btn" data-revoke="' + k.id + '" style="padding:2px 9px;font-size:.8em">Revoke</button>' +
+            '</div>';
+        }).join('');
+        list.querySelectorAll('[data-revoke]').forEach(function(b){
+          b.addEventListener('click', function(){ doRevoke(parseInt(b.dataset.revoke, 10)); });
+        });
+      }
+
+      async function loadKeys(){
+        try {
+          const r = await fetch(`/users/${u.user_id}/api-keys`);
+          if (!r.ok) throw new Error(r.status);
+          renderKeys((await r.json()).keys);
+        } catch (e) {
+          list.innerHTML = '<div class="k">Devices</div><div class="v">could not load</div>';
+        }
+      }
+
+      async function doRevoke(id){
+        if (!confirm('Revoke this device? Its bookmarklet stops working immediately. Other devices are unaffected.')) return;
+        const r = await fetch(`/users/${u.user_id}/api-keys/${id}`, { method: 'DELETE' });
+        if (!r.ok) { flash(`Revoke failed (${r.status})`, true); return; }
+        flash('Device revoked.');
+        renderKeys((await r.json()).keys);
+      }
+
+      gen.addEventListener('click', async function(){
+        const label = ($('#keyLabel').value || '').trim();
+        if (!label) { flash('Name the device — that is the only way to tell them apart later.', true); $('#keyLabel').focus(); return; }
         gen.disabled = true;
         try {
-          const r = await fetch(`/users/${u.user_id}/api-key`, { method: 'POST' });
-          if (!r.ok) { const d = await r.json().catch(() => ({})); flash(d.detail || `Failed (${r.status})`, true); return; }
+          const r = await fetch(`/users/${u.user_id}/api-keys`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label: label })
+          });
+          if (!r.ok) { const d = await r.json().catch(function(){ return {}; }); flash(d.detail || `Failed (${r.status})`, true); return; }
           const d = await r.json();
-          // Shown once — only the hash is stored. Give them the key AND a direct
-          // route to the installer rather than leaving them to find it.
+          $('#keyLabel').value = '';
           reveal.hidden = false;
           reveal.innerHTML =
             '<div class="ed-callout info" style="margin:0"><span class="mark">!</span><span>' +
             '<strong>Copy this now — it will not be shown again.</strong></span></div>' +
             '<div class="ed-field full" style="margin-top:8px"><label for="newKey">Key for ' +
-            escapeHtml(u.name || ('user ' + u.user_id)) + '</label>' +
+            escapeHtml(d.label || 'this device') + '</label>' +
             '<div style="display:flex;gap:6px;align-items:stretch">' +
             '<input id="newKey" type="text" readonly value="' + escapeHtml(d.api_key) + '" style="flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em">' +
             LibraryShell.urlControl(d.api_key, { inputId: 'newKey', display: false }) +
             '</div></div>' +
-            '<p class="ed-submeta">Install it at <a href="/forms/install.html?user_id=' + u.user_id +
-            '">the bookmarklet page</a> — the one-liner there is personalised for this user.</p>';
-          await loadUsers(); renderList();
+            '<p class="ed-submeta">Install it from <a href="/forms/install.html">the bookmarklet page</a> on that device.</p>';
+          renderKeys(d.keys);
         } catch (e) { flash('Could not reach the server: ' + e.message, true); }
         finally { gen.disabled = false; }
       });
-      if (revoke) revoke.addEventListener('click', async () => {
-        if (!confirm('Revoke this key? Their bookmarklet stops working immediately.')) return;
-        const r = await fetch(`/users/${u.user_id}/api-key`, { method: 'DELETE' });
-        if (!r.ok) { flash(`Failed (${r.status})`, true); return; }
-        flash('Key revoked.');
-        await loadUsers(); renderList(); renderMain();
-      });
+
+      loadKeys();
     }
 
     async function login(uid){

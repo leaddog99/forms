@@ -220,6 +220,87 @@ def hash_api_key(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
+def ensure_api_keys_table(conn: sqlite3.Connection) -> None:
+    """One row per DEVICE, not per user.
+
+    A single key per account meant generating one for your phone silently killed
+    the one on your laptop — and the plaintext is shown once, so there was no way
+    to re-display the old one. Phone + tablet + desktop is the normal case, so
+    the key is a device credential and belongs in its own table.
+
+    Migrates any existing users.api_key_hash across on first run, labelled so it
+    is obvious where it came from. The old column is left in place rather than
+    dropped: it is the only copy of that hash, and SQLite column drops are not
+    worth the risk for a value we can simply stop reading."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_api_keys (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            key_hash     TEXT NOT NULL,
+            label        TEXT NOT NULL DEFAULT 'Unnamed device',
+            created_at   TEXT NOT NULL,
+            last_used_at TEXT,
+            last_seen_ua TEXT
+        )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON user_api_keys(user_id)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uniq_user_api_keys_hash ON user_api_keys(key_hash)")
+    conn.commit()
+
+    have = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    if "api_key_hash" in have:
+        rows = conn.execute(
+            "SELECT user_id, api_key_hash, api_key_created_at, api_key_last_used_at "
+            "FROM users WHERE api_key_hash IS NOT NULL").fetchall()
+        for uid, h, created, used in rows:
+            if conn.execute("SELECT 1 FROM user_api_keys WHERE key_hash = ?", (h,)).fetchone():
+                continue
+            conn.execute(
+                "INSERT INTO user_api_keys (user_id, key_hash, label, created_at, last_used_at) "
+                "VALUES (?,?,?,?,?)",
+                (uid, h, "Original bookmarklet",
+                 created or _utc_now(), used))
+        conn.commit()
+
+
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def create_api_key(conn: sqlite3.Connection, user_id: int, label: str) -> str:
+    """Mint a key for one device. Returns the plaintext ONCE — only the hash is
+    stored, so a lost key is replaced, never recovered. Other devices are
+    untouched, which is the entire point of this table."""
+    ensure_api_keys_table(conn)
+    plain, hashed = generate_api_key(user_id)
+    conn.execute(
+        "INSERT INTO user_api_keys (user_id, key_hash, label, created_at) VALUES (?,?,?,?)",
+        (user_id, hashed, (label or "").strip()[:60] or "Unnamed device", _utc_now()))
+    conn.commit()
+    return plain
+
+
+def list_api_keys(conn: sqlite3.Connection, user_id: int) -> list[dict]:
+    """Metadata only — never a hash, never anything that could be replayed."""
+    ensure_api_keys_table(conn)
+    return [
+        {"id": r[0], "label": r[1], "created_at": r[2],
+         "last_used_at": r[3], "last_seen_ua": r[4]}
+        for r in conn.execute(
+            "SELECT id, label, created_at, last_used_at, last_seen_ua "
+            "FROM user_api_keys WHERE user_id = ? ORDER BY id", (user_id,))
+    ]
+
+
+def revoke_api_key(conn: sqlite3.Connection, user_id: int, key_id: int) -> bool:
+    """Delete one device's key. Scoped by user_id so a key id from another
+    account cannot be revoked by guessing the number."""
+    ensure_api_keys_table(conn)
+    cur = conn.execute("DELETE FROM user_api_keys WHERE id = ? AND user_id = ?",
+                       (key_id, user_id))
+    conn.commit()
+    return bool(cur.rowcount)
+
+
 def generate_api_key(user_id: int) -> tuple[str, str]:
     """Return (plaintext, hash). The plaintext is shown ONCE and never stored."""
     plain = f"{API_KEY_PREFIX}_{user_id}_{secrets.token_urlsafe(32)}"
@@ -241,23 +322,29 @@ def parse_api_key(key: Optional[str]) -> Optional[int]:
     return uid if uid > 0 else None      # uid 0 has no key; master needs the password
 
 
-def resolve_api_key(conn: sqlite3.Connection, key: Optional[str]) -> Optional[int]:
-    """Verify `key` against the stored hash. Returns the user_id or None.
-    Touches api_key_last_used_at so an unused key is visible as such."""
+def resolve_api_key(conn: sqlite3.Connection, key: Optional[str],
+                    user_agent: Optional[str] = None) -> Optional[int]:
+    """Verify `key` against this user's DEVICE keys. Returns the user_id or None.
+
+    The uid travels in the key's plaintext, so this reads the handful of rows for
+    that one account rather than scanning every hash. Stamps last_used_at and the
+    user-agent so the owner can tell their devices apart in the list — which is
+    the only recognition signal a browser honestly offers."""
     uid = parse_api_key(key)
     if uid is None:
         return None
-    row = conn.execute(
-        "SELECT api_key_hash FROM users WHERE user_id = ?", (uid,)).fetchone()
-    if not row or not row[0]:
-        return None
-    if not hmac.compare_digest(row[0], hash_api_key(key)):
+    ensure_api_keys_table(conn)
+    want = hash_api_key(key)
+    rows = conn.execute(
+        "SELECT id, key_hash FROM user_api_keys WHERE user_id = ?", (uid,)).fetchall()
+    match = next((r[0] for r in rows if hmac.compare_digest(r[1], want)), None)
+    if match is None:
         return None
     try:
         conn.execute(
-            "UPDATE users SET api_key_last_used_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
-            "WHERE user_id = ?",
-            (uid,))
+            "UPDATE user_api_keys SET last_used_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'), "
+            "last_seen_ua = COALESCE(?, last_seen_ua) WHERE id = ?",
+            ((user_agent or "")[:200] or None, match))
         conn.commit()
     except Exception:
         pass                              # never fail a request over telemetry

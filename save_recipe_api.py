@@ -910,9 +910,12 @@ def init_db():
             from input.pipeline.cook_kb import ensure_cook_kb_table
             ensure_cook_kb_table(conn)
             # Per-user bookmarklet API keys (users.api_key_*).
-            from input.pipeline.auth import ensure_api_key_columns, ensure_password_column
+            from input.pipeline.auth import (ensure_api_key_columns,
+                                             ensure_password_column,
+                                             ensure_api_keys_table)
             ensure_api_key_columns(conn)
             ensure_password_column(conn)
+            ensure_api_keys_table(conn)   # per-device keys + migrate the old column
             # Generic admin-managed tables (status_messages, etc.) — each
             # registered AdminModel's table is created + seeded here.
             from admin_models import ensure_admin_tables
@@ -2434,51 +2437,56 @@ async def set_user_password_endpoint(request: Request, user_id: int):
                     "is no longer accepted for it."}
 
 
-@app.post("/users/{user_id}/api-key")
-def mint_user_api_key(request: Request, user_id: int):
-    """Generate (or regenerate) this user's bookmarklet key.
+@app.get("/users/{user_id}/api-keys")
+def list_user_api_keys(request: Request, user_id: int):
+    """This user's device keys — metadata only, never a hash."""
+    _require_self_or_perm(request, user_id, "manage_users")
+    with _db() as conn:
+        return {"user_id": user_id, "keys": auth_lib.list_api_keys(conn, user_id)}
 
-    Returned in FULL exactly once — only the hash is stored, so a lost key is
-    regenerated, never recovered. Regenerating invalidates the previous one,
-    which is also how you revoke a bookmarklet from a machine you no longer have.
 
-    Self-service by design: a customer opens their own record and mints their own
-    key. Touching anyone else's needs manage_users."""
+@app.post("/users/{user_id}/api-keys")
+async def create_user_api_key(request: Request, user_id: int):
+    """Mint a key for ONE device. Body: {label}.
+
+    Other devices are untouched — that is the whole reason this is a table
+    rather than a column. Returned in full exactly once; only the hash is kept,
+    so a lost key is replaced rather than recovered.
+
+    Self-service: a customer opens their own record and adds their phone.
+    Touching anyone else's needs manage_users."""
     _require_self_or_perm(request, user_id, "manage_users")
     if user_id == 0:
         raise HTTPException(
             status_code=400,
             detail="Master (user 0) has no bookmarklet key — it authenticates "
                    "with the curator password instead.")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    label = ((payload or {}).get("label") or "").strip()
     with _db() as conn:
-        auth_lib.ensure_api_key_columns(conn)
-        row = conn.execute("SELECT name FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        if not row:
+        if not conn.execute("SELECT 1 FROM users WHERE user_id = ?", (user_id,)).fetchone():
             raise HTTPException(status_code=404, detail=f"No user {user_id}.")
-        plain, hashed = auth_lib.generate_api_key(user_id)
-        conn.execute(
-            "UPDATE users SET api_key_hash = ?, api_key_created_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'), "
-            "api_key_last_used_at = NULL WHERE user_id = ?", (hashed, user_id))
-        conn.commit()
-    print(f"[AUTH] bookmarklet key minted for user {user_id} ({row[0]})")
-    return {"user_id": user_id, "name": row[0], "api_key": plain,
-            "note": "Shown once. Store it in the bookmarklet; it cannot be retrieved again."}
+        plain = auth_lib.create_api_key(conn, user_id, label)
+        keys = auth_lib.list_api_keys(conn, user_id)
+    print(f"[AUTH] bookmarklet key minted for user {user_id} ({label or 'unnamed'})")
+    return {"user_id": user_id, "api_key": plain, "label": label, "keys": keys,
+            "note": "Shown once. Install it now; it cannot be retrieved again."}
 
 
-@app.delete("/users/{user_id}/api-key")
-def revoke_user_api_key(request: Request, user_id: int):
-    """Revoke the key. Any bookmarklet carrying it stops working immediately."""
+@app.delete("/users/{user_id}/api-keys/{key_id}")
+def revoke_user_api_key(request: Request, user_id: int, key_id: int):
+    """Revoke ONE device. The others keep working — this is how you kill the key
+    on a phone you no longer have without re-installing everywhere else."""
     _require_self_or_perm(request, user_id, "manage_users")
     with _db() as conn:
-        auth_lib.ensure_api_key_columns(conn)
-        cur = conn.execute(
-            "UPDATE users SET api_key_hash = NULL, api_key_created_at = NULL, "
-            "api_key_last_used_at = NULL WHERE user_id = ?", (user_id,))
-        conn.commit()
-    if not cur.rowcount:
-        raise HTTPException(status_code=404, detail=f"No user {user_id}.")
-    print(f"[AUTH] bookmarklet key revoked for user {user_id}")
-    return {"user_id": user_id, "revoked": True}
+        if not auth_lib.revoke_api_key(conn, user_id, key_id):
+            raise HTTPException(status_code=404, detail="No such key for this user.")
+        keys = auth_lib.list_api_keys(conn, user_id)
+    print(f"[AUTH] bookmarklet key {key_id} revoked for user {user_id}")
+    return {"user_id": user_id, "revoked": key_id, "keys": keys}
 
 
 @app.post("/users")
