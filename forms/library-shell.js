@@ -281,6 +281,111 @@
   //
   // The right-up arrow appears on hover (or always on mobile, where
   // there's no hover state) — that's the click affordance.
+  // === Sign out / lock admin =================================================
+  // There was a way in (the Master password) and no way out: the only exit was
+  // switching to another user or clearing localStorage by hand. Two separate
+  // actions, because they answer different questions:
+  //
+  //   lock admin — discard the curator token, KEEP your identity. You stay
+  //                yourself with your own recipes; staff permissions drop. This
+  //                is the one to use on a shared screen.
+  //   sign out   — discard everything, back to the picker.
+  //
+  // The curator token is a stateless HMAC, so "discard" is client-side only: it
+  // is gone from THIS browser, but a token copied elsewhere stays valid until it
+  // expires (12h). Real revocation needs a server-side blocklist. Acceptable
+  // while the token can only be obtained by knowing the password — worth
+  // revisiting if tokens ever get longer-lived.
+  function clearMasterToken() {
+    try { localStorage.removeItem('app:master_token'); } catch (e) { /* private mode */ }
+  }
+
+  function signOut() {
+    try {
+      localStorage.removeItem('app:self_user_id');
+      localStorage.removeItem('sidebar:user_id');
+      localStorage.removeItem('app:master_token');
+    } catch (e) { /* private mode */ }
+    window.location.href = '/forms/users.html';
+  }
+
+  // Unlock staff permissions on the CURRENT identity — no user switch. The token
+  // proves you know the curator password; it is not bound to a user_id, so the
+  // same one that makes uid 0 owner also unlocks a staff row's real role.
+  function unlockAdmin(password, onError) {
+    return window.fetch('/auth/master', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password })
+    }).then(function (r) {
+      if (!r.ok) {
+        onError(r.status === 429 ? 'Too many attempts — wait 15 minutes.'
+              : r.status === 503 ? 'No master password is configured on this instance.'
+              : 'Incorrect password.');
+        return null;
+      }
+      return r.json();
+    }).then(function (d) {
+      if (!d || !d.token) return;
+      try { localStorage.setItem('app:master_token', d.token); } catch (e) { /* private mode */ }
+      window.location.reload();
+    }).catch(function (e) { onError('Could not reach the server: ' + e.message); });
+  }
+
+  function identityActions(data) {
+    const A = 'style="font-size:12px;text-decoration:none;cursor:pointer"';
+    const bits = [];
+    const uid = data && data.user ? data.user.user_id : null;
+    // Master IS the token — there is no identity underneath it to fall back to,
+    // so locking admin as uid 0 would just leave you signed out. Don't offer
+    // both and pretend they differ.
+    if (uid === 0) {
+      bits.push('<a class="identity-signout muted" ' + A + ' title="End the curator session">sign out</a>');
+      return '<div class="identity-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:2px">'
+             + bits.join('') + '</div>';
+    }
+    if (data && data.staff_locked) {
+      bits.push('<a class="identity-unlock muted" ' + A + ' title="Enter the curator password to enable ' +
+                escapeHtml(data.actual_role || 'staff') + ' permissions">unlock admin</a>');
+    } else if (data && data.is_staff) {
+      bits.push('<a class="identity-lock muted" ' + A + ' title="Drop staff permissions, stay signed in">lock admin</a>');
+    }
+    bits.push('<a class="identity-signout muted" ' + A + ' title="Clear this browser\'s identity">sign out</a>');
+    return '<div class="identity-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:2px">'
+           + bits.join('<span class="muted" style="font-size:12px">·</span>') + '</div>';
+  }
+
+  function wireIdentityActions(badge) {
+    const lock = badge.querySelector('.identity-lock');
+    if (lock) lock.addEventListener('click', function () {
+      clearMasterToken();
+      window.location.reload();
+    });
+    const out = badge.querySelector('.identity-signout');
+    if (out) out.addEventListener('click', signOut);
+    const unlock = badge.querySelector('.identity-unlock');
+    if (unlock) unlock.addEventListener('click', function () {
+      if (badge.querySelector('.identity-pw')) return;   // already open
+      const row = document.createElement('div');
+      row.className = 'identity-pw';
+      row.style.cssText = 'margin-top:4px;text-align:right';
+      row.innerHTML =
+        '<input type="password" placeholder="curator password" autocomplete="current-password" ' +
+        'style="font-size:12px;padding:2px 5px;width:150px">' +
+        '<div class="identity-pw-msg muted" style="font-size:11px;margin-top:2px"></div>';
+      badge.appendChild(row);
+      const input = row.querySelector('input');
+      const msg = row.querySelector('.identity-pw-msg');
+      input.focus();
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { row.remove(); return; }
+        if (e.key !== 'Enter' || !input.value) return;
+        msg.textContent = 'checking…';
+        unlockAdmin(input.value, function (err) { msg.textContent = err; input.value = ''; input.focus(); });
+      });
+    });
+  }
+
   function initIdentityBadge() {
     const headerInner = document.querySelector('.app-header .header-inner');
     if (!headerInner) return;
@@ -334,7 +439,8 @@
           ? '<a class="identity-email" href="mailto:' + escapeHtml(email) + '">' +
             escapeHtml(email) + '</a>'
           : '';
-        badge.innerHTML = nameLink + emailLink;
+        badge.innerHTML = nameLink + emailLink + identityActions(data);
+        wireIdentityActions(badge);
       })
       .catch(() => {
         badge.innerHTML =
