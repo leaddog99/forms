@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260726a"></script>
+  <script src="/forms/library-shell.js?v=20260730a"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -2145,10 +2145,6 @@
                 <input type="text" id="bccPermalink" readonly
                        placeholder="(saved recipes only)"
                        style="flex:1;background:#f7f4ec;cursor:text" />
-                <button type="button" id="copyBccPermalinkBtn"
-                        class="secondary"
-                        style="padding:6px 12px;font-size:0.85em"
-                        title="Copy permalink to clipboard">Copy</button>
               </div>
             </div>
             <div class="form-group">
@@ -4434,31 +4430,19 @@
       window.location.href = result.url || `/r/${result.recipe_id}`;
     };
 
-    // Copy BCC permalink to clipboard. Read-only input — clipboard API
-    // is the easiest path; falls back to selecting the input text so the
-    // user can hit Cmd/Ctrl+C if the API is unavailable (older Safari).
-    document.getElementById("copyBccPermalinkBtn").onclick = async () => {
-      const input = document.getElementById("bccPermalink");
-      const url = (input && input.value) || '';
-      if (!url) {
-        showFeedback('No permalink yet — save the recipe first.', 'info');
-        return;
-      }
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(url);
-          showFeedback('Permalink copied to clipboard.', 'success');
-        } else {
-          input.select();
-          document.execCommand('copy');
-          showFeedback('Permalink copied (legacy path).', 'success');
-        }
-      } catch (e) {
-        // Surface the input contents so the user can copy manually.
-        input.select();
-        showFeedback('Copy failed — select-and-copy manually.', 'error');
-      }
-    };
+    // Shared ↗ open / ⧉ copy icons on the URL fields
+    // (memory/feedback_url_field_control). Replaces the bespoke "Copy" button
+    // that used to sit beside bccPermalink — one implementation, same icons as
+    // the domains/products/collections editors, and the permalink gains an open
+    // affordance it never had.
+    //
+    // Icons read the input's LIVE value via the shell's delegated handler, so
+    // attaching before bccPermalink is populated (it fills in on save/load) is
+    // fine. extractUrlInput is deliberately NOT included: it lives in the styled
+    // .url-row with the Extract button, and that is the extract path.
+    if (window.LibraryShell && LibraryShell.attachUrlControls) {
+      LibraryShell.attachUrlControls(['originalUrl', 'bccPermalink']);
+    }
 
     document.getElementById("claimBtn").onclick = async () => {
       const id = document.getElementById("recipe_id").value;

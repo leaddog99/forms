@@ -994,6 +994,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Public-host gate -------------------------------------------------------
+# bestcooksclub.com (customers) and recipes.tbotb.com (staff) are the same app
+# behind the same tunnel. On the public host, serve ONLY the customer allowlist
+# in input/pipeline/host_gate.py; everything else 404s.
+#
+# 404 rather than 403 on purpose: a public visitor should not learn that
+# /domains is a real endpoint. Staff hosts are untouched and still enforce
+# _require_perm — this is a perimeter, not a substitute for the permission
+# checks.
+from input.pipeline import host_gate as _host_gate  # noqa: E402
+
+
+@app.middleware("http")
+async def _public_host_gate(request: Request, call_next):
+    reason = _host_gate.blocked_reason(
+        request.headers.get("host", ""), request.url.path, request.method)
+    if reason:
+        print(f"[HOSTGATE] {reason}")
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return await call_next(request)
+
+
+print(f"[NET] Public-host gate active for: {', '.join(sorted(_host_gate.public_hosts()))}")
+
 # Dev shield: keep the whole app OUT of search indexes while it's a development
 # surface reachable via the Cloudflare tunnel (recipes.tbotb.com). robots.txt
 # governs CRAWLING; this X-Robots-Tag governs INDEXING — so a crawler that is

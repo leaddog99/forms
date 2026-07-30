@@ -1061,11 +1061,48 @@
       '</div></div>';
   }
 
+  // Retrofit the shared ↗/⧉ icons onto URL inputs that ALREADY exist in static
+  // markup (memory/feedback_url_field_control). urlField() builds a field from
+  // scratch, which suits the ACDV editors because they render their HTML from
+  // template strings — but the recipe form is hand-written markup with save reads
+  // bound to specific ids, so rewriting it to use urlField would be a large,
+  // risky diff for a cosmetic win. This decorates in place instead: the input
+  // keeps its id, type, styles and event handlers untouched.
+  //
+  // Icons act on the input's LIVE value through the one delegated handler that
+  // urlControl's inputId mode already wires, so there is no per-field click
+  // plumbing and no second copy implementation.
+  function attachUrlControls(ids) {
+    (Array.isArray(ids) ? ids : [ids]).forEach(function (id) {
+      const input = document.getElementById(id);
+      if (!input || input.type === 'hidden') return;
+      let row = input.parentElement;
+      if (!row) return;
+      if (row.querySelector('.ls-url-ctl')) return;          // idempotent
+      // Reuse the parent as the flex row when it already is one (bccPermalink
+      // ships that way); otherwise interpose one so the icons sit beside the
+      // input rather than wrapping under it.
+      let isRow = false;
+      try { isRow = window.getComputedStyle(row).display === 'flex'; } catch (e) { /* detached */ }
+      if (!isRow) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;gap:6px;align-items:stretch';
+        input.parentNode.insertBefore(wrap, input);
+        wrap.appendChild(input);
+        input.style.flex = '1 1 auto';
+        input.style.minWidth = '0';
+        row = wrap;
+      }
+      row.insertAdjacentHTML('beforeend', urlControl(input.value, { inputId: id }));
+    });
+  }
+
   window.LibraryShell = {
     init,
     initNav,
     urlControl,
     urlField,
+    attachUrlControls,
     initEditorNav,
     initIdentityBadge,
     openSidebar,
