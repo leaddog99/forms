@@ -31,7 +31,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from pydantic import ValidationError
@@ -1020,8 +1020,30 @@ async def _public_host_gate(request: Request, call_next):
         request.headers.get("host", ""), request.url.path, request.method)
     if reason:
         print(f"[HOSTGATE] {reason}")
+        # A browser gets a page with a way out; an API client gets the JSON it
+        # expects. Both are 404 and both are IDENTICAL for a blocked admin route
+        # and a genuinely nonexistent one — that indistinguishability is the
+        # point, and is why this stays a 404 rather than a 403.
+        if "text/html" in (request.headers.get("accept") or ""):
+            return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
         return JSONResponse({"detail": "Not Found"}, status_code=404)
     return await call_next(request)
+
+
+_NOT_FOUND_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Not found</title><style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#faf6f1;color:#1f1611;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+.b{text-align:center;padding:32px;max-width:26rem}h1{font-size:1.4rem;margin:0 0 8px}
+p{color:#6b5b4f;margin:0 0 20px;line-height:1.5}
+a{display:inline-block;padding:10px 20px;background:#b8602a;color:#fff;
+text-decoration:none;border-radius:9px;font-weight:600}
+</style></head><body><div class="b">
+<h1>That page isn't here</h1>
+<p>The link may be wrong, or the page may live on a different part of the site.</p>
+<a href="/">Go to the home page</a>
+</div></body></html>"""
 
 
 print(f"[NET] Public-host gate active for: {', '.join(sorted(_host_gate.public_hosts()))}")
