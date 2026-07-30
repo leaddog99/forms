@@ -905,6 +905,9 @@ def init_db():
             ensure_scheduled_jobs_table(conn)
             from input.pipeline.cook_kb import ensure_cook_kb_table
             ensure_cook_kb_table(conn)
+            # Per-user bookmarklet API keys (users.api_key_*).
+            from input.pipeline.auth import ensure_api_key_columns
+            ensure_api_key_columns(conn)
             # Generic admin-managed tables (status_messages, etc.) — each
             # registered AdminModel's table is created + seeded here.
             from admin_models import ensure_admin_tables
@@ -2127,8 +2130,37 @@ def _resolve_caller(request: Request) -> Optional[dict]:
     public hostname was a complete admin bypass."""
     header = request.headers.get("x-self-user-id")
     master_token = request.headers.get("x-master-token")
+    # Bookmarklets run on a publisher's page with no session, so they carry a
+    # per-user API key instead. A valid key outranks the self-id header — it is
+    # authentication rather than a claim.
+    api_key = (request.headers.get("x-bcc-key")
+               or _bearer_key(request.headers.get("authorization")))
     with _db() as conn:
-        return auth_lib.resolve_user(conn, header, master_token)
+        return auth_lib.resolve_user(conn, header, master_token, api_key)
+
+
+def _bearer_key(authorization: Optional[str]) -> Optional[str]:
+    """Accept `Authorization: Bearer bcc_…` as well as X-BCC-Key — some fetch
+    wrappers and proxies strip unknown X- headers."""
+    if not authorization:
+        return None
+    parts = authorization.split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return None
+
+
+def _require_self_or_perm(request: Request, user_id: int, perm: str) -> dict:
+    """Allow a caller acting on their OWN record, else demand `perm`.
+
+    Customers can see their own user record and mint their own bookmarklet key
+    from it; only staff with `perm` may touch anyone else's. Without the
+    self-clause this would be manage_users-only and no customer could ever
+    generate a bookmarklet."""
+    user = _resolve_caller(request)
+    if user and int(user.get("user_id", -1)) == int(user_id):
+        return user
+    return _require_perm(request, perm)
 
 
 # Brute-force throttle for POST /auth/master. scrypt already costs ~100ms per
@@ -2223,6 +2255,53 @@ def auth_me(request: Request):
         "staff_locked": bool(user.get("staff_locked")),
         "actual_role": user.get("actual_role") or role,
     }
+
+
+@app.post("/users/{user_id}/api-key")
+def mint_user_api_key(request: Request, user_id: int):
+    """Generate (or regenerate) this user's bookmarklet key.
+
+    Returned in FULL exactly once — only the hash is stored, so a lost key is
+    regenerated, never recovered. Regenerating invalidates the previous one,
+    which is also how you revoke a bookmarklet from a machine you no longer have.
+
+    Self-service by design: a customer opens their own record and mints their own
+    key. Touching anyone else's needs manage_users."""
+    _require_self_or_perm(request, user_id, "manage_users")
+    if user_id == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Master (user 0) has no bookmarklet key — it authenticates "
+                   "with the curator password instead.")
+    with _db() as conn:
+        auth_lib.ensure_api_key_columns(conn)
+        row = conn.execute("SELECT name FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"No user {user_id}.")
+        plain, hashed = auth_lib.generate_api_key(user_id)
+        conn.execute(
+            "UPDATE users SET api_key_hash = ?, api_key_created_at = datetime('now'), "
+            "api_key_last_used_at = NULL WHERE user_id = ?", (hashed, user_id))
+        conn.commit()
+    print(f"[AUTH] bookmarklet key minted for user {user_id} ({row[0]})")
+    return {"user_id": user_id, "name": row[0], "api_key": plain,
+            "note": "Shown once. Store it in the bookmarklet; it cannot be retrieved again."}
+
+
+@app.delete("/users/{user_id}/api-key")
+def revoke_user_api_key(request: Request, user_id: int):
+    """Revoke the key. Any bookmarklet carrying it stops working immediately."""
+    _require_self_or_perm(request, user_id, "manage_users")
+    with _db() as conn:
+        auth_lib.ensure_api_key_columns(conn)
+        cur = conn.execute(
+            "UPDATE users SET api_key_hash = NULL, api_key_created_at = NULL, "
+            "api_key_last_used_at = NULL WHERE user_id = ?", (user_id,))
+        conn.commit()
+    if not cur.rowcount:
+        raise HTTPException(status_code=404, detail=f"No user {user_id}.")
+    print(f"[AUTH] bookmarklet key revoked for user {user_id}")
+    return {"user_id": user_id, "revoked": True}
 
 
 @app.post("/users")
@@ -2652,6 +2731,12 @@ async def extract_product_endpoint(request: Request):
     """Mine one retailer product page's staged markdown into a Product, AND return everything
     the product form needs in one shot: the extracted `product`, the reverse-table ATK `facts`
     for its URL/ASIN, and existing-product `matches` (for the 'add as a vendor to X?' prompt)."""
+    # GATED 2026-07-30. Was open to any caller — a customer bookmarklet key,
+    # or no credential at all, could drive it. Curator surface: the product
+    # and review grabbers are the ADMIN bookmarklets. Which bookmarklet can do
+    # what now falls out of the owner's permissions rather than needing a
+    # separate scope system on the key.
+    _require_perm(request, "edit_master")
     from extract.markdown_to_product import markdown_to_product
     from intake.products import catalog_store, review_facts
     body = await request.json()
@@ -3270,6 +3355,12 @@ async def extract_review_endpoint(request: Request):
     stdout log, and which could not be retried. Pass `sync: true` to force the old blocking
     behaviour (useful for scripts and fixtures).
     """
+    # GATED 2026-07-30. Was open to any caller — a customer bookmarklet key,
+    # or no credential at all, could drive it. Curator surface: the product
+    # and review grabbers are the ADMIN bookmarklets. Which bookmarklet can do
+    # what now falls out of the owner's permissions rather than needing a
+    # separate scope system on the key.
+    _require_perm(request, "edit_master")
     from intake.products import review_sources
     body = await request.json()
     md = (body.get("markdown") or body.get("md") or "") if isinstance(body, dict) else ""

@@ -192,6 +192,77 @@ def verify_master_token(token: Optional[str]) -> bool:
     return hmac.compare_digest(sig, want)
 
 
+# === Per-user API keys (the bookmarklets) ====================================
+# Each user gets their own key, generated off their users-table record, and it
+# is what their bookmarklet carries. The key AUTHENTICATES IDENTITY — it does not
+# grant anything by itself. What a given bookmarklet can do falls out of the
+# permissions its owner holds: a member's key reaches /extract-from-url because
+# that needs own_recipes, and bounces off /extract-review because that needs
+# edit_master. One mechanism, no parallel scope system.
+#
+# CRUCIALLY, a key never unlocks staff. resolve_user() still requires the curator
+# token for any non-member role, so a leaked admin bookmarklet is worth exactly
+# member access. That matters because a key pasted into a browser bookmark is
+# semi-public by nature — it sits in plaintext in the bookmarks bar and is sent
+# from arbitrary publisher pages.
+#
+# Format: bcc_<user_id>_<43 urlsafe chars>. The id travels in the clear so lookup
+# is one indexed row rather than a scan over every hash.
+#
+# Hashed with plain SHA-256, NOT scrypt. Deliberate: scrypt exists to make
+# guessing a low-entropy human password expensive. This is 256 bits of CSPRNG
+# output — unguessable by construction — and it is verified on every bookmarklet
+# request, so a deliberately slow hash would only tax us.
+API_KEY_PREFIX = "bcc"
+
+
+def hash_api_key(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def generate_api_key(user_id: int) -> tuple[str, str]:
+    """Return (plaintext, hash). The plaintext is shown ONCE and never stored."""
+    plain = f"{API_KEY_PREFIX}_{user_id}_{secrets.token_urlsafe(32)}"
+    return plain, hash_api_key(plain)
+
+
+def parse_api_key(key: Optional[str]) -> Optional[int]:
+    """user_id embedded in a well-formed key, else None. Shape check only —
+    says nothing about whether the key is real."""
+    if not key or not key.startswith(API_KEY_PREFIX + "_"):
+        return None
+    parts = key.split("_", 2)
+    if len(parts) != 3 or not parts[2]:
+        return None
+    try:
+        uid = int(parts[1])
+    except ValueError:
+        return None
+    return uid if uid > 0 else None      # uid 0 has no key; master needs the password
+
+
+def resolve_api_key(conn: sqlite3.Connection, key: Optional[str]) -> Optional[int]:
+    """Verify `key` against the stored hash. Returns the user_id or None.
+    Touches api_key_last_used_at so an unused key is visible as such."""
+    uid = parse_api_key(key)
+    if uid is None:
+        return None
+    row = conn.execute(
+        "SELECT api_key_hash FROM users WHERE user_id = ?", (uid,)).fetchone()
+    if not row or not row[0]:
+        return None
+    if not hmac.compare_digest(row[0], hash_api_key(key)):
+        return None
+    try:
+        conn.execute(
+            "UPDATE users SET api_key_last_used_at = datetime('now') WHERE user_id = ?",
+            (uid,))
+        conn.commit()
+    except Exception:
+        pass                              # never fail a request over telemetry
+    return uid
+
+
 MASTER_USER: dict = {
     "user_id": 0,
     "ghost_uuid": None,
@@ -207,8 +278,21 @@ MASTER_USER: dict = {
 
 # === User resolution =========================================================
 
+def ensure_api_key_columns(conn: sqlite3.Connection) -> None:
+    """Add the api-key columns if this DB predates them. Same auto-migrate shape
+    the domains/enrich columns use — no separate migration step to forget."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    for col, decl in (("api_key_hash", "TEXT"),
+                      ("api_key_created_at", "TEXT"),
+                      ("api_key_last_used_at", "TEXT")):
+        if col not in have:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
+    conn.commit()
+
+
 def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str],
-                 master_token: Optional[str] = None) -> Optional[dict]:
+                 master_token: Optional[str] = None,
+                 api_key: Optional[str] = None) -> Optional[dict]:
     """Look up the user identified by the X-Self-User-Id header. Returns
     the row dict or None if the header is missing/invalid or the user
     doesn't exist.
@@ -216,6 +300,16 @@ def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str],
     Pre-Ghost: trusts the client header (set by users.html picker login,
     stored in localStorage). Post-Ghost: this function gets rewritten to
     validate the Ghost session JWT cookie; callers don't change."""
+    # A valid API key is REAL authentication and outranks the self-id header,
+    # which is only a claim. This is the path the bookmarklets take: they run on
+    # a publisher's page with no session, so they carry the key instead.
+    if api_key:
+        key_uid = resolve_api_key(conn, api_key)
+        if key_uid is not None:
+            self_user_id_header = str(key_uid)
+        else:
+            return None                   # a key was offered and it was wrong
+
     if not self_user_id_header:
         return None
     try:

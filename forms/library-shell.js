@@ -536,43 +536,66 @@
     // --- admin group (corpus + system back-office — TBOTB side) ---
     // Kept in alphabetical order by label. `action` items run JS instead of
     // navigating (see initNav wiring).
-    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', group: 'admin' },
+    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', perm: 'manage_dishes', group: 'admin' },
     // Two selection techniques, both live. Slash-grouped like the Jobs trio: /Search starts
     // from a saved Amazon search URL and screens the cohort on owner ratings; /Curated starts
     // from a class name and the expert reviews. Both end in product records.
-    { page: 'collections', label: 'Collections/Search', href: '/forms/product_collections.html', group: 'admin' },
-    { page: 'curated-collections', label: 'Collections/Curated', href: '/forms/curated_collections.html', group: 'admin' },
-    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', group: 'admin' },
-    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', group: 'admin' },
-    { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', group: 'admin' },
-    { page: 'run-jobs',  label: 'Jobs/Queued', action: 'runQueuedJobs', group: 'admin' },
-    { page: 'jobs',      label: 'Jobs/Scheduled', href: '/forms/jobs_admin.html', group: 'admin' },
-    { page: 'training',  label: 'Labeling', href: '/forms/training.html', group: 'admin' },
-    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', group: 'admin' },
-    { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', group: 'admin' },
-    { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', group: 'admin' },
-    { page: 'products',  label: 'Products', href: '/forms/products.html', group: 'admin' },
-    { page: 'review-install', label: 'Review Grabber', href: '/forms/review_install.html', group: 'admin' },
-    { page: 'reviews',   label: 'Reviews', href: '/forms/reviews.html', group: 'admin' },
-    { page: 'system',    label: 'System', href: '/forms/system.html', group: 'admin' },
-    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', group: 'admin' },
-    { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', group: 'admin' },
-    { page: 'users',     label: 'Users',     href: '/forms/users.html', group: 'admin' },
+    { page: 'collections', label: 'Collections/Search', href: '/forms/product_collections.html', perm: 'edit_master', group: 'admin' },
+    { page: 'curated-collections', label: 'Collections/Curated', href: '/forms/curated_collections.html', perm: 'edit_master', group: 'admin' },
+    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', perm: 'manage_dishes', group: 'admin' },
+    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', perm: 'edit_master', group: 'admin' },
+    { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', perm: 'admin_ui', group: 'admin' },
+    { page: 'run-jobs',  label: 'Jobs/Queued', action: 'runQueuedJobs', perm: 'admin_ui', group: 'admin' },
+    { page: 'jobs',      label: 'Jobs/Scheduled', href: '/forms/jobs_admin.html', perm: 'admin_ui', group: 'admin' },
+    { page: 'training',  label: 'Labeling', href: '/forms/training.html', perm: 'admin_ui', group: 'admin' },
+    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', perm: 'admin_ui', group: 'admin' },
+    { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', perm: 'admin_ui', group: 'admin' },
+    { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', perm: 'edit_master', group: 'admin' },
+    { page: 'products',  label: 'Products', href: '/forms/products.html', perm: 'edit_master', group: 'admin' },
+    { page: 'review-install', label: 'Review Grabber', href: '/forms/review_install.html', perm: 'edit_master', group: 'admin' },
+    { page: 'reviews',   label: 'Reviews', href: '/forms/reviews.html', perm: 'edit_master', group: 'admin' },
+    { page: 'system',    label: 'System', href: '/forms/system.html', perm: 'configure_system', group: 'admin' },
+    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', perm: 'admin_ui', group: 'admin' },
+    { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', perm: 'edit_master', group: 'admin' },
+    { page: 'users',     label: 'Users',     href: '/forms/users.html', perm: 'manage_users', group: 'admin' },
   ];
 
   // Cached one-shot role probe. Resolves to the role string ('admin',
   // 'member', …) or '' when unknown / not signed in. Shared by the admin
   // burger gate (and anything else that needs to know).
-  let _rolePromise = null;
-  function fetchRole() {
-    if (_rolePromise) return _rolePromise;
-    _rolePromise = window.fetch('/auth/me')
+  let _authPromise = null;
+  // Cache the WHOLE /auth/me payload, not just the role string. The menu now
+  // filters per item on the permission list the server already returns, so
+  // throwing everything but `role` away meant re-deriving server truth from a
+  // hardcoded role table on the client — which is exactly how isAdminRole drifted
+  // (see below).
+  function fetchAuth() {
+    if (_authPromise) return _authPromise;
+    _authPromise = window.fetch('/auth/me')
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(data => (data && data.role) || '')
-      .catch(() => '');
-    return _rolePromise;
+      .then(d => d || {})
+      .catch(() => ({}));
+    return _authPromise;
   }
+  function fetchRole() { return fetchAuth().then(d => d.role || ''); }
+
+  // Kept for callers outside this file. NOTE it is wrong as a staff test —
+  // 'editor' and 'author' are staff and hold admin_ui, but this returns false for
+  // them, so they never saw the admin burger at all. The menu no longer uses it;
+  // it asks for the PERMISSION instead.
   function isAdminRole(role) { return role === 'admin' || role === 'owner'; }
+
+  // Does the caller hold every permission a nav item declares? An item with no
+  // `perm` is unrestricted. This is an AFFORDANCE, not a control: hiding a menu
+  // entry protects nothing by itself — _require_perm on the endpoint is the
+  // control, and the public-host gate is the perimeter. The value here is that
+  // the menu stops offering actions that will 403.
+  function _itemPermitted(item, perms) {
+    const need = item.perm ? [item.perm] : (item.perms || []);
+    if (!need.length) return true;
+    const have = perms || [];
+    return need.every(p => have.indexOf(p) !== -1);
+  }
 
   function showComingSoon(label) {
     // Take-over overlay (dimmer + centered card). Backdrop click or
@@ -887,8 +910,30 @@
     // If the CURRENT page is an admin page, reveal the admin burger
     // immediately (you're already on it) so it never flickers/vanishes.
     const onAdminPage = adminItems.some(it => it.page === currentPage);
-    fetchRole().then(role => {
-      if (isAdminRole(role) || onAdminPage) adminBurger.toggle.style.display = '';
+
+    // Per-item permission filtering. Menus are built synchronously so first
+    // paint isn't blocked on /auth/me; when it resolves we remove the entries
+    // this caller cannot use. Previously the whole admin burger was shown or
+    // hidden on a hardcoded role check, so an 'editor' saw Users and System and
+    // got a 403 on click, while an 'author' saw no admin burger at all despite
+    // holding edit_master.
+    fetchAuth().then(auth => {
+      const perms = auth.permissions || [];
+      let adminVisible = 0;
+      [[userBurger, userItems], [adminBurger, adminItems]].forEach(pair => {
+        const burger = pair[0], items = pair[1];
+        items.forEach(it => {
+          if (_itemPermitted(it, perms)) {
+            if (burger === adminBurger) adminVisible++;
+            return;
+          }
+          const node = burger.menu && burger.menu.querySelector('[data-page="' + it.page + '"]');
+          if (node) node.remove();
+        });
+      });
+      // Show the admin burger when something is actually in it — not on a role
+      // name. An empty menu is worse than no menu.
+      if (adminVisible > 0 || onAdminPage) adminBurger.toggle.style.display = '';
     });
 
     if (headerInner) {
