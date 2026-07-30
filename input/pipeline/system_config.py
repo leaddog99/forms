@@ -642,6 +642,60 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "markers — 'scrolling back' from the comments to catch the recipe — "
                        "instead of handing the LLM the intro prose.",
     },
+    # --- Mail -----------------------------------------------------------------------
+    # The CREDENTIALS live in .env (SMTP_HOST/PORT and the two user/pass pairs) because
+    # they are secrets. These are not: a from-address appears in the header of every
+    # message we send. They are per-instance business config a self-hoster replaces with
+    # their own, exactly like public_base_url. See input/pipeline/mailer.py.
+    {
+        "key": "mail_enabled",
+        "value": True,
+        "type": "bool",
+        "category": "Mail",
+        "label": "Sending enabled",
+        "description": "Master kill switch for ALL outbound mail. Off means send_mail() "
+                       "refuses and says so — useful while testing, and the first thing to "
+                       "flip if a loop starts mailing people.",
+    },
+    {
+        "key": "mail_from_transactional",
+        "value": "noreply@bestcooksclub.com",
+        "type": "string",
+        "category": "Mail",
+        "label": "From address — transactional",
+        "description": "Sender for verification, password reset and anything a person is "
+                       "waiting on. Must be at a domain verified with the mail provider, or "
+                       "DKIM will not sign and the message will fail DMARC.",
+    },
+    {
+        "key": "mail_from_bulk",
+        "value": "digest@bestcooksclub.com",
+        "type": "string",
+        "category": "Mail",
+        "label": "From address — bulk",
+        "description": "Sender for digests, newsletters and follow alerts. Kept separate from "
+                       "the transactional address so complaint reputation stays apart; give it "
+                       "its own sending SUBDOMAIN once volume justifies warming a second one.",
+    },
+    {
+        "key": "mail_from_name",
+        "value": "Best Cooks Club",
+        "type": "string",
+        "category": "Mail",
+        "label": "From display name",
+        "description": "The human-readable name beside the address. Blank sends the bare "
+                       "address.",
+    },
+    {
+        "key": "mail_daily_cap",
+        "value": 5000,
+        "type": "int",
+        "category": "Mail",
+        "label": "Daily send cap",
+        "description": "Upper bound on messages per day, as a runaway guard rather than a "
+                       "quota — a bug that mails every subscriber in a loop should hit a wall "
+                       "here long before it hits the provider's plan limit.",
+    },
 ]
 
 _SEED_BY_KEY = {d["key"]: d for d in SYSTEM_DEFAULTS}
