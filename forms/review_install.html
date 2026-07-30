@@ -76,6 +76,19 @@
       <strong>admin</strong> tool. Today it decodes <strong>America's Test Kitchen</strong>; other
       sources (Wirecutter, Williams Sonoma, WSJ) are recognized but not yet decodable.</p>
 
+    <!-- Curator device key. This grabber posts to a gated endpoint and acts
+         immediately, so unlike the recipe bookmarklet it must identify itself. -->
+    <div class="card" id="keyBox">
+      <h3>Your device key</h3>
+      <p class="note" style="margin-top:0">This grabber writes review data, so it carries a
+        key identifying the curator. One per device — adding one here never disturbs your
+        other machines.</p>
+      <input id="keyLabel" type="text" maxlength="60" placeholder="Name this device — Desktop, Laptop…"
+             style="width:100%;padding:10px 12px;font:inherit;border:1px solid var(--border);border-radius:9px;margin-bottom:8px">
+      <button id="genKey" class="copy" type="button" disabled>Generate key for this device</button>
+      <p class="note" id="keyStatus" aria-live="polite">Checking…</p>
+    </div>
+
     <!-- ========== DESKTOP BLOCK ========== -->
     <section id="desktop-block" hidden>
       <div class="card">
@@ -157,14 +170,20 @@
     // The loader carries the app's PUBLIC host (portable-package: no host in code).
     // It stashes that origin on window.__reviewBookmarkletApi (derived from its own
     // <script src>) so review_bookmarklet.js reads it back — no host baked into the JS.
-    function buildLoader(base) {
+    // Unlike the RECIPE bookmarklet — which is universal and carries no identity —
+    // this one posts to /extract-review, a gated edit_master endpoint, and acts
+    // immediately with no form round-trip to supply a session. So it carries a
+    // device key. Curators only; there are few of them and they can manage it.
+    function buildLoader(base, key) {
       base = String(base || '').replace(/\/+$/, '');
-      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;var s=document.createElement('script');s.src='" + base + "/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
+      key = String(key || '').replace(/'/g, '');   // [A-Za-z0-9_-] by construction
+      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;window.__reviewBookmarkletKey='" + key + "';var s=document.createElement('script');s.src='" + base + "/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
     }
 
-    var LOADER = '';
+    var LOADER = '', REVIEW_KEY = '', keyUserId = null;
     function applyBase(base) {
-      LOADER = buildLoader(base);
+      currentBase = base;
+      LOADER = buildLoader(base, REVIEW_KEY);
       document.getElementById('rawCode').textContent = LOADER;
       document.getElementById('dragLink').setAttribute('href', LOADER);
       try {
@@ -172,7 +191,43 @@
         document.querySelectorAll('.pop-host').forEach(function (el) { el.textContent = host; });
       } catch (e) { /* leave the default text */ }
     }
+    var currentBase = location.origin;
     applyBase(location.origin);
+
+    // Mint a device key for this machine. Staff-only surface: /extract-review
+    // needs edit_master, so a member has nothing to gain here anyway.
+    fetch('/auth/me').then(function (r) { return r.ok ? r.json() : null; }).then(function (me) {
+      var box = document.getElementById('keyBox');
+      if (!box) return;
+      if (!me || !me.user) { document.getElementById('keyStatus').textContent =
+        'Sign in first — this bookmarklet needs a key.'; return; }
+      keyUserId = me.user.user_id;
+      document.getElementById('keyStatus').textContent = me.is_staff
+        ? 'Name this device and generate a key to personalise the code below.'
+        : 'Review grabbing needs curator permissions — unlock admin first.';
+      document.getElementById('genKey').disabled = !me.is_staff;
+    }).catch(function () {});
+
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('#genKey');
+      if (!b || keyUserId == null) return;
+      var label = (document.getElementById('keyLabel').value || '').trim() || 'This device';
+      b.disabled = true;
+      document.getElementById('keyStatus').textContent = 'Generating…';
+      fetch('/users/' + keyUserId + '/api-keys', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: label })
+      }).then(function (r) {
+        return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.detail || r.status); });
+      }).then(function (d) {
+        REVIEW_KEY = d.api_key;
+        applyBase(currentBase);
+        document.getElementById('keyStatus').textContent =
+          'Key generated and baked into the code below — install it now, it is not shown again.';
+      }).catch(function (err) {
+        document.getElementById('keyStatus').textContent = 'Could not generate a key: ' + err.message;
+      }).finally(function () { b.disabled = false; });
+    });
     fetch('/branding').then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (b && b.bookmarklet_api_base) applyBase(b.bookmarklet_api_base);
     }).catch(function () { /* keep the location.origin fallback */ });

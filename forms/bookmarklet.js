@@ -23,33 +23,25 @@
   })();
   const FORM = API + '/forms/recipe_form_styled.html';
 
-  // The owner's per-user API key, baked into the loader by install.html. It
-  // rides the same way as the API origin — no key in this file, which is served
-  // to everyone. It identifies WHO is grabbing; what they may grab follows from
-  // that user's role, so a member's bookmarklet saves recipes while the product
-  // and review grabbers stay with staff.
+  // NO KEY. This bookmarklet is UNIVERSAL — one install, any user, any number
+  // of devices. It stages the page and redirects to the form, and the form saves
+  // under whoever is signed in; ownership was always decided there, never here.
+  // A key would have been a second identity to keep in sync with that one, which
+  // is exactly the mismatch it then had to police.
   //
-  // Running on a publisher's page there is no session and no cookie, so without
-  // this the grab is anonymous. Older bookmarklets have no key and keep working
-  // wherever the endpoint allows anonymous callers.
-  const API_KEY = (function () {
-    try { if (window.__recipeBookmarkletKey) return String(window.__recipeBookmarkletKey); } catch (e) {}
-    return '';
-  })();
+  // Not signed in? The form raises the sign-in dialog and saves to whoever
+  // authenticates. The product and review grabbers DO carry keys, because they
+  // post to gated endpoints and act immediately with no form and no session.
 
-  // Wrap fetch so every call to OUR api carries the key. Calls to the publisher's
-  // own origin (hero images, for instance) must NOT — never send a credential to
-  // a third-party host.
-  const _fetch = window.fetch.bind(window);
-  function apiFetch(url, init) {
-    init = init ? Object.assign({}, init) : {};
-    if (API_KEY && String(url).indexOf(API) === 0) {
-      const h = new Headers(init.headers || {});
-      if (!h.has('X-BCC-Key')) h.set('X-BCC-Key', API_KEY);
-      init.headers = h;
-    }
-    return _fetch(url, init);
-  }
+  // Loader version. The payload you are reading is cache-busted on every click,
+  // so logic changes ship without a re-install — but the one-liner in the
+  // bookmarks bar is frozen at install time. Bump BOTH this and the loader when
+  // the one-liner's shape changes, and an old install gets told to re-install
+  // instead of failing in some confusing way.
+  const LOADER_V = 3;
+  const loaderV = (function () {
+    try { return parseInt(window.__bccLoaderV, 10) || 0; } catch (e) { return 0; }
+  })();
 
   // The loader put the synchronously-opened popup here. If for any reason
   // it's missing (e.g. someone called this script directly without the
@@ -63,6 +55,23 @@
   // Clear the handle from the global so subsequent runs don't reuse a
   // stale tab.
   try { delete window.__recipeBookmarkletPopup; } catch (e) { }
+
+  // An old one-liner still works for now, but say so once rather than letting it
+  // drift silently until something actually breaks.
+  if (loaderV < LOADER_V) {
+    try {
+      popup.document.open();
+      popup.document.write(
+        '<html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px;line-height:1.5">' +
+        '<h2>Your bookmarklet is out of date</h2>' +
+        '<p>It still works, but a newer version is available. Re-install it from ' +
+        '<a href="' + API + '/forms/install.html">the install page</a> when convenient.</p>' +
+        '<p style="color:#6b5b4f;font-size:.9em">Continuing in a moment&hellip;</p>' +
+        '</body></html>');
+      popup.document.close();
+    } catch (e) { /* cross-origin write blocked */ }
+    await new Promise(r => setTimeout(r, 2500));
+  }
 
   // Update the popup's placeholder once we're in (it was set to "Loading…"
   // by the loader; this is the more informative version).
@@ -268,7 +277,7 @@
       const ext = ((blob.type || 'image/jpeg').split('/')[1] || 'jpg')
                     .replace('jpeg', 'jpg').replace('+xml', '');
       fd.append('image', blob, 'hero.' + ext);
-      const uploadRes = await apiFetch(API + '/images', { method: 'POST', body: fd });
+      const uploadRes = await fetch(API + '/images', { method: 'POST', body: fd });
       if (!uploadRes.ok) {
         console.log('[recipe-bookmarklet] hero upload HTTP', uploadRes.status);
         return null;
@@ -429,7 +438,7 @@
       }
     }
 
-    const uploadRes = await apiFetch(API + '/stage-image/' + encodeURIComponent(token), {
+    const uploadRes = await fetch(API + '/stage-image/' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_b64: captured.b64 })
@@ -609,7 +618,7 @@
       bcc_hints: Object.keys(bccHints).length ? bccHints : null
     };
 
-    const stageRes = await apiFetch(API + '/stage-markdown', {
+    const stageRes = await fetch(API + '/stage-markdown', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -663,6 +672,6 @@
 // (derived from its own <script src>, so the host appears once) and the script
 // above reads it back — no host hardcoded in the JS.
 //
-// Template (install page substitutes __BASE__ with the public base URL and
-// __KEY__ with the signed-in user's API key — empty string when they have none):
-// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;window.__recipeBookmarkletKey='__KEY__';var s=document.createElement('script');s.src='__BASE__/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
+// Template (install page substitutes __BASE__ with the public base URL).
+// __bccLoaderV must match LOADER_V at the top of this file:
+// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;window.__bccLoaderV=3;var s=document.createElement('script');s.src='__BASE__/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();

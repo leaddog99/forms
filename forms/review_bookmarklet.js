@@ -18,6 +18,31 @@
     try { var sc = document.querySelector('script[src*="review_bookmarklet.js"]'); if (sc && sc.src) return new URL(sc.src).origin; } catch (e) {}
     return location.origin;
   })();
+
+  // THIS bookmarklet needs a key, unlike the recipe one. It POSTs to
+  // /extract-review — a gated, edit_master endpoint — and acts immediately:
+  // there is no form round-trip afterwards to supply a session. The recipe
+  // grabber can be anonymous precisely because its work lands in a form where
+  // the signed-in user is known; this one has no such moment.
+  //
+  // Baked in at install time by review_install.html from the curator's device
+  // key. Without it the grab 403s, which is what it did between the endpoint
+  // being gated and this being added.
+  const API_KEY = (function () {
+    try { return String(window.__reviewBookmarkletKey || ''); } catch (e) { return ''; }
+  })();
+
+  const _fetch = window.fetch.bind(window);
+  function apiFetch(url, init) {
+    init = init ? Object.assign({}, init) : {};
+    // Only ever to OUR origin — never attach a credential to a publisher's host.
+    if (API_KEY && String(url).indexOf(API) === 0) {
+      const h = new Headers(init.headers || {});
+      if (!h.has('X-BCC-Key')) h.set('X-BCC-Key', API_KEY);
+      init.headers = h;
+    }
+    return _fetch(url, init);
+  }
   var popup = window.__reviewBookmarkletPopup || null;
   function note(msg) { try { if (popup && !popup.closed) popup.document.body.innerHTML = "<h2 style='font-family:sans-serif;padding:16px'>" + msg + "</h2>"; } catch (e) {} }
 
@@ -59,7 +84,7 @@
     // /extract-review enqueues a `review_ingest` job and returns immediately; we poll it.
     // A big roundup takes ~30s of LLM time, and as a job the run is tracked, logged and
     // retryable instead of vanishing into a request that either worked or didn't.
-    fetch(API + "/extract-review", {
+    apiFetch(API + "/extract-review", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ markdown: markdown, url: url })
     }).then(function (r) {
@@ -74,7 +99,7 @@
       var tries = 0;
       var poll = setInterval(function () {
         tries++;
-        fetch(API + "/jobs/" + jobId).then(function (r) { return r.json(); }).then(function (j) {
+        apiFetch(API + "/jobs/" + jobId).then(function (r) { return r.json(); }).then(function (j) {
           if (j.status === "success") {
             clearInterval(poll);
             var out = j.result || {};
@@ -106,5 +131,5 @@
  * Like the product bookmarklet, the real bookmark carries the configured app host
  * (system_config.public_base_url) — nothing hardcoded here. Loader template
  * (__BASE__ substituted by the install page):
- * javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;var s=document.createElement('script');s.src='__BASE__/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
+ * javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;window.__reviewBookmarkletKey='__KEY__';var s=document.createElement('script');s.src='__BASE__/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
  */

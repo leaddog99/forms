@@ -6699,13 +6699,11 @@
         }
         const data = await res.json();
 
-        // Whose grab is this? The bookmarklet runs on the publisher's page and
-        // cannot see our session, so the comparison happens at THIS point — the
-        // first moment both facts exist together. Nothing has been written yet;
-        // staging is transient and expires, so refusing here costs only the grab.
-        //
-        // The server answers with a boolean, never an id or a name: telling
-        // whoever holds a stray bookmarklet whose it is would be user disclosure.
+        // The recipe bookmarklet carries no identity — it is universal, one
+        // install for every user on every device. Ownership is decided HERE, by
+        // whoever is signed in when the recipe is saved, which is what the save
+        // path has always done. So there is no key to match and nothing to
+        // mismatch; the only question is whether anyone is signed in at all.
         const signedIn = (function () {
           try {
             const v = localStorage.getItem('app:self_user_id');
@@ -6713,29 +6711,12 @@
           } catch (e) { return false; }
         })();
 
-        // Sign in here rather than sending them away or refusing outright — the
-        // grab is fixable, and throwing it out would cost them the page they
-        // captured. verify() re-asks the server after each successful login, so
-        // signing in as the wrong account keeps the dialog open instead of
-        // proceeding under the wrong owner. Cancel abandons the grab.
-        const needsSignIn = !signedIn || (!data.staged_by_you && !data.staged_anonymously);
-        if (needsSignIn) {
+        if (!signedIn) {
+          // Sign in here rather than filing the grab under a default user. The
+          // page they captured is worth more than the shortcut.
           const res2 = await LibraryShell.signInDialog({
-            title: signedIn ? 'Sign in to save this recipe' : 'Sign in to continue',
-            message: signedIn
-              ? 'This was grabbed with a different account’s bookmarklet. Sign in as that account to save it.'
-              : 'This recipe was grabbed with a bookmarklet. Sign in to save it to your collection.',
-            // Re-fetch and let the SERVER decide again — it compares the staged
-            // key against the new session and answers with a boolean, so no
-            // identity is exposed to whoever is at the keyboard.
-            verify: async () => {
-              try {
-                const r = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
-                if (!r.ok) return false;
-                const d = await r.json();
-                return !!(d.staged_by_you || d.staged_anonymously);
-              } catch (e) { return false; }
-            },
+            title: 'Sign in to save this recipe',
+            message: 'This recipe was grabbed with your bookmarklet. Sign in and it will be saved to your collection.',
           });
           if (!res2.ok) {
             showFeedback('Sign-in cancelled — the grab was not saved.', 'info');
