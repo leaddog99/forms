@@ -1740,103 +1740,6 @@ def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
         print(f"[ERROR] claim_recipe({recipe_id} -> user {target_user_id}) failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Claim failed: {e}")
-
-
-# Promote-to-master is the inverse of /claim — clones a personal recipe
-# into master_recipes (user_id=0). Mirrors claim's "copy not subscription"
-# semantics so the master copy is independently editable; the original
-# personal row stays in place untouched. Stamps `_source.promotedFrom`
-# (rather than `claimedFrom`) so the two provenance trails stay
-# distinguishable. Re-promote of the same source short-circuits to the
-# existing master copy, same pattern as claim's re-claim short-circuit.
-#
-# Curator authorization is a TODO: today any caller can promote. When
-# Ghost SSO lands, gate this on curator role. See
-# memory/project_master_recipes_ui.md.
-@app.post("/recipes/{recipe_id}/promote-to-master")
-def promote_to_master(recipe_id: str, request: Request):
-    _require_perm(request, "promote_to_master")
-    source_owner = _find_recipe_owner(recipe_id)
-    if source_owner is None:
-        raise HTTPException(status_code=404, detail="Source recipe not found")
-    if source_owner == 0:
-        raise HTTPException(status_code=409, detail="Recipe is already in master")
-
-    source_table = _recipes_table_for(source_owner)
-    target_table = "master_recipes"
-    new_recipe_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-
-    try:
-        with _db() as conn:
-            row = conn.execute(
-                f"SELECT data FROM {source_table} WHERE recipe_id = ?",
-                (recipe_id,),
-            ).fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Source recipe vanished")
-
-            source_data = json.loads(row[0])
-            # static_subset drops user-scoped/identity fields and keeps the
-            # platonic recipe content + LLM enrichment — same filter the
-            # claim path uses, just in the opposite direction.
-            data = static_subset(source_data)
-            data["id"] = new_recipe_id
-            source_block = data.get("_source") or {}
-            source_block["promotedFrom"] = f"user:{source_owner}"
-            source_block["promotedAt"] = now
-            source_block["promotedFromRecipeId"] = recipe_id
-            data["_source"] = source_block
-
-            # Re-promote short-circuit: if this exact source has already
-            # been promoted to master, return the existing master copy
-            # rather than minting a parallel one. Mirrors claim's
-            # re-claim short-circuit, keyed on the source recipe_id.
-            existing = conn.execute(
-                f"SELECT recipe_id FROM {target_table} "
-                f"WHERE user_id = 0 "
-                f"AND json_extract(data, '$._source.promotedFromRecipeId') = ? "
-                f"LIMIT 1",
-                (recipe_id,),
-            ).fetchone()
-            if existing:
-                print(f"[PROMOTE] Re-promote short-circuit: master already "
-                      f"has {existing[0]} from source {recipe_id}")
-                return {
-                    "recipe_id": existing[0],
-                    "url": f"/r/{existing[0]}",
-                    "bccUrl": _bcc_permalink(existing[0]),
-                    "adopted_existing": True,
-                }
-
-            # Master copy gets its own self-URL (the promoted-from URL is
-            # on the source row, not this one). url_normalized stays
-            # blank — promoted rows, like claimed rows, are detached
-            # from URL-based dedup. Auto-enrich is a no-op when the
-            # source row already carried full enrichment (which a
-            # static_subset copy preserves).
-            conn.execute(
-                f"INSERT INTO {target_table} "
-                f"(recipe_id, user_id, data, url_normalized, source_changed_at, created_at, updated_at) "
-                f"VALUES (?, 0, ?, ?, NULL, ?, ?)",
-                (new_recipe_id, json.dumps(data, indent=2), "", now, now),
-            )
-            print(f"[PROMOTE] {source_table}/{recipe_id} -> "
-                  f"{target_table}/{new_recipe_id} (master)")
-            return {
-                "recipe_id": new_recipe_id,
-                "url": f"/r/{new_recipe_id}",
-                "bccUrl": _bcc_permalink(new_recipe_id),
-                "adopted_existing": False,
-            }
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[ERROR] promote_to_master({recipe_id}) failed: {e}")
-        print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Promote failed: {e}")
-
-
 # === Image generation (DALL-E 3) ===
 # Per-recipe dish image generation. Restored 2026-05-26 from the deleted
 # image_gen_openai.py (commit 143e016^). Live form path:
@@ -7875,8 +7778,8 @@ def _save_recipe_core(payload: dict) -> dict:
     # minimum-instructions floor so the recipes/master_recipes tables
     # stay statistically clean. The form catches the structured 422 and
     # offers a "Save anyway" dialog that retries with force_save=true.
-    # Curator-only paths (claim/promote) bypass this naturally because
-    # they re-save data that already passed the gate originally.
+    # The curator claim path bypasses this naturally because it re-saves
+    # data that already passed the gate originally.
     force_save = bool(payload.get("force_save"))
     if not force_save:
         cleaned_for_check = recipe.model_dump(by_alias=True)

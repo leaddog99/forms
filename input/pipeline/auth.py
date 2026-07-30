@@ -60,24 +60,24 @@ except Exception:
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     # Owner: one per site, billing + everything Admin can do.
     "owner": frozenset({
-        "admin_ui", "edit_master", "delete_master", "promote_to_master",
+        "admin_ui", "edit_master", "delete_master",
         "refresh_dishes", "manage_users", "manage_dishes",
         "view_costs", "configure_system", "own_recipes",
     }),
     # Administrator: everything except billing-level (configure_system).
     "admin": frozenset({
-        "admin_ui", "edit_master", "delete_master", "promote_to_master",
+        "admin_ui", "edit_master", "delete_master",
         "refresh_dishes", "manage_users", "manage_dishes",
         "view_costs", "own_recipes",
     }),
     # Editor: can publish + manage curator content, but not users or money.
     "editor": frozenset({
-        "admin_ui", "edit_master", "delete_master", "promote_to_master",
+        "admin_ui", "edit_master", "delete_master",
         "refresh_dishes", "manage_dishes", "own_recipes",
     }),
     # Author: can curate but not delete master rows or trigger refreshes.
     "author": frozenset({
-        "edit_master", "promote_to_master", "own_recipes",
+        "edit_master", "own_recipes",
     }),
     # Contributor + Member: own recipes only.
     "contributor": frozenset({"own_recipes"}),

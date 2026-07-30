@@ -99,7 +99,6 @@ USER_TOP_LEVEL_FIELDS = frozenset({
                          #   rank/queries). Tied to the row's place in the
                          #   dish library — a claimed copy should NOT inherit
                          #   "kind=top" since it's no longer in the top-N;
-                         #   promote-to-master re-stamps fresh on the new row.
     # Future: "userComments" — when added, list here so cache/claim
     # never carry one user's comments to another.
 })
