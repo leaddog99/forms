@@ -5,6 +5,10 @@
 .env
 .env.local
 .env.*.local
+# set_master_password.py writes .env.bak on every run — a full copy of every
+# API key we hold. It was NOT ignored, so a `git add -A` would have committed
+# live credentials.
+.env.bak
 *.pem
 *.key
 
