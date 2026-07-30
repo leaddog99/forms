@@ -1844,3 +1844,155 @@ scheduled refresh, uncommitted.
 The host is still dying. Intel's window runs to 2028-11-21 and the evidence is
 assembled in `warranty-evidence/crash-evidence.txt`; `migration.txt` is the
 runbook for the new machine when it arrives.
+
+## Session log — 2026-07-30 (later) — the native password prompt goes · `.env` destroyed and restored · BCC can send mail
+
+Three threads. The middle one was not on the agenda and is the reason to read this entry.
+
+### `prompt()` → `signInDialog`
+
+The state note said the native prompt was in the recipe form. It was not — the recipe
+form's staged-grab path already used `LibraryShell.signInDialog`. The real one was
+`users.html` `login(uid)`, the switcher that *lands* you in the recipe form, which asked
+for a password with `prompt()`: clear text on screen, no password manager, and errors
+with nowhere to go.
+
+`signInDialog` gained a **known-account mode** (`userId`). The switcher already knows
+which row was clicked, so an email box there would let you click one account and sign in
+as another; with `userId` the email field is absent and the login posts
+`{user_id, password}`. `/auth/login` already accepted either key — no server change.
+Also `current-password` autocomplete (it was announcing `new-password`, so managers
+offered to *generate* rather than fill), an overridable mismatch message so the
+bookmarklet's "doesn't match this bookmarklet" wording stays in its own flow, and a
+`placeholder` option so a login stops reading "At least 1 characters".
+
+Verified in-browser: known-account mode blocks an empty submit **client-side** (0 server
+calls, so no throttle counter burned), Cancel resolves `{ok:false, cancelled:true}` and
+tears down the overlay, and the bookmarklet's email mode is unregressed. Master (uid 0)
+is untouched — there is no user 0 row, so `loginAsMaster()` → `login(0)` never reaches the
+password branch and still uses `#masterPw` + `/auth/master`. Cache-buster `?v=20260730k`
+across 22 pages.
+
+### `.env` was destroyed, and nearly silently
+
+Found while checking which mail libraries were installed: **`.env` was 6 bytes containing
+the literal word `done`** (CRLF), mtime 16:56. All 22 keys — Anthropic, OpenAI, Moz,
+SEMrush, ScaleSERP, Rainforest, EasyParser, the unblocker proxy credentials, **and
+`BCC_MASTER_PASSWORD` + `BCC_MASTER_TOKEN_SECRET`** — gone from disk. The running server
+still held them in memory, so nothing had failed; it would have failed on the next
+restart, on a host that hard-hangs weekly.
+
+**It survived by ten minutes.** `backup_db.py` uses `shutil.copy2`, which preserves the
+source mtime — so `Z:\Backups\recipes-db\env.backup` carrying a Jul 29 16:33 stamp proves
+`.env` was still intact when today's 16:46 backup ran. Restored, byte-for-byte identical,
+verified to parse. The `.env`-to-ADAM commit (951883f) was written *that morning*; without
+it this would have been re-issuing eight vendors' credentials one at a time.
+
+**Cause never identified.** CRLF means a Windows-native writer (PowerShell/cmd redirect or
+an editor save), not Git Bash. Neither shell history targets it. Same family as
+[[feedback_stray_keystroke_corruption]] except the whole file was replaced rather than
+appended to. Repo history was checked and is intact — the `git filter-repo --path .env`
+lines in PSReadline history belong to the old `visual_recipe_extractor` project.
+
+### BCC can send mail
+
+Curator has an **SMTP2GO** account with **175k/mo**, for newsletters, recipe digests, and
+alerts on new recipes/dishes/domains.
+
+**Vendor decision: one, SMTP2GO, for everything.** 175k already paid for dwarfs anything
+this app sends at six users; SES's $0.10/1k or Postmark's deliverability edge would be a
+second bill and a second integration to buy capacity already owned. Also corrected a
+standing assumption: this host is **Verizon Business with 5 static IPs**, not residential
+— no ISP port blocking, so the alt-port/REST-API contingency was moot. New memory
+[[project_network_infra]].
+
+**The DNS audit found the record that looked right and was not.** `_dmarc` read exactly
+`"p=none"` with **no `v=DMARC1;` tag**, which receivers discard entirely — so a DMARC row
+was present in Cloudflare and there was no DMARC policy at all. There was also no SPF
+record anywhere on the zone. Both fixed and verified live. The SPF include is
+`spf.smtp2go.com` (**.com**, read out of `return.smtp2go.net`'s own record — the recalled
+`.net` was wrong). Now: DMARC valid, DKIM selector `s112864` serving a live RSA key,
+return-path subdomain-aligned, every SMTP2GO record correctly DNS-only rather than
+orange-clouded.
+
+**Then the SPF record had to be merged, and that one was my error.** Cloudflare **Email
+Routing** was already on this zone (those `route1/2/3.mx.cloudflare.net` MX records), and
+it needs its own SPF include. A domain may have **exactly one** SPF record, so the
+SMTP2GO-only record I supplied occupied the slot and Email Routing reported *DNS records:
+Not configured* — with its rules showing **Active** while the service sat **Disabled**,
+which is why the first `dmarc@` test vanished. I had seen those MX records in the first
+screenshot and identified them, and still handed over an SPF record that ignored them.
+Correct value, both senders in one record, 2 of 10 lookups:
+
+    v=spf1 include:spf.smtp2go.com include:_spf.mx.cloudflare.net ~all
+
+A trap worth remembering: Cloudflare's DNS-check page offers to *add records
+automatically*, which would have published a SECOND `v=spf1` record and broken SPF for
+both senders — worse than having none.
+
+> **Both new records took two attempts — one lost its leading `v`, the other the final `l`
+> of `~all`. Cloudflare pre-fills the Content field on edit, so pasting into a partial
+> selection eats the edges. `Ctrl+A` first, and verify the first and last characters after
+> saving. This is almost certainly how the original DMARC record lost its `v=DMARC1;`.**
+
+**`input/pipeline/mailer.py`** — one `send_mail()` chokepoint, the `serp_search()` pattern,
+so a vendor swap is a config edit. **Two streams on two SMTP users**: bulk complaints must
+not be able to poison the reputation verification and reset mail depend on. Implicit TLS on
+465 (STARTTLS as the fallback path), `Message-ID` on our own domain rather than the relay's,
+UTC `Date`, and `List-Unsubscribe` + `List-Unsubscribe-Post` on **bulk only** — an
+unsubscribe link on a password reset is how someone opts out of being able to log in.
+Delivery failures return a result dict rather than raising, because a caller mid-signup has
+to tell the user something. Request-path callers **must** use `run_in_threadpool` (the
+`/cook/listen` lesson). New `system_config` category **Mail** (kill switch, two
+from-addresses, display name, daily cap) — credentials stayed in `.env`, these did not, per
+the rule set with the affiliate codes.
+
+**Verified live.** First attempt failed `550 From header sender domain not verified` — but
+at the DATA stage, which proved auth, TLS and the outbound path all worked. After verifying
+the sender domain in SMTP2GO (the same `112864` records already in the zone), **both
+streams delivered to the Gmail inbox on a first-ever send from a cold domain**, From
+rendering as `Best Cooks Club <noreply@bestcooksclub.com>`.
+
+**And the DMARC reporting loop closes.** After the SPF merge, a message to
+`dmarc@bestcooksclub.com` reached `john@johnlandry.com` at Outlook through Cloudflare
+Email Routing. That is the demanding case: a **forwarded** message relays from Cloudflare's
+IP rather than SMTP2GO's, so **SPF necessarily fails** at the destination — Microsoft
+accepting it into the inbox means it authenticated on the **DKIM** leg, which is the
+alignment that could not be confirmed from a header. Forwarded delivery into Microsoft on
+a domain's first day of sending is as good a signal as this gets, and the aggregate
+reports now have somewhere to land.
+
+### Decided, not built
+
+- **Verification + password reset** on a `v{uid}:{email}:{exp}` HMAC — deliberately NOT
+  `mint_user_token`, whose output *is* a 30-day session: mailing one hands a session to
+  anyone who reads the mailbox, a forward, or a proxy log. Binding the email into the
+  signature also stops a token minted for the old address verifying a changed one. Reset
+  rides the identical rails; building verify alone means building the mail half twice.
+- **The alerts vs newsletters split.** "Alerts when a dish or publisher I follow gets a new
+  recipe" is event-driven, per-subscriber and preference-filtered — it must come from BCC,
+  the only thing that knows what you follow, and there is no `follows`/`subscriptions`
+  table yet (nearest is `collection_members`). Newsletters and digests are curated
+  campaigns. One relay, two producers. Build the alert half; hand campaigns to **Listmonk**
+  later (self-hosted, free, sends through the SMTP2GO plan) rather than hand-rolling a list
+  manager.
+- **Sending subdomains.** The curator verified the **root** domain, so both streams
+  currently share one reputation. Splitting to `mail.`/`news.` is cheap now and expensive
+  after 100k newsletters have built a complaint history the transactional stream inherits.
+
+### Open
+
+- **SMTP passwords still need rotating** — both users currently share one human-chosen
+  value that was pasted into a chat transcript. A leaked SMTP credential on an
+  authenticated domain is worse than a typical key leak: it sends as us with **valid
+  DKIM**, so the phishing passes every check our real mail passes. `.env` must be updated
+  in the same pass or sending breaks. Note `backup_db.py` copies `.env` to ADAM in
+  plaintext by design, so it lands there too.
+- **Tighten DMARC past `p=none`** once a few weeks of aggregate reports come back clean.
+  The reports are the entire point of `p=none`; publishing it without a working `rua` is a
+  policy that observes nothing. That path is now proven end to end.
+- **Sending subdomains, and the `~all` → `-all` tightening**, both deliberately deferred
+  until there is sending history to reason from.
+- **Click tracking rewrites URLs.** `link.bestcooksclub.com` → `track.smtp2go.net` is live
+  with an SSL cert. Confirm Amazon `tag` and `ascsubtag` survive the rewrite before the
+  first digest, or newsletter sales pay nobody ([[project_buy_links_revenue]]).
