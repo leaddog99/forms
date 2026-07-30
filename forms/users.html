@@ -70,7 +70,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260730i"></script>
+  <script src="/forms/library-shell.js?v=20260730k"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -377,21 +377,17 @@
       // still switch straight through, which is what keeps the rollout gradual.
       const u = users[uid];
       if (u && u.has_password) {
-        const pw = prompt(`Password for ${u.name || ('user ' + uid)}:`);
-        if (!pw) return;
-        try {
-          const r = await fetch('/auth/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: uid, password: pw })
-          });
-          if (!r.ok) {
-            const d = await r.json().catch(() => ({}));
-            flash(d.detail || (r.status === 429 ? 'Too many attempts.' : 'Incorrect password.'), true);
-            return;
-          }
-          const d = await r.json();
-          try { localStorage.setItem('app:session_token', d.token); } catch (e) { /* private mode */ }
-        } catch (e) { flash('Could not reach the server: ' + e.message, true); return; }
+        // The shared dialog rather than a native prompt(): prompt() shows the
+        // password in clear text, password managers can't fill it, and its
+        // errors have nowhere to go but an alert. `userId` keeps it bound to the
+        // row that was clicked — no email box to sign in as somebody else. It
+        // stores the session token itself and refreshes the identity badge.
+        const r = await LibraryShell.signInDialog({
+          userId: uid,
+          title: `Sign in as ${u.name || ('user ' + uid)}`,
+          message: 'This account has a password, so switching to it needs a real login.',
+        });
+        if (!r.ok) return;
       } else {
         try { localStorage.removeItem('app:session_token'); } catch (e) { /* private mode */ }
       }

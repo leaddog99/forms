@@ -452,17 +452,24 @@
     const min = opts.min || 8;
     const idA = opts.id || ('pw_' + Math.floor(performance.now() * 1000));
     const idB = idA + '_confirm';
+    // 'new-password' is right when SETTING one (the default), but a login must
+    // say 'current-password' or password managers offer to generate instead of
+    // to fill.
+    const ac0 = opts.autocomplete || 'new-password';
+    // The minimum is the placeholder when there IS one to state; a login has no
+    // minimum to state, so it says what the box is for instead.
+    const hint = opts.placeholder || ('At least ' + min + ' characters');
     const wrap = document.createElement('div');
     const row = (id, label, ac) =>
       '<div class="ed-field" style="margin-bottom:8px"><label for="' + id + '">' + escapeHtml(label) + '</label>' +
       '<div style="display:flex;gap:6px;align-items:stretch">' +
       '<input id="' + id + '" type="password" autocomplete="' + ac + '" ' +
-      'placeholder="At least ' + min + ' characters" style="flex:1 1 auto;min-width:0">' +
+      'placeholder="' + escapeHtml(hint) + '" style="flex:1 1 auto;min-width:0">' +
       '<button type="button" class="ls-pw-eye" data-for="' + id + '" title="Show or hide" ' +
       'aria-label="Show or hide password" style="flex:0 0 auto;padding:0 10px;cursor:pointer">👁</button>' +
       '</div></div>';
     wrap.innerHTML =
-      row(idA, opts.label || 'Password', 'new-password') +
+      row(idA, opts.label || 'Password', ac0) +
       row(idB, opts.confirmLabel || 'Confirm password', 'new-password') +
       '<div class="ls-pw-msg" style="font-size:.8em;min-height:1.1em;color:var(--muted,#8a7f72)"></div>';
 
@@ -518,11 +525,18 @@
   // the dialog then stays open and says so, which is what makes "sign in as the
   // right account" a loop rather than a one-shot. It must not say WHICH account
   // is wanted: whoever holds a stray bookmarklet should not learn whose it is.
+  // `mismatchMessage` overrides that wording for callers outside the grab flow.
+  //
+  // `userId` switches to KNOWN-ACCOUNT mode: the email field disappears and the
+  // login posts {user_id, password}. Callers that already know who is signing in
+  // — the user switcher clicked a specific row — must not be able to type a
+  // different address and land somewhere else. `/auth/login` accepts either key.
   //
   // Resolves {ok:true, user} once verify passes, or {ok:false, cancelled:true}.
   // Cancel is always present — a modal with no way out is a trap.
   function signInDialog(opts) {
     opts = opts || {};
+    const byId = opts.userId !== undefined && opts.userId !== null && opts.userId !== '';
     return new Promise(function (resolve) {
       const ov = document.createElement('div');
       ov.style.cssText =
@@ -534,9 +548,10 @@
         '<h2 style="margin:0 0 6px;font-size:1.2rem">' + escapeHtml(opts.title || 'Sign in') + '</h2>' +
         '<p style="margin:0 0 16px;color:var(--muted,#6b5b4f);font-size:.9rem;line-height:1.45">' +
         escapeHtml(opts.message || 'Sign in to continue.') + '</p>' +
-        '<div style="margin-bottom:8px"><input class="sd-email" type="email" autocomplete="email" ' +
-        'placeholder="you@example.com" style="width:100%;padding:9px 11px;font:inherit;' +
-        'border:1px solid var(--border,#e6dccf);border-radius:8px;box-sizing:border-box"></div>' +
+        (byId ? '' :
+          '<div style="margin-bottom:8px"><input class="sd-email" type="email" autocomplete="email" ' +
+          'placeholder="you@example.com" style="width:100%;padding:9px 11px;font:inherit;' +
+          'border:1px solid var(--border,#e6dccf);border-radius:8px;box-sizing:border-box"></div>') +
         '<div class="sd-pw"></div>' +
         '<div class="sd-msg" style="font-size:.85rem;min-height:1.2em;margin:4px 0 12px;color:#a3382b"></div>' +
         '<div style="display:flex;gap:8px;justify-content:flex-end">' +
@@ -549,15 +564,18 @@
 
       // Reuse the shared password control for the reveal; a login needs no
       // confirm entry, so hide the second field.
-      const pwf = passwordField({ id: 'sd_pw', label: 'Password', min: 1 });
+      const pwf = passwordField({
+        id: 'sd_pw', label: 'Password', min: 1,
+        autocomplete: 'current-password', placeholder: 'Your password',
+      });
       pwf.el.querySelectorAll('.ed-field')[1].hidden = true;
       ov.querySelector('.sd-pw').appendChild(pwf.el);
 
-      const email = ov.querySelector('.sd-email');
+      const email = ov.querySelector('.sd-email');   // absent in known-account mode
       const msg = ov.querySelector('.sd-msg');
       const go = ov.querySelector('.sd-go');
       const pwInput = pwf.el.querySelector('input');
-      email.focus();
+      (email || pwInput).focus();
 
       function close(result) {
         document.removeEventListener('keydown', onKey);
@@ -569,17 +587,27 @@
       ov.querySelector('.sd-cancel').addEventListener('click', () => close({ ok: false, cancelled: true }));
 
       async function attempt() {
-        const em = (email.value || '').trim(), pw = pwInput.value || '';
-        if (!em || !pw) { msg.textContent = 'Email and password are both required.'; return; }
+        const em = email ? (email.value || '').trim() : '', pw = pwInput.value || '';
+        if (byId ? !pw : (!em || !pw)) {
+          msg.style.color = '#a3382b';
+          msg.textContent = byId ? 'Enter your password.' : 'Email and password are both required.';
+          return;
+        }
         go.disabled = true; msg.style.color = 'var(--muted,#6b5b4f)'; msg.textContent = 'Signing in…';
         try {
           const r = await window.fetch('/auth/login', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: em, password: pw })
+            body: JSON.stringify(byId ? { user_id: Number(opts.userId), password: pw }
+                                      : { email: em, password: pw })
           });
           const d = await r.json().catch(() => ({}));
           msg.style.color = '#a3382b';
-          if (!r.ok) { msg.textContent = d.detail || 'Incorrect email or password.'; return; }
+          if (!r.ok) {
+            msg.textContent = d.detail ||
+              (byId ? 'Incorrect password.' : 'Incorrect email or password.');
+            if (byId) { pwf.clear(); pwInput.focus(); }
+            return;
+          }
           try {
             localStorage.setItem('app:self_user_id', String(d.user_id));
             localStorage.setItem('sidebar:user_id', String(d.user_id));
@@ -591,8 +619,10 @@
             if (!okNow) {
               // Signed in successfully, still not the account this grab belongs
               // to. Stay open and let them try another — without naming it.
-              msg.textContent = 'That account doesn’t match this bookmarklet. Try another.';
-              pwf.clear(); email.select();
+              msg.textContent = opts.mismatchMessage ||
+                'That account doesn’t match this bookmarklet. Try another.';
+              pwf.clear();
+              if (email) email.select(); else pwInput.focus();
               return;
             }
           }
@@ -605,7 +635,7 @@
         } finally { go.disabled = false; }
       }
       go.addEventListener('click', attempt);
-      [email, pwInput].forEach(el =>
+      [email, pwInput].filter(Boolean).forEach(el =>
         el.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); }));
     });
   }
