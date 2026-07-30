@@ -906,8 +906,9 @@ def init_db():
             from input.pipeline.cook_kb import ensure_cook_kb_table
             ensure_cook_kb_table(conn)
             # Per-user bookmarklet API keys (users.api_key_*).
-            from input.pipeline.auth import ensure_api_key_columns
+            from input.pipeline.auth import ensure_api_key_columns, ensure_password_column
             ensure_api_key_columns(conn)
+            ensure_password_column(conn)
             # Generic admin-managed tables (status_messages, etc.) — each
             # registered AdminModel's table is created + seeded here.
             from admin_models import ensure_admin_tables
@@ -2135,8 +2136,10 @@ def _resolve_caller(request: Request) -> Optional[dict]:
     # authentication rather than a claim.
     api_key = (request.headers.get("x-bcc-key")
                or _bearer_key(request.headers.get("authorization")))
+    session_token = request.headers.get("x-session-token")
     with _db() as conn:
-        return auth_lib.resolve_user(conn, header, master_token, api_key)
+        return auth_lib.resolve_user(conn, header, master_token, api_key,
+                                     session_token)
 
 
 def _bearer_key(authorization: Optional[str]) -> Optional[str]:
@@ -2255,6 +2258,74 @@ def auth_me(request: Request):
         "staff_locked": bool(user.get("staff_locked")),
         "actual_role": user.get("actual_role") or role,
     }
+
+
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    """Exchange {user_id|email, password} for a session token.
+
+    The token is returned and sent back as X-Session-Token. It is bound to the
+    uid it was minted for, so it cannot be replayed as another account."""
+    ip = (request.client.host if request.client else "?") or "?"
+    if _master_throttled(ip):          # same per-IP ceiling as the curator login
+        raise HTTPException(status_code=429,
+                            detail="Too many attempts. Wait 15 minutes and try again.")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    payload = payload or {}
+    password = payload.get("password") or ""
+    with _db() as conn:
+        auth_lib.ensure_password_column(conn)
+        uid = payload.get("user_id")
+        if uid is None and payload.get("email"):
+            row = conn.execute("SELECT user_id FROM users WHERE lower(email) = lower(?)",
+                               (payload["email"],)).fetchone()
+            uid = row[0] if row else None
+        if uid is None:
+            raise HTTPException(status_code=400, detail="user_id or email required.")
+        uid = int(uid)
+        stored = auth_lib.user_password_hash(conn, uid)
+    if not stored:
+        raise HTTPException(
+            status_code=409,
+            detail="No password is set on this account. An administrator sets one "
+                   "with POST /users/{id}/password.")
+    if not auth_lib.verify_password(password, stored):
+        _MASTER_FAILS.setdefault(ip, []).append(time.time())
+        print(f"[AUTH] login FAILED for user {uid} from {ip}")
+        raise HTTPException(status_code=401, detail="Incorrect password.")
+    token = auth_lib.mint_user_token(uid)
+    if not token:
+        raise HTTPException(status_code=503, detail="Token secret unavailable — "
+                                                    "run set_master_password.py.")
+    _MASTER_FAILS.pop(ip, None)
+    print(f"[AUTH] login OK user {uid} from {ip}")
+    return {"user_id": uid, "token": token, "expires_in": auth_lib.USER_TOKEN_TTL}
+
+
+@app.post("/users/{user_id}/password")
+async def set_user_password_endpoint(request: Request, user_id: int):
+    """Set (or change) this user's password. Self-service, or manage_users for
+    anyone else. Setting a password HARDENS the account: from then on the
+    X-Self-User-Id header alone stops being accepted for it."""
+    _require_self_or_perm(request, user_id, "manage_users")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    password = (payload or {}).get("password") or ""
+    if len(password) < 12:
+        raise HTTPException(status_code=400,
+                            detail="Password must be at least 12 characters.")
+    with _db() as conn:
+        if not auth_lib.set_user_password(conn, user_id, password):
+            raise HTTPException(status_code=404, detail=f"No user {user_id}.")
+    print(f"[AUTH] password set for user {user_id}")
+    return {"user_id": user_id, "password_set": True,
+            "note": "This account now requires a login token; the header alone "
+                    "is no longer accepted for it."}
 
 
 @app.post("/users/{user_id}/api-key")

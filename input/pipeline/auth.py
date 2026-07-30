@@ -263,6 +263,71 @@ def resolve_api_key(conn: sqlite3.Connection, key: Optional[str]) -> Optional[in
     return uid
 
 
+# === Per-user passwords ======================================================
+# Same primitives as the master password, with the user_id bound INTO the
+# signature so a token minted for one account cannot be replayed as another.
+#
+# Rollout without a flag day: a password being set is what enforces it. An
+# account with a password_hash must present a valid token and the
+# X-Self-User-Id header alone is refused; an account without one still resolves
+# by header (logged, loudly). Set passwords one at a time and each account
+# hardens as you go — no global switch to flip and forget.
+
+USER_TOKEN_TTL = 30 * 24 * 3600      # a customer session, not an admin one
+
+
+def mint_user_token(user_id: int, ttl: int = USER_TOKEN_TTL) -> Optional[str]:
+    """`<uid>.<expiry>.<hex sig>` — stateless, verifiable, and bound to the uid."""
+    secret = _token_secret()
+    if not secret:
+        return None
+    exp = int(time.time()) + ttl
+    sig = hmac.new(secret, f"u{user_id}:{exp}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{user_id}.{exp}.{sig}"
+
+
+def verify_user_token(token: Optional[str], user_id: int) -> bool:
+    """True only for an unexpired token signed for THIS user_id."""
+    secret = _token_secret()
+    if not secret or not token:
+        return False
+    try:
+        uid_s, exp_s, sig = token.split(".", 2)
+        uid, exp = int(uid_s), int(exp_s)
+    except Exception:
+        return False
+    if uid != int(user_id) or exp < time.time():
+        return False
+    want = hmac.new(secret, f"u{uid}:{exp}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, want)
+
+
+def ensure_password_column(conn: sqlite3.Connection) -> None:
+    have = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    for col in ("password_hash", "password_set_at"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+    conn.commit()
+
+
+def set_user_password(conn: sqlite3.Connection, user_id: int, password: str) -> bool:
+    ensure_password_column(conn)
+    cur = conn.execute(
+        "UPDATE users SET password_hash = ?, password_set_at = datetime('now') "
+        "WHERE user_id = ?", (hash_password(password), user_id))
+    conn.commit()
+    return bool(cur.rowcount)
+
+
+def user_password_hash(conn: sqlite3.Connection, user_id: int) -> Optional[str]:
+    try:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    except sqlite3.OperationalError:      # column not migrated yet
+        return None
+    return row[0] if row else None
+
+
 MASTER_USER: dict = {
     "user_id": 0,
     "ghost_uuid": None,
@@ -292,7 +357,8 @@ def ensure_api_key_columns(conn: sqlite3.Connection) -> None:
 
 def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str],
                  master_token: Optional[str] = None,
-                 api_key: Optional[str] = None) -> Optional[dict]:
+                 api_key: Optional[str] = None,
+                 session_token: Optional[str] = None) -> Optional[dict]:
     """Look up the user identified by the X-Self-User-Id header. Returns
     the row dict or None if the header is missing/invalid or the user
     doesn't exist.
@@ -338,6 +404,21 @@ def resolve_user(conn: sqlite3.Connection, self_user_id_header: Optional[str],
     ).fetchone()
     if not row:
         return None
+
+    # If this account has a password, the header alone is NOT enough — a valid
+    # session token for this exact uid is required. An API key already proved
+    # identity cryptographically, so it satisfies this too.
+    #
+    # Accounts with no password still resolve by header, which is how the
+    # rollout avoids a flag day: each account hardens the moment a password is
+    # set. The warning is deliberately noisy — an un-passworded account is a
+    # spoofable one and should not go unnoticed.
+    if not api_key and user_password_hash(conn, uid):
+        if not verify_user_token(session_token, uid):
+            return None
+    elif not api_key:
+        print(f"[AUTH] user {uid} resolved by UNVERIFIED header "
+              f"(no password set on this account)")
 
     # STAFF PERMISSIONS REQUIRE THE CURATOR PASSWORD — not just uid 0.
     # Gating only uid 0 left an identical bypass one number away: user 5 carries
