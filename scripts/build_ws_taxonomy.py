@@ -206,7 +206,7 @@ def main():
                     "INSERT OR REPLACE INTO ws_categories "
                     "(headline, section, subcategory, leaf, ws_path, url, description, "
                     " products_sample, embedding, source, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?, 'ws', datetime('now'))",
+                    "VALUES (?,?,?,?,?,?,?,?,?, 'ws', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
                     (name, sec_label, sub_label, None, path, sub_url, desc,
                      products or None, emb))
                 conn.commit()

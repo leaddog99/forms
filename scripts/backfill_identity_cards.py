@@ -86,7 +86,7 @@ def _process_dishes(conn: sqlite3.Connection, *,
             conn.execute(
                 "UPDATE dishes SET identity_card = ?, embedding = ?, "
                 "embedding_text = ?, embedding_updated_at = "
-                "datetime('now'), updated_at = datetime('now') "
+                "strftime('%Y-%m-%dT%H:%M:%SZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
                 "WHERE name = ?",
                 (json.dumps(card), vec.astype(np.float32).tobytes(),
                  text, name),

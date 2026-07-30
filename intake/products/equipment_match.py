@@ -170,7 +170,7 @@ def _resolve_terms(term_keys: list, conn: sqlite3.Connection, cats: list) -> dic
             resolved[key] = res
             conn.execute(
                 "INSERT OR REPLACE INTO tool_term_map (term, ws_category_id, ws_path, method, updated_at) "
-                "VALUES (?,?,?,?, datetime('now'))",
+                "VALUES (?,?,?,?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
                 (key, res["ws_category_id"], res["ws_path"], res["method"]))
         conn.commit()
     return resolved

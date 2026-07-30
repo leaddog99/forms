@@ -1,7 +1,7 @@
 from recipe_model import RecipeModel
 import html
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 
@@ -119,8 +119,8 @@ def sanitize_recipe_data(data: dict) -> dict:
             None,
         )
         sanitized["author"] = first_author or {"@type": "Person", "name": "", "image": None}
-    set_if_nullish(sanitized, "datePublished", datetime.utcnow().isoformat())
-    set_if_nullish(sanitized, "dateModified", datetime.utcnow().isoformat())
+    set_if_nullish(sanitized, "datePublished", datetime.now(timezone.utc).isoformat())
+    set_if_nullish(sanitized, "dateModified", datetime.now(timezone.utc).isoformat())
     set_if_nullish(sanitized, "recipeYield", "")
     # recipeYield can be a list like ["48", "4 dozen cookies"] — pick the
     # most useful single value. Prefer the human-readable form (longer string)
@@ -207,7 +207,7 @@ def sanitize_recipe_data(data: dict) -> dict:
             "name": "",
             "contentUrl": "",
             "thumbnailUrl": "",
-            "uploadDate": datetime.utcnow().isoformat(),
+            "uploadDate": datetime.now(timezone.utc).isoformat(),
             "description": ""
         }
 

@@ -274,7 +274,7 @@ def _seed_users_from_recipes(conn: sqlite3.Connection) -> None:
     is excluded (master/curator pseudo-user). Idempotent — uses INSERT OR
     IGNORE; reruns are no-ops once seeded."""
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         existing_uids = {
             row[0] for row in conn.execute(
                 "SELECT user_id FROM recipes WHERE user_id IS NOT NULL AND user_id != 0 "
@@ -696,7 +696,7 @@ def _maybe_stamp_source_drift(timings, *, user_id):
         return
     table = _recipes_table_for(user_id)
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with _db() as conn:
             cursor = conn.execute(
                 f"UPDATE {table} SET source_changed_at = ? "
@@ -1632,7 +1632,7 @@ def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
     target_table = _recipes_table_for(target_user_id)
 
     new_recipe_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     try:
         with _db() as conn:
             row = conn.execute(
@@ -1744,7 +1744,7 @@ def promote_to_master(recipe_id: str, request: Request):
     source_table = _recipes_table_for(source_owner)
     target_table = "master_recipes"
     new_recipe_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     try:
         with _db() as conn:
@@ -2422,7 +2422,7 @@ async def create_user(request: Request):
         raise HTTPException(status_code=400,
                             detail=f"invalid role {role!r}; allowed: "
                                    f"{sorted(auth_lib.ROLE_PERMISSIONS.keys())}")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     try:
         with _db() as conn:
             cur = conn.execute(
@@ -2491,7 +2491,7 @@ async def update_user(user_id: int, request: Request):
         params.append(v)
     if not sets:
         raise HTTPException(status_code=400, detail="no updatable fields in body")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     sets.append("updated_at = ?")
     params.append(now)
     params.append(user_id)
@@ -7051,7 +7051,7 @@ def create_ws_category_endpoint(payload: dict = Body(...)):
         cur = conn.execute(
             "INSERT INTO ws_categories (headline, section, subcategory, leaf, ws_path, url, "
             "description, products_sample, embedding, source, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?, 'curator', datetime('now'))",
+            "VALUES (?,?,?,?,?,?,?,?,?, 'curator', strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
             (headline, section or None, subcategory or None, leaf or None, path, None,
              description or None, products or None, emb))
         conn.commit()
@@ -7680,7 +7680,7 @@ def _save_recipe_core(payload: dict) -> dict:
             **existing_master,
             "kind": "harvest",
             "dish": hints["dish"].strip(),
-            "refreshed_at": (hints.get("run") or "").strip() or datetime.utcnow().isoformat(),
+            "refreshed_at": (hints.get("run") or "").strip() or datetime.now(timezone.utc).isoformat(),
             "batch_source": "manual-from-reject",
         }
         print(f"[HARVEST] manual-from-reject save: dish={hints['dish']!r} "
@@ -7743,7 +7743,7 @@ def _save_recipe_core(payload: dict) -> dict:
     if not recipe_id:
         recipe_id = str(uuid.uuid4())
         print(f"[SAVE] WARNING: payload missing recipe_id; minted {recipe_id}")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Normalize the source URL one more time at save (defensive — covers
     # recipes that were created before normalize_url existed in the extract
@@ -7787,7 +7787,7 @@ def _save_recipe_core(payload: dict) -> dict:
                 if not (_m.get("publisher") or "").strip():
                     _m["publisher"] = _pub_attr_host
                     _m.setdefault("kind", "top")
-                    _m.setdefault("refreshed_at", datetime.utcnow().isoformat())
+                    _m.setdefault("refreshed_at", datetime.now(timezone.utc).isoformat())
                     _m.setdefault("batch_source", "manual-capture")
                     recipe_dict["_master"] = _m
                     print(f"[ATTRIBUTE] master save attributed to publisher "

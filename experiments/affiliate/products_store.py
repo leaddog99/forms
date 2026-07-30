@@ -68,11 +68,11 @@ def upsert_product(conn: sqlite3.Connection, p: dict, *, embed: bool = True) -> 
         """
         INSERT INTO products (product_id, data, embed_text, embedding, embedding_model,
                               created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'))
         ON CONFLICT(product_id) DO UPDATE SET
             data=excluded.data, embed_text=excluded.embed_text,
             embedding=excluded.embedding, embedding_model=excluded.embedding_model,
-            updated_at=datetime('now')
+            updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
         """,
         (p["id"], json.dumps(p, ensure_ascii=False), txt, blob,
          "text-embedding-3-small" if embed else None),

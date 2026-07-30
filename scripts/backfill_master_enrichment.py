@@ -31,7 +31,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -127,7 +127,7 @@ def main() -> int:
                 print(f"   WARN: enrichment produced no story; skipping DB write")
                 continue
 
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "UPDATE master_recipes SET data = ?, updated_at = ? "
                 "WHERE recipe_id = ?",

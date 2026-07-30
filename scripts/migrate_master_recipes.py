@@ -26,7 +26,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Script lives in scripts/; resolve recipes.db at the project root
@@ -129,7 +129,7 @@ def main() -> int:
         return 0
 
     # Real migration
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     inserted = 0
     skipped_existing = 0
     deleted = 0

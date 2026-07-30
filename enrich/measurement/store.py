@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS ingredient_measures (
     source_note    TEXT,
     notes          TEXT,
     description    TEXT,                              -- free text; also feeds the LLM estimate
-    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 """
 
@@ -223,7 +223,7 @@ def update_row(row_id: int, data: dict) -> bool:
         return get_row(row_id) is not None
     fields["updated_at"] = None  # set via SQL below
     sets = ", ".join(f"{c}=?" for c in fields if c != "updated_at")
-    sets += ", updated_at=datetime('now')"
+    sets += ", updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')"
     vals = [fields[c] for c in fields if c != "updated_at"]
     with connect() as conn:
         cur = conn.execute(
