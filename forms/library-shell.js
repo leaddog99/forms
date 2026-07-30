@@ -596,6 +596,8 @@
               return;
             }
           }
+          // The screen must agree with the new identity immediately.
+          try { refreshIdentity(); } catch (e) { /* non-fatal */ }
           close({ ok: true, user: d });
         } catch (e) {
           msg.style.color = '#a3382b';
@@ -608,6 +610,23 @@
     });
   }
 
+  // Re-read identity and rebuild everything that depends on it.
+  //
+  // The badge hydrates from /auth/me once at page load and fetchAuth() caches
+  // the result, so signing in through the dialog changed localStorage and left
+  // the screen saying the opposite — you stayed "not signed in" until you
+  // navigated. The nav has the same dependency: signing in as staff should
+  // reveal the admin burger without a page load.
+  //
+  // Clearing the cache is the essential part; re-rendering without it would just
+  // redisplay the stale answer.
+  function refreshIdentity() {
+    _authPromise = null;
+    document.querySelectorAll('.identity-badge, .nav-toggle, .nav-menu')
+            .forEach(el => el.remove());
+    if (_lastNavOpts) initNav(_lastNavOpts);
+    else initIdentityBadge();
+  }
   function initIdentityBadge() {
     const headerInner = document.querySelector('.app-header .header-inner');
     if (!headerInner) return;
@@ -1115,8 +1134,10 @@
     return { toggle, menu };
   }
 
+  let _lastNavOpts = null;
   function initNav(opts) {
     opts = opts || {};
+    _lastNavOpts = opts;
     const currentPage = opts.currentPage || '';
     const allItems = opts.items || NAV_ITEMS;
     const userItems = allItems.filter(it => (it.group || 'admin') === 'user');
@@ -1407,6 +1428,7 @@
     attachUrlControls,
     passwordField,
     signInDialog,
+    refreshIdentity,
     initEditorNav,
     initIdentityBadge,
     openSidebar,
