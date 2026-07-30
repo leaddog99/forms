@@ -1603,3 +1603,71 @@ So: expert consensus ranks, owner arithmetic rides alongside, and the two are ne
 
 ### NEXT UP — categories must be staff-supplied ([[project_curate_staff_inputs]])
 `run.py:29` hardcodes `DEFAULT_CATEGORIES` (two of the four are Dutch-oven concepts) and will silently apply them to any product class run without explicit ones — and on the Loaf Pans run **the assistant invented the four categories**. Categories decide what gets recommended at all, so nothing automated should be inventing them. Fix: delete the constant, make categories a REQUIRED input that fails loudly; CLI arg now, the collection record once that editor exists. Same shape applies to `DEFAULT_WEIGHTS`, lower stakes — the curator judged the seven universal, and `build_prompt()` already accepts `weights`.
+
+## Session log — 2026-07-29/30 — the host is dying · and the app had no authentication
+
+Started as "why didn't the PC come back up." Became the security session.
+
+### The host (64e0440, ec4ab4f, e4a7e04, 5a807f2, c2fdee5, 50241ce)
+
+MARLEY_SVR crashed 01:28 and sat dead ~12 hours. Bugcheck **`0x101 CLOCK_WATCHDOG_TIMEOUT`** — a CPU core stopped answering interrupts — while **awake and idle** (zero System events 00:30–01:35).
+
+**The decisive fact: microcode `0x12F` is already loaded.** That is Intel's latest Vmin-shift mitigation, released for "systems continuously running for multiple days with low-activity, lightly-threaded workloads," which is exactly this host's duty cycle. The F.40 → F.45 flash on 6/23 was an explicit experiment with a stated pass condition — *does the idle-crash cadence stop?* — and it failed: four crashes since. Mitigation applied and did not hold ⇒ the silicon has already degraded. A newer BIOS cannot help.
+
+**Why it never restarted:** `AutoReboot=1` is set, but `0x101` halts the cores, so the crash-dump-and-reset path itself wedges. **No Windows setting can fix this** — recovery has to come from outside the OS. Sleep is ruled out for good (S0ix unsupported on this board, AC standby + hibernate timeouts 0, empty wake history) — ignore the misleading `ConnectedStandbyInProgress=true` in Event 41.
+
+**`kernel_power_check.bat` was lying, and against us.** Off by one on BOTH columns: it read `BugcheckParameter1` as the bugcheck code (so the two `0x101`s displayed as "8") and `SleepInProgress` as PowerButton (so the 4/14 event looked like a deliberate power-button hold and, under the script's own documented rule, would have been discarded). Fixed. Reading it correctly also **corrects the count downward — 11 spontaneous shutdowns, not 14** — because 4/14 and 5/21 do carry a real `PowerButtonTimestamp` and cannot honestly be claimed. The load-bearing figure is untouched: four spontaneous crashes after the microcode fix, none power-button.
+
+**Warranty, settled from the receipt.** Bought at Best Buy **2023-11-21**, order `BBY01-806817898714`, $749.99. *Do not date this machine from the filesystem* — the `john` profile (2025-01-11) is a Windows REINSTALL, and dating from it wrongly put the purchase at 2025-01 for an hour. Coverage: HP 1yr expired 2024-11; **Best Buy Protection (up to 24 mo) expired 2025-11-21**, with no in-window-failure argument available since the documented crash history starts 2026-05-10; **Intel's Vmin extension runs 5 years → open to 2028-11-21**, the only live route. Routing is system-manufacturer-first (HP, expired) then Intel escalation citing their published "unsuccessful in prior RMAs" clause — a documented HP refusal is the *entry ticket*, not a dead end. Docs written: `docs/host-stability-and-watchdog.md`, `docs/warranty-claim-submissions.md`, `warranty-evidence/crash-evidence.txt`.
+
+Applied: **min processor state 5% → 100% on AC**. Pending: Fast Startup off (needs admin), BIOS *After Power Loss = Power On*. Also written: `migration.txt` (runbook for moving to the new host) and `requirements-frozen.txt` — **there was no dependency manifest at all**; the venv was the only record of what the app needs, sitting on the machine that keeps dying.
+
+### Collateral (b661032)
+
+`recipes.sql.gz` was found **truncated** — the 03:00 backup missed its slot (host was dead), fired as a boot catch-up at 13:46 and was killed 15s in (`^C`, scheduled-task result `0xC000013A`). HEAD's committed copy and ADAM's newest were both fine, but a truncated dump sitting in the working tree looks exactly like a backup, and `recipes.db` is untracked. Repaired to 39.2 MB, verified, fresh ADAM copy. Gotcha recorded: **`bcc_backup_scheduled.bat` does not survive being invoked from Git Bash** — the venv `activate.bat` swallows the rest of the script and it still exits 0.
+
+### Whisper, measured rather than assumed (d9639bb)
+
+`/cook/listen` was `async def` calling `transcribe()` **inline on the event loop** — ~420 ms of CPU-bound work behind a global model lock, freezing *all 173 endpoints* for the duration of every utterance. Moved to `run_in_threadpool`.
+
+Benchmarked on this host: **base.en 414–478 ms, tiny.en 213–236 ms**, and **flat across 1–3 s clips** because Whisper pads everything to a 30 s mel window. So `cook_stt.py`'s "1-2s" docstring is out of date, trimming utterances buys nothing, and only model size moves the number. Conclusion: **do not build a separate STT machine** — `tiny.en` routed by clip length gets most of a GPU's benefit for one line and zero dollars, and the remaining "next" latency is more likely browser VAD endpointing.
+
+### The authentication hole (ac3daf1, e2e1ff1, 4315a5c, 17fc719, f93766e)
+
+**`X-Self-User-Id: 0` alone returned a synthetic `owner`** carrying admin_ui / edit_master / delete_master / manage_users / configure_system. `auth.py` was candid that it trusted the client header and called that "fine for a private-app threat model" — but the app has been public on recipes.tbotb.com, and the access log shows continuous automated scanning (`/admin/.env`, `/admin/phpinfo.php`, `/admin/config.php`, `/xmlrpc.php` from several IPs). One header on a known URL was a complete admin bypass.
+
+Fixed uid 0 behind a curator password (scrypt + HMAC token, **fail closed** — no password configured means no master, ever; an unconfigured install must not ship a guessable admin). Then found **the identical hole one number away**: user 5 carries `role='owner'`, so `X-Self-User-Id: 5` alone returned all ten permissions with no password.
+
+> **The lesson worth keeping: the bug was never "uid 0 is special", it was "the header is trusted." Every privilege reachable from an unverified header is the same finding wearing a different number.**
+
+So staff permissions now require the password for *every* account (identity preserved, role locked — `staff_locked` so the UI can offer an unlock rather than silently hiding admin), and then **per-user passwords** generalise it properly. The token binds the uid *into* the signature so it cannot be replayed as another account. Rollout has **no flag day**: a password being set is what enforces it, so accounts harden one at a time and nothing breaks while the migration is half done.
+
+Also gated the four endpoints whose own TODOs said "gate before public exposure" — a condition that had already been true for months — and **`/extract-product` + `/extract-review`, which were reachable by any caller with no credential at all**.
+
+**Per-user API keys** for the bookmarklets (`bcc_<uid>_<43 urlsafe>`): they run on a publisher's page with no session and no cookie, so every grab was anonymous and could not land in anyone's collection. The key authenticates identity and grants nothing by itself — what a bookmarklet can do follows from its owner's permissions, so there is no parallel scope system to keep in sync. SHA-256 rather than scrypt, deliberately: 256 bits of CSPRNG output is unguessable by construction and is checked on every request; slow hashing exists for low-entropy human secrets. A leaked bookmarklet is worth member access, because staff still requires the password.
+
+Plus **401 vs 403** (a lapsed session was reporting as a permissions error, which is exactly what made an account whose record reads `owner` get told its role was `anonymous`), **sign out / lock admin** (there was a way in and no way out — the only exits were switching user or clearing localStorage by hand), and **per-item menu permissions** (an `editor` saw Users and System and got a 403 on click; an `author` saw no admin burger at all despite holding edit_master).
+
+### The split, expressed in DNS (1d75944, e65ef9c, 5219415)
+
+`bestcooksclub.com` and `recipes.tbotb.com` both served the **full app**, which is why putting Cloudflare Access on tbotb protected nothing at all — the identical admin surface answered on the other hostname with no login. A lock on one of two doors into the same room.
+
+`input/pipeline/host_gate.py`: the public host serves an explicit customer allowlist and 404s everything else (404 not 403 — a public visitor should not learn that `/domains` is a real endpoint). Deny-by-default means a route nobody remembered to gate is not automatically public.
+
+**Got the allowlist wrong twice** — first all of `/forms/*` (which put the entire admin application on the customer domain), then none of it (which killed the customer menu's own targets) — before landing on the right frame, which was the curator's: **two hamburger menus IS the split**, so the allowlist mirrors the `group: 'user'` entries in `NAV_ITEMS`. The recipe form is on both sides deliberately; what differs is privilege, not the file. Getting that backwards is what produced both wrong passes.
+
+### Cloudflare Access — created, then deleted
+
+Turned on, and it immediately broke the bookmarklet **and** "show top recipes" — both simply hung. The tell: **no log entry at all**, meaning the request never reached the app. Access was answering with a 302 to a login page that could never complete, because the Zero Trust org is seat-limited (one seat, one user listed). Deleted; `recipes.tbotb.com` back to 200.
+
+> **General lesson: a hang with no log line means the request never arrived — look at the edge (tunnel, Access, DNS), not the code. A slow query would have appeared as a logged request with a long duration.**
+
+Correct sequence is Access on the **admin host only, after** the host gate — then customers never see a Cloudflare login, only staff consume seats, and six is plenty.
+
+### Decisions taken
+
+**Ghost dropped for now** — the password dialog *is* the login, and Authlib social sign-in bolts onto the same `users` row later. **Cloudflare Access is for staff, not customers** — a seat per authenticated user and no self-serve signup make it wrong for a consumer product. **Not the NVIDIA DGX Spark**: it is ARM Linux. (The RTX Spark variant *is* Windows-on-ARM — I said otherwise and was wrong — but the risk simply moves to ARM64 Python wheels, and `sqlite-vec` / `ctranslate2` are exactly where that is thinnest.) Replacement should be x86 Ryzen with **16 GB VRAM** — a 5060 Ti 16GB beats a 5070 12GB for local models, and current pricing is ~$2,100, not the ~$1,200 first estimated. **Never Intel 13th/14th Gen again**; Best Buy still sells them. **Do not take Best Buy's $100 trade-in** — the Intel RMA yields a free CPU and the Envy becomes a warm spare, which is the redundancy this setup has never had.
+
+### Parked / next
+
+Recipes in the **admin** menu as the only master-editing path (mechanism undecided: open as Master via `?user_id=0` reusing `_recipes_table_for`, or a scope switch inside the form). The ~147 remaining ungated endpoints, unclassified. Consumer displays — until they exist the public host serves APIs and the cook view but no general UI. The Master login prompt in the recipe form is still a native `prompt()` now that `LibraryShell.passwordField` exists. `extractUrlInput` never got the shared URL icons (deliberately — it sits in the extract path). **And the 2026-07-27/28 session still has no log** — curated collections, the EasyParser histogram work, the affiliate programs table and cook-KB grounding, four commits' worth, written up nowhere.
