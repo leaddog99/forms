@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730f"></script>
+  <script src="/forms/library-shell.js?v=20260730h"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -6698,6 +6698,51 @@
           return;
         }
         const data = await res.json();
+
+        // Whose grab is this? The bookmarklet runs on the publisher's page and
+        // cannot see our session, so the comparison happens at THIS point — the
+        // first moment both facts exist together. Nothing has been written yet;
+        // staging is transient and expires, so refusing here costs only the grab.
+        //
+        // The server answers with a boolean, never an id or a name: telling
+        // whoever holds a stray bookmarklet whose it is would be user disclosure.
+        const signedIn = (function () {
+          try {
+            const v = localStorage.getItem('app:self_user_id');
+            return v !== null && v !== '';
+          } catch (e) { return false; }
+        })();
+
+        // Sign in here rather than sending them away or refusing outright — the
+        // grab is fixable, and throwing it out would cost them the page they
+        // captured. verify() re-asks the server after each successful login, so
+        // signing in as the wrong account keeps the dialog open instead of
+        // proceeding under the wrong owner. Cancel abandons the grab.
+        const needsSignIn = !signedIn || (!data.staged_by_you && !data.staged_anonymously);
+        if (needsSignIn) {
+          const res2 = await LibraryShell.signInDialog({
+            title: signedIn ? 'Sign in to save this recipe' : 'Sign in to continue',
+            message: signedIn
+              ? 'This was grabbed with a different account’s bookmarklet. Sign in as that account to save it.'
+              : 'This recipe was grabbed with a bookmarklet. Sign in to save it to your collection.',
+            // Re-fetch and let the SERVER decide again — it compares the staged
+            // key against the new session and answers with a boolean, so no
+            // identity is exposed to whoever is at the keyboard.
+            verify: async () => {
+              try {
+                const r = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
+                if (!r.ok) return false;
+                const d = await r.json();
+                return !!(d.staged_by_you || d.staged_anonymously);
+              } catch (e) { return false; }
+            },
+          });
+          if (!res2.ok) {
+            showFeedback('Sign-in cancelled — the grab was not saved.', 'info');
+            return;
+          }
+        }
+
         const safeName = (data.title || 'staged').replace(/[^a-z0-9]/gi, '_').slice(0, 40) || 'staged';
         const file = new File([data.markdown], safeName + '.md', { type: 'text/markdown' });
         // Remember the token + metadata so the image fallback can fetch the

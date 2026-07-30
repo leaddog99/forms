@@ -9473,6 +9473,23 @@ async def measure_recipe_endpoint(request: Request):
     }
 
 
+def _staged_by(request: Request) -> Optional[int]:
+    """user_id behind the bookmarklet key on this call, or None if it was
+    anonymous. Held SERVER-SIDE only — see get_staged_markdown, which compares
+    it and returns a boolean. Never the name, never the id: telling whoever holds
+    a stray bookmarklet whose it is would be user disclosure."""
+    key = (request.headers.get("x-bcc-key")
+           or _bearer_key(request.headers.get("authorization")))
+    if not key:
+        return None
+    try:
+        with _db() as conn:
+            return auth_lib.resolve_api_key(conn, key)
+    except Exception as e:
+        print(f"[STAGE] could not resolve staging key: {e}")
+        return None
+
+
 @app.post("/stage-markdown")
 async def stage_markdown_endpoint(request: Request):
     print("[STAGE] Stage markdown endpoint called")
@@ -9513,6 +9530,13 @@ async def stage_markdown_endpoint(request: Request):
         # source image so we're independent of the source site.
         "local_hero_image_url": (payload.get("local_hero_image_url") or "").strip() or None,
         "bcc_hints": bcc_hints,
+        # WHO grabbed this, taken from the bookmarklet's API key. The bookmarklet
+        # runs on the publisher's page and cannot see the app-origin session, and
+        # this request carries no session either — so the key is the only identity
+        # available here. The form compares it against the signed-in user when it
+        # opens the staged content, which is the first moment both facts exist in
+        # one place. Null when the grab was anonymous (a pre-key bookmarklet).
+        "staged_by": _staged_by(request),
         "expires_at": now + _STAGE_TTL_SECONDS,
     }
     print(f"[OK] Staged markdown under token {token[:8]} ({len(md_text)} chars, "
@@ -9522,17 +9546,27 @@ async def stage_markdown_endpoint(request: Request):
 
 
 @app.get("/staged-markdown/{token}")
-async def get_staged_markdown(token: str):
+async def get_staged_markdown(token: str, request: Request):
     print(f"[STAGE] Retrieving staged markdown for token {token[:8]}")
     entry = _staged_markdown.get(token)
     if not entry or entry.get("expires_at", 0) < time.time():
         raise HTTPException(status_code=404, detail="Token not found or expired")
+    caller = _resolve_caller(request)
+    caller_uid = caller.get("user_id") if caller else None
+    staged_uid = entry.get("staged_by")
     return {
         "markdown": entry["markdown"],
         "source_url": entry.get("source_url", ""),
         "title": entry.get("title", ""),
         "local_hero_image_url": entry.get("local_hero_image_url"),
         "bcc_hints": entry.get("bcc_hints"),
+        # Comparison happens HERE, not on the client, and the answer is a
+        # boolean. This request comes from the form on our own origin, so it
+        # carries the session — which is why the server can compare at all,
+        # while the cross-origin grab could not. Returning the staging user's id
+        # or name would tell anyone holding a stray bookmarklet whose it is.
+        "staged_by_you": (staged_uid is not None and caller_uid == staged_uid),
+        "staged_anonymously": staged_uid is None,
     }
 
 

@@ -508,6 +508,106 @@
     };
   }
 
+  // === Sign-in dialog ========================================================
+  // A modal that authenticates in place and hands the caller the result. Built
+  // for the staged-grab flow: the bookmarklet identified one user, the browser
+  // is someone else (or nobody), and refusing outright would throw away a grab
+  // the person can simply fix by signing in.
+  //
+  // `verify` lets the caller re-check after a successful login and reject it —
+  // the dialog then stays open and says so, which is what makes "sign in as the
+  // right account" a loop rather than a one-shot. It must not say WHICH account
+  // is wanted: whoever holds a stray bookmarklet should not learn whose it is.
+  //
+  // Resolves {ok:true, user} once verify passes, or {ok:false, cancelled:true}.
+  // Cancel is always present — a modal with no way out is a trap.
+  function signInDialog(opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      const ov = document.createElement('div');
+      ov.style.cssText =
+        'position:fixed;inset:0;z-index:1300;background:rgba(42,33,27,.45);' +
+        'display:flex;align-items:center;justify-content:center;padding:24px';
+      ov.innerHTML =
+        '<div style="background:#fff;border-radius:14px;padding:26px 28px;max-width:26rem;' +
+        'width:100%;box-shadow:0 12px 36px rgba(60,40,20,.3)">' +
+        '<h2 style="margin:0 0 6px;font-size:1.2rem">' + escapeHtml(opts.title || 'Sign in') + '</h2>' +
+        '<p style="margin:0 0 16px;color:var(--muted,#6b5b4f);font-size:.9rem;line-height:1.45">' +
+        escapeHtml(opts.message || 'Sign in to continue.') + '</p>' +
+        '<div style="margin-bottom:8px"><input class="sd-email" type="email" autocomplete="email" ' +
+        'placeholder="you@example.com" style="width:100%;padding:9px 11px;font:inherit;' +
+        'border:1px solid var(--border,#e6dccf);border-radius:8px;box-sizing:border-box"></div>' +
+        '<div class="sd-pw"></div>' +
+        '<div class="sd-msg" style="font-size:.85rem;min-height:1.2em;margin:4px 0 12px;color:#a3382b"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button type="button" class="sd-cancel" style="padding:9px 16px;font:inherit;background:none;' +
+        'border:1px solid var(--border,#e6dccf);border-radius:8px;cursor:pointer">Cancel</button>' +
+        '<button type="button" class="sd-go" style="padding:9px 18px;font:inherit;font-weight:600;' +
+        'background:var(--accent,#b8602a);color:#fff;border:none;border-radius:8px;cursor:pointer">Sign in</button>' +
+        '</div></div>';
+      document.body.appendChild(ov);
+
+      // Reuse the shared password control for the reveal; a login needs no
+      // confirm entry, so hide the second field.
+      const pwf = passwordField({ id: 'sd_pw', label: 'Password', min: 1 });
+      pwf.el.querySelectorAll('.ed-field')[1].hidden = true;
+      ov.querySelector('.sd-pw').appendChild(pwf.el);
+
+      const email = ov.querySelector('.sd-email');
+      const msg = ov.querySelector('.sd-msg');
+      const go = ov.querySelector('.sd-go');
+      const pwInput = pwf.el.querySelector('input');
+      email.focus();
+
+      function close(result) {
+        document.removeEventListener('keydown', onKey);
+        ov.remove();
+        resolve(result);
+      }
+      function onKey(e) { if (e.key === 'Escape') close({ ok: false, cancelled: true }); }
+      document.addEventListener('keydown', onKey);
+      ov.querySelector('.sd-cancel').addEventListener('click', () => close({ ok: false, cancelled: true }));
+
+      async function attempt() {
+        const em = (email.value || '').trim(), pw = pwInput.value || '';
+        if (!em || !pw) { msg.textContent = 'Email and password are both required.'; return; }
+        go.disabled = true; msg.style.color = 'var(--muted,#6b5b4f)'; msg.textContent = 'Signing in…';
+        try {
+          const r = await window.fetch('/auth/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: em, password: pw })
+          });
+          const d = await r.json().catch(() => ({}));
+          msg.style.color = '#a3382b';
+          if (!r.ok) { msg.textContent = d.detail || 'Incorrect email or password.'; return; }
+          try {
+            localStorage.setItem('app:self_user_id', String(d.user_id));
+            localStorage.setItem('sidebar:user_id', String(d.user_id));
+            localStorage.setItem('app:session_token', d.token);
+            localStorage.removeItem('app:master_token');
+          } catch (e) { /* private mode */ }
+          if (typeof opts.verify === 'function') {
+            const okNow = await opts.verify(d);
+            if (!okNow) {
+              // Signed in successfully, still not the account this grab belongs
+              // to. Stay open and let them try another — without naming it.
+              msg.textContent = 'That account doesn’t match this bookmarklet. Try another.';
+              pwf.clear(); email.select();
+              return;
+            }
+          }
+          close({ ok: true, user: d });
+        } catch (e) {
+          msg.style.color = '#a3382b';
+          msg.textContent = 'Could not reach the server: ' + e.message;
+        } finally { go.disabled = false; }
+      }
+      go.addEventListener('click', attempt);
+      [email, pwInput].forEach(el =>
+        el.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); }));
+    });
+  }
+
   function initIdentityBadge() {
     const headerInner = document.querySelector('.app-header .header-inner');
     if (!headerInner) return;
@@ -1306,6 +1406,7 @@
     urlField,
     attachUrlControls,
     passwordField,
+    signInDialog,
     initEditorNav,
     initIdentityBadge,
     openSidebar,

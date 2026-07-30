@@ -113,7 +113,7 @@
     }
     .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
-  <script src="/forms/library-shell.js?v=20260730f"></script>
+  <script src="/forms/library-shell.js?v=20260730h"></script>
 </head>
 <body>
   <div class="wrap">
@@ -194,7 +194,11 @@
           localStorage.setItem('app:session_token', d.token);
           localStorage.removeItem('app:master_token');
         } catch (e) { /* private mode */ }
-        location.reload();
+        // A bookmarklet grab with nobody signed in sends the user here with
+        // ?next= pointing back at the staged form. Return them to it rather
+        // than dropping them on the home page having lost the grab.
+        const next = new URLSearchParams(location.search).get('next');
+        location.href = (next && next.startsWith('/')) ? next : '/';
       } catch (e) { say('Could not reach the server: ' + e.message, 'err'); }
       finally { $('#authBtn').disabled = false; }
     });
