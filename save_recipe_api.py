@@ -2237,8 +2237,10 @@ async def auth_login(request: Request):
     if not stored:
         raise HTTPException(
             status_code=409,
-            detail="No password is set on this account. An administrator sets one "
-                   "with POST /users/{id}/password.")
+            detail="This account doesn't have a password yet, so there is nothing "
+                   "to sign in with. Accounts created before passwords existed "
+                   "still work from the user picker — sign in there and set one "
+                   "on your own record.")
     if not auth_lib.verify_password(password, stored):
         _MASTER_FAILS.setdefault(ip, []).append(time.time())
         print(f"[AUTH] login FAILED for user {uid} from {ip}")
