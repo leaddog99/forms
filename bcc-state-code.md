@@ -1671,3 +1671,118 @@ Correct sequence is Access on the **admin host only, after** the host gate — t
 ### Parked / next
 
 Recipes in the **admin** menu as the only master-editing path (mechanism undecided: open as Master via `?user_id=0` reusing `_recipes_table_for`, or a scope switch inside the form). The ~147 remaining ungated endpoints, unclassified. Consumer displays — until they exist the public host serves APIs and the cook view but no general UI. The Master login prompt in the recipe form is still a native `prompt()` now that `LibraryShell.passwordField` exists. `extractUrlInput` never got the shared URL icons (deliberately — it sits in the extract path). **And the 2026-07-27/28 session still has no log** — curated collections, the EasyParser histogram work, the affiliate programs table and cook-KB grounding, four commits' worth, written up nowhere.
+
+### Addendum — everything after the log above was written
+
+The session kept going. Sixteen more commits, and the two largest turned out to be
+things the curator saw and I had missed.
+
+**Time, standardised on UTC (7f472e0, 195921a, 3a88967).** A freshly minted key
+displayed as "237 min ago". SQLite's `datetime('now')` returns
+`YYYY-MM-DD HH:MM:SS` — UTC with nothing saying so — and JS parses that shape as
+LOCAL, which on EDT put a just-written stamp four hours in the FUTURE; `fmtDate`'s
+"< 1 hour" branch is also true for negatives, so it rendered the negative minute
+count. The curator's response was the right one: *"we need to look at the WHOLE
+SYSTEM and standardize on UTC."* The audit found **three conventions in one
+database** — `jobs.created_at` with `+00:00`, `users.created_at` as ISO with no
+offset, and the new columns as bare `datetime('now')`. Now: 14 `datetime.utcnow()`
+(UTC but NAIVE, so `.isoformat()` drops the offset) → `datetime.now(timezone.utc)`;
+11 SQL `datetime('now')` → `strftime('%Y-%m-%dT%H:%M:%SZ','now')`. 102
+timezone-aware call sites, 0 naive, 0 unmarked. **The rule: store UTC with an
+explicit offset, convert to local only at display.** Verified safe before
+sweeping — every `fromisoformat` site already coerces naive→UTC before comparing
+(`extract_cache`, `url_scoring`) or uses `.date()` (`domains_lib`) — which is why
+this was one commit and not a rollback. Log lines keep the local wall clock but
+gained the offset (`[2026-07-30 13:28:43-0400]`), because correlating a log entry
+against the UTC row it wrote should not need mental arithmetic. `astimezone()` is
+the load-bearing detail: `datetime.now()` is naive, so `%z` renders empty — the
+exact shape that started this.
+
+**The front door (ec0466b, 084b834, 693695a, 17aa508).** There was no home page —
+`/` returned the API health JSON and the only way in was to navigate straight to
+`/forms/users.html`, which is the admin user editor and correctly 404s on the
+customer host. So **a customer had no way to sign in at all**, and two supporting
+gaps made it worse: `/auth/login` was never allowlisted (allowed `/auth/me` and
+forgot the endpoint that authenticates), and `POST /users` — which accepts `role`
+from the payload — was **ungated**, so an anonymous caller on the admin host could
+mint themselves an owner row. Now `/` serves `forms/home.html`, health moved to
+`/healthz`, and `POST /auth/signup` exists as the ONLY public account-creation
+path: deliberately not a mode of `POST /users`, because a public endpoint must be
+*structurally* unable to set a role — `'member'`/`'free'` are written into the
+INSERT itself. Which flavour of home you get is decided by the HOSTNAME, the same
+split `host_gate.py` enforces, so page and server agree by construction. Admin
+home carries the four signals that had to be dug out by hand all session: did the
+backup VERIFY, which jobs failed, which accounts are still spoofable, and what the
+month costs.
+
+**THE BOOKMARKLET REWORK — the curator's call, and the best decision of the day
+(43d3f16, b8d606b).** Testing found the identity check did nothing: signed in as
+Sara, grabbed with #5's bookmarklet, and it sailed through. Two reasons. The
+installed bookmarklet predated key-baking so it carried no key at all (confirmed:
+every key read NEVER USED), and key-less grabs were waved through for backward
+compatibility. But the real finding was underneath, and it corrects a claim made
+earlier in this session: **the key never determined ownership.** `user_id` comes
+from the form's payload at save time — the key only authenticated the staging
+call. So the curator reasoned it out: *"there's only one bookmarklet and it is
+universal.. it will save correctly to whoever is signed in OR if no one is it will
+prompt."* Correct, and it deletes the whole problem rather than policing it. The
+recipe bookmarklet now carries **no identity**: one install, any user, any number
+of devices, nothing to mismatch. Not-signed-in is the only remaining question and
+`LibraryShell.signInDialog` answers it — a modal whose `verify` callback made
+sign-in a loop rather than one shot, with Cancel always present.
+
+Tracing callers to place the keys correctly turned up **a live bug**: gating
+`/extract-review` this morning broke the review grabber, which posts cross-origin
+and acts immediately with no form round-trip to supply a session. It had been
+403ing silently since. The product grabber was fine — it stages and hands off to
+`products.html`, which calls `/extract-product` same-origin. Worth the check
+rather than assuming the two admin grabbers were symmetrical; they were not.
+
+**Per-device keys (43d3f16), and knowing when to stop.** One key per account meant
+generating one for a phone silently killed the laptop's, with no way to re-display
+the old one. `user_api_keys` (label, created_at, last_used_at, last_seen_ua) fixes
+that, migrating the old column across as "Original bookmarklet"; revocation is
+scoped by user_id as well as key id so guessing a number gets nothing. **Device
+identity is a label the user types** — there is no honest automatic answer in a
+browser — with the user-agent recorded on first use as a recognition hint. It now
+applies only to the review grabber, which is the curator's own machine. A
+timestamp-in-the-bookmarklet idea was raised and dropped: regenerating a key
+already invalidates old installs, so it was a second lock on the same door. The
+useful instinct underneath was expiry, which stays unbuilt.
+
+**Loader versioning.** The payload is cache-busted on every click, so logic ships
+without a re-install — *"No re-install ever"* — but the one-liner in the bookmarks
+bar is frozen at install time, and it changed twice today. `__bccLoaderV=3` with a
+non-blocking warning when the payload sees something older. Confirmed working on a
+real stale install within the hour.
+
+**Smaller, and the pattern in them.** Password minimum 12 → 8 at every point that
+enforces or describes it. Promote-to-master removed from the form and then the
+code — a second route into `master_recipes`, and the endpoint carried its own
+stale "any caller can promote" TODO that the morning's `_require_perm` work had
+already closed. The nav burger was pinned to the viewport edge rather than the
+content column on every fallback page (columns run 560–1200px, so measuring
+`.wrap` was the only thing that fits all). A browser hitting a blocked page got
+bare `{"detail":"Not Found"}` — now a styled page with a way home, still identical
+for a blocked admin route and a genuinely missing one. And the identity badge did
+not update after signing in mid-page: it hydrates once and `fetchAuth()` caches
+the promise, so re-rendering alone would have redisplayed the stale answer —
+clearing the cache is the load-bearing half.
+
+**Three corrections worth keeping.** My test scripts leaked a password and key
+onto Ann's account while claiming to roll back — `set_user_password()` and
+`resolve_api_key()` both `commit()` internally. Cleared. `FileResponse` and
+`HTMLResponse` were each used without being imported; `compileall` does not catch
+that and both would have been NameErrors on first request — now verified by
+resolving the attribute on the imported module rather than trusting the compile.
+And the staged-grab check first returned the *name* of the account that made the
+grab, which would have told anyone holding a stray bookmarklet whose it was; the
+curator caught it — *"we shouldn't be identifying other users!!"* — and the
+comparison moved server-side to return a boolean.
+
+**Still open.** Ann is the last account without a password. `.env.bak` holds the
+previous master password hash and should be deleted. Admin-menu Recipes as the
+master-editing path is still undecided (open as Master via `?user_id=0`, or a
+scope switch in the form). Key expiry, and rate-limiting anonymous
+`/stage-markdown`, are both deliberate not-yets. And the 2026-07-27/28 session log
+is still missing.
