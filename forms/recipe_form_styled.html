@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730d"></script>
+  <script src="/forms/library-shell.js?v=20260730e"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -2342,13 +2342,6 @@
            'sidebar:user_id'). Click does a fast in-DB row copy via
            POST /recipes/<id>/claim and redirects to the claimed copy. -->
       <button type="button" id="claimBtn" class="primary" style="display:none">Claim</button>
-      <!-- Promote-to-master: clones the loaded recipe into master_recipes
-           (user_id=0) via POST /recipes/<id>/promote-to-master. Visible
-           only when the recipe is saved (has a recipe_seq_id) AND the
-           current user is not already viewing master. See
-           memory/project_master_recipes_ui.md — this is the first-pass
-           curator affordance; full workflow still needs design. -->
-      <button type="button" id="promoteBtn" class="secondary" style="display:none">Promote to Master</button>
       <button type="button" id="clearBtn" class="secondary">Clear</button>
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
@@ -3809,16 +3802,6 @@
         const isForeign = (loadedUid != null) && (loadedUid !== selfUid);
         claimBtn.style.display = isForeign ? '' : 'none';
       }
-      // Promote-to-Master visibility: shown only on a saved recipe that
-      // isn't already in master_recipes. Click clones the row to master
-      // via POST /recipes/<id>/promote-to-master. First-pass curator
-      // affordance — see memory/project_master_recipes_ui.md.
-      const promoteBtn = document.getElementById("promoteBtn");
-      if (promoteBtn) {
-        const isSaved = !!recipe.id;
-        const alreadyMaster = (loadedUid === 0);
-        promoteBtn.style.display = (isSaved && !alreadyMaster) ? '' : 'none';
-      }
       // Rework-for-cooking visibility: any SAVED recipe (master or personal) can
       // be reworked into _cook. The label flips to "Re-rework" once one exists.
       const reworkBtn = document.getElementById("reworkBtn");
@@ -4399,36 +4382,6 @@
       }
     };
 
-    // Claim button: pure in-DB row copy from another collection (master or
-    // another user) into this user's personal table. Visible only when
-    // loadForm sees a mismatch between recipe.user_id and the persisted
-    // self user_id (see toggleClaimButton). No LLM call — the server just
-    // SELECTs + INSERTs with a new UUID, so the round-trip is milliseconds.
-    // Promote-to-Master: clones the loaded recipe into master_recipes
-    // and redirects to the master copy via /r/<id>. Visibility is
-    // controlled in loadForm — only shown for saved, non-master rows.
-    document.getElementById("promoteBtn").onclick = async () => {
-      const id = document.getElementById("recipe_id").value;
-      if (!id) return;
-      if (!confirm('Promote this recipe into the master collection? '
-                 + 'A separate master copy will be created — your current '
-                 + 'recipe stays in place.')) return;
-      let res;
-      try {
-        res = await fetch(`${API}/recipes/${encodeURIComponent(id)}/promote-to-master`,
-                          { method: 'POST' });
-      } catch (err) {
-        showFeedback('Promote failed: ' + (err && err.message ? err.message : err), 'error');
-        return;
-      }
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showFeedback('Promote failed: ' + (result.detail || `HTTP ${res.status}`), 'error');
-        return;
-      }
-      // Land the user on the new master copy — same UX as Claim.
-      window.location.href = result.url || `/r/${result.recipe_id}`;
-    };
 
     // Shared ↗ open / ⧉ copy icons on the URL fields
     // (memory/feedback_url_field_control). Replaces the bespoke "Copy" button
@@ -4758,8 +4711,6 @@
       ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
       const claimBtnEl = document.getElementById("claimBtn");
       if (claimBtnEl) claimBtnEl.style.display = 'none';
-      const promoteBtnEl = document.getElementById("promoteBtn");
-      if (promoteBtnEl) promoteBtnEl.style.display = 'none';
       const bccInputEl = document.getElementById("bccPermalink");
       if (bccInputEl) bccInputEl.value = '';
       // Clearing the form also abandons the harvest context — no banner,
@@ -6280,11 +6231,9 @@
       // A fresh extract is owned by whoever ran it; no claim affordance.
       const claimBtn = document.getElementById('claimBtn');
       if (claimBtn) claimBtn.style.display = 'none';
-      // Promote-to-Master and BCC permalink only make sense for SAVED
-      // rows. A fresh extract has a recipe_id (minted by extract) but
-      // no DB row yet, so /r/<id> would 404 and promote would 404.
-      const promoteBtn = document.getElementById('promoteBtn');
-      if (promoteBtn) promoteBtn.style.display = 'none';
+      // The BCC permalink only makes sense for SAVED rows. A fresh extract
+      // has a recipe_id (minted by extract) but no DB row yet, so /r/<id>
+      // would 404.
       const bccInput = document.getElementById('bccPermalink');
       if (bccInput) bccInput.value = '';
       // A fresh extract is a fresh slate — drift banner only applies to

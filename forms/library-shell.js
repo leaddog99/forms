@@ -1079,10 +1079,37 @@
       headerInner.appendChild(userBurger.toggle);
     } else {
       // No library-shell header — mount both as fixed top-right buttons.
-      userBurger.toggle.style.cssText += ';position:fixed;top:14px;right:16px;z-index:101;';
-      adminBurger.toggle.style.cssText += ';position:fixed;top:14px;right:60px;z-index:101;';
+      //
+      // Align to the CONTENT COLUMN, not the viewport edge. Pinning to
+      // right:16px stranded the burger far outside the page on a wide screen,
+      // on every page using this fallback — and their columns run from 560px
+      // (install) to 1200px (jobs monitor), so no single constant works.
+      // Measuring .wrap adapts to each without per-page configuration, and
+      // falls back to the viewport edge where there is no such column.
+      userBurger.toggle.style.cssText += ';position:fixed;top:14px;z-index:101;';
+      adminBurger.toggle.style.cssText += ';position:fixed;top:14px;z-index:101;';
       document.body.appendChild(userBurger.toggle);
       document.body.appendChild(adminBurger.toggle);
+
+      const placeBurgers = () => {
+        const col = document.querySelector('.wrap, .container, main');
+        let right = 16;
+        if (col) {
+          const r = col.getBoundingClientRect();
+          // Sit just inside the column's right edge, but never off-screen on a
+          // narrow viewport where the column already spans the full width.
+          right = Math.min(Math.max(16, window.innerWidth - r.right + 10),
+                           window.innerWidth - 52);
+        }
+        userBurger.toggle.style.right = right + 'px';
+        adminBurger.toggle.style.right = (right + 44) + 'px';
+      };
+      placeBurgers();
+      window.addEventListener('resize', placeBurgers);
+      // The column can be laid out after this runs (late CSS, web fonts), so
+      // re-measure once the frame settles rather than trusting first paint.
+      requestAnimationFrame(placeBurgers);
+      window.addEventListener('load', placeBurgers);
     }
 
     _refreshJobBadges();  // initial queued count on page load
