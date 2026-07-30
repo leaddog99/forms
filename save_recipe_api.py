@@ -2374,7 +2374,7 @@ def mint_user_api_key(request: Request, user_id: int):
             raise HTTPException(status_code=404, detail=f"No user {user_id}.")
         plain, hashed = auth_lib.generate_api_key(user_id)
         conn.execute(
-            "UPDATE users SET api_key_hash = ?, api_key_created_at = datetime('now'), "
+            "UPDATE users SET api_key_hash = ?, api_key_created_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'), "
             "api_key_last_used_at = NULL WHERE user_id = ?", (hashed, user_id))
         conn.commit()
     print(f"[AUTH] bookmarklet key minted for user {user_id} ({row[0]})")

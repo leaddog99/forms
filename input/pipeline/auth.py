@@ -255,7 +255,8 @@ def resolve_api_key(conn: sqlite3.Connection, key: Optional[str]) -> Optional[in
         return None
     try:
         conn.execute(
-            "UPDATE users SET api_key_last_used_at = datetime('now') WHERE user_id = ?",
+            "UPDATE users SET api_key_last_used_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
+            "WHERE user_id = ?",
             (uid,))
         conn.commit()
     except Exception:
@@ -313,7 +314,7 @@ def ensure_password_column(conn: sqlite3.Connection) -> None:
 def set_user_password(conn: sqlite3.Connection, user_id: int, password: str) -> bool:
     ensure_password_column(conn)
     cur = conn.execute(
-        "UPDATE users SET password_hash = ?, password_set_at = datetime('now') "
+        "UPDATE users SET password_hash = ?, password_set_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
         "WHERE user_id = ?", (hash_password(password), user_id))
     conn.commit()
     return bool(cur.rowcount)

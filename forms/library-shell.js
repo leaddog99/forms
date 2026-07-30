@@ -293,10 +293,21 @@
   function fmtDate(s) {
     if (!s) return '—';
     try {
-      const d = new Date(s);
+      // SQLite's datetime('now') yields "YYYY-MM-DD HH:MM:SS" — UTC, but with
+      // no marker saying so, and JS parses that shape as LOCAL time. On EDT that
+      // put a just-written timestamp four hours in the FUTURE, and since the
+      // "< 1 hour" branch is also true for negatives it rendered as "-237 min
+      // ago". Treat a bare space-separated stamp as the UTC it actually is.
+      const iso = (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(s.trim()))
+        ? s.trim().replace(' ', 'T') + 'Z'
+        : s;
+      const d = new Date(iso);
       if (Number.isNaN(d.getTime())) return s;
       const ageMs = Date.now() - d.getTime();
       const ageHrs = ageMs / 3600000;
+      // Clock skew (or a stamp written a moment ago by a server a second ahead)
+      // should read as "just now", never as a negative age.
+      if (ageMs < 0) return ageMs > -120000 ? 'just now' : d.toLocaleString();
       if (ageHrs < 1) return Math.round(ageMs / 60000) + ' min ago';
       if (ageHrs < 24) return Math.round(ageHrs) + ' hr ago';
       if (ageHrs < 24 * 7) return Math.round(ageHrs / 24) + ' d ago';
