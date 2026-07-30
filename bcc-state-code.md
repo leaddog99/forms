@@ -1786,3 +1786,61 @@ master-editing path is still undecided (open as Master via `?user_id=0`, or a
 scope switch in the form). Key expiry, and rate-limiting anonymous
 `/stage-markdown`, are both deliberate not-yets. And the 2026-07-27/28 session log
 is still missing.
+
+### Closing state — 2026-07-30 evening
+
+**All six accounts have passwords.** `X-Self-User-Id` alone no longer resolves for
+anybody. That header opened the day as a complete admin bypass on a public
+hostname under active automated scanning; it ends the day inert. Everything else
+in this log follows from pulling that thread.
+
+Dead code from the bookmarklet rework removed (`d3cc2cf`): `_staged_by()`, the
+`staged_by` entry field and the `staged_by_you` comparison were still executing on
+every staged grab, resolving a key the universal bookmarklet no longer sends and
+computing an answer the form had stopped reading. `/users` also stopped reporting
+`has_api_key` and the old key timestamps — device keys live in `user_api_keys` and
+the editor reads `/users/{id}/api-keys`. The migration path in `auth.py` stays:
+it reads `users.api_key_hash` to carry pre-existing keys across on first run, and
+must survive until every install has migrated.
+
+**Restarts needed nothing beyond the schema auto-migrations.** `ensure_api_keys_table`,
+`ensure_password_column` and `ensure_api_key_columns` all run at init, so the
+device-key table and its migration happen on first boot with no manual step.
+
+#### Where to pick up
+
+Decided but unbuilt:
+- **Admin-menu Recipes** as the only master-editing path — mechanism still open:
+  open as Master via `?user_id=0` reusing `_recipes_table_for`, or a scope switch
+  inside the form. `author` is now `edit_master` + `own_recipes`, so gating the
+  entry on `edit_master` still admits them.
+- **Cloudflare Access on `recipes.tbotb.com` only**, once the Zero Trust seat
+  count is sorted (it showed 1 seat, one user listed). Now worth doing: the host
+  gate means the admin surface only answers on that hostname, so Access finally
+  protects something. Customers never see a Cloudflare login and only staff
+  consume seats.
+- **Consumer displays.** Until they exist the public host serves APIs, the cook
+  view and the recipe form, but no browsing surface.
+
+Deliberate not-yets, with the reasoning so they are not re-litigated:
+- **Key expiry.** Would bound a lost device without anyone remembering to revoke.
+  Only applies to the review grabber now, which is the curator's own machine, so
+  the value dropped sharply once the recipe bookmarklet went keyless.
+- **Rate-limiting anonymous `/stage-markdown`.** It accepts anonymous grabs
+  permanently by design — staged content is transient and worthless until someone
+  signs in and saves it, so the exposure is junk in memory, not a credential.
+- **The ~147 ungated endpoints**, still unclassified. The host gate is the
+  perimeter; `_require_perm` is the control. Both layers exist, but only the
+  endpoints reached this session have been walked.
+- **`prompt()` in the recipe form** for the Master password, now that
+  `LibraryShell.signInDialog` exists.
+- **The 2026-07-27/28 session log**, still missing — curated collections, the
+  EasyParser histogram work, the affiliate programs table, cook-KB grounding.
+
+Housekeeping: `.env.bak` holds the previous master password hash and should be
+deleted now the current one is proven. `recipes.sql.gz` carries the morning's
+scheduled refresh, uncommitted.
+
+The host is still dying. Intel's window runs to 2028-11-21 and the evidence is
+assembled in `warranty-evidence/crash-evidence.txt`; `migration.txt` is the
+runbook for the new machine when it arrives.
