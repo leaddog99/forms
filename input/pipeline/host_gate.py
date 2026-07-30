@@ -52,16 +52,25 @@ def is_public_host(host: Optional[str]) -> bool:
 
 _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     # --- app shell + assets ------------------------------------------------
-    # NOTE /forms/* is NOT here, deliberately. Everything under forms/ is the
-    # ADMIN application — the recipe form, domains, dishes, products, reviews,
-    # users, system. That is the core business tooling and it belongs to staff.
-    # Customers get purpose-built displays (not yet written); when those land,
-    # add their specific paths here rather than reopening the whole directory.
+    # /forms/ is allowed PAGE BY PAGE, and the list mirrors the `group: 'user'`
+    # entries in library-shell.js NAV_ITEMS — the customer hamburger. That is the
+    # split: two menus, and the public host serves exactly what the customer menu
+    # can reach. Everything in the `group: 'admin'` burger (domains, dishes,
+    # products, reviews, users, system, jobs, chapters, taxonomy…) is absent and
+    # 404s here.
     #
-    # The one customer-facing view today is the cook view, and it needs nothing
-    # from here: it is served by the /cook/{id} ROUTE and is self-contained (no
-    # external css/js). /r/{id} is likewise absent — it only 302s into
-    # /forms/recipe_form_styled.html, so on this host it would redirect to a 404.
+    # KEEP THIS IN SYNC WITH NAV_ITEMS. A new customer page needs an entry here;
+    # a new admin page needs nothing, and is private the moment it is written.
+    #
+    # Note the recipe form IS customer-facing — same page for both audiences.
+    # What differs is privilege, not the file: master rows are read-only without
+    # the edit_master permission, which _require_perm already enforces. The menu
+    # is the affordance; the permission is the control.
+    (r"/forms/recipe_form_styled\.html", frozenset({"GET"})),
+    (r"/forms/install\.html", frozenset({"GET"})),       # the grab bookmarklet
+    (r"/forms/cook\.html", frozenset({"GET"})),
+    (r"/forms/[^/]+\.(css|js)", frozenset({"GET"})),     # shared shell assets
+    (r"/r/.+", frozenset({"GET"})),                      # short permalink -> the form
     (r"/", frozenset({"GET"})),
     (r"/generated/.*", frozenset({"GET"})),             # hero + og images
     (r"/branding", frozenset({"GET"})),
