@@ -449,7 +449,7 @@
   // entries match and clear the minimum length.
   function passwordField(opts) {
     opts = opts || {};
-    const min = opts.min || 12;
+    const min = opts.min || 8;
     const idA = opts.id || ('pw_' + Math.floor(performance.now() * 1000));
     const idB = idA + '_confirm';
     const wrap = document.createElement('div');

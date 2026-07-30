@@ -2359,9 +2359,9 @@ async def auth_signup(request: Request):
 
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="A valid email address is required.")
-    if len(password) < 12:
+    if len(password) < 8:
         raise HTTPException(status_code=400,
-                            detail="Password must be at least 12 characters.")
+                            detail="Password must be at least 8 characters.")
     if not name:
         name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
 
@@ -2398,9 +2398,9 @@ async def set_user_password_endpoint(request: Request, user_id: int):
     except Exception:
         payload = {}
     password = (payload or {}).get("password") or ""
-    if len(password) < 12:
+    if len(password) < 8:
         raise HTTPException(status_code=400,
-                            detail="Password must be at least 12 characters.")
+                            detail="Password must be at least 8 characters.")
     with _db() as conn:
         if not auth_lib.set_user_password(conn, user_id, password):
             raise HTTPException(status_code=404, detail=f"No user {user_id}.")

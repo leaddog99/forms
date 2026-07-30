@@ -79,8 +79,8 @@ def _read_password() -> str:
         if tries > 5:
             sys.exit("Too many attempts — nothing was written.")
         pw = getpass.getpass("New Master password: ")
-        if len(pw) < 12:
-            print("  Too short — use at least 12 characters. This is the only")
+        if len(pw) < 8:
+            print("  Too short — use at least 8 characters. This is the only")
             print("  thing standing between the internet and edit_master.")
             continue
         if pw != getpass.getpass("Confirm: "):
