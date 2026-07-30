@@ -2088,9 +2088,12 @@ async def generate_recipe_image_endpoint(
 def list_users():
     try:
         with _db() as conn:
+            auth_lib.ensure_api_key_columns(conn)
+            auth_lib.ensure_password_column(conn)
             rows = conn.execute(
                 "SELECT user_id, ghost_uuid, email, name, status, "
-                "subscription_tier, role, created_at, updated_at "
+                "subscription_tier, role, created_at, updated_at, "
+                "password_hash, api_key_hash, api_key_created_at, api_key_last_used_at "
                 "FROM users ORDER BY user_id"
             ).fetchall()
             return [
@@ -2104,6 +2107,13 @@ def list_users():
                     "role": r[6] or "member",
                     "created_at": r[7],
                     "updated_at": r[8],
+                    # Presence flags only — never the hashes themselves. The UI
+                    # needs to know whether an account is hardened and whether a
+                    # bookmarklet exists, not what the secrets are.
+                    "has_password": bool(r[9]),
+                    "has_api_key": bool(r[10]),
+                    "api_key_created_at": r[11],
+                    "api_key_last_used_at": r[12],
                 }
                 for r in rows
             ]
@@ -2221,12 +2231,25 @@ def _require_perm(request: Request, perm: str) -> dict:
     """Raise 403 unless the caller has `perm`. Returns the caller's
     user dict on success — useful for downstream logging / audit."""
     user = _resolve_caller(request)
+    # 401 vs 403 is the difference between "who are you?" and "not you". They
+    # need different UI: a lapsed session should offer a re-login, not tell you
+    # your permissions are wrong. Reporting both as 403 read as a contradiction
+    # — an owner account being told its role was 'anonymous'.
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Your session has expired or you are not signed in. "
+                   "Sign in again to continue.")
     if not auth_lib.can(user, perm):
-        role = (user or {}).get("role", "anonymous")
+        role = user.get("role", "member")
+        extra = ""
+        if user.get("staff_locked"):
+            extra = (f" This account is '{user.get('actual_role')}' but staff "
+                     f"permissions are locked — unlock admin to use them.")
         raise HTTPException(
             status_code=403,
             detail=f"This action requires the '{perm}' permission "
-                   f"(your role: '{role}')."
+                   f"(your role: '{role}').{extra}"
         )
     return user
 

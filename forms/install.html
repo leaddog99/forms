@@ -123,12 +123,25 @@
     }
     .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
-  <script src="/forms/library-shell.js?v=20260730b"></script>
+  <script src="/forms/library-shell.js?v=20260730d"></script>
 </head>
 <body>
   <div class="wrap">
     <h1>Install Recipe Grabber</h1>
     <p class="sub">A one-click bookmark that imports the recipe you're reading.</p>
+
+    <!-- Per-user key. The bookmarklet runs on a publisher's page with no
+         session, so it carries this to say WHO is grabbing — without it the
+         grab is anonymous and lands nowhere. Each person installs their own. -->
+    <div class="card" id="keyBox">
+      <h3>Your key</h3>
+      <p class="note" style="margin-top:0">
+        This bookmarklet is personal to <strong id="keyWho">…</strong>. The code below
+        carries a key identifying you, so imported recipes land in your collection.
+      </p>
+      <button id="genKey" class="copy" type="button" style="margin-top:6px">Generate my key</button>
+      <p class="note key-status" id="keyStatus" aria-live="polite">Checking…</p>
+    </div>
 
     <!-- ========== DESKTOP BLOCK ========== -->
     <section id="desktop-block" hidden>
@@ -212,9 +225,10 @@
     // bookmarklet reads it back — no host baked into bookmarklet.js. Same loader
     // works on desktop and iOS: opens a popup synchronously inside the user
     // gesture (iOS Safari requires this), then injects bookmarklet.js cache-busted.
-    function buildLoader(base) {
+    function buildLoader(base, key) {
       base = String(base || '').replace(/\/+$/, '');
-      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='" + base + "/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
+      key = String(key || '').replace(/'/g, '');   // the key is [A-Za-z0-9_-] by construction
+      return "javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;window.__recipeBookmarkletKey='" + key + "';var s=document.createElement('script');s.src='" + base + "/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();";
     }
 
     // Start from this page's own origin so drag/copy work instantly; then ask
@@ -223,7 +237,8 @@
     // host the bookmarklet must hit (this page may be open on localhost).
     var LOADER = '';
     function applyBase(base) {
-      LOADER = buildLoader(base);
+      currentBase = base;
+      LOADER = buildLoader(base, USER_KEY);
       document.getElementById('rawCode').textContent = LOADER;
       document.getElementById('dragLink').setAttribute('href', LOADER);
       try {
@@ -231,7 +246,62 @@
         document.querySelectorAll('.pop-host').forEach(function (el) { el.textContent = host; });
       } catch (e) { /* leave the default text */ }
     }
+    // === Per-user key ========================================================
+    // The bookmarklet runs on a publisher's page with no session, so it carries
+    // the owner's API key to say who is grabbing. Each user installs THEIR OWN
+    // bookmarklet; the key is what makes the grab land in their collection
+    // rather than nobody's.
+    //
+    // The key is never stored client-side — it is minted on demand, baked into
+    // the one-liner, and only ever displayed here. Re-minting invalidates the
+    // previously installed bookmarklet, so the button says so.
+    var USER_KEY = '';
+    var keyUserId = null;
+
+    function keyStatus(msg, cls) {
+      var el = document.getElementById('keyStatus');
+      if (el) { el.textContent = msg; el.className = 'key-status ' + (cls || ''); }
+    }
+
+    function renderKeyState(me) {
+      var box = document.getElementById('keyBox');
+      if (!box) return;
+      if (!me || !me.user) {
+        keyStatus('Not signed in — the bookmarklet would grab anonymously. Sign in first, then generate a key.', 'warn');
+        document.getElementById('genKey').disabled = true;
+        return;
+      }
+      keyUserId = me.user.user_id;
+      document.getElementById('keyWho').textContent =
+        (me.user.name || ('user ' + keyUserId)) + ' (#' + keyUserId + ')';
+      if (USER_KEY) {
+        keyStatus('Key ready — the code below is personalised. Install it now; it is not shown again.', 'ok');
+      } else {
+        keyStatus('No key in this page yet. Generate one to personalise the bookmarklet below.', '');
+      }
+    }
+
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('#genKey');
+      if (!b || keyUserId == null) return;
+      if (USER_KEY && !confirm('Generate a new key? Any bookmarklet already installed stops working.')) return;
+      b.disabled = true;
+      keyStatus('Generating…', '');
+      fetch('/users/' + keyUserId + '/api-key', { method: 'POST' })
+        .then(function (r) { return r.ok ? r.json() : r.json().then(function (d) { throw new Error(d.detail || r.status); }); })
+        .then(function (d) {
+          USER_KEY = d.api_key;
+          applyBase(currentBase);          // re-render the one-liner WITH the key
+          keyStatus('Key generated and baked into the code below. Install it now — it is not shown again.', 'ok');
+        })
+        .catch(function (err) { keyStatus('Could not generate a key: ' + err.message, 'warn'); })
+        .finally(function () { b.disabled = false; });
+    });
+
+    var currentBase = location.origin;
     applyBase(location.origin);
+    fetch('/auth/me').then(function (r) { return r.ok ? r.json() : null; })
+                     .then(renderKeyState).catch(function () { renderKeyState(null); });
     fetch('/branding').then(function (r) { return r.ok ? r.json() : null; }).then(function (b) {
       if (b && b.bookmarklet_api_base) applyBase(b.bookmarklet_api_base);
     }).catch(function () { /* keep the location.origin fallback */ });

@@ -70,7 +70,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260730b"></script>
+  <script src="/forms/library-shell.js?v=20260730d"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -198,6 +198,33 @@
         </section>
 
         <section class="ed-block">
+          <h3 class="ed-block-label">Password</h3>
+          <div class="ed-callout info"><span class="mark">○</span><span>${u.has_password
+            ? 'This account is <strong>hardened</strong> — it requires a login and the identity header alone is no longer accepted for it.'
+            : 'No password set. This account still resolves on the <strong>unverified identity header</strong>, so anyone who can reach the app could act as it. Setting one hardens it immediately.'}</span></div>
+          <div id="pwMount"></div>
+          <div class="warn-hint" id="pwHint"></div>
+          <div class="ed-actions" style="margin-top:8px">
+            <button type="button" class="ed-btn" id="setPwBtn">${u.has_password ? 'Change password' : 'Set password'}</button>
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Bookmarklet key</h3>
+          <div class="ed-callout info"><span class="mark">○</span><span>Each user gets their own key, and their bookmarklet carries it. The key proves <em>who</em> is grabbing — what they may grab follows from their role, so a member's bookmarklet saves recipes while the product and review grabbers stay with staff. Shown <strong>once</strong>: only a hash is stored, so a lost key is regenerated, never recovered.</span></div>
+          <div class="ed-kv">
+            <div class="k">Status</div><div class="v" id="keyStatus">${u.has_api_key ? 'active' : '— none —'}</div>
+            <div class="k">Created</div><div class="v">${u.api_key_created_at ? fmtDate(u.api_key_created_at) : '—'}</div>
+            <div class="k">Last used</div><div class="v">${u.api_key_last_used_at ? fmtDate(u.api_key_last_used_at) : (u.has_api_key ? 'never' : '—')}</div>
+          </div>
+          <div id="keyReveal" hidden style="margin-top:10px"></div>
+          <div class="ed-actions" style="margin-top:8px">
+            <button type="button" class="ed-btn" id="genKeyBtn">${u.has_api_key ? 'Regenerate key' : 'Generate key'}</button>
+            ${u.has_api_key ? '<button type="button" class="ed-btn" id="revokeKeyBtn">Revoke</button>' : ''}
+          </div>
+        </section>
+
+        <section class="ed-block">
           <h3 class="ed-block-label">Activity</h3>
           <div class="ed-kv">
             <div class="k">User ID</div><div class="v">#${u.user_id}</div>
@@ -222,9 +249,109 @@
       $('#loginBtn').addEventListener('click', () => login(u.user_id));
       $('#deleteBtn').addEventListener('click', () => doDelete(u));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
+      wirePassword(u);
+      wireApiKey(u);
     }
 
-    function login(uid){
+    /* ------------------- password + bookmarklet key ------------------- */
+
+    function wirePassword(u){
+      const btn = $('#setPwBtn'), hint = $('#pwHint'), mount = $('#pwMount');
+      if (!btn || !mount) return;
+      // Shared control: two entries that must match, each with its own reveal.
+      // A typo in a masked field would otherwise only surface at the NEXT login,
+      // by which point the account is locked and the fix is a shell on the box.
+      const pwf = LibraryShell.passwordField({
+        id: 'f_pw',
+        label: u.has_password ? 'New password' : 'Set password',
+        onChange: (ok) => { btn.disabled = !ok; },
+      });
+      mount.appendChild(pwf.el);
+      btn.disabled = true;
+      const input = { get value(){ return pwf.value(); }, set value(v){ if (!v) pwf.clear(); }, focus: () => pwf.focus() };
+      const say = (m, bad) => { hint.textContent = m; hint.style.color = bad ? '' : 'var(--muted,#8a7f72)'; };
+      btn.addEventListener('click', async () => {
+        const pw = (input.value || '');
+        if (pw.length < 12) { say('At least 12 characters.', true); input.focus(); return; }
+        btn.disabled = true; say('Saving…');
+        try {
+          const r = await fetch(`/users/${u.user_id}/password`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw })
+          });
+          if (!r.ok) { const d = await r.json().catch(() => ({})); say(d.detail || `Failed (${r.status})`, true); return; }
+          input.value = '';
+          say('');
+          flash('Password set — this account now requires a login.');
+          await loadUsers(); renderList(); renderMain();
+        } catch (e) { say('Could not reach the server: ' + e.message, true); }
+        finally { btn.disabled = false; }
+      });
+
+    }
+
+    function wireApiKey(u){
+      const gen = $('#genKeyBtn'), revoke = $('#revokeKeyBtn'), reveal = $('#keyReveal');
+      if (!gen) return;
+      gen.addEventListener('click', async () => {
+        if (u.has_api_key && !confirm('Regenerate? The current bookmarklet stops working immediately.')) return;
+        gen.disabled = true;
+        try {
+          const r = await fetch(`/users/${u.user_id}/api-key`, { method: 'POST' });
+          if (!r.ok) { const d = await r.json().catch(() => ({})); flash(d.detail || `Failed (${r.status})`, true); return; }
+          const d = await r.json();
+          // Shown once — only the hash is stored. Give them the key AND a direct
+          // route to the installer rather than leaving them to find it.
+          reveal.hidden = false;
+          reveal.innerHTML =
+            '<div class="ed-callout info" style="margin:0"><span class="mark">!</span><span>' +
+            '<strong>Copy this now — it will not be shown again.</strong></span></div>' +
+            '<div class="ed-field full" style="margin-top:8px"><label for="newKey">Key for ' +
+            escapeHtml(u.name || ('user ' + u.user_id)) + '</label>' +
+            '<div style="display:flex;gap:6px;align-items:stretch">' +
+            '<input id="newKey" type="text" readonly value="' + escapeHtml(d.api_key) + '" style="flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em">' +
+            LibraryShell.urlControl(d.api_key, { inputId: 'newKey', display: false }) +
+            '</div></div>' +
+            '<p class="ed-submeta">Install it at <a href="/forms/install.html?user_id=' + u.user_id +
+            '">the bookmarklet page</a> — the one-liner there is personalised for this user.</p>';
+          await loadUsers(); renderList();
+        } catch (e) { flash('Could not reach the server: ' + e.message, true); }
+        finally { gen.disabled = false; }
+      });
+      if (revoke) revoke.addEventListener('click', async () => {
+        if (!confirm('Revoke this key? Their bookmarklet stops working immediately.')) return;
+        const r = await fetch(`/users/${u.user_id}/api-key`, { method: 'DELETE' });
+        if (!r.ok) { flash(`Failed (${r.status})`, true); return; }
+        flash('Key revoked.');
+        await loadUsers(); renderList(); renderMain();
+      });
+    }
+
+    async function login(uid){
+      // The user switcher. An account WITH a password can no longer be entered
+      // by setting the identity header — it needs a real login, so ask for the
+      // password and exchange it for a session token first. Accounts without one
+      // still switch straight through, which is what keeps the rollout gradual.
+      const u = users[uid];
+      if (u && u.has_password) {
+        const pw = prompt(`Password for ${u.name || ('user ' + uid)}:`);
+        if (!pw) return;
+        try {
+          const r = await fetch('/auth/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: uid, password: pw })
+          });
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}));
+            flash(d.detail || (r.status === 429 ? 'Too many attempts.' : 'Incorrect password.'), true);
+            return;
+          }
+          const d = await r.json();
+          try { localStorage.setItem('app:session_token', d.token); } catch (e) { /* private mode */ }
+        } catch (e) { flash('Could not reach the server: ' + e.message, true); return; }
+      } else {
+        try { localStorage.removeItem('app:session_token'); } catch (e) { /* private mode */ }
+      }
       // The user switcher: set identity + current view, open the recipe form
       // as that user (same behaviour as the old picker's pickUser).
       try {

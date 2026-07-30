@@ -23,6 +23,34 @@
   })();
   const FORM = API + '/forms/recipe_form_styled.html';
 
+  // The owner's per-user API key, baked into the loader by install.html. It
+  // rides the same way as the API origin — no key in this file, which is served
+  // to everyone. It identifies WHO is grabbing; what they may grab follows from
+  // that user's role, so a member's bookmarklet saves recipes while the product
+  // and review grabbers stay with staff.
+  //
+  // Running on a publisher's page there is no session and no cookie, so without
+  // this the grab is anonymous. Older bookmarklets have no key and keep working
+  // wherever the endpoint allows anonymous callers.
+  const API_KEY = (function () {
+    try { if (window.__recipeBookmarkletKey) return String(window.__recipeBookmarkletKey); } catch (e) {}
+    return '';
+  })();
+
+  // Wrap fetch so every call to OUR api carries the key. Calls to the publisher's
+  // own origin (hero images, for instance) must NOT — never send a credential to
+  // a third-party host.
+  const _fetch = window.fetch.bind(window);
+  function apiFetch(url, init) {
+    init = init ? Object.assign({}, init) : {};
+    if (API_KEY && String(url).indexOf(API) === 0) {
+      const h = new Headers(init.headers || {});
+      if (!h.has('X-BCC-Key')) h.set('X-BCC-Key', API_KEY);
+      init.headers = h;
+    }
+    return _fetch(url, init);
+  }
+
   // The loader put the synchronously-opened popup here. If for any reason
   // it's missing (e.g. someone called this script directly without the
   // loader), fall back to opening one ourselves — it will probably be
@@ -240,7 +268,7 @@
       const ext = ((blob.type || 'image/jpeg').split('/')[1] || 'jpg')
                     .replace('jpeg', 'jpg').replace('+xml', '');
       fd.append('image', blob, 'hero.' + ext);
-      const uploadRes = await fetch(API + '/images', { method: 'POST', body: fd });
+      const uploadRes = await apiFetch(API + '/images', { method: 'POST', body: fd });
       if (!uploadRes.ok) {
         console.log('[recipe-bookmarklet] hero upload HTTP', uploadRes.status);
         return null;
@@ -401,7 +429,7 @@
       }
     }
 
-    const uploadRes = await fetch(API + '/stage-image/' + encodeURIComponent(token), {
+    const uploadRes = await apiFetch(API + '/stage-image/' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_b64: captured.b64 })
@@ -581,7 +609,7 @@
       bcc_hints: Object.keys(bccHints).length ? bccHints : null
     };
 
-    const stageRes = await fetch(API + '/stage-markdown', {
+    const stageRes = await apiFetch(API + '/stage-markdown', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -635,5 +663,6 @@
 // (derived from its own <script src>, so the host appears once) and the script
 // above reads it back — no host hardcoded in the JS.
 //
-// Template (install page substitutes __BASE__ with the public base URL):
-// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;var s=document.createElement('script');s.src='__BASE__/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
+// Template (install page substitutes __BASE__ with the public base URL and
+// __KEY__ with the signed-in user's API key — empty string when they have none):
+// javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups for this site, then re-tap.');return;}p.document.write('<h2>Loading recipe importer...</h2>');window.__recipeBookmarkletPopup=p;window.__recipeBookmarkletKey='__KEY__';var s=document.createElement('script');s.src='__BASE__/forms/bookmarklet.js?'+Date.now();window.__recipeBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();

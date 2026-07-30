@@ -86,11 +86,51 @@
             if (t) h.set('X-Master-Token', t);
           } catch (e) { /* private mode */ }
         }
+        // Accounts WITH a password are no longer resolvable from the id header
+        // alone — they need the session token minted by POST /auth/login. Sent
+        // for every uid; the server ignores it where a password isn't set, which
+        // is what lets accounts harden one at a time.
+        if (!h.has('X-Session-Token')) {
+          try {
+            const st = localStorage.getItem('app:session_token');
+            if (st) h.set('X-Session-Token', st);
+          } catch (e) { /* private mode */ }
+        }
         init.headers = h;
       }
-      return _origFetch(input, init);
+      // A 401 means the session lapsed — the token expired, or it was cleared.
+      // Say so once, plainly, instead of letting each caller surface a generic
+      // failure. Previously this arrived as a permissions 403 that claimed an
+      // owner account's role was 'anonymous', which reads as a contradiction
+      // rather than "sign in again".
+      return _origFetch(input, init).then(function (resp) {
+        if (resp && resp.status === 401) _sessionLapsed();
+        return resp;
+      });
     };
   })();
+
+  // Shown at most once per page — a lapsed session usually fails several
+  // in-flight requests at once, and three identical banners is noise.
+  let _lapsedShown = false;
+  function _sessionLapsed() {
+    if (_lapsedShown) return;
+    _lapsedShown = true;
+    try { localStorage.removeItem('app:master_token'); } catch (e) { /* private mode */ }
+    const bar = document.createElement('div');
+    bar.setAttribute('role', 'alert');
+    bar.style.cssText =
+      'position:fixed;left:0;right:0;top:0;z-index:1200;background:#a3382b;color:#fff;' +
+      'padding:10px 16px;font:inherit;font-size:.9em;display:flex;gap:14px;' +
+      'align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.2)';
+    bar.innerHTML =
+      '<span>Your session has expired — you are signed out.</span>' +
+      '<a href="/forms/users.html" style="color:#fff;font-weight:600">Sign in again ↗</a>' +
+      '<button type="button" style="background:none;border:1px solid rgba(255,255,255,.6);' +
+      'color:#fff;border-radius:6px;padding:2px 9px;cursor:pointer">Dismiss</button>';
+    bar.querySelector('button').addEventListener('click', () => bar.remove());
+    (document.body || document.documentElement).appendChild(bar);
+  }
 
   function openSidebar() {
     if (!state.sidebar) return;
@@ -305,6 +345,7 @@
       localStorage.removeItem('app:self_user_id');
       localStorage.removeItem('sidebar:user_id');
       localStorage.removeItem('app:master_token');
+      localStorage.removeItem('app:session_token');
     } catch (e) { /* private mode */ }
     window.location.href = '/forms/users.html';
   }
@@ -386,6 +427,76 @@
     });
   }
 
+  // === Password field ========================================================
+  // Two entries that must match, plus an eyeball to reveal what you typed.
+  // Shared so every password prompt behaves identically — a typo in a masked
+  // field that only surfaces at the NEXT login is a genuinely bad failure, and
+  // it is worse here than usual because a mistyped password locks an account
+  // whose recovery path is a shell on the server.
+  //
+  // Returns { el, value(), valid(), focus() }. `value()` is '' unless both
+  // entries match and clear the minimum length.
+  function passwordField(opts) {
+    opts = opts || {};
+    const min = opts.min || 12;
+    const idA = opts.id || ('pw_' + Math.floor(performance.now() * 1000));
+    const idB = idA + '_confirm';
+    const wrap = document.createElement('div');
+    const row = (id, label, ac) =>
+      '<div class="ed-field" style="margin-bottom:8px"><label for="' + id + '">' + escapeHtml(label) + '</label>' +
+      '<div style="display:flex;gap:6px;align-items:stretch">' +
+      '<input id="' + id + '" type="password" autocomplete="' + ac + '" ' +
+      'placeholder="At least ' + min + ' characters" style="flex:1 1 auto;min-width:0">' +
+      '<button type="button" class="ls-pw-eye" data-for="' + id + '" title="Show or hide" ' +
+      'aria-label="Show or hide password" style="flex:0 0 auto;padding:0 10px;cursor:pointer">👁</button>' +
+      '</div></div>';
+    wrap.innerHTML =
+      row(idA, opts.label || 'Password', 'new-password') +
+      row(idB, opts.confirmLabel || 'Confirm password', 'new-password') +
+      '<div class="ls-pw-msg" style="font-size:.8em;min-height:1.1em;color:var(--muted,#8a7f72)"></div>';
+
+    const a = wrap.querySelector('#' + CSS.escape(idA));
+    const b = wrap.querySelector('#' + CSS.escape(idB));
+    const msg = wrap.querySelector('.ls-pw-msg');
+
+    // One eye per field rather than a global toggle — you usually want to check
+    // just the one you suspect you fumbled.
+    wrap.querySelectorAll('.ls-pw-eye').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inp = wrap.querySelector('#' + CSS.escape(btn.dataset.for));
+        const showing = inp.type === 'text';
+        inp.type = showing ? 'password' : 'text';
+        btn.textContent = showing ? '👁' : '🙈';
+        inp.focus();
+      });
+    });
+
+    function state() {
+      const va = a.value, vb = b.value;
+      if (!va && !vb) return { ok: false, msg: '' };
+      if (va.length < min) return { ok: false, msg: `At least ${min} characters.` };
+      if (!vb) return { ok: false, msg: 'Confirm it.' };
+      if (va !== vb) return { ok: false, msg: 'The two entries do not match.' };
+      return { ok: true, msg: 'Match.' };
+    }
+    function refresh() {
+      const s = state();
+      msg.textContent = s.msg;
+      msg.style.color = s.ok ? 'var(--ed-ok,#2f7a3a)' : (s.msg ? 'var(--ed-warn,#a3382b)' : 'var(--muted,#8a7f72)');
+      if (typeof opts.onChange === 'function') opts.onChange(s.ok);
+    }
+    [a, b].forEach(i => i.addEventListener('input', refresh));
+
+    return {
+      el: wrap,
+      value: () => (state().ok ? a.value : ''),
+      valid: () => state().ok,
+      message: () => state().msg,
+      focus: () => a.focus(),
+      clear: () => { a.value = ''; b.value = ''; refresh(); },
+    };
+  }
+
   function initIdentityBadge() {
     const headerInner = document.querySelector('.app-header .header-inner');
     if (!headerInner) return;
@@ -419,9 +530,17 @@
       .then(data => {
         const u = data && data.user;
         if (!u) {
-          badge.innerHTML =
-            '<a class="identity-name muted" href="/forms/users.html" title="Pick a user">' +
-            'not signed in <span class="identity-arrow">↗</span></a>';
+          // Distinguish "never signed in" from "was signed in, session lapsed".
+          // localStorage still naming a user while the server says anonymous is
+          // the second case, and it is the one that produced a confusing 403.
+          let stale = null;
+          try { stale = localStorage.getItem('app:self_user_id'); } catch (e) { /* private mode */ }
+          badge.innerHTML = (stale !== null && stale !== '')
+            ? '<a class="identity-name" href="/forms/users.html" style="color:#a3382b" ' +
+              'title="Your token expired or was cleared — sign in again">' +
+              'session expired <span class="identity-arrow">↗</span></a>'
+            : '<a class="identity-name muted" href="/forms/users.html" title="Pick a user">' +
+              'not signed in <span class="identity-arrow">↗</span></a>';
           return;
         }
         const nm = (u.name || u.email || '').trim();
@@ -1148,6 +1267,7 @@
     urlControl,
     urlField,
     attachUrlControls,
+    passwordField,
     initEditorNav,
     initIdentityBadge,
     openSidebar,
