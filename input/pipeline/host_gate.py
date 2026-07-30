@@ -75,6 +75,7 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     (r"/generated/.*", frozenset({"GET"})),             # hero + og images
     (r"/branding", frozenset({"GET"})),
     (r"/robots\.txt", frozenset({"GET"})),
+    (r"/healthz", frozenset({"GET"})),           # liveness; leaks nothing
     (r"/status-messages", frozenset({"GET"})),          # the funny wait messages
     (r"/messages", frozenset({"GET"})),
 
@@ -85,6 +86,10 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     # password, and it has no business being reachable from the customer domain.
     (r"/auth/me", frozenset({"GET"})),
     (r"/auth/login", frozenset({"POST"})),
+    # Self-signup is the ONLY account-creation path that belongs on the public
+    # host. POST /users is the admin create — it takes a role — and is absent
+    # here on purpose.
+    (r"/auth/signup", frozenset({"POST"})),
 
     # --- a customer's own recipes ------------------------------------------
     (r"/recipes", frozenset({"GET", "POST"})),

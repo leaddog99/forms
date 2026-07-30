@@ -31,7 +31,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, Response
+from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from pydantic import ValidationError
@@ -1130,9 +1130,26 @@ print("[ROUTE] Setting up routes...")
 
 
 # Health check
-@app.get("/")
+@app.get("/healthz")
 def health_check():
-    print("[HEALTH] Health check endpoint called")
+    """Liveness probe. Was served at `/` until 2026-07-30, when the front door
+    needed that slot. Kept as JSON at a conventional path so anything polling it
+    has somewhere to move to."""
+    return {"status": "ok", "message": "Full API with error handling"}
+
+
+@app.get("/")
+def home_page():
+    """The front door. Signed out it offers sign-in (and sign-up on the customer
+    host); signed in it shows news, or the admin alert tiles on the curator host.
+
+    Which flavour is decided by the HOSTNAME — the same split host_gate.py
+    enforces — so the page and the server agree by construction rather than by
+    being kept in sync. Falls back to the old health JSON if the file is missing,
+    so a bad deploy degrades rather than 500s."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forms", "home.html")
+    if os.path.exists(path):
+        return FileResponse(path, media_type="text/html")
     return {"status": "ok", "message": "Full API with error handling"}
 
 
@@ -2330,6 +2347,141 @@ async def auth_login(request: Request):
     _MASTER_FAILS.pop(ip, None)
     print(f"[AUTH] login OK user {uid} from {ip}")
     return {"user_id": uid, "token": token, "expires_in": auth_lib.USER_TOKEN_TTL}
+
+
+@app.get("/admin/home-summary")
+def admin_home_summary(request: Request):
+    """The admin home's alert tiles. Staff only.
+
+    Deliberately the four things that had to be dug out by hand during the
+    2026-07-29/30 session: whether the backup actually verified (one was silently
+    truncated), which jobs failed, which accounts are still spoofable because
+    they have no password, and what the month costs. Each returns a `level` so
+    the page can rank by what is wrong rather than by section order."""
+    _require_perm(request, "admin_ui")
+    out = {}
+
+    with _db() as conn:
+        auth_lib.ensure_password_column(conn)
+
+        # --- jobs -----------------------------------------------------------
+        rows = conn.execute(
+            "SELECT status, COUNT(*) FROM jobs "
+            "WHERE created_at >= datetime('now','-7 day') GROUP BY status").fetchall()
+        counts = {r[0]: r[1] for r in rows}
+        fail = conn.execute(
+            "SELECT id, type, finished_at, error_detail FROM jobs "
+            "WHERE status NOT IN ('success','running','queued') "
+            "ORDER BY id DESC LIMIT 1").fetchone()
+        out["jobs"] = {
+            "counts_7d": counts,
+            "failed_7d": sum(v for k, v in counts.items()
+                             if k not in ("success", "running", "queued")),
+            "running": counts.get("running", 0),
+            "last_failure": ({"id": fail[0], "type": fail[1], "at": fail[2],
+                              "error": (fail[3] or "")[:200]} if fail else None),
+            "level": "warn" if any(k not in ("success", "running", "queued")
+                                   for k in counts) else "ok",
+        }
+
+        # --- accounts without a password (still header-spoofable) ------------
+        open_accts = conn.execute(
+            "SELECT user_id, name FROM users WHERE password_hash IS NULL "
+            "ORDER BY user_id").fetchall()
+        out["accounts"] = {
+            "total": conn.execute("SELECT COUNT(*) FROM users").fetchone()[0],
+            "without_password": [{"user_id": r[0], "name": r[1]} for r in open_accts],
+            "level": "warn" if open_accts else "ok",
+        }
+
+        # --- spend, 30d ------------------------------------------------------
+        spend = conn.execute(
+            "SELECT COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0), COUNT(*) "
+            "FROM bcc_token_journal WHERE created_at >= datetime('now','-30 day')").fetchone()
+        out["spend_30d"] = {
+            "input_tokens": spend[0], "output_tokens": spend[1], "calls": spend[2],
+            # Sonnet-class blended estimate — indicative, not an invoice.
+            "est_usd": round(spend[0] / 1e6 * 3 + spend[1] / 1e6 * 15, 2),
+            "level": "ok",
+        }
+
+    # --- backup: did the last run actually verify? ---------------------------
+    # backup.log is the record; a truncated dump once looked exactly like a good
+    # one, so report the dump's real size and mtime rather than trusting "ran".
+    backup = {"level": "warn", "last_line": None, "dump_bytes": None, "dump_mtime": None}
+    try:
+        log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backup.log")
+        if os.path.exists(log_path):
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                tail = [ln.strip() for ln in f.readlines()[-12:] if ln.strip()]
+            backup["last_line"] = tail[-1] if tail else None
+            backup["level"] = "ok" if any("exit code: 0" in ln for ln in tail[-3:]) else "warn"
+        dump = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recipes.sql.gz")
+        if os.path.exists(dump):
+            backup["dump_bytes"] = os.path.getsize(dump)
+            backup["dump_mtime"] = datetime.fromtimestamp(
+                os.path.getmtime(dump), timezone.utc).isoformat()
+    except Exception as e:
+        backup["error"] = str(e)
+    out["backup"] = backup
+
+    return out
+
+
+@app.post("/auth/signup")
+async def auth_signup(request: Request):
+    """Public self-signup: {email, password, name?} -> a member account + token.
+
+    DELIBERATELY SEPARATE FROM POST /users. That one is the admin create and
+    accepts `role`, because staff legitimately need to make an editor or an
+    author. A public endpoint must be *structurally* unable to do that — not
+    "validates the role", but has no role parameter at all. Same for status and
+    subscription_tier: sent, they are ignored.
+
+    New accounts are role='member', status='free'. Email is NOT verified yet —
+    there is no mail infrastructure — so an address here is claimed, not proven.
+    Worth wiring before the site is promoted."""
+    ip = (request.client.host if request.client else "?") or "?"
+    if _master_throttled(ip):
+        raise HTTPException(status_code=429,
+                            detail="Too many attempts. Wait 15 minutes and try again.")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    payload = payload or {}
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    name = (payload.get("name") or "").strip()
+
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="A valid email address is required.")
+    if len(password) < 12:
+        raise HTTPException(status_code=400,
+                            detail="Password must be at least 12 characters.")
+    if not name:
+        name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
+
+    now = datetime.now(timezone.utc).isoformat()
+    with _db() as conn:
+        auth_lib.ensure_password_column(conn)
+        auth_lib.ensure_api_key_columns(conn)
+        if conn.execute("SELECT 1 FROM users WHERE lower(email) = ?", (email,)).fetchone():
+            # Same wording whether or not the address exists would be better for
+            # privacy, but a signup form that silently does nothing is worse —
+            # and the address is one the person just typed as their own.
+            raise HTTPException(status_code=409,
+                                detail="An account with that email already exists. Sign in instead.")
+        cur = conn.execute(
+            "INSERT INTO users (email, name, status, role, created_at, updated_at) "
+            "VALUES (?, ?, 'free', 'member', ?, ?)", (email, name, now, now))
+        uid = cur.lastrowid
+        auth_lib.set_user_password(conn, uid, password)   # commits
+    token = auth_lib.mint_user_token(uid)
+    _MASTER_FAILS.pop(ip, None)
+    print(f"[AUTH] signup: user {uid} <{email}> from {ip}")
+    return {"user_id": uid, "email": email, "name": name, "role": "member",
+            "token": token, "expires_in": auth_lib.USER_TOKEN_TTL}
 
 
 @app.post("/users/{user_id}/password")

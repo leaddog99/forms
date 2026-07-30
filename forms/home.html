@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club</title>
+  <!-- The front door, served at /. Three states — signed out (sign in / create
+       account), signed in as a customer, signed in as staff.
+
+       WHICH FLAVOUR IS DECIDED BY THE HOSTNAME, not by anything the visitor
+       picks: bestcooksclub.com is the customer product, recipes.tbotb.com is the
+       curator back-office. That is the same split input/pipeline/host_gate.py
+       enforces server-side, so the two agree by construction — the admin tiles
+       simply cannot load on the public host, because their endpoint 404s there.
+
+       One file rather than two: the pages differ in content, not structure, and
+       two 90%-identical sign-in screens would drift. -->
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <style>
+    body { margin:0; background:var(--bg,#faf6f1); color:var(--ink,#1f1611);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+    .wrap { max-width:840px; margin:0 auto; padding:28px 20px 72px; }
+    h1 { font-size:1.7rem; margin:0 0 4px; letter-spacing:-.01em; }
+    .sub { color:var(--muted,#6b5b4f); margin:0 0 26px; }
+    .card { background:#fff; border:1px solid var(--border,#e6dccf); border-radius:14px;
+      padding:18px; margin-bottom:14px; }
+    .card h2 { font-size:1rem; margin:0 0 10px; }
+    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+    .tile { background:#fff; border:1px solid var(--border,#e6dccf); border-left-width:4px;
+      border-radius:12px; padding:14px 16px; }
+    .tile.ok   { border-left-color:#2f7a3a; }
+    .tile.warn { border-left-color:#a3382b; }
+    .tile .k { font-size:.78rem; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--muted,#6b5b4f); margin-bottom:6px; }
+    .tile .v { font-size:1.5rem; font-weight:600; line-height:1.1; }
+    .tile .m { font-size:.82rem; color:var(--muted,#6b5b4f); margin-top:6px; word-break:break-word; }
+    .row { display:flex; gap:8px; align-items:stretch; margin-bottom:10px; }
+    .row input { flex:1 1 auto; min-width:0; padding:9px 11px; font:inherit;
+      border:1px solid var(--border,#e6dccf); border-radius:8px; }
+    button.primary { padding:11px 18px; font:inherit; font-weight:600; background:var(--accent,#b8602a);
+      color:#fff; border:none; border-radius:9px; cursor:pointer; }
+    button.primary:hover { background:var(--accent-dark,#944a1f); }
+    button.link { background:none; border:none; color:var(--accent-dark,#944a1f);
+      font:inherit; text-decoration:underline; cursor:pointer; padding:0; }
+    .msg { font-size:.86rem; min-height:1.2em; margin-top:6px; }
+    .msg.err { color:#a3382b; } .msg.ok { color:#2f7a3a; }
+    .quiet { color:var(--muted,#6b5b4f); font-size:.88rem; }
+    a.tilelink { text-decoration:none; color:inherit; display:block; }
+    [hidden] { display:none !important; }
+  </style>
+  <script src="/forms/library-shell.js?v=20260730d"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1 id="brand">Best Cooks Club</h1>
+    <p class="sub" id="tagline">…</p>
+
+    <!-- signed out -->
+    <section id="anon" hidden>
+      <div class="card">
+        <h2 id="authTitle">Sign in</h2>
+        <div class="row"><input id="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+        <div id="pwMount"></div>
+        <div class="row" style="margin-top:4px">
+          <button class="primary" id="authBtn" type="button">Sign in</button>
+        </div>
+        <div class="msg" id="authMsg" aria-live="polite"></div>
+        <p class="quiet" id="switchLine" style="margin-bottom:0"></p>
+      </div>
+    </section>
+
+    <!-- signed in -->
+    <section id="known" hidden>
+      <div id="alerts"></div>
+      <div class="card" id="newsCard">
+        <h2>News</h2>
+        <p class="quiet" id="news" style="margin:0">Nothing to report.</p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const { escapeHtml, fmtDate } = LibraryShell;
+
+    // The hostname is the switch. Server-side host_gate.py enforces the same
+    // split, so these agree by construction rather than by being kept in sync:
+    // on the public host the admin summary endpoint simply 404s.
+    const IS_ADMIN_HOST = !/(^|\.)bestcooksclub\.com$/i.test(location.hostname)
+                       && !/(^|\.)bestcooks\.club$/i.test(location.hostname);
+
+    let mode = 'signin';                       // 'signin' | 'signup'
+    const pwf = LibraryShell.passwordField({ id: 'home_pw', label: 'Password' });
+    $('#pwMount').appendChild(pwf.el);
+
+    function renderAuthMode() {
+      const up = mode === 'signup';
+      $('#authTitle').textContent = up ? 'Create your account' : 'Sign in';
+      $('#authBtn').textContent  = up ? 'Create account' : 'Sign in';
+      // Signup needs the confirm+reveal pair; signing in does not, but reusing
+      // one control beats maintaining two password widgets.
+      pwf.el.querySelectorAll('.ed-field')[1].hidden = !up;
+      $('#switchLine').innerHTML = up
+        ? 'Already have an account? <button type="button" class="link" id="toSignin">Sign in</button>'
+        : (IS_ADMIN_HOST ? '' : 'New here? <button type="button" class="link" id="toSignup">Create an account</button>');
+      const a = $('#toSignup'), b = $('#toSignin');
+      if (a) a.addEventListener('click', () => { mode = 'signup'; say(''); renderAuthMode(); });
+      if (b) b.addEventListener('click', () => { mode = 'signin'; say(''); renderAuthMode(); });
+    }
+    function say(m, cls) { const e = $('#authMsg'); e.textContent = m; e.className = 'msg ' + (cls || ''); }
+
+    $('#authBtn').addEventListener('click', async () => {
+      const email = ($('#email').value || '').trim();
+      if (!email) { say('Email is required.', 'err'); return; }
+      // On sign-in the confirm box is hidden, so read the first entry directly;
+      // on signup insist the pair matches.
+      const pw = mode === 'signup' ? pwf.value() : pwf.el.querySelector('input').value;
+      if (!pw) { say(mode === 'signup' ? (pwf.message() || 'Password required.') : 'Password required.', 'err'); return; }
+      $('#authBtn').disabled = true; say('Working…');
+      try {
+        const url = mode === 'signup' ? '/auth/signup' : '/auth/login';
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({ email, password: pw }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { say(d.detail || `Failed (${r.status})`, 'err'); return; }
+        try {
+          localStorage.setItem('app:self_user_id', String(d.user_id));
+          localStorage.setItem('sidebar:user_id', String(d.user_id));
+          localStorage.setItem('app:session_token', d.token);
+          localStorage.removeItem('app:master_token');
+        } catch (e) { /* private mode */ }
+        location.reload();
+      } catch (e) { say('Could not reach the server: ' + e.message, 'err'); }
+      finally { $('#authBtn').disabled = false; }
+    });
+
+    function tile(k, v, meta, level, href) {
+      const inner = `<div class="tile ${level || ''}"><div class="k">${escapeHtml(k)}</div>` +
+                    `<div class="v">${escapeHtml(String(v))}</div>` +
+                    (meta ? `<div class="m">${meta}</div>` : '') + '</div>';
+      return href ? `<a class="tilelink" href="${href}">${inner}</a>` : inner;
+    }
+
+    async function renderAdmin() {
+      const r = await fetch('/admin/home-summary');
+      if (!r.ok) return;                        // 404 on the public host, 403 without admin_ui
+      const d = await r.json();
+      const t = [];
+      const b = d.backup || {};
+      t.push(tile('Backup', b.level === 'ok' ? 'verified' : 'check it',
+        (b.dump_bytes ? (b.dump_bytes / 1048576).toFixed(1) + ' MB · ' : '') +
+        (b.dump_mtime ? escapeHtml(fmtDate(b.dump_mtime)) : 'no dump'), b.level));
+      const j = d.jobs || {};
+      t.push(tile('Failed jobs (7d)', j.failed_7d ?? 0,
+        j.last_failure ? `#${j.last_failure.id} ${escapeHtml(j.last_failure.type || '')}` :
+        (j.running ? j.running + ' running' : 'none'), j.level, '/forms/jobs_monitor.html'));
+      const a = d.accounts || {};
+      const open = (a.without_password || []);
+      t.push(tile('Accounts without a password', open.length,
+        open.length ? escapeHtml(open.map(u => u.name).join(', ')) + ' — still resolvable from the id header alone'
+                    : 'all hardened', a.level, '/forms/users.html'));
+      const s = d.spend_30d || {};
+      t.push(tile('LLM spend (30d)', '$' + (s.est_usd ?? 0),
+        (s.calls ?? 0).toLocaleString() + ' calls · indicative', s.level));
+      $('#alerts').innerHTML = '<div class="tiles">' + t.join('') + '</div>';
+    }
+
+    (async function init() {
+      $('#tagline').textContent = IS_ADMIN_HOST
+        ? 'Curator back-office.' : 'Your recipes, your way.';
+      let me = null;
+      try { const r = await fetch('/auth/me'); me = r.ok ? await r.json() : null; } catch (e) {}
+      if (!me || !me.user) { $('#anon').hidden = false; renderAuthMode(); return; }
+      $('#known').hidden = false;
+      $('#tagline').textContent = 'Signed in as ' + (me.user.name || ('user ' + me.user.user_id)) +
+        (me.staff_locked ? ' · staff permissions locked' : '');
+      if (IS_ADMIN_HOST && me.is_staff) await renderAdmin();
+      else $('#news').textContent = 'Nothing to report yet.';
+      LibraryShell.initNav({ currentPage: 'home' });
+    })();
+  </script>
+</body>
+</html>
