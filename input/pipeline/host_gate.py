@@ -52,14 +52,22 @@ def is_public_host(host: Optional[str]) -> bool:
 
 _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     # --- app shell + assets ------------------------------------------------
+    # NOTE /forms/* is NOT here, deliberately. Everything under forms/ is the
+    # ADMIN application — the recipe form, domains, dishes, products, reviews,
+    # users, system. That is the core business tooling and it belongs to staff.
+    # Customers get purpose-built displays (not yet written); when those land,
+    # add their specific paths here rather than reopening the whole directory.
+    #
+    # The one customer-facing view today is the cook view, and it needs nothing
+    # from here: it is served by the /cook/{id} ROUTE and is self-contained (no
+    # external css/js). /r/{id} is likewise absent — it only 302s into
+    # /forms/recipe_form_styled.html, so on this host it would redirect to a 404.
     (r"/", frozenset({"GET"})),
-    (r"/forms/.*", frozenset({"GET"})),                 # the HTML/JS/CSS itself
     (r"/generated/.*", frozenset({"GET"})),             # hero + og images
     (r"/branding", frozenset({"GET"})),
     (r"/robots\.txt", frozenset({"GET"})),
     (r"/status-messages", frozenset({"GET"})),          # the funny wait messages
     (r"/messages", frozenset({"GET"})),
-    (r"/r/.+", frozenset({"GET"})),                     # short permalinks
 
     # --- identity ----------------------------------------------------------
     # /auth/me only. /auth/master is the curator password endpoint and has no
