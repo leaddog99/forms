@@ -79,9 +79,12 @@ _ALLOW: tuple[tuple[str, frozenset[str]], ...] = (
     (r"/messages", frozenset({"GET"})),
 
     # --- identity ----------------------------------------------------------
-    # /auth/me only. /auth/master is the curator password endpoint and has no
-    # business being reachable from the customer domain.
+    # Customers must be able to sign in, so /auth/login belongs here — it was
+    # missed on the first pass, which left the public host with no way to
+    # authenticate at all. /auth/master stays absent: that is the CURATOR
+    # password, and it has no business being reachable from the customer domain.
     (r"/auth/me", frozenset({"GET"})),
+    (r"/auth/login", frozenset({"POST"})),
 
     # --- a customer's own recipes ------------------------------------------
     (r"/recipes", frozenset({"GET", "POST"})),
