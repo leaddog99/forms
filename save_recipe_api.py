@@ -52,7 +52,11 @@ from pathlib import Path
 import builtins as _builtins
 _real_print = _builtins.print
 def print(*args, **kwargs):  # noqa: A001 — intentional shadow
-    _real_print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]", *args, **kwargs)
+    # Local wall clock WITH the offset (…13:18:40-0400). Stored timestamps are
+    # UTC, so a bare local log line means doing timezone arithmetic in your head
+    # to line a log entry up against the row it wrote. astimezone() is what makes
+    # %z produce anything — datetime.now() alone is naive and %z renders empty.
+    _real_print(f"[{datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S%z')}]", *args, **kwargs)
 
 # In-memory staging for bookmarklet → form handoff. One-time read, TTL pruned.
 _STAGE_TTL_SECONDS = 600
@@ -1328,7 +1332,7 @@ def cook_voice_log(payload: dict = Body(...)):
         day = datetime.now().strftime("%Y-%m-%d")
         fname = f"{day}_cook_voice.log"   # date-first so logs/ lists chronologically
         with open(os.path.join("logs", fname), "a", encoding="utf-8") as f:
-            f.write(f"\n==== voice log {datetime.now().isoformat()} · {name or rid} "
+            f.write(f"\n==== voice log {datetime.now().astimezone().isoformat()} · {name or rid} "
                     f"({len(entries)} entries) ====\n")
             for e in entries[-500:]:
                 t = str(e.get("t") or "")

@@ -163,6 +163,6 @@ def transcribe(audio_bytes: bytes) -> str:
         out, reason = "", "phantom"
 
     dur_ms = (getattr(info, "duration", 0.0) or 0.0) * 1000
-    _log(f"{datetime.now().isoformat()} · audio={dur_ms:.0f}ms · nsp={worst_nsp:.2f} "
+    _log(f"{datetime.now().astimezone().isoformat()} · audio={dur_ms:.0f}ms · nsp={worst_nsp:.2f} "
          f"· alp={worst_alp:.2f} · cr={worst_cr:.2f} · raw={raw!r} · out={out!r} · {reason}")
     return out
