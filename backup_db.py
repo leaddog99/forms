@@ -18,7 +18,8 @@ What it does, in order:
   2. Copies recipes.db AND recipes.sql to ADAM (\\Adam\tbotb, mapped Z:)
      under Backups\recipes-db\ with a timestamp in the filename.
   3. Verifies the copied .db with PRAGMA integrity_check before trusting it.
-  4. Also copies the git-ignored training.db (the is-recipe corpus / gold human
+  4. Copies .env (every API key; git-ignored, so this is its only backup).
+  5. Also copies the git-ignored training.db (the is-recipe corpus / gold human
      labels) to ADAM — best-effort, its only off-machine backup.
 
 Run it any time you want an off-machine snapshot — especially BEFORE a risky
@@ -47,6 +48,7 @@ SQL = HERE / "recipes.sql.gz"
 # copy is its ONLY backup. It holds the curator's human_label CORRECTIONS: the gold
 # signal that teaches where the heuristic is wrong. Worth off-machine copies.
 TRAINING = HERE / "training.db"
+ENV = HERE / ".env"
 DEFAULT_ADAM = Path(r"Z:\Backups\recipes-db")
 
 
@@ -204,6 +206,28 @@ def run_backup(dest: Path = DEFAULT_ADAM, no_adam: bool = False) -> dict:
             out["training_integrity"] = "ok" if integrity_ok(train_dst) else "FAILED"
         except Exception as e:  # noqa: BLE001
             out["training_error"] = f"{type(e).__name__}: {e}"
+    # .env — the ONLY copy of every API key we hold, and it is git-ignored by
+    # design, so nothing else backs it up. On a host that hard-hangs weekly that
+    # made it a single point of failure: losing it means re-issuing Anthropic,
+    # OpenAI, Moz, SEMrush, ScaleSERP, Rainforest, EasyParser, the unblocker
+    # proxy credentials and the rest, one vendor at a time.
+    #
+    # Copied in PLAINTEXT, deliberately. ADAM is our own NAS on our own LAN, and
+    # anyone who can read it can already read the C: drive this file normally
+    # lives on — so encryption here would buy little while adding a passphrase
+    # that itself has to be stored somewhere. Keep a second copy in a password
+    # manager for the off-site case; this one is for machine death.
+    #
+    # NOT timestamped: one current copy, overwritten. A trail of dated files
+    # would leave revoked keys lying around indefinitely.
+    if ENV.exists():
+        try:
+            env_dst = dest / "env.backup"
+            shutil.copy2(ENV, env_dst)
+            out["env_dst"] = str(env_dst)
+        except Exception as e:  # noqa: BLE001
+            out["env_error"] = f"{type(e).__name__}: {e}"
+
     return out
 
 
@@ -229,6 +253,10 @@ def main() -> int:
             print(f"copied -> {r['training_dst']}  (training corpus, integrity: {r.get('training_integrity')})")
         elif r.get("training_error"):
             print(f"training.db NOT copied: {r['training_error']}", file=sys.stderr)
+        if r.get("env_dst"):
+            print(f"copied -> {r['env_dst']}  (.env — API keys, plaintext)")
+        elif r.get("env_error"):
+            print(f".env NOT copied: {r['env_error']}", file=sys.stderr)
     elif args.no_adam:
         print("--no-adam: skipped ADAM copy.")
     return 0
