@@ -608,12 +608,7 @@
             if (byId) { pwf.clear(); pwInput.focus(); }
             return;
           }
-          try {
-            localStorage.setItem('app:self_user_id', String(d.user_id));
-            localStorage.setItem('sidebar:user_id', String(d.user_id));
-            localStorage.setItem('app:session_token', d.token);
-            localStorage.removeItem('app:master_token');
-          } catch (e) { /* private mode */ }
+          storeSession(d);
           if (typeof opts.verify === 'function') {
             const okNow = await opts.verify(d);
             if (!okNow) {
@@ -638,6 +633,25 @@
       [email, pwInput].filter(Boolean).forEach(el =>
         el.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); }));
     });
+  }
+
+  // What "signed in" MEANS in the browser: the four localStorage keys the
+  // patched fetch reads back on every request. Any page that authenticates has
+  // to write exactly this set — self_user_id and the legacy sidebar:user_id in
+  // step, the session token, and the master token cleared so a previous curator
+  // unlock cannot outlive a normal login.
+  //
+  // One writer because it was three: signInDialog here, plus a hand-copied block
+  // in each home page. A key added or renamed in one copy and not the others is
+  // a session that half-exists, which surfaces as a permissions error rather
+  // than as a login problem.
+  function storeSession(d) {
+    try {
+      localStorage.setItem('app:self_user_id', String(d.user_id));
+      localStorage.setItem('sidebar:user_id', String(d.user_id));
+      localStorage.setItem('app:session_token', d.token);
+      localStorage.removeItem('app:master_token');
+    } catch (e) { /* private mode / no storage */ }
   }
 
   // Re-read identity and rebuild everything that depends on it.
@@ -1458,6 +1472,7 @@
     attachUrlControls,
     passwordField,
     signInDialog,
+    storeSession,
     // The identity probe itself, not just the things built on it. Callers that
     // need to know WHO is signed in before spending money (the staged-grab flow
     // checks before it pays for an extraction) have to be able to ask, and

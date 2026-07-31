@@ -16,6 +16,7 @@
        of the browser cache. The URL already knows; nothing here needs to guess. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <link rel="stylesheet" href="/forms/nav.css?v=20260731a">
   <style>
     body { margin:0; background:var(--bg,#faf6f1); color:var(--ink,#1f1611);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
@@ -37,69 +38,6 @@
     .msg.err { color:#a3382b; } .msg.ok { color:#2f7a3a; }
     .quiet { color:var(--muted,#6b5b4f); font-size:.88rem; }
     [hidden] { display:none !important; }
-
-    /* ---------- Right-side cross-page nav (⋮) ---------- */
-    /* No library-shell header on this page — initNav() mounts the
-       toggle as a fixed top-right button. */
-    .nav-toggle {
-      background: var(--accent); color: #fff; border: none;
-      width: 36px; height: 36px; border-radius: 8px;
-      cursor: pointer; font-size: 1.3em; line-height: 1;
-      box-shadow: 0 2px 8px rgba(0,0,0,.15);
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 0;
-    }
-    .nav-toggle:hover { background: var(--accent-dark); }
-    .nav-menu {
-      position: fixed; top: 60px; right: 16px;
-      background: var(--card);
-      border: 1px solid var(--border); border-radius: 10px;
-      padding: 6px; min-width: 220px;
-      box-shadow: 0 6px 20px rgba(60,40,20,.18);
-      z-index: 101;
-      display: none;
-    }
-    .nav-menu.open { display: block; }
-    .nav-menu .nav-item {
-      display: flex; align-items: center; justify-content: space-between;
-      width: 100%;
-      padding: 9px 12px; border-radius: 6px;
-      color: var(--text); text-decoration: none;
-      background: transparent; border: none;
-      font: inherit; font-size: 0.95em; text-align: left;
-      cursor: pointer; box-sizing: border-box;
-    }
-    .nav-menu .nav-item:hover { background: #f4ebdd; }
-    .nav-menu .nav-item.active {
-      background: #f4ebdd; color: var(--accent-dark); font-weight: 600;
-    }
-    .nav-menu .badge-soon {
-      font-size: 0.72em; color: var(--muted);
-      font-style: italic; margin-left: 8px;
-    }
-    .coming-soon-overlay {
-      position: fixed; inset: 0;
-      background: rgba(42, 33, 27, 0.45);
-      z-index: 200;
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-    }
-    .coming-soon-card {
-      background: var(--card);
-      border-radius: 14px; padding: 28px 32px;
-      max-width: 400px; text-align: center;
-      box-shadow: 0 12px 36px rgba(60,40,20,.3);
-    }
-    .coming-soon-card h2 {
-      font-size: 1.4em; margin: 0 0 8px; color: var(--text);
-    }
-    .coming-soon-card p { color: var(--muted); margin: 0 0 18px; }
-    .coming-soon-card button {
-      background: var(--accent); color: #fff; border: none;
-      padding: 9px 22px; border-radius: 8px;
-      font-weight: 600; cursor: pointer; font-size: 0.95em;
-    }
-    .coming-soon-card button:hover { background: var(--accent-dark); }
   </style>
   <script src="/forms/library-shell.js?v=20260731a"></script>
 </head>
@@ -168,12 +106,7 @@
                                      body: JSON.stringify({ email, password: pw }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) { say(d.detail || `Failed (${r.status})`, 'err'); return; }
-        try {
-          localStorage.setItem('app:self_user_id', String(d.user_id));
-          localStorage.setItem('sidebar:user_id', String(d.user_id));
-          localStorage.setItem('app:session_token', d.token);
-          localStorage.removeItem('app:master_token');
-        } catch (e) { /* private mode */ }
+        LibraryShell.storeSession(d);
         // A bookmarklet grab with nobody signed in sends the user here with
         // ?next= pointing back at the staged form. Return them to it rather
         // than dropping them on the home page having lost the grab.
