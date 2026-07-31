@@ -3,7 +3,15 @@
    page so it overrides any page-local :root (editor-shell.css, forms.css, or inline
    <style>), unifying the look across dishes, domains, chapters, users, … No page
    should define these tokens itself anymore — add a <link> to this file instead.
-   See memory/feedback_reuse_layout_components. */
+   See memory/feedback_reuse_layout_components.
+
+   2026-07-31: enforced. Eight pages had ignored this and carried their own :root
+   — six with a copy-pasted --accent #b8602a that is not even the canonical clay
+   below, so the "same" brown rendered as two browns. All now link this file, and
+   the full page contract (this file LAST, plus library-shell.css and the shared
+   .app-header) is written at the top of library-shell.js. Start there for a new
+   page. Page-specific tokens this file does not own — --warn/--ok/--info — stay
+   in the page. */
 :root{
   --bg:          #f8f4ed;   /* page background — warm cream */
   --card:        #fffaf2;   /* card / panel background */

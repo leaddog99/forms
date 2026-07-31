@@ -6,6 +6,39 @@
    users.html, recipe_form_styled.html, future cookbooks.html,
    etc.). Sits beside library-shell.css.
 
+   ------------------------------------------------------------
+   EVERY NEW PAGE STARTS FROM THIS CONTRACT. Four lines and one
+   block; there is no opt-out, and a page that skips it does not
+   look like the rest of the system:
+
+       <style> …page-specific rules only… </style>
+       <link rel="stylesheet" href="/forms/library-shell.css">
+       <link rel="stylesheet" href="/forms/tokens.css">   <-- LAST
+       <script src="/forms/library-shell.js"></script>
+     </head>
+     <body>
+       <header class="app-header">
+         <div class="header-inner"><h1></h1></div>
+       </header>
+
+   and call LibraryShell.initNav({ currentPage: '…' }) — which
+   fills that <h1> with the brand and mounts the identity badge
+   plus both burgers (nav, who you are, unlock admin, sign out).
+   Call it UNCONDITIONALLY: if your page returns early when signed
+   out, brand the header yourself first or it renders as an empty
+   bar.
+
+   Do NOT define --accent/--bg/--ink/… in the page. tokens.css is
+   the single palette and is loaded last so it wins; a page-local
+   :root is how eight pages ended up with three different accents,
+   two of them claiming to be the same clay. Page-specific tokens
+   that tokens.css does not own (--warn/--ok/--info) are fine.
+
+   Do NOT paste .nav-toggle / .nav-menu / .coming-soon-* rules in.
+   library-shell.css has them; copies drift (there were four
+   versions across five pages).
+   ------------------------------------------------------------
+
    Usage in a page:
 
        <script src="/forms/library-shell.js"></script>
