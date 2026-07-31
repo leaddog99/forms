@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730o"></script>
+  <script src="/forms/library-shell.js?v=20260730p"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -6685,10 +6685,39 @@
     // over the server re-fetching the URL, which would only see the public
     // version. The URL is still passed through so the recipe carries it as
     // its source. If ?staged= is present, the ?url= IIFE below skips.
+    // The token may arrive as a URL FRAGMENT after the page is already open:
+    // the bookmarklet sends this tab to the form the instant it is clicked, so
+    // identity resolves while the page is still being read, then delivers the
+    // token by fragment (which fires `hashchange` without reloading, so a login
+    // in progress is never destroyed).
+    function stagedTokenFromHash() {
+      const m = /[#&]staged=([^&]+)/.exec(window.location.hash || '');
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+    function awaitStagedToken(timeoutMs = 120000) {
+      const now = stagedTokenFromHash();
+      if (now) return Promise.resolve(now);
+      return new Promise(resolve => {
+        const done = (t) => {
+          window.removeEventListener('hashchange', onHash);
+          clearTimeout(timer);
+          resolve(t);
+        };
+        const onHash = () => { const t = stagedTokenFromHash(); if (t) done(t); };
+        window.addEventListener('hashchange', onHash);
+        // Generous: the grab is still fetching images and building markdown on
+        // the other page. Resolving '' lets the caller say so plainly.
+        const timer = setTimeout(() => done(''), timeoutMs);
+      });
+    }
+
     (async function () {
       const params = new URLSearchParams(window.location.search);
-      const token = params.get('staged');
-      if (!token) return;
+      const awaiting = params.get('awaiting') === '1';
+      let token = params.get('staged') || stagedTokenFromHash();
+      // `awaiting` means the bookmarklet sent us here ahead of the content:
+      // sign in NOW, in parallel with the grab, rather than after it.
+      if (!awaiting && !token) return;
 
       window.scrollTo({ top: 0 });
       try {
@@ -6758,7 +6787,19 @@
           } catch (e) { /* non-fatal: the store control is still visible */ }
         }
 
-        // Identity settled — now retrieve what was staged.
+        // Identity settled. If the bookmarklet sent us ahead of the content,
+        // the token arrives by fragment once the grab finishes — which by now
+        // has been running the whole time the login was on screen.
+        if (!token) {
+          showFeedback('Signed in. Waiting for the page you grabbed…', 'info');
+          token = await awaitStagedToken();
+          if (!token) {
+            showFeedback('The grab never arrived. Re-tap the bookmarklet on the recipe page.', 'error');
+            return;
+          }
+        }
+
+        // Retrieve what was staged.
         const res = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
         if (!res.ok) {
           showFeedback('Staged content not found or expired.', 'error');
@@ -6808,7 +6849,13 @@
       if (!url) return;
       // If a staged token is also present, the staged IIFE above is handling
       // this extract — skip to avoid double-firing.
-      if (params.get('staged')) return;
+      // ...or if the bookmarklet sent us ahead of the content (?awaiting=1),
+      // in which case the token is still on its way as a fragment and the
+      // staged IIFE owns this tab. Without this the server would re-fetch the
+      // URL and run a SECOND paid extraction alongside the staged one — and
+      // the server's copy is the worse of the two, since it cannot see
+      // paywalled or JS-rendered content.
+      if (params.get('staged') || params.get('awaiting') === '1') return;
       window.scrollTo({ top: 0 });
       const urlInput = document.getElementById('extractUrlInput');
       if (urlInput) urlInput.value = url;

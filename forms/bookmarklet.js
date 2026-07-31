@@ -56,6 +56,28 @@
   // stale tab.
   try { delete window.__recipeBookmarkletPopup; } catch (e) { }
 
+  // Send the popup to the form NOW, before we read a single node of this page.
+  // The form is on our own origin, so it can see the session immediately and
+  // resolve identity — or put up the login — WHILE the extraction and staging
+  // below are still running. Previously the tab sat on a splash until staging
+  // finished, so a not-signed-in user only met the login after all that work.
+  //
+  // The token is delivered afterwards as a URL FRAGMENT (see below), because a
+  // fragment change fires `hashchange` without reloading — navigating properly
+  // would destroy a login dialog the user might be in the middle of typing
+  // into. Cross-origin we may set `location.href` but not read it, hence
+  // rebuilding the exact same URL rather than appending to the current one.
+  const AWAIT_URL = FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
+  let popupHandedOff = false;
+  try {
+    popup.location.href = AWAIT_URL;
+    popupHandedOff = true;
+  } catch (e) {
+    // Navigation refused — fall back to the original behaviour further down,
+    // which navigates once with ?staged= after the token exists.
+    console.log('[recipe-bookmarklet] early hand-off failed:', e && e.message);
+  }
+
   // An old one-liner still works for now, but say so once rather than letting it
   // drift silently until something actually breaks.
   if (loaderV < LOADER_V) {
@@ -626,10 +648,18 @@
     if (!stageRes.ok) throw new Error('Stage failed: HTTP ' + stageRes.status);
     const { token } = await stageRes.json();
 
-    popup.location.href =
-      FORM +
-      '?url=' + encodeURIComponent(location.href) +
-      '&staged=' + encodeURIComponent(token);
+    if (popupHandedOff) {
+      // Same URL, fragment added: fires `hashchange` in the already-loaded
+      // form and does NOT reload it, so a login in progress survives.
+      popup.location.href = AWAIT_URL + '#staged=' + encodeURIComponent(token);
+    } else {
+      // Fallback: the early hand-off didn't happen, so this is the first
+      // navigation and the form reads ?staged= from the query as before.
+      popup.location.href =
+        FORM +
+        '?url=' + encodeURIComponent(location.href) +
+        '&staged=' + encodeURIComponent(token);
+    }
 
     try {
       // Pass the recipe `root` so the screenshot scopes to just the
