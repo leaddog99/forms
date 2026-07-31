@@ -1,0 +1,296 @@
+<title>Who owns the top 200 — a corpus concentration audit</title>
+<style>
+  :root{
+    --paper:#F5F6F4; --card:#FBFCFA; --ink:#131A1C; --ink-2:#3C4A4D; --muted:#5C6A6D;
+    --rule:#DCE1DE; --rule-soft:#E9EDEA;
+    --data:#109083;          /* single-series bar fill — validated light */
+    --flag:#C26312;          /* reserved: the non-culinary exception, always labelled */
+    --data-ghost:#10908314;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#101617; --card:#161E20; --ink:#E7EDEA; --ink-2:#B6C3C1; --muted:#8A9998;
+      --rule:#26312F; --rule-soft:#1D2628;
+      --data:#12A493; --flag:#CE7A2E; --data-ghost:#12A4931f;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#101617; --card:#161E20; --ink:#E7EDEA; --ink-2:#B6C3C1; --muted:#8A9998;
+    --rule:#26312F; --rule-soft:#1D2628;
+    --data:#12A493; --flag:#CE7A2E; --data-ghost:#12A4931f;
+  }
+  :root[data-theme="light"]{
+    --paper:#F5F6F4; --card:#FBFCFA; --ink:#131A1C; --ink-2:#3C4A4D; --muted:#5C6A6D;
+    --rule:#DCE1DE; --rule-soft:#E9EDEA;
+    --data:#109083; --flag:#C26312; --data-ghost:#10908314;
+  }
+
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:16px; line-height:1.6; margin:0;
+    padding:clamp(28px,5vw,72px) clamp(18px,5vw,40px) 96px;
+  }
+  .sheet{ max-width:74rem; margin:0 auto; display:flex; flex-direction:column; gap:clamp(40px,5vw,64px); }
+  .prose{ max-width:65ch; }
+  h1,h2,h3{ font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif;
+            font-weight:600; text-wrap:balance; margin:0; letter-spacing:-.008em; }
+  h1{ font-size:clamp(2.1rem,4.6vw,3.15rem); line-height:1.08; }
+  h2{ font-size:clamp(1.32rem,2.3vw,1.62rem); line-height:1.22; }
+  h3{ font-size:1.02rem; line-height:1.3; }
+  p{ margin:0; }
+  .mono{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace; }
+
+  .eyebrow{
+    font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+    font-size:.7rem; letter-spacing:.15em; text-transform:uppercase; color:var(--muted);
+  }
+
+  /* --- masthead --- */
+  .masthead{ display:flex; flex-direction:column; gap:18px;
+             border-bottom:1px solid var(--rule); padding-bottom:clamp(28px,4vw,40px); }
+  .standfirst{ font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,ui-serif,serif;
+               font-size:clamp(1.06rem,1.7vw,1.24rem); line-height:1.5; color:var(--ink-2); max-width:56ch; }
+  .byline{ display:flex; flex-wrap:wrap; gap:8px 20px; color:var(--muted); font-size:.78rem;
+           font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace; }
+
+  /* --- stat row --- */
+  .stats{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1px;
+          background:var(--rule); border:1px solid var(--rule); }
+  .stat{ background:var(--card); padding:20px 22px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+            font-size:clamp(1.7rem,3.2vw,2.2rem); line-height:1; font-variant-numeric:tabular-nums;
+            letter-spacing:-.02em; }
+  .stat .k{ font-size:.78rem; color:var(--muted); line-height:1.35; }
+
+  /* --- bar list --- */
+  .figure{ display:flex; flex-direction:column; gap:16px; }
+  .figcap{ display:flex; flex-direction:column; gap:5px; }
+  .figcap .note{ font-size:.83rem; color:var(--muted); max-width:62ch; }
+  .bars{ display:flex; flex-direction:column; gap:2px; }   /* 2px surface gap between fills */
+  .bar{ display:grid; grid-template-columns:minmax(0,15rem) 1fr auto; align-items:center;
+        gap:14px; padding:3px 0; }
+  .bar .host{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+              font-size:.8rem; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .track{ background:var(--data-ghost); height:14px; position:relative; }
+  .fill{ position:absolute; inset:0 auto 0 0; background:var(--data);
+         border-radius:0 4px 4px 0; }   /* 4px rounded data-end, anchored to baseline */
+  .bar .v{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+           font-size:.8rem; font-variant-numeric:tabular-nums; color:var(--ink-2); min-width:2.2rem; text-align:right; }
+  .bar.flagged .fill{ background:var(--flag); }
+  .bar.flagged .host{ color:var(--flag); }
+  .tag{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+        font-size:.62rem; letter-spacing:.09em; text-transform:uppercase;
+        border:1px solid var(--flag); color:var(--flag); padding:1px 5px; margin-left:7px;
+        white-space:nowrap; }
+
+  /* --- tables --- */
+  .scroll{ overflow-x:auto; border:1px solid var(--rule); background:var(--card); }
+  table{ border-collapse:collapse; width:100%; font-size:.85rem; }
+  th,td{ text-align:left; padding:9px 14px; border-bottom:1px solid var(--rule-soft); white-space:nowrap; }
+  thead th{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+            font-size:.66rem; letter-spacing:.11em; text-transform:uppercase; color:var(--muted);
+            border-bottom:1px solid var(--rule); font-weight:400; }
+  tbody tr:last-child td{ border-bottom:none; }
+  td.num{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+          font-variant-numeric:tabular-nums; text-align:right; }
+  td.host{ font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace; font-size:.8rem; }
+  tr.flagged td{ background:var(--data-ghost); }
+  tr.flagged td.host{ color:var(--flag); }
+
+  /* --- callout + code --- */
+  .callout{ border-left:3px solid var(--flag); padding:2px 0 2px 20px;
+            display:flex; flex-direction:column; gap:10px; max-width:64ch; }
+  pre{ margin:0; padding:16px 18px; background:var(--card); border:1px solid var(--rule);
+       overflow-x:auto; font-family:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+       font-size:.78rem; line-height:1.65; color:var(--ink-2); }
+  .section{ display:flex; flex-direction:column; gap:18px; }
+  .rule{ border:0; border-top:1px solid var(--rule); margin:0; }
+  .foot{ color:var(--muted); font-size:.78rem; max-width:64ch; }
+  a{ color:var(--data); }
+  @media (max-width:620px){
+    .bar{ grid-template-columns:minmax(0,9.5rem) 1fr auto; gap:10px; }
+    .tag{ display:none; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <span class="eyebrow">Corpus audit · master_recipes</span>
+    <h1>Who owns the top&nbsp;200</h1>
+    <p class="standfirst">The blended score ranks 3,451 recipes drawn from 731 publishers. The best 200 of them come from 34. Two of those publishers are not food sites at all — and each has exactly one recipe in the corpus.</p>
+    <div class="byline">
+      <span>30 July 2026</span>
+      <span>weight: OU 70 / power 30</span>
+      <span>cohort: whole corpus</span>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div class="stat"><span class="n">731</span><span class="k">publishers in the scored corpus</span></div>
+    <div class="stat"><span class="n">34</span><span class="k">publishers represented in the top 200</span></div>
+    <div class="stat"><span class="n">34<span style="font-size:.55em">%</span></span><span class="k">of the top 200 from just three of them</span></div>
+    <div class="stat"><span class="n">63<span style="font-size:.55em">%</span></span><span class="k">from the leading eight</span></div>
+  </section>
+
+  <section class="figure">
+    <div class="figcap">
+      <h2>Every publisher in the top 200</h2>
+      <p class="note">Count of recipes each publisher places in the highest-ranked 200. Bars in <span style="color:var(--data)">teal</span>; the two general-health publishers are marked in <span style="color:var(--flag)">amber</span> and labelled, because they are the finding rather than a category.</p>
+    </div>
+    <div class="bars">
+      <div class="bar"><span class="host">gimmesomeoven.com</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="v">28</span></div>
+      <div class="bar"><span class="host">cooking.nytimes.com</span><span class="track"><span class="fill" style="width:71.4%"></span></span><span class="v">20</span></div>
+      <div class="bar"><span class="host">smittenkitchen.com</span><span class="track"><span class="fill" style="width:71.4%"></span></span><span class="v">20</span></div>
+      <div class="bar"><span class="host">sallysbakingaddiction.com</span><span class="track"><span class="fill" style="width:53.6%"></span></span><span class="v">15</span></div>
+      <div class="bar"><span class="host">minimalistbaker.com</span><span class="track"><span class="fill" style="width:42.9%"></span></span><span class="v">12</span></div>
+      <div class="bar"><span class="host">cookieandkate.com</span><span class="track"><span class="fill" style="width:39.3%"></span></span><span class="v">11</span></div>
+      <div class="bar"><span class="host">spendwithpennies.com</span><span class="track"><span class="fill" style="width:39.3%"></span></span><span class="v">11</span></div>
+      <div class="bar"><span class="host">loveandlemons.com</span><span class="track"><span class="fill" style="width:35.7%"></span></span><span class="v">10</span></div>
+      <div class="bar"><span class="host">theguardian.com</span><span class="track"><span class="fill" style="width:32.1%"></span></span><span class="v">9</span></div>
+      <div class="bar"><span class="host">thekitchn.com</span><span class="track"><span class="fill" style="width:32.1%"></span></span><span class="v">9</span></div>
+      <div class="bar"><span class="host">recipetineats.com</span><span class="track"><span class="fill" style="width:28.6%"></span></span><span class="v">8</span></div>
+      <div class="bar"><span class="host">allrecipes.com</span><span class="track"><span class="fill" style="width:21.4%"></span></span><span class="v">6</span></div>
+      <div class="bar"><span class="host">dinneratthezoo.com</span><span class="track"><span class="fill" style="width:17.9%"></span></span><span class="v">5</span></div>
+      <div class="bar"><span class="host">tastesbetterfromscratch.com</span><span class="track"><span class="fill" style="width:17.9%"></span></span><span class="v">5</span></div>
+      <div class="bar"><span class="host">bbc.co.uk</span><span class="track"><span class="fill" style="width:14.3%"></span></span><span class="v">4</span></div>
+      <div class="bar"><span class="host">simplyrecipes.com</span><span class="track"><span class="fill" style="width:10.7%"></span></span><span class="v">3</span></div>
+      <div class="bar"><span class="host">skinnytaste.com</span><span class="track"><span class="fill" style="width:7.1%"></span></span><span class="v">2</span></div>
+      <div class="bar"><span class="host">thespruceeats.com</span><span class="track"><span class="fill" style="width:7.1%"></span></span><span class="v">2</span></div>
+      <div class="bar"><span class="host">tasteofhome.com</span><span class="track"><span class="fill" style="width:7.1%"></span></span><span class="v">2</span></div>
+      <div class="bar"><span class="host">tastesoflizzyt.com</span><span class="track"><span class="fill" style="width:7.1%"></span></span><span class="v">2</span></div>
+      <div class="bar"><span class="host">seriouseats.com</span><span class="track"><span class="fill" style="width:7.1%"></span></span><span class="v">2</span></div>
+      <div class="bar"><span class="host">natashaskitchen.com</span><span class="track"><span class="fill" style="width:7.1%"></span></span><span class="v">2</span></div>
+      <div class="bar flagged"><span class="host">healthline.com<span class="tag">general health</span></span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar flagged"><span class="host">webmd.com<span class="tag">general health</span></span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">wellplated.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">pinchofyum.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">onceuponachef.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">bonappetit.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">marthastewart.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">foodnetwork.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">davidlebovitz.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">momontimeout.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">cafedelites.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+      <div class="bar"><span class="host">ohsweetbasil.com</span><span class="track"><span class="fill" style="width:3.6%"></span></span><span class="v">1</span></div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="section">
+    <span class="eyebrow">Distribution</span>
+    <h2>The corpus is the long tail. The ranking truncates it.</h2>
+    <div class="prose" style="display:flex;flex-direction:column;gap:14px">
+      <p>Across 731 publishers the corpus is barely concentrated at all — 63% of them contribute a single recipe. Selecting the top 200 raises concentration <strong>eightfold</strong> and drops 95.3% of publishers entirely.</p>
+      <p>What survives is not a long tail in the sense that matters. Twelve publishers appear once each, but together they carry <strong>6% of the list</strong>; three publishers carry a third of it. The mass sits at the head.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Measure</th><th class="num">Whole corpus</th><th class="num">Top 200</th></tr></thead>
+        <tbody>
+          <tr><td>Publishers</td><td class="num">731</td><td class="num">34</td></tr>
+          <tr><td>Concentration (HHI)</td><td class="num">80</td><td class="num">667</td></tr>
+          <tr><td>Inequality (Gini)</td><td class="num">0.689</td><td class="num">0.553</td></tr>
+          <tr><td>Share held by top 3</td><td class="num">7.8%</td><td class="num">34.0%</td></tr>
+          <tr><td>Publishers with one recipe</td><td class="num">460</td><td class="num">12</td></tr>
+          <tr><td>Share held by those</td><td class="num">13.3%</td><td class="num">6.0%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="foot">The Gini <em>falls</em> while HHI rises eightfold: inequality among the survivors is lower precisely because selection has already removed everyone who would have made it unequal. Diversity exists in the corpus; it is being spent at selection.</p>
+  </section>
+
+  <hr class="rule">
+
+  <section class="section">
+    <span class="eyebrow">The finding</span>
+    <h2>A ranking that reads the publisher, not the recipe</h2>
+    <div class="prose" style="display:flex;flex-direction:column;gap:14px">
+      <p>The score blends two signals: <strong>OU</strong>, how far a page outperforms what its domain would predict, and <strong>power</strong>, the domain's authority plus the page's. Both are search-authority measures. Neither has read the recipe.</p>
+      <p>That is visible at rank 10. Healthline is a general-health publisher carrying a single recipe in our entire corpus, and it lands above every page from Serious Eats, Bon Appétit and Food Network — on a domain authority of 92 it did not earn by cooking.</p>
+    </div>
+    <div class="callout">
+      <p><strong>Healthline and WebMD have one recipe each in the corpus. Both went straight into the top 200.</strong></p>
+      <p style="color:var(--muted);font-size:.88rem">A 100% hit rate, against 7% for Serious Eats and 6% for Allrecipes. The pages are real recipes, correctly extracted. The ranking simply has no way to know that a health encyclopaedia is not a cooking authority.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <caption class="eyebrow" style="text-align:left;padding:12px 14px 0">Head of the ranking</caption>
+        <thead><tr><th>#</th><th>Publisher</th><th>Recipe</th><th class="num">DA</th><th class="num">PA</th><th class="num">OU</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td class="host">cooking.nytimes.com</td><td>Best Chocolate Chip Cookies</td><td class="num">95</td><td class="num">72</td><td class="num">24.75</td></tr>
+          <tr><td class="num">2</td><td class="host">cooking.nytimes.com</td><td>Quiche Lorraine</td><td class="num">95</td><td class="num">69</td><td class="num">21.75</td></tr>
+          <tr><td class="num">5</td><td class="host">bbc.co.uk</td><td>Easy banana bread</td><td class="num">95</td><td class="num">67</td><td class="num">19.75</td></tr>
+          <tr class="flagged"><td class="num">10</td><td class="host">healthline.com</td><td>Homemade Kimchi <span class="tag">general health</span></td><td class="num">92</td><td class="num">66</td><td class="num">19.66</td></tr>
+          <tr><td class="num">12</td><td class="host">cooking.nytimes.com</td><td>Cacio e Pepe</td><td class="num">95</td><td class="num">66</td><td class="num">18.75</td></tr>
+          <tr class="flagged"><td class="num">14</td><td class="host">webmd.com</td><td>Strawberry Salad with Grilled Shrimp <span class="tag">general health</span></td><td class="num">94</td><td class="num">65</td><td class="num">18.05</td></tr>
+          <tr><td class="num">15</td><td class="host">theguardian.com</td><td>Jackfruit biryani</td><td class="num">94</td><td class="num">65</td><td class="num">18.05</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="section">
+    <span class="eyebrow">Hit rate</span>
+    <h2>Depth in the corpus doesn't carry into the top</h2>
+    <p class="note" style="font-size:.85rem;color:var(--muted);max-width:62ch">How much of each publisher's corpus presence reaches the top 200. The publishers we hold the most of are not the ones that rank.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Publisher</th><th class="num">In top 200</th><th class="num">In corpus</th><th class="num">Hit rate</th></tr></thead>
+        <tbody>
+          <tr class="flagged"><td class="host">healthline.com</td><td class="num">1</td><td class="num">1</td><td class="num">100.0%</td></tr>
+          <tr class="flagged"><td class="host">webmd.com</td><td class="num">1</td><td class="num">1</td><td class="num">100.0%</td></tr>
+          <tr><td class="host">gimmesomeoven.com</td><td class="num">28</td><td class="num">48</td><td class="num">58.3%</td></tr>
+          <tr><td class="host">sallysbakingaddiction.com</td><td class="num">15</td><td class="num">31</td><td class="num">48.4%</td></tr>
+          <tr><td class="host">smittenkitchen.com</td><td class="num">20</td><td class="num">44</td><td class="num">45.5%</td></tr>
+          <tr><td class="host">cooking.nytimes.com</td><td class="num">20</td><td class="num">76</td><td class="num">26.3%</td></tr>
+          <tr><td class="host">theguardian.com</td><td class="num">9</td><td class="num">56</td><td class="num">16.1%</td></tr>
+          <tr><td class="host">recipetineats.com</td><td class="num">8</td><td class="num">91</td><td class="num">8.8%</td></tr>
+          <tr><td class="host">seriouseats.com</td><td class="num">2</td><td class="num">27</td><td class="num">7.4%</td></tr>
+          <tr><td class="host">allrecipes.com</td><td class="num">6</td><td class="num">102</td><td class="num">5.9%</td></tr>
+          <tr><td class="host">bonappetit.com</td><td class="num">1</td><td class="num">50</td><td class="num">2.0%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="section">
+    <span class="eyebrow">What follows</span>
+    <h2>Two things worth doing</h2>
+    <div class="prose" style="display:flex;flex-direction:column;gap:14px">
+      <p><strong>Cap the publisher.</strong> Any surface built on this list — a "best recipes" page, a cookbook, a digest — reads as three sites unless a per-publisher limit is applied at selection. Three publishers currently supply a third of it.</p>
+      <p><strong>Give authority a subject.</strong> A domain-level score that knows what a publisher is authoritative <em>about</em> is the fix for rank 10, and it is already on the roadmap as the system-wide domain score. Until then a health encyclopaedia with one recipe outranks a cooking magazine with fifty, and the ranking cannot tell the difference because it never looks at the food.</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <section class="section">
+    <span class="eyebrow">Method</span>
+    <h2>How this was measured</h2>
+    <div class="prose" style="display:flex;flex-direction:column;gap:14px">
+      <p>The blend is not a stored value — it is a percentile rank computed over whatever cohort you supply, so this report defines that cohort as the whole scored corpus. Percentiles stored on individual rows come from per-dish runs and are not comparable across the corpus.</p>
+      <p>One caveat on provenance: <code class="mono">_scoring.power</code> was found to be zero on 1,775 master rows whose authority figures were real, which had pinned half the corpus to the floor of the power dimension. That was repaired before this report was run, and the query below reads <code class="mono">power</code> derived from DA + PA rather than the stored field.</p>
+    </div>
+    <pre>WITH ranked AS (
+  SELECT source_host,
+         0.70 * PERCENT_RANK() OVER (ORDER BY ou_score)
+       + 0.30 * PERCENT_RANK() OVER (ORDER BY power) AS blend
+  FROM master_recipes
+  WHERE ou_score IS NOT NULL AND power IS NOT NULL
+)
+SELECT source_host, COUNT(*) n
+FROM (SELECT * FROM ranked ORDER BY blend DESC LIMIT 200)
+GROUP BY source_host
+ORDER BY n DESC;</pre>
+    <p class="foot">3,451 of 3,452 master recipes carry both signals; one row lacks them and is excluded. Figures are from recipes.db on 30 July 2026, after the power backfill.</p>
+  </section>
+
+</div>
