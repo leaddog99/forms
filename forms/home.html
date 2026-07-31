@@ -148,11 +148,29 @@
     const $ = (s) => document.querySelector(s);
     const { escapeHtml, fmtDate } = LibraryShell;
 
-    // The hostname is the switch. Server-side host_gate.py enforces the same
-    // split, so these agree by construction rather than by being kept in sync:
-    // on the public host the admin summary endpoint simply 404s.
-    const IS_ADMIN_HOST = !/(^|\.)bestcooksclub\.com$/i.test(location.hostname)
-                       && !/(^|\.)bestcooks\.club$/i.test(location.hostname);
+    // The hostname is the switch, and the SERVER decides which side we are on:
+    // GET /branding returns `is_public_host`, computed by the same
+    // host_gate.is_public_host() the gate middleware calls, on the same Host
+    // header. This page used to answer it here with its own regex, and the two
+    // lists had already drifted apart — it counted `bestcooks.club` and every
+    // *.bestcooksclub.com subdomain as customer while the gate counted only the
+    // apex and www, which would render a customer front door over the full admin
+    // surface. A local list also cannot see BCC_PUBLIC_HOSTS, the override that
+    // lets a self-hoster point their own domain here without touching code.
+    //
+    // Unknown answer => CUSTOMER. Failing toward the smaller surface is the safe
+    // direction: the cost is a curator seeing a signup link until they reload,
+    // versus a stranger seeing admin chrome. (The tiles are belt-and-braces
+    // anyway — they need me.is_staff, and /admin-summary 404s on the public host.)
+    let IS_ADMIN_HOST = false;
+    async function resolveHostFlavour() {
+      try {
+        const r = await fetch('/branding');
+        if (!r.ok) return;
+        const b = await r.json();
+        if (typeof b.is_public_host === 'boolean') IS_ADMIN_HOST = !b.is_public_host;
+      } catch (e) { /* keep the safe default */ }
+    }
 
     let mode = 'signin';                       // 'signin' | 'signup'
     const pwf = LibraryShell.passwordField({ id: 'home_pw', label: 'Password' });
@@ -235,6 +253,9 @@
     }
 
     (async function init() {
+      // Must settle BEFORE anything reads IS_ADMIN_HOST — the tagline, the signup
+      // affordance, the alert tiles and the nav all branch on it.
+      await resolveHostFlavour();
       $('#tagline').textContent = IS_ADMIN_HOST
         ? 'Curator back-office.' : 'Your recipes, your way.';
       let me = null;
