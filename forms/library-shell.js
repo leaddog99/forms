@@ -110,10 +110,21 @@
         init = init ? Object.assign({}, init) : {};
         const h = new Headers(init.headers || {});
         if (!h.has('X-Self-User-Id')) h.set('X-Self-User-Id', uid);
-        // Master (uid 0) needs a token as well as the id — the header alone no
-        // longer grants owner (it used to, which on a public hostname was a
-        // full admin bypass). Minted by POST /auth/master, see users.html.
-        if (uid === '0' && !h.has('X-Master-Token')) {
+        // The curator token, sent for EVERY uid that has one — not just uid 0.
+        // The header alone no longer grants owner (it used to, which on a public
+        // hostname was a full admin bypass), so a staff role needs this token to
+        // resolve as itself. Minted by POST /auth/master.
+        //
+        // It was gated on uid === '0', which silently broke "unlock admin" for
+        // every account except Master: the password was accepted, the token was
+        // stored, the page reloaded — and the token was never sent, so
+        // _resolve_caller saw none, kept clamping the role to 'member', and
+        // re-rendered the unlock link. Nothing reported an error because nothing
+        // had failed; the credential just never left the browser. The token is
+        // NOT bound to a user_id (see unlockAdmin), and the server ignores it for
+        // an account whose role is already 'member', so sending it always is both
+        // necessary and safe.
+        if (!h.has('X-Master-Token')) {
           try {
             const t = localStorage.getItem('app:master_token');
             if (t) h.set('X-Master-Token', t);
