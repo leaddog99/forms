@@ -115,6 +115,105 @@
     let taxLabelToId = {};          // label -> ws_category_id
     let taxById = {};               // ws_category_id -> label
 
+    const qs = (k) => new URLSearchParams(location.search).get(k);
+
+    /* ---------------- bookmarklet landing (?staged) ----------------
+       The review bookmarklet runs on the PUBLISHER's origin, where our session is
+       unreachable (localStorage is per-origin), so it stages the captured page
+       anonymously and hands off here. This page is same-origin: library-shell's
+       fetch patch attaches the curator's identity, so /extract-review — which
+       enqueues a ~$0.29 LLM job — is spent by a signed-in human rather than by a
+       key baked into a bookmark. Mirrors products.html's handshake.            */
+    async function tryStagedImport(){
+      const token = qs('staged');
+      if (!token) return null;
+      const srcUrl = qs('url') || '';
+      const clearQuery = () => { try { history.replaceState({}, '', location.pathname); } catch {} };
+      renderImporting('Reading the staged page…');
+      try {
+        let md = '', src = srcUrl;
+        const sr = await fetch('/staged-markdown/' + encodeURIComponent(token));
+        if (sr.ok){ const d = await sr.json(); md = d.markdown || ''; src = d.source_url || src; }
+        if (!md){ clearQuery(); renderImportFailed('Nothing staged to import — the grab may have expired.'); return null; }
+
+        renderImporting('Decoding the review…');
+        const post = () => fetch('/extract-review', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markdown: md, url: src }) });
+
+        let r = await post();
+        // 401/403 is the case the baked key used to paper over: nobody with
+        // edit_master is signed in on this host. The capture is already in hand and
+        // the page it came from may be paywalled or behind a login, so sending them
+        // back to re-grab is the expensive answer. Offer sign-in here and retry —
+        // the staged token is still valid. The server stays the authority; a
+        // client-side permission check would only decide what our own UI does.
+        if (r.status === 401 || r.status === 403){
+          const res = await LibraryShell.signInDialog({
+            title: 'Sign in to import',
+            message: 'This review is captured and waiting. Sign in with curator permissions to decode it — nothing has been spent yet.'
+          });
+          if (!res || !res.ok){
+            clearQuery();
+            renderImportFailed('Import cancelled — nothing was spent. Re-run the grab when you are signed in.');
+            return null;
+          }
+          renderImporting('Decoding the review…');
+          r = await post();
+        }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok){
+          clearQuery();
+          renderImportFailed(r.status === 401 || r.status === 403
+            ? 'That account cannot import reviews — curator permissions (edit_master) are required.'
+            : (d.detail || ('HTTP ' + r.status)));
+          return null;
+        }
+        // Staged content is consumed; a reload must not re-spend on it.
+        clearQuery();
+        if (!d.job_id) return d.review_id || null;   // sync fallback (older server)
+        return await pollIngest(d.job_id);
+      } catch (e){
+        clearQuery();
+        renderImportFailed(e.message || String(e));
+        return null;
+      }
+    }
+
+    // A big roundup is ~30s of LLM time. The job outlives this page, so a timeout
+    // points at the monitor rather than claiming the import failed.
+    async function pollIngest(jobId){
+      for (let tries = 1; tries <= 90; tries++){
+        await new Promise(res => setTimeout(res, 2000));
+        let j;
+        try { j = await (await fetch('/jobs/' + encodeURIComponent(jobId))).json(); }
+        catch { continue; }                       // transient — keep polling
+        if (j.status === 'success'){
+          const out = j.result || {};
+          flash && flash(`Imported ${out.product_count || 0} product rec(s)`);
+          return out.review_id || null;
+        }
+        if (j.status === 'error' || j.status === 'cancelled'){
+          renderImportFailed(`Import ${j.status}: ${j.error_detail || 'see job #' + jobId}`);
+          return null;
+        }
+        renderImporting(`Decoding the review… ${j.status} (${tries * 2}s)`);
+      }
+      renderImportFailed(`Still running — check job #${jobId} in the Job Monitor.`);
+      return null;
+    }
+
+    function renderImporting(msg){
+      $('#page').innerHTML = `<div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Importing…</span></div>
+        <h1 class="ed-title">Grabbing review…</h1>
+        <p class="muted">${escapeHtml(msg)}</p>`;
+    }
+    function renderImportFailed(msg){
+      $('#page').innerHTML = `<div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Import failed</span></div>
+        <h1 class="ed-title">Couldn’t import that page</h1>
+        <p class="muted">${escapeHtml(msg)}</p>`;
+    }
+
     async function loadTaxonomy(){
       if (taxOpts.length) return;
       try {
@@ -618,7 +717,17 @@
     $('#search').addEventListener('input', e => { term = e.target.value; renderList(); });
     $('#addToggle').addEventListener('click', () => { selected=null; mode='add'; editingItems.clear(); addingItem=false; renderList(); renderDetail(); nav.afterSelect(); });
 
-    load();
+    // Boot: load the list, then — if the review bookmarklet landed us here with
+    // ?staged — decode the staged page and select the review it produced. Load
+    // first so the sidebar is populated while the ~30s decode runs; on failure the
+    // message stays on the detail pane rather than being overwritten by the intro.
+    (async () => {
+      await load();
+      if (qs('staged')){
+        const rid = await tryStagedImport();
+        if (rid){ await load(rid); nav.afterSelect(); }
+      }
+    })();
   </script>
 </body>
 </html>

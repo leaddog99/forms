@@ -1,11 +1,13 @@
 /* Best Cooks Club — REVIEW bookmarklet.
  *
  * Run it on a product-REVIEW page (America's Test Kitchen, Wirecutter, Williams Sonoma, WSJ Buy
- * Side, …): it harvests a markdown of the page and POSTs it to /extract-review, which routes the
- * page to its per-source decoder (intake/products/review_sources), creates/updates the review
- * header + its individual product recommendations (review_products), resolves their dynamic links
- * to catalog products, and opens the Reviews editor at that review. Client-side capture, so
- * logged-in / paywalled pages work.
+ * Side, …): it harvests a markdown of the page, STAGES it, and opens the Reviews editor, which
+ * runs /extract-review — routing the page to its per-source decoder (intake/products/review_sources),
+ * creating/updating the review header + its individual product recommendations (review_products)
+ * and resolving their dynamic links to catalog products. Client-side capture, so logged-in /
+ * paywalled pages work.
+ *
+ * The decode runs from the EDITOR, not from here — see the note on credentials below.
  *
  * Only ATK is decodable today; other recognized sources return a clear "decoder not built yet"
  * message. Loader one-liner is at the bottom. Cache-busted so edits go live on the next click.
@@ -19,30 +21,22 @@
     return location.origin;
   })();
 
-  // THIS bookmarklet needs a key, unlike the recipe one. It POSTs to
-  // /extract-review — a gated, edit_master endpoint — and acts immediately:
-  // there is no form round-trip afterwards to supply a session. The recipe
-  // grabber can be anonymous precisely because its work lands in a form where
-  // the signed-in user is known; this one has no such moment.
+  // NO CREDENTIAL LIVES HERE. This bookmarklet runs on the PUBLISHER's origin,
+  // and the session (localStorage `app:session_token` + X-Self-User-Id, attached
+  // by library-shell's fetch patch) belongs to OUR origin — a bookmarklet can
+  // never read it. That is a property of the browser, not an omission.
   //
-  // Baked in at install time by review_install.html from the curator's device
-  // key. Without it the grab 403s, which is what it did between the endpoint
-  // being gated and this being added.
-  const API_KEY = (function () {
-    try { return String(window.__reviewBookmarkletKey || ''); } catch (e) { return ''; }
-  })();
-
-  const _fetch = window.fetch.bind(window);
-  function apiFetch(url, init) {
-    init = init ? Object.assign({}, init) : {};
-    // Only ever to OUR origin — never attach a credential to a publisher's host.
-    if (API_KEY && String(url).indexOf(API) === 0) {
-      const h = new Headers(init.headers || {});
-      if (!h.has('X-BCC-Key')) h.set('X-BCC-Key', API_KEY);
-      init.headers = h;
-    }
-    return _fetch(url, init);
-  }
+  // So there are only two possible designs, and this one used to be the wrong
+  // half: it POSTed straight to /extract-review carrying a baked device key,
+  // which meant a second identity system existing solely to skip the hand-off,
+  // and a ~$0.29 LLM job authorised by a token sitting in a bookmarks bar with
+  // no human in front of an editor. Now it does what the product grabber does:
+  // stage the worthless part anonymously, then navigate to reviews.html, where
+  // the session exists and the editor spends. Identity before spend — the same
+  // ordering the recipe grabber learned on 2026-07-30.
+  //
+  // A stale install that still sets window.__reviewBookmarkletKey is harmless:
+  // nothing reads it. No re-install needed.
   var popup = window.__reviewBookmarkletPopup || null;
   function note(msg) { try { if (popup && !popup.closed) popup.document.body.innerHTML = "<h2 style='font-family:sans-serif;padding:16px'>" + msg + "</h2>"; } catch (e) {} }
 
@@ -81,55 +75,33 @@
     note("Capturing review…");
     var url = location.href, title = document.title || "";
     var markdown = ["# " + title, "*Source: " + url + "*", "---", bodyMarkdown()].join("\n\n");
-    // /extract-review enqueues a `review_ingest` job and returns immediately; we poll it.
-    // A big roundup takes ~30s of LLM time, and as a job the run is tracked, logged and
-    // retryable instead of vanishing into a request that either worked or didn't.
-    apiFetch(API + "/extract-review", {
+    // Anonymous by design: /stage-markdown accepts a grab from anyone because staged
+    // content is transient and worthless until someone signed in decides to spend on
+    // it. Nothing is decoded, no job is enqueued and no money is spent here.
+    fetch(API + "/stage-markdown", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markdown: markdown, url: url })
-    }).then(function (r) {
-      return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; });
-    }).then(function (res) {
-      if (!res.ok) { note("Couldn’t import: " + ((res.d && res.d.detail) || res.status)); return; }
-      var jobId = res.d && res.d.job_id;
-      if (!jobId) {                       // sync fallback (older server): result is the review
-        return openEditor(res.d && res.d.review_id, (res.d && res.d.products || []).length);
-      }
-      note("Reading the review… (job #" + jobId + ")");
-      var tries = 0;
-      var poll = setInterval(function () {
-        tries++;
-        apiFetch(API + "/jobs/" + jobId).then(function (r) { return r.json(); }).then(function (j) {
-          if (j.status === "success") {
-            clearInterval(poll);
-            var out = j.result || {};
-            openEditor(out.review_id, out.product_count || 0);
-          } else if (j.status === "error" || j.status === "cancelled") {
-            clearInterval(poll);
-            note("Import " + j.status + ": " + (j.error_detail || "see job #" + jobId));
-          } else if (tries > 90) {        // 3 min — the job outlives us; go look at it
-            clearInterval(poll);
-            note("Still running — check job #" + jobId + " in Jobs/Monitor.");
-          } else {
-            note("Reading the review… " + j.status + " (" + tries * 2 + "s)");
-          }
-        }).catch(function () { /* transient — keep polling */ });
-      }, 2000);
+      body: JSON.stringify({ markdown: markdown, source_url: url, title: title })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.token) throw new Error("stage failed");
+      note("Opening the Reviews editor…");
+      // Hand off to our own origin. reviews.html reads ?staged, POSTs /extract-review
+      // with the curator's session, polls the job and opens the finished review — the
+      // same handshake products.html already uses for the product grabber.
+      var edUrl = API + "/forms/reviews.html?staged=" + encodeURIComponent(d.token) +
+                  "&url=" + encodeURIComponent(url);
+      if (popup && !popup.closed) popup.location.href = edUrl;
+      else window.open(edUrl, "_blank", "noopener");
     }).catch(function (e) { note("Failed: " + (e.message || e)); });
   }
 
-  function openEditor(rid, n) {
-    note("Imported " + n + " product rec" + (n === 1 ? "" : "s") + " — opening editor…");
-    var edUrl = API + "/forms/reviews.html" + (rid ? "?review=" + encodeURIComponent(rid) : "");
-    if (popup && !popup.closed) popup.location.href = edUrl;
-    else window.open(edUrl, "_blank", "noopener");
-  }
   run();
 })();
 
 /* ---- INSTALL ----
  * Like the product bookmarklet, the real bookmark carries the configured app host
- * (system_config.public_base_url) — nothing hardcoded here. Loader template
- * (__BASE__ substituted by the install page):
- * javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;window.__reviewBookmarkletKey='__KEY__';var s=document.createElement('script');s.src='__BASE__/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
+ * (system_config.public_base_url) — nothing hardcoded here, and NO key: the loader
+ * stopped baking one on 2026-07-31 when the decode moved into the editor. Existing
+ * installs that still set window.__reviewBookmarkletKey keep working; the payload
+ * ignores it. Loader template (__BASE__ substituted by the install page):
+ * javascript:(function(){var p=window.open('','_blank');if(!p){alert('Pop-up blocked. Allow pop-ups, then re-tap.');return;}p.document.write('<h2>Loading review importer...</h2>');window.__reviewBookmarkletPopup=p;var s=document.createElement('script');s.src='__BASE__/forms/review_bookmarklet.js?'+Date.now();window.__reviewBookmarkletApi=new URL(s.src).origin;(document.body||document.documentElement).appendChild(s);})();
  */
