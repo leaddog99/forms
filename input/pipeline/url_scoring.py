@@ -43,18 +43,30 @@ _CANON: Optional[dict] = None   # domain -> (use_www: bool, trailing_slash: bool
 # report actual rows spent + what the canonical-variant learning saved. reset per batch.
 _MOZ_ROWS = 0
 _MOZ_CALLS = 0
+# URLs dropped because Moz has no data for them (http_code 0) — counted apart from
+# credential/network failures, which drop URLs for the same "moz-unavailable" reason
+# but mean something entirely different. 23% of one run being uncrawled is a fact
+# about the publisher; 23% being unreachable is an outage.
+_MOZ_UNCRAWLED = 0
 
 
 def reset_moz_row_stats() -> None:
-    global _MOZ_ROWS, _MOZ_CALLS
+    global _MOZ_ROWS, _MOZ_CALLS, _MOZ_UNCRAWLED
     _MOZ_ROWS = 0
     _MOZ_CALLS = 0
+    _MOZ_UNCRAWLED = 0
+
+
+def _note_moz_uncrawled() -> None:
+    global _MOZ_UNCRAWLED
+    _MOZ_UNCRAWLED += 1
 
 
 def moz_row_stats() -> dict:
     """(rows, calls, urls_scored). `rows` = billed Moz targets; `calls` = scored URLs.
     `saved` = rows the canonical learning avoided vs the old flat 4-variant probe."""
     return {"rows": _MOZ_ROWS, "calls": _MOZ_CALLS,
+            "uncrawled": _MOZ_UNCRAWLED,
             "saved_vs_4x": max(0, _MOZ_CALLS * 4 - _MOZ_ROWS)}
 
 
@@ -279,6 +291,27 @@ def score_url_via_moz(url: str) -> Optional[dict]:
         pattern = None   # treat as an unlearned call below so we (re)learn from the probe
 
     if chosen is None:
+        return None
+
+    # NO REAL MOZ DATA => NO SCORE. `usable` was computed above and then never
+    # consulted on the way out, so a URL Moz has never crawled (http_code 0) still
+    # returned the domain-derived placeholder PA it ships with — and that flowed
+    # into ou_score and the blend as if it had been measured. On a 2026-07-31
+    # healthline harvest that was 23% of the run, every one of them handed exactly
+    # pa=44, sitting indistinguishable beside the real 44s from crawled pages.
+    #
+    # Same rule as the _scoring.power fix (2026-07-30): a value we could not
+    # compute must be ABSENT, never a number that reads as "measured, and it's
+    # nothing." Callers already handle None — _moz_score drops the URL into
+    # rejects, the cache path leaves any existing score intact.
+    #
+    # Curator's call on dropping rather than keeping-with-absent-PA: "if it can't
+    # crawl them they probably aren't popular enough to matter." The absence is
+    # itself the signal.
+    if not usable:
+        logger.info("Moz has no data for %s (http_code=%s) — dropping, not scoring",
+                    chosen_url or url, chosen.get("http_code"))
+        _note_moz_uncrawled()
         return None
 
     # Learn the domain's canonical form from the chosen (highest-PA, has-data) variant,
