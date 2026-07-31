@@ -840,6 +840,70 @@ def init_db():
                     pass  # already present
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_key ON master_recipes(dish_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_publisher_key ON master_recipes(publisher_key)")
+            # Scoring fast paths (2026-07-30). The blend INPUTS were reachable only
+            # by parsing `data` in Python, so a plain corpus question — "top 200 by
+            # blended score, grouped by domain" — meant loading every row and
+            # recomputing. These make the inputs SQL-native and indexable.
+            #
+            # The BLEND ITSELF is deliberately NOT here: it is a percentile over a
+            # cohort, which needs a window function, and generated columns cannot
+            # contain subqueries, joins or window functions. Rank in SQL with
+            # PERCENT_RANK() over these columns (see memory/project_ou_power_blend);
+            # what the cohort IS remains the open design question.
+            #
+            # `source_host` is parsed in SQL rather than read from
+            # `_scoring.rootDomain`, which is NOT the host — it returns registry
+            # suffixes like "co.uk". Scheme stripped, path/query/fragment cut,
+            # leading www. dropped, lowercased.
+            _url = "json_extract(data,'$._source.originalUrl')"
+            _after_scheme = (f"CASE WHEN instr({_url},'://') > 0 "
+                             f"THEN substr({_url}, instr({_url},'://') + 3) ELSE {_url} END")
+            _host = (f"CASE WHEN instr({_after_scheme},'/') > 0 "
+                     f"THEN substr({_after_scheme}, 1, instr({_after_scheme},'/') - 1) "
+                     f"ELSE {_after_scheme} END")
+            _host_nq = (f"CASE WHEN instr({_host},'?') > 0 "
+                        f"THEN substr({_host}, 1, instr({_host},'?') - 1) ELSE {_host} END")
+            _host_final = (f"lower(CASE WHEN {_host_nq} LIKE 'www.%' "
+                           f"THEN substr({_host_nq}, 5) ELSE {_host_nq} END)")
+            for _tbl in ("master_recipes", "recipes"):
+                for _gc, _type, _expr in (
+                    ("ou_score", "REAL", "json_extract(data,'$._scoring.ouScore')"),
+                    ("domain_authority", "REAL", "json_extract(data,'$._scoring.domainAuthority')"),
+                    ("page_authority", "REAL", "json_extract(data,'$._scoring.pageAuthority')"),
+                    # power = DA + PA, the blend's second term, DERIVED not read.
+                    # `_scoring.power` IS stored, and it is 0.0 on 1,775 master
+                    # rows (51%) whose DA and PA are both real and non-zero —
+                    # the zero propagated into powerPercentile, so anything
+                    # ranked on the stored pair put half the corpus at the floor
+                    # of the power dimension. Computing from DA/PA is correct on
+                    # every row, so this column is the trustworthy one.
+                    ("power", "REAL", "json_extract(data,'$._scoring.domainAuthority') + "
+                                      "json_extract(data,'$._scoring.pageAuthority')"),
+                    ("source_host", "TEXT", _host_final),
+                    # The is-recipe confidence, on ~100% of rows.
+                    ("recipe_score", "REAL", "json_extract(data,'$._scoring.recipeScore')"),
+                    # The STORED percentiles, exposed for AUDIT rather than for
+                    # ranking: they carry the zero-power bug above, and they were
+                    # computed per dish-run so they are not comparable across the
+                    # corpus anyway (fieldScope is empty on every row, so the
+                    # cohort they belong to isn't even recorded). Rank with
+                    # PERCENT_RANK() over ou_score/power instead.
+                    ("stored_ou_pct", "REAL", "json_extract(data,'$._scoring.ouPercentile')"),
+                    ("stored_power_pct", "REAL", "json_extract(data,'$._scoring.powerPercentile')"),
+                    ("stored_power", "REAL", "json_extract(data,'$._scoring.power')"),
+                ):
+                    try:
+                        conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_gc} {_type} "
+                                     f"GENERATED ALWAYS AS ({_expr}) VIRTUAL")
+                        print(f"[MIGRATE] added {_tbl}.{_gc} generated column")
+                    except sqlite3.OperationalError:
+                        pass  # already present
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_source_host "
+                             f"ON {_tbl}(source_host)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_ou_score "
+                             f"ON {_tbl}(ou_score)")
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_power "
+                             f"ON {_tbl}(power)")
             # Same source-of-truth embedding on USER recipes: every save embeds
             # the recipe so its vector is available for dish-matching, "find
             # similar", dedup, and recommendations (not single-use). 2026-06-02.
