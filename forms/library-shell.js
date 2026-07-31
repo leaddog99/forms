@@ -358,7 +358,12 @@
       localStorage.removeItem('app:master_token');
       localStorage.removeItem('app:session_token');
     } catch (e) { /* private mode */ }
-    window.location.href = '/forms/users.html';
+    // The front door, not the user editor. This used to send everyone to
+    // /forms/users.html, which is an ADMIN page and 404s on the customer host —
+    // so signing out of bestcooksclub.com landed on a not-found page. `/` is the
+    // right destination on both hosts now that it exists: it serves whichever
+    // home the hostname calls for, each with its own sign-in form.
+    window.location.href = '/';
   }
 
   // Unlock staff permissions on the CURRENT identity — no user switch. The token
@@ -1109,6 +1114,31 @@
   // Returns { toggle, menu }. Both are appended by the caller. The menu is
   // mounted on body and positioned under its own toggle on open (so two
   // burgers don't collide at the fixed right edge the CSS would give them).
+  // Append the sign-out row to a burger menu.
+  //
+  // Styles are INLINE rather than in a stylesheet on purpose: the nav CSS is
+  // fragmented across nav.css, library-shell.css, editor-shell.css and three
+  // pages' own inline blocks (they define their own palettes), so a new class
+  // would have to be added in six places to appear everywhere. The var()
+  // fallbacks make these two elements render correctly under any of those
+  // palettes without touching one of them.
+  function _appendSignOut(burger, auth) {
+    if (!burger || !burger.menu) return;
+    if (burger.menu.querySelector('.nav-signout')) return;      // idempotent
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid var(--border,#e6dccf);margin:6px 4px';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nav-item nav-signout';
+    const who = (auth.user && (auth.user.email || auth.user.name)) || '';
+    btn.innerHTML = 'Sign out' + (who
+      ? '<span style="font-size:.72em;color:var(--muted,#6b5b4f);font-style:italic;' +
+        'margin-left:8px">' + escapeHtml(who) + '</span>' : '');
+    btn.addEventListener('click', signOut);
+    burger.menu.appendChild(sep);
+    burger.menu.appendChild(btn);
+  }
+
   function _buildBurger(items, currentPage, toggleOpts) {
     const toggle = document.createElement('button');
     toggle.type = 'button';
@@ -1229,6 +1259,20 @@
       // Show the admin burger when something is actually in it — not on a role
       // name. An empty menu is worse than no menu.
       if (adminVisible > 0 || onAdminPage) adminBurger.toggle.style.display = '';
+
+      // Sign out goes in BOTH burgers, not only the header identity badge.
+      // initIdentityBadge() is called only on pages that have a library-shell
+      // header, and ten pages do not — including both home pages — so those
+      // offered no way out at all. The account you need to leave is precisely the
+      // one whose menu you are stuck inside, so it has to be reachable from
+      // whichever burger that account can open.
+      //
+      // It names WHO you are signing out of. Two accounts here are both called
+      // "John Landry", and a page that shows the display name alone cannot tell
+      // them apart — which is how a wrong-account problem reads as a broken page.
+      if (auth && auth.user) {
+        [userBurger, adminBurger].forEach(b => _appendSignOut(b, auth));
+      }
     });
 
     if (headerInner) {
