@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730p"></script>
+  <script src="/forms/library-shell.js?v=20260731a"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -6742,11 +6742,17 @@
         // lapsed session, we ran the extraction, and the 401 arrived at SAVE:
         // after the model had been paid for and the user had already read the
         // result. Verify BEFORE the expensive call, not after it.
+        //
+        // NO try/catch here, deliberately. `fetchAuth` catches its own network
+        // and HTTP failures and resolves `{}`, so it cannot reject for any
+        // reason a user could cause — the only way it ever threw was a missing
+        // export, and swallowing that as "not signed in" is exactly what made
+        // this prompt every signed-in user for a password and then refuse the
+        // password it had just accepted. A throw here is a broken page, not an
+        // answer about who you are, and it belongs in the console.
         const authed = async () => {
-          try {
-            const a = await LibraryShell.fetchAuth();
-            return !!(a && a.user);
-          } catch (e) { return false; }
+          const a = await LibraryShell.fetchAuth();
+          return !!(a && a.user);
         };
 
         if (!await authed()) {

@@ -67,17 +67,15 @@
   // would destroy a login dialog the user might be in the middle of typing
   // into. Cross-origin we may set `location.href` but not read it, hence
   // rebuilding the exact same URL rather than appending to the current one.
-  const AWAIT_URL = FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
-  let popupHandedOff = false;
-  try {
-    popup.location.href = AWAIT_URL;
-    popupHandedOff = true;
-  } catch (e) {
-    // Navigation refused — fall back to the original behaviour further down,
-    // which navigates once with ?staged= after the token exists.
-    console.log('[recipe-bookmarklet] early hand-off failed:', e && e.message);
-  }
-
+  // EVERY write into the popup happens BEFORE the hand-off, never after.
+  // `document.open()` aborts whatever that window is currently loading, so
+  // writing a placeholder into a tab we just pointed at the form CANCELS the
+  // navigation — which is exactly what it did: the popup sat on about:blank
+  // until the final `location.href` at the end of staging, so identity resolved
+  // AFTER the grab rather than alongside it and the parallel design above was
+  // dead on arrival. Nothing looked wrong, because the second navigation
+  // carried the token and read as a normal load.
+  //
   // An old one-liner still works for now, but say so once rather than letting it
   // drift silently until something actually breaks.
   if (loaderV < LOADER_V) {
@@ -95,18 +93,32 @@
     await new Promise(r => setTimeout(r, 2500));
   }
 
-  // Update the popup's placeholder once we're in (it was set to "Loading…"
-  // by the loader; this is the more informative version).
+  const AWAIT_URL = FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
+  let popupHandedOff = false;
   try {
-    popup.document.open();
-    popup.document.write(
-      '<html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px">' +
-      '<h2>Preparing recipe import...</h2>' +
-      '<p>Capturing rendered page content.</p>' +
-      '</body></html>'
-    );
-    popup.document.close();
-  } catch (e) { /* cross-origin popup write blocked — fine, ignore */ }
+    popup.location.href = AWAIT_URL;
+    popupHandedOff = true;
+  } catch (e) {
+    // Navigation refused — fall back to the original behaviour further down,
+    // which navigates once with ?staged= after the token exists.
+    console.log('[recipe-bookmarklet] early hand-off failed:', e && e.message);
+  }
+
+  // Only when the hand-off did NOT happen is there an empty tab left to fill.
+  // When it did, the form IS the placeholder — and a better one, since it can
+  // take a login while the capture below runs.
+  if (!popupHandedOff) {
+    try {
+      popup.document.open();
+      popup.document.write(
+        '<html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:28px">' +
+        '<h2>Preparing recipe import...</h2>' +
+        '<p>Capturing rendered page content.</p>' +
+        '</body></html>'
+      );
+      popup.document.close();
+    } catch (e) { /* cross-origin popup write blocked — fine, ignore */ }
+  }
 
   // === JSON-LD harvest (BEFORE cleanNode strips <script>) ===
   function harvestJsonLd() {

@@ -1458,6 +1458,13 @@
     attachUrlControls,
     passwordField,
     signInDialog,
+    // The identity probe itself, not just the things built on it. Callers that
+    // need to know WHO is signed in before spending money (the staged-grab flow
+    // checks before it pays for an extraction) have to be able to ask, and
+    // `refreshIdentity` — which invalidates this cache — was already exported
+    // without the reader it invalidates.
+    fetchAuth,
+    fetchRole,
     refreshIdentity,
     initEditorNav,
     initIdentityBadge,
