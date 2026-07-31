@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730n"></script>
+  <script src="/forms/library-shell.js?v=20260730o"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -6692,13 +6692,15 @@
 
       window.scrollTo({ top: 0 });
       try {
-        const res = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
-        if (!res.ok) {
-          showFeedback('Staged content not found or expired.', 'error');
-          return;
-        }
-        const data = await res.json();
-
+        // IDENTITY FIRST, before we fetch anything. The staged content is of no
+        // use to someone who cannot save it, so establishing who this is comes
+        // ahead of retrieving it — the login prompt appears the moment the tab
+        // opens rather than after a round trip. (An expired token used to be
+        // reported before the login, which is the only thing this ordering
+        // gives up; the bookmarklet redirects within milliseconds of staging,
+        // and `?staged=` is stripped after use so a reload cannot re-fire it,
+        // so arriving with an already-dead token is close to unreachable.)
+        //
         // The recipe bookmarklet carries no identity — it is universal, one
         // install for every user on every device. Ownership is decided HERE, by
         // whoever is signed in when the recipe is saved, which is what the save
@@ -6755,6 +6757,14 @@
             }
           } catch (e) { /* non-fatal: the store control is still visible */ }
         }
+
+        // Identity settled — now retrieve what was staged.
+        const res = await fetch(`${API}/staged-markdown/${encodeURIComponent(token)}`);
+        if (!res.ok) {
+          showFeedback('Staged content not found or expired.', 'error');
+          return;
+        }
+        const data = await res.json();
 
         const safeName = (data.title || 'staged').replace(/[^a-z0-9]/gi, '_').slice(0, 40) || 'staged';
         const file = new File([data.markdown], safeName + '.md', { type: 'text/markdown' });
