@@ -2132,3 +2132,160 @@ returns **401** to an anonymous caller. `/stage-markdown` still 200s anonymously
   rewrites URLs — confirm Amazon `tag`/`ascsubtag` survive before the first digest).
 - **`.env` still has no explanation.** Overwritten with the word `done` at 16:56, restored
   from a backup ten minutes old. If it happens a third time it is a pattern, not an accident.
+
+## Session log — 2026-07-31 — the review grabber loses its key · url→page · one style, one header · and three causes wearing one symptom
+
+Started as "convert the review grabber", became a UI/auth session. All shipped and verified live.
+
+### The review grabber stages and hands off (c23a6f0)
+
+Curator: *"shouldn't all the bookmarklets run the same way"* — and then the sharper cut, *"all
+other bookmarklets operate on admin level forms."* Right grouping: ONE customer bookmarklet
+(recipe) and TWO admin ones (product, review), and the two admin ones didn't match each other.
+`host_gate.py:110` already said so in a comment — *"The customer bookmarklet only. /extract-product
+and /extract-review are curator tools."*
+
+**The mechanism that settles it:** a bookmarklet runs on the PUBLISHER's origin, and the session is
+`localStorage['app:session_token']` + `X-Self-User-Id` on OURS. localStorage is per-origin, so a
+bookmarklet can never carry your session — a property of the browser, not an omission. That leaves
+exactly two designs: hand off to a page that has the session, or bake a second credential. Recipe
+and product hand off. Review baked a device key, and its own comment explained the symptom ("no
+form round-trip afterwards") rather than the cause: it chose to spend BEFORE reaching one.
+`/extract-review` enqueues a ~30s LLM job, measured at ~$0.29 on a large roundup, authorised by a
+bearer token sitting in a bookmarks bar with no human in front of an editor.
+
+Now it POSTs `/stage-markdown` (anonymous by design — staged content is worthless until someone
+signs in and spends) and navigates to `reviews.html?staged=<token>`, which decodes with the
+curator's own session. A 401 there opens `LibraryShell.signInDialog` and retries rather than sending
+you back to re-grab a page that may be paywalled. Also forward-compatible with the parked Cloudflare
+Access decision: Access can challenge a human who NAVIGATES, and answers a cross-origin XHR with a
+302 to a login that never completes — the silent hang from 07-29.
+
+No re-install (payload is cache-busted; a stale loader setting `__reviewBookmarkletKey` is ignored).
+**`user_api_keys` now has no caller** — table, endpoints and UI left intact per no-silent-removal;
+retiring them is a separate decision. **Every other `/reviews/*` endpoint is ungated**, including
+`/reviews/find` (a SERP call) and `/reviews/ingest-url` (unblocker + LLM) — the tightest remaining
+cluster for the spend-endpoint pass.
+
+### url→page, after two wrong turns (f296df7, 1c5d2f3, d5d10fe)
+
+`home.html` decided its own flavour in JS with a hardcoded hostname regex, and the two lists had
+drifted: the page counted `bestcooks.club` and every `*.bestcooksclub.com` subdomain as customer
+while `host_gate` counted only the apex and `www`. So a customer front door could render over the
+full admin surface, and `BCC_PUBLIC_HOSTS` — the override a self-hoster needs — was invisible to the
+page.
+
+I fixed it by adding `is_public_host` to `/branding`, then had to add `cache: 'no-store'` because a
+copy predating the field sat in the browser cache and silently rendered the customer home on the
+admin host. Curator: *"youre overcomplicating this.. it should be straightforward and simple... url
+to page."* Correct. Three layers answering a question the URL had already answered.
+
+`GET /` now reads the Host header and serves `home.html` or `admin_home.html`. That is the whole
+mechanism; `/branding` is byte-identical to before. Two files rather than one branching file, per
+the clone+specialize preference. Then one edit added `bestcooks.club` + `www.` to
+`_DEFAULT_PUBLIC_HOSTS` — and worth recording which side had been right: the page's old regex DID
+count it as customer, so the page reflected intent and the gate hadn't caught up.
+
+### One style, one header (bbfdb49, 03306b7, 342a7af)
+
+Curator: *"the look should be the same across the whole system so why am i differing pallettes"* and
+*"i want a 'style' that doesn't change page to page.. and that's easy to change."*
+
+**It already existed.** `tokens.css` is 39 lines and its own header has always said *"No page should
+define these tokens itself anymore."* Eight pages had simply never opted in — six carrying a
+copy-pasted `--accent:#b8602a` that isn't even the canonical clay (`#9b4a22`), so the "same" brown
+was two browns. Two more (product_install teal, review_install plum) were deliberate; that
+distinction now lives in their admin chip instead of the whole page.
+
+Ten pages now load `library-shell.css` then `tokens.css` AFTER their own `<style>` (tokens last, as
+its header instructs) and carry the shared `.app-header`. Page-specific tokens tokens.css doesn't own
+(`--warn`/`--ok`/`--info`) were preserved. Five pages had a duplicate `library-shell.css` link,
+deduped. `nav.css` — which I had created an hour earlier to dedupe two pages — deleted, because
+`library-shell.css` already had those rules for every page that loads it.
+
+Two shell bugs the rollout exposed, both fixed once rather than per page: **`initNav` never branded
+the header** (the `applyBranding` call lives inside the SIDEBAR `init()`, so only sidebar pages
+filled their `<h1>` — everything else showed an empty bar with a burger floating in it); and both
+home pages **return early when signed out**, before `initNav`, so they brand the header themselves.
+Verified in the browser, not just the markup.
+
+The contract for new pages is now at the top of `library-shell.js` — the file every page loads —
+with the two nevers (no page-local `:root` palette, no pasted nav CSS) and the drift that justifies
+each. New memory [[feedback_page_shell_contract]].
+
+### Sign out, and the account you can't leave (ce6a30e)
+
+`initIdentityBadge()` is called only in `initNav`'s header branch, so **ten header-less pages had no
+identity display and no way out**. Sign out now appends to BOTH burgers and names the account's
+email — the account you need to leave is exactly the one whose menu you're stuck in. Also a real
+bug: `signOut()` redirected to `/forms/users.html`, an admin page that **404s on the customer
+host**, so signing out of bestcooksclub.com landed on not-found. Goes to `/` now.
+
+### THREE CAUSES, ONE SYMPTOM — the diagnostic lesson
+
+"recipes.tbotb.com shows the customer menu" was true three times for three unrelated reasons, and I
+chased them in the worst order:
+
+1. **The interim window.** My own `/branding` version, pre-restart, falling back to customer.
+2. **The wrong account.** There are TWO users named John Landry — **uid 1 is a `member`
+   (own_recipes only)**, uid 5 is "John Landry (Official)", the owner. Signed in as uid 1 the admin
+   burger correctly stays hidden, and the page says "Signed in as John Landry" either way. A
+   wrong-account problem reads as a broken page.
+3. **A genuine bug (69a1e6d).** As uid 5, "unlock admin" was dead: the password was accepted,
+   `/auth/master` minted a token, the browser stored it and reloaded — and the fetch patch attached
+   `X-Master-Token` only when `uid === '0'`, so it never left the browser. `_resolve_caller` keys on
+   the token alone (`if role != "member" and not verify_master_token(...)`), no uid anywhere, and
+   `unlockAdmin`'s own comment already said the token isn't bound to a user_id. The client was the
+   only thing that disagreed. **Nothing errored, because nothing failed** — the credential was
+   simply never sent.
+
+> **The lesson: I started at the routing because that's what I'd just changed. The cheap
+> discriminator was `/auth/me`'s actual answer versus what the client sends — one look at the fetch
+> patch beside the server's clamp would have found #3 immediately. Check what the credential
+> actually IS before re-reading the code that consumes it.**
+
+### The top-200 report, recovered (1f92b9b)
+
+"Who owns the top 200 — a corpus concentration audit" existed only in the 07-30 session's
+scratchpad, a temp directory that gets cleaned; the state log's ten lines were the only thing that
+would have survived. Now `docs/reports/corpus-concentration.html` + its `-data.json` (all 200 ranked
+rows, per-host counts, corpus totals) so the figures can be re-derived rather than re-measured.
+
+### And the one to actually remember: I deleted two real recipes (a068ae5, reverted f4f1541)
+
+Asked to remove the "recipes" for the two medical sites, I inspected them with `d.get("ingredients")`
+and `d.get("title")`, got nothing, and reported **"no title, ZERO ingredients, ZERO instructions"** as
+the finding that justified the delete. The rows are schema.org shaped: the keys are
+`recipeIngredient`, `recipeInstructions`, `name`. id 478 is **Homemade Kimchi** (11 ingredients, 8
+steps) and id 1419 is **Strawberry Salad with Grilled Shrimp** (12 ingredients, 5 steps). Curator
+caught it — *"actually healthline IS a recipe"* — and WebMD was one too, by the same evidence.
+
+Restored from the backup taken before the delete, via the base (non-generated) columns, embedding
+BLOB recovered from its `repr` and the vec index rebuilt from blobs: 3450 to 3452, index matching,
+`quick_check ok`. Deletes went through an `enable_vec` connection so the AFTER DELETE trigger stayed
+in lockstep ([[project_vec_delete_triggers]]).
+
+> **The lesson is not the key names. It is that I let an ABSENCE stand as evidence. A read returning
+> nothing means the content is missing OR I asked the wrong question, and only one of those is a
+> finding. Anything about to be deleted must be POSITIVELY identified — print what IS there before
+> concluding what is not. Two lines of top-level keys would have shown `recipeIngredient` in plain
+> view.**
+
+Compounding it: I then offered to "correct that section" of the concentration report — and the report
+was already right. It says, verbatim, *"The pages are real recipes, correctly extracted. The ranking
+simply has no way to know that a health encyclopaedia is not a cooking authority,"* and names both by
+title in the rank table. **The artifact I had just recovered contained the evidence that contradicted
+me, and I hadn't read it.** Left unchanged; the false claim was only ever mine.
+
+Also: `bcc_restart.bat` was corrupted a THIRD time — `endlocal` truncated to `end`, after `.env`
+(overwritten with `done`) and this same file's echo line. Same signature
+([[feedback_stray_keystroke_corruption]]).
+
+### Open
+
+- **Endpoints that spend money**, still the highest-value pass. `/reviews/find` and
+  `/reviews/ingest-url` are the tightest cluster, both ungated.
+- **`user_api_keys`** — no caller now; retire or keep is a decision, not a cleanup.
+- **The four `/reviews/*` write endpoints** and the ~147 ungated ones generally.
+- **Rotate both SMTP passwords**; password reset; verification is still unenforced.
+- **The 2026-07-27/28 session log** — still missing, four sessions running now.
