@@ -29,7 +29,20 @@ from typing import Iterable, Optional
 # Hosts treated as the customer-facing surface. Port and case are stripped before
 # matching. Override with BCC_PUBLIC_HOSTS (comma-separated) — a self-hoster
 # points their own domain here without touching code.
-_DEFAULT_PUBLIC_HOSTS = ("bestcooksclub.com", "www.bestcooksclub.com")
+#
+# bestcooks.club is the SAME customer product as bestcooksclub.com, not a second
+# thing — an alias of the front door. It was missing here while home.html's own
+# (now deleted) hostname test did count it as customer, which is the drift that
+# made a single list worth having: this tuple is the only place the question is
+# answered, so adding a customer domain is one edit and the front-door router
+# follows automatically.
+#
+# Anything NOT listed is treated as the admin surface, so a new customer domain
+# that is forgotten here serves the back office. Add both apex and www.
+_DEFAULT_PUBLIC_HOSTS = (
+    "bestcooksclub.com", "www.bestcooksclub.com",
+    "bestcooks.club", "www.bestcooks.club",
+)
 
 
 def public_hosts() -> frozenset[str]:
