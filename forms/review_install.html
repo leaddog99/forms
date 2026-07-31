@@ -7,15 +7,7 @@
   <style>
     /* Admin palette: a plum accent to distinguish the REVIEW grabber from the
        product grabber (teal) and the user-facing recipe grabber. */
-    :root {
-      --accent: #6d4b7a;
-      --accent-dark: #513959;
-      --bg: #f6f3ef;
-      --text: #1f1611;
-      --muted: #6b5b4f;
-      --card: #fff;
-      --border: #e2dbd0;
-    }
+    
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -65,9 +57,19 @@
     .switch a { color: var(--accent-dark); }
     [hidden] { display: none !important; }
   </style>
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
+  <script src="/forms/library-shell.js?v=20260731c"></script>
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
     <span class="admin-chip">Catalog admin</span>
     <h1>Install Review Grabber</h1>

@@ -9,11 +9,8 @@
        from jobs_admin.html (the scheduled-jobs registry) and the nav's Jobs/Queued
        drain popup. Reads GET /jobs, /jobs/{id}, /jobs/{id}/stream; POSTs
        /jobs/{id}/cancel + /jobs/{id}/spawn. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
   <style>
-    :root{ --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
-      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b; --ok:#2f7a3a;
-      --info:#2a6db2; }
+    :root{ --warn:#b23b3b; --ok:#2f7a3a; --info:#2a6db2; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:var(--bg); color:var(--ink);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
@@ -80,8 +77,18 @@
       white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
     .logbody .esc{ color:#7fb3e6; }
   </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
     <h1>Job Monitor</h1>
     <p class="sub">Live view of the run queue — what's running, queued, and recently finished. Watch a job's log, cancel a running one, or spawn a queued one. (Scheduled jobs live under <a href="/forms/jobs_admin.html">Jobs/Scheduled</a>.)</p>
@@ -115,7 +122,7 @@
     <div class="logbody" id="logBody"></div>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <script src="/forms/library-shell.js?v=20260731c"></script>
   <script>
     const $ = (s, el=document) => el.querySelector(s);
     if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'jobs-monitor' });

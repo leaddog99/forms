@@ -1281,6 +1281,14 @@
         spacer.className = 'nav-spacer';
         headerInner.appendChild(spacer);
       }
+      // Brand the header here, not only in the sidebar init(). That call sits
+      // inside the sidebar setup, so it ran only on pages that HAVE a sidebar —
+      // every page adopting the shared header without one (both homes, the three
+      // install pages, cook_kb, ingredients, jobs_*, system) got an empty brand
+      // bar with a burger floating in it. initNav owns the header chrome, so the
+      // brand belongs here. applyBranding is idempotent, so sidebar pages that
+      // reach both calls are unaffected.
+      applyBranding(headerInner.querySelector('h1'), opts);
       initIdentityBadge();
       // Admin burger sits left of the user burger (back-office tucked inside,
       // personal tool outermost/rightmost).

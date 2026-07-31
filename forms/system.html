@@ -11,12 +11,8 @@
   <!-- library-shell.css supplies the nav-toggle/nav-menu styling (incl. the
        .open show/hide) so the two hamburgers render + respond. Without it the
        burgers are unstyled and the menu never opens. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
   <style>
-    :root{
-      --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
-      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b;
-    }
+    :root{ --warn:#b23b3b; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
@@ -51,8 +47,18 @@
     .flash{ font-size:.9rem; }
     .flash.ok{ color:#2f7a3a; } .flash.err{ color:var(--warn); }
   </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
     <h1>System</h1>
     <p class="sub">The instance's configuration, stored in the database. Edits take effect on the next read — no restart, no code change.</p>
@@ -66,7 +72,7 @@
     </div>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <script src="/forms/library-shell.js?v=20260731c"></script>
   <script>
     const $ = (s) => document.querySelector(s);
     if (window.LibraryShell && LibraryShell.initNav) {

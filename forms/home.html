@@ -14,9 +14,7 @@
        version was one file that detected its own flavour in JS, which meant two
        hostname lists that drifted apart, and a flavour that could be answered out
        of the browser cache. The URL already knows; nothing here needs to guess. -->
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <link rel="stylesheet" href="/forms/components.css?v=20260617c">
-  <link rel="stylesheet" href="/forms/nav.css?v=20260731a">
   <style>
     body { margin:0; background:var(--bg,#faf6f1); color:var(--ink,#1f1611);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
@@ -39,11 +37,20 @@
     .quiet { color:var(--muted,#6b5b4f); font-size:.88rem; }
     [hidden] { display:none !important; }
   </style>
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
+  <script src="/forms/library-shell.js?v=20260731c"></script>
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
-    <h1 id="brand">Best Cooks Club</h1>
     <p class="sub" id="tagline">Your recipes, your way.</p>
 
     <!-- signed out -->
@@ -71,6 +78,11 @@
 
   <script>
     const $ = (s) => document.querySelector(s);
+
+    // Kept even though initNav now brands the header: init() returns early when
+    // nobody is signed in, and initNav is after that return — so without this a
+    // signed-out visitor sees an empty header bar.
+    LibraryShell.applyBranding(document.querySelector('.app-header h1'));
 
     let mode = 'signin';                       // 'signin' | 'signup'
     const pwf = LibraryShell.passwordField({ id: 'home_pw', label: 'Password' });

@@ -7,10 +7,8 @@
   <!-- Scheduled-jobs editor (a/c/d): the DB-resident registry of recurring jobs
        (scheduled_jobs table) — purpose, cadence, on/off — obeyed by the
        scheduler. Distinct from the /jobs run queue. See scheduled_jobs.py. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
   <style>
-    :root{ --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
-      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b; --ok:#2f7a3a; }
+    :root{ --warn:#b23b3b; --ok:#2f7a3a; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:var(--bg); color:var(--ink);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
@@ -54,8 +52,18 @@
     h2.section{ font-size:.78rem; text-transform:uppercase; letter-spacing:.08em;
       color:var(--muted); margin:26px 0 12px; }
   </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
     <h1>Scheduled Jobs</h1>
     <p class="sub">Recurring jobs the scheduler runs, stored in the database. Edit a job's purpose, cadence, and on/off here — the scheduler obeys it on its next pass. Distinct from the live job queue.</p>
@@ -69,7 +77,7 @@
     </div>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <script src="/forms/library-shell.js?v=20260731c"></script>
   <script>
     const $ = (s,el=document) => el.querySelector(s);
     if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'jobs' });

@@ -14,9 +14,7 @@
        already decided. It also carries no sign-up path — accounts are created on
        the customer side, and `POST /auth/signup` is the only public route that can
        make one. -->
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <link rel="stylesheet" href="/forms/components.css?v=20260617c">
-  <link rel="stylesheet" href="/forms/nav.css?v=20260731a">
   <style>
     body { margin:0; background:var(--bg,#faf6f1); color:var(--ink,#1f1611);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
@@ -47,11 +45,20 @@
     a.tilelink { text-decoration:none; color:inherit; display:block; }
     [hidden] { display:none !important; }
   </style>
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
+  <script src="/forms/library-shell.js?v=20260731c"></script>
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
-    <h1 id="brand">Best Cooks Club</h1>
     <p class="sub" id="tagline">Curator back-office.</p>
 
     <!-- signed out -->
@@ -80,6 +87,11 @@
   <script>
     const $ = (s) => document.querySelector(s);
     const { escapeHtml, fmtDate } = LibraryShell;
+
+    // Kept even though initNav now brands the header: init() returns early when
+    // nobody is signed in, and initNav is after that return — so without this a
+    // signed-out visitor sees an empty header bar.
+    LibraryShell.applyBranding(document.querySelector('.app-header h1'));
 
     const pwf = LibraryShell.passwordField({ id: 'home_pw', label: 'Password' });
     $('#pwMount').appendChild(pwf.el);

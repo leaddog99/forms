@@ -8,10 +8,8 @@
        curated, owned moat: entries authored in OUR words, kept as drafts +
        PUBLISHED. Only published entries reach the augment pass (provenance by id).
        Master/detail — built for hundreds of entries. See cook_kb.py. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
   <style>
-    :root{ --accent:#b8602a; --accent-dark:#944a1f; --bg:#faf6f1; --ink:#1f1611;
-      --muted:#6b5b4f; --card:#fff; --border:#e6dccf; --warn:#b23b3b; --ok:#2f7a3a; }
+    :root{ --warn:#b23b3b; --ok:#2f7a3a; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:var(--bg); color:var(--ink);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
@@ -43,8 +41,18 @@
     .flash{ font-size:.85rem; } .flash.ok{ color:var(--ok); } .flash.err{ color:var(--warn); }
     .empty{ padding:30px; color:var(--muted); text-align:center; }
   </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260731a">
 </head>
 <body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
   <div class="wrap">
     <h1>Cooking Tips & Checks — Knowledge Base</h1>
     <p class="sub">The curated, owned moat. Author in <b>our words</b> (technique is fact; expression is ours), keep as <b>drafts</b>, and <b>publish</b> — only published entries reach the recipe augment pass, each attached by id (provenance). Tips improve the result; checks warn about a failure as it happens.</p>
@@ -65,7 +73,7 @@
     </div>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260731b"></script>
+  <script src="/forms/library-shell.js?v=20260731c"></script>
   <script>
     const $ = (s, el=document) => el.querySelector(s);
     if (window.LibraryShell && LibraryShell.initNav) LibraryShell.initNav({ currentPage: 'cook-kb' });
