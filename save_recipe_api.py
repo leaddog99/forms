@@ -1228,15 +1228,24 @@ def health_check():
 
 
 @app.get("/")
-def home_page():
-    """The front door. Signed out it offers sign-in (and sign-up on the customer
-    host); signed in it shows news, or the admin alert tiles on the curator host.
+def home_page(request: Request):
+    """The front door. The URL picks the page:
 
-    Which flavour is decided by the HOSTNAME — the same split host_gate.py
-    enforces — so the page and the server agree by construction rather than by
-    being kept in sync. Falls back to the old health JSON if the file is missing,
-    so a bad deploy degrades rather than 500s."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forms", "home.html")
+        bestcooksclub.com  ->  forms/home.html        customer: sign in / sign up
+        recipes.tbotb.com  ->  forms/admin_home.html  curator: sign in + alert tiles
+
+    Decided HERE, by the same host_gate.is_public_host() the gate middleware
+    calls, on the same Host header. It used to be one file that detected its own
+    flavour in JS, which meant a second hostname list to keep in step (it had
+    already drifted: the page counted bestcooks.club and every
+    *.bestcooksclub.com subdomain as customer, the gate counted only the apex and
+    www) and a flavour that could be answered out of the browser cache. A URL
+    maps to a page; nothing downstream needs to guess.
+
+    Falls back to the old health JSON if the file is missing, so a bad deploy
+    degrades rather than 500s."""
+    name = "home.html" if _host_gate.is_public_host(request.headers.get("host", "")) else "admin_home.html"
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forms", name)
     if os.path.exists(path):
         return FileResponse(path, media_type="text/html")
     return {"status": "ok", "message": "Full API with error handling"}
@@ -4176,7 +4185,7 @@ def get_dish_fit_data_endpoint(name: str):
 # canonical chapter set is the CHAPTERS list in extract.chapter_classifier.
 # =========================================================================
 @app.get("/branding")
-def branding_config(request: Request):
+def branding_config():
     """Public app-shell branding (site name, logo, home link) for the
     library-shell header. Sourced from bcc_config.json so swapping the
     brand is a config edit, not a code change.
@@ -4185,24 +4194,12 @@ def branding_config(request: Request):
     POST to (they run on a retailer/recipe page, so they can't read our host
     from location). DB-resident (system_config.public_base_url, seeded from
     bcc_link_domain) so a self-hoster's install page bakes THEIR host into the
-    loader with no code change (portable-package).
-
-    `is_public_host` tells the page WHICH hostname it was reached on, decided by
-    the same `host_gate.is_public_host()` the gate middleware calls, on the same
-    `Host` header. home.html used to answer this itself with a hardcoded regex,
-    and the two lists had already drifted: the page counted `bestcooks.club` and
-    every `*.bestcooksclub.com` subdomain as customer while the gate counted only
-    the apex and `www` — so a customer-looking front door could render over the
-    full admin surface. It also could not see BCC_PUBLIC_HOSTS, which exists so a
-    self-hoster points their own domain here without touching code, leaving them
-    the ADMIN home on their customer site. One answer, from the thing that
-    enforces it."""
+    loader with no code change (portable-package)."""
     from input.pipeline.config import BRAND_NAME, BRAND_LOGO_URL, BRAND_HOME_URL
     from input.pipeline.system_config import public_base_url
     return {
         "name": BRAND_NAME, "logo_url": BRAND_LOGO_URL, "home_url": BRAND_HOME_URL,
         "bookmarklet_api_base": public_base_url(),
-        "is_public_host": _host_gate.is_public_host(request.headers.get("host", "")),
     }
 
 

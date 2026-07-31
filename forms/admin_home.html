@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Best Cooks Club</title>
-  <!-- THE CUSTOMER FRONT DOOR (bestcooksclub.com), served at /.
+  <title>Best Cooks Club — Back office</title>
+  <!-- THE CURATOR FRONT DOOR (recipes.tbotb.com), served at /.
 
        The URL picks the page. `GET /` reads the Host header and serves this file
-       on a public host and admin_home.html on the curator host — one decision, in
-       the same place that already enforces the split (input/pipeline/host_gate.py).
+       on the admin host and home.html on a public host — one decision, in the same
+       place that already enforces the split (input/pipeline/host_gate.py).
 
-       This page therefore contains NO hostname test and no admin code. An earlier
-       version was one file that detected its own flavour in JS, which meant two
-       hostname lists that drifted apart, and a flavour that could be answered out
-       of the browser cache. The URL already knows; nothing here needs to guess. -->
+       So this page contains NO hostname test: if you are looking at it, the server
+       already decided. It also carries no sign-up path — accounts are created on
+       the customer side, and `POST /auth/signup` is the only public route that can
+       make one. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
   <link rel="stylesheet" href="/forms/components.css?v=20260617c">
   <style>
@@ -25,22 +25,30 @@
     .card { background:#fff; border:1px solid var(--border,#e6dccf); border-radius:14px;
       padding:18px; margin-bottom:14px; }
     .card h2 { font-size:1rem; margin:0 0 10px; }
+    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+    .tile { background:#fff; border:1px solid var(--border,#e6dccf); border-left-width:4px;
+      border-radius:12px; padding:14px 16px; }
+    .tile.ok   { border-left-color:#2f7a3a; }
+    .tile.warn { border-left-color:#a3382b; }
+    .tile .k { font-size:.78rem; text-transform:uppercase; letter-spacing:.04em;
+      color:var(--muted,#6b5b4f); margin-bottom:6px; }
+    .tile .v { font-size:1.5rem; font-weight:600; line-height:1.1; }
+    .tile .m { font-size:.82rem; color:var(--muted,#6b5b4f); margin-top:6px; word-break:break-word; }
     .row { display:flex; gap:8px; align-items:stretch; margin-bottom:10px; }
     .row input { flex:1 1 auto; min-width:0; padding:9px 11px; font:inherit;
       border:1px solid var(--border,#e6dccf); border-radius:8px; }
     button.primary { padding:11px 18px; font:inherit; font-weight:600; background:var(--accent,#b8602a);
       color:#fff; border:none; border-radius:9px; cursor:pointer; }
     button.primary:hover { background:var(--accent-dark,#944a1f); }
-    button.link { background:none; border:none; color:var(--accent-dark,#944a1f);
-      font:inherit; text-decoration:underline; cursor:pointer; padding:0; }
     .msg { font-size:.86rem; min-height:1.2em; margin-top:6px; }
     .msg.err { color:#a3382b; } .msg.ok { color:#2f7a3a; }
     .quiet { color:var(--muted,#6b5b4f); font-size:.88rem; }
+    a.tilelink { text-decoration:none; color:inherit; display:block; }
     [hidden] { display:none !important; }
 
     /* ---------- Right-side cross-page nav (⋮) ---------- */
     /* No library-shell header on this page — initNav() mounts the
-       toggle as a fixed top-right button. */
+       toggles as fixed top-right buttons. */
     .nav-toggle {
       background: var(--accent); color: #fff; border: none;
       width: 36px; height: 36px; border-radius: 8px;
@@ -50,6 +58,10 @@
       padding: 0;
     }
     .nav-toggle:hover { background: var(--accent-dark); }
+    /* The ADMIN burger is a distinct soft-clay chip so the two menus read as
+       different surfaces — the two-menu split is the BCC/TBOTB split. */
+    .nav-toggle--admin { background:#8a6f5c; }
+    .nav-toggle--admin:hover { background:#6f5849; }
     .nav-menu {
       position: fixed; top: 60px; right: 16px;
       background: var(--card);
@@ -106,24 +118,24 @@
 <body>
   <div class="wrap">
     <h1 id="brand">Best Cooks Club</h1>
-    <p class="sub" id="tagline">Your recipes, your way.</p>
+    <p class="sub" id="tagline">Curator back-office.</p>
 
     <!-- signed out -->
     <section id="anon" hidden>
       <div class="card">
-        <h2 id="authTitle">Sign in</h2>
+        <h2>Sign in</h2>
         <div class="row"><input id="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
         <div id="pwMount"></div>
         <div class="row" style="margin-top:4px">
           <button class="primary" id="authBtn" type="button">Sign in</button>
         </div>
         <div class="msg" id="authMsg" aria-live="polite"></div>
-        <p class="quiet" id="switchLine" style="margin-bottom:0"></p>
       </div>
     </section>
 
     <!-- signed in -->
     <section id="known" hidden>
+      <div id="alerts"></div>
       <div class="card">
         <h2>News</h2>
         <p class="quiet" id="news" style="margin:0">Nothing to report yet.</p>
@@ -133,39 +145,24 @@
 
   <script>
     const $ = (s) => document.querySelector(s);
+    const { escapeHtml, fmtDate } = LibraryShell;
 
-    let mode = 'signin';                       // 'signin' | 'signup'
     const pwf = LibraryShell.passwordField({ id: 'home_pw', label: 'Password' });
     $('#pwMount').appendChild(pwf.el);
+    // Sign-in only: no confirm entry, and no account creation on this host.
+    pwf.el.querySelectorAll('.ed-field')[1].hidden = true;
 
-    function renderAuthMode() {
-      const up = mode === 'signup';
-      $('#authTitle').textContent = up ? 'Create your account' : 'Sign in';
-      $('#authBtn').textContent  = up ? 'Create account' : 'Sign in';
-      // Signup needs the confirm+reveal pair; signing in does not, but reusing
-      // one control beats maintaining two password widgets.
-      pwf.el.querySelectorAll('.ed-field')[1].hidden = !up;
-      $('#switchLine').innerHTML = up
-        ? 'Already have an account? <button type="button" class="link" id="toSignin">Sign in</button>'
-        : 'New here? <button type="button" class="link" id="toSignup">Create an account</button>';
-      const a = $('#toSignup'), b = $('#toSignin');
-      if (a) a.addEventListener('click', () => { mode = 'signup'; say(''); renderAuthMode(); });
-      if (b) b.addEventListener('click', () => { mode = 'signin'; say(''); renderAuthMode(); });
-    }
     function say(m, cls) { const e = $('#authMsg'); e.textContent = m; e.className = 'msg ' + (cls || ''); }
 
     $('#authBtn').addEventListener('click', async () => {
       const email = ($('#email').value || '').trim();
       if (!email) { say('Email is required.', 'err'); return; }
-      // On sign-in the confirm box is hidden, so read the first entry directly;
-      // on signup insist the pair matches.
-      const pw = mode === 'signup' ? pwf.value() : pwf.el.querySelector('input').value;
-      if (!pw) { say(mode === 'signup' ? (pwf.message() || 'Password required.') : 'Password required.', 'err'); return; }
+      const pw = pwf.el.querySelector('input').value;
+      if (!pw) { say('Password required.', 'err'); return; }
       $('#authBtn').disabled = true; say('Working…');
       try {
-        const url = mode === 'signup' ? '/auth/signup' : '/auth/login';
-        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                     body: JSON.stringify({ email, password: pw }) });
+        const r = await fetch('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                               body: JSON.stringify({ email, password: pw }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) { say(d.detail || `Failed (${r.status})`, 'err'); return; }
         try {
@@ -174,27 +171,58 @@
           localStorage.setItem('app:session_token', d.token);
           localStorage.removeItem('app:master_token');
         } catch (e) { /* private mode */ }
-        // A bookmarklet grab with nobody signed in sends the user here with
-        // ?next= pointing back at the staged form. Return them to it rather
-        // than dropping them on the home page having lost the grab.
         const next = new URLSearchParams(location.search).get('next');
         location.href = (next && next.startsWith('/')) ? next : '/';
       } catch (e) { say('Could not reach the server: ' + e.message, 'err'); }
       finally { $('#authBtn').disabled = false; }
     });
 
+    function tile(k, v, meta, level, href) {
+      const inner = `<div class="tile ${level || ''}"><div class="k">${escapeHtml(k)}</div>` +
+                    `<div class="v">${escapeHtml(String(v))}</div>` +
+                    (meta ? `<div class="m">${meta}</div>` : '') + '</div>';
+      return href ? `<a class="tilelink" href="${href}">${inner}</a>` : inner;
+    }
+
+    // The four signals that otherwise have to be dug out by hand: did the backup
+    // VERIFY, which jobs failed, which accounts are still spoofable, what the
+    // month costs.
+    async function renderAdmin() {
+      const r = await fetch('/admin/home-summary');
+      if (!r.ok) return;                        // 403 without admin_ui
+      const d = await r.json();
+      const t = [];
+      const b = d.backup || {};
+      t.push(tile('Backup', b.level === 'ok' ? 'verified' : 'check it',
+        (b.dump_bytes ? (b.dump_bytes / 1048576).toFixed(1) + ' MB · ' : '') +
+        (b.dump_mtime ? escapeHtml(fmtDate(b.dump_mtime)) : 'no dump'), b.level));
+      const j = d.jobs || {};
+      t.push(tile('Failed jobs (7d)', j.failed_7d ?? 0,
+        j.last_failure ? `#${j.last_failure.id} ${escapeHtml(j.last_failure.type || '')}` :
+        (j.running ? j.running + ' running' : 'none'), j.level, '/forms/jobs_monitor.html'));
+      const a = d.accounts || {};
+      const open = (a.without_password || []);
+      t.push(tile('Accounts without a password', open.length,
+        open.length ? escapeHtml(open.map(u => u.name).join(', ')) + ' — still resolvable from the id header alone'
+                    : 'all hardened', a.level, '/forms/users.html'));
+      const s = d.spend_30d || {};
+      t.push(tile('LLM spend (30d)', '$' + (s.est_usd ?? 0),
+        (s.calls ?? 0).toLocaleString() + ' calls · indicative', s.level));
+      $('#alerts').innerHTML = '<div class="tiles">' + t.join('') + '</div>';
+    }
+
     (async function init() {
       let me = null;
       try { const r = await fetch('/auth/me'); me = r.ok ? await r.json() : null; } catch (e) {}
-      if (!me || !me.user) { $('#anon').hidden = false; renderAuthMode(); return; }
+      if (!me || !me.user) { $('#anon').hidden = false; return; }
       $('#known').hidden = false;
-      $('#tagline').textContent = 'Signed in as ' + (me.user.name || ('user ' + me.user.user_id));
-      // Customer burger only. Every admin page 404s on this host by design, so
-      // offering them would be a menu that lies.
-      LibraryShell.initNav({
-        currentPage: 'home',
-        items: LibraryShell.NAV_ITEMS.filter(i => (i.group || 'admin') === 'user'),
-      });
+      $('#tagline').textContent = 'Signed in as ' + (me.user.name || ('user ' + me.user.user_id)) +
+        (me.staff_locked ? ' · staff permissions locked' : '');
+      if (me.is_staff) await renderAdmin();
+      // Full menu. initNav builds both burgers and reveals the admin one per
+      // ITEM permission, so an account that holds edit_master but not manage_users
+      // sees exactly what it can use.
+      LibraryShell.initNav({ currentPage: 'home' });
     })();
   </script>
 </body>
