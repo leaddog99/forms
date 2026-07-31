@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730m"></script>
+  <script src="/forms/library-shell.js?v=20260730n"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -6736,6 +6736,24 @@
             showFeedback('Signed in, but the session did not take effect. Reload and try again.', 'error');
             return;
           }
+          // POINT THE STORE AT WHOEVER JUST SIGNED IN. #user_id decides
+          // ownership at save, and restoreSidebarState() filled it from
+          // localStorage at PAGE LOAD — before this login existed. A browser
+          // that had never signed in would still be holding the hardcoded 1,
+          // so the grab would file under user 1 no matter who authenticated.
+          // Only done on this branch: a user who was ALREADY signed in may have
+          // deliberately set the store (browsing TBOTB, say), and that choice is
+          // visible on screen and shouldn't be overridden.
+          try {
+            const me = await LibraryShell.fetchAuth();
+            const uid = me && me.user && me.user.user_id;
+            const uidEl = document.getElementById('user_id');
+            if (uid != null && uidEl && String(uidEl.value) !== String(uid)) {
+              uidEl.value = String(uid);
+              // 'change' is what persists it and reloads the sidebar list.
+              uidEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          } catch (e) { /* non-fatal: the store control is still visible */ }
         }
 
         const safeName = (data.title || 'staged').replace(/[^a-z0-9]/gi, '_').slice(0, 40) || 'staged';
