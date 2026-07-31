@@ -145,19 +145,39 @@ def pre_scored_from_entry(entry: dict) -> dict:
     # power (DA+PA) + the two in-cohort percentile ranks rank_by_blend stamped
     # on the entry (0..1) — carried as 0-100 so the authority commentary can
     # place the page on the exceptionality×clout 2x2, not just read raw OU.
-    power = entry.get("power")
-    if power is not None:
-        out["power"] = float(power)
-    ou_pct = entry.get("ou_pct")
-    if ou_pct is not None:
-        out["ouPercentile"] = round(float(ou_pct) * 100, 1)
-    power_pct = entry.get("power_pct")
-    if power_pct is not None:
-        out["powerPercentile"] = round(float(power_pct) * 100, 1)
-    # Field context (dish-level) — the absolute clout of the field + any
-    # geo/site restriction in the query, for the editorial commentary.
+    #
+    # ABSENT IS NOT ZERO (fixed 2026-07-30). These used to be written straight
+    # through, which put `power: 0.0` on 1,778 master rows — 51% of the corpus —
+    # whose DA and PA were both real. Cause: `power` and the percentiles come
+    # from the BATCH ENTRY, whose Moz call had returned 0/0 for small sites,
+    # while pageAuthority/domainAuthority above were written from a later
+    # successful scoring. The zeros then propagated into powerPercentile and the
+    # whole field block (every affected row has fieldN: 0), so anything ranking
+    # on the stored percentiles pinned half the corpus to the floor of the power
+    # dimension. A value we could not compute must be OMITTED, never written as
+    # a number that reads as "measured, and it's nothing".
+    #
+    # power is DERIVED here rather than trusted: da+pa is the same rule
+    # blend._power() applies, and it is right whenever DA and PA are.
+    if pa is not None and da is not None:
+        out["power"] = float(da) + float(pa)
+    # A percentile is meaningless without the cohort it was ranked within, so a
+    # degenerate cohort (no field stats, or all-zero power) yields no percentile
+    # rather than 0.0.
     field = entry.get("_field") or {}
-    if field.get("avg_power") is not None:
+    _cohort_ok = bool(field.get("n")) and float(field.get("avg_power") or 0) > 0
+    if _cohort_ok:
+        ou_pct = entry.get("ou_pct")
+        if ou_pct is not None:
+            out["ouPercentile"] = round(float(ou_pct) * 100, 1)
+        power_pct = entry.get("power_pct")
+        if power_pct is not None:
+            out["powerPercentile"] = round(float(power_pct) * 100, 1)
+    # Field context (dish-level) — the absolute clout of the field + any
+    # geo/site restriction in the query, for the editorial commentary. Same
+    # rule: an all-zero field is one we failed to measure, not a field of
+    # zero-authority sites, so it is omitted rather than written as zeros.
+    if _cohort_ok:
         out["fieldAvgPower"] = float(field["avg_power"])
         out["fieldMaxPower"] = float(field.get("max_power", field["avg_power"]))
         out["fieldMinPower"] = float(field.get("min_power", field["avg_power"]))
