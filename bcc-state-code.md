@@ -1996,3 +1996,139 @@ reports now have somewhere to land.
 - **Click tracking rewrites URLs.** `link.bestcooksclub.com` → `track.smtp2go.net` is live
   with an SSL cert. Confirm Amazon `tag` and `ascsubtag` survive the rewrite before the
   first digest, or newsletter sales pay nobody ([[project_buy_links_revenue]]).
+
+## Session log — 2026-07-30 (night) — email verification · the blend becomes SQL · a 51% scoring bug · and the bookmarklet auth thread
+
+Continuation of the same day. Restarted and verified live at the end.
+
+### Email verification (16bb58c)
+
+`users.email_verified` / `email_verified_at`, auto-migrated. `POST /auth/send-verification`
+(self or `manage_users`, per-IP throttled — an endpoint that sends mail is a way to use us
+to spam a third party) and `GET /auth/verify?token=…`, which returns a **page** because it
+is clicked from a mail client. Signup now sends the confirmation but does **not** fail if
+mail is down: the account exists and they are already signed in, so an outage should cost a
+confirmation they can re-request, not the account. Users editor gained an Email block
+(claimed vs proven) with a resend button and a status pill.
+
+> **The token is NOT a session token, and that is the whole design.** `mint_user_token`
+> returns a 30-day credential; mailing one hands a logged-in account to anyone who reads the
+> mailbox, a forwarded copy, a proxy log or a `Referer`. Emailed links use
+> `auth.mint_purpose_token(purpose, user_id, bound, ttl)`, signed over a payload binding
+> **purpose** (a verify token cannot be replayed as a reset), **user_id** (cannot be replayed
+> as another account) and **bound** — a value re-read from the DB at redemption. For
+> verification `bound` is the current email, so a token minted for an old address dies when
+> the address changes. For reset it will be the password hash, which kills the link the
+> moment the password changes — no revocation table. Verified: valid / wrong-purpose /
+> wrong-user / changed-email / tampered / expired / garbage all behave, and the two token
+> types are **not interchangeable in either direction**.
+
+Malformed, expired and unknown-user all return the SAME message so a stranger cannot learn
+whether a token was ever real. Both paths are allowlisted in `host_gate` — anything in
+customer email must be, or the mail is fine and the link is dead on arrival. Same reason
+`customer_base_url` exists rather than reusing `public_base_url`, which is the admin host.
+**Nothing enforces verification yet**: six accounts predate mail and a flag day would lock
+them out of a public site. `docs/email-setup.md` written — account, DNS, code, and the traps.
+
+### The blend becomes queryable (581c9fb)
+
+Curator: *"we need the data to easily do this."* A plain corpus question — top 200 by blended
+score, grouped by domain — needed all 3,451 rows loaded into Python. Now VIRTUAL generated
+columns on **both** recipe tables, beside the existing `dish_key`/`publisher_key`:
+`ou_score`, `domain_authority`, `page_authority`, `power`, `source_host`, `recipe_score`,
+plus `stored_*` for audit. `source_host` is parsed in SQL because **`_scoring.rootDomain`
+is not the host** — it returns registry suffixes like `co.uk`. The blend itself is
+deliberately not a column (a cohort percentile needs a window function); `PERCENT_RANK()`
+over these reproduces the Python ranking exactly in ~170ms. Open question stays **scope** —
+a stored blend must declare its cohort, and `fieldScope` is empty on every row.
+
+### The zero-power bug — 51% of the corpus (4fc0dbd)
+
+`_scoring.power` was **0.0 on 1,778 master rows whose DA and PA were both real**, and the
+zero propagated into `powerPercentile`. Anything ranked on the stored percentiles pinned
+half the corpus to the floor of the power dimension — at weight 30, up to 0.30 of blend
+score wrongly deducted.
+
+**My first hypothesis (a race with Moz scoring) was wrong.** The data corrected it: EVERY
+affected row has `fieldN: 0` and no row with a real cohort is affected. `power` and the
+percentiles come from the BATCH ENTRY, whose Moz call returned 0/0 for small sites, while
+DA/PA on the same row were written from a later successful scoring.
+
+Fix in `process_batch.pre_scored_from_entry`: `power` is DERIVED as da+pa, and the
+percentiles and field block are OMITTED when the cohort is degenerate. **A value we could
+not compute must be absent, never a number that reads as "measured, and it's nothing."**
+Backfill (`scripts/backfill_scoring_power.py`, dry-run first, DB copied): 1,775 master +
+**106 user** recipes — it was not master-only. Cohort keys removed rather than zeroed.
+0 rows remain, `quick_check ok`, ranking unchanged (correct — the derived column never read
+the corrupt value). The 63 still differing are the **paid-PA calibration**, not corruption.
+
+### The concentration report
+
+731 publishers in the corpus; the top 200 comes from **34**, three of them supplying a third.
+**Healthline and WebMD hold exactly one recipe each — and both went straight into the top
+200**, above every page from Serious Eats (2 of 27), Bon Appétit (1 of 50) and Food Network.
+Measured properly at the curator's prompt: the corpus is the long tail (HHI 80, 63% of
+publishers holding one recipe); the ranking **truncates** it rather than preserving it —
+95.3% of publishers never appear, HHI rises 8× to 667, and the surviving tail carries only
+6% of the mass. Gini *falls* (0.689 → 0.553) while HHI rises, because selection already
+removed everyone who would have made it unequal. Sharpest evidence yet for
+[[project_domain_scoring]]: we rank provenance, never the artifact.
+
+### The bookmarklet auth thread — the curator's catch (0f144c6, fe77e8c, 426d310, 369db1d)
+
+Curator: *"the check needs to be at recipe load, not save… we already paid for the
+processing."* Right, and it uncovered three separate bugs.
+
+- **The paid endpoints had NO auth at all.** `/extract-from-url`, `/extract-from-markdown`,
+  `/extract-from-image`, `/extract-from-pdf`, `/enrich-recipe` — all reachable anonymously
+  and all allowlisted on the public host. Anyone could POST in a loop and burn LLM spend.
+  **A client-side check never protected this**; it only decides what our own UI does. Same
+  shape as the header bypass: every paid operation reachable without a credential is that
+  finding wearing a different number. All five now require `own_recipes` (held by every role
+  including member). `/stage-markdown` stays anonymous by design.
+- **The client gate was a localStorage sniff.** `app:self_user_id` outlives its session
+  token, so a lapsed session passed, the extraction ran, and the 401 arrived at SAVE. Now
+  asks the server via `/auth/me`.
+- **A mid-flow sign-in filed the grab under user 1.** `#user_id` decides ownership at save
+  and is filled by `restoreSidebarState()` at PAGE LOAD — before the login existed. A browser
+  that had never signed in kept the hardcoded `1`, so the user signed in correctly as
+  themselves and the recipe landed in someone else's collection. Silently, because the store
+  control does show a 1 — just one nobody chose.
+- **Then the ordering, properly.** The popup is opened synchronously at click time, before a
+  node of the page is read, so it now goes to the form immediately (`?awaiting=1`) and
+  resolves identity **in parallel** with the extraction and staging. The token is delivered
+  afterwards as a URL **fragment**: `hashchange` fires without reloading, so it cannot
+  destroy a login dialog someone is typing into — a real navigation would. Cross-origin we
+  may set `location.href` but not read it, hence rebuilding the identical URL. Verified live
+  with an anonymous session: dialog on screen before any token exists; fragment delivered
+  mid-dialog did not reload (instance canary survived), fired `hashchange`, left the dialog
+  open, token read back intact. Also stopped a **double paid extraction** the change would
+  have caused — the `?url=`-only IIFE now stands down on `awaiting` as it already did on
+  `staged`. Loader untouched, so no re-install.
+
+### `bcc_restart.bat` was corrupted too
+
+Second file damaged today after `.env`: `localhost:%` had been cut out of the "Waiting for
+http://…" echo and left stranded on its own line as `echo.localhost:%`. Cosmetic — both are
+echo statements, the restart worked — but it is the same signature, and next time it may
+land somewhere load-bearing. Repaired.
+
+### Verified after the restart
+
+`/auth/verify` and `/auth/send-verification` exist (400, not 404). `/extract-from-url`
+returns **401** to an anonymous caller. `/stage-markdown` still 200s anonymously.
+
+### Open
+
+- **Rotate both SMTP passwords** — still one human-chosen value shared by two users, pasted
+  into a chat transcript. `.env` must change in the same pass or sending breaks.
+- **DMARC reports** should now arrive at `john@johnlandry.com`; they will confirm the DKIM
+  alignment leg and are the basis for ever tightening past `p=none`.
+- **Password reset** — same rails, `bound` = the password hash. Unbuilt.
+- **Verification is not enforced** anywhere; needs a grandfathering decision.
+- **A pass over endpoints that SPEND MONEY** — narrower and more valuable than auditing all
+  ~147 ungated ones, and the second real hole today came out of that set.
+- **A per-publisher cap at selection**, and the click-tracking check (`link.bestcooksclub.com`
+  rewrites URLs — confirm Amazon `tag`/`ascsubtag` survive before the first digest).
+- **`.env` still has no explanation.** Overwritten with the word `done` at 16:56, restored
+  from a backup ten minutes old. If it happens a third time it is a pattern, not an accident.
