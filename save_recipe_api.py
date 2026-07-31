@@ -9789,6 +9789,50 @@ async def stage_markdown_endpoint(request: Request):
     return {"token": token}
 
 
+@app.get("/staged-latest")
+async def staged_latest_endpoint(request: Request, url: str = ""):
+    """Newest un-expired staged token for `url` — how the form finds a grab when
+    the token never reached it.
+
+    The bookmarklet opens a popup and navigates it to the form, then delivers the
+    token by appending `#staged=…` to the SAME url, which fires `hashchange`
+    without reloading. That is a race, and it loses whenever staging finishes
+    before the popup has COMMITTED its first navigation: the browser coalesces
+    the two same-document navigations, commits the fragment-less one, and the
+    token is gone. The form then waits out its full two minutes on a message that
+    will never arrive. Reproduced on christinascucina.com 2026-07-31 — the popup
+    showed `hash:""` and `history.length:1`, proving the second navigation never
+    applied — while healthline.com had succeeded minutes earlier on identical
+    code, which is the signature of a race rather than a broken path.
+
+    postMessage cannot rescue it: `window.open('', '_blank')` then navigating
+    CROSS-ORIGIN to us severs `window.opener` (verified false in the popup), so
+    the two windows share no channel at all. The form has to be able to ask.
+
+    Keyed on the source url the form was opened with, so it retrieves the grab it
+    is actually waiting for. This returns only the TOKEN; the content still comes
+    from /staged-markdown/{token}. Staged entries are transient, anonymous by
+    design and worthless without a session to save them into, so this exposes
+    nothing /stage-markdown does not already accept from anyone."""
+    want = (url or "").strip()
+    if not want:
+        raise HTTPException(status_code=400, detail="url required")
+    now = time.time()
+    best_token, best_exp = None, -1.0
+    for tok, entry in _staged_markdown.items():
+        if entry.get("expires_at", 0) < now:
+            continue
+        if (entry.get("source_url") or "").strip() != want:
+            continue
+        # Newest wins: re-tapping the bookmarklet should supersede the earlier grab.
+        if entry["expires_at"] > best_exp:
+            best_token, best_exp = tok, entry["expires_at"]
+    if not best_token:
+        return {"token": None}
+    print(f"[STAGE] staged-latest matched {best_token[:8]} for {want[:80]}")
+    return {"token": best_token}
+
+
 @app.get("/staged-markdown/{token}")
 async def get_staged_markdown(token: str, request: Request):
     print(f"[STAGE] Retrieving staged markdown for token {token[:8]}")

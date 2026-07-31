@@ -95,6 +95,12 @@
 
   const AWAIT_URL = FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
   let popupHandedOff = false;
+
+  // NOTE: there is no postMessage channel to the popup. `window.open('','_blank')`
+  // followed by a cross-origin navigation to the form SEVERS `window.opener`
+  // (verified 2026-07-31: the popup reports opener === null), so neither side can
+  // message the other. The fragment below is best-effort; the form's own
+  // /staged-latest poll is what actually completes the hand-off.
   try {
     popup.location.href = AWAIT_URL;
     popupHandedOff = true;
@@ -661,9 +667,24 @@
     const { token } = await stageRes.json();
 
     if (popupHandedOff) {
-      // Same URL, fragment added: fires `hashchange` in the already-loaded
-      // form and does NOT reload it, so a login in progress survives.
-      popup.location.href = AWAIT_URL + '#staged=' + encodeURIComponent(token);
+      // Hand the token over by postMessage, with the fragment as a fallback.
+      //
+      // The fragment ALONE is a race, and it loses often enough to matter: if
+      // staging finishes before the popup has COMMITTED its navigation to
+      // AWAIT_URL, then setting AWAIT_URL + '#staged=…' is a second navigation
+      // to the same document that the browser coalesces with the first — it
+      // commits the fragment-less one and the token is silently dropped. No
+      // hashchange fires and the form waits on a message that will never come.
+      // Reproduced on christinascucina.com 2026-07-31 (popup showed hash:''
+      // and history.length:1, proving the second navigation never applied),
+      // while healthline.com had worked minutes earlier on identical code —
+      // which is the tell for a race rather than a broken path.
+      //
+      // Still sent: when it DOES win the race it is faster than the form's next
+      // poll tick, and it keeps older form builds working. When it loses, the
+      // form's /staged-latest poll finds the grab by source url instead.
+      try { popup.location.href = AWAIT_URL + '#staged=' + encodeURIComponent(token); }
+      catch (e) { /* popup gone */ }
     } else {
       // Fallback: the early hand-off didn't happen, so this is the first
       // navigation and the form reads ?staged= from the query as before.

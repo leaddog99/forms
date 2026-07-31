@@ -6698,13 +6698,49 @@
       const now = stagedTokenFromHash();
       if (now) return Promise.resolve(now);
       return new Promise(resolve => {
+        let settled = false;
         const done = (t) => {
+          if (settled) return;
+          settled = true;
           window.removeEventListener('hashchange', onHash);
           clearTimeout(timer);
+          clearInterval(poll);
           resolve(t);
         };
+
+        // THE RELIABLE PATH: ask the server.
+        //
+        // There is NO channel to the tab that opened us. `window.open('','_blank')`
+        // followed by a CROSS-ORIGIN navigation to this page severs
+        // `window.opener` (verified false in the popup on 2026-07-31), so
+        // postMessage is impossible in both directions. The only hand-off was the
+        // bookmarklet appending `#staged=…` to the url we are already on — and
+        // that RACES our own navigation. When the grab finishes before this
+        // document COMMITS, the browser coalesces the two same-document
+        // navigations, keeps the fragment-less one, and no `hashchange` ever
+        // fires; the form then waits out its full two minutes. Reproduced on
+        // christinascucina.com (`hash:""`, `history.length:1`) while
+        // healthline.com had worked minutes earlier on identical code — the
+        // signature of a race, not a broken path.
+        //
+        // We know which page we are waiting for: it is in ?url=. So we ask
+        // whether a grab for it has landed, and keep asking, because the capture
+        // is still running when this starts.
+        const srcUrl = params.get('url') || '';
+        const poll = srcUrl ? setInterval(async () => {
+          try {
+            const r = await fetch(`${API}/staged-latest?url=${encodeURIComponent(srcUrl)}`);
+            if (!r.ok) return;
+            const d = await r.json();
+            if (d && d.token) done(String(d.token));
+          } catch (e) { /* transient — keep polling */ }
+        }, 1000) : null;
+
+        // Kept as a fast path: when the fragment DOES win the race it arrives
+        // sooner than the next poll tick.
         const onHash = () => { const t = stagedTokenFromHash(); if (t) done(t); };
         window.addEventListener('hashchange', onHash);
+
         // Generous: the grab is still fetching images and building markdown on
         // the other page. Resolving '' lets the caller say so plainly.
         const timer = setTimeout(() => done(''), timeoutMs);
