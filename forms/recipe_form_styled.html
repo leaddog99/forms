@@ -1631,7 +1631,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <script src="/forms/library-shell.js?v=20260730l"></script>
+  <script src="/forms/library-shell.js?v=20260730m"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -6704,14 +6704,21 @@
         // whoever is signed in when the recipe is saved, which is what the save
         // path has always done. So there is no key to match and nothing to
         // mismatch; the only question is whether anyone is signed in at all.
-        const signedIn = (function () {
+        //
+        // ASK THE SERVER, don't sniff localStorage. `app:self_user_id` outlives
+        // its session token, and now that every account has a password the
+        // header alone no longer resolves — so a presence check passed for a
+        // lapsed session, we ran the extraction, and the 401 arrived at SAVE:
+        // after the model had been paid for and the user had already read the
+        // result. Verify BEFORE the expensive call, not after it.
+        const authed = async () => {
           try {
-            const v = localStorage.getItem('app:self_user_id');
-            return v !== null && v !== '';
+            const a = await LibraryShell.fetchAuth();
+            return !!(a && a.user);
           } catch (e) { return false; }
-        })();
+        };
 
-        if (!signedIn) {
+        if (!await authed()) {
           // Sign in here rather than filing the grab under a default user. The
           // page they captured is worth more than the shortcut.
           const res2 = await LibraryShell.signInDialog({
@@ -6720,6 +6727,13 @@
           });
           if (!res2.ok) {
             showFeedback('Sign-in cancelled — the grab was not saved.', 'info');
+            return;
+          }
+          // signInDialog clears the cached /auth/me, so this re-reads it. If the
+          // session still doesn't resolve, stop here — extracting would spend
+          // money on a recipe that cannot be saved.
+          if (!await authed()) {
+            showFeedback('Signed in, but the session did not take effect. Reload and try again.', 'error');
             return;
           }
         }

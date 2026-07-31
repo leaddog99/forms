@@ -8579,11 +8579,21 @@ def delete_recipe(recipe_id: str, request: Request, user_id: int = PLACEHOLDER_U
 # so source_url/title plumbing and validation are handled in one place.
 @app.post("/extract-from-image")
 async def extract_from_image_endpoint(
+    request: Request,
     image: UploadFile = File(...),
     source_url: str = Form(""),
     title: str = Form(""),
     user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
+    # PAID WORK — an authenticated caller only. These endpoints each spend
+    # real LLM money, and until 2026-07-30 every one of them was reachable
+    # anonymously AND allowlisted on the public host, so a stranger could
+    # burn our model spend by POSTing in a loop. The recipe form's
+    # client-side sign-in prompt never protected this: a client check
+    # cannot gate a paid endpoint, it only decides what our own UI does.
+    # `own_recipes` is held by every role including member, so this costs
+    # no real user anything; anonymous gets a 401 it can act on.
+    _require_perm(request, "own_recipes")
     print("[EXTRACT] Extract from image endpoint called")
     try:
         if not image.content_type or not image.content_type.startswith("image/"):
@@ -8716,11 +8726,21 @@ async def extract_from_image_endpoint(
 # itself — same canonical markdown -> recipe chain at the end.
 @app.post("/extract-from-pdf")
 async def extract_from_pdf_endpoint(
+    request: Request,
     file: UploadFile = File(...),
     source_url: str = Form(""),
     title: str = Form(""),
     user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
+    # PAID WORK — an authenticated caller only. These endpoints each spend
+    # real LLM money, and until 2026-07-30 every one of them was reachable
+    # anonymously AND allowlisted on the public host, so a stranger could
+    # burn our model spend by POSTing in a loop. The recipe form's
+    # client-side sign-in prompt never protected this: a client check
+    # cannot gate a paid endpoint, it only decides what our own UI does.
+    # `own_recipes` is held by every role including member, so this costs
+    # no real user anything; anonymous gets a 401 it can act on.
+    _require_perm(request, "own_recipes")
     from to_markdown.pdf_to_markdown import pdf_bytes_to_markdown
     print("[EXTRACT] Extract from PDF endpoint called")
     try:
@@ -8816,11 +8836,21 @@ async def extract_from_pdf_endpoint(
 # classification are filled in the same call.
 @app.post("/extract-from-markdown")
 async def extract_from_markdown_endpoint(
+    request: Request,
     file: UploadFile = File(...),
     source_url: str = Form(""),
     title: str = Form(""),
     user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
+    # PAID WORK — an authenticated caller only. These endpoints each spend
+    # real LLM money, and until 2026-07-30 every one of them was reachable
+    # anonymously AND allowlisted on the public host, so a stranger could
+    # burn our model spend by POSTing in a loop. The recipe form's
+    # client-side sign-in prompt never protected this: a client check
+    # cannot gate a paid endpoint, it only decides what our own UI does.
+    # `own_recipes` is held by every role including member, so this costs
+    # no real user anything; anonymous gets a 401 it can act on.
+    _require_perm(request, "own_recipes")
     print("[EXTRACT] Extract from markdown endpoint called")
     try:
         raw = await file.read()
@@ -9516,9 +9546,19 @@ def extract_recipe_from_url(
 
 @app.post("/extract-from-url")
 async def extract_from_url_endpoint(
+    request: Request,
     url: str = Form(...),
     user_id: int = Form(PLACEHOLDER_USER_ID),
 ):
+    # PAID WORK — an authenticated caller only. These endpoints each spend
+    # real LLM money, and until 2026-07-30 every one of them was reachable
+    # anonymously AND allowlisted on the public host, so a stranger could
+    # burn our model spend by POSTing in a loop. The recipe form's
+    # client-side sign-in prompt never protected this: a client check
+    # cannot gate a paid endpoint, it only decides what our own UI does.
+    # `own_recipes` is held by every role including member, so this costs
+    # no real user anything; anonymous gets a 401 it can act on.
+    _require_perm(request, "own_recipes")
     if not url or not url.strip():
         raise HTTPException(status_code=400, detail="url is required")
     url = url.strip()
@@ -9574,6 +9614,15 @@ async def screenshot_blob_endpoint(screenshot_id: str):
 # with provenance and classification fields populated.
 @app.post("/enrich-recipe")
 async def enrich_recipe_endpoint(request: Request):
+    # PAID WORK — an authenticated caller only. These endpoints each spend
+    # real LLM money, and until 2026-07-30 every one of them was reachable
+    # anonymously AND allowlisted on the public host, so a stranger could
+    # burn our model spend by POSTing in a loop. The recipe form's
+    # client-side sign-in prompt never protected this: a client check
+    # cannot gate a paid endpoint, it only decides what our own UI does.
+    # `own_recipes` is held by every role including member, so this costs
+    # no real user anything; anonymous gets a 401 it can act on.
+    _require_perm(request, "own_recipes")
     print("[ENRICH] Enrich-recipe endpoint called")
     try:
         payload = await request.json()
