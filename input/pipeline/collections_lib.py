@@ -861,7 +861,32 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
     _ms = _us.moz_row_stats()
     print(f"  [harvest] Moz rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
-          f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old 4-variant probe)")
+          f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old "
+          f"4-variant probe; {_ms['uncrawled']} URL(s) had no Moz data)")
+
+    # A harvest that BILLS and stores NOTHING is a failure, not a result.
+    #
+    # 2026-08-02: a scoring gate regression rejected every real Moz answer whose
+    # http_code was not one of four allow-listed values. A pinchofyum refresh
+    # billed 496 rows across 124 URLs and scored zero — and finished "successfully",
+    # because every URL failing individually reads exactly like a publisher whose
+    # pages Moz has never crawled. The curator found it by noticing the output, not
+    # from any alarm: "got moz fail on all.. didn't get trapped anywhere".
+    #
+    # `uncrawled` is what separates the two. Moz genuinely having no data for a
+    # whole publisher is a real (if unusual) answer and stays a soft result; every
+    # URL failing for some OTHER reason — creds, quota, network, a bad gate — is a
+    # bug, and spending money to learn nothing must be loud.
+    if n_rp and not scored:
+        _detail = (f"{n_rp} candidate(s), {_ms['rows']} Moz row(s) billed, 0 scored "
+                   f"({_ms['uncrawled']} reported no Moz data)")
+        if _ms["uncrawled"] >= n_rp:
+            print(f"  [harvest] WARNING — Moz has no data for ANY candidate: {_detail}")
+        else:
+            raise RuntimeError(
+                f"Moz scoring produced nothing while billing rows: {_detail}. "
+                f"Not an uncrawled publisher — check credentials, quota and the "
+                f"score_url_via_moz gate before re-running.")
     # System-wide authority score: replace raw-PA ranking with the corpus-grain
     # OU/power blend (one global PA~DA fit, paywall-remapped PA), so rank_score is
     # comparable ACROSS publishers, not just within one. Within a publisher DA is

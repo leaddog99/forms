@@ -274,7 +274,20 @@ def score_url_via_moz(url: str) -> Optional[dict]:
         if not pool:
             return None, None, False
         cu, cr = max(pool, key=lambda ur: ur[1].get("page_authority") or 0)
-        usable = cr.get("http_code") in (200, 301, 302, 402)
+        # ANY non-zero http_code means Moz HAS data for this variant. 0 is its
+        # "never crawled / nothing here" sentinel, and that is the only thing
+        # this gate may reject.
+        #
+        # This was briefly an allow-list of (200, 301, 302, 402) and that was
+        # wrong: those four codes exist above to RANK variants (prefer crawled
+        # over estimated), never to reject them. Moz also returns other real
+        # codes — pinchofyum.com comes back http_code 5 with pa 49 / da 75, plain
+        # measured data — and the allow-list discarded every one of them. A
+        # publisher_refresh over pinchofyum billed 496 Moz rows and scored 0 URLs,
+        # with the canonical-variant learning saving nothing, because learning
+        # only records from a probe this call considers usable.
+        code = cr.get("http_code")
+        usable = bool(code)
         return cr, cu, usable
 
     chosen, chosen_url, usable = _pick(candidates, results)
