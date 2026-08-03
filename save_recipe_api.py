@@ -5183,10 +5183,33 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
             collections_lib.replace_members(conn, "publisher", host, res["members"])
-            conn.execute(
-                "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ?, "
-                "search_pages = ?, harvest_source = ? WHERE domain = ?",
-                (res.get("recipe_path") or "", keep, query or "", pages, source, host))
+            # A LEARNED recipe_path is only trustworthy if the run it was learned
+            # from actually found recipes. When recipe_pass is 0, the auto-detect
+            # inferred the path from a sample in which NOTHING was a recipe — it is
+            # inferring from the failure itself.
+            #
+            # 2026-08-03: three publishers were harvested off SERP with no
+            # serp_query set. Discovery returned only the sites' archive pages, and
+            # the run persisted recipegirl.com -> 'set', marionskitchen.com ->
+            # 'category', paleogrubs.com -> 'tag'. `category` and `tag` are
+            # WordPress taxonomy prefixes; those domains would have scoped every
+            # future harvest to their own archives forever. The recipes are at the
+            # root (recipegirl.com/pastitsio-greek-lasagna). Keep whatever the
+            # curator had rather than overwrite it with a guess from a failed run.
+            _learned_path = res.get("recipe_path") or ""
+            if res["recipe_pass"]:
+                conn.execute(
+                    "UPDATE domains SET recipe_path = ?, keep_top_n = ?, serp_query = ?, "
+                    "search_pages = ?, harvest_source = ? WHERE domain = ?",
+                    (_learned_path, keep, query or "", pages, source, host))
+            else:
+                if _learned_path:
+                    print(f"[PUBLISHER-REFRESH] NOT learning recipe_path={_learned_path!r} — "
+                          f"0 of {res['discovered']} discovered URLs were recipes")
+                conn.execute(
+                    "UPDATE domains SET keep_top_n = ?, serp_query = ?, "
+                    "search_pages = ?, harvest_source = ? WHERE domain = ?",
+                    (keep, query or "", pages, source, host))
             conn.commit()
             # SEMrush human-workflow loop: a successful backlinks_file ingest is a
             # completed harvest → stamp it so the derived next_harvest_at rolls

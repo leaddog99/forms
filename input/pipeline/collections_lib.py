@@ -887,6 +887,23 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
                 f"Moz scoring produced nothing while billing rows: {_detail}. "
                 f"Not an uncrawled publisher — check credentials, quota and the "
                 f"score_url_via_moz gate before re-running.")
+
+    # DISCOVERED SOMETHING, KEPT NOTHING is the other silent failure, and it is the
+    # one that actually bit: 2026-08-03, three publishers each discovered 40 URLs,
+    # passed 0, and recorded `success`. The Moz guard above never fires there
+    # because n_rp is 0 — nothing reached scoring — so a run that fetched 25 pages
+    # THROUGH THE PAID UNBLOCKER and kept none of them read as a clean result.
+    #
+    # The cause was discovery, not filtering: no serp_query was set, so SERP
+    # returned the sites' own /set/, /category/ and /tag/ archives. The filter was
+    # right to drop every one. Loud, because the fix is a curator input (a
+    # serp_query, or a SEMrush export) and nothing downstream can infer it.
+    if n_raw and not n_rp:
+        raise RuntimeError(
+            f"Harvest discovered {n_raw} URL(s) and none were recipes. "
+            f"Discovery is returning non-recipe pages — check serp_query, "
+            f"recipe_path and harvest_source for this publisher rather than "
+            f"re-running as-is.")
     # System-wide authority score: replace raw-PA ranking with the corpus-grain
     # OU/power blend (one global PA~DA fit, paywall-remapped PA), so rank_score is
     # comparable ACROSS publishers, not just within one. Within a publisher DA is
