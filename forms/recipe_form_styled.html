@@ -6726,7 +6726,12 @@
         // We know which page we are waiting for: it is in ?url=. So we ask
         // whether a grab for it has landed, and keep asking, because the capture
         // is still running when this starts.
-        const srcUrl = params.get('url') || '';
+        // Read the query HERE. `params` belongs to the staged IIFE further down,
+        // not to this function, so referencing it threw ReferenceError on the
+        // first line that ran — which the IIFE's catch reported as the generic
+        // "Failed to fetch staged markdown", hiding the real error and starting
+        // no poll at all.
+        const srcUrl = new URLSearchParams(window.location.search).get('url') || '';
         const poll = srcUrl ? setInterval(async () => {
           try {
             const r = await fetch(`${API}/staged-latest?url=${encodeURIComponent(srcUrl)}`);
@@ -6874,8 +6879,12 @@
         window.history.replaceState({}, '', window.location.pathname);
         extractFromMarkdown(file, stagedSourceUrl, stagedTitle);
       } catch (err) {
+        // Say WHICH failure. A bare "Failed to fetch staged markdown" hid a
+        // ReferenceError in awaitStagedToken for a full round of testing — the
+        // message described the last thing the reader expected to happen rather
+        // than the thing that actually did.
         console.error('Staged fetch error:', err);
-        showFeedback('Failed to fetch staged markdown', 'error');
+        showFeedback('Failed to fetch staged markdown: ' + (err && err.message ? err.message : err), 'error');
       }
     })();
 
