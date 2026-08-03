@@ -91,6 +91,29 @@ without storing every raw point.
   drifts slowly); also on demand via `POST /domains/rescore` and the **Rescore** button on
   the domains page.
 
+## Two stages, two signals — why this is not an age contest
+
+**Selection and ranking are deliberately different signals.** Candidates come from the
+SEMrush Organic Top-Pages export, which is ordered by the **previous month's organic
+traffic** (`collections_lib` line ~600: the Top-Pages shape ranks by `Traffic`, the
+backlinks shape by referring domains) — so the pool is what readers are cooking *now*,
+not an all-time archive. **OU then ranks within that pool**, asking whether a page earned
+disproportionate third-party endorsement relative to its own domain's baseline; traffic
+breaks ties where PA saturates across a publisher's pages.
+
+**Why both are needed:** traffic alone rewards whatever is merely hot, and OU alone would
+reward whatever has been online longest accumulating links. Feeding a *current-demand*
+pool into an *earned-authority* ranking is what keeps either failure mode from taking
+over — the corpus never sees the stale long tail, and the hot-but-shallow page still has
+to show endorsement to win. Judging the OU formula on its own, without the traffic-ranked
+selection stage in front of it, will produce wrong conclusions about age bias.
+
+Measured, for the record (smittenkitchen.com, 114 scored pages, one domain so DA is
+constant): **correlation(PA, log10 external links) = +0.905** across the full PA range —
+PA 50-52 pages carry 141-1,409 external links, PA 61-62 pages carry 5,232-18,534. Within a
+domain, PA *is* third-party endorsement, which is what makes OU a page-level quality
+signal rather than a publisher-size proxy.
+
 ## Missing PA / DA
 
 DA is domain-constant and Moz returns DA+PA together, so in a live harvest every scored
