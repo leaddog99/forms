@@ -114,86 +114,15 @@ PA 50-52 pages carry 141-1,409 external links, PA 61-62 pages carry 5,232-18,534
 domain, PA *is* third-party endorsement, which is what makes OU a page-level quality
 signal rather than a publisher-size proxy.
 
-## Next step (NOT BUILT) — the durability dimension
+## Where this is going
 
-Traffic and excess-PA are **orthogonal**, and each covers the other's blind spot. Measured
-on smittenkitchen.com (114 pages, one domain, medians traffic 380 / PA 55):
+The forward-looking design — demand vs capture vs advocacy vs trajectory, the durability
+axis, the "point with an arrow" shape, the archetypes, the coverage tiers, and how to get
+search volume out of the Google Ads API — lives in **[recipe-scoring-design.md](recipe-scoring-design.md)**.
+Nothing in it is built or decided.
 
-| quadrant | n | example |
-|---|---|---|
-| hi traffic / hi PA | 30 | sidecar 5,944 · pumpkin bread 2,489 |
-| hi traffic / lo PA | 27 | how-to-hard-boil-an-egg **16,750**, PA 49 |
-| lo traffic / hi PA | 21 | shakshuka (2010) 329 traffic, **PA 57** |
-| lo traffic / lo PA | 36 | strawberry milk · broccoli pizza |
-
-**Traffic is appetite** — something caught thousands of people's eye and they wanted to try
-it. **Excess PA is advocacy** — having found it, someone thought it worth pointing others
-at. They are not the same act, and the gap between them is informative: a page with heavy
-traffic and below-median PA drew people in without moving them to recommend it. The
-hard-boiled egg page at 16,750 visits and PA 49 is being read correctly, not mis-ranked.
-
-**What is missing is the time axis.** Selection already proves a page is *currently* wanted
-(the pool is last month's traffic), and OU already proves it *out-earned its siblings*. The
-untapped signal is a page that has done **both, for years**: not merely "old and still
-trafficked", but **old and still carrying excess PA** — survivorship of the residual through
-everything the publisher has released since. A 2010 shakshuka still out-endorsing sixteen
-years of newer posts is a stronger claim than any single-month measurement can make.
-
-Sketch, using only data already held:
-
-* Publish date is available (URL date segment for most publishers, else `datePublished`).
-* Traffic and PA are already on `collection_members` per harvest.
-* Hold demand constant by computing it **inside a dish cohort** — the dish-refresh path
-  already builds one. An old recipe still out-trafficking and out-endorsing newer rivals
-  *for the same dish* is durability of the artifact; raw traffic alone would only be
-  measuring how popular the dish is.
-
-Open: whether durability is a third ranked dimension, a multiplier on the blend, or simply
-a display/editorial signal ("a decade-long favourite"). Do not treat age alone as merit —
-the claim is sustained *excess*, never survival.
-
-## Proposed shape (NOT DECIDED) — score as a POINT, not a scalar
-
-Curator's framing: *"maybe our scoring should be based on a point location in the 2x2
-matrix... a poor man's vector."* Treat a recipe as a point in **(appetite, advocacy)** space
-rather than collapsing the two into one number.
-
-* **x = traffic percentile** (appetite — thousands wanted to try it)
-* **y = OU / excess-PA percentile** (advocacy — having found it, someone pointed others at it)
-* **magnitude** = `hypot(x, y) / sqrt(2)` → overall strength, 0..1
-* **angle** = `degrees(atan2(y, x))` → 0 deg = pure appetite, 90 deg = pure advocacy
-
-Measured on smittenkitchen.com (114 pages). Angles span the full 0-90 with a median of 44,
-so the dimension is real and well populated, not clustered on the diagonal:
-
-| angle | reads as | example |
-|---|---|---|
-| ~45, high magnitude | wanted AND recommended | sidecar (traffic 99th pct, PA 96th) |
-| ~0-3 | huge appetite, almost no advocacy | how-to-hard-boil-an-egg (100th / 2nd) |
-| ~62-74 | quiet, disproportionately recommended | charred salt-and-vinegar cabbage (50th / 96th) |
-
-**What is actually new is the ANGLE, not the magnitude.** Euclidean distance in percentile
-space with equal weights ranks close to the existing weighted blend — so as a replacement
-scalar this changes little. The blend's real loss is that it COLLAPSES direction: two
-recipes scoring identically today can sit at 5 deg and 75 deg and mean opposite things.
-
-**It is a lens selector as much as a score.** This is `project_selection_lens` falling out of
-one computation instead of two separate builds — *hot* is low angle, *hidden gems /
-editor's find* is high angle, and medal picks are high magnitude near 45 deg. One number
-decides which surface a recipe belongs on.
-
-Two constraints if this is built:
-
-1. **Percentile-rank both axes first.** Raw traffic spans 141-16,750 and is log-distributed;
-   PA spans 49-62. Un-normalised, traffic would dominate the angle entirely.
-2. **The angle is only meaningful within a COHORT** — a publisher for a within-site lens, a
-   dish for cross-publisher picks — because both percentiles are relative to the population
-   ranked against. `PERCENT_RANK()` over the generated columns already does this.
-
-Composes with the durability dimension above without redesign: add time as a third axis and
-it is a 3-vector — appetite x advocacy x persistence. A recipe at 45 deg with high magnitude
-*that has held that position for a decade* is a different claim from one that arrived there
-last month.
+Read [`project_two_stage_selection`](../../.claude/projects) (memory) first: selection is
+last month's traffic, ranking is OU, and judging either in isolation gives wrong answers.
 
 ## Missing PA / DA
 
