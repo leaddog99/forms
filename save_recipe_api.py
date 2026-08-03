@@ -7990,6 +7990,80 @@ def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
 
 
 # Save (insert or update) a recipe
+# Moz-derived `_scoring` keys. Every one is a MEASUREMENT: absent means we could
+# not measure it, and 0 is not a legal measured value for any of them — Moz PA/DA
+# are >= 1 for any page it has crawled, and a cohort percentile of exactly 0.0
+# alongside fieldN 0 means there was no cohort, not that the recipe came last.
+_MOZ_SCORING_KEYS = ("pageAuthority", "domainAuthority", "ouScore", "power",
+                     "ouPercentile", "powerPercentile", "fieldAvgPower",
+                     "fieldMaxPower", "fieldMinPower", "fieldN",
+                     "dishCompetitivenessPct")
+
+
+def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
+    """Strip UNMEASURED zeros out of `_scoring`, and say why they are missing.
+
+    The recipe form serialises its whole scoring section on every save, so an
+    input it never received a value for is submitted as 0.0. Saved verbatim, a
+    DA-88 publisher is recorded as domainAuthority 0 — indistinguishable from a
+    real measurement, and it sits at the floor of every ranking dimension.
+
+    Observed 2026-08-03 on a sun-sentinel.com bookmarklet grab: the article was
+    three days old, Moz had not crawled it yet (all four URL variants http_code
+    0), score_url_via_moz correctly returned None — and the save wrote a complete
+    block of zeros anyway. Same failure as the _scoring.power bug fixed on
+    2026-07-30 across 1,881 rows, arriving by a different route: there the writer
+    invented the zero, here the form did and the writer accepted it.
+
+    The rule, third time of asking: a value we could not compute must be ABSENT.
+    Absent is honest, re-scoreable, and reads correctly everywhere — the metabase
+    cache already stores NULL for exactly this state.
+
+    `scoringNote` records WHY, because "no score" with no explanation is the thing
+    that sends someone digging through logs. A page Moz has not crawled YET (fresh
+    article on a known publisher) is a different situation from one it will never
+    crawl, and the note distinguishes them.
+    """
+    scoring = recipe.get("_scoring")
+    if not isinstance(scoring, dict):
+        return
+    dropped = [k for k in _MOZ_SCORING_KEYS
+               if k in scoring and isinstance(scoring[k], (int, float))
+               and not isinstance(scoring[k], bool) and float(scoring[k]) == 0.0]
+    if not dropped:
+        return
+    for k in dropped:
+        scoring.pop(k, None)
+    if not (scoring.get("fieldScope") or "").strip():
+        scoring.pop("fieldScope", None)
+
+    # Why — and be accurate about WHICH thing was missing. If pageAuthority
+    # survived, Moz answered fine and only the dish-cohort signals were absent
+    # (a recipe saved outside a batch has no cohort to be a percentile of). Saying
+    # "no Moz data" there would send the reader to the wrong place.
+    if scoring.get("pageAuthority") is not None:
+        reason = ("saved outside a dish batch, so there was no cohort to rank "
+                  "against — Moz page/domain authority above is measured")
+    else:
+        reason = "no Moz data at save time"
+        try:
+            with _db() as conn:
+                ensure_metabase_url_table(conn)
+                row = get_metabase_url(conn, url_normalized) if url_normalized else None
+            if row and not row.get("moz_last_scored"):
+                reason = ("Moz has not crawled this URL yet — common for a recently "
+                          "published article; re-score later rather than treating it as zero")
+            elif not row:
+                reason = "URL was never submitted to Moz"
+        except Exception:
+            pass
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    scoring["scoringNote"] = f"{reason} (checked {stamp})"
+    recipe["_scoring"] = scoring
+    print(f"[SCORING] dropped {len(dropped)} unmeasured zero(s) "
+          f"{dropped} for {url_normalized or '(no url)'} — {reason}")
+
+
 def _save_recipe_core(payload: dict) -> dict:
     """Synchronous core of POST /recipes. Same behavior as the endpoint —
     same return shape, same HTTPException raises — but callable
@@ -8196,6 +8270,13 @@ def _save_recipe_core(payload: dict) -> dict:
             source["type"] = "local"
         recipe_dict["_source"] = source
         print(f"[SAVE] Minted self-URL: {synthetic_url}")
+
+    # Drop unmeasured zeros out of _scoring before anything persists them. Placed
+    # here because the URL is final by this point (including a minted self-URL),
+    # and because EVERY save reaches it — the form, the bookmarklet, the batch and
+    # the in-process callers — rather than fixing the one caller that happened to
+    # send zeros. See _sanitize_scoring for why 0 is never a legal measurement.
+    _sanitize_scoring(recipe_dict, normalized_source_url)
 
     # Dedup: if a row already exists for (url_normalized, user_id) in the
     # OWNER'S table, adopt ITS recipe_id instead of the form-sent UUID so
