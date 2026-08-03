@@ -114,6 +114,44 @@ PA 50-52 pages carry 141-1,409 external links, PA 61-62 pages carry 5,232-18,534
 domain, PA *is* third-party endorsement, which is what makes OU a page-level quality
 signal rather than a publisher-size proxy.
 
+## Next step (NOT BUILT) — the durability dimension
+
+Traffic and excess-PA are **orthogonal**, and each covers the other's blind spot. Measured
+on smittenkitchen.com (114 pages, one domain, medians traffic 380 / PA 55):
+
+| quadrant | n | example |
+|---|---|---|
+| hi traffic / hi PA | 30 | sidecar 5,944 · pumpkin bread 2,489 |
+| hi traffic / lo PA | 27 | how-to-hard-boil-an-egg **16,750**, PA 49 |
+| lo traffic / hi PA | 21 | shakshuka (2010) 329 traffic, **PA 57** |
+| lo traffic / lo PA | 36 | strawberry milk · broccoli pizza |
+
+**Traffic is appetite** — something caught thousands of people's eye and they wanted to try
+it. **Excess PA is advocacy** — having found it, someone thought it worth pointing others
+at. They are not the same act, and the gap between them is informative: a page with heavy
+traffic and below-median PA drew people in without moving them to recommend it. The
+hard-boiled egg page at 16,750 visits and PA 49 is being read correctly, not mis-ranked.
+
+**What is missing is the time axis.** Selection already proves a page is *currently* wanted
+(the pool is last month's traffic), and OU already proves it *out-earned its siblings*. The
+untapped signal is a page that has done **both, for years**: not merely "old and still
+trafficked", but **old and still carrying excess PA** — survivorship of the residual through
+everything the publisher has released since. A 2010 shakshuka still out-endorsing sixteen
+years of newer posts is a stronger claim than any single-month measurement can make.
+
+Sketch, using only data already held:
+
+* Publish date is available (URL date segment for most publishers, else `datePublished`).
+* Traffic and PA are already on `collection_members` per harvest.
+* Hold demand constant by computing it **inside a dish cohort** — the dish-refresh path
+  already builds one. An old recipe still out-trafficking and out-endorsing newer rivals
+  *for the same dish* is durability of the artifact; raw traffic alone would only be
+  measuring how popular the dish is.
+
+Open: whether durability is a third ranked dimension, a multiplier on the blend, or simply
+a display/editorial signal ("a decade-long favourite"). Do not treat age alone as merit —
+the claim is sustained *excess*, never survival.
+
 ## Missing PA / DA
 
 DA is domain-constant and Moz returns DA+PA together, so in a live harvest every scored
