@@ -152,6 +152,49 @@ Open: whether durability is a third ranked dimension, a multiplier on the blend,
 a display/editorial signal ("a decade-long favourite"). Do not treat age alone as merit —
 the claim is sustained *excess*, never survival.
 
+## Proposed shape (NOT DECIDED) — score as a POINT, not a scalar
+
+Curator's framing: *"maybe our scoring should be based on a point location in the 2x2
+matrix... a poor man's vector."* Treat a recipe as a point in **(appetite, advocacy)** space
+rather than collapsing the two into one number.
+
+* **x = traffic percentile** (appetite — thousands wanted to try it)
+* **y = OU / excess-PA percentile** (advocacy — having found it, someone pointed others at it)
+* **magnitude** = `hypot(x, y) / sqrt(2)` → overall strength, 0..1
+* **angle** = `degrees(atan2(y, x))` → 0 deg = pure appetite, 90 deg = pure advocacy
+
+Measured on smittenkitchen.com (114 pages). Angles span the full 0-90 with a median of 44,
+so the dimension is real and well populated, not clustered on the diagonal:
+
+| angle | reads as | example |
+|---|---|---|
+| ~45, high magnitude | wanted AND recommended | sidecar (traffic 99th pct, PA 96th) |
+| ~0-3 | huge appetite, almost no advocacy | how-to-hard-boil-an-egg (100th / 2nd) |
+| ~62-74 | quiet, disproportionately recommended | charred salt-and-vinegar cabbage (50th / 96th) |
+
+**What is actually new is the ANGLE, not the magnitude.** Euclidean distance in percentile
+space with equal weights ranks close to the existing weighted blend — so as a replacement
+scalar this changes little. The blend's real loss is that it COLLAPSES direction: two
+recipes scoring identically today can sit at 5 deg and 75 deg and mean opposite things.
+
+**It is a lens selector as much as a score.** This is `project_selection_lens` falling out of
+one computation instead of two separate builds — *hot* is low angle, *hidden gems /
+editor's find* is high angle, and medal picks are high magnitude near 45 deg. One number
+decides which surface a recipe belongs on.
+
+Two constraints if this is built:
+
+1. **Percentile-rank both axes first.** Raw traffic spans 141-16,750 and is log-distributed;
+   PA spans 49-62. Un-normalised, traffic would dominate the angle entirely.
+2. **The angle is only meaningful within a COHORT** — a publisher for a within-site lens, a
+   dish for cross-publisher picks — because both percentiles are relative to the population
+   ranked against. `PERCENT_RANK()` over the generated columns already does this.
+
+Composes with the durability dimension above without redesign: add time as a third axis and
+it is a 3-vector — appetite x advocacy x persistence. A recipe at 45 deg with high magnitude
+*that has held that position for a decade* is a different claim from one that arrived there
+last month.
+
 ## Missing PA / DA
 
 DA is domain-constant and Moz returns DA+PA together, so in a live harvest every scored
