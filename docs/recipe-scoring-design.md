@@ -440,6 +440,100 @@ A second table would be right if rising rows needed a **different schema**, or a
 master cannot express. Neither holds: identical recipe fields, and `kind='top'` already does
 delete-and-replace churn per batch refresh — the same volatility, already tolerated.
 
+## EXECUTION — where a riser dies today, and the exact steps to catch it
+
+Curator: *"the current extract filters by pa/da... the new items aren't there, therefore
+there's no recipe to process but 'old' recipes."* Correct, and there are **TWO independent
+gates**, not one.
+
+### Why the current pipeline cannot produce a riser
+
+Take porridge as it stood in **Nov 2025**: `Ot=7`, `Or=14`, around row 400 of
+christinascucina's 820-row export.
+
+```
+1. read export, sort by traffic desc, take top records=100   <-- DEAD HERE. never a candidate
+2. pre-filter taxonomy / archive urls
+3. recipe filter - FETCH each candidate (unblocker), check JSON-LD
+4. Moz score each survivor -> PA/DA/OU
+5. domain_scoring -> rank_score
+6. sort by rank_score, keep top `keep` (10-40)               <-- DEAD HERE TOO. PA ~0
+7. extract winners -> master_recipes
+8. also-rans stay ledger rows, never extracted
+```
+
+`_read_backlinks_file(domain, want=records)` truncates 820 rows to 100 by TRAFFIC (gate 1),
+and the keep-top-N sorts on `rank_score`, which is PA-driven (gate 2). A new page fails both.
+Note steps 3-4 SPEND (unblocker fetch + Moz rows) on 100 pages BEFORE selecting, so simply
+widening the funnel is not affordable.
+
+### Phase 1 — CAPTURE, at harvest time, costs nothing
+
+1. Read the export at **FULL DEPTH** — all 820 rows, not the top 100. Same file, already
+   downloaded, already parsed.
+2. Append one snapshot row per url: `(url_normalized, captured_at, traffic, or_count,
+   traffic_change, traffic_pct, answer_engines, llm_prompts, top_keyword, primary_intent)`.
+   **No fetch, no Moz, no LLM — a workbook parse.**
+3. The existing pipeline continues **UNTOUCHED** on the top-100. Library behaviour unchanged.
+
+This is the ONLY change to the extract. Today those columns are parsed and discarded a few
+lines later, and `replace_members` is delete-and-replace, so every re-harvest destroys the
+history Rising needs.
+
+### Phase 2 — JUDGMENT, a separate scheduled job reading stored data
+
+4. For each url with **>=3 monthly snapshots**, compute from the snapshot table alone — free,
+   pure SQL: `Or` velocity, `Ot`/`Or` trend, traffic trajectory.
+5. **Screen**: keep only urls with three consecutive months of `Or` growth. Still free.
+6. **FIRST SPEND**, survivors only: `url_organic` (10 units/line) -> positions + `Nq` ->
+   poised pool, converted %.
+7. Apply the trigger: `Or` velocity AND poised pool AND `Ot`/`Or` lifting.
+
+Precedent for the shape: `domain_scoring` already runs as a scheduled job re-scoring the whole
+corpus after the fact rather than inline. Judgment MUST be a batch — the metrics are
+cohort-relative (percentiles need the whole population), velocity spans runs by definition,
+and tuning the threshold has to be free (re-run on stored data, never re-harvest).
+
+### Phase 3 — PROMOTION, triggered candidates only
+
+8. Fetch the page (unblocker per domain policy) — the first expensive I/O.
+9. Recipe filter — is it even a recipe?
+10. Artifact soundness — the floor.
+11. Extract -> `master_recipes`, `selection_lens='rising'`, `_rising` block with `triggeredAt`.
+12. Add to the `collection_type='rising'` ledger.
+
+### Phase 4 — MAINTAIN, every judgment run
+
+13. Update metrics on existing rising rows.
+14. **Graduate** — if the Library filter would now admit it on its own OU/durability, flip
+    `selection_lens='library'` and set `graduatedAt`.
+15. **Retire** — velocity reversed and never converted: drop from the rising collection.
+
+### The economics — Rising is CHEAPER per candidate than the current extract
+
+```
+820 rows snapshotted        free
+ ~20 pass velocity screen   free
+ ~20 url_organic calls      ~2,000 units
+  ~5 trigger -> fetch + extract
+```
+
+Because it screens on free stored data FIRST and only pays for survivors. The current pipeline
+fetches and Moz-scores 100 pages before deciding which 10 to keep.
+
+### The limitation, stated plainly
+
+**A page with genuinely zero rankings is invisible even at full export depth** — Semrush only
+lists pages that rank for something. Porridge first appears at `Or=16, Ot=0` in Oct 2025, so it
+IS visible before the traffic arrives; a recipe published last week is in no export at all.
+That case stays tier 3: artifact soundness only, no demand signal at any price.
+
+### Cadence — this needs deciding
+
+`harvest_ttl_days=90` on 295 of 311 domains. Rising wants MONTHLY points; a quarterly harvest
+gives three points a year, so the three-month trigger would take nine months to fire. A monthly
+clock is probably only worth it for the ~30 publishers worth acting on, not all 311.
+
 ## Tiers — how it degrades
 
 Because of the coverage constraint, this is not one formula but three:
