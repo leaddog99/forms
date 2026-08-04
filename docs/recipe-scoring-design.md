@@ -54,6 +54,90 @@ So the constraint is **cost and cadence, not availability** — and the cost is 
 expected (full corpus current traffic is ~2% of the smallest unit package). Design the tiers
 around what is worth buying for which recipes, not around what can be known.
 
+## TWO OBJECTIVES, TWO FILTERS — the organizing decision
+
+Curator, 2026-08-03: *"we have different objectives here... I want a library of the best
+tried and true recipes that is discoverable via the pa/da stats... and separately I want the
+up and coming exciting new recipes. There are two different filters on the extraction and
+need to be flagged as such."*
+
+This is not one score with archetypes falling out of it. It is **two selection pipelines**
+that read different signals, disagree by design, and stamp the record with which one found
+it. A recipe may satisfy both, either, or neither.
+
+| | **A. THE LIBRARY** (tried and true) | **B. RISING** (up and coming) |
+|---|---|---|
+| question | has this EARNED its place? | is this ABOUT to? |
+| primary | OU / excess PA — advocacy | `Or` velocity — keyword footprint growth |
+| supporting | durability (sustained excess, years), capture, like-month momentum ~1.0 | poised pool (`Nq` at pos 11-30), `Ot`/`Or` inflection, answer-engine presence |
+| floor | artifact soundness | artifact soundness |
+| **explicitly EXCLUDES** | `Or` velocity — a spike is not a credential | **PA / OU / advocacy** — a new page has none BY CONSTRUCTION; ranking on it finds new recipes LAST |
+| fails on | anything published recently | anything mature and stable |
+| flag | `selection_lens = 'library'` | `selection_lens = 'rising'` |
+
+**Why they must stay separate.** Blend them and each destroys the other: a single score with
+advocacy in it can never surface a three-week-old recipe, and a single score with keyword
+velocity in it demotes a decade-old classic that is simply stable. The two-lens split is
+already anticipated in `project_selection_lens` (a "hot" page vs "hidden gems / editor's
+find") — this is that idea with measurable triggers.
+
+**Flag at EXTRACTION, not at display.** The harvest runs both filters and stamps which one
+selected the row, so the surfaces read a flag rather than re-deriving thresholds, and a
+recipe that qualified as Rising in March is still legible as such in September when its
+numbers have moved on.
+
+## B. The RISING detector
+
+Ordered by how EARLY each fires. The first three are the detector; the rest confirm too late
+to be useful.
+
+**1. `Or` velocity — the earliest signal, 2-3 months ahead of traffic.**
+Monthly keyword count climbing consistently. **Three consecutive months of `Or` growth is the
+trigger.** Measured on christinascucina.com/porridge/, a real breakout:
+
+```
+date        Ot        Or    Ot/Or    Or chg
+20260715    10,470    224    46.7      +39
+20260615     1,055    185     5.7      +17
+20260515       727    168     4.3      +29
+20260415       549    139     3.9      +32
+20260315       383    107     3.6      +23
+20260215     1,383     84    16.5      +33
+20260115        13     51     0.3      +20      <- Or already climbing 3 months
+20251215         9     31     0.3      +17      <- traffic still noise
+20251115         7     14     0.5       -2
+20251015         0     16     0.0        0
+```
+
+`Or` climbed from Nov while `Ot` sat at 0, 7, 9, 13. Traffic did not move until February.
+
+**2. The poised pool — `Nq` ranked at positions 11-30.** Demand the page has earned reach
+into but not yet converted. This is a PREDICTION, not a record.
+
+**3. `Ot`/`Or` inflection — the conversion moment.** Traffic-per-keyword went 0.3 -> 46.7 as
+positions crossed the page-1 cliff. Low `Ot`/`Or` with a big poised pool = **loaded but not
+fired**; rising `Ot`/`Or` = firing now.
+
+The mechanism, breakout vs stuck (60 keywords sampled each):
+
+```
+PORRIDGE (broke out)  pos 1-3: 19   4-10: 33   11-20:  8   -> 84% of 103,710 Nq converted
+VONGOLE  (stuck)      pos 1-3:  0   4-10:  0   11-20: 47   ->  0% of  40,410 Nq converted
+```
+
+Vongole is not failing for lack of demand — **40,410 monthly searches in reach, every one of
+them on page two.** Porridge crossed onto page one and took 84% of a 103,710 pool. Same
+publisher, same DA, opposite outcomes, and neither is visible in a traffic snapshot.
+
+**4-6, confirmation only:** answer-engine presence (`google-ai`, `gemini`, `search-gpt` and
+`LLM Prompts` — a channel nothing in the current scoring reads); head-term `Nq` x best
+position, i.e. how big the ceiling is; artifact soundness as the floor.
+
+**What this changes.** Porridge would have tripped the Rising trigger in **January 2026**, at
+`Or 51` / `Ot 13`. The current scoring ranks it near zero — no links, no traffic — until
+July, by which point it is not a discovery. **The existing system is structurally incapable of
+finding a new recipe before everyone else has**, and that is the case for building this.
+
 ## Demand — search volume is the missing denominator
 
 **Traffic alone conflates "big dish" with "winning page."**
@@ -183,14 +267,14 @@ Two constraints if built:
    dish for cross-publisher picks. `PERCENT_RANK()` over the generated columns already does
    this.
 
-## The archetypes it produces
+## The archetypes it produces (which lens each belongs to)
 
 | archetype | signature | surface |
 |---|---|---|
-| **Star** | high magnitude, ~45 deg, flat arrow | the medal pick |
-| **Evergreen** | high magnitude, flat arrow, years of it | "a decade-long favourite" |
-| **Rising** | steep positive arrow | "trending now" |
-| **Hidden gem** | high angle (advocacy >> capture) | editor's find |
+| **Star** | high magnitude, ~45 deg, flat arrow | LIBRARY — the medal pick |
+| **Evergreen** | high magnitude, flat arrow, years of it | LIBRARY — "a decade-long favourite" |
+| **Rising** | 3 months `Or` growth + poised pool + `Ot`/`Or` lifting | RISING — "trending now" |
+| **Hidden gem** | high angle (advocacy >> capture) | LIBRARY — editor's find |
 | **Commodity** | high traffic, LOW capture, low angle | utility — do not medal it |
 | **Fading** | negative arrow, past advocacy | re-review or retire |
 | **Unproven** | no endorsement data yet | artifact score only |
