@@ -156,7 +156,7 @@ Because of the coverage constraint, this is not one formula but three:
 
 | tier | available | score |
 |---|---|---|
-| **1** — harvested publisher | volume + traffic + advocacy + trajectory | full vector, capture included |
+| **1** — harvested publisher | volume + traffic + advocacy + trajectory | full vector, capture included (page traffic is SEMrush-only, so this tier can never exceed harvest coverage) |
 | **2** — most of the corpus | volume + advocacy | dish demand x advocacy, no capture |
 | **3** — fresh grab / new URL | neither | artifact soundness only |
 
@@ -186,10 +186,25 @@ differently per use:
 * **Capture arithmetic** — buckets are mush. `traffic / [1K-10K]` is a 10x uncertainty band,
   usable only as a coarse tier.
 
-**Free alternative:** Google Trends gives *relative* interest (0-100 index) per term with no
-approval and no spend — no absolute volume, but it directly serves the "what's hot" and
-seasonality questions. If trajectory is the goal rather than capture arithmetic, that may be
-enough on its own.
+**Google Trends is NOT a substitute, and the distinction matters.** Trends is search-TERM
+interest over time — a relative 0-100 index for a QUERY, never for a URL. It can say
+"shakshuka is rising"; it can never say "this shakshuka page is rising." It is a fallback for
+DISH-demand trajectory only, not for page trajectory.
+
+**There is no Google source for third-party PAGE traffic, free or paid.** Google does not
+expose other people's page analytics. Search Console gives real page-level impressions,
+clicks and position — but only for properties you OWN and verify, so it is useful for
+bestcooksclub.com's own pages later and useless for judging a publisher's recipe.
+
+That is why the coverage constraint above is STRUCTURAL rather than a tooling gap: page-level
+performance on sites you do not own is only available from estimator vendors (SEMrush,
+Ahrefs, Similarweb), and will therefore always be a bonus tier.
+
+**So be precise about what Google buys.** `UrlSeed` gives what a page is ABOUT and how big
+those queries are — the DENOMINATOR. It does not give that page's traffic — the NUMERATOR
+still comes from SEMrush. Volume alone lifts the DEMAND axis to ~100% coverage, but CAPTURE
+cannot follow it: capture needs both, so it stays tier-1 at ~53% no matter what Google
+provides.
 
 **Recommendation:** apply for Basic Access — the URL-seed call is well matched to this
 corpus, and even bucketed volume fixes the cross-dish comparison that traffic alone cannot.
