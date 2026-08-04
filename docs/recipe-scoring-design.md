@@ -166,8 +166,8 @@ can be promoted by paying for the lookup (see costs below).
 
 | tier | who is in it | score | why not just buy everything |
 |---|---|---|---|
-| **1** — ranked shortlist | traffic + volume + advocacy + full 12-month trajectory | full vector with capture and momentum | the 12-point history is the only genuinely expensive call |
-| **2** — whole corpus | traffic + volume + advocacy + 3 time points | capture and coarse momentum | ~54% of a 2M package covers this for all 4,169 |
+| **1** — ranked shortlist | the above + trajectory | full vector with capture and momentum | history is 403 on this plan; comes from the publisher exports until that changes |
+| **2** — whole corpus | traffic + volume + advocacy | **capture — available NOW**, 41,690 units for all 4,169 | trajectory needs a plan upgrade (403) or the per-publisher exports |
 | **3** — fresh grab / brand-new URL | none of it yet | artifact soundness only | a 3-day-old page has no traffic, volume rank or endorsement to buy — nothing exists to measure |
 
 Tier 3 is the only one that is genuinely un-purchasable, and it is the cold-start case: a
@@ -179,15 +179,47 @@ structurally necessary rather than merely nice.
 **Semrush already sells everything this design needs, per url, and it is the vendor you
 already pay.** Checked 2026-08-03:
 
-| what | endpoint / column | cost |
-|---|---|---|
-| absolute traffic for ANY url | `url_overview` -> `Ot` | 10 units/line |
-| that url month by month | `url_overview` + `display_date=YYYYMM15` | 50 units/line |
-| that url's keywords + SEARCH VOLUME | `url_organic` -> `Ph`, `Nq` | 10 units/line |
+**PROBED LIVE 2026-08-03** (`scripts/semrush_url_probe.py`, 240 units of a 50k balance).
+Two of the three axes work on the current plan; the third does not:
 
-Watch two things: `url_organic` bills **per keyword line**, so 10 keywords = 100 units for one
-url; and its `Tr` column is Traffic **(%)**, not absolute — `Ot` is the absolute figure and
-`Nq` is the volume figure.
+| what | endpoint / column | cost | status |
+|---|---|---|---|
+| absolute traffic for ANY url | **`url_ranks`** -> `Ot`, `Or` | 10 units/line | **WORKS** |
+| that url's keywords + SEARCH VOLUME | `url_organic` -> `Ph`, `Po`, `Nq`, `Tr` | 10 units/line | **WORKS** |
+| that url month by month | `url_ranks` + `display_date=YYYYMM15` | 50 units/line | **403 — not allowed on this plan** |
+
+Measured, and it is the design's own worked example:
+
+```
+how-to-hard-boil-an-egg   Ot=24,625  Or=3,180   "hard boiled eggs"  Nq=246,000  pos 5   Tr=8.99%
+country-chicken-stew      Ot=    37  Or=  137   "chicken stew"      Nq= 18,100  pos 30  Tr=32.43%
+```
+
+The hard-boiled egg page is exactly the predicted shape — enormous traffic, but capturing a
+slice of a 246,000-volume query. `country-chicken-stew` takes 37 visits from an 18,100 query
+at position 30. **Capture is computable today**, on the existing balance, for the whole
+corpus (41,690 units for all 4,169 recipes).
+
+**Trajectory is blocked**, not merely expensive: `display_date` returns
+`ERROR 403 :: History reports are not allowed` at every date tried. So momentum and the
+1/6/12-month buckets need a plan upgrade — price that with sales — or stay with the SEMrush
+EXPORTS already pulled per publisher. That reinstates a coverage limit, but only on the
+trajectory axis, not on capture.
+
+Four gotchas, all paid for once already:
+
+1. **The API `type` is `url_ranks`, NOT `url_overview`.** The docs page is *titled* "URL
+   Overview (one database)"; `type=url_overview` returns `query type not found`.
+2. `url_organic` bills **per keyword line** — 10 keywords is 100 units for a single url.
+3. Its `Tr` column is Traffic **(%)**, not absolute. `Ot` is the absolute figure, `Nq` the
+   volume figure.
+4. A url Semrush has not indexed returns **`ERROR 50 :: NOTHING FOUND`**, not a zero row —
+   the three-day-old sun-sentinel article is unknown to Semrush exactly as it is to Moz.
+   **Same cold-start hole in both vendors**, which is the strongest argument for tier 3.
+
+**Unit accounting verified exact:** computed spend matched the balance delta on both runs
+(100 units, then 120), and calls returning no rows bill nothing. The cost table below can be
+trusted.
 
 ### What it costs
 
