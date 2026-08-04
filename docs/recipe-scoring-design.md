@@ -72,21 +72,62 @@ on banana bread and 5,000 on pastitsio are not the same achievement.
 depend on a publisher having been harvested. It could take the demand axis from 53% to
 effectively 100% coverage.
 
-## Trajectory — the 1/6/12-month diffs
+## Trajectory — momentum must compare LIKE MONTHS
 
-    momentum = traffic(1mo) / (traffic(12mo) / 12)
+**Do NOT use `traffic(1mo) / (traffic(12mo)/12)`, and do not use the export's raw
+`Traffic Change`.** Both compare a month against a different month, and for a seasonal dish
+that measures the calendar, not the recipe.
+
+    momentum = traffic(this month) / traffic(SAME MONTH last year)
        >1.3 rising      ~1.0 stable      <0.7 fading
 
-**Flat-and-high over twelve months IS evergreen** — measured, not inferred from a publish
-date. A 2010 recipe with `1mo ~= 6mo ~= 12mo/12` has proven durability; a 2010 recipe on a
-declining curve is a fading classic.
+Worked case that forced this correction — christinascucina.com's shortbread, July 2026. A
+month-over-month read says `-1,962` and a trailing-mean read says `0.68x`: fading, demote it.
+Year over year says the opposite:
 
-**Seasonality becomes a feature, not noise.** A hard 1mo spike against the 12mo baseline
-means the dish is *in season now* — exactly what an editorial "cook this in October" surface
-wants. Use the 6mo window as the smoother when the trend is wanted without the season.
+```
+month     2024 Ot   2025 Ot   2026 Ot  |  2024 Or   2025 Or   2026 Or
+01         13,005    10,894    16,009  |   1,127     2,322     4,479
+02         11,176    10,940    14,094  |   1,223     2,494     4,600
+03          7,718     8,867    17,019  |   1,173     2,573     3,337
+07          6,191    10,163     9,623  |   1,155     1,665       739
+```
 
-Confound to handle: momentum is contaminated by the **publisher's own trajectory** — a
-growing site lifts every page's 1mo. Normalise within publisher, the way OU already does.
+Up on every comparable month, with the Feb-peak / summer-trough shape repeating in all three
+years. It is shortbread — a Christmas bake. The "decline" was July.
+
+**A raw `Traffic Change` cannot tell a breakout from a season.** In the same export,
+porridge reads `+7,855` and shortbread `-2,182`. Porridge is genuinely breaking out (flat
+ZERO until Oct 2025, then 7 -> 1,383 -> 10,470 by Jul 2026). Shortbread is simply out of
+season. Ranking on the raw diff punishes seasonal dishes in exactly the months nobody cooks
+them, then rewards them in December for the same non-reason.
+
+### Reading `Or` alongside `Ot`
+
+`Or` (organic keywords) counts terms the url ranks for **that have measurable volume**, so it
+falls for two very different reasons that look identical in the number:
+
+1. **Demand disappeared** — "christmas shortbread gift tins" is not searched in July. The
+   page still ranks; the query stopped existing.
+2. **Rankings were lost** — the page fell out of the top 100 on terms people still search.
+   This is the real problem case.
+
+Separate them with a control: **same month last year** (season held constant, so what remains
+is structural), or **the publisher's other pages in the same window** (a domain-wide `Or` fall
+is an algorithm update or a Semrush database change, not this page). A genuine loss shows `Or`
+down year-over-year AND head-term positions slipping — shortbread holds 1, 2, 3, 1, so it has
+not lost anything.
+
+### Where the data comes from
+
+* **`Traffic Change`** — already in the Organic Pages export, free, but month-over-month only.
+  Use it as a flag to investigate, never as a ranking term.
+* **`url_rank_history`** — the API call that makes like-for-like possible. See below; note it
+  returns the FULL series (175 months) at 50 units/line, so it is a shortlist call.
+
+Confound that remains after seasonality is handled: momentum is contaminated by the
+**publisher's own trajectory** — a growing site lifts every page. Normalise within publisher,
+the way OU already does.
 
 ## Durability — the time axis on ADVOCACY
 
@@ -166,8 +207,8 @@ can be promoted by paying for the lookup (see costs below).
 
 | tier | who is in it | score | why not just buy everything |
 |---|---|---|---|
-| **1** — ranked shortlist | the above + trajectory | full vector with capture and momentum | history is 403 on this plan; comes from the publisher exports until that changes |
-| **2** — whole corpus | traffic + volume + advocacy | **capture — available NOW**, 41,690 units for all 4,169 | trajectory needs a plan upgrade (403) or the per-publisher exports |
+| **1** — ranked shortlist | the above + trajectory | full vector, momentum computed YEAR-OVER-YEAR | `url_rank_history` is 8,750 units/url — shortlist only |
+| **2** — whole corpus | traffic + volume + advocacy | **capture — available NOW**, 41,690 units for all 4,169 | `Traffic Change` from the export flags movement, but is month-over-month so it cannot rank |
 | **3** — fresh grab / brand-new URL | none of it yet | artifact soundness only | a 3-day-old page has no traffic, volume rank or endorsement to buy — nothing exists to measure |
 
 Tier 3 is the only one that is genuinely un-purchasable, and it is the cold-start case: a
@@ -186,7 +227,8 @@ Two of the three axes work on the current plan; the third does not:
 |---|---|---|---|
 | absolute traffic for ANY url | **`url_ranks`** -> `Ot`, `Or` | 10 units/line | **WORKS** |
 | that url's keywords + SEARCH VOLUME | `url_organic` -> `Ph`, `Po`, `Nq`, `Tr` | 10 units/line | **WORKS** |
-| that url month by month | `url_ranks` + `display_date=YYYYMM15` | 50 units/line | **403 — not allowed on this plan** |
+| that url month by month | **`url_rank_history`** -> `Dt`, `Ot`, `Or` | 50 units/line | **WORKS** |
+| (`url_ranks` + `display_date`) | — | — | 403 — wrong call, see below |
 
 Measured, and it is the design's own worked example:
 
@@ -200,11 +242,19 @@ slice of a 246,000-volume query. `country-chicken-stew` takes 37 visits from an 
 at position 30. **Capture is computable today**, on the existing balance, for the whole
 corpus (41,690 units for all 4,169 recipes).
 
-**Trajectory is blocked**, not merely expensive: `display_date` returns
-`ERROR 403 :: History reports are not allowed` at every date tried. So momentum and the
-1/6/12-month buckets need a plan upgrade — price that with sales — or stay with the SEMrush
-EXPORTS already pulled per publisher. That reinstates a coverage limit, but only on the
-trajectory axis, not on capture.
+**Trajectory works, via a DIFFERENT REPORT TYPE.** `url_ranks` + `display_date` returns
+`ERROR 403 :: History reports are not allowed`, which reads like a plan limit and is not —
+the history report is **`url_rank_history`**, and it works on this plan. (`domain_rank_history`
+likewise for a whole domain; `url_ranks_history` and `domain_ranks_history` do not exist.)
+Same class of mistake as `url_overview` vs `url_ranks`: a wrong type name that produces an
+error message about permissions.
+
+**But it returns the FULL series — 175 monthly rows back to 2012 — at 50 units/line, so
+8,750 units for ONE url.** That is 175x a current-traffic call and would exhaust a 50k balance
+in six urls. No range parameter was found (`display_date` is the one that 403s, `display_limit`
+does not apply); worth asking support whether the range can be bounded, because at 12 points
+it would be 600 units/url and viable for a few hundred recipes. Until then **`url_rank_history`
+is a shortlist-only call.**
 
 Four gotchas, all paid for once already:
 
