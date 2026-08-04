@@ -236,7 +236,8 @@ matrix... a poor man's vector."*
 * **Position** = (capture percentile, advocacy percentile) — the plane
 * **Magnitude** = `hypot(x,y)/sqrt(2)` — overall strength, 0..1
 * **Angle** = `degrees(atan2(y,x))` — 0 deg pure appetite, 90 deg pure advocacy
-* **Momentum** = an **arrow on the point** — where it is heading
+* **Momentum** = an **arrow on the point** — where it is heading. Must be `Or`-based: a
+  TRAFFIC arrow points the wrong way (see The Experiment)
 * **Artifact soundness** = a **floor, not a rank term** — gates eligibility, adds no points
 
 Position says what it is; the arrow says where it is going.
@@ -273,7 +274,7 @@ Two constraints if built:
 |---|---|---|
 | **Star** | high magnitude, ~45 deg, flat arrow | LIBRARY — the medal pick |
 | **Evergreen** | high magnitude, flat arrow, years of it | LIBRARY — "a decade-long favourite" |
-| **Rising** | 3 months `Or` growth + poised pool + `Ot`/`Or` lifting | RISING — "trending now" |
+| **Rising** | positive `Or` slope x R2 + poised pool + `Ot`/`Or` lifting | RISING — "trending now". NOT a traffic arrow: traffic momentum is INVERTED (-0.23), see The Experiment |
 | **Hidden gem** | high angle (advocacy >> capture) | LIBRARY — editor's find |
 | **Commodity** | high traffic, LOW capture, low angle | utility — do not medal it |
 | **Fading** | negative arrow, past advocacy | re-review or retire |
@@ -632,6 +633,77 @@ Rank new arrivals by breadth; only the broad ones earn a watchlist slot.
 **And this decouples the clocks.** Discovery runs at whatever the harvest schedule is; the
 watchlist runs monthly; the expensive pipeline (fetch, Moz, extract) stays on its slow clock.
 `harvest_ttl_days=90` on 295/311 domains stops being a blocker.
+
+## THE EXPERIMENT — does keyword growth actually predict traffic growth?
+
+Run 2026-08-04 on seriouseats.com, three Organic Pages exports (Jun 21 / Jul 21 / Aug 03),
+**n = 5,064** pages present in all three. Zero API units — the workbooks were already on disk.
+Re-runnable: `python -m scripts.keyword_lead_experiment <A> <B> <C>`.
+
+**Design, and the trap it avoids.** Taking known breakouts and confirming keywords rose first
+conditions on the outcome — porridge will always look convincing. Here the cohort is EVERY
+overlapping page, so the cases where keywords rose and NOTHING happened are counted too. And
+`Or` must beat a null, because traffic's own past already predicts its future:
+
+    predictor  dOr (Jun->Jul)  ->  outcome  dOt (Jul->Aug)
+    null       dOt (Jun->Jul)  ->  same outcome
+
+### Result
+
+```
+corr( dOr , outcome )           = +0.1162      the hypothesis
+corr( dOt , outcome )           = -0.2330      the null
+difference                      = +0.3492
+PARTIAL corr( dOr | dOt )       = +0.1865      Or's unique contribution
+```
+
+Monotonic across all ten deciles — sorting by keyword change DOES sort by subsequent traffic:
+
+```
+decile by dOr     n      mean outcome    % grew
+   1 (worst)     506        -0.0646        29%
+   ...
+  10 (best)      507        +0.0647        51%
+
+dOr > +0.10 (~+26%/mo):  n=693   52% grew  vs  43% baseline
+```
+
+### What it supports, precisely
+
+**The hypothesis survives in a WEAK form.** Ten deciles ordering correctly on n=5,064 is not
+noise, but the partial correlation of +0.187 means `Or` explains only **~3-4% of the variance**
+in next-period traffic. 52% vs 43% is a 1.2x lift, not a transformation. The
+"keywords-lead-by-2-3-months" framing earlier in this document came from porridge — ONE vivid
+case — and at population scale the effect is far softer than that story implies.
+
+So `Or` slope is a legitimate **ranking signal for a watchlist** — ordering candidates you will
+re-check monthly anyway — and **NOT a confident breakout detector**. Do not promote on it alone.
+It earns a page a cheap monthly refresh; the poised-pool and conversion checks do the real work.
+
+### The most valuable finding is the NULL
+
+**Traffic momentum is INVERTED: `corr(dOt, outcome) = -0.2330`.** A page that gained traffic
+last month tends to LOSE it next month — mean reversion, not momentum. Ranking risers by
+traffic change would perform **WORSE THAN RANDOM**.
+
+That corrects two things written earlier in this document:
+
+* the archetype **"Rising = steep positive arrow"** (a traffic arrow) is BACKWARDS;
+* treating the export's **`Traffic Change` as a positive flag** is wrong — it is a flag to
+  investigate at most, and as a ranking term it is actively harmful.
+
+It also explains why `Or` gets STRONGER as a partial (+0.187) than raw (+0.116): once traffic's
+reversion is accounted for, the keyword signal is cleaner.
+
+### Bounds on all of it
+
+One publisher (seriouseats). A **13-day outcome window against a 30-day predictor**, which
+attenuates the measured effect — the 21 August export gives a clean month-on-month version, for
+free. And a corpus of pages already ranking for something, so this says nothing about pages with
+no footprint at all.
+
+**This is now a standing check, not a one-off**: every future export pair adds a month, and the
+script re-runs on any three files.
 
 ## Tiers — how it degrades
 
