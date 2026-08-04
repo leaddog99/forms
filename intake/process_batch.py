@@ -142,6 +142,12 @@ def pre_scored_from_entry(entry: dict) -> dict:
         out["domainAuthority"] = float(da)
     if ou is not None:
         out["ouScore"] = float(ou)
+    # Provenance for the PA above: Moz's http_code at the moment it was scored.
+    # >0 measured, 0 placeholder (never written by the current gate), absent =
+    # scored before 2026-08-04 and therefore unverified. See moz_http_status().
+    code = _val(entry.get("moz_http_code"))
+    if code is not None:
+        out["mozHttpCode"] = int(code)
     # power (DA+PA) + the two in-cohort percentile ranks rank_by_blend stamped
     # on the entry (0..1) — carried as 0-100 so the authority commentary can
     # place the page on the exceptionality×clout 2x2, not just read raw OU.

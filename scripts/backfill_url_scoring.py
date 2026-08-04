@@ -106,6 +106,9 @@ def update_recipe_scoring(d: dict, scores: dict) -> tuple[float | None, float | 
     s["pageAuthority"] = scores["page_authority"]
     s["domainAuthority"] = scores["domain_authority"]
     s["ouScore"] = scores["ou_score"]
+    # Provenance for the PA just written (docs/recipe-scoring-design §11b).
+    if scores.get("moz_http_code") is not None:
+        s["mozHttpCode"] = scores["moz_http_code"]
     if scores.get("raw_title") and not s.get("rawTitle"):
         s["rawTitle"] = scores["raw_title"]
     d["_scoring"] = s

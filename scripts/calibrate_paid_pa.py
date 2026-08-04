@@ -55,6 +55,17 @@ def corpus_da_pa(conn):
             except Exception:
                 continue
             sc = d.get("_scoring") or {}
+            # EXCLUDE FABRICATED AUTHORITY. mozHttpCode == 0 means Moz has no
+            # data for the url, so pageAuthority is the domain-derived
+            # placeholder, not a measurement (see docs/recipe-scoring-design
+            # §11b). These rows are concentrated in exactly the blocked
+            # publishers this calibration is FOR — nytimes, bostonglobe,
+            # washingtonpost — so leaving them in drags the shift-scale remap
+            # toward the placeholder and calibrates the paywall tax on numbers
+            # that never measured one. Rows scored before 2026-08-04 have no
+            # code at all; those stay in, unverified, until the backfill runs.
+            if sc.get("mozHttpCode") == 0:
+                continue
             da, pa = sc.get("domainAuthority"), sc.get("pageAuthority")
             u = (d.get("_source") or {}).get("originalUrl") or ""
             h = _host(u)

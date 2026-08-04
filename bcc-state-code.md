@@ -2639,3 +2639,88 @@ in plain view.
   (`_source.type=article`, poor_quality_rate 0.41). A publisher Google cannot parse as recipes
   reads as "not rising" for reasons unrelated to quality. Systematic blind spot, unquantified.
 - Unchanged from earlier: the strip decision, the five archive-47 rows, `user_api_keys`, cadence.
+
+## Session log — 2026-08-04 (close) — the strip decision: measured, then declined
+
+The parked item from 2026-07-31 resolved, and it resolved **against the action I had
+recommended**. Two cheap measurements were enough.
+
+### The number I reported was 3x too high
+
+The claim was *"~15% of the corpus carries a fabricated PA"* — a domain-derived placeholder
+returned for URLs Moz has never crawled, stored as if measured. Re-running the same seeded 60-row
+sample through the CORRECTED gate:
+
+```
+scores fine               : 57  (95%)
+no Moz data -> would strip:  3  ( 5%)
+2026-07-31, same seed, BROKEN allow-list gate: 9/60 (15%)
+```
+
+The 15% was measured **through my own regression** — the `http_code in (200,301,302,402)`
+allow-list that also made a pinchofyum harvest bill 496 rows and score none. Two-thirds of
+"fabricated" was the measuring instrument. True scope ~210 rows of 4,179.
+
+### Why stripping was wrong, structurally
+
+The placeholder is derived from DA, and OU measures PA *against* DA — so a fabricated row lands
+near the **OU = 0 line** by construction:
+
+```
+1470  bostonglobe.com      pa 41.0  da 91.0  ou  -5.041   (par = 46.0)
+1481  cooking.nytimes.com  pa 49.0  da 95.0  ou  +1.749   (par = 47.3)
+                                  corpus median OU 11.05 · top-200 floor 18.04
+```
+
+Checked **exhaustively, not sampled**: `0 of the top 200 by OU` are fabricated. A fabricated row is
+~18 points short of the door and cannot climb. Stripping would have moved rows from "ranked last"
+to "not ranked" and changed nothing anyone sees.
+
+**The limit, stated because it cuts the other way:** the top-200 test selects BY stored OU, so it
+proves nothing fabricated is wrongly IN the top — it cannot prove none is wrongly OUT. And that
+direction is real: Boston Globe at OU −5 against a median of 11. These hosts are uncrawled because
+they **block crawlers**, not because nobody links to them, so *"if it can't crawl them they
+probably aren't popular enough to matter"* does not hold for this subset. They are the same gated
+publishers the paid-PA calibration exists to rescue. Stripping deletes the population that work
+needs and makes the exclusion permanent.
+
+### What shipped instead — provenance, not deletion
+
+The defect was never that the value exists; it is that it is **indistinguishable from a measured
+one**. So `_scoring.mozHttpCode`, three states: `NULL` unverified (everything pre-fix) · `0`
+verified fabricated · `>0` verified measured.
+
+- `_moz_lookup` returns `(scores, http_code)`; two wrappers sit on it — `score_url_via_moz` (gated,
+  unchanged contract) and `moz_http_status` (the code, no score). **Kept separate deliberately** so
+  no caller can opt back into scoring an uncrawled URL, which is the original bug.
+- Generated column `moz_http_code` on both recipe tables (+ `metabase_url` column), so it is
+  SQL-selectable like ou_score/power.
+- Excluded from `_sanitize_scoring`'s zero-strip list — it is the one `_scoring` field where **0 is
+  a real measurement**, and stripping it would delete the finding it exists to record.
+- `scripts/verify_pa_provenance.py` — stamps existing rows, never touches the PA. Resumable (NULL is
+  the worklist; a no-answer row stays NULL). **Ran on bostonglobe's 32: 30 measured, 2 fabricated
+  (6.2%) — ids 1470 and 3277, exactly the two the random sample had flagged.** Corpus-wide cost
+  corrected UP to **~$10**: a fabricated url costs ~5 Moz rows, not 1, because the learned
+  single-variant probe finds nothing and self-heals by re-expanding to all four. It is also ~2 round
+  trips each, so the run is slow — 32 urls took 7 minutes.
+- **One of those 30 came back `http_code 1`.** Not in any documented set, real data attached. Third
+  observed non-standard code after pinchofyum's `5`, and independent confirmation that `bool(code)`
+  is the right gate and the `(200,301,302,402)` allow-list was discarding measurements.
+- `calibrate_paid_pa.corpus_da_pa` now skips `mozHttpCode == 0`. The doc asserted consumers must
+  exclude it, so the one consumer that exists was changed to actually do it.
+
+Docs: `recipe-scoring-design.md` §11b (new) + two more rows in the Disproved table, including my
+own 15%.
+
+### The pattern, again
+
+Same shape as the five failures logged above: a number asserted from a broken instrument and
+carried forward as fact for four days, plus a remedy recommended before its blast radius was
+measured. The $0.79 of Moz rows that settled it was available the moment the question was asked.
+
+### Open
+
+- **Provenance backfill** — ~4,150 rows still NULL. Non-destructive, no rush; nothing visible
+  depends on it.
+- **The five archive-47 rows** (1343, 2171, 3656, 3802, 5025) — still fabricated, now scoreable.
+- Unchanged: snapshot capture, cadence, rerun the experiment on a second publisher, `user_api_keys`.

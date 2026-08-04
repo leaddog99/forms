@@ -231,19 +231,27 @@ def _moz_url_metrics(candidates: list[str], auth: str) -> Optional[list]:
         return None
 
 
-def score_url_via_moz(url: str) -> Optional[dict]:
-    """Call the Moz URL Metrics API for a single URL. Returns None on any
-    failure (missing creds, network, non-200). Never raises.
+def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
+    """The shared Moz probe. Returns (scores, http_code).
 
-    Internally queries both www and non-www variants in one batched call
-    and returns the score for the variant Moz has actually crawled
-    (http_code != 0). Falls back to the higher PA if neither is crawled.
+    `scores` is None whenever there is no score to hand out — including the
+    case where Moz answered but has no data for the URL. `http_code` is what
+    Moz reported for the chosen variant, and is meaningful EVEN WHEN scores is
+    None: 0 means "never crawled", which is the whole point of the provenance
+    flag. It is None only when we never got an answer at all (no creds,
+    network, non-200 from the API).
+
+    Two public wrappers sit on this: `score_url_via_moz` (the score, gated) and
+    `moz_http_status` (the code, for provenance/audit). They are kept separate
+    on purpose — a single function that returned a dict for an uncrawled URL is
+    exactly the bug documented at the gate below, and no caller should be able
+    to opt back into it.
     """
     if not url:
-        return None
+        return None, None
     if not MOZ_ACCESS_ID or not MOZ_SECRET_KEY:
         logger.info("Moz creds missing — skipping scoring for %s", url)
-        return None
+        return None, None
 
     auth = base64.b64encode(f"{MOZ_ACCESS_ID}:{MOZ_SECRET_KEY}".encode()).decode()
 
@@ -258,7 +266,7 @@ def score_url_via_moz(url: str) -> Optional[dict]:
 
     results = _moz_url_metrics(candidates, auth)
     if results is None:
-        return None
+        return None, None
 
     def _pick(cands, res):
         """Pair each result with the target we sent (Moz preserves order), then pick
@@ -299,12 +307,12 @@ def score_url_via_moz(url: str) -> Optional[dict]:
         candidates = _url_variants(url)
         results = _moz_url_metrics(candidates, auth)
         if results is None:
-            return None
+            return None, None
         chosen, chosen_url, usable = _pick(candidates, results)
         pattern = None   # treat as an unlearned call below so we (re)learn from the probe
 
     if chosen is None:
-        return None
+        return None, None
 
     # NO REAL MOZ DATA => NO SCORE. `usable` was computed above and then never
     # consulted on the way out, so a URL Moz has never crawled (http_code 0) still
@@ -321,11 +329,12 @@ def score_url_via_moz(url: str) -> Optional[dict]:
     # Curator's call on dropping rather than keeping-with-absent-PA: "if it can't
     # crawl them they probably aren't popular enough to matter." The absence is
     # itself the signal.
+    code = int(chosen.get("http_code") or 0)
     if not usable:
         logger.info("Moz has no data for %s (http_code=%s) — dropping, not scoring",
-                    chosen_url or url, chosen.get("http_code"))
+                    chosen_url or url, code)
         _note_moz_uncrawled()
-        return None
+        return None, code
 
     # Learn the domain's canonical form from the chosen (highest-PA, has-data) variant,
     # but only on a FULL probe (pattern is None) so the single-variant re-query reproduces
@@ -340,7 +349,40 @@ def score_url_via_moz(url: str) -> Optional[dict]:
         "domain_authority": da,
         "ou_score": _compute_ou(pa, da),
         "raw_title": chosen.get("title") or "",
-    }
+        # PROVENANCE. Stored alongside the score so a PA is self-describing:
+        # a reader can tell a measured value from a placeholder without
+        # re-querying Moz. See moz_http_status() for the three states.
+        "moz_http_code": code,
+    }, code
+
+
+def score_url_via_moz(url: str) -> Optional[dict]:
+    """Call the Moz URL Metrics API for a single URL. Returns None on any
+    failure (missing creds, network, non-200) AND whenever Moz has no data for
+    the URL. Never raises.
+
+    Internally queries both www and non-www variants in one batched call
+    and returns the score for the variant Moz has actually crawled
+    (http_code != 0). Falls back to the higher PA if neither is crawled.
+    """
+    return _moz_lookup(url)[0]
+
+
+def moz_http_status(url: str) -> Optional[int]:
+    """Moz's http_code for a URL, WITHOUT producing a score. The provenance probe.
+
+    Three states, and they are the vocabulary the `moz_http_code` column speaks:
+
+        None  we never got an answer (no creds / network / API error) — unknown
+        0     Moz answered and has NO data: any PA on this row is the
+              domain-derived PLACEHOLDER, i.e. fabricated
+        >0    Moz has real data; the PA was measured
+
+    Costs the same Moz rows as scoring, so use it deliberately. It exists for
+    auditing rows scored before 2026-08-04, when the gate below was missing and
+    placeholders were written as if measured.
+    """
+    return _moz_lookup(url)[1]
 
 
 def ensure_metabase_url_table(conn: sqlite3.Connection) -> None:
@@ -354,11 +396,18 @@ def ensure_metabase_url_table(conn: sqlite3.Connection) -> None:
             domain_authority REAL,
             ou_score REAL,
             moz_last_scored TEXT,
+            moz_http_code INTEGER,
             first_seen TEXT NOT NULL,
             last_accessed TEXT NOT NULL
         )
         """
     )
+    # Provenance for the PA above. NULL on every row written before 2026-08-04,
+    # which is exactly the "unverified" worklist — see moz_http_status().
+    try:
+        conn.execute("ALTER TABLE metabase_url ADD COLUMN moz_http_code INTEGER")
+    except sqlite3.OperationalError:
+        pass  # already present
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict:
@@ -410,7 +459,8 @@ def _apply_moz_scores(conn: sqlite3.Connection, url: str, scores: dict, now_iso:
             domain_authority = ?,
             ou_score = ?,
             raw_title = CASE WHEN ? <> '' THEN ? ELSE raw_title END,
-            moz_last_scored = ?
+            moz_last_scored = ?,
+            moz_http_code = ?
         WHERE url = ?
         """,
         (
@@ -419,6 +469,7 @@ def _apply_moz_scores(conn: sqlite3.Connection, url: str, scores: dict, now_iso:
             scores["ou_score"],
             scores["raw_title"], scores["raw_title"],
             now_iso,
+            scores.get("moz_http_code"),
             url,
         ),
     )

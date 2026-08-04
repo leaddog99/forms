@@ -368,6 +368,80 @@ Answer-engine visibility is a distribution channel nothing in the current scorin
 
 ---
 
+## 11b. PA provenance — which authority scores are real — MEASURED 2026-08-04
+
+Until 2026-08-04 `score_url_via_moz` computed `usable` — whether Moz held data for a URL — and
+never consulted it on the way out. A URL Moz had never crawled returned the **domain-derived
+placeholder PA** it ships with, and that was stored as if measured. Fixed; the fix stops new
+fabrications only.
+
+**Scope, measured, not estimated.** A 60-row sample re-scored through the corrected gate:
+
+| | fabricated PA |
+|---|---|
+| random sample of the ranked corpus (n=60) | **5%** (3) |
+| **top 200 by OU — exhaustive, not sampled** | **0%** (0) |
+
+The earlier **15%** figure was measured through the *broken allow-list* version of the gate
+(`http_code in (200,301,302,402)`), which rejected real Moz answers — the same defect that made a
+pinchofyum harvest bill 496 rows and score none. Two-thirds of "fabricated" was that regression.
+Extrapolated true scope: **~210 rows of 4,179**.
+
+**Why the top is clean, structurally.** The placeholder is derived from DA, and OU measures PA
+*against* DA — so a fabricated row lands near the **OU = 0 line** by construction:
+
+```
+id     host                  stored PA    DA   stored OU   PA for OU 0
+1470   bostonglobe.com            41.0  91.0      -5.041          46.0
+1481   cooking.nytimes.com        49.0  95.0      +1.749          47.3
+                                       corpus median OU = 11.05
+                                       top-200 floor    = 18.04
+```
+
+A fabricated row is ~18 OU points short of the top 200. It cannot climb; it parks at par.
+
+**DECISION: do not strip.** The case for clearing these values was ranking contamination, and
+there is none — they already sort to the bottom, which is where clearing would also put them.
+
+Two limits stated honestly. The top-200 test selected *by stored OU*, so it proves no fabricated
+row is wrongly **in** the top; it cannot prove none is wrongly **out**. And the wrongly-out
+direction is real and visible above — Boston Globe at OU −5 against a median of 11. These hosts
+are uncrawled because they **block crawlers**, not because nobody links to them, so the curator's
+earlier rule ("if it can't crawl them they probably aren't popular enough to matter") does not
+hold for this subset. They are the same gated-publisher population **§paid-PA calibration** exists
+to rescue. Stripping would delete the rows that work needs and make the exclusion permanent.
+
+**The defect is not that the value exists — it is that it is indistinguishable from a measured
+one.** So: provenance, not deletion. `_scoring.mozHttpCode`, exposed as a generated column
+`moz_http_code` on both recipe tables and a column on `metabase_url`:
+
+| value | meaning |
+|---|---|
+| `NULL` | scored before the fix — provenance **unverified** |
+| `0` | verified: Moz has no data, the PA **is** the placeholder |
+| `> 0` | verified measured |
+
+`moz_http_status(url)` probes the code without producing a score (kept separate from
+`score_url_via_moz` so no caller can opt back into scoring an uncrawled URL). It is the one
+`_scoring` field where **0 is a real measurement**, so it is deliberately excluded from
+`_sanitize_scoring`'s zero-strip list.
+
+`scripts/verify_pa_provenance.py` stamps existing rows — never touches the PA, resumable (`NULL` is
+the worklist, no-answer rows stay `NULL`). **~$10 corpus-wide**: a measured URL costs 1 Moz row but
+a fabricated one costs ~5, because the learned single-variant probe finds nothing and self-heals by
+re-expanding to all four variants. Two round trips each makes it slow — budget minutes per hundred.
+
+First run, bostonglobe's 32 rows: **30 measured, 2 fabricated (6.2%)** — ids 1470 and 3277, the same
+two the random sample flagged. One of the 30 returned **`http_code 1`**, a third non-standard-but-real
+code after pinchofyum's `5`; independent confirmation that `bool(code)` is the correct gate and the
+`(200,301,302,402)` allow-list was discarding real measurements.
+
+**Consumers must now exclude `moz_http_code = 0` from any fit over PA** — the paid-PA calibration
+first, since fabricated rows are concentrated in exactly its population and would drag the
+shift-scale remap toward the placeholder.
+
+---
+
 ## 12. Disproved — do not re-argue these
 
 | claim | status |
@@ -384,6 +458,8 @@ Answer-engine visibility is a distribution channel nothing in the current scorin
 | the coverage constraint is structural | **FALSE.** It is a budget line — `url_ranks` serves any url. |
 | momentum = `traffic(1mo) / (traffic(12mo)/12)` | **WRONG SHAPE.** Compares different months; for a seasonal dish it measures the calendar. Use like-month, and only for LIBRARY — a Rising page has never been through a cycle. |
 | `url_organic.Tr` as "% of the page's traffic" | **UNVERIFIED and unusable.** Reconciles with neither page nor domain. |
+| "15% of the corpus carries a fabricated PA" | **OVERSTATED ~3x.** Measured through the broken allow-list gate. Corrected: **5%** of the corpus, **0%** of the top 200 (§11b). |
+| fabricated PAs are contaminating the ranking | **FALSE.** The placeholder parks a row at OU ≈ 0, ~18 points below the top-200 floor. It cannot reach anything visible. |
 
 ---
 
@@ -399,6 +475,9 @@ Answer-engine visibility is a distribution channel nothing in the current scorin
   (`_source.type=article`, poor_quality_rate 0.41, `trust_extraction` override needed). A
   publisher Google cannot parse as recipes reads as "not rising" for reasons unrelated to
   quality. Systematic blind spot, unquantified.
+* **Provenance backfill** — `verify_pa_provenance.py` is written and the flag is live, but only
+  bostonglobe is stamped. ~4,150 rows still `NULL`. ~$8.70, non-destructive, resumable; no rush,
+  since nothing visible depends on it (§11b).
 * **Artifact scoring is the only cold-start signal.** The cook-rework validators already grade
   soundness and the result is discarded.
 * **This still ranks provenance and demand, never the dish.** An AI cannot know what tastes

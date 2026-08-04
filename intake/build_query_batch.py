@@ -928,6 +928,9 @@ def _moz_score(entries: list[dict]) -> tuple[list[dict], list[dict]]:
         e["pa"] = scores.get("page_authority")
         e["da"] = scores.get("domain_authority")
         e["ou"] = scores.get("ou_score")
+        # Provenance travels WITH the pa it describes, so the row that lands in
+        # the DB says whether its PA was measured or a placeholder.
+        e["moz_http_code"] = scores.get("moz_http_code")
         # Moz often has a better page title than SerpAPI; prefer Moz's
         # when present, otherwise keep what SerpAPI gave us.
         if scores.get("raw_title"):

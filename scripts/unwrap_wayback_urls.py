@@ -140,6 +140,8 @@ def main() -> int:
             sc["pageAuthority"] = s["page_authority"]
             sc["domainAuthority"] = s["domain_authority"]
             sc["ouScore"] = s["ou_score"]
+            if s.get("moz_http_code") is not None:
+                sc["mozHttpCode"] = s["moz_http_code"]   # provenance, §11b
             d["_scoring"] = sc
             conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
                          (json.dumps(d, indent=2), rid))

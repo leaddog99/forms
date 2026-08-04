@@ -665,6 +665,9 @@ def _attach_moz_scoring(recipe, url_normalized):
                 scoring["rootDomain"] = meta["root_domain"]
             if meta.get("raw_title") and not scoring.get("rawTitle"):
                 scoring["rawTitle"] = meta["raw_title"]
+            # Provenance rides along with the PA it describes (see moz_http_status).
+            if meta.get("moz_http_code") is not None:
+                scoring["mozHttpCode"] = meta["moz_http_code"]
             recipe["_scoring"] = scoring
     except Exception as e:
         print(f"[WARN] Moz scoring at extract failed for {url_normalized!r}: {e}")
@@ -891,6 +894,19 @@ def init_db():
                     ("stored_ou_pct", "REAL", "json_extract(data,'$._scoring.ouPercentile')"),
                     ("stored_power_pct", "REAL", "json_extract(data,'$._scoring.powerPercentile')"),
                     ("stored_power", "REAL", "json_extract(data,'$._scoring.power')"),
+                    # PA PROVENANCE — the flag that makes a fabricated authority
+                    # score selectable in SQL instead of invisible. Three states:
+                    #   NULL  scored before 2026-08-04, when the Moz gate was
+                    #         missing — provenance UNKNOWN, needs re-verifying
+                    #   0     verified: Moz has no data, so page_authority on
+                    #         this row is the domain-derived PLACEHOLDER
+                    #   >0    verified measured
+                    # The placeholder parks a row near the OU=0 line (measured
+                    # 2026-08-04: 0 of the top 200 by OU are fabricated, which is
+                    # why they were left in place rather than stripped), but it
+                    # must be excluded from any fit over PA — notably the paid-PA
+                    # calibration, whose population IS these blocked publishers.
+                    ("moz_http_code", "INTEGER", "json_extract(data,'$._scoring.mozHttpCode')"),
                 ):
                     try:
                         conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_gc} {_type} "
@@ -7998,6 +8014,10 @@ _MOZ_SCORING_KEYS = ("pageAuthority", "domainAuthority", "ouScore", "power",
                      "ouPercentile", "powerPercentile", "fieldAvgPower",
                      "fieldMaxPower", "fieldMinPower", "fieldN",
                      "dishCompetitivenessPct")
+# DELIBERATELY NOT IN THAT LIST: `mozHttpCode`. It is the one _scoring field
+# where 0 is a REAL measurement — "Moz answered and has no data for this URL",
+# i.e. any PA on the row is a placeholder. Stripping it would delete exactly the
+# finding it exists to record. See input/pipeline/url_scoring.moz_http_status.
 
 
 def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
@@ -9619,7 +9639,11 @@ def extract_recipe_from_url(
     # AFTER the cache write so they don't pollute the shared cache row.
     if pre_scored:
         scoring = recipe.get("_scoring") or {}
-        for k in ("pageAuthority", "domainAuthority", "ouScore", "rootDomain", "rawTitle"):
+        # mozHttpCode travels with the pageAuthority it describes — an upstream
+        # PA arriving without its provenance would read as verified-measured.
+        # 0 is a legal value here and passes the guard below (0 != "").
+        for k in ("pageAuthority", "domainAuthority", "ouScore", "rootDomain",
+                  "rawTitle", "mozHttpCode"):
             v = pre_scored.get(k)
             if v is not None and v != "":
                 scoring[k] = v
