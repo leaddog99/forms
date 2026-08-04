@@ -534,6 +534,105 @@ That case stays tier 3: artifact soundness only, no demand signal at any price.
 gives three points a year, so the three-month trigger would take nine months to fire. A monthly
 clock is probably only worth it for the ~30 publishers worth acting on, not all 311.
 
+## THE RISING METRIC — log-slope with R2 (replaces the consecutive-months rule)
+
+Curator: *"why don't we compute slope and filter on that."* Better than the cliff-edge rule it
+replaces, and it tells you when to trust itself.
+
+    rising_score = Or_log_slope x R2          (confidence-weighted growth)
+
+      slope = least-squares slope of log10(Or+1) per month over the window
+      R2    = fit quality of that line
+      keep    slope > 0 AND R2 > 0.7
+      prune   slope < 0 over the last 3 points
+      rank    BY rising_score - continuous, not a threshold
+
+Measured on the two series already pulled:
+
+```
+page                          window   Or slope    R2      Ot slope   R2
+porridge  (breakout)          6mo        +0.083  0.98       +0.167  0.37
+porridge  (breakout)          12mo       +0.124  0.94       +0.376  0.90
+shortbread (mature/seasonal)  6mo        -0.170  0.91       -0.038  0.26
+shortbread (mature/seasonal)  12mo       -0.041  0.30       -0.019  0.35
+```
+
+(log10 slope per month: +0.10 ~ +26%/mo, +0.30 ~ x2/mo. Porridge 6mo = ~+21%/mo.)
+
+**Three things this buys.**
+
+1. **Clean separation.** Porridge `+0.083` against shortbread `-0.170` — opposite signs, no
+   threshold fiddling. `rising_score` 0.081 vs -0.155.
+2. **R2 settles the `Or`-vs-`Ot` question QUANTITATIVELY.** Porridge's TRAFFIC slope over 6
+   months is `+0.167` but **R2 = 0.37** — that is the 1,383 -> 383 spike-and-dip, and it
+   should not be trusted. Its KEYWORD slope is `+0.083` at **R2 = 0.98**. Same page, same
+   window: one signal is noise, the other is a straight line. That is why `Or` leads.
+3. **Every cliff-edge rule goes away.** No "three consecutive months", no "stalls twice".
+   Porridge's March traffic dip does not dent a positive `Or` slope, so the prune rule is
+   simply *slope turned negative* — and the counterexample that killed the old rule (pruning
+   porridge in March, two months before it took off) cannot happen.
+
+**The seasonality caveat, and why it does not bite here.** Shortbread's 6-month `Or` slope is
+`-0.170` at R2 0.91 — a CONFIDENT downtrend that is really just July. So slope IS seasonally
+confounded **for mature pages**. But the Rising watchlist is made of pages that have never been
+through a cycle: a page born six months ago has no prior season to distort it.
+
+> **Seasonality is a LIBRARY problem, not a RISING problem.** Mature pages need the like-month
+> comparison (see Trajectory above); new pages can use raw slope.
+
+Being continuous, `rising_score` drops straight into the percentile / vector framing rather
+than sitting beside it as a separate boolean gate.
+
+## THE WATCHLIST — discovery at harvest cadence, refresh monthly
+
+Curator's design, and it removes the dependency on changing the harvest schedule:
+
+> *"screen using the current extract file, pull out the new into a new table, record the
+> stats... then monthly refresh that file using the api. Drop ones that fell, keep ones that
+> survived for another pass next month. Rinse and repeat."*
+
+| step | cadence | cost |
+|---|---|---|
+| **discover** — `Traffic == Traffic Change` in the export | harvest schedule (90-180d) | **free** |
+| **watchlist refresh** — `url_ranks` -> `Ot`, `Or` | **monthly** | **10 units/url** |
+| **prune** — slope turned negative | monthly | free |
+| **judge** — slope, R2, poised pool | batch | free (stored rows) |
+
+**`Traffic == Traffic Change` IS the "New" filter.** If this month's traffic equals this
+month's change, last month was zero. Verified on the christinascucina export: 820 rows, **26
+flagged new**, and porridge correctly NOT flagged (8,877 traffic vs 7,855 change) because it
+already had traffic. The Semrush UI's New/Lost tabs compute the same thing; the API cannot
+(`display_filter` is ignored on `domain_organic_unique` and `display_date` is 403), so the diff
+has to be ours either way — and it is free from the file already downloaded.
+
+**Costs, at 10 units per url per month:**
+
+```
+one publisher's new pages   ~26 urls        260 units/mo
+30 publishers              ~780 urls      7,800 units/mo
+300-url steady state        300 urls      3,000 units/mo
+```
+
+Self-limiting, because pruning caps the list.
+
+**Why build the series rather than buy it.** `url_rank_history` with `display_limit=12` costs
+**600 units/url** (vs 8,750 unbounded — `display_limit` DOES work on it, tested). But a page
+caught at birth needs no retroactive history: its series starts when it starts mattering, at 10
+units/month. Reserve the 600-unit backfill for a MATURE page that suddenly becomes interesting.
+
+**Within the New set, `Number of Keywords` is the screen before spending anything:**
+
+```
+earl-grey-cookies      54 keywords on  15 traffic   <- broad arrival, worth watching
+kumquat-cupcakes        2 keywords on  11 traffic   <- one lucky query
+```
+
+Rank new arrivals by breadth; only the broad ones earn a watchlist slot.
+
+**And this decouples the clocks.** Discovery runs at whatever the harvest schedule is; the
+watchlist runs monthly; the expensive pipeline (fetch, Moz, extract) stays on its slow clock.
+`harvest_ttl_days=90` on 295/311 domains stops being a blocker.
+
 ## Tiers — how it degrades
 
 Because of the coverage constraint, this is not one formula but three:
