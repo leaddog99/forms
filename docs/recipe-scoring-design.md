@@ -29,7 +29,7 @@ having found it, someone thought it worth pointing others at. Two different huma
 the gap between them is informative: heavy traffic with below-median PA means a recipe drew
 people in without moving them to recommend it.
 
-## The coverage constraint (read before designing anything)
+## The coverage constraint — it is a BUDGET, not a wall (read this first)
 
 **Traffic exists only as a by-product of a SEMrush publisher harvest.** Measured 2026-08-03:
 
@@ -40,12 +40,19 @@ master_recipes            : 4,148
 publishers with traffic   :    86 of 841  (10%)
 ```
 
-So every traffic-derived term covers **half the corpus and a tenth of publishers**, and is
-biased toward whichever publishers happened to be harvested. Traffic-derived signals
-therefore **cannot be core ranking terms** — they must be a bonus tier that degrades
-gracefully (see Tiers below).
+So every traffic-derived term covers **half the corpus and a tenth of publishers**, biased
+toward whichever publishers happened to be harvested.
 
-This is the single biggest constraint on everything else in this document.
+**BUT this is how we get traffic today, not the limit of what is available.** The Semrush
+Analytics API serves all three axes for an ARBITRARY url, on demand (see "Buying the missing
+axes" below): `url_overview` returns `Ot` (absolute organic traffic) and `Or` (organic
+keyword count) for any url at 10 units/line, with `display_date=YYYYMM15` for historical
+months at 50 units/line; `url_organic` returns that url's keywords with `Nq` (search volume)
+at 10 units/line.
+
+So the constraint is **cost and cadence, not availability** — and the cost is smaller than
+expected (full corpus current traffic is ~2% of the smallest unit package). Design the tiers
+around what is worth buying for which recipes, not around what can be known.
 
 ## Demand — search volume is the missing denominator
 
@@ -154,13 +161,62 @@ no trajectory — the artifact checks are the only thing that can speak for it.
 
 Because of the coverage constraint, this is not one formula but three:
 
-| tier | available | score |
-|---|---|---|
-| **1** — harvested publisher | volume + traffic + advocacy + trajectory | full vector, capture included (page traffic is SEMrush-only, so this tier can never exceed harvest coverage) |
-| **2** — most of the corpus | volume + advocacy | dish demand x advocacy, no capture |
-| **3** — fresh grab / new URL | neither | artifact soundness only |
+Tiers are now a **spending decision**, not a data-availability one — anything in tier 2 or 3
+can be promoted by paying for the lookup (see costs below).
 
-## Getting volume — the Google Ads API
+| tier | who is in it | score | why not just buy everything |
+|---|---|---|---|
+| **1** — ranked shortlist | traffic + volume + advocacy + full 12-month trajectory | full vector with capture and momentum | the 12-point history is the only genuinely expensive call |
+| **2** — whole corpus | traffic + volume + advocacy + 3 time points | capture and coarse momentum | ~54% of a 2M package covers this for all 4,169 |
+| **3** — fresh grab / brand-new URL | none of it yet | artifact soundness only | a 3-day-old page has no traffic, volume rank or endorsement to buy — nothing exists to measure |
+
+Tier 3 is the only one that is genuinely un-purchasable, and it is the cold-start case: a
+recipe published this week has no history at any price. That is what makes artifact scoring
+structurally necessary rather than merely nice.
+
+## Buying the missing axes — Semrush first, Google second
+
+**Semrush already sells everything this design needs, per url, and it is the vendor you
+already pay.** Checked 2026-08-03:
+
+| what | endpoint / column | cost |
+|---|---|---|
+| absolute traffic for ANY url | `url_overview` -> `Ot` | 10 units/line |
+| that url month by month | `url_overview` + `display_date=YYYYMM15` | 50 units/line |
+| that url's keywords + SEARCH VOLUME | `url_organic` -> `Ph`, `Nq` | 10 units/line |
+
+Watch two things: `url_organic` bills **per keyword line**, so 10 keywords = 100 units for one
+url; and its `Tr` column is Traffic **(%)**, not absolute — `Ot` is the absolute figure and
+`Nq` is the volume figure.
+
+### What it costs
+
+Semrush does **not publish a per-unit price** (confirmed in their KB). Units come in packages
+of 2M / 5M / 10M / 20M, the API is an add-on to the **Business** tier, and the rate comes from
+sales. Third-party sources cluster around **~$50 per million**; treat the dollars as
+indicative and the **units as exact**. Units **expire monthly and do not roll over**, which
+favours a regular scheduled pass over occasional bursts. Rate limit is 10 req/sec, so a
+full-corpus pass is ~7 minutes minimum.
+
+At 4,169 recipes:
+
+| operation | units | ~$ at $50/M |
+|---|---|---|
+| current traffic (`Ot`), whole corpus | 41,690 | $2.08 |
+| keywords + volume, top-10 kw/url, whole corpus | 416,900 | $20.85 |
+| 3 time points (1/6/12mo), whole corpus | 625,350 | $31.27 |
+| 12 monthly points, whole corpus | 2,501,400 | $125.07 |
+| **all of the above except the 12-point history** | **1,083,940** | **$54.20** |
+| 12 monthly points, 200-recipe shortlist | 120,000 | $6.00 |
+
+**Current traffic for the entire corpus is ~2% of the smallest package.** Traffic + volume +
+three time points is ~54% of one 2M package. Only the full 12-month history is expensive, and
+that is precisely the thing to run on a ranked shortlist rather than everything.
+
+Caveat that does not go away: `Ot` is Semrush's **estimate**, the same model behind the
+exports — consistent with what is already held, not more truthful.
+
+## Google Ads as the alternative denominator
 
 Checked 2026-08-03. **Yes, per-URL is possible**, in two calls:
 
@@ -206,10 +262,11 @@ still comes from SEMrush. Volume alone lifts the DEMAND axis to ~100% coverage, 
 cannot follow it: capture needs both, so it stays tier-1 at ~53% no matter what Google
 provides.
 
-**Recommendation:** apply for Basic Access — the URL-seed call is well matched to this
-corpus, and even bucketed volume fixes the cross-dish comparison that traffic alone cannot.
-Keep capture tier-1-only and do not let it become load-bearing until the precision level is
-known.
+**Recommendation: prefer Semrush.** Google would add a second vendor, a developer-token
+application and an ad-spend requirement to obtain a denominator Semrush already sells through
+an account that exists. Google is worth revisiting only if Semrush unit costs prove
+prohibitive at the cadence wanted, or if a Google-native volume figure is wanted as a
+cross-check on Semrush's estimates.
 
 Sources:
 [Keyword Planning overview](https://developers.google.com/google-ads/api/docs/keyword-planning/overview) ·
