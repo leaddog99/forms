@@ -2503,3 +2503,139 @@ it. My throwaway scripts did not.
 - **Snapshot capture** — the free change that starts the Rising clock. Not built.
 - **Cadence** — `harvest_ttl_days=90` on 295/311 domains; Rising needs monthly.
 - **`/staged-latest` and the zeros fix are live**; nothing pending a restart.
+
+## Session log — 2026-08-04 (later) — the experiment: keywords do lead traffic, weakly · traffic momentum is INVERTED · and four of my claims died
+
+Continuation of the scoring thread. Three commits, but the content is mostly **subtraction** —
+the day's work was testing things I had asserted, and most of them failed.
+
+### THE EXPERIMENT (8dd78ce, `scripts/keyword_lead_experiment.py`)
+
+Curator: *"let's do the experiment... how do you propose to do it."* The proposal that mattered
+was theirs: *"why don't I just run a seriouseats extract now"* — I had costed a 30-page
+`url_rank_history` buy at 18,000 units when a **free workbook download** gave 5,064 pages. Then:
+*"I don't actually need the extract, I just need the semrush file."* Right — no harvest, no
+fetches, no Moz rows.
+
+Three Organic Pages exports (Jun 21 / Jul 21 / Aug 03), n=5,064 pages present in all three,
+**zero API units**. Design avoids the obvious trap: taking known breakouts and confirming
+keywords rose first conditions on the outcome, and porridge will always look convincing. Cohort
+is EVERY overlapping page, so the cases where keywords rose and nothing happened are counted.
+And `Or` must beat a null, since traffic's own past predicts its future.
+
+```
+corr( dOr Jun->Jul , dOt Jul->Aug )  = +0.1162     the hypothesis
+corr( dOt Jun->Jul , dOt Jul->Aug )  = -0.2330     the null
+PARTIAL corr( dOr | dOt )            = +0.1865     unique contribution
+deciles by dOr: worst 29% grew -> best 51% grew    (monotonic, all ten)
+dOr > +0.10:    52% grew vs 43% baseline
+```
+
+**The hypothesis survives WEAKLY.** Ten monotonic deciles on n=5,064 is not noise, but `Or`
+explains only ~3-4% of variance and 52-vs-43 is a 1.2x lift. My "keywords lead traffic by 2-3
+months" framing came from porridge — ONE vivid case — and at population scale it is far softer.
+So `Or` slope is a **ranking signal for a watchlist**, never a confident breakout detector.
+
+> **The most valuable result is the NULL: traffic momentum is INVERTED (-0.233).** A page that
+> gained traffic last month tends to LOSE it next month. **Ranking risers by traffic change
+> performs WORSE THAN RANDOM** — which falsified two things I had already written into the
+> design doc: the "Rising = steep positive arrow" archetype, and using the export's
+> `Traffic Change` as a positive flag.
+
+Standing check now, not a one-off: every future export pair adds a month, and the script runs on
+any three files.
+
+### The mechanism I explained was wrong (in 4f5f4da)
+
+Curator: *"how exactly does google add new keywords to a url... I don't understand."* I explained
+it as pages climbing past rank 100 into Semrush's counted set. They asked me to verify it. It is
+false:
+
+```
+porridge's 224 keywords:  pos 1-3: 25   4-10: 84   11-20: 36   21-75: ~30   76+: 0
+```
+
+**Nothing beyond position 75.** Keywords ARRIVE already ranking decently — mostly 4-20 — not at
+the bottom of a ladder they climb. Google widens the query set it treats the page as a good
+answer for and places it reasonably on each. Semantic matching, not rank creep.
+
+Two process failures on the way, both mine. The first pull sorted ASCENDING with a limit below
+the keyword count, truncating away the exact region under test — **1,500 units for an unusable
+answer**. And I presented a traffic-attribution table that the curator immediately spotted did
+not sum to 100%: I had labelled `url_organic`'s `Tr` column "% of the page's traffic" **without
+checking what it denominates**. Tested: a 12-keyword page returns 7 rows summing to 10.05 with
+`Traffic(%)`=0.07 and page traffic 149 — reconciles with neither page nor domain. **`Tr` is now
+documented as unusable.**
+
+### The Rising metric and the watchlist (e452247)
+
+Both curator designs, both better than what they replaced.
+
+**`rising_score = Or_log_slope x R2`** — *"why don't we compute slope and filter on that."* Kills
+every cliff-edge rule. Porridge 6mo `+0.083 R2 0.98` vs shortbread `-0.170 R2 0.91`. R2 settles
+the `Or`-vs-`Ot` question quantitatively: porridge's TRAFFIC slope is `+0.167` at **R2 0.37**
+(the 1,383->383 spike) while its KEYWORD slope is `+0.083` at **R2 0.98** — same page, same
+window, one is noise and the other a straight line. And it dissolves the counterexample that
+killed the old prune rule: a traffic-fell-drop-it rule kills porridge in March, two months before
+it takes off; a negative-slope rule cannot, because `Or` never fell.
+
+Seasonality scoped honestly: shortbread's `-0.170` at R2 0.91 is a CONFIDENT downtrend that is
+really just July, so slope is confounded **for mature pages**. A Rising page has never been
+through a cycle. **Seasonality is a LIBRARY problem, not a RISING problem.**
+
+**The watchlist** — *"screen using the current extract file, pull out the new into a new table...
+then monthly refresh that file using the api. Drop ones that fell, keep ones that survived."*
+`Traffic == Traffic Change` IS the "New" filter (verified: 26 of 820 rows on christinascucina,
+porridge correctly excluded because it already had traffic). Then `url_ranks` at **10 units/url**
+monthly — 260 for one publisher's new pages, 3,000 for a 300-url steady state, self-limiting
+because pruning caps the list. Build the series rather than buy it: `url_rank_history` with
+`display_limit=12` is 600 units/url, reserved for backfilling a MATURE page. **This decouples the
+clocks**, so `harvest_ttl_days=90` on 295/311 domains stopped being the blocker it looked like.
+
+### Semrush API, mapped properly
+
+`url_ranks` (Ot/Or, any url, 10/line) · `url_organic` (keywords + Nq, 10/line) ·
+**`url_rank_history`** (monthly series, 50/line) · `domain_organic_unique` (a domain's whole page
+list — 807 rows for christinascucina, matching the export exactly) · `domain_rank_history`. No
+"New" filter and no multi-domain call.
+
+Three name traps, each paid for once: the type is `url_ranks` not `url_overview` (the docs page
+is TITLED "URL Overview"); history is `url_rank_history` not `url_ranks`+`display_date` — **the
+403 "History reports are not allowed" was a WRONG TYPE NAME producing a permissions error**, and
+I recorded it as a plan limitation in two commits; and `url_rank_history` returns 175 months
+unless `display_limit` is set, which is 8,750 units for one url. Also `url_ranks` is
+variant-sensitive — our slash-stripped `url_normalized` returns nothing at all.
+
+### The doc rewritten (4f5f4da)
+
+Curator: *"much of the earlier content has now been disproved... we should refresh the document."*
+882 -> 405 lines. Two structural changes: **every claim is marked MEASURED or ASSUMED** (most of
+the trouble came from plausible reasoning presented in the same voice as measurement), and a
+**Disproved table** carries the dead claims with their refutations so they are not re-argued.
+
+Twelve entries. Four are mine from these two sessions: the authority signal being "hardly
+meaningful" (corr(PA, log external links) = **+0.905**), an age bias in ranking (corr(publish
+year, PA) = **+0.530**, the other way), keywords gained by crossing rank 100, and traffic history
+being blocked.
+
+### The pattern, and the cost of it
+
+Across both halves of this session I asserted a mechanism and the data refused **five times**.
+Every one had a cheap test available first. Two of them cost real money: 1,500 units on a
+badly-sorted pull, and ~17,500 on two unbounded history calls where `display_limit=12` would have
+been 600. **Balance 50,000 -> 26,490.**
+
+The recurring shape is an error message describing the wrong cause — *"query type not found"*,
+*"not allowed on this plan"*, *"no data"* — taken at face value instead of probed. And a derived
+column used without checking its definition, where the arithmetic not summing to 100% was sitting
+in plain view.
+
+### Open
+
+- **Rerun the experiment** on the 21 Aug export (clean 30-day window vs the current 13) and on a
+  second publisher — everything measured is one site.
+- **Snapshot capture** — still the free change that starts the clock, still not built.
+- **Structured-data prerequisite** — bostonglobe shows no keyword signal at all
+  (`_source.type=article`, poor_quality_rate 0.41). A publisher Google cannot parse as recipes
+  reads as "not rising" for reasons unrelated to quality. Systematic blind spot, unquantified.
+- Unchanged from earlier: the strip decision, the five archive-47 rows, `user_api_keys`, cadence.
