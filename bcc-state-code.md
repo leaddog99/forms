@@ -2289,3 +2289,217 @@ Also: `bcc_restart.bat` was corrupted a THIRD time — `endlocal` truncated to `
 - **The four `/reviews/*` write endpoints** and the ~147 ungated ones generally.
 - **Rotate both SMTP passwords**; password reset; verification is still unenforced.
 - **The 2026-07-27/28 session log** — still missing, four sessions running now.
+
+## Session log — 2026-08-01/04 — the Moz placeholder and the regression that followed · Wayback unwrapped · six publishers rescued · and the scoring design written down
+
+Long session. Started with a live harvest showing suspicious scores, ended with a 711-line
+design doc for the thing the scoring cannot currently do. Three of my own regressions in the
+middle, all caught by the curator watching output rather than by me.
+
+### The Moz placeholder — and the fix that broke everything (9485520, ecc8e8a)
+
+Curator, mid-harvest: *"ALL of the first pass recipes get a 44 pa."* Half right, and the half
+that wasn't is the bug. Healthline's crawled recipe pages genuinely cluster at 44-51 — but
+every page Moz has NEVER crawled also comes back `http_code 0` with a **domain-derived
+placeholder PA**, and `score_url_via_moz` computed `usable` and then never consulted it on the
+way out. 15% of a 60-recipe sample was running on a fabricated number, and the placeholder is
+HIGHER than an obscure page deserves, so the bug systematically inflated the weakest pages.
+
+Fixed to return `None`. Curator's call on dropping rather than keeping-with-absent-PA: *"if it
+can't crawl them they probably aren't popular enough to matter."*
+
+**Then I broke it worse.** I wrote the gate as an allow-list — `http_code in (200,301,302,402)`
+— reusing four codes that exist in `_pick` to RANK variants as a rejection test. Moz returns
+other real codes: pinchofyum comes back `http_code 5` with `pa 49 / da 75`, plainly measured,
+and the allow-list binned all of it. A publisher_refresh billed **496 Moz rows across 124 URLs
+and scored ZERO**, finishing "successfully" because every URL failing individually reads
+exactly like an uncrawled publisher. Curator found it from the output: *"got moz fail on all..
+didn't get trapped anywhere."*
+
+The rule was in the original comment and I failed to read it: **0 is the sentinel, and the only
+thing the gate may reject.** `usable = bool(code)`. Re-run: 124/124 scored, and **124 Moz rows
+instead of 496** — the broken gate had also silently disabled the canonical-variant learning,
+since it only learns from a probe it considers usable.
+
+**Two guards so this cannot go quiet again** (ca00579): a harvest that BILLS and stores nothing
+now raises, distinguishing a genuinely uncrawled publisher (warn) from creds/quota/a bad gate
+(raise); and `discovered > 0, recipe_pass == 0` raises too — the case the first guard
+structurally cannot catch, since nothing reaches scoring.
+
+### A learned recipe_path from a run that found no recipes (ca00579)
+
+Three publishers harvested off SERP with no `serp_query` set. Discovery returned only the
+sites' own archives, and the run PERSISTED `recipegirl.com -> 'set'`, `marionskitchen.com ->
+'category'`, `paleogrubs.com -> 'tag'`. Those are WordPress taxonomy prefixes; each domain would
+have scoped every future harvest to its own archive pages forever. Inferring the path from a
+sample in which nothing was a recipe is inferring from the failure itself — same shape as the
+placeholder PA. Now the curator's value is kept and the skipped guess is logged.
+
+Curator diagnosed the cause: **SERP returns these sites' taxonomy, SEMrush returns their
+recipes.** Switching source fixed all three.
+
+### Wayback URLs were the recipe's identity (0d42fcc)
+
+44 master rows stored `web.archive.org/web/<ts>id_/https://real...` as `_source.originalUrl`.
+That is the TRANSPORT, not the recipe, and it cost three ways: Moz has never crawled an
+archive snapshot so all 44 carried the same placeholder (pa 47, ou 0.049); attribution pointed
+at archive.org rather than the publisher; and `url_normalized` keyed off the snapshot so the
+same page fetched directly would not dedupe. The original url is embedded in the archive url,
+so nothing needed re-fetching. 43 unwrapped, `_source.archiveUrl` preserving the snapshot.
+
+**The finding that matters: Wayback is worth MORE, not less.** 33 of 43 turned out to be
+well-scored publisher pages we simply could not fetch directly — Serious Eats 47 -> 62 (ou
+0.049 -> 16.573), Taste of Home -> 59, Mayo Clinic -> 57, including a 1997 NYT piece. Retiring
+the fallback, which looked like the implication when every archive row scored 47, would have
+cost us those.
+
+### Six publishers rescued from "unreachable"
+
+Curator: *"did we even use unblocker when we ran christina's???"* **No.** `fetch_strategy` was
+`plain` on christinascucina, washingtonpost and smittenkitchen, and SIX of the ten blocked
+hosts had **no domains row at all**. Only 11 of 305 domains were on `unblocker`. The ladder ran
+UA -> 403 -> Wayback and the paid tier was never attempted. We concluded "unreachable" from a
+test we never ran.
+
+Opted them in; five of six then fetched LIVE first try (recipegirl 645KB, washingtonpost 950KB,
+marionskitchen, paleogrubs, christinascucina). Final harvests: **495 scored, 495 stored, 171
+extracted**, corpus 3,451 -> 4,169. Washington Post passed **149 of 149** candidates — a paper
+we had written off.
+
+`haitianfoodie` was the exception and I read it wrong twice: I called its 402 "Pay-Per-Crawl
+licensing", mapping it onto the seriouseats pattern. One curl of the homepage showed
+`<title>Store unavailable</title>` — **a dead Shopify store**. Retired `harvestable=0` with the
+finding recorded; its one real recipe dropped because the corpus is discover-and-judge with a
+MANDATORY LINK and that link is not coming back (cf2d055).
+
+### The bookmarklet hung, and postMessage could never have fixed it (dc04ca8, b6e27fb)
+
+Curator: *"it's hanging on the recipe screen... BUT WE MUST FIGURE OUT THE BOOKMARKLET.. that's
+in the users face!!"* Reproduced it in-browser. The token is handed over by appending
+`#staged=…` to the url the popup is ALREADY on, so it fires `hashchange` without reloading —
+but when staging finishes before the popup COMMITS its first navigation, the browser coalesces
+the two same-document navigations, keeps the fragment-less one, and the token vanishes. The
+popup showed `hash:""` and `history.length:1`. A race — which is why it grabbed healthline and
+hung on christinascucina on identical code.
+
+**My first fix was a postMessage handshake and it was impossible**: `window.open('','_blank')`
+plus a CROSS-ORIGIN navigation SEVERS `window.opener` (verified null). The two windows share no
+channel in either direction — which is WHY the hand-off was a fragment to begin with.
+
+So the form stops waiting to be told and ASKS: it knows the page from `?url=`, and polls
+`GET /staged-latest?url=…`. Verified end to end — stage -> staged-latest matched in 1s ->
+staged-markdown -> extract 31,678 chars. The fragment lost the race again and the poll carried
+it.
+
+Also: the review grabber's device key is gone (c23a6f0, prior session but completed here) —
+`user_api_keys` now has no caller.
+
+### The form invented zeros the server never measured (29b17ff)
+
+Curator grabbed a sun-sentinel recipe: *"it didn't score it."* Moz was right — the article was
+THREE DAYS OLD and uncrawled. The save was wrong: it wrote `_scoring` with pageAuthority 0,
+domainAuthority 0, every percentile 0. A DA-88 publisher recorded as DA 0. The form serialises
+its whole scoring section, so an input with no value arrives as `0.0` and the writer stored it.
+**Third route by which fabricated zeros reached `_scoring`** — after the batch writer (1,881
+rows, 07-30) and the Moz gate. So the fix went at the SAVE BOUNDARY where every caller passes.
+Per the curator's ask it records WHY, distinguishing "Moz has not crawled this yet" from "never
+submitted" from "saved outside a dish batch".
+
+### THE SCORING WORK — docs/recipe-scoring-design.md (711 lines)
+
+Started as a curator question about paid/paywalled sites being penalised. Became the design for
+what the system cannot currently do.
+
+**I was wrong about the ranking and had to be corrected twice.** I called the authority signal
+"hardly meaningful" and proposed an age confound; both died against data. Measured on
+smittenkitchen (114 pages, one domain so DA constant): **correlation(PA, log10 external links)
+= +0.905**. Within a domain PA IS third-party endorsement. And I had forgotten the selection
+stage entirely — the curator's correction is now GOSPEL in the doc and in
+[[project_two_stage_selection]]: **selection is last month's TRAFFIC, ranking is OU**, and
+judging either in isolation gives wrong answers.
+
+Then the design, all curator-led:
+
+* **Traffic is APPETITE, not need.** Excess PA is ADVOCACY. Different acts; the gap between
+  them is the informative part. The two axes are orthogonal — verified by quadrant counts.
+* **Two objectives, two filters.** A LIBRARY of tried-and-true (leads on OU, EXCLUDES velocity)
+  and RISING (leads on `Or` velocity, EXCLUDES PA/OU entirely — a new page has none by
+  construction). Blending them destroys both. Flagged at extraction via `selection_lens`.
+* **The RISING detector**, from a measured breakout. christinascucina/porridge: `Or` climbed
+  from Nov 2025 (+17,+20,+33,+23,+32,+29,+17,+39) while `Ot` sat at 0,7,9,13 — **keywords lead
+  traffic by 2-3 months**. `Ot`/`Or` went 0.3 -> 46.7 as positions crossed the page-1 cliff.
+  Against a stuck page: porridge converts **84% of a 103,710 Nq pool**; vongole converts **0%
+  of 40,410**, every keyword on page two. Same publisher, same DA.
+* **Momentum must compare LIKE MONTHS.** Shortbread reads -1,962 month-over-month and 0.68x on
+  a trailing mean — but is UP on every comparable month year over year, with the same
+  Feb-peak/summer-trough in all three years. It is a Christmas bake. A raw `Traffic Change`
+  cannot tell a breakout from a season.
+* **Storage: no second recipe table.** Rising candidates live in the LEDGER
+  (`collection_type='rising'`, already 10,276 rows) and a PROMOTION GATE admits them to master.
+  Purity made structural via a `library_recipes` VIEW on a `selection_lens` generated column.
+* **Execution — curator's catch that two gates kill a riser**: discovery truncates 820 export
+  rows to the top 100 BY TRAFFIC, and keep-top-N sorts on PA-driven `rank_score`. Four phases
+  instead: capture free at harvest (full export depth, append a snapshot), judge free in SQL
+  (3 months of `Or` growth), pay `url_organic` only for survivors, promote only what triggers.
+  **Rising is CHEAPER per candidate than the current extract.**
+
+**API facts, probed live** (`scripts/semrush_url_probe.py`, ~400 units of a 50k balance):
+`url_ranks` gives absolute per-url `Ot`/`Or` — hard-boiled-egg 24,625, shortbread 9,616 which
+matches the UI exactly. `url_organic` gives keywords with `Nq`. **`url_rank_history` gives the
+full monthly series** — and my "history is blocked on this plan" was wrong twice over: the 403
+comes from `url_ranks` + `display_date`, a WRONG TYPE NAME producing a permissions error. The
+real constraint is that it returns all 175 months at 50 units/line = **8,750 units per url**,
+so it is shortlist-only.
+
+Gotchas recorded: the type is `url_ranks` NOT `url_overview` (the docs page is TITLED "URL
+Overview"); `url_organic` bills PER KEYWORD LINE; its `Tr` is a percentage while `Ot` is
+absolute; an unindexed url returns `ERROR 50 :: NOTHING FOUND`; and **`url_ranks` is
+variant-sensitive** — our slash-stripped `url_normalized` returns nothing at all.
+
+**And the export already carries three fields we parse and discard**: `Traffic Change`
+(momentum), `Answer Engines` (`google-ai`, `gemini`, `search-gpt`), `LLM Prompts`. Plus
+`Number of Keywords` — the single most important field for Rising. `replace_members` is
+delete-and-replace, so every re-harvest destroys the history Rising needs. Every month that
+capture is not running is a month of series that cannot be bought back cheaply.
+
+### The one to remember: I deleted two real recipes (a068ae5, reverted f4f1541)
+
+Asked to remove the "recipes" for two medical sites, I inspected them with `d.get("ingredients")`
+and `d.get("title")`, got nothing, and reported **"no title, ZERO ingredients, ZERO
+instructions"** as the finding that justified the delete. The rows are schema.org shaped —
+`recipeIngredient`, `recipeInstructions`, `name`. id 478 is **Homemade Kimchi** (11 ingredients,
+8 steps); id 1419 is **Strawberry Salad with Grilled Shrimp** (12/5). Curator caught it:
+*"actually healthline IS a recipe."* Both restored, embedding BLOBs recovered from their repr,
+vec index rebuilt.
+
+> **The lesson is not the key names. I let an ABSENCE stand as evidence. A read returning
+> nothing means the content is missing OR I asked the wrong question, and only one of those is
+> a finding. Anything about to be deleted must be POSITIVELY identified — print what IS there
+> before concluding what is not.**
+
+Compounding it, I then offered to "correct" the concentration report — which was already right,
+says *"The pages are real recipes, correctly extracted"*, and names both by title. **The
+artifact I had just recovered contained the evidence contradicting me and I had not read it.**
+
+### The pattern across all of it
+
+Five times I asserted a mechanism and the data refused: the age confound, internal linking,
+"meaningless", `url_overview`, "history is blocked". Each error message described the wrong
+cause — *"query type not found"*, *"not allowed on this plan"*, *"no data"* — and I took it at
+face value. The habit that would have caught every one is probing adjacent names, or running
+the thing, before believing the message.
+
+I also killed two live job records by importing the app in ad-hoc scripts: the
+`BCC_SKIP_JOB_RESET=1` guard exists and its comment says exactly why, and `python -m jobs` sets
+it. My throwaway scripts did not.
+
+### Open
+
+- **The strip decision** — ~15% of the corpus on fabricated PAs. Option 2 (strip) or 3
+  (read-only pass first, see the blast radius). Untouched.
+- **Five archive-47 rows still fabricated** (1343, 2171, 3656, 3802, 5025) — all now scoreable
+  (+8 to +12 OU); only 340 was fixed. Backup at `docs/reports/rescore-archive47-backup.json`.
+- **`user_api_keys`** — no caller since the review grabber went keyless. Retire or keep.
+- **Snapshot capture** — the free change that starts the Rising clock. Not built.
+- **Cadence** — `harvest_ttl_days=90` on 295/311 domains; Rising needs monthly.
+- **`/staged-latest` and the zeros fix are live**; nothing pending a restart.
