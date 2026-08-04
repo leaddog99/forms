@@ -282,6 +282,80 @@ Two constraints if built:
 The last row is the cold-start answer. A three-day-old recipe has no capture, no advocacy and
 no trajectory — the artifact checks are the only thing that can speak for it.
 
+## The record shape — two blocks, one per lens
+
+Curator: *"I would envision two different blocks in the master with fields from each
+separately."* Fits the existing typed-block pattern (`_master`, `_scoring`, `_cook`,
+`_identity`, `_measurements`).
+
+```jsonc
+"_scoring":  { ...unchanged - RAW measurements, ONE copy... },
+
+"_library": {                      // A. tried and true
+  "ouScore":         6.28,         // advocacy, the primary
+  "excessPA":        6.3,          // PA over the DA-predicted bar
+  "capture":         0.0011,       // Ot / Nq in reach
+  "momentumYoY":     1.04,         // like-month, ~1.0 = stable
+  "durabilityYears": 16,           // years carrying excess PA
+  "verdict":         "evergreen",
+  "computedAt":      "2026-08-03T...",
+  "cohort":          "dish:Pasta Vongole"
+},
+
+"_rising": {                       // B. up and coming
+  "orSeries":        [224,185,168,139,107,84],   // newest first
+  "orVelocity3mo":   0.61,         // +61% over 3 months
+  "poisedPoolNq":    40410,        // Nq ranked at positions 11-30
+  "convertedPct":    0.84,         // Nq at pos <=10 / total in reach
+  "otPerOr":         46.7,         // conversion - the inflection
+  "answerEngines":   ["google","google-ai"],
+  "llmPrompts":      26,
+  "triggeredAt":     "2026-01-15", // when it FIRST qualified
+  "graduatedAt":     null          // set when it stops being new
+}
+```
+
+**Three rules that are cheap now and expensive later.**
+
+1. **Raw in `_scoring`, derived in the lens blocks.** `Ot`, `PA`, `DA`, `Nq` are facts about
+   the page; `capture`, `momentumYoY`, `orVelocity` are interpretations. If both lens blocks
+   carry their own copy of `Ot` they will drift — the same failure as the two hostname lists
+   that produced a customer front door over the admin surface (2026-07-31).
+2. **`triggeredAt` is what makes Rising honest.** Rising is TIME-BOUND in a way Library is
+   not: porridge qualified in January and by July it is merely a popular page. Without a
+   trigger date you cannot answer "was this a discovery, or did we notice late" — the only
+   question that judges whether the detector works.
+3. **Both blocks are COHORT-RELATIVE.** `capture` and `orVelocity` are meaningless in the
+   absolute; they are relative to some population. `_scoring.fieldScope` is empty on every row
+   today, which is exactly this problem already unresolved. Stamp the cohort IN the block or
+   the number is unreadable in six months.
+
+**Two build consequences to price first.**
+
+* **Generated columns.** `_scoring` is queried through virtual generated columns (`ou_score`,
+  `power`, `source_host`). These blocks want the same — `rising_triggered_at`,
+  `library_verdict`, `poised_pool` — or they are invisible to SQL and every query re-parses
+  JSON blobs.
+* **The four-edge rule.** Per `feedback_db_form_sync`, new recipe fields need load / save /
+  extract / metadata ALL audited or they drop silently. Two blocks of ~10 fields each is real
+  form work, not a schema tweak.
+
+### OPEN QUESTION — does the VERDICT belong on the recipe at all?
+
+A recipe is one thing. "Is it rising" is a claim about a **moment and a cohort** — and a
+recipe can be Rising within one dish cohort and unremarkable in another. That reads more like
+`collection_members` (the ledger, which already carries `rank`, `selected`, `rank_score`,
+`adjusted_pa` PER collection) than like the recipe record.
+
+The likely split, not decided:
+
+* **metrics** -> the recipe (`_library` / `_rising`) — they describe the page
+* **verdict + lens flag** -> the membership row — it describes the page IN a collection
+
+Deciding this wrongly is costly in the same way `_master.dish` was before dish membership
+became a junction ([[project_dish_variants_membership]]): a single stamp on the recipe cannot
+express "rising for Porridge, ordinary for Breakfast".
+
 ## Tiers — how it degrades
 
 Because of the coverage constraint, this is not one formula but three:
