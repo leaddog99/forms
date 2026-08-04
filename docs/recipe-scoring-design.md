@@ -356,6 +356,90 @@ Deciding this wrongly is costly in the same way `_master.dish` was before dish m
 became a junction ([[project_dish_variants_membership]]): a single stamp on the recipe cannot
 express "rising for Porridge, ordinary for Breakfast".
 
+## Where Rising LIVES — the ledger, then a promotion gate
+
+Curator's concern: *"the master is the reliable library and should not be polluted with hot
+shots... but the actual recipe has to live someplace. Another recipe table?"*
+
+**No second recipe table. The ledger is already the staging area, and promotion is the gate.**
+
+Measured 2026-08-03:
+
+```
+master_recipes by _master.kind :  top 4,040   (none) 138   harvest 1
+collection_members             :  publisher - 97 keys, 10,276 rows
+```
+
+`collection_members` already holds **10,276 discovered-but-not-promoted URLs**, and the
+harvest already promotes winners into master. That is exactly the shape Rising needs: a rising
+CANDIDATE is discovered, tracked and re-evaluated monthly, and only enters master once it has
+EARNED it.
+
+    collection_type='rising'  ->  ledger row, metrics only, no recipe content
+              |  graduation gate
+              v
+    master_recipes            ->  extracted recipe, selection_lens='library'
+
+**Master stays the library BY CONSTRUCTION** — not because rising rows are stored elsewhere,
+but because the promotion gate is what admits anything at all.
+
+### Why not a second recipe table
+
+1. **A graduating recipe is the SAME recipe.** Porridge in January (rising, `Or 51`/`Ot 13`)
+   and in July (established, `Ot 10,470`) is one page. Two tables means a migration on every
+   graduation, and migrations lose things.
+2. **Dedup.** The same url can be found by both filters. Two content tables = two rows for one
+   recipe — exactly the caponata bug of 2026-07-31, where ids 5515 and 5516 were one Serious
+   Eats recipe stored by two different paths, and one had to be deleted.
+3. **The enrichment is expensive and shared.** `_cook` is a ~$0.44 Opus pass, `_identity` ~2s
+   of Haiku, plus `_measurements`, page screenshot and cooped hero image. A second table either
+   duplicates all of it — paying twice and drifting — or needs a join anyway.
+4. **Two typing mechanisms exist and neither is exercised.** `_master.kind` is 4,040 `top` and
+   almost nothing else; `collection_type` is only `publisher`. This is what they are for.
+
+### Make purity STRUCTURAL, not disciplinary
+
+The real risk of one store is a query that forgets to filter. Fix that with a **view**, not a
+table:
+
+```sql
+-- the library: nothing can accidentally read a hot-shot from this
+CREATE VIEW library_recipes AS
+  SELECT * FROM master_recipes WHERE selection_lens = 'library';
+
+CREATE VIEW rising_recipes AS
+  SELECT * FROM master_recipes WHERE selection_lens = 'rising';
+```
+
+Physically one store, logically two. Pair with `selection_lens` as a **virtual generated
+column** (same pattern as `ou_score` / `source_host`) so the filter is indexable rather than a
+JSON re-parse.
+
+### The promotion gate
+
+What a rising candidate must show before it is extracted into master — deliberately a
+different bar from the Library filter, because it is a bet rather than a credential:
+
+* `Or` growth sustained across **three consecutive months** (the trigger), AND
+* a **poised pool** worth having — meaningful `Nq` at positions 11-30, AND
+* `Ot`/`Or` **lifting** — conversion actually starting, not just footprint, AND
+* **artifact soundness passes** — the floor, and at this stage the only quality evidence that
+  exists.
+
+Candidates that never convert stay ledger rows and cost nothing: no extraction, no `_cook`, no
+screenshot. **That is the point of gating at promotion rather than at display** — the expensive
+work only happens for recipes that proved out.
+
+Graduation sets `_rising.graduatedAt` and flips `selection_lens` to `library` once the
+Library filter would admit it on its own merits. Until then a promoted rising recipe is
+visible as `rising` and only there.
+
+### What would change this decision
+
+A second table would be right if rising rows needed a **different schema**, or a lifecycle
+master cannot express. Neither holds: identical recipe fields, and `kind='top'` already does
+delete-and-replace churn per batch refresh — the same volatility, already tolerated.
+
 ## Tiers — how it degrades
 
 Because of the coverage constraint, this is not one formula but three:
