@@ -375,7 +375,7 @@
           </label>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
             <input type="checkbox" id="f_trust_extraction" ${Number(d.trust_extraction) === 1 ? 'checked' : ''}>
-            <span><b>Trust extraction</b> — this publisher's recipes have an unconventional layout the cheap is-recipe gate wrongly drops (e.g. Boston Globe's story-format recipes with no "Ingredients" heading). Keep its candidates past the structure gate + LLM catch so the full extractor decodes them. <i>Pair with a SEMrush URL filter that already narrows to recipe pages.</i></span>
+            <span><b>Trust extraction</b> — this publisher's recipes have an unconventional layout the cheap is-recipe gate wrongly drops (e.g. Boston Globe's story-format recipes with no "Ingredients" heading, or the Guardian going straight from "serves 2" into the list). Keep its candidates past the structure gate + LLM catch so the full extractor decodes them. <b>Applies to EVERY batch</b> — the host is matched per candidate, so it also affects dish batches that happen to surface this publisher, not just its own harvest. <i>Safe for recipe-only publishers, where nearly every page is a recipe. For a GENERAL-NEWS host it also opens dish batches to its non-recipe pages, and a SEMrush URL filter does not constrain those (SERP picks the candidates) — scope it another way.</i></span>
           </label>
           <div class="ed-form-grid" style="margin:4px 0 2px">
             ${field('f_exclude_words', 'Exclude sections (skip these URL sections — e.g. restaurant chef news)', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
