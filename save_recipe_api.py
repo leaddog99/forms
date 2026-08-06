@@ -1555,11 +1555,19 @@ def _master_result_row(d: dict, rid: str, *, dish=None, rank_score=None, distanc
     exc = m.get("exceptionalism") or {}
     src = d.get("_source") or {}
     img = d.get("image")
+    s = d.get("_scoring") or {}
     return {
         "recipe_id": rid,
         "name": d.get("name") or "(no title)",
         "dish": dish if dish is not None else m.get("dish"),
         "grade": exc.get("grade"),
+        # Raw signals for blend.rank_by_blend (it derives power = da + pa
+        # itself; the stored _scoring.power is unreliable). Absent stays
+        # None — percentile_ranks excludes the unmeasured from the
+        # denominator rather than scoring them 0.
+        "ou": s.get("ouScore"),
+        "da": s.get("domainAuthority"),
+        "pa": s.get("pageAuthority"),
         "rank_score": (round(rank_score, 1) if rank_score is not None else None),
         "distance": (round(distance, 4) if distance is not None else None),
         "preview_image": src.get("previewImage")
@@ -1614,13 +1622,34 @@ def similar_master_recipes(payload: dict = Body(...)):
     preview_image, bcc_url, source_url."""
     recipe = (payload or {}).get("recipe") or {}
     want = max(1, min(int((payload or {}).get("k") or 8), 25))
-    from input.pipeline.embeddings import compose_recipe_text, embed_text, find_best_dish_match
+    from input.pipeline.embeddings import (
+        compose_recipe_text, embed_text, find_best_dish_match, _l2_to_cosine_sim,
+    )
     from input.pipeline import vector_store
+    # Tier 2 cutoff. 0.95 admitted 0.7-1.4% of the corpus — always more than
+    # `want`, so it never trimmed and the window padded to k with whatever was
+    # next (a mussel query reached out to fries and moussaka at d~0.90). 0.86
+    # is inert for a typical recipe (median 26 neighbours inside it) and only
+    # bites in sparse regions, which is exactly where the padding was reaching.
     try:
         from input.pipeline import system_config as _cfg
-        similar_max = float(_cfg.get_setting("similar_max_distance", 0.95))
+        similar_max = float(_cfg.get_setting("similar_max_distance", 0.86))
     except Exception:
-        similar_max = 0.95
+        similar_max = 0.86
+    # Tier 1 confidence bar. The SAVE path rejects a dish match at L2 >
+    # `dish_match_max_distance` (0.8 -> cosine 0.68) and stamps `_match.dish =
+    # None`; this endpoint was using the looser DEFAULT_MATCH_THRESHOLD (cosine
+    # 0.55 ~ L2 0.95) and so ANCHORED to dishes the save path had already
+    # thrown out — three mussel recipes anchored to Moussaka / Coquilles Saint
+    # Jacques at 0.55-0.59 and returned those cohorts whole (Tier 1 applies no
+    # distance cutoff by design). One question, one bar: derive it from the
+    # same setting so the two paths cannot drift apart again.
+    try:
+        from input.pipeline import system_config as _cfg2
+        _dish_max_l2 = float(_cfg2.get_setting("dish_match_max_distance", 0.8))
+    except Exception:
+        _dish_max_l2 = 0.8
+    dish_min_conf = _l2_to_cosine_sim(_dish_max_l2)
 
     try:
         with _db() as conn:
@@ -1629,7 +1658,8 @@ def similar_master_recipes(payload: dict = Body(...)):
             # --- Tier 1: dish-anchored -------------------------------------
             dish_match = None
             try:
-                dish_match = find_best_dish_match(conn, recipe)
+                dish_match = find_best_dish_match(conn, recipe,
+                                                  threshold=dish_min_conf)
             except Exception as e:
                 print(f"[SIMILAR] dish-match skipped: {e}")
             if dish_match and dish_match.get("dish_name"):
@@ -1656,6 +1686,18 @@ def similar_master_recipes(payload: dict = Body(...)):
             qvec = embed_text(txt)
             raw = vector_store.find_similar_master_recipes(conn, qvec, k=max(want * 4, 20))
             near = [r for r in raw if r["distance"] <= similar_max]
+            # Drop the query recipe itself. Once a recipe is promoted to master
+            # it sits in the index, and "recipes like this" would spend its top
+            # slot recommending you the thing you are looking at. recipe_id does
+            # NOT catch it — the master copy is a separate row with its own uuid
+            # — so match on the source URL, which both carry.
+            self_url = ""
+            try:
+                from input.pipeline.url_utils import normalize_url
+                self_url = normalize_url(
+                    ((recipe.get("_source") or {}).get("originalUrl") or "").strip())
+            except Exception:
+                self_url = ""
             results: list[dict] = []
             for r in near:
                 row = conn.execute(
@@ -1664,6 +1706,8 @@ def similar_master_recipes(payload: dict = Body(...)):
                 if not row:
                     continue
                 rid, dj, urln = row
+                if self_url and urln and urln == self_url:
+                    continue
                 try:
                     d = json.loads(dj)
                 except Exception:
@@ -1676,8 +1720,16 @@ def similar_master_recipes(payload: dict = Body(...)):
                     d, rid, dish=dish,
                     rank_score=(rs[0] if rs and rs[0] is not None else None),
                     distance=r["distance"]))
+            # Two-stage, same shape as the harvest: SIMILARITY SELECTS the pool
+            # (the <= similar_max cutoff above), the OU/power BLEND RANKS within
+            # it — "show me the BEST recipes like this", not the most
+            # numerically adjacent. Sorting by distance first is the tie-break:
+            # rank_by_blend's sort is stable, so candidates that share a blend
+            # score (notably the unmeasured, which all land on 0.0) stay in
+            # closest-first order.
             results.sort(key=lambda x: x["distance"])
-            results = results[:want]
+            from input.pipeline.blend import rank_by_blend
+            results = rank_by_blend(results)[:want]
             print(f"[SIMILAR] {recipe.get('name','')!r} -> vector {len(results)} shown "
                   f"(of {len(near)} within {similar_max}, {len(raw)} scanned)")
             return {
