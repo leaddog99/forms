@@ -11,9 +11,9 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260806a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
-  <link rel="stylesheet" href="/forms/components.css?v=20260617c">
+  <link rel="stylesheet" href="/forms/components.css?v=20260806b">
 </head>
 <body>
   <header class="app-header">
@@ -404,7 +404,7 @@
           </div>
 
           <p class="ed-notes-help" id="topListLabel" style="margin:14px 0 6px">Kept top recipes:</p>
-          <div class="top-recipes-list" id="domainTopList"><div class="ed-empty-fit">Open or refresh to load the top recipes.</div></div>
+          <ol class="ed-t10" id="domainTopList"><li class="ed-empty-fit">Open or refresh to load the top recipes.</li></ol>
 
           <!-- Persistent scored-cohort panel — mirrors the dishes form's cohort accordion
                (reuses the shared .ed-accordion component). Always present; the winners list
@@ -419,7 +419,7 @@
               <button type="button" class="ed-btn" id="userscriptBtn" style="font-size:.8em;display:none" title="ZERO-CLICK FREE: the BCC capture userscript (Tampermonkey) walks the CHECKED pages in your real browser, beating anti-bot, saving each to master, paced 8–25s. Tracked as a job. Install once from /forms/bcc-capture.user.js">⚡ Run userscript</button>
               <label id="slowWrap" class="ed-check" style="display:none;font-size:.76em;gap:4px;align-items:center" title="Slower delays (30–60s) for touchy / rate-limiting sites"><input type="checkbox" id="usSlow"> slow</label>
             </div>
-            <div class="top-recipes-list" id="domainCohortList"><div class="ed-empty-fit">Open or refresh to load the scored cohort.</div></div>
+            <ol class="ed-t10" id="domainCohortList"><li class="ed-empty-fit">Open or refresh to load the scored cohort.</li></ol>
           </details>
         </section>
 
@@ -553,49 +553,62 @@
 
     // Render the publisher top-N list — same component/look as the dishes
     // top-recipes list (tile · rank · title · host · grade/corpus/★ · DA/PA/pwr ·
-    // actions). Reuses the .top-recipe-* classes lifted from dishes.html.
+    // Uses the SHARED .ed-t10-* row from editor-shell.css — the same component the
+    // dishes page renders its top-recipes and cohort lists with. These two pages show
+    // the same shape of thing (a ranked, scored list of recipes under a parent) and
+    // should look identical; the old page-local .top-recipe-* block was a second
+    // implementation that drifted louder — badge pills, a bold title, two coloured
+    // action buttons per row (feedback_reuse_layout_components).
+    //
+    // The row is a DIV, not the <a> the dishes version uses, because a domain row
+    // carries a curation checkbox and an <a> cannot contain one usefully. The name
+    // is the link instead; .ed-t10-row:hover still tints it.
     function renderDomainTop(list, cohort, elSel = '#domainTopList'){
       const el = $(elSel); if (!el) return;
-      if (!list || !list.length){ el.innerHTML = `<div class="ed-empty-fit">${cohort ? 'No scored cohort yet — run a refresh.' : 'No top recipes yet — run a refresh.'}</div>`; return; }
+      if (!list || !list.length){ el.innerHTML = `<li class="ed-empty-fit">${cohort ? 'No scored cohort yet — run a refresh.' : 'No top recipes yet — run a refresh.'}</li>`; return; }
       el.innerHTML = list.map((m, i) => {
         const host = (() => { try { return new URL(m.url).hostname.replace(/^www\./, ''); } catch { return m.url || '—'; } })();
         const title = escapeHtml(m.name || m.title || host);
         const bccHref = m.ingested && m.recipe_id ? `/r/${encodeURIComponent(m.recipe_id)}` : '';
-        const tileHref = bccHref || m.url || '#';
+        const href = bccHref || m.url || '#';
+        const openTitle = m.ingested ? 'Open in BCC' : 'View source';
         // Also-rans are never thumbnailed at harvest (only the kept top-N are), so
-        // their tile has no image. Still make the empty tile a LINK to the source when
-        // there's a destination — otherwise it renders as a dead <div> in the same spot
-        // as the winners' clickable tiles and "does nothing" when clicked.
-        const hasDest = tileHref && tileHref !== '#';
-        const tile = m.preview_image
-          ? `<a class="top-recipe-tile" href="${escapeHtml(tileHref)}" target="_blank" rel="noopener"><img src="${escapeHtml(m.preview_image)}" alt="" loading="lazy"></a>`
-          : (hasDest
-              ? `<a class="top-recipe-tile empty" href="${escapeHtml(tileHref)}" target="_blank" rel="noopener" title="${m.ingested ? 'Open in BCC' : 'View source'}"></a>`
-              : `<div class="top-recipe-tile empty"></div>`);
-        const badges =
-          // ★ only in the scored-cohort view (where it distinguishes winners from
-          // also-rans). In the default "Kept top recipes" list every row is a winner,
-          // so the pill is redundant with the header — omit it.
-          ((cohort && m.selected) ? ' <span class="top-badge sel" title="kept (top-N)">★</span>' : '') +
-          (m.grade ? ` <span class="top-badge">${escapeHtml(m.grade)}</span>` : '') +
-          (m.ingested ? ' <span class="top-badge" title="already in the corpus">in corpus</span>' : '');
-        const meta = [];
-        if (typeof m.da === 'number') meta.push(`DA ${Math.round(m.da)}`);
-        if (typeof m.pa === 'number') meta.push(`PA ${Math.round(m.pa)}`);
-        if (typeof m.da === 'number' && typeof m.pa === 'number') meta.push(`pwr ${Math.round(m.da + m.pa)}`);
-        const actions =
-          (bccHref ? `<a class="top-action top-action-primary" href="${escapeHtml(bccHref)}" target="_blank" rel="noopener">Open in BCC</a>` : '') +
-          `<a class="top-action top-action-secondary" href="${escapeHtml(m.url || '#')}" target="_blank" rel="noopener" title="${escapeHtml(m.url || '')}">View source <span class="top-action-arrow">↗</span></a>`;
-        // Curation checkbox (non-ingested rows only): check the worthy ones → ⚙ Process
-        // selected ingests just those via the unblocker. Already-in-corpus rows have none.
+        // their tile has no image — it stays an empty well, linked when there is a
+        // destination so it isn't a dead square beside the winners' clickable ones.
+        const thumb = m.preview_image
+          ? `<a class="ed-t10-thumb" href="${escapeHtml(href)}" target="_blank" rel="noopener" title="${escapeHtml(openTitle)}"><img src="${escapeHtml(m.preview_image)}" alt="" loading="lazy"></a>`
+          : `<span class="ed-t10-thumb"></span>`;
+        // ★ only in the cohort view, where it separates winners from also-rans. In the
+        // "kept top recipes" list every row is a winner, so it would repeat the header.
+        const star = (cohort && m.selected) ? ' <span class="ed-t10-grade" title="kept (top-N)">★</span>' : '';
+        const grade = m.grade ? ` <span class="ed-t10-grade">${escapeHtml(m.grade)}</span>` : '';
+        // Quiet, italic, same treatment as the dishes cohort's "not selected" chip:
+        // these are explanations, not errors.
+        const corpus = m.ingested ? ` <span class="ed-t10-status" title="already in the corpus">in corpus</span>` : '';
+        const notSel = (cohort && !m.selected) ? ` <span class="ed-t10-status" title="scored, but not a kept winner">not selected</span>` : '';
+        // Domain rank_score is a 0-1 blend; the dishes list shows a 0-100 figure in the
+        // same column, so scale it or every row reads "1.0".
+        const rk = (typeof m.rank_score === 'number')
+          ? (m.rank_score <= 1 ? m.rank_score * 100 : m.rank_score).toFixed(1) : '—';
+        const da = (typeof m.da === 'number') ? Math.round(m.da) : '—';
+        const pa = (typeof m.pa === 'number') ? Math.round(m.pa) : '—';
+        // Curation checkbox (non-ingested rows only): tick the worthy ones → ⚙ Process
+        // selected ingests just those via the unblocker.
         const pick = m.ingested ? '' :
-          `<input type="checkbox" class="ms-pick" data-url="${escapeHtml(m.url || '')}" title="select to process into master" style="margin-right:8px;width:16px;height:16px;vertical-align:middle;accent-color:var(--accent)">`;
-        return `<div class="top-recipe-row"${m.selected ? '' : ' style="opacity:.56"'}>${tile}<div class="top-recipe-body">` +
-          `<div class="top-recipe-main">${pick}<span class="top-rank">#${m.rank || i + 1}</span>` +
-          `<span class="top-recipe-title">${title}</span> <span class="top-recipe-host">${escapeHtml(host)}</span>${badges}</div>` +
-          `<div class="top-recipe-meta">${escapeHtml(meta.join(' · '))}</div>` +
-          `<div class="top-recipe-actions">${actions}</div>` +
-          `</div></div>`;
+          `<input type="checkbox" class="ms-pick" data-url="${escapeHtml(m.url || '')}" title="select to process into master" style="flex:0 0 auto;width:15px;height:15px;accent-color:var(--accent)">`;
+        return `<li class="ed-t10-row"${m.selected ? '' : ' style="opacity:.62"'}>` +
+          pick +
+          `<span class="ed-t10-rank">${m.rank || i + 1}</span>${thumb}` +
+          `<span class="ed-t10-main">` +
+            `<a class="ed-t10-name" href="${escapeHtml(href)}" target="_blank" rel="noopener" title="${escapeHtml(openTitle)}">${title}${star}</a>` +
+            `<span class="ed-t10-sub">${escapeHtml(host)}${grade}${corpus}${notSel}</span>` +
+          `</span>` +
+          `<span class="ed-t10-stats">` +
+            `<span class="ed-t10-stat score"><span class="v">${rk}</span><span class="l">score</span></span>` +
+            `<span class="ed-t10-stat pct"><span class="v">${da}</span><span class="l">da</span></span>` +
+            `<span class="ed-t10-stat pct"><span class="v">${pa}</span><span class="l">pa</span></span>` +
+          `</span>` +
+          `</li>`;
       }).join('');
     }
 
@@ -612,7 +625,7 @@
         // — else this stale result repaints the wrong domain / undoes a Clear.
         if (selected !== domain || gen !== topGen) return;
         renderDomainTop(d.top || [], false, '#domainTopList');
-      } catch (e) { el.innerHTML = `<div class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</div>`; }
+      } catch (e) { el.innerHTML = `<li class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</li>`; }
     }
 
     // Persistent scored-cohort panel (mirrors the dishes form's cohort accordion). Full
@@ -802,8 +815,11 @@
       document.querySelectorAll('#harvestModes .hm-card').forEach(c => {
         const i = c.querySelector('input'); const on = i && i.value === mode;
         if (i) i.checked = on;
-        c.style.background = on ? 'var(--accent-soft)' : 'transparent';
-        c.style.borderColor = on ? 'var(--accent)' : 'var(--line)';
+        // Quiet selection: a paper lift + a slightly firmer edge, not the clay fill
+        // this used to paint. The radio is already accent-tinted and the unselected
+        // cards sit on transparent, so the state reads without shouting.
+        c.style.background = on ? 'var(--ed-paper)' : 'transparent';
+        c.style.borderColor = on ? 'var(--ed-key)' : 'var(--line)';
       });
       if (dirty){ const b = $('#saveBtn'); if (b) b.disabled = false; }
     }

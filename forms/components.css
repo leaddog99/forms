@@ -2,66 +2,13 @@
    definitions live HERE (reference design: dishes.html); pages link this file rather
    than re-styling per page. Uses tokens.css. See feedback_reuse_layout_components. */
 
-/* ===== Top-recipes list (dishes + domains publisher panel) ===== */
-.top-recipes-panel { margin-top: 4px; }
-.top-recipes-header {
-  font-size: 1.0em; margin: 0 0 8px; color: var(--ink);
-  font-family: Georgia, 'Times New Roman', serif; font-weight: 600;
-}
-.top-recipes-subline {
-  color: var(--muted); font-weight: normal; font-style: italic;
-  font-size: 0.86em; margin-left: 6px;
-}
-.top-recipes-list { display: flex; flex-direction: column; gap: 6px; }
-.top-recipe-row {
-  display: flex; gap: 12px; padding: 8px 12px;
-  border: 1px solid var(--line); border-radius: 8px;
-  background: var(--card); font-size: 0.92em;   /* neutral; --accent-soft is reserved for SELECTION */
-  transition: background 120ms ease;
-}
-.top-recipe-row:hover { background: var(--bg); }   /* subtle neutral hover, not the selection tint */
-.top-recipe-tile {
-  flex: 0 0 auto; display: block; width: 88px; height: 66px;   /* 4:3 link-preview */
-  border-radius: 6px; overflow: hidden; background: var(--bg); border: 1px solid var(--line);
-}
-.top-recipe-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.top-recipe-tile.empty {
-  background: repeating-linear-gradient(45deg, var(--bg) 0 8px, var(--line) 8px 9px);
-}
-.top-recipe-body { flex: 1; min-width: 0; }
-.top-recipe-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.top-rank {
-  display: inline-block; min-width: 28px; padding: 2px 6px;
-  background: var(--accent); color: #fff; border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.78em; font-weight: 600; text-align: center;
-}
-.top-recipe-title { color: var(--ink); font-weight: 600; font-family: Georgia, 'Times New Roman', serif; }
-.top-recipe-host { color: var(--muted); font-size: 0.85em; font-style: italic; }
-/* small status badge — domains uses it for kept(★)/grade/in-corpus */
-.top-badge {
-  font-size: 0.72em; font-weight: 600; padding: 1px 6px; border-radius: 4px;
-  background: var(--accent-soft); color: var(--accent-dark);
-}
-.top-badge.sel { background: var(--accent); color: #fff; }
-.top-recipe-meta {
-  display: flex; align-items: center; gap: 10px; margin-top: 4px;
-  font-size: 0.82em; color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-}
-.top-scores { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-.top-recipe-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.top-action {
-  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
-  border-radius: 4px; font-family: Georgia, 'Times New Roman', serif;
-  font-size: 0.82em; font-weight: 500; text-decoration: none;
-  transition: background 120ms ease, color 120ms ease; line-height: 1.3; white-space: nowrap;
-}
-.top-action-primary { background: var(--accent); color: #fff; }
-.top-action-primary:hover { background: var(--accent-dark); }
-.top-action-secondary { background: transparent; color: var(--accent); border: 1px solid var(--line); }
-.top-action-secondary:hover { background: var(--accent-soft); border-color: var(--accent); }
-.top-action-arrow { font-size: 0.86em; opacity: 0.75; }
+/* ===== Top-recipes list — RETIRED 2026-08-06 =====
+   The domains publisher panel was the only consumer, and it now renders the SHARED
+   .ed-t10-* row from editor-shell.css — the same component the dishes page uses, so
+   the two pages finally look alike (feedback_reuse_layout_components). The old block
+   was the source of that page's brick-heavy look: a solid --accent rank badge and a
+   solid --accent "Open in BCC" button on EVERY row, plus --accent badge pills and a
+   bold serif title. Deleted rather than left to rot; git history has it. */
 
 /* ===== Source chooser (a refresh/import with alternative sources, each owning its
    own fields). One radio per group; the chosen group is highlighted with an accent
@@ -73,7 +20,11 @@
   transition: opacity .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .src-group.is-dim { opacity: 0.5; }
-.src-group.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* Selection reads as a quiet lift, not a clay ring (2026-08-06). The old
+   accent border + 2px --accent-soft glow made the chosen source the loudest
+   object on the page; the radio is already lit, and dimming the siblings
+   carries the state. Matches the restraint of the dishes page. */
+.src-group.is-active { border-color: var(--ed-key); background: var(--ed-paper); }
 .src-head {
   display: flex; align-items: center; gap: 8px; margin: 0 0 10px; cursor: pointer;
   font-family: Georgia, 'Times New Roman', serif; font-weight: 600; color: var(--ink);
