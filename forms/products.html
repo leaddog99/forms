@@ -123,7 +123,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260731d"></script>
+  <script src="/forms/library-shell.js?v=20260805a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
     LibraryShell.initNav({ currentPage: 'products' });
@@ -161,17 +161,56 @@
           const r = await fetch('/staged-markdown/' + encodeURIComponent(token));
           if (r.ok){ const d = await r.json(); md = d.markdown || ''; src = d.source_url || src; }
         }
-        if (!md){ flash && flash('Nothing staged to import', true); return false; }
-        const r = await fetch('/extract-product', {
+        if (!md){ renderImportFailed('Nothing staged to import — the token may have expired. Re-run the grab.'); return false; }
+        const post = () => fetch('/extract-product', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ markdown: md, source_url: src }) });
-        const d = await r.json();
+        let r = await post();
+        // /extract-product is gated on edit_master, so an expired or absent
+        // session answers 403 (not 401). Both were previously unhandled: the
+        // catch below only flashed a toast and returned false, and the boot
+        // caller does nothing on false — leaving the page stranded on the
+        // "Grabbing product…" screen renderImporting() already painted. That is
+        // the hang. The capture is in hand and the token is still valid, so
+        // offer sign-in and retry rather than sending anyone back to re-grab.
+        // Same handshake as reviews.html; the server stays the authority.
+        if (r.status === 401 || r.status === 403){
+          // WHICH credential is missing decides which prompt. /extract-product
+          // needs edit_master, and a staff account whose 12h master token has
+          // expired reads as 'member' (staff_locked) while still being perfectly
+          // signed in — so signing in again cannot fix it. Ask /auth/me and
+          // prompt for the unlock in that case, the login otherwise.
+          const me = await fetch('/auth/me').then(x => x.json()).catch(() => null);
+          const res = me && me.staff_locked
+            ? await LibraryShell.unlockDialog({
+                title: 'Unlock to import',
+                message: 'This product is captured and waiting. Your curator session expired — unlock to decode it. Nothing has been spent yet.'
+              })
+            : await LibraryShell.signInDialog({
+                title: 'Sign in to import',
+                message: 'This product is captured and waiting. Sign in with curator permissions to decode it — nothing has been spent yet.'
+              });
+          if (!res || !res.ok){
+            renderImportFailed('Import cancelled — nothing was spent. Re-run the grab when you are signed in.');
+            return false;
+          }
+          renderImporting();
+          r = await post();
+        }
+        const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
         importData = { product: d.product || {}, facts: d.facts || [], matches: d.matches || {}, source_url: src };
         mergeInto = (d.matches && d.matches.exact) || null;
         mode = 'add'; selected = null;
         return true;
-      } catch (e){ flash && flash('Import failed: ' + (e.message || e), true); return false; }
+      } catch (e){ renderImportFailed(e.message || String(e)); return false; }
+    }
+
+    function renderImportFailed(msg){
+      $('#page').innerHTML = `<div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Import failed</span></div>
+        <h1 class="ed-title">Couldn’t import that page</h1>
+        <p class="muted">${escapeHtml(msg)}</p>
+        <p class="muted">The catalog is still available from the menu.</p>`;
     }
 
     function renderImporting(){
@@ -758,7 +797,17 @@
     // auto-extract and open the prefilled Add form (inside the normal ACDV shell, list in the menu).
     (async () => {
       await load();
+      const staged = qs('staged') || qs('url');
       if (await tryStagedImport()){ renderList(); renderDetail(); nav.afterSelect(); }
+      else if (staged){
+        // A FAILED import must still leave a usable page. This branch did not
+        // exist: tryStagedImport returned false and the boot simply stopped,
+        // stranding the user on the "Grabbing product…" screen forever — the
+        // reported hang. Populate the master list so the catalog is reachable,
+        // but do NOT call renderDetail(), which writes #page and would wipe the
+        // failure message explaining what went wrong.
+        renderList();
+      }
     })();
   </script>
 </body>

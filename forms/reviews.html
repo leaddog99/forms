@@ -88,7 +88,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260731d"></script>
+  <script src="/forms/library-shell.js?v=20260805a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
     LibraryShell.initNav({ currentPage: 'reviews' });
@@ -149,10 +149,19 @@
         // the staged token is still valid. The server stays the authority; a
         // client-side permission check would only decide what our own UI does.
         if (r.status === 401 || r.status === 403){
-          const res = await LibraryShell.signInDialog({
-            title: 'Sign in to import',
-            message: 'This review is captured and waiting. Sign in with curator permissions to decode it — nothing has been spent yet.'
-          });
+          // Same split as products.html: an expired curator unlock (staff_locked)
+          // needs the master password, NOT another login — signInDialog posts
+          // /auth/login and never mints a master token, so it would loop.
+          const me = await fetch('/auth/me').then(x => x.json()).catch(() => null);
+          const res = me && me.staff_locked
+            ? await LibraryShell.unlockDialog({
+                title: 'Unlock to import',
+                message: 'This review is captured and waiting. Your curator session expired — unlock to decode it. Nothing has been spent yet.'
+              })
+            : await LibraryShell.signInDialog({
+                title: 'Sign in to import',
+                message: 'This review is captured and waiting. Sign in with curator permissions to decode it — nothing has been spent yet.'
+              });
           if (!res || !res.ok){
             clearQuery();
             renderImportFailed('Import cancelled — nothing was spent. Re-run the grab when you are signed in.');

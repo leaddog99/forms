@@ -413,7 +413,13 @@
   // Unlock staff permissions on the CURRENT identity — no user switch. The token
   // proves you know the curator password; it is not bound to a user_id, so the
   // same one that makes uid 0 owner also unlocks a staff row's real role.
-  function unlockAdmin(password, onError) {
+  // Resolves TRUE once the master token is stored, FALSE on any rejection, so a
+  // caller can await it and branch. `opts.reload === false` suppresses the page
+  // reload for in-flight work that must survive the unlock (the bookmarklet
+  // staged-import retry) — the header's inline link still reloads, since there
+  // the whole point is to re-render the page as a curator.
+  function unlockAdmin(password, onError, opts) {
+    const doReload = !(opts && opts.reload === false);
     return window.fetch('/auth/master', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -427,10 +433,11 @@
       }
       return r.json();
     }).then(function (d) {
-      if (!d || !d.token) return;
+      if (!d || !d.token) return false;
       try { localStorage.setItem('app:master_token', d.token); } catch (e) { /* private mode */ }
-      window.location.reload();
-    }).catch(function (e) { onError('Could not reach the server: ' + e.message); });
+      if (doReload) window.location.reload();
+      return true;
+    }).catch(function (e) { onError('Could not reach the server: ' + e.message); return false; });
   }
 
   function identityActions(data) {
@@ -681,6 +688,89 @@
       go.addEventListener('click', attempt);
       [email, pwInput].filter(Boolean).forEach(el =>
         el.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); }));
+    });
+  }
+
+  // The CURATOR UNLOCK prompt — the sibling of signInDialog, and not the same
+  // credential. signInDialog posts /auth/login, which proves WHO you are; it
+  // never mints a master token. A staff account without one resolves as
+  // 'member' (staff_locked), so every edit_master endpoint answers 403 and
+  // signing in again cannot fix it — the caller has to unlock.
+  //
+  // This existed only as the header's inline unlock link, so any FLOW that hit a
+  // 403 mid-task had no way to ask for the credential it actually needed. The
+  // master token lasts MASTER_TOKEN_TTL (12h), so a curator who unlocked
+  // yesterday morning is silently demoted today with no prompt anywhere.
+  //
+  // Returns {ok:true} once /auth/master accepts the password and the token is
+  // stored, or {ok:false} if cancelled — same contract as signInDialog so a
+  // caller can branch on either without caring which credential was missing.
+  function unlockDialog(opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      const ov = document.createElement('div');
+      ov.style.cssText =
+        'position:fixed;inset:0;z-index:1300;background:rgba(42,33,27,.45);' +
+        'display:flex;align-items:center;justify-content:center;padding:24px';
+      ov.innerHTML =
+        '<div style="background:#fff;border-radius:14px;padding:26px 28px;max-width:26rem;' +
+        'width:100%;box-shadow:0 12px 36px rgba(60,40,20,.3)">' +
+        '<h2 style="margin:0 0 6px;font-size:1.2rem">' + escapeHtml(opts.title || 'Unlock curator tools') + '</h2>' +
+        '<p style="margin:0 0 16px;color:var(--muted,#6b5b4f);font-size:.9rem;line-height:1.45">' +
+        escapeHtml(opts.message || 'Your curator session has expired. Enter the master password to continue.') + '</p>' +
+        '<div class="ud-pw"></div>' +
+        '<div class="ud-msg" style="font-size:.85rem;min-height:1.2em;margin:4px 0 12px;color:#a3382b"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button type="button" class="ud-cancel" style="padding:9px 16px;font:inherit;background:none;' +
+        'border:1px solid var(--border,#e6dccf);border-radius:8px;cursor:pointer">Cancel</button>' +
+        '<button type="button" class="ud-go" style="padding:9px 18px;font:inherit;font-weight:600;' +
+        'background:var(--accent,#b8602a);color:#fff;border:none;border-radius:8px;cursor:pointer">Unlock</button>' +
+        '</div></div>';
+      document.body.appendChild(ov);
+
+      const pwf = passwordField({
+        id: 'ud_pw', label: 'Master password', min: 1,
+        autocomplete: 'current-password', placeholder: 'Master password',
+      });
+      pwf.el.querySelectorAll('.ed-field')[1].hidden = true;   // no confirm on an unlock
+      ov.querySelector('.ud-pw').appendChild(pwf.el);
+
+      const msg = ov.querySelector('.ud-msg');
+      const go = ov.querySelector('.ud-go');
+      const pwInput = pwf.el.querySelector('input');
+      pwInput.focus();
+
+      function close(result) {
+        document.removeEventListener('keydown', onKey);
+        ov.remove();
+        resolve(result);
+      }
+      function onKey(e) { if (e.key === 'Escape') close({ ok: false }); }
+      document.addEventListener('keydown', onKey);
+      ov.querySelector('.ud-cancel').addEventListener('click', () => close({ ok: false }));
+      ov.addEventListener('click', e => { if (e.target === ov) close({ ok: false }); });
+
+      async function attempt() {
+        const pw = pwInput.value || '';
+        if (!pw) { msg.textContent = 'Enter the master password.'; return; }
+        go.disabled = true; msg.style.color = 'var(--muted,#6b5b4f)'; msg.textContent = 'Unlocking…';
+        try {
+          // reload:false — the caller has work in flight (a staged capture) that
+          // a reload would restart or lose.
+          const ok = await unlockAdmin(pw, function (err) {
+            msg.style.color = '#a3382b';
+            msg.textContent = err || 'Incorrect password.';
+          }, { reload: false });
+          if (!ok) { pwf.clear(); pwInput.focus(); return; }
+          try { refreshIdentity(); } catch (e) { /* non-fatal */ }
+          close({ ok: true });
+        } catch (e) {
+          msg.style.color = '#a3382b';
+          msg.textContent = 'Could not reach the server: ' + e.message;
+        } finally { go.disabled = false; }
+      }
+      go.addEventListener('click', attempt);
+      pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') attempt(); });
     });
   }
 
@@ -1568,6 +1658,7 @@
     attachUrlControls,
     passwordField,
     signInDialog,
+    unlockDialog,
     storeSession,
     // The identity probe itself, not just the things built on it. Callers that
     // need to know WHO is signed in before spending money (the staged-grab flow
