@@ -39,6 +39,7 @@ import sqlite3
 import uuid
 import asyncio
 import json
+import re
 import time
 from datetime import datetime, timezone
 import os
@@ -7132,6 +7133,55 @@ def _finalize_extract_recipe(recipe, *, url_norm=None, usage_log=None) -> None:
     _attach_identity_card(recipe, usage_log=usage_log)
 
 
+# A BCC self-permalink — our own page, nothing to screenshot.
+_SELF_PERMALINK_RE = re.compile(
+    r"/r/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
+def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None) -> None:
+    """Capture the source page and stamp `_source.pageScreenshot`.
+
+    Stored as a compact JPEG BLOB in media.db keyed by url_normalized; the
+    recipe carries only the short `/screenshot/<id>` URL the blob endpoint
+    serves. Durable — image_store's generated/ is git-ignored + ephemeral.
+
+    SHARED (2026-08-06) between the URL path and the markdown/bookmarklet path.
+    It had lived inline in extract_recipe_from_url only, so the bookmarklet —
+    which stages HTML client-side and lands on /extract-from-markdown — never
+    attempted a capture at all. That is why personal saves sat at 172/412 while
+    master ran 3927/4356, with NO "capture failed" lines anywhere: nothing was
+    failing, nothing was being tried. Call this BEFORE the extract-cache write
+    on every path, so the screenshot travels with the cached row.
+
+    Idempotent and best-effort: a row that already has one is left alone (guards
+    a cache hit from re-capturing), and any failure is swallowed — a missing
+    screenshot must never cost the caller their extraction.
+    """
+    if not url or not url_norm:
+        return
+    if not url.startswith(("http://", "https://")):
+        return
+    if _SELF_PERMALINK_RE.search(url):
+        return
+    if (recipe.get("_source") or {}).get("pageScreenshot"):
+        return
+    try:
+        from input.pipeline.screenshot_pipeline import capture_and_store_blob
+        t_shot = time.perf_counter()
+        shot_url = capture_and_store_blob(url, url_norm, MEDIA_DB_PATH)
+        if timings is not None:
+            timings["screenshot_ms"] = int((time.perf_counter() - t_shot) * 1000)
+        if shot_url:
+            src = recipe.get("_source") or {}
+            src["pageScreenshot"] = shot_url
+            recipe["_source"] = src
+            print(f"[SCREENSHOT] stored blob: {shot_url}")
+        else:
+            print(f"[SCREENSHOT] no capture for {url_norm}")
+    except Exception as e:
+        print(f"[SCREENSHOT] capture failed (continuing): {e}")
+
+
 def _stamp_translation_provenance(recipe, meta) -> None:
     """Stamp `_source` translation provenance (originalLanguage/translated/translatedAt/
     originalTitle) from a translation meta dict. Was duplicated in the bookmarklet and
@@ -9213,6 +9263,11 @@ async def extract_from_markdown_endpoint(
             # Every extract carries equipment (fast lane emits none). See _ensure_equipment.
             _ensure_equipment(recipe, path_used=path_used)
 
+            # Page screenshot BEFORE the cache write, so it travels with the
+            # cached row — same ordering the URL path uses. This path (the
+            # bookmarklet) had never attempted a capture at all.
+            _attach_page_screenshot(recipe, effective_url, url_norm, timings)
+
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
         timings["path"] = path_used
@@ -9676,24 +9731,8 @@ def extract_recipe_from_url(
     _attach_identity_card(recipe, usage_log=usage_log)
     timings["identity_ms"] = int((time.perf_counter() - t_idy) * 1000)
 
-    # Page screenshot — capture only when missing (guards a complete cache
-    # hit from re-capturing). Stored as a compact JPEG BLOB in media.db
-    # keyed by url_normalized; _source.pageScreenshot holds the short
-    # /screenshot/<id> URL the blob endpoint serves. Durable alongside the
-    # cache row (image_store's generated/ is git-ignored + ephemeral).
-    if url_norm and not (recipe.get("_source") or {}).get("pageScreenshot"):
-        try:
-            from input.pipeline.screenshot_pipeline import capture_and_store_blob
-            t_shot = time.perf_counter()
-            shot_url = capture_and_store_blob(url, url_norm, MEDIA_DB_PATH)
-            timings["screenshot_ms"] = int((time.perf_counter() - t_shot) * 1000)
-            if shot_url:
-                src = recipe.get("_source") or {}
-                src["pageScreenshot"] = shot_url
-                recipe["_source"] = src
-                print(f"[SCREENSHOT] stored blob: {shot_url}")
-        except Exception as e:
-            print(f"[SCREENSHOT] capture failed (continuing): {e}")
+    # Page screenshot — shared with the markdown/bookmarklet path.
+    _attach_page_screenshot(recipe, url, url_norm, timings)
 
     # Cache write AFTER enrichment so screenshot/identity/preview travel with
     # the row. Write on a fresh extract, to self-heal a hit row that predated
