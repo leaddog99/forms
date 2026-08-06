@@ -2975,3 +2975,104 @@ caught by running something rather than reasoning harder.
   migration candidate ([[project_system_config]]).
 - Unchanged: provenance backfill (~4,150 NULL `mozHttpCode`), the five archive-47 rows,
   snapshot capture, cadence, `user_api_keys`.
+
+## Session log — 2026-08-06 (close) — the ranking arc (three orderings, the third was the curator's), dishes_vec, and grades that outlived their scores
+
+Continuation of the mussel thread. Two threads, and the first one I got wrong twice in a row
+before the curator supplied the reasoning that settled it.
+
+### The ranking arc — selection had already happened
+
+Shipped **rank by OU/power blend** within the similarity pool, reasoning by analogy to the
+harvest gospel: similarity SELECTS, quality RANKS ([[project_two_stage_selection]]). The
+curator caught it live: *"i might have jumped the gun... sole meuniere came out on top whereas
+the next dish was mussels at a .27 distance vs the sole at .82."* Confirmed — inside the pool
+the blend had discarded distance entirely, so Sole Meuniere (blend 1.00, d=0.8288) outranked a
+near-identical moules mariniere at **d=0.2618**.
+
+Curator proposed multiplying. Measured five formulas on the real pool; **blend × cosine** fixed
+the case and left the other two queries IDENTICAL (it only bites when the pool holds a genuinely
+close match — same property that made the 0.86 cutoff safe). Chose cosine over a similarity
+percentile deliberately: rank flattens the very thing that matters, the gap between d=0.26 and
+d=0.71, and a percentile hands the pool-worst an exact 0 which annihilates a product. Shipped
+with a 0.15 floor against that zero.
+
+Then the curator supplied the argument that killed both versions: *"recipes that weren't scored
+won't participate... just the fact that these are master recipes implies they are great...
+i'd rather see mussel recipes than sole regardless of rank."*
+
+**Right, and it inverts the two-stage frame. MASTER MEMBERSHIP IS THE SELECTION STAGE.** Every
+row in the pool already survived harvest selection and curation, so re-ranking on authority
+charges a second toll on a signal the pool has already applied — and demotes rows that are
+merely UNSCORED rather than bad. Similarity is the only ordering the pool has not already
+expressed. Final: **order by distance; SHOW the grade** (94.7% populated, A+..D-, the form
+already renders it) so the reader judges instead of the ranker deciding.
+
+The proof is Moules Frites: under blend, Air Fryer French Fries and Perfect Crispy French Fries
+sat 2nd and 3rd. Under distance, **three mussels recipes take the top three.**
+
+Tier 1 (exact dish cohort) still ranks by rank_score, correctly — there every member IS the
+same dish, so similarity carries no information.
+
+**My error both times:** reaching for a pattern that fit the shape of the problem
+([[project_two_stage_selection]]) without checking whether its precondition held. It did not:
+the selection stage was upstream, in the corpus itself.
+
+### dishes_vec had no rebuild path (closes an open item from the previous entry)
+
+`backup_db.py` EXCLUDES the vec0 virtual tables from `recipes.sql` — they are derived. Master
+and products have `rebuild_*_vec_from_blobs`; dishes did not, so a restore came back with the
+dish index empty and no route home but re-embedding all 150 through the API. The BLOBs were in
+the dump the whole time. Written and verified non-destructively: captured all 150 vectors,
+rebuilt for real, compared — 150 written, 0 missing, 0 extra, 0 drifted, KNN unchanged.
+
+Small tell worth remembering: `rebuild_master_vec_from_blobs`' docstring had described itself as
+mirroring *"how dishes_vec rebuilds from dishes.embedding"* — a function nobody had written. A
+docstring asserting a sibling exists is not evidence it does.
+
+### Grades that outlived their scores
+
+Curator: *"i think the d- is a result of no score... if there isn't a score nor should there be
+a grade."* Half right, and the half that was wrong is the interesting half.
+
+The D grades are overwhelmingly GENUINE — the ladder tracks OU monotonically (A+ median 17.03 →
+D median −5.72) and 14 of 15 D/D- rows carry real negative OU. And `compute_exceptionalism`
+cannot grade without DA/PA; `float(None)` raises and it returns None.
+
+So these were graded when scores existed, and **the manufactured-zero strip (e942c78) removed
+the fabricated PA/DA from `_scoring` while leaving the DERIVED exceptionalism block behind.**
+The grade outlived its basis — the same shape as the bug the strip was fixing, one level down.
+
+**47 rows, not the 17 I first reported**: master uses `_master.exceptionalism`, personal uses
+`_grade`, and my first count only looked at the former. The personal table held the worse cases.
+
+Curator chose re-score over delete. Yield was 1 of 47, but the diagnosis was worth it:
+
+```
+regraded                             :  1
+self-url (not applicable) -> dropped : 19
+no-moz-data -> dropped               : 25
+scored but no cohort -> dropped      :  1
+no-url -> dropped                    :  1
+```
+
+**The 19 are the finding.** Handwritten recipes carrying their own `/r/<uuid>` permalink —
+nothing external can ever link to them, so Moz can never answer, and a `D-` was grading the
+curator's own recipe as failing for want of inbound links to a URL that exists only for them.
+That is NOT APPLICABLE, distinct from NOT MEASURED ([[feedback_absent_not_zero]]). Now skipped
+BEFORE the Moz call, matched on the `/r/<uuid>` path rather than the host (the public host has
+changed over time; the path shape has not). Result: **0 orphaned grades in either table.**
+
+### Open
+
+- **Restart needed** — the similarity ordering (33ed9ae) is committed but not running.
+- **`recipes.sql.gz` stale again** — the grade repair rewrote 47 rows after the 14:09 dump.
+- `scripts/repair_orphan_grades.py --dry-run` **still spends Moz rows** (previewing a re-score
+  requires scoring; only the write is suppressed). Ran it twice before committing, ~3x the
+  necessary spend. Small (~130 rows of a 120k plan) but the flag promises more than it delivers.
+- A **scoring counterpart to check_embeddings.py** — assert no row carries a grade without a
+  live PA/DA, so this cannot recur silently. This is the second derived-artifact-outlives-source
+  bug in three days ([[project_regression_check_cycle]]).
+- Unchanged: personal-path screenshots never attempted, 429 master screenshots,
+  `power_blend_weight` still in `bcc_config.json`, provenance backfill (~4,150 NULL
+  `mozHttpCode`), the five archive-47 rows, `user_api_keys`.
