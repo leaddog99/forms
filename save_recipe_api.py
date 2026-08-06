@@ -1727,9 +1727,40 @@ def similar_master_recipes(payload: dict = Body(...)):
             # rank_by_blend's sort is stable, so candidates that share a blend
             # score (notably the unmeasured, which all land on 0.0) stay in
             # closest-first order.
+            # Two-stage, same shape as the harvest: SIMILARITY SELECTS the pool
+            # (the <= similar_max cutoff above), then quality RANKS within it.
+            #
+            # Ranking on the blend ALONE overreached (curator, 2026-08-06: "I
+            # might have jumped the gun"): on a Moules Marinieres query, Sole
+            # Meuniere led on authority (blend 1.00, d=0.83) over a near-
+            # duplicate moules marinière at d=0.26. Inside the pool the blend
+            # had discarded distance entirely, so a different dish could beat
+            # what is effectively the same recipe.
+            #
+            # Multiply instead: match = blend * cosine. Both factors must be
+            # decent — authority cannot rescue a marginal neighbour, and
+            # closeness cannot rescue a weak page. Measured on the three live
+            # pools: it fixes the Moules Marinieres order and leaves the other
+            # two IDENTICAL, because it only bites when the pool actually holds
+            # a close match (same property as the 0.86 cutoff).
+            #
+            # BLEND_FLOOR guards the multiplicative zero: percentile_ranks
+            # assigns 0.0 to the pool-worst AND to the unmeasured, and a bare
+            # 0 would annihilate the product — pinning a d=0.05 near-duplicate
+            # to last place on a missing signal ([[feedback_absent_not_zero]]).
+            # It is a guard, not a tuned value; it changes no current ordering.
+            BLEND_FLOOR = 0.15
             results.sort(key=lambda x: x["distance"])
             from input.pipeline.blend import rank_by_blend
-            results = rank_by_blend(results)[:want]
+            results = rank_by_blend(results)
+            for r in results:
+                dist = r.get("distance")
+                sim = _l2_to_cosine_sim(dist) if isinstance(dist, (int, float)) else 0.0
+                r["similarity"] = round(sim, 4)
+                r["match_score"] = round(
+                    (BLEND_FLOOR + (1.0 - BLEND_FLOOR) * r["blend_score"]) * sim, 6)
+            results.sort(key=lambda x: x["match_score"], reverse=True)
+            results = results[:want]
             print(f"[SIMILAR] {recipe.get('name','')!r} -> vector {len(results)} shown "
                   f"(of {len(near)} within {similar_max}, {len(raw)} scanned)")
             return {
