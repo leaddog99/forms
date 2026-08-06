@@ -6710,6 +6710,130 @@ async def _handle_chapter_rollups_job(job: dict) -> dict:
 jobs_lib.register_handler("chapter_rollups", _handle_chapter_rollups_job)
 
 
+async def _handle_screenshot_refresh_job(job: dict) -> dict:
+    """Keep source-page screenshots current. Captures what is MISSING and
+    re-shoots what has gone STALE, in one pass.
+
+    Four reasons a row is picked up, all read from data we already keep:
+
+      no-shot     `_source.pageScreenshot` empty — never captured.
+      no-blob     the recipe points at a /screenshot/<id> whose media.db row is
+                  gone (media.db is git-ignored and regenerable, so this is the
+                  expected state after a restore).
+      changed     `source_changed_at` is newer than the blob — the publisher
+                  edited the page since we shot it, so the image is a picture of
+                  something that no longer exists.
+      aged        the blob is older than `max_age_days` (default 365; 0 = off).
+                  Sites redesign; a two-year-old shot misrepresents them.
+
+    Re-shooting is cheap and idempotent: `screenshot_id_for(url_normalized)` is
+    deterministic, so a recapture OVERWRITES one media.db row and the recipe's
+    `/screenshot/<id>` URL is unchanged — the recipe row is only rewritten when
+    it had no screenshot before.
+
+    params: {mode: "all"|"missing"|"stale", limit: int, max_age_days: int,
+             tables: ["master_recipes","recipes"]}
+    Wall time is Playwright-bound, ~4s/row, so `limit` is the real control —
+    a nightly schedule with limit ~200 keeps the corpus fresh without ever
+    running long.
+    """
+    p = job.get("params") or {}
+    mode = (p.get("mode") or "all").strip()
+    limit = int(p.get("limit") or 0)
+    max_age_days = int(p.get("max_age_days", 365))
+    tables = p.get("tables") or ["master_recipes", "recipes"]
+
+    def _run():
+        from input.pipeline.screenshot_pipeline import screenshot_id_for
+        from datetime import timedelta
+        counts = {"scanned": 0, "no-shot": 0, "no-blob": 0, "changed": 0,
+                  "aged": 0, "captured": 0, "failed": 0, "skipped": 0}
+        media = sqlite3.connect(MEDIA_DB_PATH, timeout=30)
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=max_age_days) if max_age_days > 0 else None
+        with _db() as conn:
+            for table in tables:
+                rows = conn.execute(
+                    f"SELECT id, data, url_normalized, source_changed_at FROM {table}"
+                ).fetchall()
+                for rid, dj, url_norm, changed_at in rows:
+                    if limit and counts["captured"] >= limit:
+                        break
+                    counts["scanned"] += 1
+                    try:
+                        d = json.loads(dj)
+                    except Exception:
+                        continue
+                    src = d.get("_source") or {}
+                    url = (src.get("originalUrl") or "").strip()
+                    if not url or not url.startswith(("http://", "https://")):
+                        counts["skipped"] += 1
+                        continue
+                    if _SELF_PERMALINK_RE.search(url):
+                        counts["skipped"] += 1
+                        continue
+                    key = (url_norm or url).strip()
+                    had_shot = bool((src.get("pageScreenshot") or "").strip())
+
+                    # Resolve the blob by the id the RECIPE POINTS AT first, and
+                    # only then by the id we would compute today. Measured
+                    # 2026-08-06: 31 rows carry a working screenshot stored
+                    # under a different id than screenshot_id_for(url_normalized)
+                    # now yields (the key used at capture time differed). Trusting
+                    # only the computed id calls those "missing" and re-shoots a
+                    # perfectly good page, orphaning the original blob.
+                    blob_at = None
+                    stored_id = ((src.get("pageScreenshot") or "")
+                                 .strip().rsplit("/", 1)[-1])
+                    for sid in (stored_id, screenshot_id_for(key)):
+                        if not sid:
+                            continue
+                        row = media.execute(
+                            "SELECT created_at FROM page_screenshots WHERE screenshot_id = ?",
+                            (sid,)).fetchone()
+                        if row:
+                            blob_at = row[0]
+                            break
+
+                    reason = None
+                    if not had_shot:
+                        reason = "no-shot"
+                    elif blob_at is None:
+                        reason = "no-blob"
+                    elif changed_at and blob_at and str(changed_at) > str(blob_at):
+                        reason = "changed"
+                    elif cutoff and blob_at and str(blob_at) < cutoff.isoformat():
+                        reason = "aged"
+                    if reason is None:
+                        continue
+                    if mode == "missing" and reason not in ("no-shot", "no-blob"):
+                        continue
+                    if mode == "stale" and reason in ("no-shot",):
+                        continue
+                    counts[reason] += 1
+
+                    before = (d.get("_source") or {}).get("pageScreenshot")
+                    _attach_page_screenshot(d, url, key, None, force=True)
+                    after = (d.get("_source") or {}).get("pageScreenshot")
+                    if not after:
+                        counts["failed"] += 1
+                        continue
+                    counts["captured"] += 1
+                    if after != before:
+                        conn.execute(f"UPDATE {table} SET data = ? WHERE id = ?",
+                                     (json.dumps(d, indent=2), rid))
+                        conn.commit()
+        media.close()
+        return counts
+
+    summary = await asyncio.to_thread(_run)
+    print(f"[SCREENSHOT-REFRESH] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("screenshot_refresh", _handle_screenshot_refresh_job)
+
+
 async def _handle_semrush_ranks_refresh_job(job: dict) -> dict:
     """Re-import the newest SEMrush Rank export (input/ ∪ ~/Downloads) and re-stamp
     every domain's semrush_rank from it. The export is MANUAL (no SEMrush API at
@@ -7138,7 +7262,8 @@ _SELF_PERMALINK_RE = re.compile(
     r"/r/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
-def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None) -> None:
+def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None,
+                            *, force: bool = False) -> None:
     """Capture the source page and stamp `_source.pageScreenshot`.
 
     Stored as a compact JPEG BLOB in media.db keyed by url_normalized; the
@@ -7163,7 +7288,10 @@ def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None) -> No
         return
     if _SELF_PERMALINK_RE.search(url):
         return
-    if (recipe.get("_source") or {}).get("pageScreenshot"):
+    # `force` is the RECAPTURE path (the screenshot_refresh job): the blob key
+    # is deterministic from url_normalized, so a re-shoot overwrites the same
+    # media.db row and the recipe's /screenshot/<id> URL never changes.
+    if not force and (recipe.get("_source") or {}).get("pageScreenshot"):
         return
     try:
         from input.pipeline.screenshot_pipeline import capture_and_store_blob
