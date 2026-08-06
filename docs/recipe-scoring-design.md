@@ -436,6 +436,45 @@ two the random sample flagged. One of the 30 returned **`http_code 1`**, a third
 code after pinchofyum's `5`; independent confirmation that `bool(code)` is the correct gate and the
 `(200,301,302,402)` allow-list was discarding real measurements.
 
+### 11b.1 "No Moz data" was often OUR bug, not Moz's — MEASURED 2026-08-06
+
+Two defects made pages look uncrawled when Moz held them all along. Both inflate the
+fabricated/uncrawled population above, so counts taken before this date read high.
+
+**1. We asked about non-canonical URLs.** The stored URL is whatever the bookmarklet grabbed —
+a mobile path from a phone, an AMP page, a share sheet's tracking query. Moz indexes the
+canonical page and has never seen those strings:
+
+```
+cooking.nytimes.com/recipes/1025200-…?unlocked_article_code=…&smid=ck-recipe-iOS-share   NO DATA
+cooking.nytimes.com/recipes/1025200-…                                    pa=57 da=95 ou=+9.75
+williams-sonoma.com/m/recipe/stanley-tucci-chicken-cacciatore.html                       NO DATA
+williams-sonoma.com/recipe/stanley-tucci-chicken-cacciatore.html         pa=41 da=82 ou=-2.24
+```
+
+Fixed in `_canonical_form()`, which adds the cleaned URL as an EXTRA probe candidate.
+`url_normalized` — the dedup and cache key — is deliberately untouched.
+
+Guards, because the failure mode is silent over-scoring: tracking keys are an **allow-list**
+(`utm_*`, `smid`, `fbclid`, `unlocked_article_code`, `token`…), since sites use the query string
+as real page identity (`?p=123`) and stripping one asks about a different page; only a **leading**
+`/m/` is removed; and a canonical form that collapses to the site root is **refused outright**,
+because attributing a homepage's PA to a recipe is worse than having no score. An already-canonical
+URL adds nothing, so ordinary scoring still costs 4 variants.
+
+**2. A usable variant could lose a tie-break.** `_pick` sorted candidates into `crawled`
+(200/301/302) and `estimated` (402) and dropped everything else into a generic pool ranked by PA.
+Moz also returns codes **1, 3 and 5** with real metrics, so those fell to the generic pool — and
+when PA tied across variants, `max()` broke the tie by list order and could return a code-0 row,
+which then failed the usable gate. Observed on `travel-gourmet.com/…/stufato-di-pesce-…/`: all 8
+variants pa=21, only the trailing-slash form carried `code=3`, and the page scored nothing.
+
+Fixed by adding a `has_data` tier (**any** non-zero code) above the generic pool. **This is the
+`(200,301,302,402)` allow-list mistake for the third time** — first as the `usable` gate that
+rejected pinchofyum's `code=5` (496 rows billed, 0 scored), then as the inflated 15% fabrication
+estimate, now as a tie-break. Those four codes RANK known tiers; they have never been the
+definition of "has data". That is `bool(http_code)`, and nothing else.
+
 **Consumers must now exclude `moz_http_code = 0` from any fit over PA** — the paid-PA calibration
 first, since fabricated rows are concentrated in exactly its population and would drag the
 shift-scale remap toward the placeholder.

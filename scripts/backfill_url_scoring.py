@@ -49,9 +49,34 @@ from input.pipeline.url_scoring import (  # noqa: E402
 DB_PATH = str(PROJECT_ROOT / "recipes.db")
 
 
-def gather_recipes(con: sqlite3.Connection) -> dict[str, list[tuple[int, dict]]]:
+# The cohort fields. A single-URL Moz call CANNOT produce these — they are a
+# page's rank within a dish's field of competitors, computed at dish-batch time.
+# A recipe saved outside a batch has no field, so there is no accurate value to
+# write; re-scoring fixes the Moz half and leaves these untouched.
+_COHORT_KEYS = ("ouPercentile", "powerPercentile", "fieldAvgPower", "fieldMaxPower",
+                "fieldMinPower", "fieldN", "fieldScope", "dishCompetitivenessPct")
+
+
+def _has_unmeasured_zeros(d: dict) -> bool:
+    """True when _scoring carries a 0.0 nothing ever measured — the state
+    ScoringMetadata's `= 0.0` defaults manufacture on every extract."""
+    sc = d.get("_scoring")
+    if not isinstance(sc, dict):
+        return False
+    for k in ("pageAuthority", "domainAuthority", "ouScore", "power") + _COHORT_KEYS:
+        v = sc.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and float(v) == 0.0:
+            return True
+    return False
+
+
+def gather_recipes(con: sqlite3.Connection,
+                   zeros_only: bool = False) -> dict[str, list[tuple[int, dict]]]:
     """Return {normalized_url: [(id, recipe_dict), ...]}. Skips recipes
-    with no source URL (handwritten / synthetic-self-URL records)."""
+    with no source URL (handwritten / synthetic-self-URL records).
+
+    `zeros_only` narrows to rows carrying unmeasured zeros — the repair set,
+    rather than re-billing Moz for the whole table."""
     out: dict[str, list[tuple[int, dict]]] = {}
     cur = con.execute("SELECT id, data FROM recipes")
     for id_, data in cur.fetchall():
@@ -59,6 +84,8 @@ def gather_recipes(con: sqlite3.Connection) -> dict[str, list[tuple[int, dict]]]
             d = json.loads(data)
         except Exception as e:
             print(f"  [WARN] recipe id={id_} JSON parse failed: {e}")
+            continue
+        if zeros_only and not _has_unmeasured_zeros(d):
             continue
         src = (d.get("_source") or {}).get("originalUrl") or ""
         if not src.startswith(("http://", "https://")):
@@ -106,6 +133,12 @@ def update_recipe_scoring(d: dict, scores: dict) -> tuple[float | None, float | 
     s["pageAuthority"] = scores["page_authority"]
     s["domainAuthority"] = scores["domain_authority"]
     s["ouScore"] = scores["ou_score"]
+    # power is DA+PA and was one of the manufactured zeros, so recompute it from
+    # the values just measured rather than leaving a 0 beside a real PA.
+    try:
+        s["power"] = float(scores["domain_authority"]) + float(scores["page_authority"])
+    except (TypeError, ValueError):
+        s.pop("power", None)
     # Provenance for the PA just written (docs/recipe-scoring-design §11b).
     if scores.get("moz_http_code") is not None:
         s["mozHttpCode"] = scores["moz_http_code"]
@@ -122,13 +155,17 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0,
                     help="Only process the first N unique URLs (0 = all).")
     ap.add_argument("--db", default=DB_PATH, help=f"DB path (default {DB_PATH}).")
+    ap.add_argument("--zeros-only", action="store_true",
+                    help="Only rows carrying unmeasured zeros (the repair set).")
     args = ap.parse_args()
 
     print(f"[BACKFILL] DB: {args.db}")
     print(f"[BACKFILL] Mode: {'COMMIT' if args.commit else 'DRY-RUN (no writes)'}")
+    if args.zeros_only:
+        print("[BACKFILL] Scope: rows with UNMEASURED ZEROS only")
 
     con = sqlite3.connect(args.db)
-    grouped = gather_recipes(con)
+    grouped = gather_recipes(con, zeros_only=args.zeros_only)
     print(f"[BACKFILL] {sum(len(v) for v in grouped.values())} recipes across {len(grouped)} unique URLs")
 
     items = list(grouped.items())

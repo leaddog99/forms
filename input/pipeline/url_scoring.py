@@ -8,7 +8,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 from dotenv import load_dotenv
@@ -79,6 +79,71 @@ def _compute_ou(pa: float, da: float) -> Optional[float]:
         return None
 
 
+# Query keys that are TRACKING, never page identity. Deliberately an ALLOW-LIST:
+# plenty of sites use the query string as the page's real address (WordPress
+# `?p=123`, `?recipeId=`), and stripping one of those would ask Moz about a
+# DIFFERENT page — usually a listing or the homepage, which scores far higher.
+# An unknown key is therefore always kept.
+_TRACKING_KEYS = {
+    "fbclid", "gclid", "msclkid", "dclid", "yclid", "igshid", "mc_cid", "mc_eid",
+    "ref", "ref_src", "ref_url", "referrer", "source", "share", "shared",
+    # nytimes share links: ?smid=ck-recipe-iOS-share&unlocked_article_code=…
+    "smid", "unlocked_article_code", "sgrp", "algo", "impression_id",
+    # patreon "instant access" grants — an access token, not the page's address
+    "token", "amp",
+}
+_TRACKING_PREFIXES = ("utm_",)
+
+
+def _canonical_form(url: str) -> Optional[str]:
+    """The URL with MOBILE/AMP/TRACKING decoration removed, or None when the
+    input is already canonical (nothing to add).
+
+    Moz indexes the canonical page. We store whatever the bookmarklet grabbed,
+    which on a phone is a mobile path and from a share sheet carries tracking
+    params — so we were asking Moz about strings it has never seen and reading
+    the empty answer as "this page has no authority". Measured 2026-08-06, all
+    three recovered immediately in canonical form:
+
+        cooking.nytimes.com/recipes/1025200-…?unlocked_article_code=…  NO DATA
+        cooking.nytimes.com/recipes/1025200-…                          pa=57 da=95
+        williams-sonoma.com/m/recipe/stanley-tucci-chicken-cacciatore  NO DATA
+        williams-sonoma.com/recipe/stanley-tucci-chicken-cacciatore    pa=41 da=82
+        travel-gourmet.com/…/stufato-di-pesce-italian-fish-stew/amp    NO DATA
+        travel-gourmet.com/…/stufato-di-pesce-italian-fish-stew/       pa=21 da=30
+
+    This is only ever used to ADD a candidate; the stored URL is untouched, and
+    `url_normalized` (the dedup + cache key) is deliberately not involved.
+    """
+    try:
+        p = urlparse(url)
+        path, query = p.path or "/", p.query
+        # /amp suffix or an /amp/ segment — same document, AMP rendering.
+        if path.rstrip("/").endswith("/amp"):
+            path = path.rstrip("/")[: -len("/amp")] or "/"
+        path = path.replace("/amp/", "/")
+        # LEADING /m/ only. A deeper /m/ is a real path segment on plenty of
+        # sites, and rewriting it would point at some other page entirely.
+        if path.startswith("/m/"):
+            path = path[2:]
+        if query:
+            kept = [(k, v) for k, v in parse_qsl(query, keep_blank_values=True)
+                    if k.lower() not in _TRACKING_KEYS
+                    and not k.lower().startswith(_TRACKING_PREFIXES)]
+            query = urlencode(kept)
+        cleaned = urlunparse((p.scheme, p.netloc, path, p.params, query, ""))
+        if cleaned == url or not cleaned:
+            return None
+        # NEVER fall back to the site root. Stripping decoration off a page and
+        # landing on "/" means we guessed wrong about what was decoration, and
+        # the homepage's much higher PA would be silently attributed to a recipe.
+        if (urlparse(cleaned).path or "/") in ("", "/"):
+            return None
+        return cleaned
+    except Exception:
+        return None
+
+
 def _url_variants(url: str) -> list[str]:
     """Return all reasonable URL variants Moz might score differently:
     {host, alt-host (www-toggled)} × {path, alt-path (trailing-slash-toggled)}.
@@ -94,27 +159,36 @@ def _url_variants(url: str) -> list[str]:
     """
     out = [url]
     seen = {url}
-    try:
-        p = urlparse(url)
-        host = (p.netloc or "").lower()
-        if not host:
-            return out
-        # Host toggle
-        alt_host = host[4:] if host.startswith("www.") else "www." + host
-        # Path toggle (trailing slash)
-        path = p.path or "/"
-        if path.endswith("/") and len(path) > 1:
-            alt_path = path.rstrip("/")
-        else:
-            alt_path = path + "/" if path else "/"
-        for h in (host, alt_host):
-            for pa in (path, alt_path):
-                v = urlunparse((p.scheme, h, pa, p.params, p.query, p.fragment))
-                if v not in seen:
-                    seen.add(v)
-                    out.append(v)
-    except Exception:
-        pass
+    # The stored URL first, then its canonical form when they differ. Only a
+    # DECORATED url (mobile path / amp / tracking params) adds anything here, so
+    # an ordinary url still probes the same 4 variants and costs the same Moz
+    # rows; canonical-variant learning then collapses the domain to 1.
+    bases = [url]
+    canon = _canonical_form(url)
+    if canon:
+        bases.append(canon)
+    for base in bases:
+        try:
+            p = urlparse(base)
+            host = (p.netloc or "").lower()
+            if not host:
+                continue
+            # Host toggle
+            alt_host = host[4:] if host.startswith("www.") else "www." + host
+            # Path toggle (trailing slash)
+            path = p.path or "/"
+            if path.endswith("/") and len(path) > 1:
+                alt_path = path.rstrip("/")
+            else:
+                alt_path = path + "/" if path else "/"
+            for h in (host, alt_host):
+                for pa in (path, alt_path):
+                    v = urlunparse((p.scheme, h, pa, p.params, p.query, p.fragment))
+                    if v not in seen:
+                        seen.add(v)
+                        out.append(v)
+        except Exception:
+            pass
     return out
 
 
@@ -278,7 +352,22 @@ def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
         paired = list(zip(cands, res)) if len(res) == len(cands) else [(None, r) for r in res]
         crawled = [(u, r) for u, r in paired if r.get("http_code") in (200, 301, 302)]
         estimated = [(u, r) for u, r in paired if r.get("http_code") == 402]
-        pool = crawled or estimated or paired
+        # ANY non-zero code means Moz HAS data for that variant, and such a
+        # variant must outrank a code-0 one even when PA ties.
+        #
+        # This tier list was the (200,301,302,402) allow-list all over again.
+        # Those four rank the KNOWN tiers; they are not the definition of "has
+        # data", and Moz returns others — 1, 3 and 5 all observed with real
+        # metrics. A non-standard code fell through to the generic `paired`
+        # pool, where `max(..., key=PA)` broke a tie by list order and could
+        # hand back a code-0 variant, which then failed the usable gate below
+        # and the URL was reported as having no data at all.
+        #
+        # Seen on travel-gourmet.com/…/stufato-di-pesce-italian-fish-stew/,
+        # where all 8 variants returned pa=21 and only the trailing-slash form
+        # carried code=3: the /amp form won the tie and the page scored nothing.
+        has_data = [(u, r) for u, r in paired if r.get("http_code")]
+        pool = crawled or estimated or has_data or paired
         if not pool:
             return None, None, False
         cu, cr = max(pool, key=lambda ur: ur[1].get("page_authority") or 0)
