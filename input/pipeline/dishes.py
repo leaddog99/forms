@@ -549,8 +549,17 @@ def recompute_competitiveness(conn: sqlite3.Connection) -> dict:
     rows = conn.execute(
         "SELECT json_extract(data,'$.classification.chapter') AS chapter, "
         "json_extract(data,'$._master.dish') AS dish, "
-        "AVG(COALESCE(json_extract(data,'$._scoring.domainAuthority'),0) "
-        "  + COALESCE(json_extract(data,'$._scoring.pageAuthority'),0)) AS avg_power "
+        # NO COALESCE TO 0. An unmeasured winner used to contribute 0 to its
+        # dish's field clout, dragging the average down and making the dish read
+        # as quieter/nicher than it is — which then propagates to
+        # competitiveness_pct and the authority commentary. `da + pa` is NULL
+        # when either side is, and SQLite's AVG ignores NULLs, so those rows are
+        # excluded from the mean instead of counted as zero. A dish whose
+        # winners are ALL unmeasured yields NULL and is skipped below, which is
+        # the honest outcome: no clout figure, rather than a clout of 0.
+        # (curator 2026-08-06: empty stats stay out of aggregates.)
+        "AVG(json_extract(data,'$._scoring.domainAuthority') "
+        "  + json_extract(data,'$._scoring.pageAuthority')) AS avg_power "
         "FROM master_recipes "
         "WHERE json_extract(data,'$._master.kind') = 'top' "
         "  AND json_extract(data,'$._master.dish') IS NOT NULL "

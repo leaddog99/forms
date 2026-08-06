@@ -20,30 +20,49 @@ from input.pipeline.config import POWER_BLEND_WEIGHT
 
 
 def percentile_ranks(values: list[Optional[float]]) -> list[float]:
-    """Map each value to its percentile rank in [0,1] within the list
-    (0 = lowest, 1 = highest), averaging ties. None ranks below every
-    real value and gets 0.0 — a missing signal can't lift a page, only
-    fail to. Robust to outliers by construction: one extreme value can't
-    compress the rest, the reason we rank rather than min-max scale
-    (user call 2026-06-01)."""
+    """Map each value to its percentile rank in [0,1] AMONG THE MEASURED VALUES
+    (0 = lowest, 1 = highest), averaging ties. None gets 0.0 — a missing signal
+    can't lift a page, only fail to. Robust to outliers by construction: one
+    extreme value can't compress the rest, the reason we rank rather than
+    min-max scale (user call 2026-06-01).
+
+    THE UNMEASURED ARE EXCLUDED FROM THE DENOMINATOR (2026-08-06, curator: "the
+    'empty' stats should not be included in any aggregate analysis"). They used
+    to be keyed to -inf and ranked alongside real values, which left them at the
+    bottom — correct — but kept them in `n`, so they occupied rank slots and
+    compressed everyone else into the top of the range. With 5 of 10 values
+    missing, the measured pages spanned 0.56-1.0 instead of 0-1, and a
+    "70th percentile" page was 70th among candidates INCLUDING ones we could not
+    measure, which is not a statistic about anything. Ordering was unaffected;
+    the blend score, which consumes the percentile as a magnitude, was not.
+
+    Now that `_scoring` fields default to None rather than 0.0 (see
+    ScoringMetadata), absence is common enough that this matters routinely
+    rather than at the margins.
+
+    Note a measured WORST value also lands on 0.0, so it is not distinguishable
+    from unmeasured in the output — true before this change too, and acceptable
+    because both mean "gets no lift from this dimension"."""
     n = len(values)
     if n == 0:
         return []
-    if n == 1:
-        return [1.0 if values[0] is not None else 0.0]
-    neg = float("-inf")
-    keyed = [v if v is not None else neg for v in values]
-    order = sorted(range(n), key=lambda i: keyed[i])
     pct = [0.0] * n
+    real = [i for i, v in enumerate(values) if v is not None]
+    m = len(real)
+    if m == 0:
+        return pct                       # nothing measured — nobody gets lift
+    if m == 1:
+        pct[real[0]] = 1.0               # the only measured value tops its cohort
+        return pct
+    order = sorted(real, key=lambda i: values[i])
     i = 0
-    while i < n:
+    while i < m:
         j = i
-        while j + 1 < n and keyed[order[j + 1]] == keyed[order[i]]:
+        while j + 1 < m and values[order[j + 1]] == values[order[i]]:
             j += 1
-        p = ((i + j) / 2.0) / (n - 1)        # avg 0-indexed rank of tie group -> [0,1]
+        p = ((i + j) / 2.0) / (m - 1)    # avg 0-indexed rank of tie group -> [0,1]
         for k in range(i, j + 1):
-            idx = order[k]
-            pct[idx] = 0.0 if values[idx] is None else p
+            pct[order[k]] = p
         i = j + 1
     return pct
 
