@@ -2724,3 +2724,133 @@ measured. The $0.79 of Moz rows that settled it was available the moment the que
   depends on it.
 - **The five archive-47 rows** (1343, 2171, 3656, 3802, 5025) — still fabricated, now scoreable.
 - Unchanged: snapshot capture, cadence, rerun the experiment on a second publisher, `user_api_keys`.
+
+## Session log — 2026-08-05/06 — the bookmarklet hang, and four layers under "why are my scores zero"
+
+Two threads, both starting from a one-line report and both bottoming out somewhere other than where
+the symptom pointed.
+
+### The product bookmarklet "hang" (9083021)
+
+The log had **no King Arthur trace at all** — no `stage-markdown`, not even the
+`product_bookmarklet.js` fetch every successful run starts with. So it died in the page. Two
+hypotheses, both killed by measurement before any code was written: **not CSP** (neither King Arthur
+host sends one; an injected `<script src>` loaded AND executed) and **not the `md()` DOM walk**
+(3,686 nodes, depth 25, **6 ms**).
+
+Reproducing on the real page found it. `products.html` painted `renderImporting()` and then, on ANY
+failure, flashed a toast and returned `false` — and the boot did nothing with `false`:
+
+```js
+if (await tryStagedImport()){ renderList(); renderDetail(); ... }
+```
+
+The page sat on *"Grabbing product…"* forever, toast long gone. The trigger is credential expiry:
+`/extract-product` needs `edit_master`, `MASTER_TOKEN_TTL` is **12h**, and a lapsed curator still
+resolves as themselves but reads as `member` (`staff_locked`) — so 403, and the grabber had no way to
+ask for what it needed.
+
+**And the sign-in retry ported from reviews.html was the WRONG CREDENTIAL.** `signInDialog` posts
+`/auth/login`, which proves who you are and never mints a master token; against `staff_locked` it
+would have looped forever. Added `LibraryShell.unlockDialog()` (the `/auth/master` sibling),
+`unlockAdmin` now returns true/false and takes `{reload:false}` so an unlock does not discard work in
+flight, and both grabbers pick the prompt by asking `/auth/me`.
+
+Nearly shipped invisible: `library-shell.js?v=` is a **manual** cache-buster. Until it was bumped
+(20260731d to 20260805a, 23 pages) every browser kept the old shell.
+
+### "i've had zero scores many times" — and the recurrence was the tell
+
+Zero-carrying saves by month: **May 3% / Jun 10% / Jul 15% / Aug 94%**. Four layers, only the last
+one causal.
+
+**Layer 1 — the fix that never ran.** `_sanitize_scoring` was committed 08-03 and executed for the
+first time on 08-06. BCC is an NSSM service with no `--reload` and had not been restarted in three
+days. Proof was one command: the function prints on every drop, and `grep -c` over 25MB of log
+returned **1**, timestamped three minutes after the restart. The confusing part was that in-process
+JOBS (fresh process each run) did apply it, so job-written rows looked right and service-written rows
+looked broken — the difference was **process age, not logic**.
+
+**Layer 2 — "no Moz data" was usually OUR bug** (226635a). The stored URL is whatever the bookmarklet
+grabbed: a mobile path from a phone, an AMP page, a share sheet's tracking query. Moz indexes the
+canonical page and had never seen those strings.
+
+```
+cooking.nytimes.com/recipes/1025200-...?unlocked_article_code=...  NO DATA -> pa=57 da=95
+williams-sonoma.com/m/recipe/stanley-tucci-chicken-cacciatore      NO DATA -> pa=41 da=82
+```
+
+`_canonical_form()` adds the cleaned URL as an EXTRA candidate; `url_normalized` (dedup + cache key)
+is untouched. Guarded three ways because silent over-scoring is the worse failure: tracking keys are
+an ALLOW-LIST (sites use `?p=123` as real identity), only a LEADING `/m/` is stripped, and a canonical
+form collapsing to the site root is REFUSED outright.
+
+**Layer 3 — a usable variant losing a tie-break**, found only because `/amp` still failed after layer
+2. `_pick` tiered on `crawled` (200/301/302) and `estimated` (402) and dumped the rest into a generic
+pool ranked by PA. On travel-gourmet all 8 variants returned pa=21 and only the trailing-slash form
+carried **code=3** — so `max()` broke the tie by list order, returned a code-0 row, and the page
+scored nothing. **That is the (200,301,302,402) allow-list for the THIRD time** (the `usable` gate
+that made pinchofyum bill 496 rows and score 0; the inflated 15% estimate measured through it; now a
+tie-break). Those four RANK known tiers. "Has data" is `bool(http_code)` and nothing else. A fourth
+undocumented code — **15** — turned up later during sampling.
+
+**Layer 4, the actual cause — the CONTRACT manufactured the zeros** (f70a075). `ScoringMetadata`
+declared every numeric field `= 0.0`; every extract passes through `RecipeModel`, so the model created
+a full block of zeros on every recipe. `sanitize_recipe_data` re-inserted PA/DA/OU as a second
+manufacturer. **Three prior fixes had all been at the SINK** — the `pre_scored` writer (07-30), the
+save boundary (08-03), the restart (08-06) — each deleting values the contract had just created.
+
+Three genuinely different states had been collapsed into one `0`: **NOT APPLICABLE** (a handwritten
+recipe mints a `/r/<uuid>` self-URL; nothing can link to it) / **NOT MEASURED YET** / **NO COHORT**
+(saved outside a dish batch). 11 / 16 / 41 of the 70 affected rows. `None` expresses all three.
+
+Audited every reader before flipping, because None in a ranking path is worse than a zero — all of
+them already tolerated absence (`setScoreChip` renders an em-dash, `blend._power` returns None unless
+both operands are numbers, `chapters.py` filters `IS NOT NULL`, `dishes.py` COALESCEs). **The "222
+refs and `da + pa` would break" warning was wrong**: lines grepped without reading their guards.
+
+Caught by the same audit: **`mozHttpCode` was never declared on the model**, so pydantic silently
+dropped the provenance flag on every extract that round-tripped it — written by `url_scoring`,
+surviving batch and save, vanishing at validation. Exactly what the model-first rule prevents.
+
+### Repairs, each measured rather than assumed
+
+- **Re-score** (`--zeros-only`): 42 urls, **5 recovered, 0 lost** — the Tucci recipes and the NYT
+  shawarma, all `0.0 -> real`. The curator's proposal ("just re-score them") was right for 16 of 70
+  and could not touch the other 54; my projection of 16 recoveries produced 5.
+- **Strip** the manufactured zeros: 110 rows in `recipes`, **2,214** in `master_recipes`. Checked the
+  one real hazard first — a row with genuine PA whose `ouScore` was exactly 0.0 would silently lose
+  its OU — and found **zero** such rows. Ranking after: rankable 4353 -> 4334, exactly the 19 whose PA
+  was already 0; top-10 by OU unchanged, still pancakerecipes.com at 25.38.
+- **Tie-break blast radius, measured not estimated** (3288756). The obvious sample would have lied:
+  corpus rows are SURVIVORS (they scored under the old code, so damage reads 0 by construction) and
+  the affected population — candidates dropped mid-harvest — is never persisted. Used `dish_rejects`
+  rows rejected for FETCH reasons instead. **Damage 0/120 (0.0%)** on the unbiased sample, 1/40 on the
+  survivor control, ~0.6% combined, roughly 26 floor-dwelling rows. The at-risk condition was common
+  (22%) but the failure needs a second coincidence. **Recommendation: do NOT re-score the corpus.**
+  I predicted the control would be 0 "by construction" and said otherwise meant my reasoning was
+  broken; it found 1, and the reasoning WAS off — survivors are guaranteed against the response at
+  HARVEST time, not today's.
+- **Aggregates** (e6627c8), curator: *"the 'empty' stats should not be included in any aggregate
+  analysis."* Two were counting them. `recompute_competitiveness` averaged
+  `COALESCE(da,0)+COALESCE(pa,0)`, so an unmeasured winner contributed 0 and made its dish read as
+  nicher than it is (recomputed: 5 dishes moved, Cream Pie 50.0 -> 75.0). And `percentile_ranks` kept
+  None in the DENOMINATOR, squeezing measured pages into the top of the range. That instruction also
+  retroactively fixed something invisible: the per-dish OU regression filters on
+  `isinstance(x,(int,float))`, and `0.0` IS a float — so unmeasured rows had been entering the fit as
+  `(0,0)` points and bending the curve.
+
+### The pattern
+
+Every layer was a plausible mechanism asserted where a cheap measurement was available. The two
+bookmarklet hypotheses died in one browser call each; the 15% fabrication figure had been measured
+through a broken instrument; the re-score projection was 3x optimistic; the reader audit contradicted
+my own blast-radius warning. **What worked was refusing to act on the estimate.**
+
+### Open
+
+- **Provenance backfill** — ~4,150 rows still NULL, ~$10, non-destructive. Fold a re-score into it if
+  it ever runs (`backfill_url_scoring` does both in one pass).
+- **`recipes.sql.gz` is stale** — predates today's re-scores and both strips. Run `bcc_backup.bat`.
+- **`docs/reports/strip-master-backup.json`** — 1.7MB rollback snapshot, untracked, deletable.
+- Unchanged: the five archive-47 rows, snapshot capture, cadence, `user_api_keys`.
