@@ -3076,3 +3076,75 @@ changed over time; the path shape has not). Result: **0 orphaned grades in eithe
 - Unchanged: personal-path screenshots never attempted, 429 master screenshots,
   `power_blend_weight` still in `bcc_config.json`, provenance backfill (~4,150 NULL
   `mozHttpCode`), the five archive-47 rows, `user_api_keys`.
+
+## Session log — 2026-08-06 (screenshots) — the capture that was never attempted, and a recapture job
+
+Third block of the day. Closes the screenshot thread opened by *"how come i'm not getting
+screenshot on the mussel entries"*.
+
+### The personal path never tried (ca80649)
+
+Diagnosed earlier from three numbers: personal saves 172/412, master 3927/4356, and **zero
+`capture failed` lines in any log**. Nothing was failing — nothing was being attempted.
+
+The capture lived INLINE in `extract_recipe_from_url`, the URL path. The bookmarklet grabs the
+page client-side and lands on `/extract-from-markdown`, which has its own tail and never called
+it. The 42% that did have screenshots were the recipes saved by URL rather than by bookmarklet.
+
+Lifted to a shared `_attach_page_screenshot` called from BOTH paths, before the extract-cache
+write in each so the shot travels with the cached row ([[feedback_single_path]] — one capture,
+not a second copy on the markdown side). Guards, each verified directly: skip when a screenshot
+already exists (a cache hit must not re-shoot), skip non-http and empty urls, and skip our own
+`/r/<uuid>` permalinks — a handwritten recipe's "source" is our own page, there is nothing to
+photograph. Failures are swallowed; a missing screenshot must never cost the caller their
+extraction. Needed a module-level `import re` that had never been there.
+
+### The 429-row master backfill
+
+Ran with the fixed script (the ephemeral-store bug was fixed in fc535dc earlier today).
+**429 -> 214 remaining and still draining at ~4.2s/row** as this was written; media.db 4,904 ->
+5,106 blobs. The stragglers are the anti-bot hosts (washingtonpost, nytimes) and the Greek
+harvest sites, which is the expected tail.
+
+### The recapture job (6a4f689)
+
+Curator: *"we might need a recapture job for screenshots going forward (batch)."* Built as a
+first-class handler + nightly schedule (limit 200) rather than another one-off script
+([[project_jobs_as_executables]]) — schedulable, DB-logged, in the Job Monitor. Verified
+registered on the live service after restart.
+
+Four pickup reasons, all from data already kept: **no-shot** (never captured) · **no-blob** (the
+recipe points at a `/screenshot/<id>` with no media.db row — the EXPECTED state after a restore,
+since media.db is git-ignored and regenerable) · **changed** (`source_changed_at` newer than the
+blob, so the image shows a page that no longer exists) · **aged** (older than `max_age_days`,
+default 365).
+
+Recapture is idempotent: `screenshot_id_for(url_normalized)` is deterministic, so a re-shoot
+overwrites ONE media.db row and the recipe's `/screenshot/<id>` never changes; the recipe row is
+rewritten only when it had no shot before.
+
+**The measurement that paid for itself.** Of 197 rows that looked blob-less, **31 carry a
+perfectly good screenshot stored under a DIFFERENT id** than `screenshot_id_for(url_normalized)`
+yields today — the key used at capture time differed. Only 179 are truly gone. A job trusting
+the computed id alone would have re-shot those 31 and orphaned the originals. The lookup now
+checks the id THE RECIPE POINTS AT first, computed id second.
+
+Census at write time: no-shot 537 (backfill still draining it), no-blob 179, changed 0, aged 0,
+ok 3947, skipped 88. `changed` and `aged` are both 0 today — they exist for going forward,
+exactly as the curator framed it. Steady state is near zero, so nightly/limit-200 catches up in
+a few nights and then only handles drift.
+
+### Open
+
+- **`recipes.sql.gz` stale** — the grade repair and the screenshot backfill both rewrote rows
+  after the 14:09 dump. No schema change this time, so ordinary hygiene, not the restore hazard
+  the re-embed created.
+- **Personal-table screenshots still 240/412 missing** — the backfill ran `--master-only`. The
+  new job covers both tables and will drain it nightly; run `--personal-only` to force it now.
+- **`pageScreenshot` still defaults to `""`** in `recipe_model`, so never-attempted stays
+  indistinguishable from attempted-and-failed. That default is precisely what made this read as
+  a 42% success rate for a month instead of a path that never ran
+  ([[feedback_absent_not_zero]]). `Optional[str] = None` + a reader audit.
+- Unchanged: the scoring counterpart to `check_embeddings.py`, `power_blend_weight` in
+  `bcc_config.json`, provenance backfill (~4,150 NULL `mozHttpCode`), the five archive-47 rows,
+  `user_api_keys`.
