@@ -258,6 +258,40 @@ def find_similar_dishes(conn: sqlite3.Connection, query_vec: np.ndarray,
     return out
 
 
+def rebuild_dishes_vec_from_blobs(conn: sqlite3.Connection) -> int:
+    """Rebuild dishes_vec from the source-of-truth `dishes.embedding` BLOB — the
+    free, API-less regeneration path (mirrors rebuild_master_vec_from_blobs and
+    rebuild_products_vec_from_blobs). Clears first, so orphans go too. Returns
+    vectors written.
+
+    Written 2026-08-06: this was the one vec0 table with no rebuild path, which
+    only bites on a restore — `backup_db.py` EXCLUDES the vec0 virtual tables
+    from recipes.sql (they are derived), so a restored DB came back with dish
+    vectors gone and the only way to repopulate them was re-embedding all 150
+    through the API. The BLOBs were in the dump the whole time.
+    rebuild_master_vec_from_blobs' docstring had claimed to mirror this
+    function, which did not exist.
+
+    dishes_vec carries no aux columns (name + embedding only), so unlike the
+    master/product rebuilds there is no row JSON to decode.
+    """
+    enable_vec(conn)
+    conn.execute("DELETE FROM dishes_vec")
+    rows = conn.execute(
+        "SELECT name, embedding FROM dishes WHERE embedding IS NOT NULL"
+    ).fetchall()
+    written = 0
+    for name, blob in rows:
+        if not name:
+            continue
+        vec = np.frombuffer(blob, dtype="float32") if blob else None
+        if vec is None or vec.size != EMBED_DIM:
+            continue
+        upsert_dish_vector(conn, name, vec)
+        written += 1
+    return written
+
+
 # === Master-recipe vec0 helpers =============================================
 
 
