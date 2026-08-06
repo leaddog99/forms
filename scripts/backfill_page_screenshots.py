@@ -30,22 +30,30 @@ if str(PROJECT_ROOT) not in sys.path:
 from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
 
-from input.pipeline.screenshot_pipeline import capture_screenshot  # noqa: E402
+# capture_and_store_blob, NOT capture_screenshot. The latter stores via
+# image_store into generated/, which is git-ignored and ephemeral — the rows
+# would carry URLs that break on the next cleanup AND, being non-empty, would
+# then be skipped by the `existing` guard below, locking them out of ever
+# self-healing through the live extract path. The live path in
+# save_recipe_api._extract writes durable blobs to media.db keyed by
+# url_normalized; this backfill must write to the same place.
+from input.pipeline.screenshot_pipeline import capture_and_store_blob  # noqa: E402
 
 DB_PATH = str(PROJECT_ROOT / "recipes.db")
+MEDIA_DB_PATH = str(PROJECT_ROOT / "media.db")
 
 
 def _process_table(conn: sqlite3.Connection, table: str, *,
                    dry_run: bool, limit: int, force: bool) -> Counter:
     rows = conn.execute(
-        f"SELECT id, recipe_id, data FROM {table} ORDER BY id"
+        f"SELECT id, recipe_id, data, url_normalized FROM {table} ORDER BY id"
     ).fetchall()
     print(f"--- {table}: {len(rows)} rows ---")
     counts: Counter = Counter()
     captured = 0
     t0 = time.perf_counter()
 
-    for rid, recipe_uuid, dj in rows:
+    for rid, recipe_uuid, dj, url_norm in rows:
         try:
             d = json.loads(dj)
         except Exception:
@@ -61,8 +69,11 @@ def _process_table(conn: sqlite3.Connection, table: str, *,
             counts["already"] += 1
             continue
 
+        # Blob key is url_normalized (stable across re-extracts, one row per
+        # URL). Fall back to the row's own value only if the column is empty.
+        key_url = (url_norm or original_url).strip()
         try:
-            shot_url = capture_screenshot(original_url, recipe_uuid)
+            shot_url = capture_and_store_blob(original_url, key_url, MEDIA_DB_PATH)
         except Exception as e:
             print(f"  [error] id={rid}: {e}")
             counts["capture-error"] += 1
