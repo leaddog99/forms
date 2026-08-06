@@ -475,6 +475,47 @@ rejected pinchofyum's `code=5` (496 rows billed, 0 scored), then as the inflated
 estimate, now as a tie-break. Those four codes RANK known tiers; they have never been the
 definition of "has data". That is `bool(http_code)`, and nothing else.
 
+### 11b.2 The zeros were manufactured by the CONTRACT — fixed 2026-08-06
+
+Curator: *"i've had zero scores many times."* Correct, and the recurrence was the tell. Zero-carrying
+saves by month: **May 3% · Jun 10% · Jul 15% · Aug 94%**.
+
+`ScoringMetadata` declared every numeric field `= 0.0`. Every extract passes through `RecipeModel`,
+so the model **manufactured a full block of zeros on every recipe**, which then read as measured
+everywhere downstream. `sanitize_recipe_data` re-inserted PA/DA/OU as a second manufacturer.
+
+Three fixes had been applied at the SINK and none at the SOURCE — each deleting values the model had
+just created:
+
+| when | fix | where |
+|---|---|---|
+| 07-30 | `power`/percentiles written as 0 | `pre_scored_from_entry` — the writer |
+| 08-03 | zeros persisted on save | `_sanitize_scoring` — the save boundary |
+| 08-06 | that fix had NEVER RUN | service restart (NSSM, no `--reload`, 3 days stale) |
+
+The August spike is the stale service; the May–July baseline is the model leaking through.
+
+**Three distinct states were collapsed into one `0`:** NOT APPLICABLE (a handwritten recipe mints a
+`/r/<uuid>` self-URL — nothing can link to it, so PA is meaningless), NOT MEASURED YET (a real page
+Moz hasn't crawled), and NO COHORT (saved outside a dish batch, so the field statistics have nothing
+to rank within). `None` expresses all three; `0.0` expresses none. Of 70 affected rows: 11 / 16 / 41
+respectively, plus 2 non-recipe links.
+
+Fields flipped to `Optional[... ] = None`. **Strings keep `""`** and **`recipeScore`/`recipeScoreThreshold`
+keep `0`** — the validator sets them on every extract and the threshold is used in `>=` comparisons
+where `None` genuinely would break.
+
+**Audited before flipping** — every reader already tolerated absence: `setScoreChip` renders `—` for
+null, `blend._power` returns None unless both operands are numbers, `enrich_recipe` guards with
+`is not None`/truthiness, `chapters.py` filters `IS NOT NULL`, `dishes.py` wraps in `COALESCE`.
+Nothing consumed the zeros. `exclude_none` was deliberately NOT added at the two `model_dump` sites —
+it is model-wide and would drop unrelated fields; `null` reads identically to absent for every
+consumer above, and `json_extract` yields SQL NULL either way.
+
+Also caught by the same audit: **`mozHttpCode` was never declared on the model**, so pydantic silently
+dropped the provenance flag on every extract that round-tripped it — written by `url_scoring`,
+surviving the batch and save paths, and vanishing at validation. Now declared.
+
 **Consumers must now exclude `moz_http_code = 0` from any fit over PA** — the paid-PA calibration
 first, since fabricated rows are concentrated in exactly its population and would drag the
 shift-scale remap toward the placeholder.

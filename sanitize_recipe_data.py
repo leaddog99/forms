@@ -244,9 +244,12 @@ def sanitize_recipe_data(data: dict) -> dict:
     # Pipeline-side metadata. Leave as None when not provided so we don't
     # carry empty defaults on every record; sanitizer ensures shape only.
     if isinstance(sanitized.get("_scoring"), dict):
-        set_if_nullish(sanitized["_scoring"], "pageAuthority", 0.0)
-        set_if_nullish(sanitized["_scoring"], "domainAuthority", 0.0)
-        set_if_nullish(sanitized["_scoring"], "ouScore", 0.0)
+        # NO 0.0 DEFAULTS FOR THE MEASURED FIELDS. pageAuthority/domainAuthority/
+        # ouScore used to be defaulted here too, which made this the SECOND
+        # manufacturer of the zeros after ScoringMetadata — so even a recipe
+        # whose scoring had been correctly stripped got them re-inserted on the
+        # next pass. Absence is the honest state; see ScoringMetadata's docstring
+        # for the three distinct situations 0.0 was conflating.
         set_if_nullish(sanitized["_scoring"], "rootDomain", "")
         set_if_nullish(sanitized["_scoring"], "rawTitle", "")
         set_if_nullish(sanitized["_scoring"], "iconUrl", "")

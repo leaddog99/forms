@@ -457,30 +457,69 @@ class MasterMetadata(BaseModel):
 # Pipeline-side metadata. Defaults are empty so interactive saves don't have to
 # populate them; batch stages fill them in over time.
 class ScoringMetadata(BaseModel):
-    pageAuthority: float = 0.0
-    domainAuthority: float = 0.0
-    ouScore: float = 0.0
+    """ABSENT MEANS UNMEASURED. Every numeric field here defaults to None, not
+    0.0, because 0 is not a legal measured value for any of them — Moz PA/DA are
+    >= 1 for any page it has crawled, and a cohort percentile of 0 alongside
+    fieldN 0 means there was no cohort, not that the recipe came last.
+
+    These WERE `= 0.0`, and that is the root of a bug fixed three times at the
+    sink and never at the source (2026-08-06). Every extract passes through this
+    model, so the defaults MANUFACTURED a full block of zeros on every recipe,
+    which then read as measured everywhere downstream. The repairs — the
+    `pre_scored` writer (07-30), `_sanitize_scoring` at the save boundary
+    (08-03), and the restart that finally made the latter run (08-06) — were all
+    deleting values this class had just created.
+
+    Three genuinely different states were collapsed into that one 0: NOT
+    APPLICABLE (a handwritten recipe minted a /r/<uuid> self-URL; no third party
+    can link to it, so PA is meaningless), NOT MEASURED YET (a real page Moz
+    hasn't crawled), and NO COHORT (saved outside a dish batch, so the field
+    statistics have nothing to rank within). None expresses all three honestly;
+    0.0 expresses none of them.
+
+    Audited 2026-08-06 before flipping: every reader already tolerates absence —
+    `setScoreChip` renders "—" for null, `blend._power` returns None unless both
+    operands are numbers, `enrich_recipe` guards with `is not None`/truthiness,
+    chapters.py filters `IS NOT NULL`, dishes.py wraps in COALESCE. Nothing
+    consumed the zeros; they only ever misinformed.
+
+    `traffic`/`trafficPct` below were already Optional — this brings the rest of
+    the block in line with them. Strings keep "" (an empty name is not a false
+    measurement) and recipeScore keeps 0 (our own validator computes it on
+    essentially every row).
+    """
+    pageAuthority: Optional[float] = None
+    domainAuthority: Optional[float] = None
+    ouScore: Optional[float] = None
     # Raw clout (DA+PA) and the two in-cohort PERCENTILE ranks (0-100) the
     # OU/power blend ranks on — the axes of the exceptionality×clout 2x2.
     # Stamped from the batch entry (rank_by_blend) so the editorial authority
     # commentary can read where the page sits, not just its raw OU.
-    power: float = 0.0
-    ouPercentile: float = 0.0
-    powerPercentile: float = 0.0
+    power: Optional[float] = None
+    ouPercentile: Optional[float] = None
+    powerPercentile: Optional[float] = None
     # Field context (dish-level): the cohort's absolute clout (DA+PA, 0-200) +
     # spread, and any geo/site restriction in the query (e.g. "gr" = Greek-only
     # search). Lets the commentary say "established-publisher field" vs
     # "specialist-site field" and "among Greek sites".
-    fieldAvgPower: float = 0.0
-    fieldMaxPower: float = 0.0
-    fieldMinPower: float = 0.0
-    fieldN: int = 0
+    fieldAvgPower: Optional[float] = None
+    fieldMaxPower: Optional[float] = None
+    fieldMinPower: Optional[float] = None
+    fieldN: Optional[int] = None
     fieldScope: str = ""
     # How this dish's field clout ranks among its CHAPTER siblings (0-100):
     # high = a popular/contested dish (covered by strong publishers), low = a
     # niche dish. Lets the commentary say "a hotly-covered dish" vs "a quiet
     # corner". Stamped at dish refresh from the chapter's other dishes.
-    dishCompetitivenessPct: float = 0.0
+    dishCompetitivenessPct: Optional[float] = None
+    # PA PROVENANCE — Moz's http_code at the moment pageAuthority was measured.
+    # NOT declared here when the flag shipped (2026-08-04), so pydantic silently
+    # DROPPED it on every extract that round-trips this model: the value was
+    # written by url_scoring, survived the batch and save paths, and vanished
+    # here. The one field whose 0 IS a real measurement — "Moz answered and has
+    # no data", i.e. any PA on the row is the domain-derived placeholder.
+    # None = never verified. See input/pipeline/url_scoring.moz_http_status.
+    mozHttpCode: Optional[int] = None
     rootDomain: str = ""
     rawTitle: str = ""
     iconUrl: str = ""
