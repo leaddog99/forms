@@ -62,10 +62,13 @@ import anthropic
 _anthropic_client = anthropic.Anthropic()
 
 
-# 14 structural roles spanning the dish surface area. Order in this
-# list is presentational only — what matters is that every ingredient
-# gets exactly one tag, and that PRIMARY_ROLES below defines which
-# ones count as dish-defining vs supporting.
+# 14 structural roles spanning the dish surface area. Every ingredient
+# gets exactly one tag; PRIMARY_ROLES below defines which ones count as
+# dish-defining vs supporting.
+#
+# ORDER IS LOAD-BEARING (2026-08-06) — it is the importance ranking used
+# by _derive_primary_ingredients to sort the embed text, most
+# dish-defining first. Do not reorder this list for readability.
 INGREDIENT_ROLES = [
     "main_protein",        # the centerpiece protein: chicken, beef, fish, tofu, eggs (when main)
     "primary_vegetable",   # the dish-defining vegetable: asparagus in au gratin, spinach in spanakopita
@@ -368,17 +371,34 @@ def _call_identity_tool(user_prompt: str, *,
 
 
 def _derive_primary_ingredients(roles: list) -> list[str]:
-    """Filter ingredientRoles to PRIMARY_ROLES and return the texts in
-    original order. Used at read time; never re-prompted."""
-    out: list[str] = []
-    for entry in roles or []:
+    """Filter ingredientRoles to PRIMARY_ROLES and return the texts
+    ordered MOST DISH-DEFINING FIRST. Used at read time; never re-prompted.
+
+    Was original (recipe-listing) order, which let an incidental
+    ingredient lead the embed text: Moules Frites listed `Yukon Gold
+    potatoes` (starch) before `mussels` (main_protein) purely because the
+    aioli and fries came first in the ingredient list, so the vector read
+    as a potato dish and the recommender returned fries and mashed potato.
+    Rank by INGREDIENT_ROLES position instead — main_protein before
+    primary_vegetable before starch — so the title's subject leads.
+
+    Stable within a role: ingredients sharing a role keep recipe order.
+    """
+    ranked: list[tuple[int, int, str]] = []
+    for i, entry in enumerate(roles or []):
         if not isinstance(entry, dict):
             continue
-        if (entry.get("role") or "") in PRIMARY_ROLES:
+        role = (entry.get("role") or "")
+        if role in PRIMARY_ROLES:
             text = (entry.get("text") or "").strip()
             if text:
-                out.append(text)
-    return out
+                try:
+                    rank = INGREDIENT_ROLES.index(role)
+                except ValueError:      # unknown role -> after every known one
+                    rank = len(INGREDIENT_ROLES)
+                ranked.append((rank, i, text))
+    ranked.sort(key=lambda t: (t[0], t[1]))
+    return [t[2] for t in ranked]
 
 
 def _attach_primary(card: dict) -> dict:
