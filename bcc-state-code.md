@@ -2854,3 +2854,124 @@ my own blast-radius warning. **What worked was refusing to act on the estimate.*
 - **`recipes.sql.gz` is stale** — predates today's re-scores and both strips. Run `bcc_backup.bat`.
 - **`docs/reports/strip-master-backup.json`** — 1.7MB rollback snapshot, untracked, deletable.
 - Unchanged: the five archive-47 rows, snapshot capture, cadence, `user_api_keys`.
+
+## Session log — 2026-08-06 (later) — "why am I not getting the other mussel recipes" — four defects under one symptom, and the embedding side audited
+
+Started from one report: three mussel recipes saved by bookmarklet, and "Show top recipes
+like this" returned neither them nor the other mussels — it returned **moussaka** and
+**coquilles st jacques**. Two independent causes, and I got the second one wrong twice
+before measuring it.
+
+### The missing mussels — structural, working as designed
+
+The three saves are `user_id 5` in the `recipes` table. `recipes_master_vec` is populated
+ONLY for `user_id == 0` (`save_recipe_api.py:8512`); user rows get the BLOB and nothing
+reads it — the comment's *"a `recipes_vec` index can derive from it later"* never happened.
+Curator's call: leave master alone, personal recipes stay out. See
+[[project_discover_vs_possess]].
+
+### The weird results — two wrong theories, then the evidence
+
+**Wrong once:** "moussaka is rank 8 of the KNN window." The button posts `k: 6`, so that
+could not have been it. **Wrong twice:** the query composes differently from the index —
+no, `lastExtractedRecipe = r` is the full record on both load and extract, so `_identity`
+is sent and the card path is used on both sides.
+
+The answer was in the rows the whole time. `_match`, stamped at save:
+
+```
+794 Carl Dooley's Mussels -> nearest dish Moussaka  (0.9251)  confident:False dish:None
+795 Moules Marinieres     -> nearest dish Coquilles (0.9002)  confident:False dish:None
+796 Moules Frites         -> nearest dish Moussaka  (0.9293)  confident:False dish:None
+```
+
+**The save path had already rejected all three.** The endpoint asked the same question with
+a different metric and a looser bar — save uses `dish_match_max_distance` 0.8 L2 (= cosine
+0.68), the endpoint used `DEFAULT_MATCH_THRESHOLD` cosine 0.55 (~L2 0.95) — anchored to the
+rejected dish, and Tier 1 returns a cohort with **no distance cutoff by design**. Six
+coquilles. Reproduced exactly. One question, one bar: the endpoint now derives it from the
+same setting ([[feedback_single_path]]).
+
+Three more in the same endpoint: the Tier-2 cutoff `similar_max_distance` **never bound**
+(0.95 admits 0.7-1.4% of the corpus, always more than `k`, so the window padded); no
+self-exclusion, so a promoted recipe recommends itself (`recipe_id` misses it — the master
+copy is a separate row with its own uuid; matched on normalized source URL instead); and
+results ranked by proximity rather than quality. Now two-stage like the harvest —
+**similarity SELECTS, the OU/power blend RANKS** ([[project_two_stage_selection]]). Cutoff
+0.86, seeded into `system_config`; measured inert for a typical recipe (median 26 neighbours
+inside it) and biting only in sparse regions, which is where the padding was reaching.
+
+### The identity card led with an incidental ingredient
+
+Curator: *"we must prioritize the title ingredients."* `_derive_primary_ingredients` returned
+primaries in RECIPE-LISTING order, so Moules Frites embedded as
+`primary: yukon gold potatoes, mussels, ...` — the aioli and fries came first in the source
+list. `INGREDIENT_ROLES` was already in importance order and simply was not used for sorting.
+Now ranked on it (main_protein > primary_vegetable > starch), and that list is **load-bearing**.
+**41.4% of master cards change order, 28.5% get a new lead** (onion -> shrimp, flour ->
+blueberries, grits -> shrimp).
+
+The title itself stays OUT — measured and removed 2026-06-11 (titles nearly doubled intra-dish
+L2, 0.35 -> 0.68). The directive is satisfied by ordering the ingredients the title implies.
+
+### The embedding audit — the plumbing was never the problem
+
+Four vector surfaces, all `text-embedding-3-small`. Composition **symmetric** on every one
+(query and index built by the same composer); vec0 agrees with the source BLOB (0 drift /
+623 sampled); no orphans either direction; no zero vectors, dimension or norm anomalies;
+delete triggers present. The single defect was in the TEXT being embedded — the one layer
+nothing watched.
+
+Root cause of the blind spot: `dishes` carried `embedding_text` / `embedding_model` /
+`embedding_updated_at`; `master_recipes`, `recipes`, `products` carried none, so composer
+drift was **undetectable**. Added. Curator, unprompted and correct: *"an embedding timestamp
+might be a useful add."*
+
+`scripts/reembed_identity.py` (`--dry-run`, resumable by text hash) re-derives from stored
+`ingredientRoles` — pure function, no LLM, roles never modified, so the pass is reversible.
+**Ran: 4,775 rows, 2,023 reordered, 21 personal + 11 product rows that had NO embedding now
+filled, ~$0.006.** Those 11 products are the original ATK loaf-pan catalog, which predates
+the `description` field — they could never have surfaced in `find_similar_products`.
+
+### The regression cycle
+
+Curator: *"we need a regression test cycle to run on demand or daily to flag these items
+before they cause trouble."* First one shipped: `scripts/check_embeddings.py`, read-only,
+non-zero exit, covering dimension / norm / zero-vectors / index-vs-BLOB / orphans / coverage
+/ model drift / **composer-drift staleness** — the last compares each row's stored
+`embedding_text_hash` against what the current composer produces, and is what would have
+caught this the day it shipped. **Now 0 failures, 0 warnings.** See
+[[project_regression_check_cycle]], [[project_embedding_architecture]].
+
+### Screenshots
+
+Not failing — **not attempted** on the personal/bookmarklet path. Master 3927/4356 (90%),
+personal 172/412 (42%), and zero "capture failed" lines in any log. Same recipe saved
+personally at 16:55 had no blob; extracted into master at 17:20 it got one. Separately, the
+429-row backfill script called `capture_screenshot()` (image_store -> `generated/`,
+git-ignored and ephemeral) instead of `capture_and_store_blob()` (media.db) — running it
+would have written 429 URLs that break on the next cleanup AND, being non-empty, locked
+those rows out of self-healing. Fixed; dry-run verified at 4.2s/row.
+
+### The pattern
+
+Same as the last two sessions. Every wrong answer I gave was a plausible mechanism asserted
+where a cheap measurement was available — the rank-8 theory died on one glance at `k: 6`,
+the composition theory on one grep, and the actual cause was sitting in `_match` on the rows
+from the moment they were saved. Two of my four claims this session were wrong and both were
+caught by running something rather than reasoning harder.
+
+### Open
+
+- **`recipes.sql.gz` stale** — the re-embed rewrote 4,775 rows AND added three columns, so a
+  restore from the current dump comes back without provenance. Run `bcc_backup.bat`.
+- **Restart needed** for self-exclusion + blend ranking (committed, not yet running — the
+  restart earlier today only carried the tier-1 bar and the cutoff).
+- **Personal-path screenshots** — capture never attempted; plus `pageScreenshot` defaults to
+  `""` in `recipe_model`, so never-attempted is indistinguishable from failed
+  ([[feedback_absent_not_zero]] shape).
+- **429 master screenshots** missing — script is safe now, ~30 min.
+- `power_blend_weight` (30.0) lives in `bcc_config.json`, not `system_config` — one more
+  migration candidate ([[project_system_config]]).
+- Unchanged: provenance backfill (~4,150 NULL `mozHttpCode`), the five archive-47 rows,
+  snapshot capture, cadence, `user_api_keys`.
