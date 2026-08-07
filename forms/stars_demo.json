@@ -1,0 +1,313 @@
+{
+  "_note": "Demo data for forms/stars_mockup.html. PUBLIC FIELDS ONLY — this is the exact shape a user-facing endpoint may return. No ou, power, blend or percentile appears here by design.",
+  "counts": {
+    "3.0": 536,
+    "3.5": 1222,
+    "4.0": 1075,
+    "4.5": 1131,
+    "5.0": 561
+  },
+  "total": 4525,
+  "items": [
+    {
+      "title": "Best Ever Homemade Pancakes Recipe",
+      "host": "graceandgoodeats.com",
+      "thumb": "/generated/og-thumbs/554e15a924c1bdfb.jpg",
+      "stars": 5.0,
+      "starFill": 100,
+      "starLabel": "5 out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "Chicken Gyoza Recipe",
+      "host": "valentinascorner.com",
+      "thumb": "/generated/og-thumbs/c93d0303c0719d2e.jpg",
+      "stars": 5.0,
+      "starFill": 100,
+      "starLabel": "5 out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "1-Hour Vegan Shepherd's Pie",
+      "host": "minimalistbaker.com",
+      "thumb": "/generated/og-thumbs/ded85f003c1e58b0.jpg",
+      "stars": 5.0,
+      "starFill": 100,
+      "starLabel": "5 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "15 Minute Lo Mein",
+      "host": "pinchofyum.com",
+      "thumb": "/generated/og-thumbs/0510e7601319a36a.jpg",
+      "stars": 5.0,
+      "starFill": 100,
+      "starLabel": "5 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "2-Ingredient Banana Pancakes",
+      "host": "thekitchn.com",
+      "thumb": "/generated/og-thumbs/1923619789c5be76.jpg",
+      "stars": 5.0,
+      "starFill": 100,
+      "starLabel": "5 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "2-Ingredient Slow Cooker Salsa Chicken",
+      "host": "gimmesomeoven.com",
+      "thumb": "/generated/og-thumbs/852105aeaf659a5b.jpg",
+      "stars": 5.0,
+      "starFill": 100,
+      "starLabel": "5 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "Acadia Cooks: Crawfish Étouffée",
+      "host": "acadiacrawfish.com",
+      "thumb": "/generated/og-thumbs/53129e1899033142.jpg",
+      "stars": 4.5,
+      "starFill": 90,
+      "starLabel": "4½ out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "Air Fryer Boneless Skinless Chicken Thighs",
+      "host": "windingcreekranch.org",
+      "thumb": "/generated/og-thumbs/928d87263a0118ac.jpg",
+      "stars": 4.5,
+      "starFill": 90,
+      "starLabel": "4½ out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "Anthony Bourdain Scrambled Eggs with Sour Cream Recipe ",
+      "host": "myeverydaytable.com",
+      "thumb": "/generated/og-thumbs/298632c4327e4cba.jpg",
+      "stars": 4.5,
+      "starFill": 90,
+      "starLabel": "4½ out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "Aunt Lillian's Polish Potato Pancakes",
+      "host": "thedeliciousspoon.com",
+      "thumb": "/generated/og-thumbs/24a6870bb7c9d86c.jpg",
+      "stars": 4.5,
+      "starFill": 90,
+      "starLabel": "4½ out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "Authentic Austrian Beef Goulash",
+      "host": "lilvienna.com",
+      "thumb": "/generated/og-thumbs/031c7cd91aa0ee71.jpg",
+      "stars": 4.5,
+      "starFill": 90,
+      "starLabel": "4½ out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "Authentic Cacio e Pepe (VIDEO)",
+      "host": "cjeatsrecipes.com",
+      "thumb": "/generated/og-thumbs/527ddab9b9eb1a5c.jpg",
+      "stars": 4.5,
+      "starFill": 90,
+      "starLabel": "4½ out of 5",
+      "badge": "hidden_gem",
+      "badgeText": "Hidden gem"
+    },
+    {
+      "title": "'Not Too Sweet' Pecan Pie Recipe",
+      "host": "latimes.com",
+      "thumb": "/generated/og-thumbs/3cf01c8d42e82a72.jpg",
+      "stars": 4.0,
+      "starFill": 80,
+      "starLabel": "4 out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "22-Minute Coconut Chicken Curry",
+      "host": "epicurious.com",
+      "thumb": "/generated/og-thumbs/dab3a109eb5abb97.jpg",
+      "stars": 4.0,
+      "starFill": 80,
+      "starLabel": "4 out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "All-American Eggplant Parmesan",
+      "host": "seriouseats.com",
+      "thumb": "/generated/og-thumbs/5c080229c3c81998.jpg",
+      "stars": 4.0,
+      "starFill": 80,
+      "starLabel": "4 out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Amatriciana",
+      "host": "allrecipes.com",
+      "thumb": "/generated/og-thumbs/369f9ead391a2b04.jpg",
+      "stars": 4.0,
+      "starFill": 80,
+      "starLabel": "4 out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Apple Crumb Pie",
+      "host": "bonappetit.com",
+      "thumb": "/generated/og-thumbs/a043b958da0f88a3.jpg",
+      "stars": 4.0,
+      "starFill": 80,
+      "starLabel": "4 out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Armenian-style rice pilaf with vermicelli, peas, and herbs",
+      "host": "bostonglobe.com",
+      "thumb": "/generated/og-thumbs/a747dd20a11a008e.jpg",
+      "stars": 4.0,
+      "starFill": 80,
+      "starLabel": "4 out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Air Fryer Baked Potatoes",
+      "host": "washingtonpost.com",
+      "thumb": "/generated/og-thumbs/c0912ef10c9e24ee.jpg",
+      "stars": 3.5,
+      "starFill": 70,
+      "starLabel": "3½ out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Apple Brown Betty",
+      "host": "foodnetwork.com",
+      "thumb": "https://cook.fnr.sndimg.com/content/dam/images/cook/fullset/2015/6/10/0/WU0202H_apple-brown-betty_s4x3.jpg.rend.hgtvcom.1280.1280.suffix/1483736130739.webp",
+      "stars": 3.5,
+      "starFill": 70,
+      "starLabel": "3½ out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Apple and miso self-saucing pudding",
+      "host": "abc.net.au",
+      "thumb": "/generated/og-thumbs/bae263a01c63f96a.jpg",
+      "stars": 3.5,
+      "starFill": 70,
+      "starLabel": "3½ out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Arroz Con Pollo (Puerto Rican rice with chicken)",
+      "host": "web.archive.org",
+      "thumb": "/generated/og-thumbs/5dd7049c64002cf8.jpg",
+      "stars": 3.5,
+      "starFill": 70,
+      "starLabel": "3½ out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Baked Indian Pudding With Maple Syrup",
+      "host": "allrecipes.com",
+      "thumb": "/generated/og-thumbs/196bfcd83c729d95.jpg",
+      "stars": 3.5,
+      "starFill": 70,
+      "starLabel": "3½ out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "Baked Stuffed Shrimp ",
+      "host": "allrecipes.com",
+      "thumb": "/generated/og-thumbs/c7cb2fb9255263aa.jpg",
+      "stars": 3.5,
+      "starFill": 70,
+      "starLabel": "3½ out of 5",
+      "badge": "trusted",
+      "badgeText": "Widely trusted"
+    },
+    {
+      "title": "10 Ways to Cook Beef Liver",
+      "host": "meatandgrillstories.com",
+      "thumb": "/generated/og-thumbs/aa7d3b458b1bd953.jpg",
+      "stars": 3.0,
+      "starFill": 60,
+      "starLabel": "3 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "2-Scalloped Potatoes with Chimichurri",
+      "host": "foodgal.com",
+      "thumb": "https://www.foodgal.com/wp-content/uploads/2022/11/2-potato-gratin-baked-overhead-703x1024.jpg",
+      "stars": 3.0,
+      "starFill": 60,
+      "starLabel": "3 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "Adeena's Classic Hanukkah Brisket",
+      "host": "cravingsbychrissyteigen.com",
+      "thumb": "/generated/og-thumbs/dfacd11f75fc5b1e.jpg",
+      "stars": 3.0,
+      "starFill": 60,
+      "starLabel": "3 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "Air Fryer Burgers",
+      "host": "mariesaba.com",
+      "thumb": "/generated/og-thumbs/4d7dbbae7f91cd2d.jpg",
+      "stars": 3.0,
+      "starFill": 60,
+      "starLabel": "3 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "Air Fryer Stuffed Mushrooms",
+      "host": "mariesaba.com",
+      "thumb": "/generated/og-thumbs/0d2431fcfde4a151.jpg",
+      "stars": 3.0,
+      "starFill": 60,
+      "starLabel": "3 out of 5",
+      "badge": null,
+      "badgeText": null
+    },
+    {
+      "title": "Akis Petretzikis's Galaktoboureko",
+      "host": "akispetretzikis.com",
+      "thumb": "/generated/og-thumbs/46d169ccd296d322.jpg",
+      "stars": 3.0,
+      "starFill": 60,
+      "starLabel": "3 out of 5",
+      "badge": null,
+      "badgeText": null
+    }
+  ]
+}

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Mockup · Star rating</title>
+  <!-- MOCKUP for the public scoring UI (see memory/project_two_stage_selection and
+       input/pipeline/public_scoring.py). Not wired to a live endpoint: it reads
+       stars_demo.json, which was generated from the real corpus and deliberately
+       contains ONLY public fields — if you can reconstruct a score from that file,
+       the chokepoint has a hole in it.
+
+       Follows the page contract at the top of library-shell.js: shell + components,
+       tokens.css LAST, shared .app-header. Same pattern as chapters_mockup.html /
+       domains_mockup.html. -->
+  <link rel="stylesheet" href="/forms/library-shell.css">
+  <link rel="stylesheet" href="/forms/components.css?v=20260807a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
+  <script src="/forms/library-shell.js"></script>
+  <style>
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 20px 80px; }
+    .lede { color: var(--muted); max-width: 62ch; line-height: 1.55; margin: 0 0 30px; }
+    .sec { margin: 0 0 40px; }
+    .sec > h2 { font-size: 1.05rem; margin: 0 0 4px; letter-spacing: -.01em; }
+    .sec > .hint { color: var(--muted); font-size: .88rem; margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+
+    /* --- the scale reference --- */
+    .scale { display: grid; grid-template-columns: auto auto 1fr; gap: 12px 18px; align-items: center; }
+    .scale .lvl { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .scale .note { color: var(--muted); font-size: .85rem; }
+    .scale code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85em; }
+
+    /* --- ranked list: the pre-click surface --- */
+    .rl { list-style: none; margin: 0; padding: 0; }
+    .rl li { display: flex; align-items: center; gap: 14px; padding: 11px 8px; border-radius: 11px; }
+    .rl li + li { border-top: 1px solid var(--ed-hairline-soft); }
+    .rl li:hover { background: var(--bg); border-top-color: transparent; }
+    .rl .rank { flex: 0 0 auto; width: 18px; text-align: center; color: var(--muted);
+      font-variant-numeric: tabular-nums; font-size: .85rem; }
+    .rl .thumb { flex: 0 0 auto; width: 52px; height: 52px; border-radius: 10px; overflow: hidden;
+      background: var(--bg); border: 1px solid var(--line); }
+    .rl .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .rl .main { flex: 1; min-width: 0; }
+    .rl .name { display: block; font-size: .97rem; line-height: 1.3; color: var(--ink);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rl .host { font-size: .77rem; color: var(--muted); margin-top: 3px; }
+    .rl .right { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+
+    /* --- badge: the second axis, as a label. Never a second scale. --- */
+    .badge { display: inline-block; font-size: .63rem; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+      background: var(--accent-soft); color: var(--accent-dark); }
+    .badge.trusted { background: #e7e0d3; color: #6b5b45; }
+
+    /* --- the stored card --- */
+    .card-demo { display: grid; grid-template-columns: 260px 1fr; gap: 22px; }
+    .shotwrap { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+      background: var(--bg); aspect-ratio: 3/4; }
+    .shotwrap img { width: 100%; height: 100%; object-fit: cover; display: block;
+      /* MOCK ONLY. In production the blur is baked in server-side at the serve
+         boundary and cached as its own blob — a CSS filter ships the readable
+         screenshot to the browser and devtools strips it in two clicks. */
+      filter: blur(9px) saturate(.9); transform: scale(1.06); }
+    .shotcap { position: absolute; left: 0; right: 0; bottom: 0; padding: 9px 11px; font-size: .72rem;
+      color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.72)); }
+    /* z-index: the <img> carries a transform, which makes it a stacking context
+       and paints it over a plain positioned sibling. Without this the flag
+       disappears behind the very thing it is warning about. */
+    .mockflag { position: absolute; z-index: 2; top: 8px; left: 8px; font-size: .58rem; font-weight: 700;
+      letter-spacing: .07em; text-transform: uppercase; background: var(--danger); color: #fff;
+      padding: 2px 7px; border-radius: 999px; }
+    .card-demo h3 { margin: 0 0 6px; font-size: 1.25rem; line-height: 1.25; }
+    .card-demo .byline { color: var(--muted); font-size: .85rem; margin: 0 0 14px; }
+    .starline { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
+    .asof { color: var(--muted); font-size: .74rem; font-style: italic; }
+    .verdict { line-height: 1.6; margin: 0 0 18px; max-width: 60ch; }
+    .blk { border-top: 1px solid var(--ed-hairline-soft); padding-top: 12px; margin-top: 14px; }
+    .blk h4 { margin: 0 0 6px; font-size: .68rem; letter-spacing: .09em; text-transform: uppercase;
+      color: var(--muted); font-weight: 700; }
+    .blk p, .blk ul { margin: 0; color: var(--ink); font-size: .92rem; line-height: 1.55; }
+    .blk ul { padding-left: 18px; }
+    .held { color: var(--muted); font-style: italic; font-size: .87rem; }
+    .visit { display: inline-block; margin-top: 16px; padding: 9px 16px; border-radius: 9px;
+      background: var(--accent); color: #fff; text-decoration: none; font-size: .9rem; }
+
+    .payload { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .8rem;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+      white-space: pre; overflow-x: auto; color: var(--ink); line-height: 1.6; }
+    .dist { display: flex; gap: 10px; align-items: flex-end; height: 90px; margin: 4px 0 10px; }
+    .dist div { flex: 1; background: var(--accent-soft); border-radius: 6px 6px 0 0; position: relative; }
+    .dist div span { position: absolute; top: -18px; left: 0; right: 0; text-align: center;
+      font-size: .7rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .dist div b { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center;
+      font-size: .72rem; font-weight: 600; }
+    @media (max-width: 720px) { .card-demo { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner"><h1></h1></div>
+  </header>
+
+  <div class="wrap">
+    <p class="lede">
+      The public face of the ranking. A user sees a star fill and, for about one recipe in ten,
+      a badge — never a number, never a second scale. Everything below is rendered from
+      <code>stars_demo.json</code>, generated from the live corpus through
+      <code>public_scoring.public_score()</code>.
+    </p>
+
+    <section class="sec">
+      <h2>The scale</h2>
+      <p class="hint">
+        Five levels across 3–5 stars. Nothing below 3 is ever shown: every recipe in the index
+        already passed selection, so a low star would be insulting a recipe we chose ourselves.
+        One glyph tiled at 20% with 2 units of padding baked into each side of a 20×20 tile —
+        that symmetry is what puts a half star exactly on a glyph centre.
+      </p>
+      <div class="panel scale" id="scale"></div>
+    </section>
+
+    <section class="sec">
+      <h2>Where they land</h2>
+      <p class="hint">
+        The cuts sit on the blend <em>value</em>, not on rank position — so a recipe keeps its
+        stars as the corpus grows instead of being demoted by arithmetic. The blend averages two
+        percentiles, so the spread is centre-heavy: scarce at both ends, which is what makes a
+        top band worth having.
+      </p>
+      <div class="panel"><div class="dist" id="dist"></div><div style="height:22px"></div>
+        <p class="hint" style="margin:0" id="disttotal"></p></div>
+    </section>
+
+    <section class="sec">
+      <h2>Ranked results — the pre-click surface</h2>
+      <p class="hint">
+        The most exposed surface, and the one a competitor scrapes. Star, badge, thumbnail, host.
+        No ingredients, no method, no numbers.
+      </p>
+      <div class="panel"><ol class="rl" id="list"><li>Loading…</li></ol></div>
+    </section>
+
+    <section class="sec">
+      <h2>The stored card</h2>
+      <p class="hint">
+        What a user keeps. The star is frozen and dated at save time — a stored card holds the
+        rating that was read, and a refresh surfaces a change as an event rather than silently
+        rewriting it. The second axis is spent here, as the comparison sentence.
+      </p>
+      <div class="panel card-demo" id="card"></div>
+    </section>
+
+    <section class="sec">
+      <h2>What crosses the wire</h2>
+      <p class="hint">
+        The whole payload for one recipe. Quantised on the server: reading it off the DOM
+        recovers a band, not a score.
+      </p>
+      <div class="payload" id="payload">—</div>
+    </section>
+  </div>
+
+<script>
+  LibraryShell.initNav({ currentPage: 'stars_mockup' });
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  // The ONLY thing the client does with a score: paint the fill it was handed.
+  // No thresholds here — that arithmetic lives on the server by design.
+  const starsEl = (fill, label, cls = '') =>
+    `<span class="stars ${cls}" style="--fill:${fill}%" role="img" aria-label="${esc(label)}"></span>`;
+
+  const badgeEl = it => it.badge
+    ? `<span class="badge ${it.badge === 'trusted' ? 'trusted' : ''}">${esc(it.badgeText)}</span>` : '';
+
+  function renderScale() {
+    const rows = [
+      [3.0, 60,  'edge falls in the gap between glyph 3 and 4 — reads as 3 solid'],
+      [3.5, 70,  'dead centre of the 4th glyph — a true half'],
+      [4.0, 80,  'edge in the gap after glyph 4'],
+      [4.5, 90,  'centre of the 5th glyph'],
+      [5.0, 100, 'full track'],
+    ];
+    document.getElementById('scale').innerHTML = rows.map(([lvl, fill, note]) => `
+      <span class="lvl">${lvl % 1 ? String(Math.floor(lvl)) + '½' : lvl}</span>
+      ${starsEl(fill, (lvl % 1 ? Math.floor(lvl) + '½' : lvl) + ' out of 5')}
+      <span class="note"><code>--fill: ${fill}%</code> — ${note}</span>`).join('');
+  }
+
+  function renderDist(counts, total) {
+    const keys = ['3.0','3.5','4.0','4.5','5.0'];
+    const max = Math.max(...keys.map(k => counts[k] || 0));
+    document.getElementById('dist').innerHTML = keys.map(k => {
+      const n = counts[k] || 0;
+      const lbl = k.endsWith('.5') ? k[0] + '½' : k[0];
+      return `<div style="height:${Math.round((n / max) * 100)}%">
+        <span>${n}</span><b>${lbl}★</b></div>`;
+    }).join('');
+    document.getElementById('disttotal').textContent =
+      `${total.toLocaleString()} scored recipes in the index.`;
+  }
+
+  function renderList(items) {
+    document.getElementById('list').innerHTML = items.slice(0, 12).map((it, i) => `
+      <li>
+        <span class="rank">${i + 1}</span>
+        <span class="thumb">${it.thumb ? `<img src="${esc(it.thumb)}" alt="" loading="lazy">` : ''}</span>
+        <span class="main">
+          <span class="name">${esc(it.title)}</span>
+          <span class="host">${esc(it.host || '')}</span>
+        </span>
+        <span class="right">
+          ${starsEl(it.starFill, it.starLabel, 'sm')}
+          ${badgeEl(it)}
+        </span>
+      </li>`).join('');
+  }
+
+  // One card, using a real row. The prose is the placeholder for what
+  // scoreCommentary already generates from the OU x power quadrant — the second
+  // axis rendered as a sentence instead of a second number.
+  function renderCard(it) {
+    const line = it.badge === 'hidden_gem'
+      ? 'From a smaller kitchen than the others we looked at for this dish — and it still came out ahead of them.'
+      : it.badge === 'trusted'
+      ? 'The most established name cooking this dish, doing it the standard way.'
+      : 'It holds up well against the other versions of this dish we ranked.';
+    document.getElementById('card').innerHTML = `
+      <div>
+        <div class="shotwrap">
+          <span class="mockflag">mock blur</span>
+          ${it.thumb ? `<img src="${esc(it.thumb)}" alt="">` : ''}
+          <span class="shotcap">${esc(it.host || '')} — tap to read the original</span>
+        </div>
+      </div>
+      <div>
+        <h3>${esc(it.title)}</h3>
+        <p class="byline">${esc(it.host || '')}</p>
+        <div class="starline">
+          ${starsEl(it.starFill, it.starLabel)}
+          ${badgeEl(it)}
+          <span class="asof">rated 7 Aug 2026</span>
+        </div>
+        <p class="verdict">${esc(line)}</p>
+        <div class="blk"><h4>Compared with the others</h4>
+          <p class="held">Where this version differs from the rest of the ranked field, and why
+             that difference matters. Generated per recipe — this is the block the second
+             scoring axis is spent on.</p></div>
+        <div class="blk"><h4>Equipment we'd use</h4>
+          <p class="held">Culled and ordered from the recipe's own method, linked to the catalog.</p></div>
+        <div class="blk"><h4>Worth buying well</h4>
+          <p class="held">The one or two ingredients where quality actually changes the result.</p></div>
+        <div class="blk"><h4>Making it better</h4>
+          <p class="held">Our notes and tips — the step the publisher skipped, the timing they
+             understate.</p></div>
+        <div class="blk"><h4>The recipe itself</h4>
+          <p class="held">Ingredients and method stay with the publisher. We hold them to do the
+             analysis above; we don't reprint them.</p></div>
+        <a class="visit" href="#" onclick="return false">Read it at ${esc(it.host || 'the source')} →</a>
+      </div>`;
+    document.getElementById('payload').textContent = JSON.stringify({
+      title: it.title, host: it.host,
+      stars: it.stars, starFill: it.starFill, starLabel: it.starLabel,
+      badge: it.badge, scoredAt: '2026-08-07'
+    }, null, 2);
+  }
+
+  fetch('/forms/stars_demo.json')
+    .then(r => r.json())
+    .then(d => {
+      renderScale();
+      renderDist(d.counts, d.total);
+      renderList(d.items);
+      const gem = d.items.find(i => i.badge === 'hidden_gem') || d.items[0];
+      renderCard(gem);
+    })
+    .catch(e => {
+      renderScale();
+      document.getElementById('list').innerHTML =
+        `<li>Could not load stars_demo.json — open this page through the server, not file://. (${esc(e.message)})</li>`;
+    });
+</script>
+</body>
+</html>

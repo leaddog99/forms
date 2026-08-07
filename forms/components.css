@@ -38,3 +38,43 @@
 }
 .src-file.ok { color: var(--accent-dark); border-color: var(--accent-soft); }
 .src-file.missing { color: var(--danger); background: var(--danger-soft); border-color: var(--danger-soft); }
+
+/* ===== Star rating =====================================================
+   The PUBLIC face of a recipe's score. Deliberately coarse: the server sends
+   one of five fill percentages and nothing else, so the private math (OU,
+   power, the blend) is never on the wire. See input/pipeline/public_scoring.py
+   — that module is the only place a private score becomes a public one.
+
+   Geometry. One star glyph tiled at exactly 20% of the track, drawn inside a
+   20x20 viewBox with the star occupying 2..18 — the 2-unit padding on EACH
+   side is baked into the tile, NOT added with CSS spacing. That symmetry is
+   what makes the arithmetic honest: the centre of tile k sits at (k+0.5)*20%,
+   so a half star is a clean 10% step and a whole star boundary falls in the
+   gap between glyphs.
+
+       60% = 3    70% = 3.5    80% = 4    90% = 4.5    100% = 5
+
+   Nothing below 3 is ever displayed: every recipe in the index already passed
+   selection, so a 1-star would be insulting a recipe we chose ourselves.
+
+   The mask does the clipping, so the fill layer can run past a glyph into the
+   gap and paint nothing — a rounding slip cannot leak visually. SVG rather
+   than a PNG: sharp at any DPI, takes theme tokens, and the tile geometry is
+   guaranteed instead of eyeballed. */
+.stars {
+  --stars-w: 100px;
+  display: inline-block; vertical-align: -0.15em; position: relative;
+  width: var(--stars-w); height: calc(var(--stars-w) / 5);
+  background: var(--star-empty);
+  -webkit-mask: var(--star-glyph) 0 0 / 20% 100% repeat-x;
+          mask: var(--star-glyph) 0 0 / 20% 100% repeat-x;
+}
+.stars::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0;
+  width: var(--fill, 0%); background: var(--star-fill);
+}
+:root {
+  --star-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 2.8 12.234 7.726 17.609 8.328 13.614 11.974 14.702 17.272 10 14.6 5.298 17.272 6.386 11.974 2.391 8.328 7.766 7.726Z' fill='%23000'/%3E%3C/svg%3E");
+}
+/* Small variant for a dense ranked row. */
+.stars.sm { --stars-w: 72px; }

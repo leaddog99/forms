@@ -1022,6 +1022,32 @@
       color: var(--muted);
       font-weight: 400;
     }
+    /* Public rating chip — stars sit lower than a numeric value would, so the
+       wrap gets the same vertical rhythm as .score-value rather than a raw
+       inline image jammed under the label. */
+    .pub-stars-wrap { display: flex; align-items: center; gap: 8px; margin-top: 3px; min-height: 1.2em; }
+    .pub-badge {
+      font-size: 0.6em; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+      background: var(--accent-soft); color: var(--accent-dark);
+    }
+    .pub-badge.trusted { background: #e7e0d3; color: #6b5b45; }
+    .pub-badge.hidden { display: none; }
+    .score-chip.hidden { display: none; }
+    /* Reads as the bottom of the strip, not a second panel: -18px cancels the
+       strip's own margin-bottom so the two boxes meet, and the strip squares
+       its lower corners while this is showing (.has-commentary). */
+    .score-commentary {
+      margin: -18px 0 18px; padding: 12px 18px 14px;
+      background: var(--card); border: 1px solid var(--line); border-top: none;
+      border-radius: 0 0 12px 12px;
+    }
+    .scoring-strip.has-commentary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .score-commentary.hidden { display: none; }
+    .score-commentary p {
+      margin: 4px 0 0; font-size: 0.93em; line-height: 1.55; color: var(--ink);
+      max-width: 78ch;
+    }
 
     /* ─── Exceptionalism grade badge ──────────────────────────────────
        Editorial monogram: letter is the focal point, +/- a small
@@ -1627,10 +1653,13 @@
        inline block runs first; library-shell.css uses lower-specificity
        selectors so the form's rules cleanly win where they override. -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
+  <!-- Shared components — here for .stars, the public star rating shown in the
+       scoring strip so the curator sees what a user would see. -->
+  <link rel="stylesheet" href="/forms/components.css?v=20260807a">
   <!-- Shared design tokens (the dish/forms style guidelines) — loaded LAST so it is the
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260617b">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
   <script src="/forms/library-shell.js?v=20260805a"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
@@ -1797,6 +1826,29 @@
             <span class="score-value empty" id="score_match_value">—</span>
             <span class="exc-chip-basis" id="score_match_basis"></span>
           </div>
+          <!-- What the USER would see. Every other chip in this strip is the
+               private machinery; this one is the public face of it, put here so
+               the curator can judge the translation against the numbers that
+               produced it. Stars and badge come from GET /public-score — the
+               mapping is never reimplemented in JS (input/pipeline/public_scoring). -->
+          <div class="score-chip hidden" id="score_public_chip">
+            <span class="score-label">Public rating</span>
+            <span class="pub-stars-wrap">
+              <span class="stars sm" id="score_stars" style="--fill:0%"></span>
+              <span class="pub-badge hidden" id="score_badge"></span>
+            </span>
+            <span class="exc-chip-basis" id="score_public_basis"></span>
+          </div>
+        </div>
+
+        <!-- Score commentary — the editorial reading of the numbers above
+             (OU x power quadrant + residual). Read-only here; the editable
+             field stays in the Editorial section, and this mirrors it so the
+             interpretation sits next to what it interprets. Hidden when the
+             recipe has no commentary. -->
+        <div class="score-commentary hidden" id="scoreCommentaryBox">
+          <span class="score-label">Commentary</span>
+          <p id="scoreCommentaryText"></p>
         </div>
 
         <!-- Collections this recipe belongs to: dish winners (scoring ledger) +
@@ -3026,6 +3078,59 @@
         hasMatch
       );
       if (strip) strip.classList.toggle('hidden', !hasAny);
+
+      updatePublicScore(sc);
+      setScoreCommentary(recipe && recipe.editorial && recipe.editorial.scoreCommentary);
+    }
+
+    // The public star rating, fetched rather than computed. Deliberately NOT
+    // derived in JS: input/pipeline/public_scoring owns the mapping, and a
+    // second copy here would drift from it the first time a cut point moves.
+    // Needs all three raw scores — a star built on a missing input would be a
+    // manufactured rating, and absent must stay absent.
+    async function updatePublicScore(sc) {
+      const chip = document.getElementById('score_public_chip');
+      const starEl = document.getElementById('score_stars');
+      const badgeEl = document.getElementById('score_badge');
+      const basisEl = document.getElementById('score_public_basis');
+      if (!chip || !starEl) return;
+      const ou = sc && sc.ouScore, da = sc && sc.domainAuthority, pa = sc && sc.pageAuthority;
+      const ready = [ou, da, pa].every(v => typeof v === 'number' && !Number.isNaN(v));
+      if (!ready) { chip.classList.add('hidden'); return; }
+      try {
+        const qs = `ou=${encodeURIComponent(ou)}&da=${encodeURIComponent(da)}&pa=${encodeURIComponent(pa)}`;
+        const res = await fetch(`${API}/public-score?${qs}`);
+        if (!res.ok) { chip.classList.add('hidden'); return; }
+        const p = await res.json();
+        if (!p || typeof p.starFill !== 'number') { chip.classList.add('hidden'); return; }
+        starEl.style.setProperty('--fill', p.starFill + '%');
+        starEl.setAttribute('role', 'img');
+        starEl.setAttribute('aria-label', p.starLabel || '');
+        if (badgeEl) {
+          const txt = { hidden_gem: 'Hidden gem', trusted: 'Widely trusted' }[p.badge];
+          badgeEl.textContent = txt || '';
+          badgeEl.classList.toggle('trusted', p.badge === 'trusted');
+          badgeEl.classList.toggle('hidden', !txt);
+        }
+        if (basisEl) basisEl.textContent = p.starLabel || '';
+        chip.classList.remove('hidden');
+      } catch (e) {
+        chip.classList.add('hidden');   // never let a rating break the form
+      }
+    }
+
+    // Mirror the editorial scoreCommentary under the strip, read-only. The
+    // editable field stays in the Editorial section — this is the same value
+    // shown where it makes sense to read it.
+    function setScoreCommentary(text) {
+      const box = document.getElementById('scoreCommentaryBox');
+      const p = document.getElementById('scoreCommentaryText');
+      if (!box || !p) return;
+      const t = (text || '').trim();
+      p.textContent = t;
+      box.classList.toggle('hidden', !t);
+      const strip = document.getElementById('scoringStrip');
+      if (strip) strip.classList.toggle('has-commentary', !!t && !strip.classList.contains('hidden'));
     }
     // Surface the embedding-based cohort matching internals so the
     // curator can see WHAT the matcher used + WHICH dish it picked.
@@ -3121,9 +3226,19 @@
       if (excValEl) excValEl.innerHTML = '<span class="score-value empty">—</span>';
       const excBasisEl = document.getElementById('score_exc_basis');
       if (excBasisEl) excBasisEl.textContent = '';
+      const pubChip = document.getElementById('score_public_chip');
+      if (pubChip) pubChip.classList.add('hidden');
+      setScoreCommentary('');
       const strip = document.getElementById('scoringStrip');
       if (strip) strip.classList.add('hidden');
     }
+    // Keep the read-only mirror in step with the editable field, so editing
+    // the commentary doesn't leave stale text sitting at the top of the form.
+    document.addEventListener('input', (e) => {
+      if (e.target && e.target.id === 'editorial_score_commentary') {
+        setScoreCommentary(e.target.value);
+      }
+    });
     // Form-wide input listener — covers typing in any field. Programmatic
     // .value assignments (populateFormFromRecipe / loadForm / clearBtn)
     // don't fire 'input' so those code paths call updateButtonStates

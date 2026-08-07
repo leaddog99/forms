@@ -8924,6 +8924,56 @@ def get_url_metadata(url: str):
     return row
 
 
+@app.get("/public-score")
+def get_public_score(ou: float = None, da: float = None, pa: float = None):
+    """The PUBLIC face of a recipe's score — stars and, sometimes, a badge.
+
+    The quantising lives on the server on purpose (see
+    input/pipeline/public_scoring): a page that receives the raw numbers and
+    works out stars in JavaScript has published the ranking method to anyone
+    who opens devtools. The admin recipe form already holds the raw scores, so
+    this endpoint is not hiding anything FROM it — it exists so there is ONE
+    implementation of the mapping, and so the curator sees exactly what a user
+    would see rather than a second copy of the arithmetic that can drift.
+
+    Percentiles are computed against master_recipes — the curated index IS the
+    cohort a public star is relative to. Two counting scans over ~4.5k rows;
+    ou_score is indexed, power is not, which is fine at this size.
+
+    Takes the raw scores as query params rather than a recipe id so it also
+    answers for a recipe that has been extracted but not yet saved.
+    """
+    if ou is None or da is None or pa is None:
+        return {}
+    try:
+        from input.pipeline.public_scoring import public_score
+        power = float(da) + float(pa)
+        with _db() as conn:
+            r = conn.execute(
+                """
+                SELECT (SELECT COUNT(*) FROM master_recipes
+                          WHERE ou_score IS NOT NULL AND ou_score < ?)  AS ou_below,
+                       (SELECT COUNT(*) FROM master_recipes
+                          WHERE ou_score IS NOT NULL AND power IS NOT NULL) AS n_ou,
+                       (SELECT COUNT(*) FROM master_recipes
+                          WHERE power IS NOT NULL AND power < ?)        AS pw_below
+                """,
+                (float(ou), power),
+            ).fetchone()
+        n = (r["n_ou"] if isinstance(r, sqlite3.Row) else r[1]) or 0
+        if n <= 1:
+            return {}
+        ou_below = r["ou_below"] if isinstance(r, sqlite3.Row) else r[0]
+        pw_below = r["pw_below"] if isinstance(r, sqlite3.Row) else r[2]
+        out = public_score(ou_below / n, pw_below / n)
+        # The inputs are NOT echoed back. This endpoint's whole job is to be
+        # the boundary; a convenience echo here is how the boundary leaks.
+        return out
+    except Exception as e:
+        print(f"[ERROR] public-score failed: {e}")
+        return {}
+
+
 # Delete a recipe. user_id dispatches to the right table (0 = master,
 # else = personal). Cross-table delete is a 404 — admins must be explicit
 # about which collection they're removing from.

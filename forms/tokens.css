@@ -26,6 +26,12 @@
   --placeholder: #cdc1b3;   /* example/hint text in inputs — clearly faded, reads as a suggestion not data */
   --border: var(--line);    /* aliases some older pages used */
   --text:   var(--ink);
+  /* Star rating (.stars in components.css). Antique gold rather than the bright
+     retail gold — it has to sit next to the clay without shouting, and the
+     curator's direction is soft tones over garish. Empty is a warm tint of
+     --line so an unfilled star still reads as a star, not a hole. */
+  --star-fill:  #c08a2e;
+  --star-empty: #e6dccd;
   --font-body: Georgia, "Times New Roman", serif;
   /* reconcile the editor shell's own hairline tokens onto the shared warm line so
      editor borders match everywhere (editor-shell.css defined cooler greys). */
