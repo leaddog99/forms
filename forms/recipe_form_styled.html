@@ -3173,6 +3173,17 @@
       updated_at:    { get: r => r.updated_at,                                                          type: 'date' },
       created_at:    { get: r => r.created_at,                                                          type: 'date' },
       rank:          { get: r => (r.data && r.data._batch && r.data._batch.rank),                      type: 'num' },
+      // Raw authority = DA + PA. DERIVED, not read from `_scoring.power`: that stored
+      // field is present on only 149/412 personal rows (and was one of the manufactured
+      // zeros stripped 2026-08-06), whereas 341 carry both DA and PA — so computing it
+      // makes 2.3x more of the list sortable. Mirrors blend._power, which returns None
+      // unless BOTH operands are numbers: a row with only one measured signal is
+      // UNMEASURED, not half-powerful, and the comparator already sinks missing numbers
+      // to the bottom in both directions (feedback_absent_not_zero).
+      power:         { get: r => { const s = r.data && r.data._scoring;
+                                   const da = s && s.domainAuthority, pa = s && s.pageAuthority;
+                                   return (typeof da === 'number' && typeof pa === 'number') ? da + pa : undefined; },
+                       type: 'num' },
     };
 
     // SORT_ORDERS is the named-multi-field-sort table the user asked
@@ -3186,6 +3197,11 @@
       name_asc:      { label: "Name (A–Z)",               order: [["name", "asc"]] },
       ou_desc:       { label: "OU score (highest)",       order: [["ouScore", "desc"]] },
       pa_desc:       { label: "Page authority (highest)", order: [["pageAuthority", "desc"]] },
+      // Raw authority, the other half of the OU/power blend. OU measures a page
+      // AGAINST its domain, so it deliberately does not reward a strong domain;
+      // this sorts by the strength OU normalises away. Tie-break on PA so two rows
+      // from the same publisher (identical DA) order by the page's own standing.
+      power_desc:    { label: "Power — DA+PA (highest)",  order: [["power", "desc"], ["pageAuthority", "desc"]] },
       chapter_asc:   { label: "Chapter (A–Z)",            order: [["chapter", "asc"], ["name", "asc"]] },
       // Composite "quality" sort: best OU first, tie-break on recipe-text
       // score (in-page recipe phrasing), then most-recently-updated.
