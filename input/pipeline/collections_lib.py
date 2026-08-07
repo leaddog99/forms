@@ -368,6 +368,24 @@ def _input_dir():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def semrush_archive_dir():
+    """<project>/input/semrush — the PERMANENT, git-tracked home for SEMrush exports.
+
+    An export is not a throwaway import artifact: it carries per-URL traffic,
+    keyword and position data we currently read one column of, and SEMrush will
+    not sell the same historical snapshot back to us. So every export we have
+    ever taken is kept, and kept somewhere it gets BACKED UP.
+
+    A SUBFOLDER on purpose. `.gitignore` carries `input/*.xlsx`, which matches
+    only the root level — exports sitting loose in input/ were silently
+    untracked (35 of 55 on 2026-08-07, while the other 20 predated the rule and
+    stayed tracked, which is why the gap was invisible). Nesting them one level
+    down makes them tracked with no .gitignore change and no exception to
+    forget."""
+    import os
+    return os.path.join(_input_dir(), "semrush")
+
+
 def semrush_inbox_dir():
     """The admin-configured folder SEMrush exports are saved to (read DIRECTLY — no
     copy-into-input step). `system_config.semrush_inbox_dir` if set, else the OS
@@ -406,6 +424,9 @@ def backlinks_search_dirs(extra=None):
             # File path (existing OR stale-but-.xlsx) → search its folder, not the file.
             cand.append(os.path.dirname(ep) if (ep.lower().endswith(".xlsx") or os.path.isfile(ep)) else ep)
     cand.append(semrush_inbox_dir())
+    # The permanent archive comes BEFORE loose input/ — once an export is
+    # filed it is the copy that survives, and the loose root is legacy.
+    cand.append(semrush_archive_dir())
     cand.append(_input_dir())
     seen, out = set(), []
     for d in cand:
@@ -420,19 +441,109 @@ def backlinks_search_dirs(extra=None):
     return out
 
 
+# ── SEMrush export archiving ────────────────────────────────────────────────
+# An export is not a throwaway import artifact. It carries per-URL traffic,
+# keywords, positions and history that we read one column of today, and SEMrush
+# will not sell the same historical snapshot back to us later. So every export
+# the harvest consumes is filed into input/semrush/, which IS backed up.
+#
+# The two shapes backlinks_file_path tolerates. Chrome's " (1)" duplicate
+# suffix is stripped before matching — left in place it defeats both patterns
+# and the file is silently skipped instead of archived.
+_RE_EXPORT_ORG = re.compile(
+    r"^(?P<stem>.+?)-organic\.PagesV3-(?P<db>[a-z]{2})-(?P<snap>\d{8})-(?P<ts>.+?)\.xlsx$", re.I)
+_RE_EXPORT_BL = re.compile(r"^(?P<stem>.+?)[-_]backlinks[_-]pages\.xlsx$", re.I)
+_RE_DUP_SUFFIX = re.compile(r"\s*\(\d+\)(?=\.xlsx$)", re.I)
+
+
+def semrush_export_key(filename):
+    """(stem, database) for a SEMrush export filename, or None if it isn't one.
+
+    The key is deliberately NOT the domain. A domain legitimately has more than
+    one CURRENT export — 101cookbooks has a -gr run and a -us run;
+    thepioneerwoman has a backlinks-pages export and an organic one. Keying on
+    the domain alone treats those as versions of each other and retires data
+    that is not a duplicate.
+    """
+    import os
+    fn = _RE_DUP_SUFFIX.sub("", os.path.basename(filename or ""))
+    m = _RE_EXPORT_ORG.match(fn)
+    if m:
+        return m.group("stem").lower(), m.group("db").lower()
+    m = _RE_EXPORT_BL.match(fn)
+    if m:
+        return m.group("stem").lower(), "backlinks"
+    return None
+
+
+def archive_export(path):
+    """File a consumed SEMrush export into input/semrush/. Returns the archived
+    path, or None if it wasn't an export / couldn't be filed.
+
+    Older versions of the SAME (stem, database) are MOVED to
+    input/semrush/_superseded/, never deleted — newest is not always richest.
+    Measured 2026-08-07: three real cases had the newer export materially
+    smaller than the one it replaced (marthastewart 74KB -> 26KB the same day),
+    which is what a re-run with a narrower filter looks like. Losing the wider
+    one to an automatic rule is not recoverable; SEMrush will not re-issue it.
+
+    Copies, never moves, from outside the project — the admin's Downloads folder
+    is theirs. Fully non-fatal: a harvest must never fail because bookkeeping
+    did.
+    """
+    import os, shutil
+    try:
+        if not path or not os.path.isfile(path):
+            return None
+        key = semrush_export_key(path)
+        if not key:
+            return None
+        archive = semrush_archive_dir()
+        fn = os.path.basename(path)
+        dest = os.path.join(archive, fn)
+        if os.path.realpath(os.path.dirname(path)) == os.path.realpath(archive):
+            return path                      # already filed
+        os.makedirs(archive, exist_ok=True)
+        if not os.path.exists(dest):
+            shutil.copy2(path, dest)
+            print(f"  [archive] filed {fn} -> input/semrush/")
+        # Retire any older file already in the archive under the same key.
+        superseded = os.path.join(archive, "_superseded")
+        for other in os.listdir(archive):
+            if other == fn or not other.lower().endswith(".xlsx"):
+                continue
+            op = os.path.join(archive, other)
+            if not os.path.isfile(op) or semrush_export_key(other) != key:
+                continue
+            if os.path.getmtime(op) >= os.path.getmtime(dest):
+                continue                     # the incoming one is not newer
+            os.makedirs(superseded, exist_ok=True)
+            tgt = os.path.join(superseded, other)
+            if os.path.exists(tgt):
+                os.remove(op)
+            else:
+                shutil.move(op, tgt)
+            print(f"  [archive] superseded {other} -> _superseded/")
+        return dest
+    except Exception as e:
+        print(f"  [archive] skipped ({type(e).__name__}: {e})")
+        return None
+
+
 def backlinks_file_path(domain, extra_dir=None):
     """Path to a publisher's SEMrush page export, searched DIRECTLY across
     `backlinks_search_dirs` (configured inbox / Downloads / input / per-domain override),
     or None. Reads in place — nothing is copied into input/.
 
-    Tolerant of BOTH SEMrush page-export shapes (the reader auto-detects which):
-      - BACKLINKS pages:  {domain}-backlinks-pages.xlsx / {domain}_recipe-backlinks_pages.xlsx
+    Resolves to the organic TOP-PAGES shape ONLY:
       - organic TOP-PAGES: {domain}_recipe-organic.PagesV3-us-…xlsx (traffic-ranked, and for
-        a /recipe subfolder a clean current list of just recipe URLs)
-    So we match `{domain}*[Pp]ages*.xlsx` — the `*` after the domain absorbs the subpath +
-    export type; the trailing `*` tolerates the browser's de-dup suffix (`…(1).xlsx`).
-    Across ALL search dirs, the MOST RECENTLY MODIFIED match wins (so a fresh Top-Pages
-    export supersedes an old backlinks one).
+        a /recipe subfolder a clean current list of just recipe URLs)   ← the live shape
+      - BACKLINKS pages ({domain}-backlinks-pages.xlsx) is LEGACY and skipped — see the
+        exclusion note below. Reachable only via an explicit per-domain file override.
+    We match `{domain}*[Pp]ages*.xlsx` — the `*` after the domain absorbs the subpath +
+    export type; the trailing `*` tolerates the browser's de-dup suffix (`…(1).xlsx`) —
+    then drop the legacy shape from the result. Across ALL search dirs the MOST RECENTLY
+    MODIFIED surviving match wins.
 
     `extra_dir` (domains.backlinks_dir) may be EITHER a folder OR an EXACT FILE PATH — if it
     points at an existing file (or a folder + filename), that file is used DIRECTLY, no
@@ -457,7 +568,33 @@ def backlinks_file_path(domain, extra_dir=None):
         for pat in semrush_export_patterns():
             hits += glob.glob(os.path.join(d, pat.replace("{domain}", domain)))
     hits = list({os.path.realpath(h): h for h in hits}.values())   # dedup across patterns
-    return max(hits, key=os.path.getmtime) if hits else None
+    # LEGACY SHAPE EXCLUDED (2026-08-07). Selection is now Top-Pages ranked by
+    # TRAFFIC (project_two_stage_selection: harvest selects on last month's
+    # traffic, OU ranks within that pool). The old backlinks-pages export ranks
+    # by REFERRING DOMAINS, a different and now-superseded basis — and every
+    # such file on disk was downloaded 2026-06-01..21.
+    #
+    # They were still being used: thekitchn and allrecipes both harvested on
+    # 2026-07-22 off June backlinks files, because those were the only exports
+    # they had. Silently selecting on a stale, retired signal is worse than not
+    # finding a file, so we return None and let the caller raise its
+    # export-not-found message (which names the legacy file it skipped).
+    #
+    # NOT deleted, and NOT unreachable: an explicit per-domain file override
+    # (domains.backlinks_dir pointing AT the .xlsx) still uses it directly,
+    # above — the capability stays, only the automatic pickup goes.
+    # Uses the shared key, not a bare regex: it strips Chrome's " (1)" suffix
+    # first, so `thepioneerwoman.com-backlinks_pages (1).xlsx` is recognised as
+    # legacy rather than slipping through unmatched.
+    def _is_legacy(p):
+        k = semrush_export_key(os.path.basename(p))
+        return bool(k) and k[1] == "backlinks"
+    live = [h for h in hits if not _is_legacy(h)]
+    if hits and not live:
+        skipped = ", ".join(sorted(os.path.basename(h) for h in hits))
+        print(f"  [harvest] ignoring legacy backlinks-shape export(s) for {domain}: {skipped}")
+        print(f"  [harvest] a Top-Pages (organic.PagesV3) export is needed instead")
+    return max(live, key=os.path.getmtime) if live else None
 
 
 def semrush_export_patterns() -> list:
@@ -666,6 +803,12 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         if len(out) >= want:
             break
     print(f"  [harvest] SEMrush file {os.path.basename(path)}: {len(out)} URLs (by {rank_label})")
+    # File the export into the tracked archive. Here, at the point it is
+    # CONSUMED, is the one place every backlinks_file harvest passes through —
+    # and after a successful parse, so a corrupt download is never archived as
+    # though it were good. Non-fatal by construction; the harvest owns the
+    # recipes, this is bookkeeping.
+    archive_export(path)
     return out, meta
 
 
