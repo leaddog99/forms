@@ -3148,3 +3148,154 @@ a few nights and then only handles drift.
 - Unchanged: the scoring counterpart to `check_embeddings.py`, `power_blend_weight` in
   `bcc_config.json`, provenance backfill (~4,150 NULL `mozHttpCode`), the five archive-47 rows,
   `user_api_keys`.
+
+## Session log — 2026-08-06 (evening) — the no-struct gate is not a recall metric · domains gets the dishes list
+
+Fourth and final block of a long day. One investigation that reversed my own recommendation,
+and one UI job that closes a month-old open item.
+
+### "dropped on no struct" — the Guardian, and why I was wrong about the rest
+
+Curator ran a **dish** extract for mussels; a Guardian recipe was dropped `no-struct` while the
+bookmarklet handled the same page fine. *"I've been seeing this quite a bit lately."*
+
+Reproduced exactly with the harvest's own fetcher. `has_recipe_structure` needs BOTH an
+ingredients marker and a method marker; the Guardian page has the method half and **the word
+"ingredient" appears zero times** — its Word of Mouth column goes straight from `serves 2` into
+the list. The recipe is entirely there (`1kg mussels`, `2 shallots`, `150ml dry white wine`,
+`50g butter`, numbered method) and it scored **phrase=12 against a threshold of 7**.
+
+**The structural defect is an asymmetry:** there is a header-less METHOD fallback
+(`_method_verb_count` substitutes for a missing "Method" heading) but **no header-less
+INGREDIENTS fallback**. So a recipe with an unlabelled ingredient list cannot get through,
+however obviously it is a recipe.
+
+The bookmarklet succeeded because it never runs this gate — the gate protects PAID harvest
+fetches. The two paths disagreeing is correct behaviour, not a bug in either.
+
+**The trust flag is cross-cutting** (curator asked, and it matters): the lookup lives inside
+`_is_recipe_filter`, matching each CANDIDATE's own host, so the domains master acts as a
+publisher policy layer for EVERY batch — dish batches included, not just that publisher's own
+harvest. Same is true of its neighbours in that loop (`exclude_words`, `url_prefilter`,
+`render_required`, `fetch_strategy`). Granted `theguardian.com`; verified end-to-end, the exact
+line flipped from `DROP no-struct phrase=12` to `KEEP trust phrase=12`. Boston Globe validated
+the mechanism historically: its 149 drops are all in ONE log dated 2026-07-23, before its grant,
+and it now shows 226 `KEEP trust`.
+
+**Then I proposed granting a 10-host "recipe-only" tier and was WRONG.** I ranked hosts by
+no-struct drop volume (12 hosts = 990 of 2,199 = 45%) and inferred a recall problem from
+publisher reputation **without ever looking at the URLs**. Sampling them killed it:
+
+```
+foodgal        dining-at-mustards-grill · tokyo-eats · a-visit-to-thomas-kellers-burgers
+marthastewart  1505788/recipes · 1513477/healthy-recipes · 1502264/cookie-recipes
+thekitchn      guy-fieri-net-worth · masterchef-winners · closet-decluttering-tips
+epicurious     expert-advice/...-article · ingredients/what-is-greek-yogurt · ...-gallery
+recipegirl     set/thanksgiving/ · set/cuisine/       delish  .../g69290004/...  (g = gallery)
+```
+
+Restaurant reviews, roundups, galleries, taxonomy pages, ingredient explainers, celebrity news.
+**The gate is working.** Trust bypasses the cheap gate AND the LLM cascade catch, so granting it
+would have pushed thousands of those into paid extraction.
+
+**THE LESSON, worth keeping: the `DROP no-struct` COUNT IS NOT A RECALL METRIC.** Killing
+roundups and galleries before they cost money is the gate's JOB, so a high count is mostly
+success. The honest false-drop figure is the **4.2%** measured against the 31,776-sample
+`training.db` corpus (JSON-LD-positive pages as ground truth), of which a quantity-token
+ingredients fallback rescues only ~9.5% at a 0.5% precision cost — roughly break-even, so NOT
+shipped. Caveat stated because it cuts the other way: JSON-LD pages never reach this gate, so
+that population is the wrong one and may understate the gain. Finding the genuine misses needs
+per-URL labelling — which is exactly what the is-recipe labeler UI and those 31,776 samples
+exist for.
+
+### The domains page gets the dishes list (a711152)
+
+Curator: *"too garish with the brick coloring vs the nice soft grey tones which I want the whole
+site to look like… change the content list to the same data and style used in dishes — they are
+very similar pages and should look like it."*
+
+Neither page has a local `:root`; both load the same three stylesheets. The brick came from
+domains rendering its recipe list with a page-local `.top-recipe-*` block that had drifted much
+louder — a **solid `--accent` rank badge AND a solid `--accent` "Open in BCC" button on EVERY
+row**, plus `--accent` badge pills and a bold serif title. Now uses the SHARED `.ed-t10-*` row
+from `editor-shell.css` (the dishes component), `<li>` in `<ol class="ed-t10">`. Retired 60
+lines of dead CSS — domains was its only consumer. **Closes the open item in
+[[feedback_reuse_layout_components]]**, outstanding since 2026-07-12.
+
+Two gotchas: the row is a DIV not the `<a>` dishes uses (a domain row carries a curation
+checkbox), so the NAME is the link and `.ed-t10-name` gained `text-decoration:none`. And domain
+`rank_score` is **0-1** while dishes' is **0-100** in the same column — scaled, or every row
+reads "1.0". Stats are score / DA / PA (what a publisher row actually has).
+
+Also softened: the harvest mode card's selected state (was an `--accent-soft` FILL) and
+`.src-group.is-active` (was an `--accent` border + 2px glow) → a quiet `--ed-paper` lift.
+Left the `<b>` in help text alone — it names clickable controls, which is emphasis doing real
+work.
+
+**`editor-shell.css` + `components.css` are MANUALLY cache-busted** (11 and 14 pages). Bumped
+twice this session. Any future shared-CSS edit needs the same sweep or browsers keep the old
+stylesheet — the same trap that nearly shipped invisible with `library-shell.js` this morning.
+
+Verified in the browser, not by reading: both lists screenshotted, they match; no console
+errors; JS parses under `node --check`.
+
+---
+
+## START HERE — state of play as of 2026-08-06 end of day
+
+**Branch `split/enrichment-api`, pushed. Server restarted and current.**
+
+### What shipped today (23 commits, four sessions)
+
+1. **Scoring** — absent-is-not-zero fixed in the CONTRACT (`ScoringMetadata` had defaulted every
+   numeric field to 0.0, manufacturing a full zero block on every extract); manufactured zeros
+   stripped from the DB; aggregates now exclude the unmeasured.
+2. **Similar-recipes** — the mussel thread. One dish-match bar (was two, with the looser one
+   driving the recommender), a cutoff that actually binds (0.86), self-exclusion, and finally
+   **order by SIMILARITY** — master membership is already the quality gate, so grade is SHOWN
+   not sorted on.
+3. **Embeddings** — identity card now ordered by `INGREDIENT_ROLES` (that list is LOAD-BEARING,
+   do not reorder it for readability); 4,775 rows re-embedded; provenance columns added;
+   `scripts/check_embeddings.py` written and passing 0/0.
+4. **Screenshots** — the bookmarklet path had never attempted a capture (now a shared
+   `_attach_page_screenshot` on both paths); 429-row master backfill; nightly
+   `screenshot_refresh` job registered.
+5. **Grading** — 47 grades that had outlived their scores, re-scored or removed.
+6. **UI** — domains now renders the dishes list component.
+
+### Current numbers
+
+- master_recipes **4,523** · personal **412**
+- screenshots: **99%** master, **55%** personal
+- `check_embeddings.py` → **0 failures, 0 warnings**
+- trusted domains: `bostonglobe.com`, `theguardian.com`, `andrewzimmern.com`
+- scheduled jobs: `chapter_rollups`, `semrush_ranks_refresh`, `domain_scoring`,
+  `screenshot_refresh`
+
+### Do first tomorrow
+
+1. **`bcc_backup.bat`** — `recipes.sql.gz` is stale again (the grade repair, the screenshot
+   backfill, and today's harvesting all landed after the 14:09 dump). No schema change this
+   time, so ordinary hygiene.
+2. **A scoring counterpart to `check_embeddings.py`** — assert no row carries a grade without a
+   live PA/DA. **Twice in three days** a derived artifact outlived its source and nothing
+   noticed. See [[project_regression_check_cycle]].
+3. **Schedule `check_embeddings.py`** daily via `python -m jobs`.
+
+### Known-open, not urgent
+
+- `pageScreenshot` still defaults to `""` in `recipe_model`, so never-attempted is
+  indistinguishable from attempted-and-failed. Same shape as the scoring zeros
+  ([[feedback_absent_not_zero]]). `Optional[str] = None` plus a reader audit.
+- The header-less INGREDIENTS fallback (above) — needs per-URL labels, not host trust.
+- `power_blend_weight` (30.0) lives in `bcc_config.json`, not `system_config`.
+- Provenance backfill: ~4,150 rows still NULL `mozHttpCode`, ~$10, non-destructive.
+- The five archive-47 rows; snapshot capture; cadence; `user_api_keys`.
+- `docs/reports/orphan-grades-backup.json` — 2.2MB rollback snapshot, untracked, deletable.
+
+### The pattern, four sessions running
+
+Every wrong answer I gave today was a plausible mechanism asserted where a cheap measurement was
+available: the rank-8 theory (died on `k: 6`), the composition-asymmetry theory (died on one
+grep), the 15% fabrication figure, the re-score projection, and the 45%-recoverable trust tier
+(died on one look at the URLs). **What worked every time was refusing to act on the estimate.**
