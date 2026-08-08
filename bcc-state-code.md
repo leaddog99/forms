@@ -3499,7 +3499,6 @@ known good, and the page the video plays on. The generic fix still does the stan
 - `power_blend_weight` (30.0) lives in `bcc_config.json`, not `system_config`.
 - Provenance backfill: ~4,150 rows still NULL `mozHttpCode`, ~$10, non-destructive.
 - A scoring counterpart to `check_embeddings.py`; schedule the latter daily.
-- `docs/reports/orphan-grades-backup.json` — 2.2MB rollback snapshot, untracked, deletable.
 - The five archive-47 rows; snapshot capture; cadence; `user_api_keys`.
 
 ### The pattern, five sessions running
