@@ -3239,63 +3239,278 @@ stylesheet — the same trap that nearly shipped invisible with `library-shell.j
 Verified in the browser, not by reading: both lists screenshotted, they match; no console
 errors; JS parses under `node --check`.
 
+## Session log — 2026-08-07/08 — the public star · the export archive that was never backed up · two wrong answers about one table
+
+Long session in two halves: designing what a USER sees of the scoring (versus what the curator
+sees), then a data-preservation thread that started as a one-line query and turned up a
+`.gitignore` rule quietly discarding a year of SEMrush exports.
+
+### "Do you think blend and power are redundant?"
+
+Curator's framing: hide the algorithm from the user surface, keep the numbers for admin, and
+translate the useful scores into stars — the About page may DESCRIBE what we do but must never
+name PA/DA/OU/power/volume.
+
+Measured on 4,525 scored master rows before answering. **The redundant pair is not blend and
+power — it is blend and OU.**
+
+```
+spearman   ou <-> power    +0.235      nearly independent
+           blend <-> power +0.556
+           blend <-> ou    +0.937      near-duplicate
+
+as 5-star buckets:  blend vs ou     63% identical, 0.02% off by 2+
+                    blend vs power  33% identical, 28%   off by 2+
+```
+
+At `power_blend_weight=30` the blend is 70% OU by construction, so showing OU stars AND blend
+stars is showing one axis twice. OU and power are the genuinely independent pair, so the second
+axis is spent on a **badge**, never a second scale — two continuous scales side by side invite
+someone to work out the relationship between them. Populations: `hidden_gem` (OU top-20%, power
+bottom-40%) 3.6%, `trusted` (inverse) 6.8%, so ~90% of recipes carry no badge, which is the point.
+
+**3–5 stars, never lower.** Every recipe in the index already survived selection — the index IS
+the filter — so a percentile band handing 20% of a curated set one star insults a recipe we chose
+ourselves. Five levels in half steps.
+
+**Cuts land on the blend VALUE, not on rank.** This started as my own mislabelling (the parameter
+said "percentile", I passed the value) and the distribution came out centre-heavy rather than
+flat — 12/27/24/25/12. Kept deliberately: cutting on rank forces 20% into each band, so every
+time the corpus grows some recipe is demoted by arithmetic alone and a stored card silently loses
+a star. Cutting on the value makes a star an absolute claim, and it makes 5★ scarce, which is
+what makes a top band worth having.
+
+**Drift was measured, and it killed my own recommendation.** Replaying corpus growth: steady
+state 2–4% of rows shift one band, none shift two (the 45% at the 25% checkpoint is a corpus
+composition shock, not drift). I was about to recommend freezing the thresholds — measured it,
+43%/3.4%/3.1%, **no better**, because `blend` is itself built from in-cohort percentiles so the
+cohort dependency sits a level BELOW any cut point. The only fully drift-free option is a
+raw-scale blend, which reorders 11.7% of the corpus. Not worth it for a 2–4% problem. The fix is
+provenance: a stored card keeps its stars plus a `scored_at`, and a refresh surfaces a change as
+an EVENT rather than rewriting a number someone already read.
+
+### The star control, and where the leak actually is
+
+`input/pipeline/public_scoring.py` is the single chokepoint. **Coarsening only protects you if it
+happens BEFORE the wire** — a page that receives `{"ou": 12.4, "power": 131}` and computes stars
+in JS has published the method to anyone who opens devtools. The pixels are not the leak, the
+payload is. `GET /public-score` returns `{stars, starFill, starLabel, badge}` and does not echo
+its inputs; the accessible name is "3½ out of 5", never a number.
+
+Geometry, from the curator's own sketch (a 100px 5-star image clipped to N%): one SVG glyph tiled
+at exactly 20%, star drawn at 2..18 inside a 20×20 tile so the **padding is baked into the tile,
+not added with CSS spacing**. That symmetry is load-bearing — the centre of tile k sits at
+(k+0.5)·20%, so 60/70/80/90/100 land on glyph centres and inter-star gaps. With trailing-gap
+geometry instead, "70%" would render as a 62.5%-filled star. The mask also means a fill edge
+landing in a gap paints nothing, so a rounding slip cannot leak visually.
+
+Admin recipe form gains a **Public rating** chip beside PA/DA/OU (stars fetched, never computed
+client-side) and mirrors `editorial.scoreCommentary` read-only under the strip, live-bound to the
+editable field so it cannot go stale. `forms/stars_mockup.html` renders the scale, the
+distribution, a ranked list and a stored card off real corpus rows; `stars_demo.json` carries
+public fields ONLY — if you can reconstruct a score from it, the chokepoint has a hole.
+
+Verified live after restart: Kimchi (PA 41 / DA 16 / OU 24.9) → **4½ + HIDDEN GEM**, a page
+massively outperforming a small domain, which is exactly the case the badge exists for.
+
+**Known, and it blocks the card:** the existing `scoreCommentary` names the metrics outright —
+*"The page scores modestly (PA 31) on a domain with moderate authority (DA 49)…"*. Fine as an
+admin audit trail, unusable as public copy. The card needs a SECOND, public-voice variant; keep
+both, because the admin one is what lets you check the public one is honest.
+
+### Positioning — the curator corrected me, and the correction is the pitch
+
+I wrote "most sites rank on popularity". Wrong, and lazy. **Publisher sites rank only their own
+inventory** — their "best" is bounded by what they happen to own, rated by people already on
+their site. Google is the only cross-site ranker and it ranks on search performance, not cooking.
+
+So the differentiator is not the formula, it is: **we have no recipes of our own to promote.** A
+site with inventory structurally cannot tell you a competitor did it better. And that is already
+the architecture, not just copy — [[project_discover_vs_possess]]: index rather than cache, link
+out always. The rights posture and the credibility claim are the same decision.
+
+Filed as YELLOW in `docs/marketing-differentiation-brief.md`'s claims ledger — it is a
+competitive claim needing a dated competitor audit before it goes public.
+
+**Teaser bound settled** ([[project_user_as_publisher]], [[project_image_policy]]): blurred
+full-page screenshot, no recipe text at all, publisher opt-out with a generated replacement
+image. Blurred is *stronger* fair use than a clear thumbnail — unreadable cannot substitute for
+the visit. Two things make the promise keepable: the card stores a `/screenshot/<id>` URL and not
+bytes, so one flag revokes the image everywhere including cards saved months ago; and the blur
+must be baked server-side, since a CSS filter ships the readable JPEG and devtools strips it.
+Policy belongs on the `domains` table beside `trust_extraction` — a small enum, image-opt-out vs
+full delisting, plus honouring `X-Robots-Tag: noimageindex` automatically.
+
+### Two wrong answers about the domains table
+
+Curator asked for domains lacking a "SEMrush extract selection", ordered by DA. I keyed on
+`semrush_report_url` (252 empty) and flagged 30 domains as misconfigured. **Both wrong, and the
+code says so in a comment I had not read:**
+
+- `semrush_report_url` is **DERIVED at read time** from the `semrush_*` filter fields via
+  `build_semrush_pages_url()` unless `semrush_url_uncoupled=1`. `domains_lib.py:511` explicitly
+  warns not to key on it — "that link is now auto-defaulted for every domain, so keying on it
+  would put the whole corpus on the worklist."
+- `backlinks_dir` is an **optional per-domain override FOLDER**; blank means "use the configured
+  inbox" (Downloads). recipetineats harvested 250 URLs with it `None`. Blank is normal.
+
+The real membership signal is `harvest_source`. And `'backlinks_file'` does NOT mean
+backlinks-shape — it is the legacy label for "read a local SEMrush export", carried by 101
+domains, most reading traffic-ranked Top-Pages files. **The name outlived the thing it named**,
+and it misled me twice in one session.
+
+Corrected list: 219 domains not on the export flow, nearly all sitting at 1–5 master recipes with
+no `last_harvested_at` — SERP-discovered, never harvested as publishers. nytimes has 81 master
+recipes from SERP alone; foodandwine and williams-sonoma have zero.
+
+### The exports were never being backed up
+
+Curator: *"we should be keeping ALL of the export files!! they are a rich source of valuable data
+that we're only skimming."*
+
+Two mechanisms were losing them:
+
+1. **`.gitignore` line 82 is `input/*.xlsx`, which matches only the ROOT of input/.** 35 of the 55
+   exports there were untracked. The other **20 predated the rule and stayed tracked — which is
+   exactly why the gap was invisible.** It looked backed up, and a fifth of it was.
+2. Exports downloaded on this machine were never copied into the project at all — the harvest
+   reads them in place from Downloads, so 71 existed only in a folder nobody backs up.
+
+`input/semrush/` is a **subfolder on purpose**: `input/*.xlsx` does not match it, so the files are
+tracked with no `.gitignore` edit and no exception to forget later. 110 current + 17 superseded,
+24MB, and the 20 tracked ones moved as **renames** so their history followed them.
+
+**The supersede key is (stem, database), NOT the domain.** Keying on the domain would have retired
+four files that are different data: 101cookbooks has a -gr run AND a -us run; thepioneerwoman has
+a backlinks-pages export AND an organic one.
+
+**Superseded files are moved, never deleted** — `--delete` is opt-in and unused. Newest is not
+always richest, and three real cases prove it: marthastewart 74KB → 26KB *the same day*,
+seriouseats 1013KB → 667KB, tasteofhome 1024KB → 837KB. That is what a re-run with a narrower
+filter looks like, and SEMrush will not re-issue the wider one. Those three still want a human.
+
+`collections_lib.archive_export()` fires from `_from_backlinks_file` at the point an export is
+CONSUMED — the one place every export harvest passes through, and after a successful parse so a
+corrupt download is never archived as good. Non-fatal: a harvest must never fail because
+bookkeeping did. `scripts/collect_semrush_exports.py` is the batch sweep, dry-run by default,
+sharing the key with the job so the two cannot disagree.
+
+**Two bugs of my own on the way.** I archived superseded inbox files without checking WHY they
+were flagged, which re-copied ~70 files already filed (9MB of duplicates) — guarded on
+`why == "superseded"` and removed them by hash. And **Chrome's `" (1)"` suffix defeated the name
+parser**, silently skipping `thepioneerwoman.com-backlinks_pages (1).xlsx` rather than archiving
+it; stripped before matching now. That one would have recurred forever.
+
+`--clean-inbox` deletes an inbox copy only on a **sha256** match, never a filename match —
+`allrecipes.com-backlinks_pages.xlsx` exists in two different versions under one name, so a name
+match is a false guarantee. 73 removed, 10.8MB reclaimed, 0 unique.
+
+### Backlinks ranking retired
+
+Curator: *"I don't think we are using backlinks anymore!"* — right, and the data sharpened it. 194
+harvests ranked by traffic vs 37 by referring domains, and every backlinks-shape FILE is from
+2026-06-01..21. **But it was still running:** thekitchn and allrecipes both harvested on
+2026-07-22 off June backlinks files, because those were the only exports they had.
+
+`backlinks_file_path` now skips the legacy shape and prints which file it ignored. Four domains
+(allrecipes, thekitchn, themediterraneandish, edibleboston) needed a fresh Top-Pages export;
+three that had BOTH shapes now pick the organic one **by shape rather than by whichever was
+downloaded last**. Not removed and not unreachable — the reader still handles the shape, and an
+explicit per-domain file override still uses it ([[feedback_no_silent_removal]]).
+
+Confirmed end-to-end in production the same evening, unprompted: job 762 refused allrecipes'
+June export and said so; job 763, a minute later, read a fresh Top-Pages export (360 URLs by
+traffic) and the hook filed it. bbcgoodfood (320) and toriavey (240) likewise.
+
+### The video that 404'd on our own host
+
+*"I just tried to play the video on Kenny halal cart chicken and rice and get a not found."*
+
+`video.contentUrl` was **site-relative** — `/kenjilopezalt/posts/this-halal-cart-153948287` — and
+the form assigns `link.href` straight from it, so the browser resolved it against OUR origin.
+Same bug class as the hero-image relative-URL fix (2026-06-29); video was not included in that
+pass, and it fails louder than an image does — a broken image hides its box, a broken link sends
+the user to a 404 on our site.
+
+Fixed in three places: extraction absolutizes video URLs beside the existing image handling; the
+form falls back to `_source.originalUrl` when `contentUrl` is not absolute (so old rows work with
+no migration, and both copies of `showVideo()` were patched); the one row backfilled. Scope was
+genuinely small — ONE relative contentUrl across ~5,100 recipes with video, plus one
+protocol-relative thumbnail that has no filename and already degrades correctly.
+
+**Judgement call:** `urljoin`'s standards-correct answer duplicates the creator segment
+(`…/kenjilopezalt/posts/…`), and the original path is patreon.com's URL shape rather than this
+custom domain's. Patreon 403s every probe INCLUDING the recipe's own source page, so neither
+candidate is verifiable by fetching. Rather than guess, the row points at the source post —
+known good, and the page the video plays on. The generic fix still does the standard `urljoin`.
+
 ---
 
-## START HERE — state of play as of 2026-08-06 end of day
+## START HERE — state of play as of 2026-08-08
 
-**Branch `split/enrichment-api`, pushed. Server restarted and current.**
+**Branch `split/enrichment-api`, pushed (`7b578a5`). Server restarted and current.**
 
-### What shipped today (23 commits, four sessions)
+### What shipped this session (4 commits)
 
-1. **Scoring** — absent-is-not-zero fixed in the CONTRACT (`ScoringMetadata` had defaulted every
-   numeric field to 0.0, manufacturing a full zero block on every extract); manufactured zeros
-   stripped from the DB; aggregates now exclude the unmeasured.
-2. **Similar-recipes** — the mussel thread. One dish-match bar (was two, with the looser one
-   driving the recommender), a cutoff that actually binds (0.86), self-exclusion, and finally
-   **order by SIMILARITY** — master membership is already the quality gate, so grade is SHOWN
-   not sorted on.
-3. **Embeddings** — identity card now ordered by `INGREDIENT_ROLES` (that list is LOAD-BEARING,
-   do not reorder it for readability); 4,775 rows re-embedded; provenance columns added;
-   `scripts/check_embeddings.py` written and passing 0/0.
-4. **Screenshots** — the bookmarklet path had never attempted a capture (now a shared
-   `_attach_page_screenshot` on both paths); 429-row master backfill; nightly
-   `screenshot_refresh` job registered.
-5. **Grading** — 47 grades that had outlived their scores, re-scored or removed.
-6. **UI** — domains now renders the dishes list component.
+1. **Public star rating** — `public_scoring.py` as the ONE place a private score becomes a public
+   one; `.stars` SVG component; `GET /public-score`; a Public rating chip + read-only commentary
+   mirror on the admin recipe form; `forms/stars_mockup.html` over real corpus rows.
+2. **SEMrush export archive** — `input/semrush/`, tracked, 113 current + 17 superseded. The
+   `.gitignore` rule that had been discarding them is worked around by nesting, not edited.
+3. **Archiving in the harvest** — `archive_export()` fires where an export is consumed; proven in
+   production the same evening on allrecipes / bbcgoodfood / toriavey.
+4. **Backlinks ranking retired** — legacy shape skipped with a loud log line, capability kept via
+   the explicit per-domain override.
+5. **Video relative-URL fix** — the play link no longer 404s on our own host.
 
 ### Current numbers
 
-- master_recipes **4,523** · personal **412**
-- screenshots: **99%** master, **55%** personal
-- `check_embeddings.py` → **0 failures, 0 warnings**
+- master_recipes **~4,530** · personal **412**
+- SEMrush exports archived: **113 current + 17 superseded** (24MB, tracked)
+- harvest ranking: **194 by traffic** vs 37 by referring domains (the latter now refused)
 - trusted domains: `bostonglobe.com`, `theguardian.com`, `andrewzimmern.com`
 - scheduled jobs: `chapter_rollups`, `semrush_ranks_refresh`, `domain_scoring`,
   `screenshot_refresh`
 
-### Do first tomorrow
+### Do first
 
-1. **`bcc_backup.bat`** — `recipes.sql.gz` is stale again (the grade repair, the screenshot
-   backfill, and today's harvesting all landed after the 14:09 dump). No schema change this
-   time, so ordinary hygiene.
-2. **A scoring counterpart to `check_embeddings.py`** — assert no row carries a grade without a
-   live PA/DA. **Twice in three days** a derived artifact outlived its source and nothing
-   noticed. See [[project_regression_check_cycle]].
-3. **Schedule `check_embeddings.py`** daily via `python -m jobs`.
+1. **Fresh Top-Pages exports for the last three** — `thekitchn.com`,
+   `themediterraneandish.com`, `edibleboston.com`. They now fail loudly rather than harvesting on
+   a June referring-domains signal. allrecipes is already done.
+2. **The three newer-but-smaller supersedes** in `input/semrush/_superseded/` — marthastewart,
+   seriouseats, tasteofhome. Decide whether the wider older export should be the keeper; nothing
+   is deleted.
+3. **A public-voice commentary variant.** The card cannot use today's `scoreCommentary` — it
+   names PA/DA/OU in prose. Second generated field, both kept.
+4. **`bcc_backup.bat`** — `recipes.sql.gz` still uncommitted from the 03:00 dump.
 
 ### Known-open, not urgent
 
-- `pageScreenshot` still defaults to `""` in `recipe_model`, so never-attempted is
-  indistinguishable from attempted-and-failed. Same shape as the scoring zeros
-  ([[feedback_absent_not_zero]]). `Optional[str] = None` plus a reader audit.
-- The header-less INGREDIENTS fallback (above) — needs per-URL labels, not host trust.
+- Star display isn't wired to any user-facing surface yet, because none exists — `home.html` is a
+  launcher and dishes/domains are admin. The component + payload contract are ready for whichever
+  surface is built first.
+- **Blur must be baked server-side** when the card is built — a CSS filter ships the readable
+  screenshot. And the card must store the `/screenshot/<id>` URL, never bytes, or publisher
+  opt-out becomes unenforceable.
+- `harvest_source='backlinks_file'` should become `'semrush_export'` — the label misled me twice
+  in one session, and the one shape it names is the one we no longer read.
+- `pageScreenshot` still defaults to `""` in `recipe_model` ([[feedback_absent_not_zero]]).
+- The header-less INGREDIENTS fallback — needs per-URL labels, not host trust.
 - `power_blend_weight` (30.0) lives in `bcc_config.json`, not `system_config`.
 - Provenance backfill: ~4,150 rows still NULL `mozHttpCode`, ~$10, non-destructive.
-- The five archive-47 rows; snapshot capture; cadence; `user_api_keys`.
+- A scoring counterpart to `check_embeddings.py`; schedule the latter daily.
 - `docs/reports/orphan-grades-backup.json` — 2.2MB rollback snapshot, untracked, deletable.
+- The five archive-47 rows; snapshot capture; cadence; `user_api_keys`.
 
-### The pattern, four sessions running
+### The pattern, five sessions running
 
-Every wrong answer I gave today was a plausible mechanism asserted where a cheap measurement was
-available: the rank-8 theory (died on `k: 6`), the composition-asymmetry theory (died on one
-grep), the 15% fabrication figure, the re-score projection, and the 45%-recoverable trust tier
-(died on one look at the URLs). **What worked every time was refusing to act on the estimate.**
+Same lesson, new shape. Yesterday every wrong answer was a mechanism asserted where a measurement
+was available. Today the wrong answers came from **reading a column instead of reading the code
+that fills it** — `semrush_report_url` is derived at read time and `backlinks_dir` is an optional
+override, so "empty" meant "normal" in both cases, and `domains_lib.py:511` carried a comment
+warning about precisely the query I wrote. Twice, on one table, in one session.
+
+What worked, again, was measuring before acting: the blend/OU redundancy, the star-drift replay
+that killed my own freeze-the-thresholds recommendation, the sampling that showed newest is not
+richest, and the hash check before deleting anything from Downloads. **The estimate was wrong
+every time it was checked.**
