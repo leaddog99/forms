@@ -279,6 +279,21 @@ def _attach_source_metadata(json_data: dict, *, source_url: str, title: str) -> 
             existing_source["previewImage"] = _abs(prev)
             json_data["_source"] = existing_source
 
+        # Same treatment for the VideoObject. Missed when the image fix landed
+        # 2026-06-29, and it fails LOUDER than a broken image: the form sets
+        # link.href straight from contentUrl, so a site-relative value resolves
+        # against OUR origin and the play link 404s on our own host (found on
+        # the Kenji halal-cart recipe, whose contentUrl was
+        # "/kenjilopezalt/posts/this-halal-cart-153948287").
+        vid = json_data.get("video")
+        if isinstance(vid, dict):
+            for k in ("contentUrl", "embedUrl", "thumbnailUrl", "url"):
+                if isinstance(vid.get(k), str) and vid[k]:
+                    vid[k] = _abs(vid[k])
+            json_data["video"] = vid
+        elif isinstance(vid, str) and vid:
+            json_data["video"] = _abs(vid)
+
 
 if __name__ == "__main__":
     import sys

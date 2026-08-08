@@ -4079,7 +4079,14 @@
         const cap = document.getElementById('videoCaption');
         if (!block || !link || !img) return;
         const v = r.video;
-        const url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
+        let url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
+        // A site-relative contentUrl resolves against OUR origin, so the play
+        // link 404s on our own host. Extraction absolutizes these now, but rows
+        // saved before that fix still carry one — fall back to the source page,
+        // which is where the video lives anyway and is a URL we know is good.
+        if (url && !/^(https?:)?\/\//i.test(url)) {
+          url = ((r._source && r._source.originalUrl) || '').trim();
+        }
         const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
         // Suppress the box unless a thumbnail actually LOADS. A broken/missing
         // thumbnail (the "broken image" icon the user was seeing) is our best
@@ -6506,7 +6513,14 @@
         const cap = document.getElementById('videoCaption');
         if (!block || !link || !img) return;
         const v = r.video;
-        const url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
+        let url = (v && (typeof v === 'string' ? v : v.contentUrl) || '').trim();
+        // A site-relative contentUrl resolves against OUR origin, so the play
+        // link 404s on our own host. Extraction absolutizes these now, but rows
+        // saved before that fix still carry one — fall back to the source page,
+        // which is where the video lives anyway and is a URL we know is good.
+        if (url && !/^(https?:)?\/\//i.test(url)) {
+          url = ((r._source && r._source.originalUrl) || '').trim();
+        }
         const thumb = (v && typeof v === 'object' && v.thumbnailUrl || '').trim();
         // Suppress the box unless a thumbnail actually LOADS. A broken/missing
         // thumbnail (the "broken image" icon the user was seeing) is our best
