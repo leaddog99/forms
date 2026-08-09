@@ -55,6 +55,27 @@ SCHEDULED_DEFAULTS: list[dict] = [
         "params": {"log_label": "domain_scoring"},
         "enabled": 1,
     },
+    {
+        "name": "paid_pa_calibration",
+        "job_type": "paid_pa_calibration",
+        "purpose": "Re-measure the paywall PA-tax for each publisher flagged "
+                   "`paywall=1`. Gated recipe PAGES collect few backlinks, so their "
+                   "Moz PA runs far below what their DOMAIN authority predicts, and "
+                   "OU then reads them as under-performing and drops them from "
+                   "winners. This recomputes each one's PA mean/spread against "
+                   "matched-DA FREE publishers, giving the shift-and-scale remap the "
+                   "dish and publisher scorers both apply. It is a snapshot of two "
+                   "moving distributions — the publisher's PA accrues links, the free "
+                   "baseline grows with the corpus — so it goes stale silently: it "
+                   "mis-ranks rather than erroring. (All four calibrations sat "
+                   "untouched from 2026-06-23 to 2026-08-09 for exactly that reason.) "
+                   "Monthly is ample; link graphs move slowly. Uses only LOCAL "
+                   "samples — the paid SERP+Moz fallback stays off unless "
+                   "`harvest_missing` is set, so a scheduled run never surprise-spends.",
+        "interval_hours": 720,   # ~30 days = monthly
+        "params": {"log_label": "paid_pa_calibration", "harvest_missing": False},
+        "enabled": 1,
+    },
 ]
 
 

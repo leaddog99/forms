@@ -7184,6 +7184,71 @@ async def _handle_domain_scoring_job(job: dict) -> dict:
 jobs_lib.register_handler("domain_scoring", _handle_domain_scoring_job)
 
 
+async def _handle_paid_pa_calibration_job(job: dict) -> dict:
+    """Recompute the per-publisher paywall PA-remap calibration.
+
+    WHY THIS IS A JOB. Gated publishers' recipe PAGES are link-starved (paywall →
+    few backlinks → low Moz PA) while their DOMAIN authority stays high, so OU
+    reads them as under-performing and the selector drops them. The fix is a
+    per-publisher shift-and-scale of PA onto its free-equivalent, calibrated from
+    the publisher's own PA distribution against matched-DA free publishers. That
+    calibration is a SNAPSHOT of two moving distributions: PA drifts as links
+    accrue, and the free baseline moves as the corpus grows. Left alone it goes
+    stale silently — as it did between 2026-06-23 and 2026-08-09, when all four
+    stored calibrations were seven weeks old and nobody noticed, because a stale
+    remap fails quietly by mis-ranking rather than by erroring.
+
+    WHAT IT DOES, per domain flagged `paywall=1` in the domains master:
+      1. resolve that publisher's recipe-page PA samples — ingested corpus rows
+         first, then already-harvested collection_members (both free)
+      2. compute its PA mean + spread (mu_paid, sigma_paid)
+      3. find the matched-DA FREE reference (free publishers within +/-8 DA) for
+         mu_free, sigma_free — paywall-flagged hosts are excluded from that
+         baseline so a gated publisher never calibrates against itself
+      4. floor sigma_paid at 0.5 x sigma_free, capping the slope at 2.0
+      5. require n >= 15 samples, else refuse and report why
+      6. persist mu/sigma/n + the free reference onto the domains row
+    Scoring then applies `adjusted_PA = max(pa, mu_free + (pa - mu_paid) *
+    (sigma_free/sigma_paid))` — one-directional, so a publisher already above the
+    free line (NYT) is untouched.
+
+    SPEND. `harvest_missing` (default FALSE) controls the live SERP+Moz fallback
+    for publishers with too few local samples. It is off deliberately: this runs
+    unattended, and a scheduled job must never surprise-spend. Turn it on per-run
+    from the params if a newly-flagged publisher has no corpus footprint yet.
+
+    The result carries a per-domain `results` list including the REASON a
+    publisher was skipped (too_few_samples / no_data / no_free_reference), so the
+    Job Monitor shows why coverage failed to grow rather than just a count.
+    See scripts/calibrate_paid_pa.py + memory/project_paid_pa_calibration.
+    """
+    p = job.get("params") or {}
+    only = (p.get("only") or "").strip() or None
+    harvest_missing = bool(p.get("harvest_missing"))
+    dry_run = bool(p.get("dry_run"))
+
+    def _run():
+        from scripts.calibrate_paid_pa import run_calibration
+        with _db() as conn:
+            return run_calibration(conn, persist=not dry_run, only=only,
+                                   harvest_missing=harvest_missing)
+
+    summary = await asyncio.to_thread(_run)
+    skipped = [f"{r.get('domain')}({r.get('status')})"
+               for r in summary.get("results", [])
+               if r.get("status") not in ("calibrated", "dry_run")]
+    print(f"[PAID-PA-CAL] flagged={summary.get('flagged')} "
+          f"calibrated={summary.get('calibrated')} skipped={summary.get('skipped')} "
+          f"corpus={summary.get('corpus_pages')} free={summary.get('free_pages')}"
+          f"{'  DRY RUN' if dry_run else ''}")
+    if skipped:
+        print(f"[PAID-PA-CAL] not calibrated: {', '.join(skipped)}")
+    return summary
+
+
+jobs_lib.register_handler("paid_pa_calibration", _handle_paid_pa_calibration_job)
+
+
 def _size_face(size):
     """Coerce a size value to a plain display string. `_cook` equipment sizes are
     measurement DICTS ({imperial, metric, convertible}); the top-level `equipment.size`

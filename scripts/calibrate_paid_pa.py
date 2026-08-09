@@ -16,6 +16,7 @@ Run:  python -m scripts.calibrate_paid_pa            (report + persist)
       python -m scripts.calibrate_paid_pa --dry-run  (no DB writes)
 """
 import argparse, json, os, sys, statistics as st
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -128,17 +129,25 @@ def collection_members_da_pa(conn, domain):
 
 
 def calibrate(name, domain, samples, free_rows, conn, persist):
-    """samples = list of (url, da, pa). Report + (optionally) persist."""
+    """samples = list of (url, da, pa). Report + (optionally) persist.
+
+    Returns a per-domain RESULT DICT (never None) so the job handler can report
+    what happened per publisher instead of only printing it. `status` is one of:
+    no_data · too_few_samples · no_free_reference · calibrated · dry_run.
+    """
     if not samples:
-        print(f"\n{name}: no data"); return
+        print(f"\n{name}: no data")
+        return {"domain": domain, "status": "no_data", "n": 0}
     das = [d for _, d, _ in samples]; pas = [pa for _, _, pa in samples]
     da = st.mean(das); mu = st.mean(pas); sd_raw = st.pstdev(pas) or 0.01
     ref = free_ref(free_rows, da)
     print(f"\n{name}  ({domain})  n={len(pas)}  DA~{da:.0f}  PA μ={mu:.1f} σ={sd_raw:.1f} range {min(pas):.0f}-{max(pas):.0f}")
     if len(pas) < MIN_N:
-        print(f"  (only {len(pas)} samples — need ≥{MIN_N}; not calibrated)"); return
+        print(f"  (only {len(pas)} samples — need ≥{MIN_N}; not calibrated)")
+        return {"domain": domain, "status": "too_few_samples", "n": len(pas), "min_n": MIN_N}
     if not ref:
-        print("  (no free DA-neighbors — cannot calibrate)"); return
+        print("  (no free DA-neighbors — cannot calibrate)")
+        return {"domain": domain, "status": "no_free_reference", "n": len(pas)}
     fmu, fsd, fn = ref
     # σ-floor: a tiny, tightly-clustered paid σ makes the shift-and-scale slope
     # (σ_free/σ_paid) explode and over-rewards the single highest page — Boston Globe
@@ -163,6 +172,12 @@ def calibrate(name, domain, samples, free_rows, conn, persist):
             conn, domain, da=da, pa_mean=mu, pa_std=sd, pa_n=len(pas),
             free_mean=fmu, free_std=fsd, paywall=True)
         print(f"  [persisted] calibration for {domain} (pa_std={sd:.2f})")
+    return {"domain": domain, "status": "calibrated" if persist else "dry_run",
+            "n": len(pas), "da": round(da, 1), "pa_mean": round(mu, 2),
+            "pa_std": round(sd, 2), "pa_std_raw": round(sd_raw, 2),
+            "free_mean": round(fmu, 2), "free_std": round(fsd, 2),
+            "shift": round(fmu - mu, 2), "slope": round(slope, 3),
+            "sigma_floored": sd > sd_raw + 1e-9, "source": None}
 
 
 def _paywall_domains(conn):
@@ -202,6 +217,55 @@ def _resolve_samples(conn, domain, corpus_rows, spend_ok=True):
                key=lambda c: len(c[1]))
 
 
+def run_calibration(conn, *, persist: bool = True, only: Optional[str] = None,
+                    harvest_missing: bool = False) -> dict:
+    """Calibrate every paywall-flagged publisher. THE shared entry point.
+
+    Called by BOTH the CLI (`main`) and the `paid_pa_calibration` job handler in
+    save_recipe_api, so the scheduled run and a hand-run do byte-identical work —
+    there is no second implementation to drift.
+
+    `harvest_missing` defaults to **False** and that default is load-bearing: the
+    SERP fallback costs SerpAPI credits + Moz rows per publisher, and a job that
+    fires on a schedule must never surprise-spend. The CLI opts in with
+    --harvest-missing; the scheduled row would have to pass it explicitly.
+
+    Returns a summary dict (also the job's stored result):
+        {corpus_pages, free_pages, flagged, calibrated, skipped, results: [...]}
+    where each entry of `results` is calibrate()'s per-domain dict, carrying the
+    reason when a publisher was NOT calibrated (too_few_samples / no_data /
+    no_free_reference) — the thing you want in the Job Monitor when coverage
+    silently fails to grow.
+    """
+    rows = corpus_da_pa(conn)
+    flagged = _paywall_domains(conn)
+    # Free reference excludes EVERY paywall-flagged host (read from the DB, not a code
+    # constant) so a gated publisher's starved PA never poisons the free baseline.
+    paid_hosts = [d for d, _ in flagged]
+    free_rows = [r for r in rows if not any(p in r[1] for p in paid_hosts)]
+    print(f"corpus: {len(rows)} scored pages ({len(free_rows)} free) | "
+          f"{len(flagged)} paywall-flagged domain(s){'' if persist else '  [DRY RUN]'}")
+    summary = {"corpus_pages": len(rows), "free_pages": len(free_rows),
+               "flagged": len(flagged), "calibrated": 0, "skipped": 0, "results": []}
+    if not flagged:
+        print("No paywall=1 domains in the master — flag a publisher in the domains "
+              "editor first, then re-run.")
+        return summary
+    for domain, name in flagged:
+        if only and only.replace("www.", "") != domain:
+            continue
+        src, samples = _resolve_samples(conn, domain, rows, spend_ok=harvest_missing)
+        print(f"\n[{domain}] samples: {src} ({len(samples)})")
+        res = calibrate(name, domain, samples, free_rows, conn, persist) or {}
+        res["source"] = src
+        summary["results"].append(res)
+        if res.get("status") in ("calibrated", "dry_run"):
+            summary["calibrated"] += 1
+        else:
+            summary["skipped"] += 1
+    return summary
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="report only, no DB writes")
@@ -210,26 +274,9 @@ def main():
                     help="SERP-harvest publishers with too few LOCAL samples (costs credits); "
                          "off by default so a run never surprise-spends")
     args = ap.parse_args()
-    persist = not args.dry_run
     conn = sqlite3.connect(DB)
-    rows = corpus_da_pa(conn)
-    flagged = _paywall_domains(conn)
-    # Free reference excludes EVERY paywall-flagged host (read from the DB, not a code
-    # constant) so a gated publisher's starved PA never poisons the free baseline.
-    paid_hosts = [d for d, _ in flagged]
-    free_rows = [r for r in rows if not any(p in r[1] for p in paid_hosts)]
-    print(f"corpus: {len(rows)} scored pages ({len(free_rows)} free) | "
-          f"{len(flagged)} paywall-flagged domain(s){'  [DRY RUN]' if args.dry_run else ''}")
-    if not flagged:
-        print("No paywall=1 domains in the master — flag a publisher in the domains "
-              "editor first, then re-run.")
-        return
-    for domain, name in flagged:
-        if args.only and args.only.replace("www.", "") != domain:
-            continue
-        src, samples = _resolve_samples(conn, domain, rows, spend_ok=args.harvest_missing)
-        print(f"\n[{domain}] samples: {src} ({len(samples)})")
-        calibrate(name, domain, samples, free_rows, conn, persist)
+    run_calibration(conn, persist=not args.dry_run, only=args.only,
+                    harvest_missing=args.harvest_missing)
 
 
 if __name__ == "__main__":
