@@ -143,3 +143,7 @@ experiments/curate/out/
 
 # curate doc cache — regenerable, expensive but not source
 cache/
+
+# Excel lock files (~$name.xlsx) — created when a workbook is open; they would
+# otherwise ride along into input/semrush on the next `git add`.
+~$*
