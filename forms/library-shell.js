@@ -1606,11 +1606,21 @@
         if (!el) return;
         if (!el.value) { flash('Already empty'); return; }
         el.value = '';
+        el.removeAttribute('title');
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         el.focus();
       }
     });
+    // Keep the hover tooltip in step with what is actually in the field —
+    // otherwise a pasted or edited URL keeps showing the value it replaced,
+    // which is worse than no tooltip at all.
+    document.addEventListener('input', function (e) {
+      const el = e.target;
+      if (!el || !el.parentElement || !el.parentElement.classList) return;
+      if (!el.parentElement.classList.contains('ls-url-wrap')) return;
+      if (el.value) el.title = el.value; else el.removeAttribute('title');
+    }, true);
   }
   function urlControl(url, opts) {
     opts = opts || {};
@@ -1643,9 +1653,14 @@
     const v = value == null ? '' : String(value);
     const full = opts.full ? ' full' : '';
     const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : 'ex: ' + opts.ph) : '';
+    // title = the full URL, so hovering reveals what the field is too narrow to
+    // show. The icons occupy ~104px of the input, so a long URL is truncated
+    // more than it used to be; the tooltip is what makes it readable without
+    // clicking into the field and scrolling.
     return '<div class="ed-field' + full + '"><label for="' + id + '">' + (label == null ? '' : label) + '</label>' +
       '<div class="ls-url-wrap">' +
-        '<input id="' + id + '" type="url" value="' + escapeHtml(v) + '" placeholder="' + escapeHtml(ph) + '">' +
+        '<input id="' + id + '" type="url" value="' + escapeHtml(v) + '" placeholder="' + escapeHtml(ph) + '"' +
+          (v ? ' title="' + escapeHtml(v) + '"' : '') + '>' +
         urlControl(v, { inputId: id }) +
       '</div></div>';
   }
@@ -1678,6 +1693,7 @@
       wrap.appendChild(input);
       input.style.flex = '';
       input.style.minWidth = '0';
+      if (input.value && !input.title) input.title = input.value;   // hover shows the full URL
       wrap.insertAdjacentHTML('beforeend', urlControl(input.value, { inputId: id }));
     });
   }
