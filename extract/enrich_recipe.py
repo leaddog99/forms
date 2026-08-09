@@ -151,6 +151,14 @@ exists to surface the best RECIPES, not the best publishers, so frame it as the
 RECIPE winning, never as the publisher's page placing — and NEVER write about the
 publisher's size/clout or SEO mechanics.
 
+CALIBRATION — judge authority ONLY against the supplied "DA IN CONTEXT"
+percentile, NEVER against the raw 0-100 scale. The scale is not linear and it is
+not a school grade: our corpus median sits in the mid-60s, so a mid-60s
+publisher is TYPICAL of what we keep, not marginal. Calling such a site "small",
+"marginal" or "obscure" is factually wrong — that language belongs only to the
+bottom tenth. When no percentile is supplied, say nothing about the publisher's
+standing at all rather than guessing from the number.
+
 DISCLOSURE — the raw authority SCORES and how they're computed are PROPRIETARY.
 You MAY cite RELATIVE standing ("among the very top we found for this dish", "#N
 of NN", "rose above bigger names", "best among Greek sites") — a percentile/rank
@@ -360,6 +368,32 @@ def _build_user_prompt(recipe: dict) -> str:
         score_lines.append(f"  PA (this page's authority, 0-100): {float(pa):.1f}")
     if has_da:
         score_lines.append(f"  DA (publisher domain's authority, 0-100): {float(da):.1f}")
+        # CALIBRATION. Without this the model judges DA against its own prior --
+        # "the scale runs to 100, so 65 is middling" -- and calls a DA-65
+        # publisher a "marginal site". Measured 2026-08-09: DA 65 is the exact
+        # MEDIAN of the corpus and the 74th percentile of curated publishers.
+        # A caller that already knows the percentile (the stateless enrichment
+        # API, which has no DB) may pass it in; otherwise we look it up.
+        _ctx = scoring.get("daCorpusPct")
+        if _ctx is not None:
+            try:
+                from input.pipeline.url_scoring import _AUTH_BANDS
+                _band = next(l for e, l in _AUTH_BANDS if float(da) < e)
+                score_lines.append(
+                    f"  >> DA IN CONTEXT: {float(_ctx):.0f}th percentile of our corpus "
+                    f"-> {_band}")
+            except Exception:
+                pass
+        else:
+            try:
+                from input.pipeline.url_scoring import authority_corpus_context
+                _c = authority_corpus_context(da)
+                if _c:
+                    score_lines.append(
+                        f"  >> DA IN CONTEXT: {_c['pct']:.0f}th percentile of our corpus "
+                        f"(n={_c['n']}) -> {_c['band']}")
+            except Exception:
+                pass  # calibration is a nicety; never fail an enrichment for it
     power_val = scoring.get("power")
     if power_val:
         score_lines.append(f"  power (raw clout = DA+PA): {float(power_val):.1f}")

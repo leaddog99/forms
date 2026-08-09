@@ -617,3 +617,72 @@ def get_or_create_url_metadata(
             _apply_moz_scores(conn, norm, scores, now)
 
     return _row_to_dict(conn.execute("SELECT * FROM metabase_url WHERE url = ?", (norm,)).fetchone())
+
+
+# ── corpus calibration for the editorial commentary ─────────────────────────
+# The scoreCommentary block was handed raw numbers and no reference, so the
+# model judged them against its own prior — "the scale runs to 100, so 65 is
+# middling" — and called a DA-65 publisher a "marginal site". Measured
+# 2026-08-09 over 4,769 scored master rows, DA 65 is the EXACT MEDIAN of the
+# corpus (p10 33 · p25 47 · median 64 · p75 82 · p90 92) and the 74th percentile
+# of curated publishers. "Marginal" was wrong by any reading available.
+#
+# That is a calibration bug, not a wording bug: tightening the prose alone just
+# moves the error. So the prompt gets the percentile, not just the number.
+#
+# NOTE the reference population. This is a SELECTED corpus — harvest selects on
+# traffic, then OU ranks within that pool — so these are NOT web-wide norms.
+# A DA is being placed among recipes we already judged worth keeping, which is
+# the right frame for commentary about our own shelf and the wrong one for a
+# general claim about the web.
+_AUTH_BANDS = (
+    (33, "bottom tenth of our corpus — genuinely small / obscure"),
+    (47, "small publisher (10-25th percentile)"),
+    (64, "modest, mid-sized (25-50th)"),
+    (82, "well-established (50-75th)"),
+    (92, "major publisher (75-90th)"),
+    (1e9, "household name (top tenth)"),
+)
+
+_CORPUS_DA_CACHE: dict = {}
+
+
+def _corpus_da_values(db_path: str = "recipes.db") -> list:
+    """Sorted DA values across the corpus, cached per process.
+
+    Cached because this feeds a per-recipe prompt: re-reading ~4.8k rows on
+    every enrich would be a silly cost for a distribution that moves slowly.
+    A restart picks up drift, which is often enough for calibration bands.
+    """
+    import sqlite3
+    key = str(db_path)
+    if key not in _CORPUS_DA_CACHE:
+        try:
+            with sqlite3.connect(key, timeout=5) as conn:
+                rows = conn.execute(
+                    "SELECT domain_authority FROM master_recipes "
+                    "WHERE domain_authority IS NOT NULL"
+                ).fetchall()
+            _CORPUS_DA_CACHE[key] = sorted(float(r[0]) for r in rows)
+        except Exception:
+            _CORPUS_DA_CACHE[key] = []
+    return _CORPUS_DA_CACHE[key]
+
+
+def authority_corpus_context(da, db_path: str = "recipes.db") -> dict:
+    """Where a DA sits IN OUR CORPUS: {pct, band, n}. Empty dict when unknown.
+
+    Best-effort — a missing DB or an unscored corpus returns {} and the caller
+    simply omits the calibration line rather than failing an enrichment.
+    """
+    try:
+        da = float(da)
+    except (TypeError, ValueError):
+        return {}
+    vals = _corpus_da_values(db_path)
+    if not vals:
+        return {}
+    below = sum(1 for v in vals if v < da)
+    pct = round(100.0 * below / len(vals), 1)
+    band = next(label for edge, label in _AUTH_BANDS if da < edge)
+    return {"pct": pct, "band": band, "n": len(vals)}
