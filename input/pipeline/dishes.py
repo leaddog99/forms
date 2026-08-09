@@ -24,6 +24,7 @@ See memory/project_dish_library.md for the broader design.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -462,6 +463,113 @@ def list_rejects_for_dish(conn: sqlite3.Connection, dish_name: str) -> list[dict
     return out
 
 
+# ── query ROWS ──────────────────────────────────────────────────────────────
+# A dish's queries were a flat list of strings with ONE select size
+# (top_n_serpapi) applied to every one, and the SERP locale hardcoded to
+# gl=us/hl=en in _serpapi_lookup. Two things that cost us:
+#   - some search terms deserve a much larger select than others
+#   - a dish could not combine, say, a Greek-locale query with a US one
+#
+# So a query becomes a ROW carrying its own select size and locale:
+#
+#     {"q": "γιουβαρλάκια αυγολέμονο", "n": 120, "gl": "gr", "hl": "el"}
+#
+# `n` = None means "use the dish's top_n_serpapi", which keeps that column
+# meaningful as the default rather than orphaning it.
+#
+# gl and hl are SEPARATE fields, not one "country". They are separate Google
+# parameters and they genuinely diverge: gl=gr/hl=el gets Greek-language
+# results, gl=gr/hl=en gets English-language pages that rank in Greece. The
+# domains table already models country and language separately for the same
+# reason.
+#
+# They are also NOT expressible as `site:.gr` in the query text. A TLD filter
+# restricts which DOMAINS may appear; gl selects which Google index answers.
+# Measured 2026-08-08: 10 of the 14 Greek publishers in the corpus are not on
+# a .gr TLD — including akispetretzikis.com (DA 59, 21 master recipes) — so
+# `site:.gr` silently excludes most of the Greek corpus while gl=gr does not.
+# Anyone wanting the TLD restriction as well just keeps writing it in `q`,
+# which still passes to Google verbatim.
+#
+# Storage is lazily migrated: a bare string coerces to a row on read, so no
+# backfill and no schema change. Mixed old/new rows in the table are fine.
+DEFAULT_GL = "us"
+DEFAULT_HL = "en"
+_CODE_RE = re.compile(r"^[a-z]{2}$")
+
+
+def normalize_query_rows(raw) -> list[dict]:
+    """Coerce whatever is stored/posted into canonical query rows.
+
+    Accepts a list mixing bare strings (the legacy shape) and dicts, or a
+    single string. Unknown keys are dropped; `query`/`text` alias `q`,
+    `top_n` aliases `n`, `country`/`language` alias `gl`/`hl` so a caller
+    using the UI's vocabulary still lands correctly.
+
+    Pure and total: never raises, never consults config. Validation of
+    bounds belongs to the validators, which own the error messages.
+    """
+    if isinstance(raw, (str, dict)):
+        raw = [raw]
+    out: list[dict] = []
+    for item in raw or []:
+        if isinstance(item, str):
+            q, n, gl, hl = item, None, DEFAULT_GL, DEFAULT_HL
+        elif isinstance(item, dict):
+            q = item.get("q", item.get("query", item.get("text", "")))
+            n = item.get("n", item.get("top_n"))
+            gl = item.get("gl", item.get("country")) or DEFAULT_GL
+            hl = item.get("hl", item.get("language")) or DEFAULT_HL
+        else:
+            continue
+        q = str(q or "").strip()
+        if not q:
+            continue
+        try:
+            n = int(n) if n not in (None, "") else None
+        except (TypeError, ValueError):
+            n = None
+        gl = str(gl or DEFAULT_GL).strip().lower() or DEFAULT_GL
+        hl = str(hl or DEFAULT_HL).strip().lower() or DEFAULT_HL
+        out.append({"q": q, "n": n, "gl": gl, "hl": hl})
+    return out
+
+
+def query_texts(rows) -> list[str]:
+    """Just the query strings, in order — the LEGACY projection.
+
+    Every existing consumer (compose_dish_text, dish_signal, identity_card,
+    build_query_batch) does `str(q)` over this list. Handing them a dict
+    would stringify it into the embedding text and silently stale every dish
+    vector, so `row_to_dict` keeps serving strings under `queries` and
+    publishes the rows separately. Consumers move over one at a time.
+    """
+    return [r["q"] for r in normalize_query_rows(rows)]
+
+
+def validate_query_rows(raw, *, max_n: Optional[int] = None) -> list[dict]:
+    """Normalize + validate. Raises ValueError; endpoints turn that into 400."""
+    if not isinstance(raw, (list, str, dict)) or (isinstance(raw, list) and not raw):
+        raise ValueError("queries must be a non-empty array")
+    rows = normalize_query_rows(raw)
+    if not rows:
+        raise ValueError("queries must contain at least one non-empty query")
+    for r in rows:
+        if r["n"] is not None:
+            if r["n"] <= 0:
+                raise ValueError(f"select size for {r['q']!r} must be positive")
+            if max_n is not None and r["n"] > max_n:
+                raise ValueError(
+                    f"select size {r['n']} for {r['q']!r} exceeds the max of "
+                    f"{max_n} (raise it in System → Limits)")
+        for field in ("gl", "hl"):
+            if not _CODE_RE.match(r[field]):
+                raise ValueError(
+                    f"{field} for {r['q']!r} must be a two-letter code "
+                    f"(got {r[field]!r}) — store the CODE, not a display name")
+    return rows
+
+
 def row_to_dict(row: tuple) -> dict:
     """Convert a SELECT * row into the dict shape every endpoint returns.
 
@@ -469,6 +577,10 @@ def row_to_dict(row: tuple) -> dict:
     a list here so the API surfaces a real array. Adds a derived
     `is_due` field based on refresh_ttl_days + last_refreshed, and a
     derived `last_run_log_url` for the form's "View latest log" link.
+
+    Emits BOTH shapes during the rollout: `queries` stays a list of plain
+    strings for the four existing consumers, and `query_rows` carries the
+    canonical rows (select size + locale). See normalize_query_rows.
     """
     (name, queries_json, top_n_serpapi, top_n_final, ttl_days,
      last_refreshed, last_run_status, last_run_count, notes,
@@ -477,9 +589,11 @@ def row_to_dict(row: tuple) -> dict:
      embedding_text, embedding_model, embedding_updated_at,
      identity_card_json, competitiveness_pct, field_clout, display_name) = row
     try:
-        queries = json.loads(queries_json) if queries_json else []
+        queries_raw = json.loads(queries_json) if queries_json else []
     except Exception:
-        queries = []
+        queries_raw = []
+    query_rows = normalize_query_rows(queries_raw)
+    queries = [r["q"] for r in query_rows]
     try:
         ou_fit = json.loads(last_ou_fit) if last_ou_fit else None
     except Exception:
@@ -490,7 +604,8 @@ def row_to_dict(row: tuple) -> dict:
         identity_card = None
     return {
         "name": name,
-        "queries": queries,
+        "queries": queries,          # legacy projection: plain strings
+        "query_rows": query_rows,    # canonical: {q, n, gl, hl}
         "top_n_serpapi": top_n_serpapi,
         "top_n_final": top_n_final,
         "refresh_ttl_days": ttl_days,
@@ -672,14 +787,12 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
     name = (payload.get("name") or "").strip()
     if not name:
         raise ValueError("name is required and must be non-empty")
-    queries_raw = payload.get("queries")
-    if not isinstance(queries_raw, list) or not queries_raw:
-        raise ValueError("queries must be a non-empty array of strings")
-    queries = [str(q).strip() for q in queries_raw if str(q).strip()]
-    if not queries:
-        raise ValueError("queries must contain at least one non-empty string")
-
     _max_serp, _max_final = dish_limits()
+    # Accepts BOTH the legacy array-of-strings and the canonical rows, so an
+    # un-migrated client keeps posting strings and gets default locale + the
+    # dish's top_n_serpapi. Returns rows; create_dish stores them.
+    queries = validate_query_rows(payload.get("query_rows", payload.get("queries")),
+                                  max_n=_max_serp)
     top_n_serpapi = int(payload.get("top_n_serpapi", 25))
     if top_n_serpapi <= 0:
         raise ValueError("top_n_serpapi must be positive")
@@ -728,13 +841,19 @@ def create_dish(conn: sqlite3.Connection, *,
                 auto_enrich: bool = False,
                 description: Optional[str] = None) -> dict:
     """Insert a new dish. Raises sqlite3.IntegrityError on name
-    collision (caller maps to 409). Returns the created dict."""
+    collision (caller maps to 409). Returns the created dict.
+
+    `queries` accepts either shape — the validator hands us canonical rows,
+    but scripts and tests call this directly with plain strings. Normalizing
+    here means the column only ever holds rows.
+    """
     now = datetime.now(timezone.utc).isoformat()
+    rows = normalize_query_rows(queries)
     conn.execute(
         "INSERT INTO dishes (name, queries, top_n_serpapi, top_n_final, "
         "refresh_ttl_days, notes, created_at, updated_at, auto_enrich, description) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (name, json.dumps(queries), top_n_serpapi, top_n_final,
+        (name, json.dumps(rows, ensure_ascii=False), top_n_serpapi, top_n_final,
          refresh_ttl_days, notes, now, now, 1 if auto_enrich else 0, description),
     )
     conn.commit()
@@ -746,7 +865,9 @@ def create_dish(conn: sqlite3.Connection, *,
 # orphan recipes. To "rename", caller deletes + recreates (which deletes
 # the master rows too — intentional cascade).
 _PATCHABLE = {
-    "queries", "top_n_serpapi", "top_n_final",
+    # `queries` = the legacy array of strings; `query_rows` = the canonical
+    # {q, n, gl, hl}. Both accepted, both write the same column.
+    "queries", "query_rows", "top_n_serpapi", "top_n_final",
     "refresh_ttl_days", "notes", "auto_enrich",
     "description", "display_name",
 }
@@ -763,17 +884,19 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
     sets: list[str] = []
     params: list = []
 
-    if "queries" in patch:
-        q = patch["queries"]
-        if not isinstance(q, list) or not q:
-            raise ValueError("queries must be a non-empty array of strings")
-        q_clean = [str(x).strip() for x in q if str(x).strip()]
-        if not q_clean:
-            raise ValueError("queries must contain at least one non-empty string")
-        sets.append("queries = ?")
-        params.append(json.dumps(q_clean))
-
     _max_serp, _max_final = dish_limits()
+
+    # `query_rows` wins when present (the canonical shape); `queries` remains
+    # accepted so the current editor, which posts plain strings, keeps working.
+    # NOTE for the UI phase: a client that posts bare strings RESETS n/gl/hl to
+    # their defaults, because a string carries no locale to preserve. Harmless
+    # today — nothing can author a non-default row yet — but the editor must
+    # send query_rows in the same release that lets a curator set them.
+    if "query_rows" in patch or "queries" in patch:
+        raw = patch.get("query_rows", patch.get("queries"))
+        rows = validate_query_rows(raw, max_n=_max_serp)
+        sets.append("queries = ?")
+        params.append(json.dumps(rows, ensure_ascii=False))
     if "top_n_serpapi" in patch:
         v = int(patch["top_n_serpapi"])
         if v <= 0:
