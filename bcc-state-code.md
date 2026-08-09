@@ -3444,72 +3444,252 @@ custom domain's. Patreon 403s every probe INCLUDING the recipe's own source page
 candidate is verifiable by fetching. Rather than guess, the row points at the source post —
 known good, and the page the video plays on. The generic fix still does the standard `urljoin`.
 
+## Session log — 2026-08-09 — scoring under scrutiny: three bad comparisons of mine, a traffic axis that survived, and a doc claim that cost the credits
+
+A long analysis day that went badly before it went well. The curator caught every error; the
+findings that survived are theirs more than mine.
+
+### Calibration — two follow-ons to the public star
+
+**DA commentary calibration.** A critique called a mid-60s DA publisher "a marginal site".
+Measured: DA 65 is the **exact median** of the corpus (p10 33 · p25 47 · median 64 · p75 82 ·
+p90 92) and the 74th percentile of curated publishers. Root cause was calibration, not wording —
+`scoreCommentary` got raw numbers and no reference, so the model judged 65 against "the scale
+runs to 100". The prompt now receives `>> DA IN CONTEXT: 50th percentile of our corpus ->
+well-established`, plus an instruction to judge only on that and reserve "small/marginal/obscure"
+for the bottom tenth. `authority_corpus_context()` in url_scoring, cached per process.
+
+**paid_pa_calibration is now a JOB** (monthly, 720h). The paywall PA-remap had not been
+recomputed since 2026-06-23 — seven weeks, silently, because a stale calibration mis-ranks
+rather than erroring. `run_calibration()` extracted as the shared entry point so CLI and job
+cannot drift; `calibrate()` returns per-domain results carrying the REASON a publisher was
+skipped. First run: flagged 6, calibrated 4, skipped 2 (`177milkstreet` n=10, `capecodtimes`
+n=6, against the n>=15 floor). latimes.com was flagged paywalled and had NEVER been calibrated.
+`harvest_missing` defaults FALSE — a scheduled job must never surprise-spend.
+
+**Also corrected `memory/project_paid_pa_calibration`**, whose Status said the SELECTION half was
+unbuilt. It shipped 2026-06-16 (ee7b8da). The real gaps are coverage (4 of ~96), staleness (now
+fixed) and the paywall-only TRIGGER.
+
+**adjustedPageAuthority reaches the form** (code-complete, needs verification): both selectors
+already rank on the remapped PA, but the form showed raw PA and an ouScore derived from it — an
+ATK page displayed **PA 36 / OU -5.0** while selection scored it **50.9 / +10.0**. Derived on
+read, never stored, because the calibration now moves monthly.
+
+### THE STRUCTURAL FINDING — exceptionalism needs a varying baseline
+
+In a PUBLISHER harvest DA is constant, so `OU = PA - g(DA)` is `PA - constant` whatever g is —
+power law or quadratic. Verified: `PA - OU` = **46.345 with spread 0.0000** across all 143
+allrecipes rows; **spearman(PA, rank_score) = 1.0000**. The 70/30 blend reproduces PA ordering
+exactly. That is not a defect — PA is a good within-site ranker (below) — but the OU machinery
+contributes nothing in that path. It does real work in a DISH cohort, where DA varies.
+
+### Three bad comparisons, all mine, all pushing the same way
+
+I built a case that the scoring was useless. Each step was wrong:
+
+1. **Compared DA to recipe inventory using newspapers and a health site** — washingtonpost,
+   latimes, healthline. Their DA measures news authority. Including them manufactured the result.
+2. **Mixed `-gr` exports into a US analysis** — bonappetit showed *zero* recipes above 1k/mo
+   because it was a Greek-database export of a US site. I had identified that exact trap earlier
+   the same day and walked into it.
+3. **Used Pearson on log-distributed traffic**, turning a **7.2x** effect into "+0.36, weak".
+
+Corrected: among recipe sites on the US database, **spearman(DA, recipes >=100/mo) = +0.711**.
+The curator's keep-formula premise holds. And PA carries strong within-site signal — allrecipes
+PA>=60 median traffic **28,112** vs PA<=52 **3,925**, cleanly monotonic across bands.
+
+Curator: *"you check your own conclusions more closely next time."* The check I skipped: verify
+the populations are comparable, and sanity-read whether a number is plausible for a recipe site.
+bonappetit at zero should have stopped me instantly; I printed it in a table and reasoned from it.
+
+### How deep to skim — measured properly
+
+Curator's experiment: take the top 10 by blended score at increasing sample depths and count new
+entrants. Ran it on 10 recipe sites, then bought honest ground truth with two score-only runs at
+depth 1000 (recipetineats, budgetbytes, ~$3.80).
+
+    recall of the deepest top-10, by skim depth
+      recipetineats   250 -> 90%    360 -> 100%     (export 2,688 rows)
+      budgetbytes     360 -> 80%    500 -> 100%     (export 3,336)
+      allrecipes      750 -> 90%   1000 -> 90%      (export 10,000, still climbing)
+
+Roughly **6-12% of the export gets 90% of the best 10**. An earlier "250 saturates" was an
+artifact of ground truth only 250 deep — measuring agreement with itself. Current configs land
+60-90%, worst on the biggest sites: allrecipes at 3.6% depth returns 60%, so 4 of its best 10 sit
+below where the harvest stops.
+
+### TRAFFIC EXCEPTIONALISM — the curator's idea, and it survived
+
+*"is there an exceptionalism buried there... similar to the OU but for traffic not PA."*
+
+**The baseline is PA, not DA.** DA explains only **13%** of per-page log-traffic variance and its
+band medians are non-monotonic. PA explains **33%**, and `corr(PA, log traffic)` is **positive in
+56 of 56 publishers**.
+
+    TU = log10(traffic) - f(PA)      f: -0.000374*PA^2 + 0.09992*PA - 0.8308, R^2 0.330
+
+Near-independent of OU (**+0.166**) — a genuine third axis. Top TU is the shape the product
+exists to find: loveandlemons/chimichurri (PA 35, 106k/mo), argiro.gr/giouvarlakia-avgolemono
+(PA 34, 51k/mo — the curator's own dish). allrecipes' 660k/mo page does NOT appear, because PA 64
+predicts it.
+
+**Caveat that matters: 71% of TU variance is BETWEEN sites, 29% within.** Raw TU is a publisher
+badge; site-centred TU is the page signal. Newspapers score -2.0 to -2.2, so their recipe pages
+are not merely under-linked, they are **not read** — a stronger reason to discount them than OU
+gave. Filed as `memory/project_traffic_exceptionalism`; parked pending data supply.
+
+One-month traffic is NOISY (seriouseats, 4,982 URLs a month apart): median moves 1.03x but
+**39% swing >=1.5x, 24% >=2x, 13% >=3x**; 82% of the top decile stays in the top decile.
+
+### The doc claim that cost the credits
+
+Curator: *"if you look back at the state file you'll see we burnt all the credits."* Correct —
+50,000 -> 26,490 on 2026-08-04, ~17,500 of it on two unbounded `url_rank_history` calls where
+`display_limit=12` would have been 600.
+
+I had told the curator six-month history was unavailable on this plan, having re-run the probe
+and read `ERROR 403 :: History reports are not allowed` at face value. **Section 12 of the design
+doc already carried that as disproved** — the 403 is a WRONG TYPE NAME. Third time that error has
+been made. It also went into a memory before being caught.
+
+Then the corollary. That same doc sentence claimed `display_filter` is ignored on
+`domain_organic_unique`. Since its companion claim was already known false, I tested it: sorted
+`tg_asc`, unfiltered bottom rows `0,0,0,0,0`; with a `Tg > 1000` filter they are
+**1001, 1006, 1013, 1021, 1022**. **The filter works.** 100 units to find out.
+
+That changes the economics of the thing the curator actually wants — *"it might get rid of me
+having to do the web based search/save/process dance"*. Filtering server-side means paying only
+for rows above a traffic floor (pinchofyum 1,661 -> 451; seriouseats 7,099 -> 3,154), and
+`display_offset` pages past the 10,000-row export cap. A ~96-publisher refresh at a 100/mo floor
+is **~50,000 lines ~= 500,000 units** against a 2M minimum package — about four cycles a year,
+matching `harvest_ttl_days=90`. I had costed only the traffic-backfill case and called the
+package 15x over-provisioned; that was wrong too.
+
+Semrush is now **Adobe** (acquisition completed April 2026). No startup programme found. Units
+come in 2M/5M/10M/20M packages at roughly $50/M (third-party figures; Semrush does not publish
+them). The curator's read that the 50k never refreshes is almost certainly right: the smallest
+package is 2 MILLION, so 50k was a grant, not a purchase.
+
+### Also today
+
+- **URL-field controls rebuilt** — icons moved INSIDE the input (the old `flex-wrap:wrap` made
+  them stack on a phone), 30px/36px, a ✕ clear that dispatches `input`+`change`, hover/focus
+  reveal of the full URL that flips above when the keyboard would cover it.
+- **Checkbox/radio sizing** — no shared rule existed; browser default ~13px. Now 20px/24px with
+  a 44px touch row. This cost money: a domains harvest ran twice in score-only from a phone
+  because the curator could not see the checkbox state.
+- **The score-only trap closed** — the harvest MODE cards set `score_only` silently; the run
+  button now reads "📊 Score only — ingests nothing" in warn red BEFORE the click.
+- **Dish query rows phase 1** — `{q, n, gl, hl}` with lazy migration; `queries` still returns
+  plain strings because `compose_dish_text`/`dish_signal`/`identity_card` all do `str(q)`.
+  Locale work then PARKED: curator wants US nailed first.
+- **Video `contentUrl`** — a site-relative path made the play link 404 on our own host.
+
+### The pattern
+
+Yesterday's lesson was mechanisms asserted without measurement. Today's is narrower and worse:
+**three separate analyses contaminated in the same direction, and a documented correction
+re-broken because I trusted a fresh error message over our own written record.** What worked was
+the curator refusing each conclusion, and one 100-unit test against a claim that had already been
+caught lying once.
+
 ---
 
-## START HERE — state of play as of 2026-08-08
+## START HERE — state of play as of 2026-08-09
 
-**Branch `split/enrichment-api`, pushed (`7b578a5`). Server restarted and current.**
+**Branch `split/enrichment-api`. Server restarted and current through the
+`paid_pa_calibration` job; the adjusted-PA form work is UNCOMMITTED and unverified.**
 
-### What shipped this session (4 commits)
+### What shipped today
 
-1. **Public star rating** — `public_scoring.py` as the ONE place a private score becomes a public
-   one; `.stars` SVG component; `GET /public-score`; a Public rating chip + read-only commentary
-   mirror on the admin recipe form; `forms/stars_mockup.html` over real corpus rows.
-2. **SEMrush export archive** — `input/semrush/`, tracked, 113 current + 17 superseded. The
-   `.gitignore` rule that had been discarding them is worked around by nesting, not edited.
-3. **Archiving in the harvest** — `archive_export()` fires where an export is consumed; proven in
-   production the same evening on allrecipes / bbcgoodfood / toriavey.
-4. **Backlinks ranking retired** — legacy shape skipped with a loud log line, capability kept via
-   the explicit per-domain override.
-5. **Video relative-URL fix** — the play link no longer 404s on our own host.
+1. **DA commentary calibration** — the prompt now gets `>> DA IN CONTEXT: Nth percentile of our
+   corpus -> <band>` and is told to judge only on that. Fixes "a marginal site" said of a
+   publisher sitting at the exact corpus median.
+2. **`paid_pa_calibration` is a scheduled job** (monthly). Was a hand-run script, last run
+   2026-06-23. First run recalibrated 4 publishers incl. latimes (never calibrated before) and
+   reported WHY the other 2 were skipped.
+3. **UI** — url-field icons inside the input with a ✕ clear and a full-URL reveal that flips
+   above the keyboard; shared checkbox/radio sizing (20/24px, 44px touch row); the score-only
+   run button now warns BEFORE the click.
+4. **Dish query rows phase 1** — `{q, n, gl, hl}`, lazy migration, no behaviour change.
+5. **Video relative-URL fix.**
+
+### UNCOMMITTED / UNVERIFIED — pick this up first
+
+**`adjustedPageAuthority` on the recipe form.** Code-complete across all four edges of
+[[feedback_db_form_sync]] (contract, load, display, commentary prompt) but **never verified in
+the browser** — a restart landed just as the session ended. Test row: ATK "Best Blueberry
+Muffins" `9c10a665-81d9-4519-bc86-af915e471f13`, currently PA 43 / OU +2.0, should read
+`PA 43 -> 65 free-equiv (gated)`. Derived on read, never stored.
 
 ### Current numbers
 
 - master_recipes **~4,530** · personal **412**
-- SEMrush exports archived: **113 current + 17 superseded** (24MB, tracked)
-- harvest ranking: **194 by traffic** vs 37 by referring domains (the latter now refused)
-- trusted domains: `bostonglobe.com`, `theguardian.com`, `andrewzimmern.com`
+- SEMrush API units: **26,220** — a one-time grant, NOT a monthly refresh (smallest purchasable
+  package is 2 MILLION units, so 50k was never a purchase)
 - scheduled jobs: `chapter_rollups`, `semrush_ranks_refresh`, `domain_scoring`,
-  `screenshot_refresh`
+  `screenshot_refresh`, **`paid_pa_calibration`**
+- paywall calibrations: 4 of 6 flagged publishers (`177milkstreet` n=10 and `capecodtimes` n=6
+  are under the n>=15 floor — they need `harvest_missing: true` on a one-off run)
 
 ### Do first
 
-1. **Fresh Top-Pages exports for the last three** — `thekitchn.com`,
-   `themediterraneandish.com`, `edibleboston.com`. They now fail loudly rather than harvesting on
-   a June referring-domains signal. allrecipes is already done.
-2. **The three newer-but-smaller supersedes** in `input/semrush/_superseded/` — marthastewart,
-   seriouseats, tasteofhome. Decide whether the wider older export should be the keeper; nothing
-   is deleted.
+1. **Verify the adjusted-PA form work**, then commit it.
+2. **Fresh Top-Pages exports** for `thekitchn.com`, `themediterraneandish.com`,
+   `edibleboston.com` — they now fail loudly rather than harvesting on a June
+   referring-domains signal.
 3. **A public-voice commentary variant.** The card cannot use today's `scoreCommentary` — it
-   names PA/DA/OU in prose. Second generated field, both kept.
-4. **`bcc_backup.bat`** — `recipes.sql.gz` still uncommitted from the 03:00 dump.
+   names PA/DA/OU in prose, and now also carries the paywall-adjusted figure.
+4. **The three newer-but-smaller supersedes** in `input/semrush/_superseded/` — marthastewart,
+   seriouseats, tasteofhome.
+
+### The big open question — automate the export dance
+
+`display_filter` **works** on `domain_organic_unique` (measured, 2026-08-09), so the manual
+search/save/process workflow is replaceable: pull only rows above a traffic floor, page past the
+10,000-row export cap with `display_offset`. **~500,000 units for a full ~96-publisher refresh at
+a 100/mo floor**, vs a 2M minimum package (~$50/M, third-party figure) on top of Business
+(~$500/mo). Semrush is Adobe-owned since April 2026; no startup programme found.
+
+**Prove it on the 26,220 units already held before buying anything** — that is ~2,600
+current-traffic lookups or ~43 URLs of 12-month history, enough to establish whether TU and
+trajectory actually change picks. A measured "we need N units/month" is a better sales
+conversation than asking what a package costs.
 
 ### Known-open, not urgent
 
-- Star display isn't wired to any user-facing surface yet, because none exists — `home.html` is a
-  launcher and dishes/domains are admin. The component + payload contract are ready for whichever
-  surface is built first.
-- **Blur must be baked server-side** when the card is built — a CSS filter ships the readable
-  screenshot. And the card must store the `/screenshot/<id>` URL, never bytes, or publisher
-  opt-out becomes unenforceable.
-- `harvest_source='backlinks_file'` should become `'semrush_export'` — the label misled me twice
-  in one session, and the one shape it names is the one we no longer read.
+- **[[project_traffic_exceptionalism]]** — TU is a real third axis (corr to OU only +0.166) but
+  blocked on data supply: traffic exists only on publisher-harvested rows, and 71% of its
+  variance is between-site so it must be used as site TU + site-centred TU separately.
+- **Keep-sizing**: an OU floor would delete 98 of marthastewart's 100 for having re-platformed
+  its URLs, and gut ATK for being gated. Do NOT ship an OU floor until the PA remap covers
+  migration as well as paywall — the remap math is cause-agnostic, only the trigger is not.
+- **Skim depth**: 6-12% of an export gets 90% of the best 10; current configs land 60-90%, worst
+  on the biggest sites (allrecipes 3.6% -> 60%).
+- Star display isn't wired to a user-facing surface yet (none exists). Blur must be baked
+  server-side; the card must store the `/screenshot/<id>` URL, never bytes.
+- `harvest_source='backlinks_file'` should become `'semrush_export'`.
 - `pageScreenshot` still defaults to `""` in `recipe_model` ([[feedback_absent_not_zero]]).
-- The header-less INGREDIENTS fallback — needs per-URL labels, not host trust.
-- `power_blend_weight` (30.0) lives in `bcc_config.json`, not `system_config`.
-- Provenance backfill: ~4,150 rows still NULL `mozHttpCode`, ~$10, non-destructive.
-- A scoring counterpart to `check_embeddings.py`; schedule the latter daily.
-- The five archive-47 rows; snapshot capture; cadence; `user_api_keys`.
+- The header-less INGREDIENTS fallback; `power_blend_weight` in `bcc_config.json`; provenance
+  backfill (~4,150 NULL `mozHttpCode`); a scoring counterpart to `check_embeddings.py`; the five
+  archive-47 rows; snapshot capture; cadence; `user_api_keys`.
 
-### The pattern, five sessions running
+### The pattern, six sessions running
 
-Same lesson, new shape. Yesterday every wrong answer was a mechanism asserted where a measurement
-was available. Today the wrong answers came from **reading a column instead of reading the code
-that fills it** — `semrush_report_url` is derived at read time and `backlinks_dir` is an optional
-override, so "empty" meant "normal" in both cases, and `domains_lib.py:511` carried a comment
-warning about precisely the query I wrote. Twice, on one table, in one session.
+Two distinct failures today, and the second is the one to fix.
 
-What worked, again, was measuring before acting: the blend/OU redundancy, the star-drift replay
-that killed my own freeze-the-thresholds recommendation, the sampling that showed newest is not
-richest, and the hash check before deleting anything from Downloads. **The estimate was wrong
-every time it was checked.**
+**Contaminated comparisons.** Three analyses — DA vs inventory, PA vs traffic, export vs API —
+each spoiled by a population error (newspapers among recipe sites, `-gr` exports in a US test,
+Pearson on log-distributed data), all pushing toward "the scoring is useless". Curator: *"you
+check your own conclusions more closely next time."*
+
+**Trusting a fresh error over the written record.** `ERROR 403 :: History reports are not
+allowed` is a WRONG TYPE NAME, documented as disproved in §12 of the design doc — and I re-made
+it a third time by re-running the probe instead of reading. The fix that worked was the
+converse: distrusting the *companion* claim in that same sentence and spending 100 units to test
+it, which is how `display_filter` turned out to work and the whole export-automation case opened
+up.
+
+**Read the Disproved table before probing an API.** It exists precisely because these error
+messages describe the wrong cause.

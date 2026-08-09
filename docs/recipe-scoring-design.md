@@ -160,8 +160,15 @@ rerun, free.
 **`Traffic == Traffic Change` IS the "New" filter — MEASURED.** Equality means last month was
 zero. christinascucina export: 820 rows, **26 flagged new**, porridge correctly NOT flagged
 (8,877 vs 7,855) because it already had traffic. The UI's New/Lost tabs compute the same thing;
-**the API cannot** (`display_filter` ignored on `domain_organic_unique`, `display_date` 403), so
-the diff is ours either way — free, from a file already downloaded.
+**the API has no "new" flag** — that needs two months compared, which no single call does — so
+the diff is ours either way. It is free either from a downloaded file or from two stored
+`domain_organic_unique` pulls.
+
+> **CORRECTED 2026-08-09.** This paragraph previously read "the API cannot (`display_filter`
+> ignored on `domain_organic_unique`, `display_date` 403)". **Both halves were wrong.**
+> `display_date`'s 403 was a wrong type name (already corrected in §10/§12), and
+> `display_filter` **is honoured** — see §10. Only the *New* comparison is genuinely
+> unavailable, because it is a two-month diff rather than a filter.
 
 ```
 one publisher's new pages   ~26 urls        260 units/mo
@@ -324,8 +331,25 @@ developer-token application, no ad-spend requirement.
 | monthly series for a url | **`url_rank_history`** -> `Dt`, `Ot`, `Or` | 50 units/line | works |
 | a domain's full page list | **`domain_organic_unique`** | 10 units/line | works |
 | a domain's monthly series | `domain_rank_history` | 50 units/line | works |
-| "New pages" filter | — | — | **not available** |
+| **filter a domain's page list by traffic** | `domain_organic_unique` + `display_filter` | 10 units/line, **filtered rows only** | **works — MEASURED 2026-08-09** |
+| "New pages" filter | — | — | **not available** (a two-month diff, not a filter) |
 | multiple domains per call | — | — | **not available** |
+
+**`display_filter` IS honoured on `domain_organic_unique` — MEASURED 2026-08-09**, contradicting
+an earlier note that said it was ignored. Test: pinchofyum.com sorted `tg_asc` (ascending by
+traffic). Unfiltered the bottom rows are `0, 0, 0, 0, 0` — the dead tail. With
+`display_filter=+|Tg|Gt|1000` the bottom rows become **1001, 1006, 1013, 1021, 1022**. Cost 100
+units total.
+
+This is the difference between paying for a publisher's whole page list and paying only for the
+part above a traffic floor — pinchofyum 1,661 rows vs **451** at ≥100/mo; seriouseats 7,099 vs
+**3,154**. Combined with `display_offset` (which pages past the export's 10,000-row cap, hiding
+allrecipes' true depth) it makes the manual search/save/process export dance replaceable:
+**~50,000 lines ≈ 500,000 units for a full ~96-publisher refresh at a 100/mo floor**, against a
+2M-unit minimum package — roughly four cycles a year, which matches `harvest_ttl_days=90`.
+
+The filter also turns skim depth from a judgement call into a parameter: the traffic floor IS
+the `records` decision.
 
 **Gotchas, each paid for once:**
 
@@ -533,7 +557,8 @@ shift-scale remap toward the placeholder.
 | "Rising = steep positive traffic arrow" | **FALSE.** Traffic momentum is INVERTED (-0.233), worse than random. |
 | `Traffic Change` as a positive ranking flag | **FALSE.** Same finding. Investigate-only. |
 | keywords are gained by "crossing rank 100" | **FALSE.** Porridge's keywords span 1-75, none beyond; they arrive at 4-20. |
-| traffic history is blocked on this plan | **FALSE.** `url_rank_history` works; the 403 was a wrong type name. |
+| traffic history is blocked on this plan | **FALSE.** `url_rank_history` works; the 403 was a wrong type name. **Re-made a THIRD time on 2026-08-09** by re-running the probe and reading its 403 at face value instead of reading this table. The error message describes the wrong cause; that is the whole point of the entry. |
+| `display_filter` is ignored on `domain_organic_unique` | **FALSE — MEASURED 2026-08-09.** Sorted `tg_asc`, unfiltered bottom rows are `0,0,0,0,0`; with `+\|Tg\|Gt\|1000` they are `1001,1006,1013,1021,1022`. It was written in the same sentence as the `display_date` 403 and inherited its credibility. Filtering server-side is what makes replacing the manual export workflow affordable (§10). |
 | Google Trends as a page-trajectory fallback | **FALSE.** Trends is query-level only. No Google source gives third-party PAGE traffic. |
 | the coverage constraint is structural | **FALSE.** It is a budget line — `url_ranks` serves any url. |
 | momentum = `traffic(1mo) / (traffic(12mo)/12)` | **WRONG SHAPE.** Compares different months; for a seasonal dish it measures the calendar. Use like-month, and only for LIBRARY — a Rising page has never been through a cycle. |
