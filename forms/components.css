@@ -78,3 +78,30 @@
 }
 /* Small variant for a dense ranked row. */
 .stars.sm { --stars-w: 72px; }
+
+/* ===== Form controls — touch-sized by default =============================
+   Checkboxes and radios had NO shared sizing: `.ed-check input` set
+   `width:auto`, i.e. the browser default of roughly 13px. That is about 2mm
+   on a phone, well under the 44px minimum touch target, and at that size the
+   checked/unchecked difference is a few pixels of tick.
+
+   It cost real money. A domains harvest was run three times in "score only"
+   mode from a phone (2026-08-08, jobs 773/774) because the curator could not
+   see the state of a control that decides whether the run ingests anything.
+
+   One rule here rather than another local fix — components.css:32 had already
+   sized the source-chooser radio by hand, which is how the drift starts.
+   domains.html alone carries 11 of these. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 20px; height: 20px; flex: 0 0 auto; margin: 0;
+  accent-color: var(--accent); cursor: pointer;
+}
+/* The LABEL is the tap target — a 20px box is legible but still a small hit
+   area, so the row around it carries the touch minimum. */
+.ed-check { min-height: 34px; }
+@media (max-width: 640px) {
+  input[type="checkbox"],
+  input[type="radio"] { width: 24px; height: 24px; }
+  .ed-check { min-height: 44px; }
+}

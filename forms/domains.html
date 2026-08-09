@@ -13,7 +13,7 @@
        memory/feedback_editor_template_not_runtime.md. -->
   <link rel="stylesheet" href="/forms/editor-shell.css?v=20260806a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
-  <link rel="stylesheet" href="/forms/components.css?v=20260807a">
+  <link rel="stylesheet" href="/forms/components.css?v=20260808a">
 </head>
 <body>
   <header class="app-header">
@@ -88,7 +88,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260805a"></script>
+  <script src="/forms/library-shell.js?v=20260808a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -309,7 +309,7 @@
             ${[
               ['open','🟢 Auto · open site','Fetch → verify → keep top-N → ingest. Normal, reachable sites.'],
               ['blocked','🔴 Auto · blocked site','Unblocker + full render, verify, keep top-N, ingest. Anti-bot — hands-off but paid (1 render each).'],
-              ['curate','✋ Curate · score & pick','Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or ⚡ userscript (free). Best for anti-bot / junk-heavy exports.'],
+              ['curate','✋ Curate · score & pick','<b>Ingests nothing.</b> Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or ⚡ userscript (free). Best for anti-bot / junk-heavy exports.'],
             ].map(([v,t,s]) => `<label class="hm-card" style="cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:9px 11px;display:block;transition:background .12s"><input type="radio" name="harvestMode" value="${v}" style="margin-right:6px"><b style="font-size:.9em">${t}</b><span style="display:block;margin-top:3px;font-size:.76em;color:var(--muted);line-height:1.35">${s}</span></label>`).join('')}
           </div>
           <p class="ed-notes-help" style="margin:0 0 12px;font-size:.78em">Mode sets the <b>fetch strategy · render · verify · score-only</b> options for you — fine-tune any of them below if needed.</p>
@@ -451,6 +451,10 @@
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
       $('#deepEnrichBtn').addEventListener('click', () => doDeepEnrich(d.domain));
+      // Toggling score-only directly (not via a mode card) must restate what the
+      // run button will do — the checkbox and the button are the same decision.
+      $('#f_score_only')?.addEventListener('change', syncRunButton);
+      syncRunButton();
       renderKeywords($('#f_ranking_keywords')?.value);
       // SEMrush deep-link: regenerate the preview live as the filter fields change
       // (mirrors domains_lib.build_semrush_pages_url — server re-derives it on save/reload).
@@ -812,6 +816,7 @@
       const rr = $('#f_render_required'); if (rr) rr.checked = !!m.render_required;
       const cr = $('#f_check_recipe'); if (cr) cr.checked = !!m.check_recipe;
       const so = $('#f_score_only'); if (so) so.checked = !!m.score_only;
+      syncRunButton();
       document.querySelectorAll('#harvestModes .hm-card').forEach(c => {
         const i = c.querySelector('input'); const on = i && i.value === mode;
         if (i) i.checked = on;
@@ -823,6 +828,25 @@
       });
       if (dirty){ const b = $('#saveBtn'); if (b) b.disabled = false; }
     }
+    // The run button states what the run will DO, before it is pressed.
+    // It used to say "Refresh top recipes" in every mode and only reveal
+    // "⏳ Scoring…" after the click — so a Curate run that ingests nothing was
+    // indistinguishable from a real harvest until it was already going. On a
+    // phone, where the score-only checkbox is a dot, that was the whole failure
+    // (2026-08-08: saltandlavender.com harvested twice in score-only by
+    // mistake). The mode picker sets score_only silently; this is what makes
+    // the consequence visible.
+    function syncRunButton(){
+      const btn = $('#refreshTopBtn'); if (!btn || btn.dataset.busy) return;
+      const on = !!$('#f_score_only')?.checked;
+      btn.textContent = on ? '📊 Score only — ingests nothing' : '🔄 Refresh top recipes';
+      btn.title = on
+        ? 'Moz-rank the URLs and store the cohort. No fetches, no renders, nothing ingested.'
+        : 'Run the query, verify recipes, score + keep the top N';
+      btn.style.borderColor = on ? 'var(--ed-warn, #b23b3b)' : '';
+      btn.style.color = on ? 'var(--ed-warn, #b23b3b)' : '';
+    }
+
     function inferHarvestMode(d){
       // score_only is now persisted, so Curate survives a save. It's the field that
       // distinguishes Curate from Blocked (both fetch via unblocker); fall back to the
@@ -865,7 +889,7 @@
         streamRefresh(data.stream_url, domain, data.job_id);
       } catch (e) {
         if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Refresh failed: ${e.message || e}`; }
-        btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
+        btn.disabled = false; syncRunButton();
       }
     }
 
@@ -885,7 +909,7 @@
         };
       }
       const done = (txt, warn) => { finished = true;
-        btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
+        btn.disabled = false; syncRunButton();
         if (cancelBtn){ cancelBtn.disabled = true; cancelBtn.textContent = '✋ Cancel'; }  // idle again
         if (hint){ hint.style.color = warn ? 'var(--ed-warn)' : ''; if (txt) hint.textContent = txt; } };
       // Render the TERMINAL outcome from a job result — shared by the SSE 'done'

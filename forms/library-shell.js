@@ -1549,14 +1549,34 @@
     _urlWired = true;
     const st = document.createElement('style');
     st.textContent =
-      '.ls-url-ctl{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}' +
+      // The icons sit INSIDE the input, overlaid on its right edge, rather than
+      // beside it. Beside-the-input was two 24px buttons in a flex row that
+      // carried `flex-wrap:wrap` — so on a narrow screen they wrapped onto
+      // separate lines and stacked vertically instead of staying horizontal.
+      // Absolutely positioning them inside removes the wrap failure entirely
+      // (there is no row left to wrap) and stops the icons stealing width from
+      // the field on a phone.
+      '.ls-url-wrap{position:relative;display:block;width:100%}' +
+      '.ls-url-wrap>input{width:100%;padding-right:104px}' +
+      // nowrap is the fix for the stacking. flex:0 0 auto keeps the group from
+      // being squeezed when it is used inline (the read-only display variant).
+      '.ls-url-ctl{display:inline-flex;align-items:center;gap:3px;flex-wrap:nowrap;flex:0 0 auto}' +
+      '.ls-url-ctl.inside{position:absolute;right:5px;top:50%;transform:translateY(-50%)}' +
+      // The read-only variant still wraps: it renders the URL as text and a long
+      // one has to break somewhere.
+      '.ls-url-ctl.display{flex-wrap:wrap}' +
       '.ls-url-text{font-family:ui-monospace,monospace;font-size:.82rem;word-break:break-all}' +
-      '.ls-url-btn{display:inline-flex;align-items:center;justify-content:center;min-width:24px;' +
-      'height:24px;padding:0 6px;border:1px solid var(--line,#ccc);border-radius:6px;' +
-      'background:var(--card,#fff);cursor:pointer;font-size:.85rem;line-height:1;' +
+      '.ls-url-btn{display:inline-flex;align-items:center;justify-content:center;min-width:30px;' +
+      'height:30px;padding:0 6px;border:1px solid var(--line,#ccc);border-radius:6px;' +
+      'background:var(--card,#fff);cursor:pointer;font-size:.95rem;line-height:1;' +
       'text-decoration:none;color:inherit}' +
       '.ls-url-btn:hover{background:var(--accent-soft,#f0e8e0)}' +
-      '.ls-url-btn.disabled{opacity:.4;cursor:default;pointer-events:none}';
+      '.ls-url-btn.disabled{opacity:.4;cursor:default;pointer-events:none}' +
+      '.ls-url-clear{color:var(--danger,#c0392b)}' +
+      // Phone: bigger hit areas, and the input grows to hold them.
+      '@media(max-width:640px){' +
+      '.ls-url-btn{min-width:36px;height:36px;font-size:1.05rem}' +
+      '.ls-url-wrap>input{padding-right:122px;min-height:44px}}';
     document.head.appendChild(st);
     document.addEventListener('click', function (e) {
       const c = e.target.closest && e.target.closest('.ls-url-copy');
@@ -1574,6 +1594,21 @@
         const v = (document.getElementById(o.dataset.inputId) || {}).value || '';
         if (/^https?:\/\//i.test(v)) window.open(v, '_blank', 'noopener');
         else flash('Not a valid link', true);
+        return;
+      }
+      // Clear the field. Dispatches `input` so the page's dirty-tracking sees
+      // it — every editor here enables Save off an input event, so clearing
+      // without one would leave a field that looks empty and saves as-is.
+      const x = e.target.closest && e.target.closest('.ls-url-clear');
+      if (x) {
+        e.preventDefault();
+        const el = document.getElementById(x.dataset.inputId);
+        if (!el) return;
+        if (!el.value) { flash('Already empty'); return; }
+        el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.focus();
       }
     });
   }
@@ -1583,9 +1618,10 @@
     const u = (url || '').trim(), safe = escapeHtml(u);
     if (opts.inputId) {
       const id = escapeHtml(opts.inputId);
-      return '<span class="ls-url-ctl">' +
+      return '<span class="ls-url-ctl inside">' +
         '<button type="button" class="ls-url-btn ls-url-open" data-input-id="' + id + '" title="Open in new tab" aria-label="Open link">↗</button>' +
-        '<button type="button" class="ls-url-btn ls-url-copy" data-input-id="' + id + '" title="Copy URL" aria-label="Copy URL">⧉</button></span>';
+        '<button type="button" class="ls-url-btn ls-url-copy" data-input-id="' + id + '" title="Copy URL" aria-label="Copy URL">⧉</button>' +
+        '<button type="button" class="ls-url-btn ls-url-clear" data-input-id="' + id + '" title="Clear this URL" aria-label="Clear URL">✕</button></span>';
     }
     const openable = /^https?:\/\//i.test(u);
     const open = openable
@@ -1593,7 +1629,7 @@
       : '<span class="ls-url-btn disabled" title="Not a link">↗</span>';
     const copy = u ? '<button type="button" class="ls-url-btn ls-url-copy" data-url="' + safe + '" title="Copy URL" aria-label="Copy URL">⧉</button>' : '';
     const text = (opts.display === false) ? '' : '<span class="ls-url-text">' + (safe || '— none —') + '</span>';
-    return '<span class="ls-url-ctl">' + text + (u ? open + copy : '') + '</span>';
+    return '<span class="ls-url-ctl display">' + text + (u ? open + copy : '') + '</span>';
   }
 
   // Editable URL FIELD (memory/feedback_url_field_control): a labeled <input type=url>
@@ -1608,8 +1644,8 @@
     const full = opts.full ? ' full' : '';
     const ph = opts.ph ? (opts.ph.endsWith('…') ? opts.ph : 'ex: ' + opts.ph) : '';
     return '<div class="ed-field' + full + '"><label for="' + id + '">' + (label == null ? '' : label) + '</label>' +
-      '<div style="display:flex;gap:6px;align-items:stretch">' +
-        '<input id="' + id + '" type="url" value="' + escapeHtml(v) + '" placeholder="' + escapeHtml(ph) + '" style="flex:1 1 auto;min-width:0">' +
+      '<div class="ls-url-wrap">' +
+        '<input id="' + id + '" type="url" value="' + escapeHtml(v) + '" placeholder="' + escapeHtml(ph) + '">' +
         urlControl(v, { inputId: id }) +
       '</div></div>';
   }
@@ -1629,24 +1665,20 @@
     (Array.isArray(ids) ? ids : [ids]).forEach(function (id) {
       const input = document.getElementById(id);
       if (!input || input.type === 'hidden') return;
-      let row = input.parentElement;
-      if (!row) return;
-      if (row.querySelector('.ls-url-ctl')) return;          // idempotent
-      // Reuse the parent as the flex row when it already is one (bccPermalink
-      // ships that way); otherwise interpose one so the icons sit beside the
-      // input rather than wrapping under it.
-      let isRow = false;
-      try { isRow = window.getComputedStyle(row).display === 'flex'; } catch (e) { /* detached */ }
-      if (!isRow) {
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'display:flex;gap:6px;align-items:stretch';
-        input.parentNode.insertBefore(wrap, input);
-        wrap.appendChild(input);
-        input.style.flex = '1 1 auto';
-        input.style.minWidth = '0';
-        row = wrap;
-      }
-      row.insertAdjacentHTML('beforeend', urlControl(input.value, { inputId: id }));
+      if (input.parentElement && input.parentElement.classList.contains('ls-url-wrap')) return;  // idempotent
+      // Always interpose a positioning wrapper — the icons now sit INSIDE the
+      // input, so unlike the old beside-the-input row there is nothing to reuse
+      // and nothing that can wrap. Inheriting the input's flex sizing keeps a
+      // field that already lived in a flex row (bccPermalink) laid out the same.
+      const wrap = document.createElement('div');
+      wrap.className = 'ls-url-wrap';
+      const cs = (function () { try { return window.getComputedStyle(input); } catch (e) { return null; } })();
+      if (cs && cs.flex && cs.flex !== '0 1 auto') wrap.style.flex = cs.flex;
+      input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+      input.style.flex = '';
+      input.style.minWidth = '0';
+      wrap.insertAdjacentHTML('beforeend', urlControl(input.value, { inputId: id }));
     });
   }
 
