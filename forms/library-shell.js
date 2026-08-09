@@ -1573,6 +1573,23 @@
       '.ls-url-btn:hover{background:var(--accent-soft,#f0e8e0)}' +
       '.ls-url-btn.disabled{opacity:.4;cursor:default;pointer-events:none}' +
       '.ls-url-clear{color:var(--danger,#c0392b)}' +
+      // Full-URL reveal. The native `title` tooltip is kept (free, and it is
+      // what a power user reaches for) but it cannot be the answer on its own:
+      // it needs about a second of stationary hover, and it does not exist on
+      // touch — which is where this started. So an overflowing URL also gets a
+      // real popover on hover OR focus, which a tap satisfies.
+      // Absolutely positioned so revealing it never reflows the form.
+      '.ls-url-full{display:none;position:absolute;z-index:5;left:0;right:0;top:calc(100% + 4px);' +
+      'padding:7px 9px;border:1px solid var(--line,#ccc);border-radius:7px;background:var(--card,#fff);' +
+      'font-family:ui-monospace,monospace;font-size:.76rem;line-height:1.45;word-break:break-all;' +
+      'color:var(--ink,#2a211b);box-shadow:0 8px 22px rgba(60,40,20,.14)}' +
+      // Flip ABOVE the field when there is no room below. On a phone, tapping
+      // the input opens the keyboard, which covers the bottom of the viewport —
+      // so a popover anchored below is exactly where it cannot be read, on the
+      // device this was reported from.
+      '.ls-url-full.above{top:auto;bottom:calc(100% + 4px)}' +
+      '.ls-url-wrap.is-overflow:hover .ls-url-full,' +
+      '.ls-url-wrap.is-overflow:focus-within .ls-url-full{display:block}' +
       // Phone: bigger hit areas, and the input grows to hold them.
       '@media(max-width:640px){' +
       '.ls-url-btn{min-width:36px;height:36px;font-size:1.05rem}' +
@@ -1607,20 +1624,66 @@
         if (!el.value) { flash('Already empty'); return; }
         el.value = '';
         el.removeAttribute('title');
+        const w = el.parentElement && el.parentElement.querySelector('.ls-url-full');
+        if (w) w.remove();
+        if (el.parentElement) el.parentElement.classList.remove('is-overflow');
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         el.focus();
       }
     });
-    // Keep the hover tooltip in step with what is actually in the field —
+    // Keep the tooltip + reveal in step with what is actually in the field —
     // otherwise a pasted or edited URL keeps showing the value it replaced,
-    // which is worse than no tooltip at all.
-    document.addEventListener('input', function (e) {
-      const el = e.target;
-      if (!el || !el.parentElement || !el.parentElement.classList) return;
-      if (!el.parentElement.classList.contains('ls-url-wrap')) return;
-      if (el.value) el.title = el.value; else el.removeAttribute('title');
-    }, true);
+    // which is worse than showing nothing.
+    function _syncUrlReveal(el) {
+      const wrap = el && el.parentElement;
+      if (!wrap || !wrap.classList || !wrap.classList.contains('ls-url-wrap')) return;
+      const v = el.value || '';
+      if (v) el.title = v; else el.removeAttribute('title');
+      let full = wrap.querySelector('.ls-url-full');
+      // Overflow is measured, not guessed: scrollWidth exceeds the visible box
+      // only when the value really is clipped, so a short URL never sprouts a
+      // popover it does not need.
+      const clipped = !!v && el.scrollWidth > el.clientWidth + 2;
+      if (clipped) {
+        if (!full) {
+          full = document.createElement('div');
+          full.className = 'ls-url-full';
+          wrap.appendChild(full);
+        }
+        full.textContent = v;
+        // Decide the side from the space actually available. Measuring the
+        // popover needs it laid out, so make it briefly measurable rather than
+        // guessing a height — a long URL wraps to several lines and a fixed
+        // guess would flip the wrong way on exactly the URLs that need it.
+        full.classList.remove('above');
+        const prevDisplay = full.style.display;
+        full.style.visibility = 'hidden';
+        full.style.display = 'block';
+        const box = el.getBoundingClientRect();
+        const need = full.getBoundingClientRect().height + 8;
+        full.style.display = prevDisplay;
+        full.style.visibility = '';
+        const roomBelow = (window.innerHeight || 0) - box.bottom;
+        // Flip only when below genuinely does not fit AND above does — never
+        // trade a bad position for a worse one.
+        if (roomBelow < need && box.top > need) full.classList.add('above');
+      } else if (full) {
+        full.remove();
+      }
+      wrap.classList.toggle('is-overflow', clipped);
+    }
+    document.addEventListener('input', function (e) { _syncUrlReveal(e.target); }, true);
+    // Measured lazily, at the moment of hover/focus: the field's width is only
+    // reliable once it is laid out, and it changes with the viewport.
+    document.addEventListener('mouseover', function (e) {
+      const w = e.target && e.target.closest && e.target.closest('.ls-url-wrap');
+      if (w) _syncUrlReveal(w.querySelector('input'));
+    });
+    document.addEventListener('focusin', function (e) {
+      const w = e.target && e.target.closest && e.target.closest('.ls-url-wrap');
+      if (w) _syncUrlReveal(w.querySelector('input'));
+    });
   }
   function urlControl(url, opts) {
     opts = opts || {};
