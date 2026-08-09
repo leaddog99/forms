@@ -491,6 +491,17 @@ class ScoringMetadata(BaseModel):
     pageAuthority: Optional[float] = None
     domainAuthority: Optional[float] = None
     ouScore: Optional[float] = None
+    # Free-equivalent PA for a GATED publisher, from the per-publisher paywall
+    # calibration (memory/project_paid_pa_calibration). ABSENT unless the
+    # publisher is calibrated AND the remap actually lifts — so a reader can
+    # tell "no remap applies" from "remapped to the same number".
+    #
+    # DERIVED ON READ, never persisted: `get_recipe` stamps it from the LIVE
+    # calibration, which the monthly paid_pa_calibration job re-measures. A
+    # stored copy would go stale the moment the calibration moves — the exact
+    # failure that left four calibrations untouched for seven weeks. It exists
+    # in the contract so the field is legal on the wire, not so it can be saved.
+    adjustedPageAuthority: Optional[float] = None
     # Raw clout (DA+PA) and the two in-cohort PERCENTILE ranks (0-100) the
     # OU/power blend ranks on — the axes of the exceptionality×clout 2x2.
     # Stamped from the batch entry (rank_by_blend) so the editorial authority

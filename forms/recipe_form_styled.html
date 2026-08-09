@@ -1783,9 +1783,14 @@
              pay for the Enrich step) before clicking Save. Hidden when
              no scores are present. -->
         <div class="scoring-strip hidden" id="scoringStrip">
+          <!-- PA, plus the free-equivalent for a GATED publisher. Both selectors
+               already remap a paywalled page's PA before ranking it; showing only
+               the raw number here made the strip disagree with the decision the
+               system actually made (ATK: displayed OU -5.0, selected at +10.0). -->
           <div class="score-chip">
             <span class="score-label">Page Authority</span>
             <span class="score-value empty" id="score_pa">—</span>
+            <span class="exc-chip-basis" id="score_pa_adj"></span>
           </div>
           <div class="score-chip">
             <span class="score-label">Domain Authority</span>
@@ -2974,6 +2979,16 @@
     function populateScoringStrip(recipe) {
       const sc = (recipe && recipe._scoring) || {};
       setScoreChip('score_pa', sc.pageAuthority);
+      // Paywall remap, when the publisher is calibrated. The server stamps this
+      // from the LIVE calibration on load, so it tracks the monthly re-measure
+      // instead of freezing whatever was true at save time.
+      (function () {
+        const el = document.getElementById('score_pa_adj');
+        if (!el) return;
+        const adj = sc.adjustedPageAuthority;
+        el.textContent = (typeof adj === 'number' && adj > (sc.pageAuthority || 0))
+          ? `→ ${adj.toFixed(0)} free-equiv (gated)` : '';
+      })();
       setScoreChip('score_da', sc.domainAuthority);
       setScoreChip('score_ou', sc.ouScore);
       setScoreChip('score_text', sc.recipeScore);

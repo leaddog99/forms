@@ -686,3 +686,65 @@ def authority_corpus_context(da, db_path: str = "recipes.db") -> dict:
     pct = round(100.0 * below / len(vals), 1)
     band = next(label for edge, label in _AUTH_BANDS if da < edge)
     return {"pct": pct, "band": band, "n": len(vals)}
+
+
+# ── paywall PA-remap, for DISPLAY surfaces ──────────────────────────────────
+# The selectors already remap: the dish path via build_query_batch.
+# _apply_paywall_remap, the publisher path via domain_scoring.score_members.
+# The recipe FORM did not — it reads recipe._scoring, which carries the RAW pa
+# and an ouScore computed from it. So a gated publisher showed as under-
+# performing on a page the selector had actually rated well: measured
+# 2026-08-09, an ATK recipe displayed PA 36 / OU -5.0 while selection scored the
+# same page at an adjusted PA 50.9 / OU +10.0. A 15-point disagreement, and the
+# form's version is the one a curator reads — and the one scoreCommentary was
+# writing its verdict from.
+#
+# DERIVED, NEVER STORED. The calibration is a snapshot of two moving
+# distributions and is re-run monthly (the paid_pa_calibration job), so a stored
+# adjustedPageAuthority would go stale exactly the way the calibration itself
+# just did. Computing on read means the form always reflects the CURRENT
+# calibration. Cached per process; a restart picks up a re-calibration.
+_PAYWALL_CAL_CACHE: dict = {}
+
+
+def _paywall_cals(db_path: str = "recipes.db") -> dict:
+    key = str(db_path)
+    if key not in _PAYWALL_CAL_CACHE:
+        try:
+            import sqlite3
+            from input.pipeline import domains_lib
+            with sqlite3.connect(key, timeout=5) as conn:
+                cals = domains_lib.get_paywall_calibrations(conn)
+            _PAYWALL_CAL_CACHE[key] = {
+                (c.get("domain") or "").lower().replace("www.", ""): c
+                for c in cals if c.get("pa_std") and c["pa_std"] > 0
+            }
+        except Exception:
+            _PAYWALL_CAL_CACHE[key] = {}
+    return _PAYWALL_CAL_CACHE[key]
+
+
+def adjusted_pa_for(host: str, pa, db_path: str = "recipes.db"):
+    """Free-equivalent PA for a gated publisher's page, or None when no remap applies.
+
+    Returns None — not the raw pa — when the publisher isn't calibrated, so a
+    caller can tell "no remap" from "remap that happened to change nothing"
+    (memory/feedback_absent_not_zero). One-directional, matching every other
+    consumer: `max(pa, free_mean + (pa - paid_mean) * (free_std/paid_std))`.
+    """
+    try:
+        pa = float(pa)
+    except (TypeError, ValueError):
+        return None
+    h = (host or "").lower().replace("www.", "")
+    c = _paywall_cals(db_path).get(h)
+    if not c:
+        return None
+    try:
+        ps = float(c["pa_std"])
+        if ps <= 0:
+            return None
+        adj = float(c["free_mean"]) + (pa - float(c["pa_mean"])) * (float(c["free_std"]) / ps)
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        return None
+    return round(max(pa, adj), 1)

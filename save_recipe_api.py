@@ -1528,6 +1528,31 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
             ).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Recipe not found")
+            _data = json.loads(row[3])
+            # Stamp the free-equivalent PA for gated publishers, DERIVED from the
+            # live calibration rather than read from storage. Both SELECTORS
+            # already remap (dish: _apply_paywall_remap; publisher:
+            # domain_scoring.score_members) but the form showed raw PA and an
+            # ouScore computed from it — so an ATK page displayed PA 36 / OU -5.0
+            # while selection had scored it 50.9 / +10.0. The curator, and
+            # scoreCommentary, were reading the un-corrected numbers.
+            # Absent when the publisher isn't calibrated or the remap doesn't
+            # lift (memory/feedback_absent_not_zero).
+            try:
+                _sc = _data.get("_scoring") or {}
+                _pa = _sc.get("pageAuthority")
+                if _pa:
+                    from input.pipeline.url_scoring import adjusted_pa_for
+                    _host = (_sc.get("rootDomain") or "").strip().lower()
+                    if not _host:
+                        from urllib.parse import urlparse as _up
+                        _host = (_up((_data.get("_source") or {}).get("originalUrl") or "").hostname or "")
+                    _adj = adjusted_pa_for(_host, _pa)
+                    if _adj is not None and _adj > float(_pa):
+                        _sc["adjustedPageAuthority"] = _adj
+                        _data["_scoring"] = _sc
+            except Exception as _e:
+                print(f"[WARN] adjusted-PA stamp skipped: {_e}")
             # user_id is returned at the top level (it's a column, not part of
             # the recipe blob) so the form's loadForm hydration can refresh
             # the admin band input to match the loaded row's actual owner —
@@ -1537,7 +1562,7 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
                 "id": row[0],
                 "recipe_id": row[1],
                 "user_id": row[2],
-                "data": json.loads(row[3]),
+                "data": _data,
                 "source_changed_at": row[4],
                 "created_at": row[5],
                 "updated_at": row[6],
