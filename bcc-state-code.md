@@ -3729,6 +3729,98 @@ queries not titles. Each reframe dissolved a question I had been answering the h
 
 ---
 
+## Session log — 2026-08-10 (evening) — the ramen re-run, a percentile that was really zero, and the AI editor named
+
+### The ramen pass, judged then re-run (jobs 794 → 795)
+
+Reviewed 794 and the funnel ratio flagged as suspect was **not** the problem. The
+binding constraint was the min-OU floor: 48 candidates cut to 26, then 20 taken from
+26. Two of the four queries were the trap recorded that morning — `Best Ramen Recipes`
+fed a SERP the listicle filter is built to discard (it caught food.com's "29 Best Ramen
+Recipes", foodandwine's "17 Cozy Chewy Ramen Recipes", justonecookbook's own hub). In
+fairness `Best Ramen Broth Recipe` behaved WELL — the "broth" qualifier made it a
+component query, and it delivered the tonkotsu pages.
+
+The verdict on 794: **OU measures link-earning exceptionalism, not whether a recipe is
+the best version of the dish.** #1 was `thesaltymarshmallow` sesame-garlic instant
+noodles (6 ingredients, 6 steps) — DA 51/PA 50 punching above weight. Adam Liaw's Ramen
+School, Serious Eats' miso butter, 101cookbooks' vegan ramen and tasteofhome's
+from-scratch NOODLES were all below the floor.
+
+Queries replaced with head + component + three variants (`Ramen Recipe`, `Ramen Broth`,
+`Tonkotsu`, `Miso`, `Shoyu`), `top_n_serpapi` 30 → 25. Result:
+
+    union      66 -> 106        the 4 old queries overlapped 45%
+    to Moz     50 -> 78
+    survivors  26 -> 43         20 chosen from 43, not from 26
+    #1         instant-noodle toss -> seriouseats Tonkotsu Broth
+    #2                             -> justonecookbook Miso Ramen
+
+Shortcut bowls fell from ~10 of 20 to 4. New entrants are the authentic tier —
+mealsbymolly (DA **19**, top exceptionalism 91.2), sudachirecipes, gastroplant's vegan
+tonkotsu, honestcooking (35 ingredients / 20 steps), Serious Eats' pressure-cooker
+chintan shoyu.
+
+**But the floor still discards good work**, now demonstrated on a clean query set:
+epicurious tonkotsu (-1.49), doobydobap (-2.75), joshuaweissman best-tonkotsu (-3.75),
+seriouseats miso-butter again (-3.62). 35 of 78 dropped. That is the case for §AI editor.
+
+### A percentile that was really zero (26 rows)
+
+Chased the log line claiming a row was "saved outside a dish batch" while sitting inside
+one. Not a message bug — data loss. `_sanitize_scoring` strips 0.0 as proof-of-unmeasured,
+but `PERCENT_RANK` gives **exactly 0.0 to the bottom-ranked row of a cohort**. 26 master
+rows had lost a true percentile, each the lowest-power row of its own dish, each stamped
+with a false explanation. `fieldN` now decides: no cohort → strip; cohort → the zero is
+real. Fixed BEFORE the re-run so 795 wrote correct data. (795 did not exercise it — its
+minimum was 13.1; the unit test covers all three cases.)
+
+### The embedding moved to the write
+
+Curator: *"shouldn't the embedding logic run right thru the sql update logic path so
+nothing gets missed"* — correct, and it had already been missed. The refresh lived in the
+two HTTP endpoints, so a script, a job or the jobs CLI could change `queries` and leave
+`dishes.embedding` + `dishes_vec` describing the old ones, silently. Now inside
+`create_dish`/`update_dish`. Cheap unconditionally — `ensure_dish_embedding` is
+content-addressed.
+
+### THE AI EDITOR — docs/ai-editor-mediation.md
+
+Curator's design: statistical first pass, then hand the kept set AND the rejections to an
+AI editor for mediation both ways, thumbs up / thumbs down, mediation log kept for
+verification. Cost is not a constraint (low volume, every run). Four findings constrain it:
+
+1. **The reject pool is not persisted.** `dish_rejects` took 1 of 39 drops on 794 and 1
+   of 61 on 795. The rest live only in a log file. **Phase 0 is the ledger, not the AI.**
+2. **Editor's Choice is candidacy, NOT override** — `_pinned` is written twice and read
+   NOWHERE, so a pin must clear every gate again including the floor we want overturned.
+   Thumbs-up has to be an override with a recorded reason. Affects curator pins too.
+3. **Capture at run time** — a reject's Moz score and content are in NEITHER cache; free
+   at the moment of the drop, paid for afterwards.
+4. **`public_scoring.py` already settles the stars.** 3.0–5.0 half steps (never below 3 —
+   the index IS the filter), cuts on the blend VALUE not rank, frozen when stored. So the
+   AI judges WITHIN the cohort but emits an ABSOLUTE rubric band, and thumbs-down means
+   removal from the set, not one star.
+
+Rule: **overturn judgments, not facts.** Rubric axes: dish fidelity (grounded in the
+identity card — it alone would have caught the ramen #1), method completeness, craft
+specificity, source trust, and failure-mode coverage — the comparison ratio tracks a KNOWN
+failure mode, so the property that makes a dish worth ranking is what the ranking should
+reward.
+
+### Also
+
+- **SerpApi cancelled**, verified safe: `serp_provider=scaleserp`, no code calls the
+  Shopping/Amazon engines the $25/mo was held for. Fixed a stale guard —
+  `detect_recipe_path` gated on `SERPAPI_KEY` and would have silently assumed `/recipes`
+  for every publisher once that key left `.env` (Milk Street: 45 pages found vs 0).
+- **Pagination measured** — `/recipes` 4,829 rows, ~0.8s server, 4.8 MB with `summary=1`
+  and **83.2 MB** without (that is the default). `/dishes` and `/domains` have no limit at
+  all but are 156/321 rows. The list DOM is uncapped. Not a one-liner: search and sort are
+  client-side over the full cache.
+
+---
+
 ## START HERE — state of play as of 2026-08-10
 
 **Branch `split/enrichment-api`, pushed. Server restarted and current.**
@@ -3768,7 +3860,12 @@ author ourselves get full Recipe markup.
 
 ### Do first
 
-0. **REVIEW THE RAMEN PASS (job 794, dish `Ramen`, 2026-08-10 18:38, kept 20/30).**
+0. **BUILD THE CANDIDATE LEDGER** (`docs/ai-editor-mediation.md` Phase 0) — persist every
+   drop with stage + reason + scores at run time. The AI editor cannot mediate over a pool
+   we throw away, and `dish_rejects` is currently capturing 1 drop in 40. Then Phase 1
+   (shadow) on Ramen, whose two runs are the natural before/after.
+
+0b. ~~REVIEW THE RAMEN PASS (job 794)~~ — DONE, and re-run as job 795 with fixed queries.
    The curator ran it and asked for an opinion. It is the sharpest test of the whole
    keyword thesis: ramen has the highest comparison ratio measured — **272%**, the only
    dish where `best ramen recipe` OUTDRAWS `ramen recipe` — so if picking the best is
