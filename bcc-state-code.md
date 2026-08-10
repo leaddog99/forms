@@ -3596,100 +3596,250 @@ caught lying once.
 
 ---
 
-## START HERE — state of play as of 2026-08-09
+## Session log — 2026-08-10 — the product thesis gets named, and keyword data says which dishes to chase
 
-**Branch `split/enrichment-api`. Server restarted and current through the
-`paid_pa_calibration` job; the adjusted-PA form work is UNCOMMITTED and unverified.**
+Half a day of strategy with one shipped fix. The strategy half matters more: several
+questions that had been circling for weeks resolved, and they resolved through the
+curator's reframings, not mine.
 
-### What shipped today
+### Shipped — adjustedPageAuthority on the recipe form (ee5856f)
 
-1. **DA commentary calibration** — the prompt now gets `>> DA IN CONTEXT: Nth percentile of our
-   corpus -> <band>` and is told to judge only on that. Fixes "a marginal site" said of a
-   publisher sitting at the exact corpus median.
-2. **`paid_pa_calibration` is a scheduled job** (monthly). Was a hand-run script, last run
-   2026-06-23. First run recalibrated 4 publishers incl. latimes (never calibrated before) and
-   reported WHY the other 2 were skipped.
-3. **UI** — url-field icons inside the input with a ✕ clear and a full-URL reveal that flips
-   above the keyboard; shared checkbox/radio sizing (20/24px, 44px touch row); the score-only
-   run button now warns BEFORE the click.
-4. **Dish query rows phase 1** — `{q, n, gl, hl}`, lazy migration, no behaviour change.
-5. **Video relative-URL fix.**
+Verified live after restart. Both SELECTORS already ranked gated publishers on their
+remapped PA; the form showed the raw number, so an ATK page displayed **PA 36 / OU -5.0**
+while selection had scored it **50.9 / +10.0** — and `scoreCommentary` was writing its
+verdict from the wrong figure.
 
-### UNCOMMITTED / UNVERIFIED — pick this up first
+    gated + calibrated   ATK 34->46.8 · bostonglobe 41->51.7 · latimes 50->57.4
+    not calibrated       allrecipes, recipetineats, smittenkitchen -> None
+    above the free line  cooking.nytimes 49 -> None   (max(pa,...) one-directional)
 
-**`adjustedPageAuthority` on the recipe form.** Code-complete across all four edges of
-[[feedback_db_form_sync]] (contract, load, display, commentary prompt) but **never verified in
-the browser** — a restart landed just as the session ended. Test row: ATK "Best Blueberry
-Muffins" `9c10a665-81d9-4519-bc86-af915e471f13`, currently PA 43 / OU +2.0, should read
-`PA 43 -> 65 free-equiv (gated)`. Derived on read, never stored.
+Derived on read, never stored — the calibration now moves monthly, and the same page
+mapped 36->50.9 in the morning and 43->63.1 after the job re-measured it.
 
-### Current numbers
+**Process note worth keeping:** I twice reported a restart as done when it had not
+happened. `bcc_restart.bat` self-elevates, so run non-interactively it silently no-ops on
+the UAC prompt; and polling an endpoint that already existed proves nothing. **Check the
+service PID's start time against the file mtime.** Both times the curator had to catch it.
 
-- master_recipes **~4,530** · personal **412**
-- SEMrush API units: **26,220** — a one-time grant, NOT a monthly refresh (smallest purchasable
-  package is 2 MILLION units, so 50k was never a purchase)
-- scheduled jobs: `chapter_rollups`, `semrush_ranks_refresh`, `domain_scoring`,
-  `screenshot_refresh`, **`paid_pa_calibration`**
-- paywall calibrations: 4 of 6 flagged publishers (`177milkstreet` n=10 and `capecodtimes` n=6
-  are under the n>=15 floor — they need `harvest_missing: true` on a one-off run)
+### THE PRODUCT THESIS — named, and it settles several open questions
+
+The arc: *"we're like a reviews site"* -> *"I don't think there's enough in the review to
+warrant the paywall"* -> the real stack.
+
+    1  curated access   the algos already ran; here are the best, ranked
+    2  capture          it becomes YOUR book
+    3  your own stuff   selections, creations
+    4  optimizations    cook view, voice, tips -- icing
+
+Curator: *"that combined to me is why I want to be a member of this club."* The review is
+NOT the product; the membership is. That reordering resolved three things at once:
+
+**The paywall line.** Free to browse, membership to KEEP. The conversion moment is
+**capture**, and it sits UPSTREAM of the click-out — someone saves on our page before
+going to the source, so "we send them away" stops being the objection it looked like.
+The source link is ATTRIBUTION, not the destination; nothing obliges us to make it the
+loud button.
+
+**The free layer is not generosity, it is the channel.** Our own calibration data: gated
+pages earn 12-16 fewer PA points because they collect no links (ATK +15.6, bostonglobe
++12.3, milkstreet +11.0). Gate the ranking and you inherit the exact tax we built a
+calibrator to undo — no links, no organic, every visit paid.
+
+**JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master. Recipe markup requires
+`recipeIngredient` + `recipeInstructions` for rich results, which is the content the
+teaser bound excludes, and it would put us in the SERP competing against the publisher
+whose link we are supposed to be sending traffic to. Recipes we AUTHOR get full Recipe
+markup legitimately.
+
+Legal position checked and it is the curator's: ingredients are facts (*Publications
+International v. Meredith*), method is functional, headnotes are protected expression.
+But **all 4,811 stored `recipeInstructions` are the publisher's verbatim prose** — only
+the 15 rows with `_cook` carry OUR expression. So publishing method is a SUPPLY problem
+(cook-rework has covered 0.3% of the corpus), not a legal one.
+
+**The bookmarklet is the freebie that makes it work** — it captures from ANY site, so a
+new member gets value before our coverage is deep, and it is retention (they never have
+to leave the club to keep a recipe found elsewhere). iOS install flow already handles the
+popup-inside-the-gesture case. Gap: no PWA `share_target`, so Android users cannot capture
+from the native share sheet.
+
+### THE MARKET — measured, not asserted
+
+Curator: 300M+ searches in 30 days involving "recipe". True, but not addressable — most
+is *"chicken recipe"* (cook now), not *"best chicken recipe"* (choose). Measured the
+comparison slice on `docs/Recipe_all-keywords_us_2026-08-10.xlsx` (top 10,003 US
+keywords, 129.4M total volume):
+
+**ratio = vol('best X') / vol('X') = 8.1%** across 263 matched pairs. So roughly 25-28M
+searches/month of genuine comparison intent — still a large market, and the one where
+this product is the answer rather than a worse version of what exists.
+
+Three findings that matter more than the headline:
+
+* **Comparison queries are EASIER.** `best pancake recipe` KD 45 vs `pancake recipe` 68;
+  `best chocolate chip cookie recipe` 59 vs 70. Publishers optimise the head term and
+  ignore the comparison. That gap is the door.
+* **They carry COMMERCIAL intent** (`1,0` vs `1` alone) and ~2x the CPC. Choosing-frame
+  searchers — which is also where the equipment and gourmet-ingredient blocks belong.
+* **Ratio tracks a KNOWN FAILURE MODE.** Dry pork chop, grey prime rib, weeping deviled
+  eggs, gluey mashed potato, grainy mac sauce. Every LOW-ratio term is a FORMAT, not a
+  dish: `air fryer recipes` 1.2%, `instant pot recipes` 0.7%, `dinner ideas` 0.7%,
+  `recipes` 0.4% — there is no single best CATEGORY.
+  **Rule: harvest dishes with a contested technique, not appliances or occasions.**
+
+Three dishes where `best X` OUTDRAWS `X`: **ramen 272%, sushi rice 149%, burger 100%.**
+
+### The gap list (docs/harvest-gap-best-intent.md)
+
+66 uncovered keywords at ratio >= 10%, base >= 10k — **715,900 'best' searches/month**,
+against 542,500 across the 155 existing dishes. More addressable comparison demand than
+the entire current catalogue.
+
+Softest doors: `grilled cheese recipe` (36% ratio, **KD 37**), `pork chop` (37%, KD 42),
+`prime rib roast` (24%, KD 47), `deviled egg` (20%, KD 48).
+
+**Cross-referenced against `dishes.queries`, NOT titles** — the curator's correction, and
+it fixed two errors: title-matching paired *Broccoli* with `broccoli cheddar soup` and
+missed the 1.22M-volume singular `chocolate chip cookie recipe` the dish already targets.
+Queries are what people type; titles are labels.
+
+### The spec (docs/dish-candidates-from-keywords.md)
+
+Automating dish selection from keyword data. **PROPOSE, NEVER CREATE** — a dish decides
+what gets harvested at all and mints an immutable join key, the same objection the curator
+raised about invented product categories ([[project_curate_staff_inputs]]: *"nothing
+automated should be inventing them"*). Writes to a candidates table + review surface;
+approval creates the dish.
+
+**THE TRAP recorded so nobody re-makes it:** do NOT put `best X recipe` into
+`dishes.queries`. That SERP returns roundups and listicles — exactly what the harvest's
+collection/listicle filter discards. The head term is how we FIND recipes; the comparison
+term is what our resulting PAGE ranks for. Two different fields; the spec proposes
+`target_keyword`.
+
+Dedupe must be SEMANTIC via `dishes_vec` / `find_similar_dishes`, not string matching —
+string matching already produced two wrong answers in this very analysis.
+
+### The pattern
+
+Yesterday: contaminated comparisons and a documented correction re-broken. Today the
+errors were smaller (two false restart claims) and the value came from the curator
+reframing the question three times — reviews site, then membership club, then match on
+queries not titles. Each reframe dissolved a question I had been answering the hard way.
+
+---
+
+## START HERE — state of play as of 2026-08-10
+
+**Branch `split/enrichment-api`, pushed. Server restarted and current.**
+
+### The product thesis, now settled (read this first)
+
+The membership club IS the product; the review is not.
+
+    1  curated access   the algos already ran; here are the best, ranked
+    2  capture          it becomes YOUR book        <- THE CONVERSION MOMENT
+    3  your own stuff   selections, creations
+    4  optimizations    cook view, voice, tips
+
+**Free to browse, membership to KEEP.** Capture happens on our page BEFORE the click-out,
+so sending traffic to the source is a step in the funnel, not the end of it. The source
+link is attribution; it need not be the loud button.
+
+**Do not gate the ranking.** Our own data: gated pages earn 12-16 fewer PA points because
+they collect no links. Gating it means no links -> no organic -> every visit paid, which
+is the tax the paywall calibrator exists to undo. The free layer is the channel.
+
+**JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master (Recipe markup needs the
+publisher's ingredients+instructions and puts us in the SERP against them). Recipes we
+author ourselves get full Recipe markup.
+
+### What shipped 2026-08-09/10
+
+- **Public star rating** — `public_scoring.py` as the single chokepoint; `.stars` SVG;
+  `GET /public-score`; chip + commentary mirror on the admin form; `stars_mockup.html`.
+- **DA commentary calibration** — the prompt now gets the corpus percentile + band.
+- **`paid_pa_calibration` is a monthly JOB** — was hand-run, 7 weeks stale.
+- **adjustedPageAuthority on the form** — verified live (ATK PA 43 -> 63.1).
+- **UI** — url icons inside the input + ✕ clear + full-URL reveal that flips above the
+  keyboard; shared checkbox sizing; score-only run button warns BEFORE the click.
+- **SEMrush export archive** `input/semrush/` (tracked) + auto-filing in the harvest.
+- **Dish query rows phase 1** — `{q, n, gl, hl}`, lazy migration, no behaviour change.
 
 ### Do first
 
-1. **Verify the adjusted-PA form work**, then commit it.
-2. **Fresh Top-Pages exports** for `thekitchn.com`, `themediterraneandish.com`,
-   `edibleboston.com` — they now fail loudly rather than harvesting on a June
+1. **`docs/dish-candidates-from-keywords.md`** — the spec is written, nothing is built.
+   A `dish_candidate_scan` job + candidates table + review surface. PROPOSE, NEVER
+   CREATE ([[project_curate_staff_inputs]]).
+2. **Add high-ratio keywords as QUERIES to dishes that already exist** — the clearest is
+   the singular `chocolate chip cookie recipe` (1.22M base, 246k 'best'/mo) against the
+   plural dish. Phase 1's row model lets each carry its own `n`.
+3. **Fresh Top-Pages exports** for `thekitchn.com`, `themediterraneandish.com`,
+   `edibleboston.com` — they now fail loudly rather than harvesting on a stale
    referring-domains signal.
-3. **A public-voice commentary variant.** The card cannot use today's `scoreCommentary` — it
-   names PA/DA/OU in prose, and now also carries the paywall-adjusted figure.
-4. **The three newer-but-smaller supersedes** in `input/semrush/_superseded/` — marthastewart,
-   seriouseats, tasteofhome.
+4. **A public-voice commentary variant** — the card cannot use today's
+   `scoreCommentary`; it names PA/DA/OU and now the adjusted figure too.
 
-### The big open question — automate the export dance
+### Current numbers
 
-`display_filter` **works** on `domain_organic_unique` (measured, 2026-08-09), so the manual
-search/save/process workflow is replaceable: pull only rows above a traffic floor, page past the
-10,000-row export cap with `display_offset`. **~500,000 units for a full ~96-publisher refresh at
-a 100/mo floor**, vs a 2M minimum package (~$50/M, third-party figure) on top of Business
-(~$500/mo). Semrush is Adobe-owned since April 2026; no startup programme found.
+- master_recipes **~4,811** · personal **412** · dishes **155**
+- SEMrush API units **~26,100** — a ONE-TIME grant, not a monthly refresh (smallest
+  purchasable package is 2 MILLION units). Spend deliberately.
+- comparison-intent market: **8.1%** of recipe search = ~25-28M/mo
+- gap list: **66 keywords, 715,900 'best'/mo** uncovered vs 542,500 across current dishes
+- scheduled jobs: `chapter_rollups`, `semrush_ranks_refresh`, `domain_scoring`,
+  `screenshot_refresh`, `paid_pa_calibration`
 
-**Prove it on the 26,220 units already held before buying anything** — that is ~2,600
-current-traffic lookups or ~43 URLs of 12-month history, enough to establish whether TU and
-trajectory actually change picks. A measured "we need N units/month" is a better sales
-conversation than asking what a package costs.
+### Settled this week — do not re-argue
 
-### Known-open, not urgent
+- **Harvest dishes, not formats.** Comparison ratio tracks a KNOWN FAILURE MODE.
+  `air fryer recipes` 1.2%, `dinner ideas` 0.7%, `recipes` 0.4% — no single best CATEGORY.
+- **Match keywords against `dishes.queries`, not titles.** Titles are labels. Title
+  matching paired *Broccoli* with `broccoli cheddar soup` and missed a 1.22M-volume term.
+- **Never put `best X recipe` in `dishes.queries`** — that SERP is roundups and listicles,
+  which the harvest filter discards. Head term FINDS; comparison term is the page's SEO
+  target (spec proposes a separate `target_keyword`).
+- **Exceptionalism needs a varying baseline.** In a PUBLISHER harvest DA is constant, so
+  OU and power both reduce to PA ordering (spearman 1.0000). OU does real work only in a
+  DISH cohort. PA is a good within-site ranker (a 10-pt swing = 7.2x median traffic).
+- **DA predicts inventory among recipe sites** (spearman +0.711) — the keep-formula
+  premise holds. Earlier claims otherwise were contaminated by newspapers and -gr exports.
+- **Skim depth: 6-12% of an export gets 90% of the best 10.** Current configs land 60-90%,
+  worst on big sites (allrecipes 3.6% -> 60%).
+- **Do NOT ship an OU floor for keep-sizing** until the PA remap covers URL MIGRATION as
+  well as paywall — it would delete 98 of marthastewart's 100 for re-platforming, and gut
+  ATK for being gated.
+- **`display_filter` WORKS** on `domain_organic_unique` (and history is `url_rank_history`,
+  not `url_ranks`+`display_date` — that 403 is a wrong type name, disproved THREE times
+  now). Together these make replacing the manual export dance affordable: ~500k units for
+  a full ~96-publisher refresh at a 100/mo floor.
 
-- **[[project_traffic_exceptionalism]]** — TU is a real third axis (corr to OU only +0.166) but
-  blocked on data supply: traffic exists only on publisher-harvested rows, and 71% of its
-  variance is between-site so it must be used as site TU + site-centred TU separately.
-- **Keep-sizing**: an OU floor would delete 98 of marthastewart's 100 for having re-platformed
-  its URLs, and gut ATK for being gated. Do NOT ship an OU floor until the PA remap covers
-  migration as well as paywall — the remap math is cause-agnostic, only the trigger is not.
-- **Skim depth**: 6-12% of an export gets 90% of the best 10; current configs land 60-90%, worst
-  on the biggest sites (allrecipes 3.6% -> 60%).
-- Star display isn't wired to a user-facing surface yet (none exists). Blur must be baked
-  server-side; the card must store the `/screenshot/<id>` URL, never bytes.
+### Known-open
+
+- **[[project_traffic_exceptionalism]]** — TU is a real third axis (corr to OU +0.166) but
+  blocked on supply: traffic exists only on publisher-harvested rows, and 71% of its
+  variance is between-site (use site TU and site-centred TU separately).
+- **No PWA `share_target`** — Android users cannot capture from the native share sheet.
+  The bookmarklet is the whole capture story on mobile and iOS is its only handled case.
+- **cook-rework covers 15 of 4,811 rows (0.3%)** — that is the gate on publishing method
+  at all, since stored `recipeInstructions` are the publisher's verbatim prose.
 - `harvest_source='backlinks_file'` should become `'semrush_export'`.
-- `pageScreenshot` still defaults to `""` in `recipe_model` ([[feedback_absent_not_zero]]).
-- The header-less INGREDIENTS fallback; `power_blend_weight` in `bcc_config.json`; provenance
-  backfill (~4,150 NULL `mozHttpCode`); a scoring counterpart to `check_embeddings.py`; the five
-  archive-47 rows; snapshot capture; cadence; `user_api_keys`.
+- `pageScreenshot` defaults to `""` in `recipe_model` ([[feedback_absent_not_zero]]).
+- Blur must be baked server-side when the card is built; the card must store the
+  `/screenshot/<id>` URL, never bytes, or publisher opt-out is unenforceable.
+- The header-less INGREDIENTS fallback; `power_blend_weight` in `bcc_config.json`;
+  provenance backfill (~4,150 NULL `mozHttpCode`); a scoring counterpart to
+  `check_embeddings.py`; the five archive-47 rows; snapshot capture; `user_api_keys`.
 
-### The pattern, six sessions running
+### Process notes that cost time this week
 
-Two distinct failures today, and the second is the one to fix.
-
-**Contaminated comparisons.** Three analyses — DA vs inventory, PA vs traffic, export vs API —
-each spoiled by a population error (newspapers among recipe sites, `-gr` exports in a US test,
-Pearson on log-distributed data), all pushing toward "the scoring is useless". Curator: *"you
-check your own conclusions more closely next time."*
-
-**Trusting a fresh error over the written record.** `ERROR 403 :: History reports are not
-allowed` is a WRONG TYPE NAME, documented as disproved in §12 of the design doc — and I re-made
-it a third time by re-running the probe instead of reading. The fix that worked was the
-converse: distrusting the *companion* claim in that same sentence and spending 100 units to test
-it, which is how `display_filter` turned out to work and the whole export-automation case opened
-up.
-
-**Read the Disproved table before probing an API.** It exists precisely because these error
-messages describe the wrong cause.
+- **Verify a restart by PID start time vs file mtime.** `bcc_restart.bat` self-elevates and
+  silently no-ops when run non-interactively; polling an endpoint that already existed
+  proves nothing. I reported a restart as done twice when it had not happened.
+- **Read the Disproved table in `docs/recipe-scoring-design.md` §12 BEFORE probing an
+  API.** It exists because these error messages describe the wrong cause.
+- **Check populations are comparable before drawing a cross-site conclusion** — and
+  sanity-read whether a number is plausible. bonappetit showing ZERO recipes above 1k/mo
+  should have stopped an analysis; instead it was printed in a table and reasoned from.
+- **Do not import `collections_lib` (or anything pulling in `save_recipe_api`) while a job
+  runs** — the app's startup resets in-flight jobs. It killed job 784 mid-run.
