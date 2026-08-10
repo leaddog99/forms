@@ -3137,17 +3137,10 @@ async def create_dish_endpoint(request: Request):
                 auto_enrich=auto_enrich,
                 description=description,
             )
-            # Auto-describe (when blank) + embed so the dish is
-            # immediately participating in cohort matches. Best-effort:
-            # failures don't block the create.
-            try:
-                from input.pipeline.embeddings import ensure_dish_embedding
-                ensure_dish_embedding(conn, created)
-                # Re-read so the response reflects the auto-filled
-                # description + chapter.
-                created = dishes_lib.get_dish(conn, name) or created
-            except Exception as e:
-                print(f"[WARN] post-create dish embed failed for {name!r}: {e}")
+            # create_dish now auto-describes + embeds inside the write itself,
+            # so every caller gets it and not just this endpoint. Re-read so the
+            # response reflects the auto-filled description + chapter.
+            created = dishes_lib.get_dish(conn, name) or created
             return created
     except sqlite3.IntegrityError:
         # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name
@@ -3184,16 +3177,10 @@ async def update_dish_endpoint(name: str, request: Request):
                 raise HTTPException(status_code=400, detail=str(e))
             if updated is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
-            # If the edit touched queries/description, the embedding's
-            # input text may have changed. Re-embed (idempotent — the
-            # staleness check inside ensure_dish_embedding compares the
-            # cached embedding_text to the freshly composed one).
-            try:
-                from input.pipeline.embeddings import ensure_dish_embedding
-                ensure_dish_embedding(conn, updated)
-                updated = dishes_lib.get_dish(conn, name) or updated
-            except Exception as e:
-                print(f"[WARN] post-edit dish re-embed failed for {name!r}: {e}")
+            # update_dish re-embeds inside the write, so an edit made by a
+            # script or a job cannot leave the vector describing old queries.
+            # Re-read to pick up anything that refresh auto-filled.
+            updated = dishes_lib.get_dish(conn, name) or updated
             return updated
     except HTTPException:
         raise
@@ -8355,6 +8342,11 @@ _MOZ_SCORING_KEYS = ("pageAuthority", "domainAuthority", "ouScore", "power",
                      "ouPercentile", "powerPercentile", "fieldAvgPower",
                      "fieldMaxPower", "fieldMinPower", "fieldN",
                      "dishCompetitivenessPct")
+# Of those, the COHORT-derived ones — computed only when a batch ranked this row
+# against its peers. For these, 0.0 is a LEGAL measurement: PERCENT_RANK gives
+# exactly 0.0 to the bottom-ranked member of every cohort, and fieldMinPower is
+# the cohort's floor. `fieldN` is NOT here — fieldN 0 really does mean no cohort.
+_COHORT_SCORING_KEYS = ("ouPercentile", "powerPercentile", "fieldMinPower")
 # DELIBERATELY NOT IN THAT LIST: `mozHttpCode`. It is the one _scoring field
 # where 0 is a REAL measurement — "Moz answered and has no data for this URL",
 # i.e. any PA on the row is a placeholder. Stripping it would delete exactly the
@@ -8388,7 +8380,19 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
     scoring = recipe.get("_scoring")
     if not isinstance(scoring, dict):
         return
-    dropped = [k for k in _MOZ_SCORING_KEYS
+    # A cohort was computed iff fieldN says so. When it was, the cohort-derived
+    # zeros are REAL (the bottom row of any ranking is the 0th percentile) and
+    # must survive — same exemption logic as mozHttpCode above, established by
+    # measurement: 26 master rows had already lost a true percentile this way,
+    # each of them the lowest-power row of its own dish batch, and each stamped
+    # with a scoringNote blaming "saved outside a dish batch" while sitting IN one.
+    try:
+        _field_n = float(scoring.get("fieldN") or 0)
+    except (TypeError, ValueError):
+        _field_n = 0.0
+    _strip_keys = (_MOZ_SCORING_KEYS if _field_n <= 0 else
+                   tuple(k for k in _MOZ_SCORING_KEYS if k not in _COHORT_SCORING_KEYS))
+    dropped = [k for k in _strip_keys
                if k in scoring and isinstance(scoring[k], (int, float))
                and not isinstance(scoring[k], bool) and float(scoring[k]) == 0.0]
     if not dropped:
@@ -8402,7 +8406,11 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
     # survived, Moz answered fine and only the dish-cohort signals were absent
     # (a recipe saved outside a batch has no cohort to be a percentile of). Saying
     # "no Moz data" there would send the reader to the wrong place.
-    if scoring.get("pageAuthority") is not None:
+    if _field_n > 0:
+        # It WAS in a batch — fieldN proves it. Do not repeat the no-cohort story.
+        reason = (f"ranked in a cohort of {int(_field_n)}; the dropped field(s) "
+                  f"{dropped} arrived as an unmeasured 0 from the caller")
+    elif scoring.get("pageAuthority") is not None:
         reason = ("saved outside a dish batch, so there was no cohort to rank "
                   "against — Moz page/domain authority above is measured")
     else:

@@ -857,7 +857,37 @@ def create_dish(conn: sqlite3.Connection, *,
          refresh_ttl_days, notes, now, now, 1 if auto_enrich else 0, description),
     )
     conn.commit()
-    return get_dish(conn, name)  # round-trip so we return the canonical shape
+    created = get_dish(conn, name)  # round-trip so we return the canonical shape
+    _refresh_dish_embedding(conn, created)
+    return created
+
+
+def _refresh_dish_embedding(conn: sqlite3.Connection, dish_row: Optional[dict]) -> None:
+    """Bring the dish's vector back in step with the row that was just written.
+
+    This lives HERE, at the write, and not in the HTTP endpoints where it used
+    to sit. `compose_dish_text` is built from name + description + queries (or
+    the identity_card), so any write can invalidate the vector — and an
+    invariant that each caller has to remember is one a caller eventually
+    forgets. It already had: only the two endpoints re-embedded, so a script,
+    a job or the jobs CLI editing a dish left `dishes.embedding` and
+    `dishes_vec` describing the OLD queries, silently, with no error to notice.
+
+    Cheap to call unconditionally: `ensure_dish_embedding` is content-addressed
+    (it compares the stored `embedding_text` against the freshly composed text)
+    so an update that did not change the embed text costs one string compare and
+    no API call. Best-effort by design — a dish write must not fail because the
+    embedding provider is down; the staleness check will catch it on the next
+    write, and scripts/check_embeddings.py is the backstop.
+    """
+    if not dish_row:
+        return
+    try:
+        from input.pipeline.embeddings import ensure_dish_embedding
+        ensure_dish_embedding(conn, dish_row)
+    except Exception as e:
+        print(f"[EMBED] dish {dish_row.get('name')!r} re-embed failed: "
+              f"{type(e).__name__}: {e}")
 
 
 # The fields PATCH is allowed to update. `name` is intentionally absent —
@@ -992,7 +1022,11 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
         params,
     )
     conn.commit()
-    return get_dish(conn, name)
+    updated = get_dish(conn, name)
+    # Deliberately AFTER the write and NOT on the no-op early return above: a
+    # patch that changed nothing cannot have staled the vector.
+    _refresh_dish_embedding(conn, updated)
+    return updated
 
 
 def delete_dish(conn: sqlite3.Connection, name: str) -> bool:
