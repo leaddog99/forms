@@ -3834,6 +3834,19 @@ author ourselves get full Recipe markup.
   The bookmarklet is the whole capture story on mobile and iOS is its only handled case.
 - **cook-rework covers 15 of 4,811 rows (0.3%)** — that is the gate on publishing method
   at all, since stored `recipeInstructions` are the publisher's verbatim prose.
+- **MUST BUILD: a real guard against the import-resets-jobs landmine.** Importing
+  `collections_lib` (or anything that pulls in `save_recipe_api`) runs the app's startup,
+  which RESETS in-flight jobs. It killed job 784 mid-run, and was tripped again on
+  2026-08-10 while testing the serp guard (harmless that time — nothing was running).
+  Today this exists ONLY as a warning in this file, which is not a guard. Options: make
+  the startup job-reset refuse to run when the importing process is not the service (a
+  PID/entrypoint check), or gate the reset behind an explicit env flag the service sets.
+  Until then it will keep being re-tripped by exactly the people who read this file.
+- **Pagination — the lists read the whole table** (see 2026-08-10 measurements): `/recipes`
+  has `limit`/`offset` but they DEFAULT TO 0 = unbounded, and the only GET caller does not
+  pass them; `/dishes` and `/domains` have no limit/offset at all. Not a one-line fix —
+  search/sort/chapter filtering all live CLIENT-side over the full cache, so adding LIMIT
+  without moving filter+sort server-side would silently make search only search page 1.
 - `harvest_source='backlinks_file'` should become `'semrush_export'`.
 - `pageScreenshot` defaults to `""` in `recipe_model` ([[feedback_absent_not_zero]]).
 - Blur must be baked server-side when the card is built; the card must store the
