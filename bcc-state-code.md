@@ -3768,6 +3768,17 @@ author ourselves get full Recipe markup.
 
 ### Do first
 
+0. **REVIEW THE RAMEN PASS (job 794, dish `Ramen`, 2026-08-10 18:38, kept 20/30).**
+   The curator ran it and asked for an opinion. It is the sharpest test of the whole
+   keyword thesis: ramen has the highest comparison ratio measured — **272%**, the only
+   dish where `best ramen recipe` OUTDRAWS `ramen recipe` — so if picking the best is
+   ever worth doing, it is worth doing here. Worth checking: did the winners look like
+   genuine best-of contenders or SEO-optimised filler; did the collection/listicle filter
+   behave on a dish whose SERP is roundup-heavy; and how do the 20 kept rows score on
+   OU/power against the corpus. `top_n_serpapi=30 / top_n_final=20` is a thin funnel
+   (1.5x) versus the 4-5x the publisher harvests use — that ratio is the first thing to
+   question if the winners disappoint.
+
 1. **`docs/dish-candidates-from-keywords.md`** — the spec is written, nothing is built.
    A `dish_candidate_scan` job + candidates table + review surface. PROPOSE, NEVER
    CREATE ([[project_curate_staff_inputs]]).
