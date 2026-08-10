@@ -31,7 +31,6 @@ import requests
 from input.pipeline.url_scoring import score_url_via_moz  # loads .env on import
 from input.pipeline.url_utils import normalize_url, root_domain
 
-_SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
 
 def ensure_collection_members_table(conn: sqlite3.Connection) -> None:
@@ -239,8 +238,19 @@ def detect_recipe_path(domain) -> str:
     common candidates (`recipes`, `recipe`, `recipe-finder`…); whichever has the most
     `site:domain/<cand>` leaf hits wins. If none, broad-scan `site:domain` and infer
     the dominant first segment among leaf (slug) URLs, preferring a recipe-ish one.
-    Returns the segment (e.g. 'recipes') or '' if undetectable."""
-    if not _SERPAPI_KEY:
+    Returns the segment (e.g. 'recipes') or '' if undetectable.
+
+    The key check asks the ACTIVE provider (serp_search.has_key), not SERPAPI_KEY —
+    that guard predated the Scale SERP switch and would have silently disabled
+    detection for everyone the day the (now unused) SerpApi key left .env. Falling
+    back to a bare 'recipes' assumption is exactly what this function exists to
+    avoid: for Milk Street the DETECTED path found 45 recipe pages vs 0 for the
+    assumption, so the fallback WARNS instead of degrading silently."""
+    from input.pipeline.serp_search import has_key, active_provider
+    if not has_key():
+        print(f"  [detect_recipe_path] no SERP key for active provider "
+              f"'{active_provider()}' — assuming '/recipes' for {domain} "
+              f"(detection skipped; harvest may come back empty)")
         return "recipes"
     best, best_n = "", 0
     for cand in ("recipes", "recipe", "recipe-finder", "cooking"):
