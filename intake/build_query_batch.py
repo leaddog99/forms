@@ -1567,6 +1567,15 @@ def build_batch(
         },
         "ou_fit": ou_fit,
         "entries": final,
+        # The dropped entries themselves, not just the counts above. The caller
+        # persists them via candidate_ledger — a reject is free to record HERE
+        # (we are holding its url/title/rank/DA/PA/OU right now) and costs money
+        # to reacquire later: the OU-dropped URLs land in neither the Moz cache
+        # nor the extract cache. See docs/ai-editor-mediation.md.
+        "dropped_disallowed": dropped_disallowed,
+        "dropped_not_recipe": dropped_not_recipe,
+        "dropped_moz": dropped_moz,
+        "dropped_low_ou": dropped_low_ou,
         # Full (url, DA, PA) cohort fed to _compute_custom_ou — the
         # caller persists these to dish_run_data_points so the
         # chapter-level fit aggregates the same URL universe the

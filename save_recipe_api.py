@@ -6457,6 +6457,28 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         except Exception as e:
             print(f"[REFRESH-DISH] data-points persist/score failed (non-fatal): {e}")
 
+    # The candidate ledger — every URL this run considered and what it decided,
+    # winners and losers alike (docs/ai-editor-mediation.md Phase 0). Written
+    # HERE, before the save loop, for the same reason the data points are: a
+    # crash mid-save must not cost us the record of what we threw away. Until
+    # this existed the drops lived only in the log file — dish_rejects captured
+    # 1 of 39 on job 794 and 1 of 61 on job 795.
+    try:
+        from input.pipeline import candidate_ledger
+        ledger_rows = candidate_ledger.build_rows(
+            batch_result, collection_type="dish", collection_key=canonical_name,
+            job_id=job.get("id"),
+            run_started_at=job.get("started_at") or datetime.now(timezone.utc).isoformat(),
+        )
+        with _db() as conn:
+            n_led = candidate_ledger.record_run(conn, ledger_rows)
+            summary = candidate_ledger.run_summary(conn, job.get("id"))
+        n_med = sum(1 for r in ledger_rows if r["outcome"] == "dropped" and r["overturnable"])
+        print(f"[REFRESH-DISH] candidate ledger: {n_led} row(s) {summary} "
+              f"— {n_med} reconsiderable by the editor")
+    except Exception as e:
+        print(f"[REFRESH-DISH] candidate ledger failed (non-fatal): {e}")
+
     # Recompute + persist THIS dish's chapter fit now that its cohort data
     # points are refreshed. Every dish update keeps the chapter formula
     # current, so chapter fits never drift from the dish corpus — there is
