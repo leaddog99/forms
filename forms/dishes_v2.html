@@ -323,6 +323,15 @@
         </section>
 
         <section class="ed-block">
+          <details class="ed-accordion" id="candAcc">
+            <summary>Considered <span class="ed-pill" id="candCount" style="margin-left:6px"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Every URL the last run looked at, not just the winners. <b>Reconsiderable</b> = dropped by a judgement we could argue with (the OU floor, a detection miss, a missing Moz score). Drops that are matters of <b>fact</b> — your blocklist, an archive page, a roundup — are counted but not listed, because nothing should overturn them.</p>
+            <div id="candSummary" class="ed-kv" style="margin-bottom:12px"></div>
+            <ol class="ed-t10" id="candlist"><li class="ed-empty-fit">Loading…</li></ol>
+          </details>
+        </section>
+
+        <section class="ed-block">
           <details class="ed-accordion">
             <summary>Metadata</summary>
             <div class="ed-kv" style="margin-top:12px">
@@ -354,6 +363,7 @@
       loadTopRecipes(d.name);
       loadCohort(d.name);
       loadRejects(d.name);
+      loadCandidates(d.name);
       loadEditorsChoice(d.name);
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
@@ -361,6 +371,55 @@
         const btn = e.target.closest('[data-unpin]'); if (!btn) return;
         removePin(d.name, btn.getAttribute('data-unpin'));
       });
+    }
+
+    // Candidate ledger for the last run (docs/ai-editor-mediation.md). The Rejects
+    // panel above shows only what died at extract/save; this shows the whole funnel,
+    // including the 35-of-78 an OU floor can discard without leaving a trace anywhere
+    // but a log file. Facts are counted, never listed — listing them invites someone
+    // to argue with the blocklist.
+    async function loadCandidates(name){
+      const wrap = $('#candlist'); if(!wrap) return;
+      try {
+        const r = await fetch(`/candidates?collection_type=dish&collection_key=${encodeURIComponent(name)}`);
+        if(!r.ok){ wrap.innerHTML = `<li class="ed-empty-fit">Failed (${r.status})</li>`; return; }
+        const d = await r.json();
+        const rec = d.reconsider || [];
+        const cnt = $('#candCount'); if(cnt) cnt.textContent = rec.length || '';
+        const sum = $('#candSummary');
+        if(sum){
+          const s = d.summary || {};
+          const total = Object.values(s).reduce((a,b)=>a+b,0);
+          sum.innerHTML = total
+            ? `<div class="k">Considered</div><div class="v">${total}</div>
+               <div class="k">Kept</div><div class="v">${s.kept || 0}</div>
+               <div class="k">Reconsiderable</div><div class="v">${rec.length}</div>
+               <div class="k">Settled as fact</div><div class="v">${d.excluded_as_fact || 0}</div>`
+            : '';
+        }
+        if(!total_or_zero(d)){ wrap.innerHTML = '<li class="ed-empty-fit">No ledger yet — it is written by the next run.</li>'; return; }
+        if(!rec.length){ wrap.innerHTML = '<li class="ed-empty-fit">Nothing to reconsider: every drop was a matter of fact.</li>'; return; }
+        wrap.innerHTML = rec.map(x => {
+          let host = x.url; try { host = new URL(x.url).hostname.replace(/^www\./,''); } catch(_){}
+          const near = x.stage === 'rank_cut';
+          return `<li class="ed-t10-row" style="${near?'background:#fbf3e9;':''}">
+            <span class="ed-t10-main">
+              <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.title || host)}</a>
+                <span class="ed-t10-grade" title="stage it was dropped at">${escapeHtml(x.stage)}</span></span>
+              <span class="ed-t10-sub">${escapeHtml(x.reason || '')}</span>
+            </span>
+            <span class="ed-t10-stats">
+              <span class="ed-t10-stat score"><span class="v">${typeof x.ou==='number'?x.ou.toFixed(1):'—'}</span><span class="l">ou</span></span>
+              <span class="ed-t10-stat pct"><span class="v">${x.da ?? '—'}</span><span class="l">da</span></span>
+              <span class="ed-t10-stat pct"><span class="v">${x.pa ?? '—'}</span><span class="l">pa</span></span>
+            </span>
+          </li>`;
+        }).join('');
+      } catch(e){ wrap.innerHTML = `<li class="ed-empty-fit">${escapeHtml(String(e.message||e))}</li>`; }
+    }
+    // An empty ledger is a legitimate state (no run since it shipped), not an error.
+    function total_or_zero(d){
+      return Object.values(d.summary || {}).reduce((a,b)=>a+b,0) > 0;
     }
 
     // Rejects from the last run — URLs that ranked but were dropped (extract/

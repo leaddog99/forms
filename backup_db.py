@@ -64,6 +64,11 @@ _EXCLUDE_TABLES = ("llm_extract_cache", "metabase_url")
 _ORDER_OVERRIDE = {
     "recipes": '"recipe_id"',
     "master_recipes": '"recipe_id"',
+    # Append-only run audit; its `id` is an autoincrement reassigned on reinsert,
+    # so order by the durable identity (its UNIQUE key) instead. NOT excluded as a
+    # cache: the ledger cannot be rebuilt — being the only surviving record of what
+    # a run discarded is the entire reason it exists.
+    "run_candidates": '"job_id", "url_normalized"',
 }
 
 

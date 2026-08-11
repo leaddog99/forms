@@ -4041,6 +4041,50 @@ def list_dish_editors_choice(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+@app.get("/candidates")
+def list_run_candidates(collection_type: str = "dish", collection_key: str = "",
+                        job_id: int = 0, limit: int = 500):
+    """The candidate ledger for one run — every URL considered and what was decided.
+
+    Defaults to the LATEST run for (collection_type, collection_key) so a caller
+    that only knows "the Ramen dish" does not have to hunt for a job id first.
+    `mediatable` splits it the way the AI editor will read it: kept, what may be
+    reconsidered, and a count of what is excluded as fact.
+    """
+    try:
+        from input.pipeline import candidate_ledger
+        with _db() as conn:
+            candidate_ledger.ensure_candidate_ledger_table(conn)
+            jid = int(job_id or 0)
+            if not jid:
+                key = (collection_key or "").strip()
+                if not key:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="collection_key or job_id is required")
+                row = conn.execute(
+                    "SELECT job_id FROM run_candidates WHERE collection_type = ? "
+                    "AND collection_key = ? ORDER BY run_started_at DESC, id DESC "
+                    "LIMIT 1", (collection_type, key)).fetchone()
+                if not row:
+                    # No run ledgered yet — an empty ledger is a legitimate state
+                    # (nothing has run since this shipped), not an error.
+                    return {"job_id": None, "kept": [], "reconsider": [],
+                            "excluded_as_fact": 0, "summary": {}}
+                jid = row[0]
+            packet = candidate_ledger.mediatable_for_run(conn, jid)
+            packet["job_id"] = jid
+            packet["summary"] = candidate_ledger.run_summary(conn, jid)
+            lim = max(1, min(int(limit or 500), 2000))
+            packet["reconsider"] = packet["reconsider"][:lim]
+            return packet
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] list_run_candidates failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @app.post("/dishes/{name}/editors-choice")
 def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(...)):
     """Pin a URL to a dish (admin only). Body: {url, note?}. Idempotent on the
@@ -5285,6 +5329,21 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             from input.pipeline import domains_lib
             domains_lib.ensure_domains_table(conn)  # self-heal: guarantee harvest_source col exists
             collections_lib.replace_members(conn, "publisher", host, res["members"])
+            # Candidate ledger — the pre-scoring drops, which replace_members above
+            # never sees (it only ever receives what reached Moz).
+            try:
+                from input.pipeline import candidate_ledger
+                _led = candidate_ledger.build_publisher_rows(
+                    res, collection_key=host, job_id=job.get("id"),
+                    run_started_at=(job.get("started_at")
+                                    or datetime.now(timezone.utc).isoformat()))
+                _n = candidate_ledger.record_run(conn, _led)
+                _nm = sum(1 for r in _led if r["outcome"] == "dropped" and r["overturnable"])
+                print(f"[PUBLISHER-REFRESH] candidate ledger: {_n} row(s) "
+                      f"{candidate_ledger.run_summary(conn, job.get('id'))} "
+                      f"— {_nm} reconsiderable by the editor")
+            except Exception as e:
+                print(f"[PUBLISHER-REFRESH] candidate ledger failed (non-fatal): {e}")
             # A LEARNED recipe_path is only trustworthy if the run it was learned
             # from actually found recipes. When recipe_pass is 0, the auto-detect
             # inferred the path from a sample in which NOTHING was a recipe — it is

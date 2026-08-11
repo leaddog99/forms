@@ -146,6 +146,15 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # forward-compat with rows created during the brief window.
     ensure_dish_rejects_table(conn)
     ensure_editors_choice_table(conn)
+    # The candidate ledger is created with the schema, not lazily on first write:
+    # a read surface (the dish/domain forms) must be able to query an empty table
+    # rather than 500 because no run has happened yet on this install. It is shared
+    # with the publisher harvest, hence the import rather than a local definition.
+    try:
+        from input.pipeline.candidate_ledger import ensure_candidate_ledger_table
+        ensure_candidate_ledger_table(conn)
+    except Exception as e:   # never block dish-table setup on it
+        print(f"[SCHEMA] candidate ledger table setup skipped: {e}")
     # Index on refresh_ttl_days so the agent's "find due" query is cheap.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_dishes_ttl "

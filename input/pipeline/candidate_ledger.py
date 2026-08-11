@@ -42,7 +42,10 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
 # Stage a candidate reached before it stopped. Ordered by how far it got.
-STAGES = ("disallowed", "is_recipe", "moz", "min_ou", "rank_cut", "kept")
+# `prefilter` is the publisher harvest's pre-fetch pass (path scope, archive/taxonomy
+# URLs, roundup titles) — it has no dish-batch equivalent, which is why it is named
+# rather than folded into `disallowed`.
+STAGES = ("disallowed", "prefilter", "is_recipe", "moz", "min_ou", "rank_cut", "kept")
 
 # reason prefix -> (stage, overturnable). Longest prefix wins.
 # Overturnable = an inference we drew. Not overturnable = something we observed,
@@ -53,6 +56,8 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     ("disallowed-path",   "disallowed", False),   # curator blocklist
     ("domain-exclude",    "is_recipe",  False),   # curator per-domain exclude
     ("collection-title",  "is_recipe",  False),   # it IS a roundup/listicle
+    ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope
+    ("archive-url",       "prefilter",  False),   # /tag/, /category/, feeds — never a recipe
     # --- inferences: overturnable ----------------------------------------
     ("no-recipe-structure", "is_recipe", True),   # detection failure
     ("recipe-score<",       "is_recipe", True),   # heuristic threshold
@@ -165,6 +170,10 @@ def build_rows(batch: dict, *, collection_type: str, collection_key: str,
         if key in seen:      # a URL can appear in two stage lists (e.g. fetch-fail
             return           # re-scored); the FIRST/most-advanced classification wins
         seen.add(key)
+        # An entry may name the stage it died at (the publisher harvest does — the
+        # same `collection-title` reason fires pre-fetch there and mid-filter in the
+        # dish batch). Reason still decides overturnability; only the location moves.
+        stage = e.get("_stage") or stage
         rows.append({
             "job_id": job_id,
             "collection_type": collection_type,
@@ -202,6 +211,63 @@ def build_rows(batch: dict, *, collection_type: str, collection_key: str,
             reason = e.get("_dropped_reason")
             stage, over = classify(reason)
             add(e, stage=stage, outcome="dropped", reason=reason, overturnable=over)
+    return rows
+
+
+def build_publisher_rows(harvest: dict, *, collection_key: str,
+                         job_id: Optional[int], run_started_at: str) -> list[dict]:
+    """Ledger rows for one `harvest_publisher_top` result.
+
+    The publisher path needs less than the dish path, and it is worth saying why:
+    everything that REACHES Moz is already persisted — `collection_members` keeps
+    the losers too, flagged `selected=0` (15,102 rows today). So a publisher's
+    `rank_cut` class was never lost. What was lost is everything discarded BEFORE
+    scoring — the path scope, the archive/roundup pre-filter, the is_recipe drops
+    and the Moz failures — which is exactly `harvest['dropped_candidates']`.
+
+    The scored members are still written here so one run reads as one ledger, and
+    so `mediatable_for_run` can hand the editor the kept set and the rejects
+    together without joining across two tables with different lifecycles.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    rows: list[dict] = []
+    seen: set[str] = set()
+
+    def add(e: dict, *, stage: str, outcome: str, reason: Optional[str],
+            overturnable: bool, final_rank: Optional[int] = None) -> None:
+        url = (e.get("url") or "").strip()
+        if not url:
+            return
+        key = _norm(url)
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append({
+            "job_id": job_id, "collection_type": "publisher",
+            "collection_key": collection_key, "run_started_at": run_started_at,
+            "url": url, "url_normalized": key, "title": e.get("title") or None,
+            "serp_rank": e.get("file_seq"), "queries": json.dumps([], ensure_ascii=False),
+            "stage": stage, "outcome": outcome, "reason": reason,
+            "overturnable": 1 if overturnable else 0,
+            "da": _num(e.get("da")), "pa": _num(e.get("pa")), "ou": _num(e.get("ou")),
+            "exc_score": _num(e.get("rank_score")), "exc_grade": None,
+            "final_rank": final_rank, "pinned": 0, "created_at": now,
+        })
+
+    for m in harvest.get("members") or []:
+        if m.get("selected"):
+            add(m, stage="kept", outcome="kept", reason=None, overturnable=False,
+                final_rank=m.get("rank"))
+        else:
+            # Scored but below `keep` — the publisher analogue of rank_cut, and the
+            # cheapest thing an editor can promote: already fetched, already scored.
+            add(m, stage="rank_cut", outcome="dropped", reason="below keep",
+                overturnable=True, final_rank=m.get("rank"))
+    for e in harvest.get("dropped_candidates") or []:
+        reason = e.get("_dropped_reason")
+        stage, over = classify(reason)
+        add(e, stage=e.get("_stage") or stage, outcome="dropped",
+            reason=reason, overturnable=over)
     return rows
 
 

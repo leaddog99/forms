@@ -421,6 +421,17 @@
             </div>
             <ol class="ed-t10" id="domainCohortList"><li class="ed-empty-fit">Open or refresh to load the scored cohort.</li></ol>
           </details>
+
+          <!-- The cohort panel above can only show what REACHED Moz. This one shows
+               what never got there — path-scoped out, pre-filtered as an archive or
+               roundup, failed the recipe check, or Moz had no data. Until the
+               candidate ledger those drops existed only in the run's log file. -->
+          <details class="ed-accordion" id="domainCandAcc" style="margin-top:16px">
+            <summary>Dropped before scoring <span class="ed-count" id="domainCandCount"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 10px">Candidates discarded <b>before</b> Moz, so they never appear in the cohort above. Only the <b>arguable</b> ones are listed — a detection miss or a missing Moz score. Drops that are matters of fact (off-path, an archive page, a roundup title) are counted only: they are your rules and the page's own structure, not judgement calls.</p>
+            <div id="domainCandSummary" class="ed-kv" style="margin-bottom:10px"></div>
+            <ol class="ed-t10" id="domainCandList"><li class="ed-empty-fit">Open or refresh to load.</li></ol>
+          </details>
         </section>
 
         <section class="ed-block">
@@ -484,6 +495,7 @@
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
       loadDomainTop(d.domain);         // stored winners (kept top-N)
       loadDomainCohort(d.domain);      // full scored cohort (persistent panel)
+      loadDomainCandidates(d.domain);  // pre-scoring drops (candidate ledger)
     }
 
     // Activate the chosen source group (highlight + enable its inputs); dim + disable
@@ -636,6 +648,41 @@
     // ledger by rank_score: winners ★ + dimmed also-rans. The count shows in the summary
     // even while collapsed. Curation buttons appear only when there are pickable (not-yet-
     // ingested) also-rans to process.
+    // Pre-scoring drops from the candidate ledger — the half of the funnel the
+    // cohort panel structurally cannot show, because those URLs never reached Moz.
+    async function loadDomainCandidates(domain){
+      const el = $('#domainCandList'); if (!el) return;
+      const gen = topGen;
+      try {
+        const r = await fetch(`/candidates?collection_type=publisher&collection_key=${encodeURIComponent(domain)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (selected !== domain || gen !== topGen) return;
+        // Only the pre-scoring stages — rank_cut already has a home in the cohort panel.
+        const rows = (d.reconsider || []).filter(x => x.stage !== 'rank_cut');
+        const cnt = $('#domainCandCount'); if (cnt) cnt.textContent = rows.length || '';
+        const sum = $('#domainCandSummary');
+        const s = d.summary || {};
+        const total = Object.values(s).reduce((a,b)=>a+b,0);
+        if (sum) sum.innerHTML = total
+          ? `<div class="k">Considered</div><div class="v">${total}</div>
+             <div class="k">Arguable</div><div class="v">${rows.length}</div>
+             <div class="k">Settled as fact</div><div class="v">${d.excluded_as_fact || 0}</div>` : '';
+        if (!total){ el.innerHTML = '<li class="ed-empty-fit">No ledger yet — written by the next harvest.</li>'; return; }
+        if (!rows.length){ el.innerHTML = '<li class="ed-empty-fit">Nothing arguable: every pre-scoring drop was a matter of fact.</li>'; return; }
+        el.innerHTML = rows.map(x => {
+          let host = x.url; try { host = new URL(x.url).pathname; } catch(_){}
+          return `<li class="ed-t10-row">
+            <span class="ed-t10-main">
+              <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.title || host)}</a>
+                <span class="ed-t10-grade" title="stage it was dropped at">${escapeHtml(x.stage)}</span></span>
+              <span class="ed-t10-sub">${escapeHtml(x.reason || '')}</span>
+            </span>
+          </li>`;
+        }).join('');
+      } catch(e){ el.innerHTML = `<li class="ed-empty-fit">${escapeHtml(String(e.message||e))}</li>`; }
+    }
+
     async function loadDomainCohort(domain){
       const el = $('#domainCohortList'); if (!el) return;
       const gen = topGen;

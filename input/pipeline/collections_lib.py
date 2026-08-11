@@ -926,9 +926,26 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # = no scoping, for publishers with no clean prefix (e.g. Boston Globe /YYYY/.../slug —
     # use a verbatim query instead). Drops off-path clutter (/gallery, /video, section
     # indexes) before any fetch spend.
+    # Candidate ledger (docs/ai-editor-mediation.md): every URL this harvest throws
+    # away, captured AT the drop. The publisher path already persists everything that
+    # reaches Moz — collection_members keeps the losers too, flagged selected=0 — so
+    # what was missing here is precisely the PRE-SCORING drops below, which until now
+    # existed only in this function's stdout.
+    dropped_candidates: list[dict] = []
+
+    def _drop(url: str, title: str, reason: str, stage: str) -> None:
+        dropped_candidates.append({"url": url, "title": title or "",
+                                   "_dropped_reason": reason, "_stage": stage})
+
     if recipe_path:
         n_before = len(found)
-        found = [(l, t) for l, t in found if _under_path(l, recipe_path)]
+        kept_scoped = []
+        for l, t in found:
+            if _under_path(l, recipe_path):
+                kept_scoped.append((l, t))
+            else:
+                _drop(l, t, f"off-path:/{recipe_path}", "prefilter")
+        found = kept_scoped
         if len(found) < n_before:
             print(f"  [harvest] path-scoped to /{recipe_path}/ — dropped "
                   f"{n_before - len(found)} off-path URL(s), {len(found)} under path")
@@ -942,8 +959,15 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # caught downstream by _is_recipe_filter when check_recipe is ON.
     from intake.build_query_batch import _looks_like_recipe_collection
     n_raw = len(found)
-    found = [(l, t) for l, t in found
-             if not _looks_like_archive(l) and not _looks_like_recipe_collection(t)]
+    kept_pre = []
+    for l, t in found:
+        if _looks_like_archive(l):
+            _drop(l, t, "archive-url", "prefilter")
+        elif _looks_like_recipe_collection(t):
+            _drop(l, t, "collection-title", "prefilter")
+        else:
+            kept_pre.append((l, t))
+    found = kept_pre
     if len(found) < n_raw:
         print(f"  [harvest] pre-filtered {n_raw - len(found)} archive/taxonomy/collection URLs "
               f"({len(found)} candidates remain)")
@@ -958,7 +982,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     recipe_pass = found
     if check_recipe and found:
         from intake.build_query_batch import _is_recipe_filter
-        kept, _dropped = _is_recipe_filter(
+        kept, _dropped = _is_recipe_filter(   # _dropped: full entry dicts, ledgered below
             [{"url": l, "title": t} for l, t in found],
             capture_source="domain_harvest",
             capture_provenance={"domain": domain, "discover_source": source},
@@ -968,6 +992,11 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             domain_lang=domain_lang,
             should_cancel=should_cancel)
         recipe_pass = [(e["url"], e.get("title") or "") for e in kept]
+        # These carry their own `_dropped_reason` (no-recipe-structure, fetch-failed,
+        # collection-title, recipe-score<N …) — the same vocabulary the dish batch
+        # emits, because it is the same filter. Let candidate_ledger.classify() read
+        # it rather than restating the mapping here.
+        dropped_candidates.extend(_dropped or [])
         # Auto-learn the JS-rendered hint: if any kept recipe was only recoverable
         # via a full-browser render escalation, flag the domain so the form shows it
         # (and future runs can fetch render-first). Idempotent + best-effort.
@@ -1011,6 +1040,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             _fp = lambda v: ("?" if v is None else f"{v:>3}")
             print(f"  [{i:>2}/{n_rp}] MOZ-OK   pa={_fp(pa)} da={_fp(da)}  {url}")
         else:
+            _drop(url, title, "moz-unavailable", "moz")
             print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
     _ms = _us.moz_row_stats()
     print(f"  [harvest] Moz rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
@@ -1127,4 +1157,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     xt = f" · translated {n_xt} titles → {_base_l}" if n_xt else ""
     print(f"  [harvest] captured {n_img} thumbnails for {keep} selected{extra}{xt}")
     return {"members": scored, "discovered": n_raw, "recipe_pass": len(recipe_pass),
-            "scored": len(scored), "recipe_path": used_path, "query": query}
+            "scored": len(scored), "recipe_path": used_path, "query": query,
+            # Everything discarded before scoring, captured at the drop. The caller
+            # persists it via candidate_ledger — see _handle_publisher_refresh_job.
+            "dropped_candidates": dropped_candidates}
