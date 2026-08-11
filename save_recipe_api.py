@@ -4075,6 +4075,26 @@ def list_run_candidates(collection_type: str = "dish", collection_key: str = "",
             packet = candidate_ledger.mediatable_for_run(conn, jid)
             packet["job_id"] = jid
             packet["summary"] = candidate_ledger.run_summary(conn, jid)
+            # The editor's shadow verdicts, joined onto the rows they judged, so the
+            # form shows the arithmetic and the disagreement in one place rather than
+            # asking the curator to hold two screens in their head.
+            try:
+                from input.pipeline import ai_editor
+                ai_editor.ensure_mediation_table(conn)
+                med = {m["url_normalized"]: m for m in ai_editor.list_for_run(conn, jid)}
+                for r in packet["kept"] + packet["reconsider"]:
+                    m = med.get(r["url_normalized"])
+                    if m:
+                        r["mediation"] = {
+                            "verdict": m["verdict"], "band": m["band"],
+                            "ordinal_rank": m["ordinal_rank"],
+                            "evidence": m["evidence"], "rationale": m["rationale"],
+                            "applied": bool(m["applied"]),
+                        }
+                packet["mediated"] = bool(med)
+            except Exception as e:
+                print(f"[candidates] mediation join skipped: {e}")
+                packet["mediated"] = False
             lim = max(1, min(int(limit or 500), 2000))
             packet["reconsider"] = packet["reconsider"][:lim]
             return packet
@@ -6801,6 +6821,48 @@ async def _handle_chapter_rollups_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("chapter_rollups", _handle_chapter_rollups_job)
+
+
+async def _handle_ai_mediation_job(job: dict) -> dict:
+    """SHADOW review of one run by the AI editor (docs/ai-editor-mediation.md).
+
+    Params: {job_id} — the run to review — or {dish}/{collection_key} to review that
+    collection's LATEST ledgered run. Records verdicts and changes nothing; the
+    handler refuses `apply` rather than accepting it and quietly ignoring it.
+    """
+    p = job.get("params") or {}
+    if isinstance(p, str):
+        p = json.loads(p or "{}")
+    if p.get("apply"):
+        raise ValueError("apply is Phase 2 — shadow mediation records verdicts only")
+    target = int(p.get("job_id") or 0)
+    ctype = p.get("collection_type") or "dish"
+    ckey = (p.get("collection_key") or p.get("dish") or "").strip()
+
+    def _run():
+        from input.pipeline import ai_editor
+        with _db() as conn:
+            jid = target
+            if not jid:
+                if not ckey:
+                    raise ValueError("job_id or collection_key/dish is required")
+                row = conn.execute(
+                    "SELECT job_id FROM run_candidates WHERE collection_type = ? "
+                    "AND collection_key = ? ORDER BY run_started_at DESC, id DESC "
+                    "LIMIT 1", (ctype, ckey)).fetchone()
+                if not row:
+                    raise ValueError(
+                        f"no candidate ledger for {ctype} {ckey!r} — the ledger is "
+                        f"written by a run, so run one first")
+                jid = row[0]
+            return ai_editor.mediate_run(conn, jid, apply=False)
+
+    res = await asyncio.to_thread(_run)
+    print(f"[AI-EDITOR] shadow review: {res}")
+    return res
+
+
+jobs_lib.register_handler("ai_mediation", _handle_ai_mediation_job)
 
 
 async def _handle_screenshot_refresh_job(job: dict) -> dict:

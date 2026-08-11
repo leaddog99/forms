@@ -327,6 +327,7 @@
             <summary>Considered <span class="ed-pill" id="candCount" style="margin-left:6px"></span></summary>
             <p class="ed-notes-help" style="margin:10px 0 12px">Every URL the last run looked at, not just the winners. <b>Reconsiderable</b> = dropped by a judgement we could argue with (the OU floor, a detection miss, a missing Moz score). Drops that are matters of <b>fact</b> — your blocklist, an archive page, a roundup — are counted but not listed, because nothing should overturn them.</p>
             <div id="candSummary" class="ed-kv" style="margin-bottom:12px"></div>
+            <div id="candEditor" style="margin-bottom:14px"></div>
             <ol class="ed-t10" id="candlist"><li class="ed-empty-fit">Loading…</li></ol>
           </details>
         </section>
@@ -398,14 +399,44 @@
             : '';
         }
         if(!total_or_zero(d)){ wrap.innerHTML = '<li class="ed-empty-fit">No ledger yet — it is written by the next run.</li>'; return; }
+        // The editor's shadow verdicts on the KEPT set, shown above the drops: a
+        // demote is the disagreement worth reading first, and it is advisory only
+        // (applied=false) until Phase 2. Ordered by the editor's own ranking so the
+        // reordering is legible next to the arithmetic's.
+        const kept = (d.kept || []).filter(k => k.mediation);
+        const ed = $('#candEditor');
+        if (ed) {
+          if (!kept.length) { ed.innerHTML = d.mediated ? '' :
+            '<p class="ed-notes-help" style="margin:0 0 12px">No editorial review of this run yet.</p>'; }
+          else {
+            kept.sort((a,b) => (a.mediation.ordinal_rank||99) - (b.mediation.ordinal_rank||99));
+            ed.innerHTML = `<p class="ed-notes-help" style="margin:0 0 8px"><b>AI editor — advisory only.</b> Its ranking and bands are recorded, not applied.</p>
+              <ol class="ed-t10">` + kept.map(k => {
+              const m = k.mediation, moved = (m.ordinal_rank && m.ordinal_rank !== k.final_rank);
+              const bad = m.verdict === 'demote';
+              return `<li class="ed-t10-row" style="${bad?'background:#fdf0ee;':''}">
+                <span class="ed-t10-main">
+                  <span class="ed-t10-name"><a href="${escapeHtml(k.url)}" target="_blank" rel="noopener">${escapeHtml(k.title || k.url)}</a>
+                    <span class="ed-t10-grade" title="editor's verdict">${escapeHtml(m.verdict)}</span>
+                    ${moved?`<span class="ed-t10-grade" title="editor's rank vs the run's">#${m.ordinal_rank} was #${k.final_rank}</span>`:''}</span>
+                  <span class="ed-t10-sub">${escapeHtml(m.evidence || '')}</span>
+                </span>
+                <span class="ed-t10-stats">
+                  <span class="ed-t10-stat score"><span class="v">${m.band != null ? m.band.toFixed(1) : '—'}</span><span class="l">band</span></span>
+                </span>
+              </li>`; }).join('') + '</ol>';
+          }
+        }
         if(!rec.length){ wrap.innerHTML = '<li class="ed-empty-fit">Nothing to reconsider: every drop was a matter of fact.</li>'; return; }
         wrap.innerHTML = rec.map(x => {
           let host = x.url; try { host = new URL(x.url).hostname.replace(/^www\./,''); } catch(_){}
           const near = x.stage === 'rank_cut';
-          return `<li class="ed-t10-row" style="${near?'background:#fbf3e9;':''}">
+          const nom = x.mediation && x.mediation.verdict === 'nominate';
+          return `<li class="ed-t10-row" style="${nom?'background:#eef6ee;':(near?'background:#fbf3e9;':'')}">
             <span class="ed-t10-main">
               <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.title || host)}</a>
-                <span class="ed-t10-grade" title="stage it was dropped at">${escapeHtml(x.stage)}</span></span>
+                <span class="ed-t10-grade" title="stage it was dropped at">${escapeHtml(x.stage)}</span>
+                ${nom?'<span class="ed-t10-grade" title="the editor thinks this is worth fetching and judging properly">nominated</span>':''}</span>
               <span class="ed-t10-sub">${escapeHtml(x.reason || '')}</span>
             </span>
             <span class="ed-t10-stats">
