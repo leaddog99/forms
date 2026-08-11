@@ -4064,9 +4064,52 @@
       _imageGenTweak = (r._imageMeta && r._imageMeta.tweak) || '';   // restore the saved generate tweak
       applyHeroImageFromUrl();
 
+      // Wait for a deferred page-screenshot capture and fill it in when it lands.
+      // Backs off 2s -> 4s -> 6s ... and gives up at ~40s, which is the nav
+      // timeout (25s) plus browser start and JPEG shrink; past that the capture
+      // has failed rather than being slow. Cancels itself if the form moves to a
+      // different recipe, so a fast editor never gets a stale screenshot pasted
+      // into the wrong record.
+      window._shotPollToken = (window._shotPollToken || 0) + 1;
+      window.pollForScreenshot = async function (sourceUrl) {
+        const token = window._shotPollToken;
+        const started = Date.now();
+        let waitMs = 2000;
+        while (Date.now() - started < 40000) {
+          await new Promise(r => setTimeout(r, waitMs));
+          if (token !== window._shotPollToken) return;    // a different recipe loaded
+          try {
+            const res = await fetch(`${API}/screenshot-status?url=${encodeURIComponent(sourceUrl)}`);
+            if (!res.ok) return;
+            const d = await res.json();
+            if (d.ready && d.url) {
+              if (token !== window._shotPollToken) return;
+              const block = document.getElementById('pageScreenshotBlock');
+              const img = document.getElementById('pageScreenshotImg');
+              const link = document.getElementById('pageScreenshotLink');
+              if (img && block && link) {
+                img.src = d.url;
+                link.href = sourceUrl || d.url;
+                block.style.display = '';
+              }
+              // Carry it on the in-memory recipe so a save made without a reload
+              // still records it (the server backstop covers the rest).
+              try {
+                window.currentRecipe = window.currentRecipe || {};
+                currentRecipe._source = currentRecipe._source || {};
+                currentRecipe._source.pageScreenshot = d.url;
+              } catch (_) {}
+              return;
+            }
+          } catch (_) { return; }
+          waitMs = Math.min(waitMs + 2000, 8000);
+        }
+      };
+
       // Page screenshot — display when present + source URL exists.
       // Tile is clickable to open the source page.
       (function showPageScreenshot() {
+        // (poller defined at module scope below; see pollForScreenshot)
         const block = document.getElementById('pageScreenshotBlock');
         const img = document.getElementById('pageScreenshotImg');
         const link = document.getElementById('pageScreenshotLink');
@@ -4081,6 +4124,12 @@
         } else {
           block.style.display = 'none';
           img.src = '';
+          // The capture is now DEFERRED — the extract no longer waits up to 25s
+          // of headless Chromium for it — so "absent" here usually means "still
+          // being taken", not "there isn't one". Poll until it lands, then fill
+          // the field in place. Bounded, and silent: a screenshot that never
+          // arrives simply leaves the block hidden, exactly as before.
+          if (src) pollForScreenshot(src);
         }
       })();
 

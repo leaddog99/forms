@@ -32,9 +32,7 @@ if errorlevel 1 (
 echo Restarting service %SVC% ...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Restart-Service -Name '%SVC%' -Force; Start-Sleep -Seconds 3"
 
-REM --- verify the listener came back on %PORT% ---
-echo Waiting for http://localhost:%PORT% to listen ...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "for($i=0;$i -lt 25;$i++){ $c=Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue; if($c){ $p=($c.OwningProcess|Select-Object -First 1); $pi=Get-CimInstance Win32_Process -Filter ('ProcessId='+$p); Write-Host ('  listening: pid='+$p+' started '+$pi.CreationDate); exit 0 }; Start-Sleep -Seconds 1 }; Write-Host '  ***** PORT %PORT% DID NOT COME UP — check: nssm status %SVC% / Get-Service %SVC% *****'; exit 1"
+Rrespowershell -NoProfile -ExecutionPolicy Bypass -Command "for($i=0;$i -lt 25;$i++){ $c=Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue; if($c){ $p=($c.OwningProcess|Select-Object -First 1); $pi=Get-CimInstance Win32_Process -Filter ('ProcessId='+$p); Write-Host ('  listening: pid='+$p+' started '+$pi.CreationDate); exit 0 }; Start-Sleep -Seconds 1 }; Write-Host '  ***** PORT %PORT% DID NOT COME UP — check: nssm status %SVC% / Get-Service %SVC% *****'; exit 1"
 
 echo.
 echo Service %SVC% restarted. Manage it with:  nssm status %SVC%  ^|  nssm edit %SVC%  (logs/cmdline)

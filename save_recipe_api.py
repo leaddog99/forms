@@ -44,6 +44,7 @@ import time
 from datetime import datetime, timezone
 import os
 import traceback
+import threading   # deferred page-screenshot capture (see _attach_page_screenshot)
 from pathlib import Path
 
 # Shadow the builtin print so every existing `print(...)` call in this
@@ -7485,8 +7486,28 @@ _SELF_PERMALINK_RE = re.compile(
     r"/r/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 
 
+def _stored_screenshot_url(url_norm: str) -> Optional[str]:
+    """`/screenshot/<id>` if a blob for this URL is ALREADY in media.db, else None.
+
+    The id is a deterministic hash of url_normalized, so existence is a cheap
+    lookup with no capture. Three callers need exactly this question: the capture
+    helper (so a URL we already shot is never re-shot), the /screenshot-status
+    poll the form uses while a deferred capture runs, and the save backstop.
+    """
+    if not url_norm:
+        return None
+    try:
+        from input.pipeline.screenshot_pipeline import screenshot_id_for, read_screenshot_blob
+        sid = screenshot_id_for(url_norm)
+        if read_screenshot_blob(MEDIA_DB_PATH, sid):
+            return f"/screenshot/{sid}"
+    except Exception:
+        pass
+    return None
+
+
 def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None,
-                            *, force: bool = False) -> None:
+                            *, force: bool = False, defer: bool = False) -> None:
     """Capture the source page and stamp `_source.pageScreenshot`.
 
     Stored as a compact JPEG BLOB in media.db keyed by url_normalized; the
@@ -7515,6 +7536,48 @@ def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None,
     # is deterministic from url_normalized, so a re-shoot overwrites the same
     # media.db row and the recipe's /screenshot/<id> URL never changes.
     if not force and (recipe.get("_source") or {}).get("pageScreenshot"):
+        return
+    # Already shot this URL? Stamp it for free. Without this, a deferred capture
+    # would be re-run on every later extract of the same page (a cache hit no
+    # longer carries pageScreenshot into the cached row), paying 25s of Chromium
+    # to produce a blob we are already holding.
+    if not force:
+        existing = _stored_screenshot_url(url_norm)
+        if existing:
+            src = recipe.get("_source") or {}
+            src["pageScreenshot"] = existing
+            recipe["_source"] = src
+            if timings is not None:
+                timings["screenshot_ms"] = 0
+            return
+    if defer:
+        # DEFERRED: hand the capture to a background thread and return now.
+        #
+        # Measured 2026-08-11 on the live log: the capture is 60-75% of an
+        # interactive extract — 22s of 27s, worst case 31s of 43s — while a
+        # cache-warm extract is 6s. A user watching a spinner for 40 seconds
+        # reloads, which is exactly what happened on an allrecipes egg foo
+        # young: the server finished at 08:22:49 and the browser had already
+        # gone, so the work was done and thrown away, and the retry looked
+        # instant because the blob was by then stored.
+        #
+        # Nothing is stamped on the recipe here. The id is derivable from
+        # url_normalized, so we COULD stamp the /screenshot/<id> URL up front —
+        # but 45 of 45 captures failed in one recent refresh job, and stamping a
+        # URL for a blob that may never exist asserts something false
+        # ([[absent-is-not-zero]]). The client polls /screenshot-status instead,
+        # and _backfill_screenshot_on_save is the backstop for whoever does not.
+        def _bg():
+            try:
+                from input.pipeline.screenshot_pipeline import capture_and_store_blob
+                shot = capture_and_store_blob(url, url_norm, MEDIA_DB_PATH)
+                print(f"[SCREENSHOT] deferred capture {'stored ' + shot if shot else 'FAILED'} "
+                      f"for {url_norm}")
+            except Exception as e:
+                print(f"[SCREENSHOT] deferred capture failed for {url_norm}: {e}")
+        threading.Thread(target=_bg, name=f"shot:{url_norm[:40]}", daemon=True).start()
+        if timings is not None:
+            timings["screenshot_ms"] = 0     # honestly zero: we did not wait
         return
     try:
         from input.pipeline.screenshot_pipeline import capture_and_store_blob
@@ -8793,6 +8856,22 @@ def _save_recipe_core(payload: dict) -> dict:
     # send zeros. See _sanitize_scoring for why 0 is never a legal measurement.
     _sanitize_scoring(recipe_dict, normalized_source_url)
 
+    # Deferred-screenshot backstop. The interactive extract no longer waits for
+    # the capture, so a recipe can reach save with pageScreenshot unset while the
+    # blob has since landed. Stamp it here rather than relying on the form having
+    # polled — every save passes through this function, and a screenshot that
+    # exists but is not referenced is a silent loss of something already paid for.
+    try:
+        _src = recipe_dict.get("_source") or {}
+        if not (_src.get("pageScreenshot") or "").strip():
+            _shot = _stored_screenshot_url(normalized_source_url)
+            if _shot:
+                _src["pageScreenshot"] = _shot
+                recipe_dict["_source"] = _src
+                print(f"[SCREENSHOT] backfilled at save: {_shot}")
+    except Exception as e:
+        print(f"[SCREENSHOT] save backstop skipped: {e}")
+
     # Dedup: if a row already exists for (url_normalized, user_id) in the
     # OWNER'S table, adopt ITS recipe_id instead of the form-sent UUID so
     # the existing record gets updated rather than creating a parallel
@@ -9690,10 +9769,13 @@ async def extract_from_markdown_endpoint(
             # Every extract carries equipment (fast lane emits none). See _ensure_equipment.
             _ensure_equipment(recipe, path_used=path_used)
 
-            # Page screenshot BEFORE the cache write, so it travels with the
-            # cached row — same ordering the URL path uses. This path (the
-            # bookmarklet) had never attempted a capture at all.
-            _attach_page_screenshot(recipe, effective_url, url_norm, timings)
+            # Page screenshot — DEFERRED on this path, because this is the one a
+            # human sits and waits on (bookmarklet -> form). Capture was 60-75% of
+            # the wait and cost an allrecipes extract its whole response. The
+            # batch/URL path keeps the synchronous capture so cached rows still
+            # carry a screenshot; here the form polls /screenshot-status and the
+            # save backstop catches anyone who does not.
+            _attach_page_screenshot(recipe, effective_url, url_norm, timings, defer=True)
 
             cache_status, drift = _extract_cache_write(url_norm, recipe, prior_fingerprint=prior_fp)
 
@@ -10266,6 +10348,27 @@ async def extract_from_url_endpoint(
         if msg.startswith("Failed to fetch/convert URL"):
             raise HTTPException(status_code=502, detail=msg)
         raise HTTPException(status_code=500, detail=msg)
+
+
+@app.get("/screenshot-status")
+def screenshot_status_endpoint(url: str = ""):
+    """Has the deferred capture for this source URL landed yet?
+
+    {"ready": bool, "url": "/screenshot/<id>"|None}. The form polls this after an
+    extract instead of holding the request open for up to 25 seconds of headless
+    Chromium. Cheap: a deterministic id plus one media.db lookup, no capture is
+    ever triggered from here — a poll that could start work would let a reload
+    loop spawn browsers.
+    """
+    try:
+        norm = normalize_url((url or "").strip()) or ""
+        if not norm:
+            return {"ready": False, "url": None}
+        shot = _stored_screenshot_url(norm)
+        return {"ready": bool(shot), "url": shot}
+    except Exception as e:
+        print(f"[ERROR] screenshot_status failed: {e}")
+        return {"ready": False, "url": None}
 
 
 @app.get("/screenshot/{screenshot_id}")
