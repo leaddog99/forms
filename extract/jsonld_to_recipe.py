@@ -23,25 +23,95 @@ from input.pipeline.validators import is_recipe, stamp_validation_on_recipe
 from input.pipeline.url_utils import normalize_url, root_domain
 
 
+# A page can publish structurally valid Recipe markup that carries almost none of
+# the recipe. Barefoot Contessa's Parmesan Chicken renders its ingredients client
+# side, so the captured JSON-LD held ONE newline-joined ingredient string and ONE
+# instruction — the vinaigrette — and the fast lane returned it as a complete
+# recipe (2026-08-11). One ingredient passed because "non-empty" was the bar.
+#
+# These are the SAME thresholds the extract cache already uses to refuse a row
+# (_is_cacheable, >=2/>=2). They belong here rather than at each call site: this
+# function's contract is "return None and let the caller pay for the LLM", and a
+# rule enforced per-caller is one that a new caller forgets. save_recipe_api's
+# three lanes and enrich/api's two all inherit it from this single edit.
+_MIN_FASTLANE_INGREDIENTS = 2
+_MIN_FASTLANE_STEPS = 2
+
+
 def _has_required_fields(jsonld: dict) -> tuple[bool, str]:
-    """Return (ok, reason). Required: name + non-empty ingredients +
-    non-empty instructions. Anything thinner and we fall back to the LLM."""
+    """Return (ok, reason). Required: a name, and enough ingredients and steps to
+    be a plausible recipe. Anything thinner and we fall back to the LLM, which
+    reads the whole page instead of trusting the publisher's markup."""
     if not isinstance(jsonld, dict):
         return False, "JSON-LD is not a dict"
     name = jsonld.get("name")
     if not isinstance(name, str) or not name.strip():
         return False, "missing name"
     ingredients = jsonld.get("recipeIngredient") or []
-    if not isinstance(ingredients, list) or not [i for i in ingredients if str(i).strip()]:
+    if not isinstance(ingredients, list):
         return False, "missing or empty recipeIngredient"
+    real_ings = [i for i in ingredients if str(i).strip()]
+    if len(real_ings) < _MIN_FASTLANE_INGREDIENTS:
+        return False, (f"only {len(real_ings)} ingredient(s) in the markup — "
+                       f"the page is not fully described by its JSON-LD")
     instructions = jsonld.get("recipeInstructions")
     if not instructions:
         return False, "missing recipeInstructions"
     # Strings, list of strings, list of HowToStep dicts, and list of
     # HowToSection dicts (which contain itemListElement) all count as present.
-    if isinstance(instructions, list) and not [i for i in instructions if i]:
-        return False, "empty recipeInstructions"
+    steps = _flatten_instructions(instructions)
+    if len(steps) < _MIN_FASTLANE_STEPS:
+        return False, f"only {len(steps)} instruction step(s) in the markup"
     return True, "ok"
+
+
+def _recipe_richness(block: Any) -> int:
+    """How much of a recipe a JSON-LD block actually carries — ingredients plus
+    instruction steps. Used only to choose BETWEEN blocks."""
+    if not isinstance(block, dict):
+        return 0
+    ings = block.get("recipeIngredient") or []
+    n = len([i for i in ings if str(i).strip()]) if isinstance(ings, list) else 0
+    ins = _flatten_instructions(block.get("recipeInstructions"))
+    return n + len(ins)
+
+
+def best_recipe_jsonld(blocks: Any) -> Optional[dict]:
+    """Pick the RICHEST Recipe-typed block from a page's JSON-LD, not the first.
+
+    Every caller used to pass `blocks[0]`, which is only correct when a page
+    publishes exactly one recipe. Barefoot Contessa's Parmesan Chicken publishes
+    the salad VINAIGRETTE first and the chicken second, so the fast lane saved a
+    recipe whose entire method was "Measure the lemon juice ... whisk together"
+    and whose ingredient list was lemon juice, olive oil and seasoning — a real
+    recipe, just not the one on the page (2026-08-11).
+
+    Richness (ingredients + steps) is the tie-break rather than document order,
+    because a component sub-recipe is nearly always the thinner of the two.
+    Returns None when no block carries a Recipe.
+    """
+    if isinstance(blocks, dict):
+        blocks = [blocks]
+    if not isinstance(blocks, list):
+        return None
+    best, best_score = None, -1
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        # A block may be a @graph container rather than the recipe itself.
+        candidates = [b] + [g for g in (b.get("@graph") or []) if isinstance(g, dict)]
+        for c in candidates:
+            t = c.get("@type")
+            types = t if isinstance(t, list) else [t]
+            if not any("Recipe" == str(x) or str(x).endswith("Recipe") for x in types if x):
+                continue
+            ok, _ = _has_required_fields(c)
+            if not ok:
+                continue
+            score = _recipe_richness(c)
+            if score > best_score:
+                best, best_score = c, score
+    return best
 
 
 def _flatten_instructions(raw: Any) -> list:

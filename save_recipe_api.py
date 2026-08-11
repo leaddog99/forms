@@ -86,7 +86,7 @@ try:
     from to_markdown.markdown_passthrough import markdown_passthrough
     from to_markdown.pdf_to_markdown import pdf_url_to_markdown, PDF_TO_MARKDOWN_PROMPT
     from extract.markdown_to_recipe import markdown_to_recipe, SYSTEM_PROMPT as _MD_PROMPT
-    from extract.jsonld_to_recipe import jsonld_to_recipe
+    from extract.jsonld_to_recipe import jsonld_to_recipe, best_recipe_jsonld
     from extract.enrich_recipe import enrich_recipe, SYSTEM_PROMPT as _ENRICH_PROMPT
     from extract.chapter_classifier import classify_chapter, CHAPTERS
 
@@ -5626,7 +5626,10 @@ def _capture_jsonld_to_master(host: str, url: str, jsonld: list, rank: int = 0) 
     recipe = None
     if jsonld:
         try:
-            recipe = jsonld_to_recipe(jsonld[0], source_url=url, title="")
+            from extract.jsonld_to_recipe import best_recipe_jsonld
+            block = best_recipe_jsonld(jsonld)
+            recipe = jsonld_to_recipe(block if block is not None else jsonld[0],
+                                      source_url=url, title="")
         except Exception as e:
             print(f"[USERSCRIPT] jsonld_to_recipe raised: {type(e).__name__}: {e}")
     if recipe is None and jsonld:
@@ -9639,12 +9642,17 @@ async def extract_from_markdown_endpoint(
             if envelope.get("jsonld"):
                 print(f"[EXTRACT] has_jsonld=True -> trying jsonld-direct fast lane")
                 try:
+                    from extract.jsonld_to_recipe import best_recipe_jsonld
+                    block = best_recipe_jsonld(envelope["jsonld"])
                     recipe = jsonld_to_recipe(
-                        envelope["jsonld"][0],
+                        block if block is not None else envelope["jsonld"][0],
                         source_url=effective_url,
                         title=effective_title,
                         timings=timings,
                     )
+                    # Thin markup now returns None from jsonld_to_recipe itself
+                    # (>=2 ingredients / >=2 steps), so this lane falls through to
+                    # the LLM without needing its own copy of the rule.
                     if recipe is not None:
                         path_used = "jsonld-direct"
                 except Exception as e:
@@ -9721,7 +9729,10 @@ def _extract_via_enrichment_api(md_result, page_lang, timings, prompts,
     from enrich import enrich, EnrichmentRequest
     req = EnrichmentRequest(
         markdown=md_result["markdown"],
-        jsonld=(md_result["jsonld"][0] if md_result.get("jsonld") else None),
+        # Richest Recipe block, not the first — a page that publishes a component
+        # sub-recipe ahead of the main one would otherwise enrich the wrong dish.
+        jsonld=(best_recipe_jsonld(md_result["jsonld"]) or md_result["jsonld"][0]
+                if md_result.get("jsonld") else None),
         source_url=md_result["source_url"],
         title=md_result["title"],
         page_language=page_lang,
