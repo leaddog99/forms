@@ -95,6 +95,12 @@
 
   const AWAIT_URL = FORM + '?awaiting=1&url=' + encodeURIComponent(location.href);
   let popupHandedOff = false;
+  // Did the popup ACTUALLY take a navigation? Tracked separately from
+  // popupHandedOff so that, when every attempt to drive it fails, the capture
+  // is not simply lost — the recipe is already staged on the server, so all the
+  // user needs is a way to reach it. See the rescue banner after staging.
+  let popupNavigated = false;
+  let finalUrl = AWAIT_URL;
 
   // NOTE: there is no postMessage channel to the popup. `window.open('','_blank')`
   // followed by a cross-origin navigation to the form SEVERS `window.opener`
@@ -104,6 +110,7 @@
   try {
     popup.location.href = AWAIT_URL;
     popupHandedOff = true;
+    popupNavigated = true;
   } catch (e) {
     // Navigation refused — fall back to the original behaviour further down,
     // which navigates once with ?staged= after the token exists.
@@ -688,10 +695,22 @@
     } else {
       // Fallback: the early hand-off didn't happen, so this is the first
       // navigation and the form reads ?staged= from the query as before.
-      popup.location.href =
+      //
+      // This assignment used to be UNPROTECTED, and that turned an unusable
+      // popup into a silent dead end: the early hand-off fails (caught, so no
+      // form ever opens), staging succeeds, then THIS line throws and jumps to
+      // the outer catch — so uploadScreenshot never runs either. Observed
+      // 2026-08-11 on an allrecipes egg foo young: the server log shows
+      // stage-markdown 200 and then nothing at all, no form request and no
+      // stage-image, while the capture itself had completed perfectly.
+      finalUrl =
         FORM +
         '?url=' + encodeURIComponent(location.href) +
         '&staged=' + encodeURIComponent(token);
+      try { popup.location.href = finalUrl; popupNavigated = true; }
+      catch (e) {
+        console.log('[recipe-bookmarklet] popup navigation failed:', e && e.message);
+      }
     }
 
     try {
@@ -701,6 +720,52 @@
       await uploadScreenshot(token, root);
     } catch (e) {
       console.log('[recipe-bookmarklet] screenshot skipped/failed:', e && e.message ? e.message : e);
+    }
+
+    // RESCUE. The grab succeeded and is sitting on the server under `token`,
+    // but no window was ever driven to it, so from the user's side this looks
+    // like a bookmarklet that did nothing — the failure mode that reads as a
+    // hang. Put an unmissable, unblockable link on the page they are already
+    // looking at: a plain anchor they click, so no popup blocker is involved
+    // and the source page is not navigated away from underneath them.
+    if (!popupNavigated) {
+      try {
+        const id = '__bcc_rescue';
+        const old = document.getElementById(id);
+        if (old) old.remove();
+        const bar = document.createElement('div');
+        bar.id = id;
+        bar.setAttribute('style', [
+          'position:fixed', 'z-index:2147483647', 'left:16px', 'right:16px', 'bottom:16px',
+          'background:#1c1813', 'color:#f4efe6', 'padding:16px 18px', 'border-radius:12px',
+          'font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+          'box-shadow:0 8px 30px rgba(0,0,0,.35)', 'display:flex', 'gap:14px',
+          'align-items:center', 'flex-wrap:wrap'
+        ].join(';'));
+        const msg = document.createElement('span');
+        msg.textContent = 'Recipe captured — the pop-up could not be opened.';
+        msg.style.flex = '1 1 220px';
+        const a = document.createElement('a');
+        a.href = finalUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Open your recipe →';
+        a.setAttribute('style',
+          'background:#e0a75e;color:#1c1813;padding:10px 16px;border-radius:8px;' +
+          'text-decoration:none;font-weight:600;white-space:nowrap');
+        const x = document.createElement('button');
+        x.textContent = '✕';
+        x.setAttribute('style',
+          'background:transparent;border:0;color:#f4efe6;font-size:18px;cursor:pointer;padding:4px 8px');
+        x.onclick = () => bar.remove();
+        bar.appendChild(msg); bar.appendChild(a); bar.appendChild(x);
+        document.body.appendChild(bar);
+      } catch (e) {
+        // Even the banner failed (hostile CSP / no body) — say it plainly
+        // rather than leaving the user with nothing at all.
+        alert('Recipe captured, but the pop-up could not be opened.\n\n'
+              + 'Open this to finish:\n' + finalUrl);
+      }
     }
   } catch (e) {
     if (popup && popup.document && popup.document.body) {
