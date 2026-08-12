@@ -1,8 +1,93 @@
 # The AI Editor — mediation over the statistical pass
 
-**Status: DESIGN.** Nothing here is built. Written 2026-08-10, out of the ramen
-pass (job 794) where the statistical ranking put an instant-noodle toss at #1 and
-excluded Adam Liaw's ramen school entirely.
+> ## ⚠️ SUPERSEDED 2026-08-12 — the founding premise was wrong
+>
+> **The selection role is cancelled. What survives is commentary.** Read this
+> box before anything below it; §1–§4 argue from an example that measurement has
+> since falsified.
+>
+> This doc was written because the statistical pass ranked an instant-noodle toss
+> #1 and dropped Adam Liaw's ramen school, and that looked self-evidently broken.
+> We finally pulled the SEMrush demand data for those exact URLs:
+>
+>     thesaltymarshmallow  Sesame Garlic Ramen Noodles   ranked #1 "wrongly"   9,667
+>     adamliaw             Ramen School 001               dropped "wrongly"       105
+>
+> **92× in favour of the recipe the doc holds up as the mistake.** Adam Liaw's
+> whole ramen-school series reads 357 / 210 / 105 / 19 / 4 / 1. The statistical
+> pass was not broken on the founding example. It was right, and the human and AI
+> reading of it — mine included — was wrong.
+>
+> The shadow mediation on job 795 says the same thing at scale. Traffic for each
+> URL against the verdict I gave it:
+>
+>     thecozycook      demote → floor      96,775
+>     pinchofyum       demote → floor      77,242
+>     justonecookbook  demoted #2 → #9     40,238
+>     seriouseats      hold #2             16,278
+>     fifteenspatulas  demote → floor       2,448
+>     joshuaweissman   NOMINATE (rescue)    1,744
+>     honestcooking    hold #1  ← my top    1,075
+>     bbcgoodfood      demote → floor         866
+>     epicurious       NOMINATE (rescue)      120
+>
+> My number-one pick draws 1,075. The two I sent to the floor draw 96,775 and
+> 77,242. The page I argued hardest to rescue — writing that its negative OU was
+> "an authority artifact, not a quality signal" — is last in the set at 120, which
+> is precisely what its OU predicted. **The ranking I produced is close to
+> inverted against demand.**
+>
+> ### Why, and what it means for the design
+>
+> The rubric in §4 scores `dish_fidelity`, `method_completeness`, and
+> `craft_specificity` — is this really the dish, made properly. That is a coherent
+> question. It is not the question the business is asking. We are after traffic
+> too: the statistical pass already surfaces what people actually cook, and it
+> does that job well. Re-ranking it on authenticity replaces a measurement with an
+> AI's taste — and the curator's objection stands on its own even without the
+> numbers: **the criteria are subjective, and they are subjective coming from an
+> AI.**
+>
+> I was not uniformly wrong, and the exception is instructive. bbcgoodfood
+> ("Cheat's", 866) and fifteenspatulas (2,448) are low-fidelity *and* low-demand,
+> so demoting those held up — the arithmetic did over-credit bbcgoodfood's DA-88
+> domain. The failure was not "demoting shortcuts". It was that I could not tell
+> which shortcuts people actually want, and ranked with full confidence anyway.
+>
+> ### The revision
+>
+> **Keep:** the per-recipe LLM read. The `evidence` and `axes` blocks are the
+> valuable output and they are *descriptive*, not evaluative — "3 lb split pig
+> trotters, 4-hour rolling boil to emulsify the fatback", "eggs simmered exactly
+> 6 min and marinated 4–12 hrs", "broth is 700ml store stock + Worcestershire +
+> five-spice". That is real editorial copy for a top-10 display, and it is
+> checkable against the page.
+>
+> **Cut:** `verdict`, `ordinal_rank`, and `band` as anything that moves selection.
+> The algorithms pick the mix; the AI describes it. The mediation log stays as a
+> record, not as an input.
+>
+> **Residue worth one more look, but weak:** a *factual* identity mismatch is
+> different from a quality judgment — cjeatsrecipes' "Spicy Garlic Ramen" has no
+> broth at all, so calling it a soup is checkably wrong, not a matter of taste.
+> But even that is contested by the data: thecozycook is self-labelled
+> American/Asian with Frank's hot sauce and honey-roasted peanuts, and it is the
+> single biggest traffic winner in the cohort. So if identity-mismatch survives at
+> all it flags for a human, and never demotes on its own.
+>
+> One caveat on the evidence, stated so it is not over-read: traffic partly
+> reflects head-term targeting. "Homemade ramen" is a high-volume generic query;
+> "rich and creamy tonkotsu broth from scratch" is niche. The demand winners are
+> partly winning by answering the query most people type — which is arguably
+> exactly the signal a home-cook product wants, but it is not a pure quality
+> measure either.
+>
+> **Everything below is retained as the record of the original argument.**
+
+**Status: DESIGN — SELECTION ROLE CANCELLED, see the box above.** Nothing here is
+built. Written 2026-08-10, out of the ramen pass (job 794) where the statistical
+ranking put an instant-noodle toss at #1 and excluded Adam Liaw's ramen school
+entirely.
 
 The curator's framing, which is the design:
 
