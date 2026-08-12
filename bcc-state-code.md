@@ -3933,9 +3933,166 @@ what two rounds of log-reading had guessed at. **Reproduce before attributing.**
 
 ---
 
+## Session log — 2026-08-12 (afternoon) — the paywall correction rebuilt on the bar not the page, and a migration that ate the data it was protecting
+
+Started from a curator question about the bookmarklet: a paid site's recipe gets no paywall
+adjustment on the interactive path, so the best recipes sink. It ended up replacing the
+whole correction, and the replacement was arrived at by the curator overruling me three
+times running.
+
+### The old correction was wrong, and the curator caught it before I did
+
+The shipped remap rewrote PA to a "free-equivalent":
+`free_mean + (PA − paid_mean) · (free_std / paid_std)`. Preview said a Boston Globe pilaf
+would go from OU **+7.96 → +31.70**. The curator's reaction — *"that would be the highest
+in the whole system… I can't imagine that's the world's best recipe"* — was exactly right:
+measured, the maximum OU across 4,896 master rows is **+25.38**, and **zero** rows sat
+above 31.66.
+
+Two faults. The slope `free_std/paid_std` divided a **pooled** free sigma (gathered across
+a DA±8 window, so carrying BETWEEN-site variance) by a single publisher's **within-site**
+sigma — apples to oranges. It pinned at its 2.0 cap for 3 of 5 publishers and doubled every
+page's distance from its publisher's mean. And it was unbounded: PA ≥ 70 on a DA-91
+publisher would have emitted an impossible PA > 100.
+
+There was already a σ-floor guard in `calibrate_paid_pa.py` naming this exact case
+("Boston Globe at raw σ 1.8 → slope 3.24 → #1 of 249, an over-correction"). It fired. It
+just didn't cut far enough.
+
+### The curator's diagnosis beat mine: fix the BAR, not the page
+
+My instinct was to tune the slope. The curator's was better: *"we might just adjust the DA
+on these sites down some amount to estimate the impact of the pages being behind a paywall
+while the domain itself is not."*
+
+That is the right frame. DA is measured across the WHOLE domain — bostonglobe.com is DA 91
+on the strength of its free news — while the recipes sit behind the wall, so OU judges a
+gated page against an ungated domain's expectations. **Discount the DA; leave PA alone.**
+PA is the one thing actually measured.
+
+`pa_gap_v1` (`input/pipeline/paywall_calibration.py`):
+`gap = mean_free_PA(DA) − mean_publisher_PA`, then
+`adjusted_DA = ou_bar_inverse(ou_bar(DA) − gap)`. One measured quantity, one bounded
+transform, nothing extrapolated. `gap ≤ 0` → no adjustment at all.
+
+### Three corrections from the curator, each of which changed the answer
+
+**"Why should it change… it is still evidence."** I had decided master_recipes was a
+survivors' pool (dish runs keep pages averaging PA 47.6 and drop pages averaging 34.4 —
+a +13.2 selection gap) and rewired the calibration to read the candidate ledger instead.
+The curator pushed back. Testing it settled it against me: the ledger is ~75% rejects, so
+it compares a gated publisher's fresh top-traffic harvest against **other runs' discards** —
+free-peer pools of n=38 and n=23 averaging PA 45.3/50.3, versus master's n=268/n=114 at
+54.6/62.2. It reported cooking.nytimes.com OUTSCORING its peers by 12.7, which is
+composition, not signal. Reverted to master_recipes. The requirement was never
+"unselected" — it is that **both sides pass through the same selection regime.**
+
+**"The 6-point band IS meaningful for ranking."** I twice called Boston Globe's PA spread
+near-noise. The by-DA table killed it: the Globe's σ is 2.75 over a 16-point range, which
+is *mid-pack* — free cohorts at DA 84, 71 and 69 discriminate LESS. σ 2–5 is simply what
+PA discrimination looks like everywhere here. The same table exposed the real defect: no
+single-DA row is anywhere near the 5.98 "free sigma" the old method used, confirming it was
+pooled.
+
+**"Persist it — I might want a report writer to just query it."** I had carried forward the
+old code's "derived on read, never stored" rule. The curator's two reasons both land: a
+value that only exists inside a Python call is invisible to SQL, and recomputing erases
+which adjustment was in force when a page was scored. Staleness is handled by **re-stamping
+on recalibration**, not by refusing to store. Now `restamp_recipes()` plus five generated
+columns (`adjusted_da`, `adjusted_ou_score`, `paywall_discount_pct`, `paywall_adj_method`,
+`effective_ou_score` — the last COALESCEs to raw OU so a query can rank on one column
+without knowing which publishers are gated). Written up as
+memory/feedback_persist_derived_values.
+
+### Two gating attempts of mine that were wrong
+
+An `n` floor didn't catch NYT. A standard-error test was worse — SE shrinks with √n, so
+NYT's meaningless 2.21 gap scored z = 3.32 and sailed through, while I had *written the
+comment* arguing effect size and then implemented precision-of-the-mean. The gate that
+works measures the gap against the ordinary page-to-page spread (Cohen's-d style) **and**
+requires the sign to survive the peer-window choice — the check that actually caught NYT,
+which reads +2.21 (starved) at exact-DA and −0.80 (not starved) at DA±2.
+
+### Gated is not the same as penalized
+
+cooking.nytimes.com cannot be fetched without the unblocker, yet averages PA 59.8 against
+free DA-95 peers at 58.9. It is linked heavily enough to overcome its own wall. So
+`paywall` stays the FACT (is it gated) and `paywall_da_discount_pct` is the measured
+JUDGMENT (is it penalized, and how much) — **neither derived from the other.**
+eatingwell.com's flag was pulled on the fact that it is not gated at all.
+
+Final state: **2 of 7 adjusted.** ATK −56.5% (gap 16.2, effect 5.17), Boston Globe −27.0%
+(gap 8.0, effect 1.17). Milk Street low_confidence (n=6), NYT + LA Times inconclusive,
+cookscountry + capecodtimes no_rows. Max effective OU corpus-wide stays **+25.38** — no
+manufactured record. The pilaf lands **+15.92** with PA untouched at 54. ATK goes from
+**0 → 3** rows inside the corpus top-500.
+
+### A join that matched zero rows
+
+`_scoring.rootDomain` holds the APEX (`nytimes.com`); `domains` is canonical at FULL-HOST
+grain (`cooking.nytimes.com`); there is no domains row for the apex. So the paywall flag
+matched **0 of NYT's 89 master rows**. `adjustment_for_url` now walks up the label chain.
+I had also told the curator NYT had "0 master rows" — it has 89, and they were right that
+those came from dish runs, not a publisher extract.
+
+### Follow-ups, all built the same afternoon
+
+Monthly cadence was the wrong trigger — a publisher can sit at `no_rows` for weeks after
+the harvest that would settle it. A **gated publisher now recalibrates at the end of its own
+refresh** (no Moz/SERP spend; the corpus is the sample), timer dropped 720h → 168h as a
+backstop. A **curator override** (`paywall_adj_source='manual'`) that the job refuses to
+overwrite — without that marker a hand-set value would survive until the next scheduled run
+and vanish with no trace. **Status + a one-line reason** written for every flagged publisher,
+because "no discount" had four causes that all rendered as a blank field.
+
+And the job was still named `paid_pa_calibration`, with a stored `purpose` describing the
+deleted shift-and-scale remap in confident detail — a curator reading the Job Monitor would
+have been **actively misinformed**. Renamed `paywall_calibration`, purpose rewritten, old
+job_type kept registered as an alias so historical rows still resolve. The monthly timer was
+also still wired to the deleted script and would have resurrected the old method on its next
+tick.
+
+### The SEMrush URL generator, deleted — and the near-miss
+
+The curator settled a long-parked question: for awkward publishers they build the query in
+SEMrush, copy the URL, paste it, and uncouple. *"It's too complicated for you to create the
+domain url — we should just go with either the default or use uncouple with a copy paste."*
+
+That closes project_semrush_filter_codes without doing the parked work: decoding SEMrush's
+undocumented `fld`/`cri` codes only ever existed to let the generator reach what copy-paste
+already reaches. Worse, the generator **re-derived the URL on every read** while the form
+posted back what it displayed, so hand-built links silently reverted — eleven rows carried
+`db=gr` while every row's `semrush_db` said `us`.
+
+**Then I did the same thing to the data, in the step meant to protect it.** Before removing
+generation I "materialized" the derived URL into the column for all 322 rows — writing the
+DERIVED value over the STORED one. That flattened **27 hand-built URLs** (Greek `db=gr`,
+`/recipe` and `/syntagh` paths, `searchType=subfolder`, a `fid=` parameter) to a bare
+`?db=us&q=domain&searchType=domain`. Recovered byte-identical from the pre-change dump at
+3b07a07 — 90/90 rows with a stored URL match their prior state — but only because a same-day
+dump existed and because a spot-check I nearly skipped printed `epicurious.com → db=us`.
+The rule is `COALESCE(stored, derived)`, and print the rows a bulk UPDATE would change
+before running it: memory/feedback_materialize_stored_not_derived.
+
+Six DB columns dropped (with the vec extension loaded — `DROP COLUMN` revalidates every
+trigger, including the vec0 ones). `semrush_url_uncoupled` kept and pinned to 1 on all 322
+rows as a latch, at the curator's suggestion, so a re-introduced generator finds every row
+already opted out.
+
+### Also worth remembering
+
+`restamp_recipes` reported "0 rows" and looked like a clean no-op. `json` was not imported
+in the module, so `json.loads` raised NameError on all 4,898 rows and a bare
+`except Exception: continue` swallowed every one. **A silent zero is what a broken loop
+looks like.** Narrowed to `(ValueError, TypeError)`.
+
+Three commits pushed: caef3fa, 10c8fdb, 825c4a5.
+
+---
+
 ## START HERE — state of play as of 2026-08-12
 
-**Branch `split/enrichment-api`, pushed (3b07a07). Server restarted and current.**
+**Branch `split/enrichment-api`, pushed (825c4a5). Server restarted and current.**
 
 ### The product thesis (read this first — unchanged, still settled)
 
