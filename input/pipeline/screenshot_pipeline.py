@@ -285,6 +285,37 @@ def ensure_page_screenshots_table(conn) -> None:
     conn.commit()
 
 
+def crop_above_fold(raw_bytes: bytes) -> Optional[bytes]:
+    """Crop a full-length capture down to the same above-the-fold window a
+    headless capture produces.
+
+    A browser-rendered capture (html2canvas, from the user's own signed-in page)
+    is the WHOLE recipe element and can be several thousand pixels tall, where a
+    server capture is one viewport. Both end up in the same tile, so they have to
+    be framed the same way — otherwise a paywalled site's screenshot is a long
+    ribbon next to everyone else's clip.
+
+    The window is taken from VIEWPORT_W/CAPTURE_HEIGHT rather than a literal, so
+    this stays tied to the server geometry: change the viewport and both paths
+    move together. Shorter-than-the-window images are returned untouched — we
+    crop, never pad or upscale.
+    """
+    try:
+        import io as _io
+        from PIL import Image
+        im = Image.open(_io.BytesIO(raw_bytes)).convert("RGB")
+        want_h = max(1, round(im.width * (CAPTURE_HEIGHT / float(VIEWPORT_W))))
+        if im.height <= want_h:
+            return raw_bytes
+        im = im.crop((0, 0, im.width, want_h))
+        out = _io.BytesIO()
+        im.save(out, format="PNG", optimize=True)
+        return out.getvalue()
+    except Exception as e:
+        print(f"[screenshot] above-fold crop failed ({e}); keeping the full capture")
+        return raw_bytes
+
+
 def _to_blob_jpeg(raw_bytes: bytes, *, max_w: int = 800, quality: int = 65) -> Optional[bytes]:
     """Downscale + re-encode the raw capture to a compact JPEG. The page
     screenshot is a 'real source on a real site' signal, not a hero image,

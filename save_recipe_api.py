@@ -10670,8 +10670,13 @@ async def stage_image_endpoint(token: str, request: Request):
             import base64 as _b64
             raw_b64 = image_b64.split(",", 1)[1] if image_b64.startswith("data:") else image_b64
             raw = _b64.b64decode(raw_b64)
-            from input.pipeline.screenshot_pipeline import _to_blob_jpeg, store_screenshot_blob
-            blob = _to_blob_jpeg(raw)      # same 800px/q65 normalisation as a server capture
+            from input.pipeline.screenshot_pipeline import (
+                _to_blob_jpeg, store_screenshot_blob, crop_above_fold)
+            # html2canvas hands back the WHOLE recipe element — often thousands of
+            # pixels tall — so crop to the same above-the-fold window a headless
+            # capture would have produced before the shared 800px/q65 encode.
+            # Same tile, same framing, whichever path took the picture.
+            blob = _to_blob_jpeg(crop_above_fold(raw))
             if blob:
                 norm = normalize_url(src_url) or src_url
                 shot = store_screenshot_blob(MEDIA_DB_PATH, norm, blob)
