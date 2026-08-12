@@ -1783,22 +1783,25 @@
              pay for the Enrich step) before clicking Save. Hidden when
              no scores are present. -->
         <div class="scoring-strip hidden" id="scoringStrip">
-          <!-- PA, plus the free-equivalent for a GATED publisher. Both selectors
-               already remap a paywalled page's PA before ranking it; showing only
-               the raw number here made the strip disagree with the decision the
-               system actually made (ATK: displayed OU -5.0, selected at +10.0). -->
+          <!-- PA is shown exactly as measured — the paywall correction no longer
+               touches it. For a GATED publisher the adjustment lands on the DA
+               BAR (and therefore on Opportunity), because DA is measured across
+               the whole domain while the recipes sit behind the wall. Showing
+               only the raw numbers made the strip disagree with the decision the
+               system actually made (ATK: displayed OU -5.0, selected well above). -->
           <div class="score-chip">
             <span class="score-label">Page Authority</span>
             <span class="score-value empty" id="score_pa">—</span>
-            <span class="exc-chip-basis" id="score_pa_adj"></span>
           </div>
           <div class="score-chip">
             <span class="score-label">Domain Authority</span>
             <span class="score-value empty" id="score_da">—</span>
+            <span class="exc-chip-basis" id="score_da_adj"></span>
           </div>
           <div class="score-chip">
             <span class="score-label">Opportunity</span>
             <span class="score-value empty" id="score_ou">—</span>
+            <span class="exc-chip-basis" id="score_ou_adj"></span>
           </div>
           <div class="score-chip">
             <span class="score-label">Recipe-text</span>
@@ -2979,18 +2982,21 @@
     function populateScoringStrip(recipe) {
       const sc = (recipe && recipe._scoring) || {};
       setScoreChip('score_pa', sc.pageAuthority);
-      // Paywall remap, when the publisher is calibrated. The server stamps this
-      // from the LIVE calibration on load, so it tracks the monthly re-measure
-      // instead of freezing whatever was true at save time.
-      (function () {
-        const el = document.getElementById('score_pa_adj');
-        if (!el) return;
-        const adj = sc.adjustedPageAuthority;
-        el.textContent = (typeof adj === 'number' && adj > (sc.pageAuthority || 0))
-          ? `→ ${adj.toFixed(0)} free-equiv (gated)` : '';
-      })();
       setScoreChip('score_da', sc.domainAuthority);
       setScoreChip('score_ou', sc.ouScore);
+      // Paywall DA-adjustment, when the publisher carries one. The correction
+      // lands on the BAR (DA) and therefore on Opportunity — PA above is shown
+      // exactly as measured. Both chips label the adjusted figure as adjusted so
+      // the strip never presents a judgment as a measurement.
+      (function () {
+        const aDa = sc.adjustedDomainAuthority, aOu = sc.adjustedOuScore;
+        const has = (typeof aDa === 'number' && typeof aOu === 'number');
+        const daEl = document.getElementById('score_da_adj');
+        if (daEl) daEl.textContent = has ? `→ ${aDa.toFixed(0)} gated-equiv` : '';
+        const ouEl = document.getElementById('score_ou_adj');
+        if (ouEl) ouEl.textContent = has
+          ? `→ ${aOu >= 0 ? '+' : ''}${aOu.toFixed(1)} adjusted` : '';
+      })();
       setScoreChip('score_text', sc.recipeScore);
 
       // SEMrush per-page traffic — comma-formatted, with share-of-site in the basis line.

@@ -1122,11 +1122,21 @@ def _compute_custom_ou(entries: list[dict]) -> dict:
     residuals = np.zeros(n)
     for fit_idx, e_idx in enumerate(fit_indices):
         actual_pa = pa_vals[fit_idx]
-        predicted_pa = float(chosen_pred[fit_idx])
+        e = entries[e_idx]
+        # Paywall DA-adjustment: a gated publisher is scored against the bar for
+        # the DA its WALLED SECTION behaves like, not the whole domain's. The
+        # curve itself is fit on MEASURED (da, pa) — the observed relationship is
+        # what we want to model; only this publisher's position on it moves.
+        _eff_da = e.get("_da_eff")
+        if _eff_da is not None and chosen_name in ("quadratic", "linear"):
+            predicted_pa = float(np.polyval(chosen_coeffs, float(_eff_da)))
+            e["_ou_da_effective"] = round(float(_eff_da), 2)   # provenance crumb
+        else:
+            predicted_pa = float(chosen_pred[fit_idx])
         residual = actual_pa - predicted_pa
         residuals[fit_idx] = residual
-        entries[e_idx]["ou"] = residual
-        entries[e_idx]["_ou_predicted_pa"] = predicted_pa  # debug crumb
+        e["ou"] = residual
+        e["_ou_predicted_pa"] = predicted_pa  # debug crumb
 
     # === Exceptionalism grade ===
     # Compute σ across all post-fit residuals, apply floor, T-score each
@@ -1274,36 +1284,45 @@ def _predict_pa_from_fit(ou_fit: dict, da: float) -> Optional[float]:
 
 
 def _apply_paywall_remap(entries: list[dict]) -> int:
-    """SELECTION-side paywall correction: lift gated premium publishers' PA to its
-    free-equivalent BEFORE the OU fit + rank_by_blend, so the winner SELECTOR stops
-    penalizing the paywall (mirrors the display-side remap in
-    score_data_points_for_dish). adjusted = max(pa, free_mean + (pa-paid_mean)*
-    (free_std/paid_std)) — one-directional (only LIFTS; a publisher above the free
-    line is untouched). The caller snapshots RAW pa into fit_data_points (the ledger)
-    BEFORE calling this, and score_data_points re-applies the SAME remap there — so
-    no double-count. Calibration lives on the domains master. Returns # lifted."""
+    """SELECTION-side paywall correction (pa_gap_v1): lower a gated publisher's
+    EXPECTATIONS BAR before the OU fit + rank_by_blend, so the winner SELECTOR
+    stops penalizing the paywall. Mirrors the display-side adjustment in
+    score_data_points_for_dish.
+
+    Stamps `_da_eff` — the DA the walled section behaves like — and leaves `da`
+    and `pa` as the measurements they are. The previous version rewrote `pa` in
+    place to a "free-equivalent"; that both destroyed the measured value on the
+    entry and, because the free reference sigma was pooled across a DA±8 window
+    while the publisher sigma was within-site, inflated the top of each gated
+    publisher's band (a Boston Globe OU of +31.7 against a corpus maximum of
+    +25.4). See input/pipeline/paywall_calibration.py.
+
+    The caller snapshots RAW da/pa into fit_data_points (the ledger) and
+    score_data_points re-derives the SAME adjustment there, so no double-count.
+    Returns # of entries adjusted."""
     try:
-        from input.pipeline.domains_lib import get_paywall_calibrations
-        cals = {c["domain"]: c for c in get_paywall_calibrations()
-                if c.get("pa_std") and c["pa_std"] > 0}
+        from input.pipeline.domains_lib import (get_paywall_da_adjustments,
+                                                adjustment_for_url)
+        adjustments = get_paywall_da_adjustments()
     except Exception:
-        cals = {}
-    if not cals:
+        adjustments = {}
+    if not adjustments:
         return 0
     n = 0
     for e in entries:
-        host = (urlparse(e.get("url") or "").hostname or "").lower()
-        if host.startswith("www."):
-            host = host[4:]
-        c = cals.get(host)
-        pa = e.get("pa")
-        if not c or not isinstance(pa, (int, float)):
+        url = e.get("url") or ""
+        da = e.get("da")
+        if not isinstance(da, (int, float)):
             continue
-        remap = c["free_mean"] + (pa - c["pa_mean"]) * (c["free_std"] / c["pa_std"])
-        if remap > pa:
-            e["pa"] = float(remap)
-            e["_pa_raw"] = pa          # keep the original for transparency
-            n += 1
+        # Resolve from the full URL, not a stripped apex — cooking.nytimes.com
+        # must find its own domains row rather than falling through to nothing.
+        adj = adjustment_for_url(url, adjustments)
+        pct = float((adj or {}).get("discount_pct") or 0)
+        if pct <= 0:
+            continue
+        e["_da_eff"] = float(da) * (1.0 - pct / 100.0)
+        e["_da_discount_pct"] = pct     # provenance, for the run log + ledger
+        n += 1
     return n
 
 

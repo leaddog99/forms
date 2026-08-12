@@ -491,17 +491,26 @@ class ScoringMetadata(BaseModel):
     pageAuthority: Optional[float] = None
     domainAuthority: Optional[float] = None
     ouScore: Optional[float] = None
-    # Free-equivalent PA for a GATED publisher, from the per-publisher paywall
-    # calibration (memory/project_paid_pa_calibration). ABSENT unless the
-    # publisher is calibrated AND the remap actually lifts — so a reader can
-    # tell "no remap applies" from "remapped to the same number".
-    #
-    # DERIVED ON READ, never persisted: `get_recipe` stamps it from the LIVE
-    # calibration, which the monthly paid_pa_calibration job re-measures. A
-    # stored copy would go stale the moment the calibration moves — the exact
-    # failure that left four calibrations untouched for seven weeks. It exists
-    # in the contract so the field is legal on the wire, not so it can be saved.
+    # SUPERSEDED 2026-08-12 by adjustedDomainAuthority/adjustedOuScore below.
+    # The old correction rewrote PA to a "free-equivalent"; it is no longer
+    # computed or stamped anywhere. Kept declared ONLY so rows written while it
+    # was live remain legal on the wire — do not populate it.
     adjustedPageAuthority: Optional[float] = None
+    # Paywall DA-adjustment (pa_gap_v1). DA is measured across the whole domain
+    # while a gated publisher's recipes sit behind the wall, so OU judges the
+    # page against an ungated domain's bar. These carry the DA that publisher's
+    # WALLED SECTION behaves like, and the OU that follows from it. PA is left
+    # exactly as measured — it is the one thing here that was observed.
+    #
+    # ABSENT unless the publisher carries a calibrated adjustment, so a reader
+    # can tell "no adjustment applies" from "adjusted to the same number"
+    # (memory/feedback_absent_not_zero).
+    #
+    # DERIVED ON READ, never persisted: `get_recipe` stamps them from the LIVE
+    # calibration. A stored copy would go stale the moment the calibration moves
+    # — the exact failure that left four calibrations untouched for seven weeks.
+    adjustedDomainAuthority: Optional[float] = None
+    adjustedOuScore: Optional[float] = None
     # Raw clout (DA+PA) and the two in-cohort PERCENTILE ranks (0-100) the
     # OU/power blend ranks on — the axes of the exceptionality×clout 2x2.
     # Stamped from the batch entry (rank_by_blend) so the editorial authority

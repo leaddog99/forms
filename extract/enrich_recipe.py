@@ -366,17 +366,22 @@ def _build_user_prompt(recipe: dict) -> str:
     score_lines = []
     if has_pa:
         score_lines.append(f"  PA (this page's authority, 0-100): {float(pa):.1f}")
-        # A GATED publisher's pages collect few links, so raw PA understates them
-        # and OU reads them as under-performing. Both selectors already rank on the
-        # remapped value; without this line the commentary would keep writing its
-        # verdict from the raw one and call a well-selected page weak.
-        _apa = scoring.get("adjustedPageAuthority")
-        if isinstance(_apa, (int, float)) and float(_apa) > float(pa):
+        # A GATED publisher's pages collect few links, so OU reads them as
+        # under-performing — but the fault is the BAR, not the page: DA is
+        # measured domain-wide while the recipes sit behind the wall. Both
+        # selectors already rank against the adjusted bar; without this line the
+        # commentary would keep writing its verdict from the raw OU and call a
+        # well-selected page weak. PA itself is NOT adjusted and is not restated.
+        _ada = scoring.get("adjustedDomainAuthority")
+        _aou = scoring.get("adjustedOuScore")
+        if isinstance(_ada, (int, float)) and isinstance(_aou, (int, float)):
             score_lines.append(
-                f"  >> PAYWALL-ADJUSTED PA: {float(_apa):.1f} (free-equivalent — this "
-                f"publisher is GATED, so its pages are link-starved; the SELECTOR ranked "
-                f"this page on the adjusted value, NOT the raw {float(pa):.1f}). Judge "
-                f"standing on the adjusted figure.")
+                f"  >> PAYWALL-ADJUSTED BAR: this publisher is GATED, so it is judged "
+                f"against DA {float(_ada):.1f} (the authority its walled section actually "
+                f"behaves like) rather than its domain-wide DA. Its OU on that basis is "
+                f"{float(_aou):+.1f}, and the SELECTOR ranked it on THAT, not the raw "
+                f"figure. Judge standing on the adjusted OU. Its PA is a real "
+                f"measurement and is unchanged.")
     if has_da:
         score_lines.append(f"  DA (publisher domain's authority, 0-100): {float(da):.1f}")
         # CALIBRATION. Without this the model judges DA against its own prior --

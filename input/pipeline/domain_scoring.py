@@ -31,7 +31,7 @@ publisher keeps is unchanged; only the rank_score VALUE becomes a comparable
 Single-path reuse:
   - the global fit reuses chapters._fit_da_pa (the same quadratic shape the dish +
     chapter fits use — pinned to quadratic, no model-flip jitter);
-  - the paywall remap reuses domains_lib.get_paywall_calibrations.
+  - the paywall DA-adjustment reuses domains_lib.get_paywall_da_adjustments.
 
 The fit (coefficients + 101-point OU/power quantile SKETCHES) is persisted in a
 single-row `domain_score_fit` table — a computed artifact, the corpus analog of
@@ -108,41 +108,32 @@ def _store_fit(conn: sqlite3.Connection, fit: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Paywall PA-remap (Python mirror of score_data_points_for_dish's SQL eff_pa)
+# Paywall DA-adjustment (Python mirror of score_data_points_for_dish's SQL eff_da)
 # --------------------------------------------------------------------------- #
-def _host_of(url: str) -> str:
-    """The url's host without www (the key get_paywall_calibrations uses)."""
-    from urllib.parse import urlparse
-    try:
-        h = (urlparse(url).hostname or "").lower()
-    except Exception:
-        h = ""
-    return h[4:] if h.startswith("www.") else h
 
 
-def _cal_index(calibrations: list) -> dict:
-    """{host: cal} for O(1) lookup; only cals with a positive pa_std are usable."""
-    out = {}
-    for c in calibrations or []:
-        if float(c.get("pa_std") or 0) > 0:
-            out[c["domain"]] = c
-    return out
+def _adjusted_da(url: str, da, adjustments: dict):
+    """Paywall DA-adjustment (pa_gap_v1) — the DA a gated publisher's walled
+    section actually behaves like. Python mirror of the SQL `eff_da` in
+    chapters.score_data_points_for_dish.
 
+    Returns `(effective_da, applied)`. `effective_da` falls back to the MEASURED
+    da when nothing applies so the caller's arithmetic is unconditional, while
+    `applied` lets it keep the stored field ABSENT rather than echoing the
+    measurement back as though it were a judgment
+    (memory/feedback_absent_not_zero).
 
-def _adjusted_pa(url: str, pa: Optional[float], cal_by_host: dict) -> Optional[float]:
-    """Paywall remap: adjusted_PA = max(pa, free_mean + (pa − paid_mean)·(free_std/paid_std)).
-    ONE-DIRECTIONAL (a paywall can only suppress links → only ever LIFT); a publisher
-    already above the free line keeps its real PA. No calibration → pa unchanged."""
-    if pa is None:
-        return None
-    c = cal_by_host.get(_host_of(url))
-    if not c:
-        return float(pa)
-    ps = float(c["pa_std"])
-    if ps <= 0:
-        return float(pa)
-    remap = float(c["free_mean"]) + (float(pa) - float(c["pa_mean"])) * (float(c["free_std"]) / ps)
-    return max(float(pa), remap)
+    Resolution walks up the host labels via domains_lib, so a subdomain
+    publisher (cooking.nytimes.com) matches its own domains row instead of
+    silently missing."""
+    if da is None:
+        return None, False
+    from input.pipeline import domains_lib
+    adj = domains_lib.adjustment_for_url(url or "", adjustments or {})
+    pct = float((adj or {}).get("discount_pct") or 0)
+    if pct <= 0:
+        return float(da), False
+    return float(da) * (1.0 - pct / 100.0), True
 
 
 # --------------------------------------------------------------------------- #
@@ -227,15 +218,16 @@ def compute_global_fit(conn: sqlite3.Connection,
     base = chapters._fit_da_pa(da_arr, pa_arr)
     a0, a1, a2 = (float(x) for x in base["coefficients"])
 
-    # OU/power over the ADJUSTED-PA population → the reference distribution the
-    # percentile sketches summarize. Build cal index once.
-    cal_by_host = _cal_index(domains_lib.get_paywall_calibrations(conn))
+    # OU over the ADJUSTED-DA population → the reference distribution the
+    # percentile sketches summarize. Power stays on MEASURED da+pa: the paywall
+    # suppresses a page's links, it does not make the domain weaker.
+    adj_by_host = domains_lib.get_paywall_da_adjustments(conn)
     ou_vals, pw_vals = [], []
     for url, da, pa in pop:
-        apa = _adjusted_pa(url, pa, cal_by_host)
-        pred = a0 * da * da + a1 * da + a2
-        ou_vals.append(apa - pred)
-        pw_vals.append(da + apa)
+        eda, _ = _adjusted_da(url, da, adj_by_host)
+        pred = a0 * eda * eda + a1 * eda + a2
+        ou_vals.append(pa - pred)
+        pw_vals.append(da + pa)
 
     fit = {
         "used": True,
@@ -281,7 +273,7 @@ def score_members(members: list[dict], *,
         if fit is None:
             fit = get_global_fit(conn)
         from input.pipeline import domains_lib
-        cal_by_host = _cal_index(domains_lib.get_paywall_calibrations(conn))
+        adj_by_host = domains_lib.get_paywall_da_adjustments(conn)
     finally:
         if own:
             try:
@@ -299,20 +291,24 @@ def score_members(members: list[dict], *,
     for m in members:
         pa = m.get("pa")
         da = m.get("da")
-        apa = _adjusted_pa(m.get("url") or "", pa, cal_by_host)
-        m["adjusted_pa"] = round(apa, 4) if apa is not None else None
+        eda, _applied = _adjusted_da(m.get("url") or "", da, adj_by_host)
+        m["adjusted_da"] = round(eda, 4) if _applied else None
+        # SUPERSEDED by adjusted_da. PA is no longer rewritten, so this must go
+        # NULL rather than keep a stale free-equivalent from the old remap — a
+        # leftover value here would still be read by the members API and the UI.
+        m["adjusted_pa"] = None
         if not usable:
             # BOOTSTRAP — no global fit computed yet → raw-PA fallback for EVERY member
             # across every publisher. The scale is uniform (all raw PA), so within- and
             # cross-publisher ordering stay consistent; this is the documented old
             # behavior until the first batch run computes a fit.
             m["ou"] = None
-            m["power"] = (float(da) + apa) if (da is not None and apa is not None) else None
+            m["power"] = (float(da) + float(pa)) if (da is not None and pa is not None) else None
             m["ou_pct"] = None
             m["power_pct"] = None
             m["rank_score"] = float(pa) if pa is not None else None
             continue
-        if apa is None or da is None:
+        if pa is None or da is None:
             # Fit EXISTS but this member has no authority signal (no PA, or no DA so OU is
             # uncomputable) → it can't be placed on the system scale. NULL it (sorts last,
             # excluded from the leaderboard). Crucially NOT raw PA: a 0–100 PA value mixed
@@ -324,8 +320,9 @@ def score_members(members: list[dict], *,
             m["power_pct"] = None
             m["rank_score"] = None
             continue
-        ou = apa - (a0 * da * da + a1 * da + a2)
-        power = float(da) + apa
+        # OU against the ADJUSTED bar; power on the MEASURED authority.
+        ou = float(pa) - (a0 * eda * eda + a1 * eda + a2)
+        power = float(da) + float(pa)
         ou_pct = _percentile(ou, ouq)
         pw_pct = _percentile(power, pwq)
         m["ou"] = round(ou, 4)

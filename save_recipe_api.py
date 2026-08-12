@@ -670,6 +670,16 @@ def _attach_moz_scoring(recipe, url_normalized):
             # Provenance rides along with the PA it describes (see moz_http_status).
             if meta.get("moz_http_code") is not None:
                 scoring["mozHttpCode"] = meta["moz_http_code"]
+            # Paywall DA-adjustment, STAMPED AT SCORING TIME so the adjustment a
+            # page was actually scored under is stored with it — queryable in SQL
+            # via the adjusted_da / adjusted_ou_score / effective_ou_score columns
+            # without running the pipeline, and still readable after a later
+            # recalibration moves the number.
+            try:
+                from input.pipeline.url_scoring import stamp_paywall_adjustment
+                stamp_paywall_adjustment(scoring, url_normalized)
+            except Exception as _e:
+                print(f"[WARN] paywall DA-adjustment stamp skipped: {_e}")
             recipe["_scoring"] = scoring
     except Exception as e:
         print(f"[WARN] Moz scoring at extract failed for {url_normalized!r}: {e}")
@@ -893,6 +903,29 @@ def init_db():
                     # corpus anyway (fieldScope is empty on every row, so the
                     # cohort they belong to isn't even recorded). Rank with
                     # PERCENT_RANK() over ou_score/power instead.
+                    # PAYWALL DA-ADJUSTMENT (pa_gap_v1) — stored, not derived on
+                    # read, so a report can be written in plain SQL instead of by
+                    # running the pipeline, and so the adjustment IN FORCE when a
+                    # page was scored stays auditable after a recalibration.
+                    # `domain_authority` above remains the raw Moz measurement;
+                    # these sit beside it as an explicitly labelled judgment.
+                    ("adjusted_da", "REAL",
+                     "json_extract(data,'$._scoring.adjustedDomainAuthority')"),
+                    ("adjusted_ou_score", "REAL",
+                     "json_extract(data,'$._scoring.adjustedOuScore')"),
+                    ("paywall_discount_pct", "REAL",
+                     "json_extract(data,'$._scoring.paywallDiscountPct')"),
+                    # WHICH formula produced the number, so a row calibrated by a
+                    # superseded method is identifiable rather than merely suspect.
+                    ("paywall_adj_method", "TEXT",
+                     "json_extract(data,'$._scoring.paywallAdjMethod')"),
+                    # THE COLUMN TO RANK ON. Falls back to the raw OU when no
+                    # adjustment applies, so a query never has to know whether a
+                    # publisher is gated — and can't accidentally rank gated rows
+                    # on the un-adjusted figure by forgetting the COALESCE.
+                    ("effective_ou_score", "REAL",
+                     "COALESCE(json_extract(data,'$._scoring.adjustedOuScore'), "
+                     "json_extract(data,'$._scoring.ouScore'))"),
                     ("stored_ou_pct", "REAL", "json_extract(data,'$._scoring.ouPercentile')"),
                     ("stored_power_pct", "REAL", "json_extract(data,'$._scoring.powerPercentile')"),
                     ("stored_power", "REAL", "json_extract(data,'$._scoring.power')"),
@@ -1530,30 +1563,32 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
             if not row:
                 raise HTTPException(status_code=404, detail="Recipe not found")
             _data = json.loads(row[3])
-            # Stamp the free-equivalent PA for gated publishers, DERIVED from the
-            # live calibration rather than read from storage. Both SELECTORS
-            # already remap (dish: _apply_paywall_remap; publisher:
-            # domain_scoring.score_members) but the form showed raw PA and an
-            # ouScore computed from it — so an ATK page displayed PA 36 / OU -5.0
-            # while selection had scored it 50.9 / +10.0. The curator, and
-            # scoreCommentary, were reading the un-corrected numbers.
-            # Absent when the publisher isn't calibrated or the remap doesn't
-            # lift (memory/feedback_absent_not_zero).
+            # Stamp the paywall DA-adjustment for gated publishers, DERIVED from
+            # the live calibration rather than read from storage. Both SELECTORS
+            # already adjust (dish: _apply_paywall_remap; publisher:
+            # domain_scoring.score_members) but the form showed the raw DA bar
+            # and an ouScore computed from it — so an ATK page displayed OU -5.0
+            # while selection had scored the same page well above zero. The
+            # curator, and scoreCommentary, were reading the un-corrected number.
+            # Absent when the publisher carries no adjustment
+            # (memory/feedback_absent_not_zero).
+            #
+            # Resolved from the ORIGINAL URL first: `_scoring.rootDomain` holds
+            # the apex while `domains` is keyed at full-host grain, and matching
+            # on the apex found 0 of cooking.nytimes.com's 89 rows.
+            # Rows saved before the adjustment shipped (or before the publisher
+            # was calibrated) carry no stamp, so refresh it on read too. The
+            # stamper is the SAME one the save path uses, so a read can never
+            # show a different adjustment than the one that was stored.
             try:
                 _sc = _data.get("_scoring") or {}
-                _pa = _sc.get("pageAuthority")
-                if _pa:
-                    from input.pipeline.url_scoring import adjusted_pa_for
-                    _host = (_sc.get("rootDomain") or "").strip().lower()
-                    if not _host:
-                        from urllib.parse import urlparse as _up
-                        _host = (_up((_data.get("_source") or {}).get("originalUrl") or "").hostname or "")
-                    _adj = adjusted_pa_for(_host, _pa)
-                    if _adj is not None and _adj > float(_pa):
-                        _sc["adjustedPageAuthority"] = _adj
+                if _sc:
+                    from input.pipeline.url_scoring import stamp_paywall_adjustment
+                    _url = (_data.get("_source") or {}).get("originalUrl") or ""
+                    if stamp_paywall_adjustment(_sc, _url):
                         _data["_scoring"] = _sc
             except Exception as _e:
-                print(f"[WARN] adjusted-PA stamp skipped: {_e}")
+                print(f"[WARN] paywall DA-adjustment stamp skipped: {_e}")
             # user_id is returned at the top level (it's a column, not part of
             # the recipe blob) so the form's loadForm hydration can refresh
             # the admin band input to match the loaded row's actual owner —
@@ -7379,29 +7414,38 @@ async def _handle_paid_pa_calibration_job(job: dict) -> dict:
     The result carries a per-domain `results` list including the REASON a
     publisher was skipped (too_few_samples / no_data / no_free_reference), so the
     Job Monitor shows why coverage failed to grow rather than just a count.
-    See scripts/calibrate_paid_pa.py + memory/project_paid_pa_calibration.
+    See memory/project_paid_pa_calibration.
+
+    REWIRED 2026-08-12 to pa_gap_v1 (input/pipeline/paywall_calibration.py). The
+    docstring above describes the SUPERSEDED shift-and-scale method, which this
+    job used to run monthly; leaving it wired would have resurrected the old
+    pa_cal_* remap on the next scheduled tick and re-introduced the impossible
+    scores it produced. The current method instead measures the PA gap against
+    free peers at matched DA and converts it to a DA haircut, gated on effect
+    size and peer-window stability, then re-stamps every affected recipe row so
+    the stored adjustment tracks the new calibration.
+
+    No SERP/Moz spend at all — the corpus is the sample — so `harvest_missing`
+    no longer applies and is ignored.
     """
     p = job.get("params") or {}
-    only = (p.get("only") or "").strip() or None
-    harvest_missing = bool(p.get("harvest_missing"))
     dry_run = bool(p.get("dry_run"))
 
     def _run():
-        from scripts.calibrate_paid_pa import run_calibration
+        from input.pipeline import paywall_calibration
         with _db() as conn:
-            return run_calibration(conn, persist=not dry_run, only=only,
-                                   harvest_missing=harvest_missing)
+            return paywall_calibration.calibrate(conn, persist=not dry_run)
 
     summary = await asyncio.to_thread(_run)
     skipped = [f"{r.get('domain')}({r.get('status')})"
                for r in summary.get("results", [])
-               if r.get("status") not in ("calibrated", "dry_run")]
-    print(f"[PAID-PA-CAL] flagged={summary.get('flagged')} "
-          f"calibrated={summary.get('calibrated')} skipped={summary.get('skipped')} "
-          f"corpus={summary.get('corpus_pages')} free={summary.get('free_pages')}"
-          f"{'  DRY RUN' if dry_run else ''}")
+               if r.get("status") != "adjusted"]
+    print(f"[PAYWALL-CAL] method={summary.get('method')} "
+          f"flagged={summary.get('flagged')} adjusted={summary.get('adjusted')} "
+          f"corpus={summary.get('corpus_rows')} free={summary.get('free_rows')} "
+          f"restamped={summary.get('restamped')}{'  DRY RUN' if dry_run else ''}")
     if skipped:
-        print(f"[PAID-PA-CAL] not calibrated: {', '.join(skipped)}")
+        print(f"[PAYWALL-CAL] not adjusted: {', '.join(skipped)}")
     return summary
 
 

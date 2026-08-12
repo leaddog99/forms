@@ -170,42 +170,48 @@ def score_data_points_for_dish(
     a0, a1, a2 = (float(x) for x in ou_fit["coefficients"])
     pw = float(power_weight)
 
-    # Paywall PA-remap: for flagged premium publishers, replace the gated (link-
-    # starved) PA with its free-equivalent BEFORE scoring, so OU stops penalizing
-    # them for the paywall instead of quality. adjusted_PA = free_mean + (PA −
-    # paid_mean)·(free_std/paid_std) — shift AND scale (scripts/calibrate_paid_pa.py;
-    # calibration lives on the domains master). No flagged domains (or none with a
-    # solid sample) → eff_pa is just `pa` → byte-identical to the prior behavior.
-    # Matched by the data point's normalized url host (with/without www).
+    # Paywall DA-adjustment (pa_gap_v1): for flagged premium publishers, lower the
+    # EXPECTATIONS BAR rather than rewriting PA. DA is measured across the whole
+    # domain — bostonglobe.com is DA 91 on the strength of its free news — while
+    # the recipes sit behind the wall, so OU judges a gated page against an
+    # ungated domain's bar. Discounting DA fixes the bar; PA, the only thing we
+    # actually measured, is left alone. Calibration + the full argument (and why
+    # the old PA shift-and-scale produced an impossible +31.7 OU) live in
+    # input/pipeline/paywall_calibration.py. No adjusted domains → eff_da is just
+    # `da` → byte-identical to the prior behavior.
+    #
+    # Matched by instr on the data point's url. The adjustment dict is keyed at
+    # FULL-HOST grain, which is what the url contains — an apex-keyed match would
+    # miss every subdomain publisher (cooking.nytimes.com).
     from input.pipeline import domains_lib
     _whens = []
-    for c in domains_lib.get_paywall_calibrations(conn):
-        h = c["domain"]; ps = float(c["pa_std"])
-        if ps <= 0:
+    for h, adj in (domains_lib.get_paywall_da_adjustments(conn) or {}).items():
+        pct = float(adj.get("discount_pct") or 0)
+        if pct <= 0:
             continue
         cond = (f"(instr(url, {('//' + h + '/')!r}) > 0 "
                 f"OR instr(url, {('//www.' + h + '/')!r}) > 0)")
-        # max(pa, remap): the correction is ONE-DIRECTIONAL — a paywall can only
-        # SUPPRESS page links, never inflate them, so we only ever LIFT. A publisher
-        # already at/above the free line (e.g. NYT) keeps its real PA, untouched.
-        _whens.append(f"WHEN {cond} THEN max(pa, {float(c['free_mean'])!r} + "
-                      f"(pa - {float(c['pa_mean'])!r}) * ({float(c['free_std'])!r} / {ps!r}))")
-    eff_pa = ("CASE " + " ".join(_whens) + " ELSE pa END") if _whens else "pa"
+        _whens.append(f"WHEN {cond} THEN da * {(1.0 - pct / 100.0)!r}")
+    eff_da = ("CASE " + " ".join(_whens) + " ELSE da END") if _whens else "da"
 
     # !r => full-precision float literal (no rounding drift); our own coefficients.
-    ou_inner = f"(epa - ({a0!r}*da*da + {a1!r}*da + {a2!r}))"
+    # OU uses the ADJUSTED da (the bar). `power` below deliberately keeps the
+    # MEASURED da: the paywall suppresses a page's links, it does not make the
+    # domain weaker, and power is a raw authority magnitude rather than a
+    # penalty. Discounting it there would invent a second, unearned correction.
+    ou_inner = f"(pa - ({a0!r}*eda*eda + {a1!r}*eda + {a2!r}))"
     conn.execute(
         f"""
         WITH base AS (
-            SELECT url, da, ({eff_pa}) AS epa
+            SELECT url, da, pa, ({eff_da}) AS eda
             FROM dish_run_data_points
             WHERE dish_name = :d AND da IS NOT NULL AND pa IS NOT NULL
         ), scored AS (
             SELECT url,
                    {ou_inner}                                     AS ou,
-                   da + epa                                       AS power,
+                   da + pa                                        AS power,
                    PERCENT_RANK() OVER (ORDER BY {ou_inner}) * 100.0 AS ou_pct,
-                   PERCENT_RANK() OVER (ORDER BY da + epa)    * 100.0 AS power_pct
+                   PERCENT_RANK() OVER (ORDER BY da + pa)     * 100.0 AS power_pct
             FROM base
         )
         UPDATE dish_run_data_points AS p

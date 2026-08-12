@@ -113,8 +113,9 @@ _COUNT_COLUMNS = {
 }
 
 # Paywall PA-calibration (shift-and-scale remap of a gated publisher's PA to its
-# free-equivalent). Recomputed by scripts/calibrate_paid_pa.py; consumed by the
-# scorer (score_data_points_for_dish) for paywall=1 domains.
+# free-equivalent). SUPERSEDED 2026-08-12 by the paywall_da_* columns below and
+# by input/pipeline/paywall_calibration.py; these columns are retained read-only
+# so historic calibrations stay inspectable. Nothing writes them any more.
 _PAYWALL_COLUMNS = {
     "paywall": "INTEGER NOT NULL DEFAULT 0",        # 1 = gated premium publisher
     "pa_cal_mean": "REAL",                          # this publisher's recipe-PA mean
@@ -131,6 +132,28 @@ _PAYWALL_COLUMNS = {
     # keep_top_n/search_pages; PERSISTED so it sticks across edits/reloads (was
     # read only at refresh time and reset to 100 each load). Default 100.
     "harvest_records": "INTEGER NOT NULL DEFAULT 100",
+    # ── Paywall DA-adjustment (pa_gap_v1, 2026-08-12) ──────────────────────────
+    # SUPERSEDES the pa_cal_* shift-and-scale above. That remap rewrote PA — the
+    # one thing we actually measured — by dividing a publisher's WITHIN-site PA
+    # spread by a free reference σ pooled across a DA±8 window. The pooled σ
+    # carries BETWEEN-site variance, so the ratio was apples-to-oranges: it drove
+    # the slope to its 2.0 cap and manufactured a Boston Globe OU of +31.7 when
+    # the highest OU ever observed in 4,896 master rows is +25.4.
+    #
+    # The real mismatch is the BAR, not the page. DA is measured across the whole
+    # domain — bostonglobe.com is DA 91 on the strength of free news — while the
+    # recipe sits behind the wall. So we hold a gated page to an expectations bar
+    # set by an ungated domain. Fix the bar: discount DA, leave PA alone.
+    #
+    # The discount is a JUDGMENT and is stored as one — never overwriting
+    # `domain_authority`, and always beside the method id and the inputs that
+    # produced it, so a later method change can't silently re-mean old rows.
+    "paywall_da_discount_pct": "REAL",   # % haircut applied to measured DA
+    "paywall_da_adjusted": "REAL",       # the resulting DA (derived, for display)
+    "paywall_adj_method": "TEXT",        # formula id, e.g. 'pa_gap_v1'
+    "paywall_adj_inputs": "TEXT",        # JSON: every input behind the number
+    "paywall_adj_n": "INTEGER",          # sample size (thin => low confidence)
+    "paywall_adj_at": "TEXT",            # when computed (ISO)
     # The publisher's recipe URL path segment (e.g. 'recipes', 'recipe', 'cooking').
     # NOT assumed — detected per publisher (collections_lib.detect_recipe_path) and
     # stored here, curator-overridable. '' = not yet detected.
@@ -318,7 +341,10 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
     # We store a per-publisher shift-and-scale calibration so the scorer can remap
     # their PA to a free-equivalent. `paywall=1` flags a gated premium publisher;
     # pa_cal_* are this publisher's own PA mean/std/n; pa_cal_free_* are the matched-
-    # DA free reference at calibration time. See scripts/calibrate_paid_pa.py.
+    # DA free reference at calibration time. SUPERSEDED — see paywall_da_* above.
+    # NOTE (2026-08-12): the pa_cal_* half of this block is SUPERSEDED by the
+    # paywall_da_* columns in the same dict — see the comment there. The old
+    # columns stay readable so historic calibrations remain inspectable.
     for col, decl in _PAYWALL_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
@@ -401,6 +427,104 @@ def get_paywall_calibrations(conn=None, db_path: str = _DEFAULT_DB) -> list:
                 conn.close()
             except Exception:
                 pass
+
+
+def set_paywall_da_adjustment(conn, domain, *, discount_pct, da_adjusted,
+                              method, inputs, n):
+    """Persist a publisher's DA haircut TOGETHER with the method and inputs that
+    produced it. `domain_authority` (the Moz measurement) is deliberately not
+    touched: the measured DA is a fact, the discount is our judgment about how
+    much of that domain-wide authority the gated section actually inherits, and
+    the two must stay separately readable."""
+    ensure_domains_table(conn)
+    host = _canon_host(domain)
+    now = _now()
+    if not domain_exists(conn, host):
+        conn.execute(
+            "INSERT INTO domains (domain, root_domain, created_at, updated_at) VALUES (?,?,?,?)",
+            (host, root_domain(host) or host, now, now),
+        )
+    conn.execute(
+        "UPDATE domains SET paywall_da_discount_pct = ?, paywall_da_adjusted = ?, "
+        "paywall_adj_method = ?, paywall_adj_inputs = ?, paywall_adj_n = ?, "
+        "paywall_adj_at = ?, updated_at = ? WHERE domain = ?",
+        (discount_pct, da_adjusted, method, json.dumps(inputs, sort_keys=True),
+         n, now, now, host),
+    )
+    conn.commit()
+
+
+def clear_paywall_da_adjustment(conn, domain) -> None:
+    """Drop a publisher's DA adjustment (e.g. the paywall flag was wrong, or the
+    evidence no longer supports a haircut). Clears to NULL, not 0 — an absent
+    adjustment must not read as 'measured, and it came out zero'."""
+    ensure_domains_table(conn)
+    conn.execute(
+        "UPDATE domains SET paywall_da_discount_pct = NULL, paywall_da_adjusted = NULL, "
+        "paywall_adj_method = NULL, paywall_adj_inputs = NULL, paywall_adj_n = NULL, "
+        "paywall_adj_at = NULL, updated_at = ? WHERE domain = ?",
+        (_now(), _canon_host(domain)),
+    )
+    conn.commit()
+
+
+def get_paywall_da_adjustments(conn=None, db_path: str = _DEFAULT_DB) -> dict:
+    """{host: {discount_pct, da_adjusted, method, n, inputs}} for every publisher
+    carrying a DA adjustment. Keyed by the domains row's own FULL-HOST key, which
+    is what `adjustment_for_url` resolves against."""
+    own = conn is None
+    if own:
+        conn = _connect(db_path)
+    try:
+        if own:
+            ensure_domains_table(conn)
+        rows = conn.execute(
+            "SELECT domain, paywall_da_discount_pct, paywall_da_adjusted, "
+            "paywall_adj_method, paywall_adj_n, paywall_adj_inputs FROM domains "
+            "WHERE paywall_da_discount_pct IS NOT NULL AND paywall_da_discount_pct > 0"
+        ).fetchall()
+        out = {}
+        for r in rows:
+            try:
+                inputs = json.loads(r[5]) if r[5] else {}
+            except Exception:
+                inputs = {}
+            out[r[0]] = {"discount_pct": r[1], "da_adjusted": r[2],
+                         "method": r[3], "n": r[4], "inputs": inputs}
+        return out
+    except Exception:
+        return {}
+    finally:
+        if own:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def adjustment_for_url(url_or_host: str, adjustments: dict) -> Optional[dict]:
+    """Resolve a URL (or host) to its publisher adjustment, walking UP the label
+    chain: cooking.nytimes.com → nytimes.com → com, first match wins.
+
+    Why not a plain equality check on `_scoring.rootDomain`: that field holds the
+    APEX ('nytimes.com') while `domains` is canonical at FULL-HOST grain
+    ('cooking.nytimes.com'), and there is no domains row for the apex. Measured
+    2026-08-12, that grain mismatch meant the paywall flag on cooking.nytimes.com
+    matched exactly 0 of its 89 master rows — the adjustment would have silently
+    no-opped for every subdomain publisher. So resolve from the URL's real host,
+    which is the fact, rather than from the derived apex.
+    """
+    if not adjustments:
+        return None
+    host = _canon_host(url_or_host)
+    if not host:
+        return None
+    labels = host.split(".")
+    for i in range(len(labels) - 1):
+        hit = adjustments.get(".".join(labels[i:]))
+        if hit:
+            return hit
+    return None
 
 
 def seed_domains(conn: sqlite3.Connection) -> int:

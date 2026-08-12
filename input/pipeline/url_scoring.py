@@ -70,11 +70,32 @@ def moz_row_stats() -> dict:
             "saved_vs_4x": max(0, _MOZ_CALLS * 4 - _MOZ_ROWS)}
 
 
+# The OU curve's fitted constants. Named (rather than inlined) because the
+# paywall DA-adjustment has to invert this exact bar to turn a measured PA gap
+# into a DA haircut — two copies of the magic numbers would let the calibration
+# and the score silently disagree.
+OU_K = 3.0273
+OU_EXP = 0.6034
+
+
+def ou_bar(da: float) -> float:
+    """The break-even PA for a site of this DA — what a typical page on a domain
+    this strong is expected to earn. OU is a page's PA minus this bar."""
+    return OU_K * (float(da) ** OU_EXP)
+
+
+def ou_bar_inverse(bar: float) -> float:
+    """The DA that produces this bar. Used by the paywall DA-adjustment to
+    express 'this publisher's pages run N PA points below their DA peers' as the
+    DA the gated section actually behaves like."""
+    return (max(float(bar), 1e-6) / OU_K) ** (1.0 / OU_EXP)
+
+
 def _compute_ou(pa: float, da: float) -> Optional[float]:
     """Opportunity score: derived from Moz PA and DA. Lifted from the batch
     pipeline so scores stay comparable across batch and interactive flows."""
     try:
-        return round(-3.0273 * (da ** 0.6034) + pa, 3)
+        return round(pa - ou_bar(da), 3)
     except Exception:
         return None
 
@@ -688,63 +709,120 @@ def authority_corpus_context(da, db_path: str = "recipes.db") -> dict:
     return {"pct": pct, "band": band, "n": len(vals)}
 
 
-# ── paywall PA-remap, for DISPLAY surfaces ──────────────────────────────────
-# The selectors already remap: the dish path via build_query_batch.
-# _apply_paywall_remap, the publisher path via domain_scoring.score_members.
-# The recipe FORM did not — it reads recipe._scoring, which carries the RAW pa
-# and an ouScore computed from it. So a gated publisher showed as under-
-# performing on a page the selector had actually rated well: measured
-# 2026-08-09, an ATK recipe displayed PA 36 / OU -5.0 while selection scored the
-# same page at an adjusted PA 50.9 / OU +10.0. A 15-point disagreement, and the
-# form's version is the one a curator reads — and the one scoreCommentary was
-# writing its verdict from.
+# ── paywall DA-adjustment (pa_gap_v1) — the CURRENT correction ──────────────
+# Replaced the PA shift-and-scale remap. We no longer rewrite PA (the measurement);
+# we discount DA (the expectations bar), because DA is measured domain-wide on
+# publishers whose recipes sit behind a wall. See
+# input/pipeline/paywall_calibration.py for the full argument and the numbers.
 #
-# DERIVED, NEVER STORED. The calibration is a snapshot of two moving
-# distributions and is re-run monthly (the paid_pa_calibration job), so a stored
-# adjustedPageAuthority would go stale exactly the way the calibration itself
-# just did. Computing on read means the form always reflects the CURRENT
-# calibration. Cached per process; a restart picks up a re-calibration.
-_PAYWALL_CAL_CACHE: dict = {}
+# Deliberately returns an adjusted DA rather than an adjusted OU: every surface
+# uses a different curve for the bar (url_scoring the fitted power law, chapters
+# and domain_scoring a per-cohort quadratic), so handing back the DA lets each
+# feed its own curve and keeps one definition of the adjustment.
+_PAYWALL_ADJ_CACHE: dict = {}
 
 
-def _paywall_cals(db_path: str = "recipes.db") -> dict:
+def _paywall_adjustments(db_path: str = "recipes.db") -> dict:
     key = str(db_path)
-    if key not in _PAYWALL_CAL_CACHE:
+    if key not in _PAYWALL_ADJ_CACHE:
         try:
             import sqlite3
             from input.pipeline import domains_lib
             with sqlite3.connect(key, timeout=5) as conn:
-                cals = domains_lib.get_paywall_calibrations(conn)
-            _PAYWALL_CAL_CACHE[key] = {
-                (c.get("domain") or "").lower().replace("www.", ""): c
-                for c in cals if c.get("pa_std") and c["pa_std"] > 0
-            }
+                _PAYWALL_ADJ_CACHE[key] = domains_lib.get_paywall_da_adjustments(conn)
         except Exception:
-            _PAYWALL_CAL_CACHE[key] = {}
-    return _PAYWALL_CAL_CACHE[key]
+            _PAYWALL_ADJ_CACHE[key] = {}
+    return _PAYWALL_ADJ_CACHE[key]
 
 
-def adjusted_pa_for(host: str, pa, db_path: str = "recipes.db"):
-    """Free-equivalent PA for a gated publisher's page, or None when no remap applies.
+def reset_paywall_cache() -> None:
+    """Drop the per-process cache so a re-calibration takes effect without a
+    restart (the calibration job calls this after persisting)."""
+    _PAYWALL_ADJ_CACHE.clear()
 
-    Returns None — not the raw pa — when the publisher isn't calibrated, so a
-    caller can tell "no remap" from "remap that happened to change nothing"
-    (memory/feedback_absent_not_zero). One-directional, matching every other
-    consumer: `max(pa, free_mean + (pa - paid_mean) * (free_std/paid_std))`.
+
+def adjusted_da_for(url_or_host: str, da, db_path: str = "recipes.db",
+                    adjustments: Optional[dict] = None):
+    """The DA a gated publisher's section actually behaves like, or None when no
+    adjustment applies.
+
+    None — not `da` — when the publisher isn't adjusted, so a caller can tell
+    "no adjustment" from "an adjustment that changed nothing"
+    (memory/feedback_absent_not_zero).
+
+    Resolves by walking UP the host labels (cooking.nytimes.com → nytimes.com),
+    because `_scoring.rootDomain` holds the apex while `domains` is keyed at
+    full-host grain — an equality check silently matched 0 of NYT's 89 rows.
     """
     try:
-        pa = float(pa)
+        da = float(da)
     except (TypeError, ValueError):
         return None
-    h = (host or "").lower().replace("www.", "")
-    c = _paywall_cals(db_path).get(h)
-    if not c:
+    if da <= 0:
         return None
+    from input.pipeline import domains_lib
+    adj = domains_lib.adjustment_for_url(
+        url_or_host, _paywall_adjustments(db_path) if adjustments is None else adjustments)
+    if not adj:
+        return None
+    pct = adj.get("discount_pct")
+    if not pct or pct <= 0:
+        return None
+    return round(da * (1.0 - float(pct) / 100.0), 2)
+
+
+def stamp_paywall_adjustment(scoring: dict, url: str = "",
+                             db_path: str = "recipes.db") -> bool:
+    """Write the paywall DA-adjustment INTO a `_scoring` dict. Returns whether
+    one applied. Mutates in place; safe to call repeatedly.
+
+    PERSISTED, not derived-on-read. The earlier remap was computed on every read
+    and never stored, on the theory that a stored copy goes stale when the
+    calibration moves. That trade was wrong in two ways:
+
+      1. A number that only exists inside a Python call is invisible to SQL, so
+         anyone writing a report has to run the pipeline to see why a page
+         ranked where it did.
+      2. It erases the audit trail. The adjustment that was in force WHEN a page
+         was scored is a fact about that decision; recomputing only ever shows
+         today's answer, so you can never tell whether a ranking reflected the
+         current calibration or an older one.
+
+    Staleness is handled the way the rest of the system handles stored derived
+    values (ou/power/rank_score) — by re-stamping on recalibration, not by
+    refusing to store. `paywallAdjMethod` records WHICH formula produced the
+    number so a stale row is identifiable rather than merely suspect.
+
+    `domainAuthority` and `pageAuthority` are left untouched: they are
+    measurements, and the adjustment sits beside them as an explicitly labelled
+    judgment.
+    """
     try:
-        ps = float(c["pa_std"])
-        if ps <= 0:
-            return None
-        adj = float(c["free_mean"]) + (pa - float(c["pa_mean"])) * (float(c["free_std"]) / ps)
-    except (KeyError, TypeError, ValueError, ZeroDivisionError):
-        return None
-    return round(max(pa, adj), 1)
+        pa = scoring.get("pageAuthority")
+        da = scoring.get("domainAuthority")
+        if pa is None or da is None:
+            return False
+        # Resolve from the real URL first; `rootDomain` is the apex and cannot
+        # match a full-host domains row (cooking.nytimes.com).
+        adj_da = adjusted_da_for(url or "", da, db_path)
+        if adj_da is None and scoring.get("rootDomain"):
+            adj_da = adjusted_da_for(scoring["rootDomain"], da, db_path)
+        if adj_da is None or adj_da >= float(da):
+            # Absent, not zero — clear any stamp left by a previous calibration
+            # so a publisher that lost its adjustment doesn't keep the old lift.
+            for k in ("adjustedDomainAuthority", "adjustedOuScore",
+                      "paywallDiscountPct", "paywallAdjMethod"):
+                scoring.pop(k, None)
+            return False
+        from input.pipeline import domains_lib
+        meta = domains_lib.adjustment_for_url(
+            url or scoring.get("rootDomain") or "", _paywall_adjustments(db_path)) or {}
+        scoring["adjustedDomainAuthority"] = adj_da
+        scoring["adjustedOuScore"] = round(float(pa) - ou_bar(adj_da), 3)
+        scoring["paywallDiscountPct"] = meta.get("discount_pct")
+        scoring["paywallAdjMethod"] = meta.get("method")
+        return True
+    except Exception:
+        return False
+
+
