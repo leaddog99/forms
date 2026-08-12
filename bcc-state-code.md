@@ -3933,11 +3933,11 @@ what two rounds of log-reading had guessed at. **Reproduce before attributing.**
 
 ---
 
-## START HERE — state of play as of 2026-08-10
+## START HERE — state of play as of 2026-08-12
 
-**Branch `split/enrichment-api`, pushed. Server restarted and current.**
+**Branch `split/enrichment-api`, pushed (3b07a07). Server restarted and current.**
 
-### The product thesis, now settled (read this first)
+### The product thesis (read this first — unchanged, still settled)
 
 The membership club IS the product; the review is not.
 
@@ -3947,76 +3947,78 @@ The membership club IS the product; the review is not.
     4  optimizations    cook view, voice, tips
 
 **Free to browse, membership to KEEP.** Capture happens on our page BEFORE the click-out,
-so sending traffic to the source is a step in the funnel, not the end of it. The source
-link is attribution; it need not be the loud button.
+so sending traffic to the source is a step in the funnel, not the end of it.
 
-**Do not gate the ranking.** Our own data: gated pages earn 12-16 fewer PA points because
-they collect no links. Gating it means no links -> no organic -> every visit paid, which
-is the tax the paywall calibrator exists to undo. The free layer is the channel.
+**Do not gate the ranking** — gated pages earn 12-16 fewer PA points because they collect
+no links, which is the tax the paywall calibrator exists to undo. The free layer is the
+channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
-**JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master (Recipe markup needs the
-publisher's ingredients+instructions and puts us in the SERP against them). Recipes we
-author ourselves get full Recipe markup.
+### What shipped 2026-08-11/12
 
-### What shipped 2026-08-09/10
-
-- **Public star rating** — `public_scoring.py` as the single chokepoint; `.stars` SVG;
-  `GET /public-score`; chip + commentary mirror on the admin form; `stars_mockup.html`.
-- **DA commentary calibration** — the prompt now gets the corpus percentile + band.
-- **`paid_pa_calibration` is a monthly JOB** — was hand-run, 7 weeks stale.
-- **adjustedPageAuthority on the form** — verified live (ATK PA 43 -> 63.1).
-- **UI** — url icons inside the input + ✕ clear + full-URL reveal that flips above the
-  keyboard; shared checkbox sizing; score-only run button warns BEFORE the click.
-- **SEMrush export archive** `input/semrush/` (tracked) + auto-filing in the harvest.
-- **Dish query rows phase 1** — `{q, n, gl, hl}`, lazy migration, no behaviour change.
+- **The candidate ledger** — `run_candidates` + `input/pipeline/candidate_ledger.py`.
+  Every URL a run considered, dish AND publisher, captured AT the drop. `overturnable`
+  encodes the fact/judgment boundary as data. LIVE and proven: 7 runs, 700 rows.
+- **The AI editor, shadow** — `input/pipeline/ai_editor.py`, `run_mediations`,
+  `ai_mediation` job. Verdicts only; `applied=0`; `apply=True` RAISES.
+- **JSON-LD fast lane requires >=2 ingredients / >=2 steps** — fixed in
+  `_has_required_fields`, so all five lanes inherit it. Verified live on Barefoot Contessa.
+- **Page screenshot = the user's own browser capture.** `/stage-image` adopts the
+  bookmarklet's html2canvas image (signed in, paywall-free) as the page screenshot,
+  cropped by `crop_above_fold()` to the same 800x427 the headless path produced. The
+  bookmarklet path now launches NO headless Chromium. Verified live on ATK.
+- **Screenshot deferred** on the interactive path + `/screenshot-status` poll + save-time
+  backstop. (Largely moot on the bookmarklet path now — the browser capture wins first.)
+- **Bookmarklet rescue banner** when the pop-up cannot be driven.
+- **`_sanitize_scoring` keeps a real 0** — a bottom-of-cohort percentile is a measurement.
+- **Dish embedding moved into `create_dish`/`update_dish`**, not the HTTP endpoints.
+- **SerpApi cancelled**; `detect_recipe_path` now asks the ACTIVE provider for its key.
 
 ### Do first
 
-0. **BUILD THE CANDIDATE LEDGER** (`docs/ai-editor-mediation.md` Phase 0) — persist every
-   drop with stage + reason + scores at run time. The AI editor cannot mediate over a pool
-   we throw away, and `dish_rejects` is currently capturing 1 drop in 40. Then Phase 1
-   (shadow) on Ramen, whose two runs are the natural before/after.
+0. **CALIBRATE THE AI EDITOR — this is the decision everything else waits on.**
+   Ramen/795 verdicts are in `run_mediations` (dish form -> **Considered** panel).
+   **19 of 20 ranks moved, 6 of 20 demoted.** Read the six demotes and say whether you
+   agree. That is not a question the model can answer about itself, and it decides
+   whether verdicts ever get authority. Cost was $0.44/run, opus-4-8.
+1. **Phase 2 — give verdicts effect** (`docs/ai-editor-mediation.md`), ONLY after (0).
+   Needs override plumbing: **an Editor's Choice pin is candidacy, not override** —
+   `_pinned` is written twice and read NOWHERE, so a pin re-enters the pool and must clear
+   the same OU floor we want overturned. This bites curator pins today too.
+2. **`docs/dish-candidates-from-keywords.md`** — spec written, nothing built. A
+   `dish_candidate_scan` job + candidates table + review surface. PROPOSE, NEVER CREATE.
+3. **Add high-ratio keywords as QUERIES to existing dishes** — clearest is the singular
+   `chocolate chip cookie recipe` (1.22M base) against the plural dish. But see the
+   sourcing-vs-target rule under "Settled" before touching `dishes.queries`.
+4. **Fresh Top-Pages exports** for `thekitchn.com`, `themediterraneandish.com`,
+   `edibleboston.com` — they now fail loudly rather than harvesting on a stale signal.
+5. **A public-voice commentary variant** — the card cannot use `scoreCommentary`; it names
+   PA/DA/OU.
 
-0b. ~~REVIEW THE RAMEN PASS (job 794)~~ — DONE, and re-run as job 795 with fixed queries.
-   The curator ran it and asked for an opinion. It is the sharpest test of the whole
-   keyword thesis: ramen has the highest comparison ratio measured — **272%**, the only
-   dish where `best ramen recipe` OUTDRAWS `ramen recipe` — so if picking the best is
-   ever worth doing, it is worth doing here. Worth checking: did the winners look like
-   genuine best-of contenders or SEO-optimised filler; did the collection/listicle filter
-   behave on a dish whose SERP is roundup-heavy; and how do the 20 kept rows score on
-   OU/power against the corpus. `top_n_serpapi=30 / top_n_final=20` is a thin funnel
-   (1.5x) versus the 4-5x the publisher harvests use — that ratio is the first thing to
-   question if the winners disappoint.
+### Current numbers (measured 2026-08-12)
 
-0c. **CALIBRATE THE AI EDITOR** — shadow verdicts for Ramen/795 are in `run_mediations`
-   (dish form -> Considered panel). 19 of 20 ranks moved, 6 demoted. Read the six demotes
-   and say whether you agree; that decides whether it ever earns authority. Phase 2
-   (giving verdicts effect) needs the override plumbing, since a pin is candidacy, not
-   override.
-
-1. **`docs/dish-candidates-from-keywords.md`** — the spec is written, nothing is built.
-   A `dish_candidate_scan` job + candidates table + review surface. PROPOSE, NEVER
-   CREATE ([[project_curate_staff_inputs]]).
-2. **Add high-ratio keywords as QUERIES to dishes that already exist** — the clearest is
-   the singular `chocolate chip cookie recipe` (1.22M base, 246k 'best'/mo) against the
-   plural dish. Phase 1's row model lets each carry its own `n`.
-3. **Fresh Top-Pages exports** for `thekitchn.com`, `themediterraneandish.com`,
-   `edibleboston.com` — they now fail loudly rather than harvesting on a stale
-   referring-domains signal.
-4. **A public-voice commentary variant** — the card cannot use today's
-   `scoreCommentary`; it names PA/DA/OU and now the adjusted figure too.
-
-### Current numbers
-
-- master_recipes **~4,811** · personal **412** · dishes **155**
-- SEMrush API units **~26,100** — a ONE-TIME grant, not a monthly refresh (smallest
-  purchasable package is 2 MILLION units). Spend deliberately.
-- comparison-intent market: **8.1%** of recipe search = ~25-28M/mo
-- gap list: **66 keywords, 715,900 'best'/mo** uncovered vs 542,500 across current dishes
+- master_recipes **4,921** · personal **423** · dishes **159** · domains **322**
+- candidate ledger **700 rows across 7 runs** · mediations **25** (Ramen only)
+- cook-reworked: **16** rows with a non-empty `_cook` (0.3%)
+- SEMrush API units **~26,100** — a ONE-TIME grant. Smallest purchasable package is
+  2 MILLION units. Spend deliberately.
 - scheduled jobs: `chapter_rollups`, `semrush_ranks_refresh`, `domain_scoring`,
   `screenshot_refresh`, `paid_pa_calibration`
 
-### Settled this week — do not re-argue
+### Settled — do not re-argue
+
+- **`dishes.queries` is a SOURCING instrument, not an SEO target.** Judged by the quality
+  of the candidate pool it surfaces, NOT by search volume. Ramen's queries were the
+  curator's top-4 SEMrush keywords — the right selector for `target_keyword` and the wrong
+  one for this field. Replacing them with head + component + variants took the union
+  66 -> 106 and moved #1 from an instant-noodle toss to Serious Eats' tonkotsu.
+- **Capture the page from the USER'S browser, not ours.** A server fetch is anonymous, so
+  on a subscription site it photographs the paywall. The hero image already worked this
+  way; the screenshot now does too.
+- **Reproduce before attributing.** Three separate causes wore one symptom ("the
+  bookmarklet is broken") on 2026-08-11, and the hang was attributed to the screenshot on
+  circumstantial timing before anyone drove the real bookmarklet in a browser. The
+  reproduction settled in one step what two rounds of log-reading had guessed wrong.
+
 
 - **Harvest dishes, not formats.** Comparison ratio tracks a KNOWN FAILURE MODE.
   `air fryer recipes` 1.2%, `dinner ideas` 0.7%, `recipes` 0.4% — no single best CATEGORY.
@@ -4041,6 +4043,26 @@ author ourselves get full Recipe markup.
   a full ~96-publisher refresh at a 100/mo floor.
 
 ### Known-open
+
+- **26 master rows are still missing a real percentile.** `_sanitize_scoring` used to
+  delete a bottom-of-cohort 0.0 as if it were unmeasured; the bug is fixed going forward
+  but those rows lost the value. Recomputable from their cohorts — not done, because it
+  touches data.
+- **Why the bookmarklet pop-up was unusable is still unknown.** 2026-08-11's fix makes the
+  case recoverable and VISIBLE (rescue banner) rather than silent. If the banner appears
+  again, that confirms the pop-up is the failing part; the console lines to look for are
+  `early hand-off failed` and `popup navigation failed`.
+- **`recipes.sql.gz` is 53 MB and past GitHub's 50 MB warning threshold** (hard limit is
+  100 MB, and the file only grows). Options when it matters: Git LFS, splitting the dump,
+  or excluding more rebuildable tables. Also: use targeted `git add <paths>`, never
+  `git add -A` — on 2026-08-12 that swept four 55 MB dumps (209 MB) into three code
+  commits, collapsed to one before pushing.
+- **The batch/publisher path still captures screenshots synchronously** (5-31s each). Fine
+  for correctness — nobody waits on it, and cached rows need the screenshot — but it is
+  several minutes of a 20-recipe dish refresh. Deferring needs care there for that reason.
+- **Publisher harvests still screenshot anonymously**, so a paywalled publisher shows its
+  paywall. There is no user session to borrow on that path; a real limitation of
+  harvesting, not something the browser-capture fix covers.
 
 - **[[project_traffic_exceptionalism]]** — TU is a real third axis (corr to OU +0.166) but
   blocked on supply: traffic exists only on publisher-harvested rows, and 71% of its
