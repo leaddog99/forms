@@ -3821,6 +3821,118 @@ reward.
 
 ---
 
+## Session log — 2026-08-11/12 — the candidate ledger, the AI editor's first verdicts, and three bugs wearing one symptom
+
+### Phase 0 + 1 of the AI editor (docs/ai-editor-mediation.md)
+
+**The candidate ledger SHIPPED** (`run_candidates`, `input/pipeline/candidate_ledger.py`).
+Nothing new had to be computed: `build_batch` already returned every dropped entry as a
+full dict and threw away all but the counts. The timing is the point — at the moment of a
+drop we hold url/title/rank/DA/PA/OU, and afterwards it costs money, because the
+OU-dropped URLs are in NEITHER the Moz cache nor the extract cache.
+
+A new table rather than a wider `dish_rejects`, because the grain differs: that is a
+curator worklist (dish-scoped, current-state, status lifecycle); this is a run audit
+(run-scoped, immutable, winners included). **`overturnable` encodes the mediation rule as
+data at write time** — the editor may argue with an inference (the OU floor, a detection
+failure, a missing measurement) and never with an observation (blocklist, listicle,
+skip-thin). Unknown reasons default to NOT overturnable. `rank_cut` names the class that
+cleared every gate and merely missed `top_n_final` — the cheapest promotions, previously
+invisible. Wired for BOTH dish and publisher runs; the publisher half needed less, because
+`collection_members` already keeps the scored losers (`selected=0`) — what was missing
+there is only the pre-scoring drops.
+
+**Shadow mediation SHIPPED** (`input/pipeline/ai_editor.py`, `run_mediations`,
+`ai_mediation` job). First real run on Ramen/795, opus-4-8, **$0.44**, 20 verdicts:
+demoted all six shortcut bowls with cited evidence ("no broth at all"; "700ml store
+chicken stock + soy + Worcestershire"), moved honestcooking's 12-hour tonkotsu **#19 -> #1**
+and Serious Eats' chintan shoyu **#18 -> #3**, nominated exactly the drops that looked
+wrong by hand, and **flagged glebekitchen for a reason nobody here had noticed**: it calls
+for 8 cups of tonkotsu broth and links out rather than making it.
+
+**The design decision that matters: there is no `promote` verdict.** A kept row has been
+extracted; a dropped row has not, so all we hold is a title and three numbers. The editor
+can argue convincingly that something kept is WRONG and cannot argue that something
+dropped is RIGHT. Hence hold/demote/flag on winners and **`nominate`** on a drop, meaning
+"worth paying to fetch and judge". `applied=0` throughout; `apply=True` RAISES.
+
+**Open question for the curator: 19 of 20 ranks moved and 6 of 20 were demoted.** Whether
+that is a real finding or miscalibration is the question shadow mode exists to answer.
+
+### Three bugs that all looked like "the bookmarklet is broken"
+
+1. **The JSON-LD fast lane accepted a recipe that wasn't there.** Barefoot Contessa saved
+   with ONE ingredient — a newline-joined lemon/oil/seasoning string — and one instruction:
+   the salad VINAIGRETTE. The site renders ingredients client-side. `jsonld_to_recipe`
+   already promised to return None on thin markup; its bar was "non-empty", so one
+   ingredient passed. Now >=2/>=2, the SAME thresholds the cache uses — and the cache was
+   already refusing this exact recipe while the extract path called it a success. Fixed in
+   `_has_required_fields`, so all FIVE lanes inherit it (three in save_recipe_api, two in
+   enrich/api — the batch path, which is why it failed twice). Blast radius: 2 of 4,850.
+   VERIFIED LIVE 2026-08-12: `not eligible (only 1 ingredient(s) in the markup) -> fall
+   back to LLM`, full recipe recovered.
+2. **The screenshot was 60-75% of every interactive extract** (22s of 27s; worst 31s of
+   43s; 6s when cached). Now deferred to a background thread on the bookmarklet path, with
+   `/screenshot-status` for the form to poll and a save-time backstop. Nothing is stamped
+   optimistically — 45 of 45 captures failed in one recent refresh job, so a URL pointing
+   at a blob that may never arrive asserts something false.
+3. **An unusable pop-up swallowed a finished capture.** THIS was the actual egg foo young
+   hang, not the screenshot. Reproduced in a real browser: script and server are healthy.
+   The early hand-off is wrapped, so its failure is silent; then the else-branch
+   `popup.location.href = ...` was NOT wrapped, threw, and skipped `uploadScreenshot` —
+   which is exactly why the log showed stage-markdown 200 and then nothing at all. Now
+   wrapped, with a rescue banner carrying the token (a plain anchor: nothing to block, and
+   the source page is not navigated away). **Root cause of the dead pop-up still unknown.**
+
+### The screenshot was photographing the wrong page
+
+Curator, on a paywalled ATK recipe they were signed in to: the saved screenshot showed the
+paywall. The server captures with headless Chromium, which fetches anonymously — it was
+never photographing the curator's page at all.
+
+**The right image was already being taken and thrown away.** The bookmarklet renders the
+page with html2canvas IN THE USER'S OWN BROWSER and uploads it to `/stage-image`, where it
+was used only as a fallback input for vision extraction. `/stage-image` now also adopts it
+as the page screenshot. This is the principle the HERO image has followed all along —
+`stage_markdown_endpoint`'s own comment says it uploads hero bytes "from inside the user's
+authenticated session (paywall-aware)".
+
+`crop_above_fold()` frames it to the same window a headless capture produces (derived from
+`VIEWPORT_W`/`CAPTURE_HEIGHT`, so both paths move together); every shape lands on 800x427.
+The crop is a SEPARATE derived copy — `entry["image_b64"]` is untouched, so vision
+extraction still gets the full-length capture. Consequences: the bookmarklet path launches
+**no headless Chromium at all**, and the deferred capture stands down when a
+browser-rendered one arrived first, so it cannot finish late and overwrite the good image.
+
+VERIFIED LIVE on a real ATK recipe: `adopted the browser-rendered capture`, no deferred
+capture line. Blobs overwrite in place (deterministic key), so a re-grab fixes an existing
+row's screenshot without even saving.
+
+### Also
+
+- **`_sanitize_scoring` was deleting real zeros.** `PERCENT_RANK` gives exactly 0.0 to the
+  bottom-ranked row of a cohort; 26 master rows had lost a true percentile, each stamped
+  with a note blaming "saved outside a dish batch" while sitting inside one. `fieldN` now
+  decides. **The 26 damaged rows are NOT repaired.**
+- **The dish embedding moved into `create_dish`/`update_dish`.** It lived in the two HTTP
+  endpoints, so a script or job could change `queries` and leave `dishes_vec` describing
+  the old ones. Curator's catch.
+- **SerpApi cancelled**, verified nothing called it; fixed a stale `SERPAPI_KEY` guard in
+  `detect_recipe_path` that would have silently assumed `/recipes` for every publisher.
+- **Ramen re-run (795)** with sourcing queries instead of the top-4 SEMrush keywords:
+  union 66 -> 106, survivors 26 -> 43, #1 went from an instant-noodle toss to Serious Eats'
+  tonkotsu. **The queries were the curator's top-volume keywords — which is the right
+  selector for `target_keyword` and the wrong one for `dishes.queries`.**
+
+### The pattern
+
+Three separate causes wore one symptom ("the bookmarklet is broken"), and I attributed the
+hang to the screenshot on circumstantial timing before reproducing it. The reproduction —
+driving the real bookmarklet against the live server in a browser — settled in one step
+what two rounds of log-reading had guessed at. **Reproduce before attributing.**
+
+---
+
 ## START HERE — state of play as of 2026-08-10
 
 **Branch `split/enrichment-api`, pushed. Server restarted and current.**
@@ -3875,6 +3987,12 @@ author ourselves get full Recipe markup.
    OU/power against the corpus. `top_n_serpapi=30 / top_n_final=20` is a thin funnel
    (1.5x) versus the 4-5x the publisher harvests use — that ratio is the first thing to
    question if the winners disappoint.
+
+0c. **CALIBRATE THE AI EDITOR** — shadow verdicts for Ramen/795 are in `run_mediations`
+   (dish form -> Considered panel). 19 of 20 ranks moved, 6 demoted. Read the six demotes
+   and say whether you agree; that decides whether it ever earns authority. Phase 2
+   (giving verdicts effect) needs the override plumbing, since a pin is candidacy, not
+   override.
 
 1. **`docs/dish-candidates-from-keywords.md`** — the spec is written, nothing is built.
    A `dish_candidate_scan` job + candidates table + review surface. PROPOSE, NEVER
