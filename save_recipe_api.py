@@ -7569,6 +7569,16 @@ def _attach_page_screenshot(recipe, url: str, url_norm: str, timings=None,
         # and _backfill_screenshot_on_save is the backstop for whoever does not.
         def _bg():
             try:
+                # Re-check on the way in. The bookmarklet uploads its own
+                # browser-rendered capture (/stage-image) at roughly the same
+                # moment this starts, and that one is strictly better — it is the
+                # page as the USER saw it, signed in, with no paywall over it.
+                # Without this the anonymous capture finishes 5-31s later and
+                # overwrites it, which is precisely the ATK complaint.
+                if _stored_screenshot_url(url_norm):
+                    print(f"[SCREENSHOT] deferred capture skipped for {url_norm} — "
+                          f"a browser-rendered capture arrived first")
+                    return
                 from input.pipeline.screenshot_pipeline import capture_and_store_blob
                 shot = capture_and_store_blob(url, url_norm, MEDIA_DB_PATH)
                 print(f"[SCREENSHOT] deferred capture {'stored ' + shot if shot else 'FAILED'} "
@@ -10637,6 +10647,42 @@ async def stage_image_endpoint(token: str, request: Request):
     # Bump TTL so the form has time to fetch even if the screenshot took a while.
     entry["expires_at"] = time.time() + _STAGE_TTL_SECONDS
     print(f"[OK] Stored image for token {token[:8]} ({len(image_b64)} chars b64)")
+
+    # ALSO adopt it as the page screenshot for this URL.
+    #
+    # This image was rendered by html2canvas in the user's OWN browser, inside
+    # their own session. The server's headless capture cannot be: it fetches the
+    # page anonymously, so on a subscription site it photographs the paywall
+    # instead of the recipe. Reported 2026-08-12 on an ATK recipe the curator was
+    # logged in to — the saved screenshot showed the paywall overlay, not the page
+    # they were looking at.
+    #
+    # This is the same principle the HERO image already follows a few lines up in
+    # stage_markdown_endpoint ("uploads the page's hero image bytes ... from
+    # inside the user's authenticated session (paywall-aware)"); the page
+    # screenshot simply never adopted it. Doing so also means the bookmarklet path
+    # normally needs NO headless capture at all — _attach_page_screenshot's
+    # existing "already stored?" short-circuit finds this blob and skips Chromium,
+    # which is 5-31s of work that was buying a worse picture.
+    try:
+        src_url = (entry.get("source_url") or "").strip()
+        if src_url:
+            import base64 as _b64
+            raw_b64 = image_b64.split(",", 1)[1] if image_b64.startswith("data:") else image_b64
+            raw = _b64.b64decode(raw_b64)
+            from input.pipeline.screenshot_pipeline import _to_blob_jpeg, store_screenshot_blob
+            blob = _to_blob_jpeg(raw)      # same 800px/q65 normalisation as a server capture
+            if blob:
+                norm = normalize_url(src_url) or src_url
+                shot = store_screenshot_blob(MEDIA_DB_PATH, norm, blob)
+                if shot:
+                    entry["page_screenshot"] = shot
+                    print(f"[SCREENSHOT] adopted the browser-rendered capture "
+                          f"({len(blob):,} bytes) as the page screenshot for {norm}")
+    except Exception as e:
+        # Never fail the upload over this — the vision-extraction fallback still
+        # has its image, and the headless capture remains as the backstop.
+        print(f"[SCREENSHOT] could not adopt the staged image: {type(e).__name__}: {e}")
     return {"ok": True}
 
 
