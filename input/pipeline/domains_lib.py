@@ -70,8 +70,7 @@ EDITABLE_FIELDS = (
     # it (blank/None) hands ownership back to the job on its next run.
     "paywall_da_discount_pct",
     "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
-    "semrush_report_url",      # DERIVED from the semrush_* fields UNLESS uncoupled — then a pasted custom URL
-    "semrush_url_uncoupled",   # 1 = use the pasted semrush_report_url as-is (don't regenerate)
+    "semrush_report_url",      # the curator's SEMrush link: seeded once at create, hand-editable thereafter
     "trust_extraction",        # 1 = keep candidates past the structure gate + cascade catch → extractor
     "backlinks_dir",       # OPTIONAL per-domain override folder for the SEMrush export
     "exclude_words",       # OPTIONAL per-domain EXCLUSIONARY sections (restaurant/chef/news)
@@ -79,12 +78,6 @@ EDITABLE_FIELDS = (
     "brand_authority",     # Moz V3 Brand Authority 0-100 (managed by deep-enrich; overridable)
     "referring_domains",   # Moz V3 referring-domain count (managed; overridable)
     "ranking_keywords",    # JSON list of top keywords the site ranks for (managed)
-    "semrush_db",              # SEMrush country database (us, gr, …)
-    "semrush_search_type",     # domain | subdomain | subfolder | url
-    "semrush_filter_word",     # advanced-filter value, e.g. "Recipe"
-    "semrush_filter_field",    # mkwd (Top Keyword) | url
-    "semrush_filter_include",  # 1=Include, 0=Exclude
-    "semrush_filter_criterion",# containing | not_containing | …
 )
 
 
@@ -291,20 +284,21 @@ _ENRICH_COLUMNS = {
 # PRE-FILTERED (e.g. keyword containing "Recipe") before it ever reaches our own
 # filters. The report is the ORGANIC pages view (what a domain ranks for in organic
 # search — excludes paid/promoted); toppages is an alias of organic/pages (same data).
-# Mirrors SEMrush's own advanced-filter form: {Include/Exclude, field, criterion, word}.
-# db = country database (ISO-2: us, gr, …); searchType = domain|subdomain|subfolder|url.
-# See domains_lib.build_semrush_pages_url + project_backlinks_source.
+#
+# REMOVED 2026-08-12: the six advanced-filter columns (semrush_db,
+# semrush_search_type, semrush_filter_{word,field,include,criterion}) that fed the
+# URL generator. They existed to build SEMrush's Advanced Filter from per-domain
+# config, and the generator re-derived semrush_report_url on every read — which
+# silently reverted any hand-built link. The workflow is now two modes: take the
+# seeded default, or paste a URL built in the SEMrush UI. See
+# seed_semrush_pages_url for the full argument.
 _SEMRUSH_FILTER_COLUMNS = {
-    "semrush_db": "TEXT NOT NULL DEFAULT 'us'",              # country db (us, gr, …)
-    "semrush_search_type": "TEXT NOT NULL DEFAULT 'domain'", # domain|subdomain|subfolder|url
-    "semrush_filter_word": "TEXT NOT NULL DEFAULT ''",       # e.g. "Recipe" ('' = no filter)
-    "semrush_filter_field": "TEXT NOT NULL DEFAULT 'url'",   # url (URL — default; catches more) | mkwd (Top Keyword)
-    "semrush_filter_include": "INTEGER NOT NULL DEFAULT 1",  # 1=Include, 0=Exclude
-    "semrush_filter_criterion": "TEXT NOT NULL DEFAULT 'containing'",
-    # UNCOUPLE: when 1, semrush_report_url is a curator-PASTED custom URL used as-is —
-    # NOT regenerated from the filter fields (for a SEMrush view the builder can't express
-    # yet). When 0 (default), the URL is derived from the fields (build_semrush_pages_url).
-    "semrush_url_uncoupled": "INTEGER NOT NULL DEFAULT 0",
+    # VESTIGIAL LATCH, kept deliberately and pinned to 1 on every row. Nothing
+    # regenerates semrush_report_url any more, so this flag no longer decides
+    # anything — it stays as a belt-and-braces guard in case a generation path
+    # survived the removal, and so a re-introduced generator would find every
+    # existing row already opted out. Drop it once that confidence is earned.
+    "semrush_url_uncoupled": "INTEGER NOT NULL DEFAULT 1",
 }
 
 # Poor-publisher signal (2026-07-08). The is-recipe LLM cascade tags harvest pages
@@ -605,16 +599,6 @@ def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
-def report_url_template(conn: Optional[sqlite3.Connection] = None) -> str:
-    """The SEMrush Indexed-Pages deep-link template (`{domain}` placeholder), from
-    system_config so a SEMrush URL re-skin is a config edit ([[feedback_no_data_in_code]]).
-    LEGACY: retained for back-compat; new links are built by build_semrush_pages_url."""
-    from input.pipeline import system_config
-    return system_config.get_setting(
-        "semrush_indexed_pages_url_template",
-        "https://www.semrush.com/analytics/organic/pages/?q={domain}&searchType=domain")
-
-
 def semrush_pages_base_url() -> str:
     """Base SEMrush report URL the deep-link builder targets (params added in code, so
     NO `{domain}` here). Default = the Top-Pages / Organic-Pages report (organic-search
@@ -626,42 +610,38 @@ def semrush_pages_base_url() -> str:
         "https://www.semrush.com/analytics/toppages/") or "").strip()
 
 
-def build_semrush_pages_url(d: dict) -> str:
-    """Generate the SEMrush Top-Pages deep-link for a domain row WITH its per-domain
-    Advanced Filter — db (country), searchType (domain/subdomain/…), and an
-    include/field/criterion/word filter that PRE-FILTERS the page list in SEMrush (e.g.
-    Top-Keyword containing "Recipe") before export. Mirrors SEMrush's own filter form:
-    {inc, fld, cri, val}. No filter word → a plain (unfiltered) report URL. '' if no host."""
-    import json
+def seed_semrush_pages_url(host: str) -> str:
+    """The starting SEMrush Top-Pages link for a NEWLY created domain — written
+    once, at create, and thereafter owned by the curator.
+
+    Deliberately the simplest URL that works: db + host + searchType, no filter.
+    The previous version built SEMrush's Advanced Filter from six per-domain
+    columns, and that was a mistake in two ways. It could not express what the
+    SEMrush UI can (multi-condition AND filters), so complex publishers —
+    cooking.nytimes.com and the like — always ended up hand-built anyway. And it
+    RE-DERIVED the URL on every read, so a hand-tuned link silently reverted:
+    measured 2026-08-12, several rows carried `db=gr` while every row's
+    `semrush_db` said `us`, meaning the generator rewrote those Greek reports to
+    the US database each time the form displayed them.
+
+    The workflow is therefore two modes and no third: take this default, or
+    build the query in SEMrush and paste the URL in. Copy-paste already
+    expresses everything the generator was trying to reach, at no risk of an
+    undocumented filter code quietly filtering the wrong column.
+    """
     from urllib.parse import urlencode
-    host = (d.get("domain") or "").strip()
+    host = (host or "").strip()
     base = semrush_pages_base_url()
     if not host or not base:
         return ""
-    params = {
-        "db": (d.get("semrush_db") or "us").strip() or "us",
-        "q": host,
-        "searchType": (d.get("semrush_search_type") or "domain").strip() or "domain",
-    }
-    word = (d.get("semrush_filter_word") or "").strip()
-    if word:
-        adv = {
-            "inc": bool(int(d.get("semrush_filter_include", 1) or 0)),
-            "fld": (d.get("semrush_filter_field") or "mkwd").strip() or "mkwd",
-            "cri": (d.get("semrush_filter_criterion") or "containing").strip() or "containing",
-            "val": word,
-        }
-        params["filter"] = json.dumps(
-            {"search": "", "changesTypes": "", "answerEngines": [], "advanced": {"0": adv}},
-            separators=(",", ":"))
-    return base.split("?")[0] + "?" + urlencode(params)
+    return base.split("?")[0] + "?" + urlencode(
+        {"db": "us", "q": host, "searchType": "domain"})
 
 
-def _derive_schedule(d: dict, report_template: Optional[str] = None) -> None:
+def _derive_schedule(d: dict) -> None:
     """Stamp DERIVED harvest-schedule fields onto a domain dict in place:
-      - semrush_report_url : if the row has none stored, default it from the template
-                             with `{domain}` substituted (so the worklist link + form
-                             field just work; a stored value overrides).
+      (semrush_report_url is NOT derived here any more — it is a stored,
+       curator-owned value; see the note in the body.)
       - next_harvest_at : last_harvested_at's date + harvest_ttl_days (None if the
                           domain isn't SEMrush-managed; '' last → never)
       - harvest_status  : 'new' (never harvested) | 'due' (next <= today) | 'ok'
@@ -670,15 +650,16 @@ def _derive_schedule(d: dict, report_template: Optional[str] = None) -> None:
     next_harvest is date-grain (the cadence is days); a missing/garbage timestamp
     reads as 'new' rather than raising."""
     # Worklist membership = the SEMrush backlinks-file flow ONLY. Deliberately NOT
-    # keyed on semrush_report_url — that link is now auto-defaulted for every domain
-    # (below), so keying on it would put the whole corpus on the worklist.
+    # keyed on semrush_report_url — that link exists for every domain, so keying on
+    # it would put the whole corpus on the worklist.
     managed = d.get("harvest_source") == "backlinks_file"
-    # semrush_report_url is DERIVED from the per-domain SEMrush filter fields
-    # (build_semrush_pages_url) — the curator edits db / searchType / filter word+field,
-    # and the deep-link is generated. EXCEPT when UNCOUPLED: then it's a curator-pasted
-    # custom URL, used as-is (leave the stored value alone).
-    if d.get("domain") and not d.get("semrush_url_uncoupled"):
-        d["semrush_report_url"] = build_semrush_pages_url(d)
+    # semrush_report_url is NO LONGER derived here. It used to be regenerated on
+    # every read from six per-domain filter columns, which meant a curator's
+    # hand-built URL was silently overwritten by a worse one the moment the form
+    # displayed it. It is now a plain stored value: seeded once at create
+    # (seed_semrush_pages_url) and owned by the curator from then on. The 2026-08-12
+    # migration materialized the last derived value into the column for all 322
+    # rows, so nothing was lost when the generator went away.
     d["next_harvest_at"] = None
     d["harvest_status"] = None
     d["harvest_due"] = False
@@ -778,10 +759,9 @@ def list_domains(conn: sqlite3.Connection) -> list[dict]:
     )
     for i, d in enumerate(ranked, 1):
         d["bcc_rank"] = i
-    tmpl = report_url_template()   # read once, not per-row
     for d in rows:
         d.setdefault("bcc_rank", None)
-        _derive_schedule(d, tmpl)
+        _derive_schedule(d)
     return rows
 
 
@@ -825,6 +805,14 @@ def create_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
         f"VALUES ({', '.join('?' * len(cols))})",
         vals,
     )
+    # Seed the SEMrush link ONCE, here, if the curator didn't supply one. From
+    # this point the column is theirs: nothing regenerates it, so a hand-built
+    # URL for an awkward publisher survives every later save.
+    if not (payload.get("semrush_report_url") or "").strip():
+        seeded = seed_semrush_pages_url(host)
+        if seeded:
+            conn.execute("UPDATE domains SET semrush_report_url = ? WHERE domain = ?",
+                         (seeded, host))
     conn.commit()
     stamp_semrush_rank(conn, host)   # look up + persist the new domain's SEMrush rank
     invalidate_cache()
