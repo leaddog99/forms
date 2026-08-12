@@ -4041,11 +4041,47 @@ def list_dish_top_recipes(name: str):
                         if isinstance(d.get("image"), list) else None
                     ),
                 })
+            # Editor's Choice awards — a SEPARATE band, not merged into the ranked
+            # list. They carry no ledger row (they never entered a run), so the
+            # query above cannot surface them; that separation is the design, not
+            # an omission. Their scores ride along so the UI can DESCRIBE them —
+            # an award is exempt from ranking, not from measurement.
+            awards: list[dict] = []
+            try:
+                for (aid, a_uuid, adj) in conn.execute(
+                    """SELECT id, recipe_id, data FROM master_recipes
+                       WHERE json_extract(data,'$._master.dish') = :dish
+                         AND json_extract(data,'$._master.kind') = 'editors_choice'
+                       ORDER BY json_extract(data,'$._master.awarded_at') DESC, id""",
+                    {"dish": dish},
+                ).fetchall():
+                    ad = json.loads(adj)
+                    a_src = ad.get("_source") or {}
+                    a_sc = ad.get("_scoring") or {}
+                    a_m = ad.get("_master") or {}
+                    awards.append({
+                        "id": aid,
+                        "recipe_id": a_uuid,
+                        "name": ad.get("name") or "(no title)",
+                        "source_url": a_src.get("originalUrl") or "",
+                        "site_name": friendly_site_name(
+                            a_src.get("siteName"), a_src.get("originalUrl")),
+                        "bcc_url": _bcc_link_permalink(a_uuid),
+                        "note": a_m.get("note"),
+                        "awarded_at": a_m.get("awarded_at"),
+                        "pa": a_sc.get("pageAuthority"),
+                        "da": a_sc.get("domainAuthority"),
+                        "ou": a_sc.get("ouScore"),
+                        "preview_image": a_src.get("previewImage") or "",
+                    })
+            except Exception as e:
+                print(f"[WARN] editors-choice band for {dish!r} skipped: {e}")
             return {
                 "dish": existing["name"],
                 "refreshed_at": existing.get("last_refreshed"),
                 "count": len(out),
                 "recipes": out,
+                "editors_choice": awards,
             }
     except HTTPException:
         raise
@@ -4054,12 +4090,21 @@ def list_dish_top_recipes(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-# Editor's Choice — curator pins (a (dish, url) membership). The dish's next
-# refresh adds these URLs to its candidate pool so they're scored into the ledger
-# like any SerpAPI result and surface in the top-N if they rank. This is the first
-# concrete brick of the many-to-many 'collections' model (membership is a junction
-# row, not a stamp on the recipe). See list_dish_top_recipes for how display reads
-# the ledger, not a label.
+# Editor's Choice — a curator AWARD over a (dish, url) membership. Ingested to
+# master_recipes at pin time as kind='editors_choice': exempt from the min-OU gate,
+# never ranked against the algorithmic winners, preserved across refreshes (which
+# delete kind='top' only), and excluded from the OU regression baseline.
+#
+# It used to be a NOMINATION — injected into the next run's candidate pool, scored,
+# and shown "if it ranks". That made the award meaningless in exactly the case it
+# existed for: a curator rescuing a recipe the statistics had dropped handed it back
+# to the gate that dropped it (Adam Liaw's ramen school, ou -1.04, could be pinned
+# and would still never appear). Changed 2026-08-12.
+#
+# Still the first concrete brick of the many-to-many 'collections' model (membership
+# is a junction row, not a stamp on the recipe). See list_dish_top_recipes for how
+# the ranked list reads the ledger, not a label — and returns awards as a separate
+# band beside it.
 @app.get("/dishes/{name}/editors-choice")
 def list_dish_editors_choice(name: str):
     """Curator pins for a dish (newest first)."""
@@ -4142,9 +4187,26 @@ def list_run_candidates(collection_type: str = "dish", collection_key: str = "",
 
 
 @app.post("/dishes/{name}/editors-choice")
-def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(...)):
-    """Pin a URL to a dish (admin only). Body: {url, note?}. Idempotent on the
-    normalized URL. The pin takes effect on the dish's next refresh."""
+async def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(...)):
+    """Award a URL Editor's Choice for a dish (admin only). Body: {url, note?}.
+    Idempotent on the normalized URL.
+
+    An AWARD, not a nomination. It is ingested to master_recipes immediately as
+    `kind='editors_choice'` and never competes: it does not pass through the
+    min-OU gate, it is not ranked against the algorithmic winners, and it keeps
+    its place across refreshes.
+
+    Why it changed (2026-08-12): a pin used to be injected into the next run as
+    an extra candidate, scored, and shown "if it ranks" — so a curator rescuing a
+    recipe the statistics had dropped handed it straight back to the gate that
+    dropped it. Adam Liaw's ramen school (ou -1.04) could be pinned and would
+    still never appear. An award that the algorithm can veto is not an award.
+
+    The rest of the machinery already assumed this shape and only needed the
+    ingest to write the kind: a dish refresh deletes `kind='top'` rows ONLY, so
+    an award survives it, and the OU regression already excludes
+    editors_choice/legacy so an award cannot skew the baseline it is exempt from.
+    """
     _require_perm(request, "manage_dishes")
     url = (payload.get("url") or "").strip()
     note = (payload.get("note") or "").strip() or None
@@ -4156,7 +4218,17 @@ def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(..
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
             pin = dishes_lib.add_editors_choice(conn, existing["name"], url, note)
-        return {"ok": True, "pin": pin}
+            dish_name = existing["name"]
+        # Ingest NOW so the award is visible immediately rather than at the next
+        # refresh. Best-effort: the pin is already recorded, so a fetch failure
+        # leaves a re-ingestable award rather than losing the curator's decision.
+        ingested = False
+        try:
+            ingested = await _extract_url_to_master_as_editors_choice(
+                url, dish_name, note=note)
+        except Exception as e:
+            print(f"[EDITORS-CHOICE] ingest failed for {url}: {type(e).__name__}: {e}")
+        return {"ok": True, "pin": pin, "ingested": ingested}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -4168,7 +4240,13 @@ def add_dish_editors_choice(name: str, request: Request, payload: dict = Body(..
 
 @app.delete("/dishes/{name}/editors-choice")
 def remove_dish_editors_choice(name: str, request: Request, url_normalized: str = ""):
-    """Unpin by url_normalized (query param; admin only)."""
+    """Revoke an Editor's Choice award by url_normalized (query param; admin only).
+
+    Removes the master row too. The award IS the row's reason for existing —
+    nothing else would ever have admitted it, and a refresh will not clean it up
+    because refreshes only delete `kind='top'`. Leaving it would strand an
+    un-earned recipe in the cohort permanently.
+    """
     _require_perm(request, "manage_dishes")
     if not url_normalized:
         raise HTTPException(status_code=400, detail="url_normalized is required")
@@ -4178,7 +4256,17 @@ def remove_dish_editors_choice(name: str, request: Request, url_normalized: str 
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
             n = dishes_lib.remove_editors_choice(conn, existing["name"], url_normalized)
-        return {"ok": True, "removed": n}
+            # Reuse the shared retire path rather than a raw DELETE: it clears the
+            # dish block, keeps the row when a publisher block still needs it, and
+            # goes through the vec0 cleanup triggers. Scoped to kind
+            # 'editors_choice' so revoking an award can never remove an
+            # algorithmically-earned row for the same URL.
+            removed_rows = dishes_lib.retire_master_membership(
+                conn, marker="dish", value=existing["name"],
+                other_marker="publisher", remove_fields=["dish", "exceptionalism"],
+                also_match=("kind", "editors_choice"),
+                url_normalized=url_normalized)[1]
+        return {"ok": True, "removed": n, "rows_removed": removed_rows}
     except HTTPException:
         raise
     except Exception as e:
@@ -5249,6 +5337,101 @@ def domain_recipes_endpoint(domain: str):
     except Exception as e:
         print(f"[ERROR] domain_recipes({domain!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+async def _extract_url_to_master_as_editors_choice(url: str, dish_name: str,
+                                                   *, note: str = None) -> bool:
+    """Ingest ONE curator-awarded URL into master_recipes as `kind='editors_choice'`.
+
+    Deliberately bypasses the whole selection apparatus. There is no Moz score to
+    clear, no min-OU filter, no rank: the curator's judgement IS the admission
+    criterion, which is the entire point of an award. Scores are still computed
+    and stored by the normal save path, so the recipe can be *described* by its
+    numbers on screen — it just cannot be excluded by them.
+
+    Sibling of _extract_publisher_url_to_master; kept separate rather than
+    parameterised because the two differ in the thing that matters (one competes,
+    one does not) and collapsing them invites a later edit that re-applies a gate
+    to both.
+    """
+    from input.pipeline import page_cache
+    log_prefix = "[EDITORS-CHOICE]"
+    try:
+        with page_cache.enabled():
+            extract_result = await asyncio.to_thread(
+                extract_recipe_from_url, url, user_id=0, force_refresh=True)
+    except Exception as e:
+        print(f"{log_prefix} EXTRACT-FAIL {url}: {type(e).__name__}: {e}")
+        return False
+    recipe_dict = (extract_result or {}).get("recipe") or {}
+    if not recipe_dict:
+        print(f"{log_prefix} EXTRACT-EMPTY {url}")
+        return False
+    # NON-EMPTY check only — deliberately NOT the normal save gate.
+    #
+    # The standard gate wants >=3 ingredients and >=3 instructions. That is a
+    # reasonable admission test for an algorithmic candidate and the wrong test
+    # for an award. Found by testing this feature on the exact recipe it was
+    # built for: Adam Liaw's Basic Clear Ramen Broth extracts 11 ingredients
+    # (whole old chicken, chicken feet, pork trotters, 9L water) and 2
+    # paragraph-length steps carrying more technique than eight one-liners —
+    # and the gate rejected it for having 2 instructions instead of 3. Step
+    # COUNT is not a quality signal; it measures how an author paragraphs.
+    #
+    # So we check only that an extraction actually happened. Zero ingredients or
+    # zero steps means we read a paywall stub or a failed render — a fetch
+    # problem, which is a real reason to refuse. Anything above that is the
+    # curator's call, which is what an award means.
+    def _non_empty(rec):
+        ings = rec.get("recipeIngredient") or []
+        steps = rec.get("recipeInstructions") or []
+        if not ings:
+            return False, "no ingredients extracted (likely a paywall stub or failed render)"
+        if not steps:
+            return False, "no instructions extracted (likely a paywall stub or failed render)"
+        return True, ""
+    ok, reason = _non_empty(recipe_dict)
+    if not ok:
+        print(f"{log_prefix} EMPTY ({reason}) — render-retry {url}")
+        try:
+            with page_cache.enabled():
+                extract_result = await asyncio.to_thread(
+                    extract_recipe_from_url, url, user_id=0,
+                    force_refresh=True, fetch_render=True)
+            recipe_dict = (extract_result or {}).get("recipe") or {}
+            ok, reason = _non_empty(recipe_dict) if recipe_dict else (False, "empty recipe")
+        except Exception as e:
+            print(f"{log_prefix} render-retry failed {url}: {type(e).__name__}: {e}")
+    if not ok:
+        print(f"{log_prefix} SKIP-EMPTY {reason}  {url}")
+        return False
+    payload = dict(recipe_dict)
+    payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
+    payload["user_id"] = 0
+    payload["_master"] = {
+        "kind": "editors_choice",
+        "dish": dish_name,          # belongs to the cohort; exempt from its ranking
+        "awarded_at": datetime.now(timezone.utc).isoformat(),
+        "note": note,
+        "batch_source": "editors-choice",
+    }
+    payload["_skip_auto_enrich"] = True
+    # The save-quality gate has a documented bypass — the same `force_save` the
+    # form's "Save anyway" dialog sends when a curator overrides it by hand. An
+    # award IS that override, made deliberately and recorded, so it sets the flag
+    # rather than being refused by a floor it is exempt from by definition.
+    # Without this, Adam Liaw's broth (11 ingredients, 2 dense steps) is rejected
+    # at 422 — the gate counts steps, and he writes paragraphs.
+    payload["force_save"] = True
+    try:
+        await asyncio.to_thread(_save_recipe_core, payload)
+        print(f"{log_prefix} AWARDED {dish_name!r} <- {url}")
+        return True
+    except HTTPException as e:
+        print(f"{log_prefix} SAVE-FAIL {url}: {e.status_code} {e.detail}")
+    except Exception as e:
+        print(f"{log_prefix} SAVE-FAIL {url}: {type(e).__name__}: {e}")
+    return False
 
 
 async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
@@ -6517,12 +6700,18 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     print(f"top_n_serpapi: {top_serp} per query, top_n_final: {top_final}")
     print(f"[REFRESH-DISH] {canonical_name!r} starting")
 
-    # Editor's Choice pins for this dish — added to the candidate pool so they're
-    # scored alongside the SerpAPI results and surface in the top-N if they rank.
+    # Editor's Choice awards are NOT injected into the candidate pool any more.
+    # They were, and that was the bug: a pin went in as an extra candidate, got
+    # scored, and surfaced only "if it ranks" — handing a curator's rescue back to
+    # the exact gate that had dropped the recipe. Awards are now ingested at pin
+    # time as kind='editors_choice' and are exempt from ranking, so a refresh must
+    # leave them alone. They already survive the delete below (it is scoped to
+    # kind='top') and are already excluded from the OU fit.
     with _db() as conn:
         pinned_urls = dishes_lib.editors_choice_urls(conn, canonical_name)
     if pinned_urls:
-        print(f"[REFRESH-DISH] {len(pinned_urls)} Editor's Choice pin(s) to include")
+        print(f"[REFRESH-DISH] {len(pinned_urls)} Editor's Choice award(s) preserved "
+              f"(exempt from ranking)")
 
     from input.pipeline.jobs import JobCancelled
     job_id = job.get("id")
@@ -6543,7 +6732,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             dish=canonical_name,
             top_n_serpapi=top_serp,
             top_n_final=top_final,
-            extra_urls=pinned_urls or None,
+            extra_urls=None,   # see the Editor's Choice note above — awards don't compete
             should_cancel=_should_cancel,
         )
     except JobCancelled:

@@ -528,9 +528,31 @@
         const recs = (payload.recipes || []).slice().sort((a, b) =>
           (b.rank_score ?? -Infinity) - (a.rank_score ?? -Infinity) || (a.rank ?? Infinity) - (b.rank ?? Infinity));
         const cnt = $('#topcount'); if (cnt) cnt.textContent = recs.length ? `(${recs.length})` : '';
-        if (!recs.length){ wrap.innerHTML = '<li class="ed-empty-fit">No winners yet — refresh the dish.</li>'; return; }
+        const awards = payload.editors_choice || [];
+        if (!recs.length && !awards.length){ wrap.innerHTML = '<li class="ed-empty-fit">No winners yet — refresh the dish.</li>'; return; }
+        // Editor's Choice band — rendered ABOVE the ranked list and visibly apart
+        // from it. These are awards, not competitors: they carry no rank_score
+        // because they never entered a run, and showing their PA/DA/OU is
+        // descriptive only. An award nobody can see is not an award, which is
+        // what the previous "surfaces in the winners if it ranks" amounted to.
+        const awardHtml = awards.map(a => {
+          const host = a.site_name || (a.source_url || '').replace(/^https?:\/\//, '').split('/')[0];
+          const nums = [a.pa != null ? `PA ${Math.round(a.pa)}` : null,
+                        a.da != null ? `DA ${Math.round(a.da)}` : null,
+                        a.ou != null ? `OU ${Number(a.ou).toFixed(1)}` : null]
+                       .filter(Boolean).join(' · ');
+          return `<li class="ed-t10-row" style="border-left:3px solid #8250df;background:rgba(130,80,223,.05)">
+            <span class="ed-t10-main">
+              <span class="ed-t10-name">
+                <span style="color:#8250df;font-weight:600;font-size:.82em;letter-spacing:.02em">★ EDITOR'S CHOICE</span>
+                &nbsp;<a href="${a.recipe_id ? `/r/${encodeURIComponent(a.recipe_id)}` : escapeHtml(a.source_url || '#')}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>
+              </span>
+              <span class="ed-t10-sub">${escapeHtml(host)}${nums ? ` — ${escapeHtml(nums)} <i>(not ranked)</i>` : ''}${a.note ? ` · ${escapeHtml(a.note)}` : ''}</span>
+            </span>
+          </li>`;
+        }).join('');
         // Winners list — same-origin /r/<id> link (resolves on any host).
-        wrap.innerHTML = recs.map((rec, i) => scoreRow({
+        wrap.innerHTML = awardHtml + recs.map((rec, i) => scoreRow({
           rank_score: rec.rank_score, ou_pct: rec.ou_percentile, pwr_pct: rec.power_percentile,
           name: rec.name,
           domain: rec.site_name || (rec.source_url || '').replace(/^https?:\/\//, '').split('/')[0],
@@ -544,9 +566,11 @@
       }
     }
 
-    // Editor's Choice — curator pins (a (dish, url) membership). The dish's next
-    // Refresh adds these URLs to its candidate pool; they're scored into the ledger
-    // and show in the winners above if they rank. No label on the recipe.
+    // Editor's Choice — a curator AWARD over a (dish, url) membership. Pinning
+    // ingests the recipe immediately as kind='editors_choice': it does NOT pass
+    // through the min-OU gate, is never ranked against the algorithmic winners,
+    // and survives refreshes. It appears as a labelled band above the ranked list.
+    // Unpinning revokes the award and removes the row it created.
     async function loadEditorsChoice(name){
       const wrap = $('#eclist'); if (!wrap) return;
       try {

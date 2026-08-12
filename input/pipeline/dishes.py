@@ -1127,7 +1127,8 @@ def find_due_dishes(conn: sqlite3.Connection) -> list[dict]:
 
 def retire_master_membership(conn: sqlite3.Connection, *, marker: str, value: str,
                              other_marker: str, remove_fields: list,
-                             also_match: tuple = None) -> tuple:
+                             also_match: tuple = None,
+                             url_normalized: str = None) -> tuple:
     """TYPED-BLOCK lifecycle on the single master (the shared inline reference count).
     A recipe row carries up to two membership blocks — a dish block (`_master.dish`)
     and a domain block (`_master.publisher`). To retire one owner's claim, CLEAR that
@@ -1148,6 +1149,13 @@ def retire_master_membership(conn: sqlite3.Connection, *, marker: str, value: st
     if also_match:
         where += f" AND json_extract(data, '$._master.{also_match[0]}') = ?"
         params.append(also_match[1])
+    # Optional SINGLE-ROW scope. Retiring a whole membership is the batch case
+    # (a dish refresh clearing all its kind='top' rows); revoking one Editor's
+    # Choice award must touch exactly the one URL, so it passes this. Omitted =
+    # unchanged behaviour for every existing caller.
+    if url_normalized:
+        where += " AND url_normalized = ?"
+        params.append(url_normalized)
     rows = conn.execute(f"SELECT id, data FROM master_recipes WHERE {where}", params).fetchall()
     cleared = deleted = 0
     for rid, data in rows:
