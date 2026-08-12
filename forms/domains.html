@@ -214,6 +214,29 @@
       return LANG_ALIAS[k] || LANG_ALIAS[k.slice(0,2)] || k.slice(0,2);
     }
 
+    // Paywall DA-adjustment status. Rendered for EVERY flagged publisher, not
+    // just the adjusted ones: "no discount" has five distinct causes and they
+    // call for different actions (harvest it / wait for rows / accept that it
+    // isn't penalized). A blank field would make all five look identical, and
+    // identical to a publisher nobody ever evaluated.
+    function paywallStatusHtml(d){
+      if (Number(d.paywall) !== 1) return '';
+      const st = d.paywall_adj_status, note = d.paywall_adj_note || '';
+      if (!st) return ' · <i>not yet evaluated — runs on the next publisher refresh</i>';
+      const tone = { adjusted: '#1a7f37', manual: '#8250df', no_penalty: '#57606a',
+                     inconclusive: '#9a6700', low_confidence: '#9a6700',
+                     no_rows: '#57606a', no_free_reference: '#57606a' }[st] || '#57606a';
+      const pct = (d.paywall_da_discount_pct != null)
+        ? ` — DA ${Number(d.domain_authority || 0).toFixed(0)} → <b>${Number(d.paywall_da_adjusted).toFixed(0)}</b>` +
+          ` (−${Number(d.paywall_da_discount_pct).toFixed(1)}%)` : '';
+      const when = d.paywall_adj_at ? ` · ${escapeHtml(fmtDate(d.paywall_adj_at))}` : '';
+      const how  = d.paywall_adj_source === 'manual' ? ' · set by hand' : '';
+      return `<div style="margin-top:6px;padding:6px 8px;border-left:3px solid ${tone};background:rgba(0,0,0,.03);font-size:.85em">` +
+             `<b style="color:${tone}">${escapeHtml(st.replace(/_/g,' '))}</b>${pct}${how}${when}` +
+             (note ? `<div style="color:var(--muted,#666);margin-top:3px">${escapeHtml(note)}</div>` : '') +
+             `</div>`;
+    }
+
     function field(id, label, value, opts = {}){
       const v = value == null ? '' : String(value);
       const full = opts.full ? ' full' : '';
@@ -371,8 +394,19 @@
           </label>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
             <input type="checkbox" id="f_paywall" ${Number(d.paywall) === 1 ? 'checked' : ''}>
-            <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify) <i>and</i> a system rescore PA-calibrates it to free-equivalent so its link-starved pages aren't penalized${d.pa_cal_at ? ` · <b>calibrated</b> ${escapeHtml(fmtDate(d.pa_cal_at))} (n=${Number(d.pa_cal_n) || 0})` : ' · <i>not yet calibrated — runs on the next Rescore</i>'}</span>
+            <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify). This is the <b>fact</b> that it's gated, not a claim that it's penalized: whether its pages are actually starved is measured separately below.${paywallStatusHtml(d)}</span>
           </label>
+          ${Number(d.paywall) === 1 ? `
+          <div class="ed-field" style="margin:2px 0 6px 26px;max-width:520px">
+            <label for="f_paywall_discount">DA discount override (%)</label>
+            <input id="f_paywall_discount" type="number" step="0.1" min="0.1" max="99.9"
+                   value="${d.paywall_adj_source === 'manual' && d.paywall_da_discount_pct != null ? Number(d.paywall_da_discount_pct) : ''}"
+                   placeholder="blank = let the calibration job decide">
+            <div style="font-size:.78em;color:var(--muted,#666);margin-top:3px">
+              Overrides the measured discount. While set, the calibration job
+              <b>leaves this publisher alone</b> — clear the box to hand it back.
+            </div>
+          </div>` : ''}
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
             <input type="checkbox" id="f_trust_extraction" ${Number(d.trust_extraction) === 1 ? 'checked' : ''}>
             <span><b>Trust extraction</b> — this publisher's recipes have an unconventional layout the cheap is-recipe gate wrongly drops (e.g. Boston Globe's story-format recipes with no "Ingredients" heading, or the Guardian going straight from "serves 2" into the list). Keep its candidates past the structure gate + LLM catch so the full extractor decodes them. <b>Applies to EVERY batch</b> — the host is matched per candidate, so it also affects dish batches that happen to surface this publisher, not just its own harvest. <i>Safe for recipe-only publishers, where nearly every page is a recipe. For a GENERAL-NEWS host it also opens dish batches to its non-recipe pages, and a SEMrush URL filter does not constrain those (SERP picks the candidates) — scope it another way.</i></span>
@@ -1242,6 +1276,9 @@
         harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp',
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
         paywall: $('#f_paywall')?.checked ? 1 : 0,
+        // Empty string (not null) clears the override and returns the publisher
+        // to automatic calibration — the server distinguishes the two.
+        paywall_da_discount_pct: ($('#f_paywall_discount')?.value ?? '').trim(),
         trust_extraction: $('#f_trust_extraction')?.checked ? 1 : 0,
         harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
         // SEMrush deep-link + advanced filter (semrush_report_url is DERIVED server-side).

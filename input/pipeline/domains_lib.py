@@ -64,7 +64,11 @@ EDITABLE_FIELDS = (
     "search_pages",   # how many SERP pages (~10 results each) to fetch on refresh
     "harvest_source", # discovery source: 'serp' (Google site:) or 'backlinks_file' (SEMrush export)
     "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
-    "paywall",        # gated premium publisher (drives PA-remap)
+    "paywall",        # gated premium publisher (FACT: is it gated — not "is it penalized")
+    # Curator override for the DA haircut. Setting it flips paywall_adj_source
+    # to 'manual', which makes the calibration job leave the row alone; clearing
+    # it (blank/None) hands ownership back to the job on its next run.
+    "paywall_da_discount_pct",
     "harvest_ttl_days",    # refresh cadence (days) → drives the due-today worklist
     "semrush_report_url",      # DERIVED from the semrush_* fields UNLESS uncoupled — then a pasted custom URL
     "semrush_url_uncoupled",   # 1 = use the pasted semrush_report_url as-is (don't regenerate)
@@ -154,6 +158,20 @@ _PAYWALL_COLUMNS = {
     "paywall_adj_inputs": "TEXT",        # JSON: every input behind the number
     "paywall_adj_n": "INTEGER",          # sample size (thin => low confidence)
     "paywall_adj_at": "TEXT",            # when computed (ISO)
+    # WHO set the discount. 'measured' = computed by the calibration job and
+    # owned by it; 'manual' = a curator disagreed with the computed number and
+    # set it by hand. The job REFUSES to overwrite a manual row — without this
+    # marker a hand-set value would survive exactly until the next scheduled
+    # run and then vanish with no trace, which is worse than not allowing the
+    # override at all.
+    "paywall_adj_source": "TEXT",        # 'measured' | 'manual'
+    # WHY a flagged publisher has no discount. Written for EVERY flagged
+    # publisher on every run, not just the adjusted ones: 'no adjustment' has
+    # four distinct causes (not starved / too few rows / gap inside the noise /
+    # never harvested) and they call for different actions. Without this they
+    # are indistinguishable from a publisher nothing ever looked at.
+    "paywall_adj_status": "TEXT",        # adjusted | inconclusive | low_confidence | no_rows | no_penalty | no_free_reference | manual
+    "paywall_adj_note": "TEXT",          # one-line human-readable reason
     # The publisher's recipe URL path segment (e.g. 'recipes', 'recipe', 'cooking').
     # NOT assumed — detected per publisher (collections_lib.detect_recipe_path) and
     # stored here, curator-overridable. '' = not yet detected.
@@ -430,7 +448,7 @@ def get_paywall_calibrations(conn=None, db_path: str = _DEFAULT_DB) -> list:
 
 
 def set_paywall_da_adjustment(conn, domain, *, discount_pct, da_adjusted,
-                              method, inputs, n):
+                              method, inputs, n, note=None):
     """Persist a publisher's DA haircut TOGETHER with the method and inputs that
     produced it. `domain_authority` (the Moz measurement) is deliberately not
     touched: the measured DA is a fact, the discount is our judgment about how
@@ -447,25 +465,45 @@ def set_paywall_da_adjustment(conn, domain, *, discount_pct, da_adjusted,
     conn.execute(
         "UPDATE domains SET paywall_da_discount_pct = ?, paywall_da_adjusted = ?, "
         "paywall_adj_method = ?, paywall_adj_inputs = ?, paywall_adj_n = ?, "
-        "paywall_adj_at = ?, updated_at = ? WHERE domain = ?",
+        "paywall_adj_source = 'measured', paywall_adj_status = 'adjusted', "
+        "paywall_adj_note = ?, paywall_adj_at = ?, updated_at = ? WHERE domain = ?",
         (discount_pct, da_adjusted, method, json.dumps(inputs, sort_keys=True),
-         n, now, now, host),
+         n, note, now, now, host),
     )
     conn.commit()
 
 
-def clear_paywall_da_adjustment(conn, domain) -> None:
-    """Drop a publisher's DA adjustment (e.g. the paywall flag was wrong, or the
+def clear_paywall_da_adjustment(conn, domain, *, status=None, note=None, n=None) -> None:
+    """Drop a publisher's DA adjustment (the paywall flag was wrong, or the
     evidence no longer supports a haircut). Clears to NULL, not 0 — an absent
-    adjustment must not read as 'measured, and it came out zero'."""
+    adjustment must not read as 'measured, and it came out zero'.
+
+    `status`/`note` record WHY there is no adjustment, so 'not starved',
+    'too few rows', 'inside the noise' and 'never harvested' stay tellable
+    apart on the domain record instead of all rendering as a blank field."""
     ensure_domains_table(conn)
     conn.execute(
         "UPDATE domains SET paywall_da_discount_pct = NULL, paywall_da_adjusted = NULL, "
-        "paywall_adj_method = NULL, paywall_adj_inputs = NULL, paywall_adj_n = NULL, "
-        "paywall_adj_at = NULL, updated_at = ? WHERE domain = ?",
-        (_now(), _canon_host(domain)),
+        "paywall_adj_method = NULL, paywall_adj_inputs = NULL, paywall_adj_n = ?, "
+        "paywall_adj_source = ?, paywall_adj_status = ?, paywall_adj_note = ?, "
+        "paywall_adj_at = ?, updated_at = ? WHERE domain = ?",
+        (n, "measured" if status else None, status, note, _now(), _now(),
+         _canon_host(domain)),
     )
     conn.commit()
+
+
+def paywall_adjustment_is_manual(conn, domain) -> bool:
+    """True when a curator owns this publisher's discount. The calibration job
+    checks this before writing: a hand-set value that the next scheduled run
+    silently reverts is worse than no override at all."""
+    try:
+        row = conn.execute(
+            "SELECT paywall_adj_source FROM domains WHERE domain = ?",
+            (_canon_host(domain),)).fetchone()
+    except Exception:
+        return False
+    return bool(row and (row[0] or "").lower() == "manual")
 
 
 def get_paywall_da_adjustments(conn=None, db_path: str = _DEFAULT_DB) -> dict:
@@ -801,6 +839,37 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     sets = {k: fields[k] for k in EDITABLE_FIELDS if k in fields}
     if not sets:
         return get_domain(conn, host)
+
+    # A curator touching the discount takes OWNERSHIP of it. Stamp the row
+    # 'manual' so the calibration job skips it; clearing the field hands it back
+    # to the job. Done here rather than in the form so the guarantee holds for
+    # every writer of update_domain, not just the one UI that happens to exist.
+    if "paywall_da_discount_pct" in sets:
+        raw = sets["paywall_da_discount_pct"]
+        manual = raw not in (None, "")
+        try:
+            pct = float(raw) if manual else None
+        except (TypeError, ValueError):
+            raise ValueError("paywall_da_discount_pct must be a number, or blank to clear")
+        if manual and not (0 < pct < 100):
+            raise ValueError("paywall_da_discount_pct must be between 0 and 100 (exclusive)")
+        sets["paywall_da_discount_pct"] = pct
+        sets["paywall_adj_source"] = "manual" if manual else None
+        sets["paywall_adj_status"] = "manual" if manual else None
+        sets["paywall_adj_note"] = (
+            "Set by hand; the calibration job will not overwrite it. "
+            "Clear this field to return the publisher to automatic calibration."
+            if manual else None)
+        sets["paywall_adj_method"] = "manual" if manual else None
+        sets["paywall_adj_at"] = _now()
+        # The measured DA is a fact and is never rewritten; recompute the
+        # DERIVED adjusted DA so the stored pair can't disagree with itself.
+        row = get_domain(conn, host) or {}
+        da = row.get("domain_authority")
+        sets["paywall_da_adjusted"] = (
+            round(float(da) * (1.0 - pct / 100.0), 2)
+            if (manual and isinstance(da, (int, float)) and da) else None)
+
     sets["updated_at"] = _now()
     assignments = ", ".join(f"{k} = ?" for k in sets)
     conn.execute(
@@ -809,6 +878,14 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     )
     conn.commit()
     invalidate_cache()
+    if "paywall_da_discount_pct" in sets:
+        # The scorers cache adjustments per process; without this the running
+        # server keeps applying the OLD discount until it restarts.
+        try:
+            from input.pipeline.url_scoring import reset_paywall_cache
+            reset_paywall_cache()
+        except Exception:
+            pass
     return get_domain(conn, host)
 
 

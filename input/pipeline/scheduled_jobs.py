@@ -56,24 +56,37 @@ SCHEDULED_DEFAULTS: list[dict] = [
         "enabled": 1,
     },
     {
-        "name": "paid_pa_calibration",
-        "job_type": "paid_pa_calibration",
-        "purpose": "Re-measure the paywall PA-tax for each publisher flagged "
-                   "`paywall=1`. Gated recipe PAGES collect few backlinks, so their "
-                   "Moz PA runs far below what their DOMAIN authority predicts, and "
-                   "OU then reads them as under-performing and drops them from "
-                   "winners. This recomputes each one's PA mean/spread against "
-                   "matched-DA FREE publishers, giving the shift-and-scale remap the "
-                   "dish and publisher scorers both apply. It is a snapshot of two "
-                   "moving distributions — the publisher's PA accrues links, the free "
-                   "baseline grows with the corpus — so it goes stale silently: it "
-                   "mis-ranks rather than erroring. (All four calibrations sat "
-                   "untouched from 2026-06-23 to 2026-08-09 for exactly that reason.) "
-                   "Monthly is ample; link graphs move slowly. Uses only LOCAL "
-                   "samples — the paid SERP+Moz fallback stays off unless "
-                   "`harvest_missing` is set, so a scheduled run never surprise-spends.",
-        "interval_hours": 720,   # ~30 days = monthly
-        "params": {"log_label": "paid_pa_calibration", "harvest_missing": False},
+        "name": "paywall_calibration",
+        "job_type": "paywall_calibration",
+        "purpose": "Re-measure the paywall penalty for each publisher flagged "
+                   "`paywall=1`, and re-stamp every recipe it affects. A gated "
+                   "publisher's DA is measured across its WHOLE domain — "
+                   "bostonglobe.com is DA 91 on the strength of its free news — while "
+                   "its recipes sit behind the wall, so OU judges those pages against "
+                   "an ungated domain's expectations and buries them. This job "
+                   "measures the penalty where it is actually observable (each "
+                   "publisher's PA gap against FREE publishers at matched DA) and "
+                   "converts it into a discount on the DA bar. PA is never rewritten: "
+                   "it is the one thing we measured. "
+                   "A discount is only applied when the gap is large against the "
+                   "ordinary page-to-page spread AND keeps its sign across peer "
+                   "windows — otherwise the publisher is recorded as `inconclusive`, "
+                   "`low_confidence`, `no_penalty` or `no_rows` WITH the reason, so "
+                   "'no discount' never looks like 'never evaluated'. Gated is not "
+                   "the same as penalized: cooking.nytimes.com cannot be fetched "
+                   "without the unblocker yet earns normal authority, and correctly "
+                   "gets no discount. "
+                   "Rows a curator set by hand (`paywall_adj_source='manual'`) are "
+                   "skipped, never overwritten. "
+                   "Costs nothing to run: the corpus IS the sample, so there is no "
+                   "SERP or Moz spend. It also runs automatically at the end of a "
+                   "publisher refresh for a gated domain — the event that actually "
+                   "changes the evidence — so this timer is the backstop, not the "
+                   "main path. Replaced the superseded PA shift-and-scale remap "
+                   "(job type `paid_pa_calibration`) on 2026-08-12; see "
+                   "input/pipeline/paywall_calibration.py for why.",
+        "interval_hours": 168,   # weekly — the backstop; refreshes trigger it directly
+        "params": {"log_label": "paywall_calibration"},
         "enabled": 1,
     },
 ]

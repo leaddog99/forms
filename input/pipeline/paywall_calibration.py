@@ -173,6 +173,42 @@ def compute_gap(rows: list[dict], free_rows: list[dict]) -> dict:
             "da_adjusted": round(adjusted, 1), "discount_pct": round(discount, 1)}
 
 
+def _explain(res: dict) -> str:
+    """One line a curator can act on, for the domain record and the job log.
+
+    Every 'no adjustment' outcome has a different remedy — harvest the
+    publisher, wait for more rows, or accept that it isn't penalized — and a
+    blank field tells you none of them."""
+    s = res.get("status")
+    n, gap = res.get("n"), res.get("pa_gap")
+    if s == "adjusted":
+        return (f"Pages run {gap:.1f} PA below free publishers at DA "
+                f"{res['da_measured']:.0f} (effect {res['effect']:.2f} of the peer "
+                f"spread, n={n}); DA discounted {res['discount_pct']:.1f}%.")
+    if s == "no_rows":
+        return ("No scored recipes for this publisher yet, so the paywall flag has "
+                "never been tested. Run a publisher refresh to gather evidence.")
+    if s == "no_penalty":
+        return (f"Not starved: its pages match or beat free publishers at the same DA "
+                f"(gap {gap:+.1f}). Gated, but earning normal authority — no discount "
+                f"is warranted.")
+    if s == "low_confidence":
+        return (f"Only {n} scored recipes (need {res.get('min_n', MIN_N)}). A gap of "
+                f"{gap:+.1f} is showing but the sample is too thin to act on.")
+    if s == "inconclusive":
+        why = res.get("why", "")
+        if "window-unstable" in why:
+            return (f"Gap of {gap:+.1f} reverses sign depending on which free peers it "
+                    f"is compared against, so it is an artifact of the comparison set, "
+                    f"not a measured tax.")
+        return (f"Gap of {gap:+.1f} is small against the ordinary page-to-page spread "
+                f"(effect {res.get('effect', 0):.2f}, needs {MIN_EFFECT}). Too close to "
+                f"noise to act on.")
+    if s == "no_free_reference":
+        return ("No free publishers at a comparable DA to measure against.")
+    return s or "unknown"
+
+
 def calibrate(conn, *, persist: bool = True) -> dict:
     """Recompute every flagged publisher's DA adjustment from current corpus data.
 
@@ -236,8 +272,18 @@ def calibrate(conn, *, persist: bool = True) -> dict:
 
     results = []
     for dom in flagged:
+        # A curator who set this discount by hand owns it. Skip the row
+        # entirely — recomputing and overwriting would revert their decision
+        # silently on a schedule, which is the failure mode that makes people
+        # stop trusting an override.
+        if persist and domains_lib.paywall_adjustment_is_manual(conn, dom):
+            results.append({"domain": dom, "status": "manual",
+                            "note": "curator-owned; calibration skipped"})
+            continue
+
         res = compute_gap([r for r in rows if r["owner"] == dom], free_rows)
         res["domain"] = dom
+        res["note"] = _explain(res)
         results.append(res)
         if not persist:
             continue
@@ -253,12 +299,15 @@ def calibrate(conn, *, persist: bool = True) -> dict:
                         # 7-15 PA points on the two publishers holding both), so
                         # a stored discount is uninterpretable without it.
                         "sample_source": "master_recipes"},
-                n=res["n"])
+                n=res["n"], note=res["note"])
         else:
-            # no_rows / no_penalty / no_free_reference / low_confidence all mean
-            # "we are not adjusting this publisher" — clear to NULL so a stale
-            # discount from a previous run can never outlive its evidence.
-            domains_lib.clear_paywall_da_adjustment(conn, dom)
+            # no_rows / no_penalty / no_free_reference / low_confidence /
+            # inconclusive all mean "we are not adjusting this publisher" — clear
+            # the discount so it can never outlive its evidence, but KEEP the
+            # status and reason so the domain record says which of the five it is.
+            domains_lib.clear_paywall_da_adjustment(
+                conn, dom, status=res["status"], note=res["note"],
+                n=res.get("n"))
 
     restamped = restamp_recipes(conn) if persist else {}
 

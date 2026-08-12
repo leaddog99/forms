@@ -5535,9 +5535,35 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         except Exception as e:
             print(f"[PUBLISHER-REFRESH] re-flag selected failed: {type(e).__name__}: {e}")
 
+    # Recalibrate the paywall DA-adjustment when a GATED publisher just gained
+    # rows. The refresh is the event that changes the evidence — a monthly timer
+    # is the wrong trigger, because a publisher can sit at `no_rows` or
+    # `low_confidence` for weeks after the harvest that would have settled it.
+    # Cheap enough to run inline: the corpus is the sample, so there is no Moz
+    # or SERP spend, and restamp only rewrites rows whose value actually moved.
+    _recal = None
+    try:
+        with _db() as _pc:
+            if (_pc.execute("SELECT paywall FROM domains WHERE domain = ?",
+                            (host,)).fetchone() or [0])[0]:
+                from input.pipeline import paywall_calibration
+                _out = paywall_calibration.calibrate(_pc, persist=True)
+                _mine = next((r for r in _out["results"] if r.get("domain") == host), {})
+                _recal = {"status": _mine.get("status"),
+                          "discount_pct": _mine.get("discount_pct"),
+                          "restamped": _out.get("restamped")}
+                print(f"[PUBLISHER-REFRESH] paywall recalibrated: {host} -> "
+                      f"{_mine.get('status')}"
+                      + (f" ({_mine['discount_pct']}%)" if _mine.get("discount_pct") else "")
+                      + f" | {_mine.get('note', '')}")
+    except Exception as e:
+        # Never fail a completed harvest over the calibration step.
+        print(f"[PUBLISHER-REFRESH] paywall recalibration skipped: {type(e).__name__}: {e}")
+
     return {"discovered": res["discovered"], "recipe_pass": res["recipe_pass"],
             "scored": res["scored"], "stored": len(res["members"]),
-            "extracted": extracted, "recipe_path": res.get("recipe_path")}
+            "extracted": extracted, "recipe_path": res.get("recipe_path"),
+            "paywall_recalibration": _recal}
 
 
 jobs_lib.register_handler("publisher_refresh", _handle_publisher_refresh_job)
@@ -7449,6 +7475,11 @@ async def _handle_paid_pa_calibration_job(job: dict) -> dict:
     return summary
 
 
+jobs_lib.register_handler("paywall_calibration", _handle_paid_pa_calibration_job)
+# The pre-2026-08-12 job type, kept registered so historical `jobs` rows and any
+# job queued under the old name still resolve to a handler. The name said "PA"
+# but the job now discounts DA — renaming without this alias would turn a
+# re-run of an old row into an unhandled-type failure.
 jobs_lib.register_handler("paid_pa_calibration", _handle_paid_pa_calibration_job)
 
 
