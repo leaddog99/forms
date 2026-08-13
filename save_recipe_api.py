@@ -5378,6 +5378,11 @@ async def _extract_url_to_master_as_editors_choice(url: str, dish_name: str,
         return True, ""
     ok, reason = _non_empty(recipe_dict)
     if not ok:
+        _worth, _why_not = _render_retry_would_help(url)
+        if not _worth:
+            print(f"{log_prefix} EMPTY ({reason}) — SKIPPING render-retry: {_why_not}  {url}")
+            print(f"{log_prefix} SKIP-EMPTY {reason}  {url}")
+            return False
         print(f"{log_prefix} EMPTY ({reason}) — render-retry {url}")
         try:
             with page_cache.enabled():
@@ -5449,6 +5454,11 @@ async def _extract_publisher_url_to_master(url: str, host: str, rank: int,
     # RENDER-RETRY-ON-THIN: a JS publisher can render PARTIALLY (the recipe card loads
     # late → empty/thin extract). Retry ONCE forcing a full-browser render before giving up.
     if not ok:
+        _worth, _why_not = _render_retry_would_help(url)
+        if not _worth:
+            print(f"{log_prefix} THIN ({reason}) — SKIPPING render-retry: {_why_not}  {url}")
+            print(f"{log_prefix} SKIP-THIN {reason}  {url}")
+            return False
         print(f"{log_prefix} THIN ({reason}) — render-retry {url}")
         try:
             with page_cache.enabled():
@@ -8850,6 +8860,48 @@ _COHORT_SCORING_KEYS = ("ouPercentile", "powerPercentile", "fieldMinPower")
 # where 0 is a REAL measurement — "Moz answered and has no data for this URL",
 # i.e. any PA on the row is a placeholder. Stripping it would delete exactly the
 # finding it exists to record. See input/pipeline/url_scoring.moz_http_status.
+
+
+def _render_retry_would_help(url: str) -> tuple[bool, str]:
+    """Is a forced-render retry of `url` capable of returning anything new?
+
+    The retry exists for a JS publisher whose recipe card loads late: the first
+    STATIC fetch gets a shell, a rendered fetch gets the card. That is a real
+    case and it stays.
+
+    It is useless when the domain is already `render_required`: the first fetch
+    ALREADY rendered, so `fetch_render=True` re-issues a byte-identical request.
+    That is the condition checked here, and it is knowable from one DB read
+    before paying anything.
+
+    Measured on job 822 (177milkstreet.com, render_required): five winners each
+    paid TWO full unblocker fetches and TWO LLM extracts to reach the same
+    "fewer than 2 ingredients (0)" verdict. The second of each pair could not
+    have gone differently.
+
+    A second condition is real but NOT implemented here: a page declaring
+    itself paywalled (`isAccessibleForFree: false`) cannot be rendered into
+    content the server never sent. Wiring it needs the fetched HTML, which this
+    function does not have — and for the case that prompted R6 it is redundant,
+    since that publisher is render_required anyway.
+
+    Returns (worth_trying, why_not).
+    """
+    try:
+        from urllib.parse import urlparse as _urlparse
+        from input.pipeline import domains_lib
+        from input.pipeline.url_utils import root_domain as _rootd
+        host = (_urlparse(url).hostname or "").lower()
+        with _db() as conn:
+            row = domains_lib.get_domain(conn, host) or domains_lib.get_domain(conn, _rootd(url) or "")
+        if row and row.get("render_required"):
+            return False, ("domain is render_required, so the first fetch already "
+                           "rendered — the retry is the same request")
+    except Exception as e:
+        # Unknown policy: keep the retry. Never let a lookup failure remove a
+        # recovery path — the whole point of the retry is the uncertain case.
+        print(f"[WARN] render-retry policy lookup failed (retrying anyway): {e}")
+    return True, ""
 
 
 def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
