@@ -4090,9 +4090,162 @@ Three commits pushed: caef3fa, 10c8fdb, 825c4a5.
 
 ---
 
-## START HERE — state of play as of 2026-08-12
+## Session 2026-08-13 — "why didn't it score?" was four bugs, and one of them was five copies
 
-**Branch `split/enrichment-api`, pushed (825c4a5). Server restarted and current.**
+Started as R7 from `docs/acquisition-logic-study.md` and turned into a run at the whole
+"a value is missing and nothing says why" family. Everything below is measured, not read.
+
+### R7 — a fetch failure now says what it saw
+
+`_fetch_for_filter` returned `Optional[tuple]`: timeout, 404, captcha and parse error all
+collapsed into one `None`, so the caller could only write a bare `"fetch-failed"`. Replaced
+with a **`FilterFetch` NamedTuple** whose `ok=False` branch always carries `failure`, a
+human phrase that reaches the run log, `_dropped_reason`, and the ledger in one move
+(`classify()`'s longest-prefix match on `fetch-failed` still fires, so the suffix is free).
+The render escalation had the same defect one level down — a rendered challenge stub scored
+0 and was filed `no-recipe-structure`. Both verdict paths now refuse before scoring.
+
+**The part that was nearly wrong.** `_looks_blocked`'s own docstring said it was safe *only*
+for deciding whether to spend a credit. Reusing it unchanged as a VERDICT violated that: a
+false positive there discards a real recipe. So two thresholds —
+`_THIN_SPEND_CHARS = 15000` (eager, credit at risk) and `_THIN_VERDICT_CHARS = 2000`
+(strict, recipe at risk), selected by `strict=`.
+
+**The part that WAS wrong, caught by measuring.** The first strict build refused 4 of 40
+previously-kept recipes; two were **767 KB real jamieoliver.com pages**. Cloudflare injects
+its passive JSD probe (`/cdn-cgi/challenge-platform/scripts/jsd/main.js`) into pages it
+serves normally, so the marker list had been treating vendor plumbing as proof of a block.
+Markers are now two tiers: **HARD** (`px-captcha`, `just a moment...`, `verify you are
+human` — only appear ON a challenge page, sufficient alone) and **AMBIENT**
+(`challenge-platform`, `datadome`, `incapsula` — corroborating only; they name WHO once a
+thin body has established THAT). `_BLOCK_MARKERS` kept as the union for existing importers.
+
+| set | n | refused |
+|---|---|---|
+| previously-kept recipes (random `master_recipes`) | 40 | 1 — genuinely blocked today (1,115 b Cloudflare) |
+| known blocks (tiffycooks 213 b, bostonchefs 1,142 b, kalofagas 836 b) | 3 | 3 |
+
+Two live bugs the restructure surfaced: `_fetch_text` did `result[0]`, which under the
+NamedTuple is `ok` — it would have returned `True` as page text; and the Phase-A salvage
+filter tested `_dropped_reason == "fetch-failed"` **exactly**, so the newly-labelled blocks
+would have been excluded from the recovery path R7 exists to feed.
+
+### The sun-sentinel swordfish grab: no score, no reason
+
+Nothing was broken — the article was published THAT DAY, Moz had not crawled it, and
+`score_url_via_moz` correctly returned None. But the chain that explains this was broken in
+four places, so the only way to answer "why" was to read the database:
+
+1. **The reason was computed and thrown away.** `_moz_lookup` knows the code (0 = "answered,
+   no data"); `score_url_via_moz` returns `[0]` only and `get_or_create_url_metadata` did
+   `if scores:` … then nothing. Now `_moz_score_and_record` records BOTH outcomes.
+2. **It was re-billing.** With nothing written, `moz_last_scored` stayed NULL and
+   `_is_moz_stale(None)` is True — **every re-extract re-ran the full 4-variant probe**.
+   49 rows were in that state. Uncrawled now stamps `moz_http_code=0` + a timestamp and
+   retries on `MOZ_UNCRAWLED_RETRY_DAYS = 3` (waiting on a crawl, not on a score going
+   stale). Verified: second lookup went **4 rows → 0**.
+3. **`_sanitize_scoring` returned before writing the note** — it only fires on values
+   arriving as `0.0`, and the form now sends `null` (the absent-not-zero fix working). The
+   trigger is now the STATE (no page authority), not the repair.
+4. **Two silent drops of the same shape already fixed once here.** `_row_to_dict` omitted
+   `moz_http_code`, so `_attach_moz_scoring`'s `is not None` check could never be true —
+   1,277 metabase rows carried a code while only 77 recipe rows had ever received one. And
+   `scoringNote` was undeclared on `ScoringMetadata`, so pydantic dropped it on every
+   round-trip — the identical loss the comment three lines above documents for
+   `mozHttpCode`.
+
+**And the form never displayed it at all** — zero references to `scoringNote` in any HTML.
+Added a "No score — why" box under the scoring strip, shown only when the authority chips
+are actually empty.
+
+### Wayback is a transport, never an identity
+
+`web.archive.org` URLs were being scored as themselves. All 97 scored archive rows in
+`metabase_url` carried the IDENTICAL **PA 47 / DA 94 / OU 0.049** — archive.org's own
+authority — and 16 recipe rows were ranked on it. Another 28 never scored at all and were
+re-probed on every access.
+
+- `unwrap_wayback()` / `is_wayback()` are now canonical in `url_utils`. There were **three**
+  independent copies (`html_to_markdown`, an inline `find("/http")` scan in
+  `save_recipe_api`, the migration script) and the one place it cost money had none.
+- `scoring_url()` = unwrap + normalize, applied at the Moz probe AND the metabase key, read
+  and write, so a score and the row it lands on cannot disagree about which page they mean.
+- **`_save_recipe_core` was still minting archive identities** — repairing rows without this
+  just schedules the next repair. It now unwraps and preserves the snapshot on
+  `_source.archiveUrl`.
+- Migration (`scripts/unwrap_wayback_urls.py`, extended to both tables + a second failure
+  mode): **15 unwrapped, 28 re-scored, 35 Moz rows.** Of the 16 bad rows only 3 still had an
+  archive `originalUrl`; the other 13 had been unwrapped by the earlier run with their
+  **scores never corrected** — invisible to any scan for archive URLs.
+- `rootDomain` was stale on **54** rows (still `archive.org` beside a correct publisher PA),
+  because the Moz result has no `root_domain` key. Not cosmetic —
+  `stamp_paywall_adjustment` falls back to it. The writer now derives it from the identity
+  URL; 53 corrected.
+
+**DECIDED, do not re-litigate: the unwrap does NOT go inside `normalize_url`.** Its
+docstring claims "one canonical form across the system" and it isn't, which is why three
+copies grew around it — but the transport URL must stay representable or "fetch this
+snapshot" becomes inexpressible. Two named concepts is the correct model, not one.
+
+### The `_scoring` dict has ONE writer now
+
+`apply_moz_scores(scoring, scores, *, url, stamp_paywall)` + `clear_moz_scores()` +
+`MOZ_SCORING_FIELDS` in `url_scoring.py`. Five hand-rolled constructors —
+`process_batch`, `_attach_moz_scoring`, `backfill_url_scoring`, `unwrap_wayback_urls`,
+`_sanitize_scoring` (which now derives its key list from the shared tuple) — all delegate.
+A grep for `["pageAuthority"] =` returns exactly one hit: inside the writer.
+
+What the duplication was hiding:
+
+| | recipes | master_recipes |
+|---|---|---|
+| had PA but **no** `power` | 201 / 351 | 1,481 / 5,017 |
+| `power != DA+PA` (stale) | 0 | 57 |
+
+The live extract path — every bookmarklet grab — **never wrote `power` at all**, so those
+rows carried a measured PA that no power-blend ranking could see. The stale ones came from
+a writer refreshing PA and leaving `power` computed from the old value. **1,739 rows
+re-derived** through the new writer at zero Moz cost, plus one orphan `power: 72.0` beside
+a null PA/DA. Invariant now holds corpus-wide: `missing=0 stale=0 orphan=0`.
+
+Rules that were restated differently in each copy, now stated once: absent-is-not-zero;
+`power` DERIVED from what is in the block (not carried), so a PA-only refresh moves it;
+`mozHttpCode` provenance rides with the PA; `rawTitle` is fill-only; a real score clears an
+explanatory note.
+
+### Coquilles Saint Jacques — merged, not deleted
+
+Row 7236 was described (by me) as a redundant duplicate of 932 and approved for deletion.
+It was not: **7236 was a `kind=top` dish winner**, one of 10, and the only one unscoreable
+because it had been "scored" as archive.org. 932 was the unstamped older copy of the same
+publisher page holding the real PA 35/DA 37 — which is exactly why the migration refused to
+re-key 7236 onto that URL. Merged instead: **932 deleted, 7236 re-keyed to the publisher and
+scored** (PA 35 · DA 37 · OU 8.251 · power 72), now 4th of 10 by OU instead of unranked.
+Delete ran with `enable_vec` loaded; **5029 vec entries = 5029 master rows**, rowid-map
+orphans 0. Backup: `docs/reports/coquilles-dedupe-backup.json`.
+
+### Process notes that cost time today
+
+- **ASCII only in run-log lines.** `└─` raises `UnicodeEncodeError` on this host's cp1252
+  stdout and would have killed a harvest mid-run. Em dashes are fine (cp1252 has one). The
+  sub-line is `why:`.
+- **A value-based detector needs a discriminator.** Flagging PA 47/DA 94 by value alone
+  swept in 7 legitimate washingtonpost.com rows every run — WaPo really is DA 94 and its
+  thin `/recipes/` pages really do measure PA 47. Tightened to require
+  `rootDomain = archive.org`; the migration is now idempotent (0 / 0 / 1 skipped).
+- **Test the suspicion before "fixing" it.** Those 7 rows looked like placeholders. Scoring
+  fabricated WaPo URLs returned http_code 0 (correctly rejected) while two real ones came
+  back 47 and 55 — real data. `usable = bool(code)` is right; nothing needed changing.
+- **`recipes` has 19 duplicate `url_normalized` groups and that is CORRECT** — every group's
+  distinct-user count equals its row count. Multi-tenant, not a defect. Do not "fix" it.
+
+---
+
+## START HERE — state of play as of 2026-08-13
+
+**Branch `split/enrichment-api`, pushed (6741a82, 2e7a5a9, c424fa3). Server restarted and
+current.** Data repairs of 2026-08-13 are IN `recipes.db` — 1,739 rows re-derived, 28
+re-scored, 53 `rootDomain` corrected, 1 row merged. Refresh the dump before relying on it.
 
 ### The product thesis (read this first — unchanged, still settled)
 
@@ -4247,7 +4400,25 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
   `/screenshot/<id>` URL, never bytes, or publisher opt-out is unenforceable.
 - The header-less INGREDIENTS fallback; `power_blend_weight` in `bcc_config.json`;
   provenance backfill (~4,150 NULL `mozHttpCode`); a scoring counterpart to
-  `check_embeddings.py`; the five archive-47 rows; snapshot capture; `user_api_keys`.
+  `check_embeddings.py`; snapshot capture; `user_api_keys`.
+  (The archive-47 rows are DONE — see 2026-08-13.)
+
+- **R8 and R9 are still open** (`docs/acquisition-logic-study.md`): parse JSON-LD in
+  `<meta name="application/ld+json">` (Milk Street), and MEASURE microdata/microformat/rdfa
+  across a real sample of `no-struct` rejects before adding any of them. R7 is shipped, and
+  it changed what that sample means — reject reasons now separate "we never got the page"
+  from "the page has no recipe structure", so the measurement is finally worth taking.
+- **Still open from R1-R6:** R4 (a fourth harvest mode, "gated — human capture only"),
+  R5 (acquisition rows in the ledger), R6 (skip the extract render-retry when escalation
+  already failed).
+- **The unsaved-work guard is done for domains, NOT for `dishes_v2.html`** (identical
+  structure, the fix lifts directly) or the recipe form (which needs a real dirty flag
+  first — `saveBtn.disabled` there means "has content", not "is clean").
+- **~4,150 rows still have NULL `mozHttpCode`** = scored before 2026-08-04 and therefore
+  unverified. Now that `_row_to_dict` carries the code and the uncrawled case persists it,
+  this backlog drains on natural re-score; a deliberate pass would cost Moz rows.
+- **Milk Street partial capture is undecided** — store 3-of-10 ingredients marked gated,
+  or refuse the row entirely?
 
 ### Process notes that cost time this week
 
