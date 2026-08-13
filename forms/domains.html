@@ -384,8 +384,13 @@
           </label>
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
             <input type="checkbox" id="f_paywall" ${Number(d.paywall) === 1 ? 'checked' : ''}>
-            <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify). This is the <b>fact</b> that it's gated, not a claim that it's penalized: whether its pages are actually starved is measured separately below.${paywallStatusHtml(d)}</span>
+            <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify). This is the <b>fact</b> that it's gated, not a claim that it's penalized: whether its pages are actually starved is measured separately below.</span>
           </label>
+          <!-- OUTSIDE the label on purpose: this renders a block element, and a
+               <div> nested in the label's <span> is invalid — the parser closes
+               the span (and can close the label) to place it, restructuring the
+               control that owns the paywall checkbox. -->
+          ${paywallStatusHtml(d)}
           ${Number(d.paywall) === 1 ? `
           <div class="ed-field" style="margin:2px 0 6px 26px;max-width:520px">
             <label for="f_paywall_discount">DA discount override (%)</label>
