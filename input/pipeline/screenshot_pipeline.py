@@ -316,14 +316,33 @@ def crop_above_fold(raw_bytes: bytes) -> Optional[bytes]:
         return raw_bytes
 
 
+# Below this width a "screenshot" is not one. This pipeline only ever crops and
+# downscales — never pads, never upscales — so a small capture stays small all
+# the way into media.db, where it reads as a corrupt tile rather than an obvious
+# failure. Four phone captures were stored at 65x35 through 138x74 on 2026-08-13
+# before anyone noticed, because nothing between the browser and the blob had an
+# opinion about what "too small to be a page" means.
+MIN_USABLE_W = 320
+
+
 def _to_blob_jpeg(raw_bytes: bytes, *, max_w: int = 800, quality: int = 65) -> Optional[bytes]:
     """Downscale + re-encode the raw capture to a compact JPEG. The page
     screenshot is a 'real source on a real site' signal, not a hero image,
-    so 800px wide @ q65 (~30-60KB) is plenty and keeps media.db lean."""
+    so 800px wide @ q65 (~30-60KB) is plenty and keeps media.db lean.
+
+    REFUSES an implausibly small capture. Returning None means the recipe has no
+    screenshot, which is honest and re-capturable; storing a 65px smudge is a
+    permanent wrong answer that looks like a rendering bug on every surface."""
     try:
         import io as _io
         from PIL import Image
         im = Image.open(_io.BytesIO(raw_bytes)).convert("RGB")
+        if im.width < MIN_USABLE_W:
+            print(f"[screenshot] REFUSED a {im.width}x{im.height} capture — under "
+                  f"{MIN_USABLE_W}px wide it is not a page view. Nothing stored; the "
+                  f"recipe keeps no screenshot rather than a smudge. (A tall mobile "
+                  f"capture scaled by its long edge is the usual cause.)")
+            return None
         if im.width > max_w:
             h = max(1, round(im.height * max_w / im.width))
             im = im.resize((max_w, h), Image.LANCZOS)
