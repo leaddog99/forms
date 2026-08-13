@@ -1027,19 +1027,47 @@
       if (!confirm(`Run the userscript over ${picks.length} page(s)? It opens a tab and walks them in your real browser (free), pausing ${slow ? '30–60' : '8–25'}s between each.\n\nRequires the BCC capture userscript installed in Tampermonkey (install once from /forms/bcc-capture.user.js).`)) return;
       const btn = $('#userscriptBtn'); const restore = () => { if (btn){ btn.disabled = false; btn.textContent = '⚡ Run userscript'; } };
       if (btn){ btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+      // OPEN THE TAB NOW, inside the click's user gesture. The window.open used to
+      // happen AFTER `await fetch(...)`, by which point the activation is spent and
+      // Chrome blocks the pop-up silently — the job was created, the hint claimed
+      // "Userscript launched", and nothing ever ran. Job 825 sat at attempted=0 for
+      // 20 minutes that way. bookmarklet.js already opens synchronously for exactly
+      // this reason; this path had drifted from it.
+      const win = window.open('', '_blank');
+      if (win){
+        win.document.write('<p style="font:15px Georgia,serif;padding:24px">'
+          + 'Starting BCC capture…</p>');
+      }
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/userscript/start`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: picks, slow }) });
         const data = await r.json().catch(() => ({}));
-        if (r.status === 409){ if (hint) hint.textContent = 'A userscript run is already in flight for this domain.'; if (data.stream_url) streamRefresh(data.stream_url, domain, data.job_id); restore(); return; }
+        if (r.status === 409){ if (hint) hint.textContent = 'A userscript run is already in flight for this domain.'; if (data.stream_url) streamRefresh(data.stream_url, domain, data.job_id); if (win) win.close(); restore(); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        // Open page 1 WITH the capture hash → the installed userscript takes over from there.
+        // Navigate the ALREADY-OPEN tab to page 1 with the capture hash → the
+        // installed userscript takes over from there.
         const hash = '#bcc-capture=' + encodeURIComponent(location.origin + '|' + data.job_id + '|' + data.host);
-        window.open(data.next_url + hash, '_blank');
+        if (!win){
+          // Say so instead of claiming success. A blocked pop-up is the one failure
+          // where the job exists, the UI looks fine, and nothing whatsoever happens.
+          if (hint){
+            hint.style.color = 'var(--ed-warn)';
+            hint.textContent = `Pop-up blocked — job #${data.job_id} is queued but no tab opened. `
+              + `Allow pop-ups for this page and press ⚡ Run userscript again, or open this `
+              + `URL manually: ${data.next_url + hash}`;
+          }
+          restore();
+          return;
+        }
+        win.location.href = data.next_url + hash;
         if (hint){ hint.style.color = ''; hint.textContent = `Userscript launched (job #${data.job_id}) — watch the opened tab; ${data.total} queued.`; }
         streamRefresh(data.stream_url, domain, data.job_id);   // job log + reload-on-done
         restore();
-      } catch (e){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Userscript start failed: ' + (e.message || e); } restore(); }
+      } catch (e){
+        if (win) win.close();   // don't strand a blank tab when the start failed
+        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Userscript start failed: ' + (e.message || e); }
+        restore();
+      }
     }
 
     // Harvest MODE — one intent picker that sets the scattered low-level flags. The raw
