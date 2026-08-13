@@ -13,7 +13,7 @@
        memory/feedback_editor_template_not_runtime.md. -->
   <link rel="stylesheet" href="/forms/editor-shell.css?v=20260806a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
-  <link rel="stylesheet" href="/forms/components.css?v=20260808a">
+  <link rel="stylesheet" href="/forms/components.css?v=20260813b">
 </head>
 <body>
   <header class="app-header">
@@ -295,19 +295,19 @@
       const n = d.obtainable_n, tried = d.obtainable_tried;
       const yieldTxt = (n != null && tried) ? ` — ${n} of ${tried} extracted (${Math.round(100*n/tried)}% yield)` : '';
       if (v === 'unknown') {
-        return `<div style="margin:6px 0;padding:6px 8px;border-left:3px solid #999;background:rgba(0,0,0,.03);font-size:.85em">`
+        return `<div class="opt-status" style="padding:6px 8px;border-left:3px solid #999;background:rgba(0,0,0,.03)">`
           + `<b>Obtainability: not yet measured</b>`
           + `<div style="color:var(--muted,#666);margin-top:3px">A refresh that tries extractions will decide this from what it actually gets.</div></div>`;
       }
       if (v === 'never') {
-        return `<div style="margin:6px 0;padding:6px 8px;border-left:3px solid #b3261e;background:rgba(179,38,30,.06);font-size:.85em">`
+        return `<div class="opt-status" style="padding:6px 8px;border-left:3px solid #b3261e;background:rgba(179,38,30,.06)">`
           + `<b style="color:#b3261e">Obtainability: NEVER — page fetches are skipped</b>`
           + `<div style="color:var(--muted,#666);margin-top:3px">Repeated runs extracted nothing, so refreshes now score without fetching. `
           + `This publisher stays in the corpus and keeps its DA/PA, rank and links — only ingestion stops. `
           + `<b>Capture its recipes with the bookmarklet</b>, where your browser is authenticated and ours is not.</div></div>`;
       }
       const low = (n != null && tried && (n / tried) < 0.34);
-      return `<div style="margin:6px 0;padding:6px 8px;border-left:3px solid ${low ? '#9a6700' : '#1a7f37'};background:rgba(0,0,0,.03);font-size:.85em">`
+      return `<div class="opt-status" style="padding:6px 8px;border-left:3px solid ${low ? '#9a6700' : '#1a7f37'};background:rgba(0,0,0,.03)">`
         + `<b style="color:${low ? '#9a6700' : '#1a7f37'}">Obtainable via ${escapeHtml(v.replace(/_/g,' + '))}</b>${escapeHtml(yieldTxt)}`
         + (low ? `<div style="color:var(--muted,#666);margin-top:3px">Low yield — most pages cost a fetch and produce nothing. The bookmarklet may be cheaper than a refresh here.</div>` : '')
         + `</div>`;
@@ -316,7 +316,10 @@
     function paywallStatusHtml(d){
       if (Number(d.paywall) !== 1) return '';
       const st = d.paywall_adj_status, note = d.paywall_adj_note || '';
-      if (!st) return ' · <i>not yet evaluated — runs on the next publisher refresh</i>';
+      // A BLOCK, not an inline tail. This used to be appended after the paywall
+      // checkbox's label text, so it opened with " · " as a separator; once the
+      // options became a list the separator orphaned onto a line of its own.
+      if (!st) return '<div class="opt-status"><i>Not yet evaluated — runs on the next publisher refresh.</i></div>';
       const tone = { adjusted: '#1a7f37', manual: '#8250df', no_penalty: '#57606a',
                      inconclusive: '#9a6700', low_confidence: '#9a6700',
                      no_rows: '#57606a', no_free_reference: '#57606a' }[st] || '#57606a';
@@ -325,7 +328,7 @@
           ` (−${Number(d.paywall_da_discount_pct).toFixed(1)}%)` : '';
       const when = d.paywall_adj_at ? ` · ${escapeHtml(fmtDate(d.paywall_adj_at))}` : '';
       const how  = d.paywall_adj_source === 'manual' ? ' · set by hand' : '';
-      return `<div style="margin-top:6px;padding:6px 8px;border-left:3px solid ${tone};background:rgba(0,0,0,.03);font-size:.85em">` +
+      return `<div class="opt-status" style="padding:6px 8px;border-left:3px solid ${tone};background:rgba(0,0,0,.03)">` +
              `<b style="color:${tone}">${escapeHtml(st.replace(/_/g,' '))}</b>${pct}${how}${when}` +
              (note ? `<div style="color:var(--muted,#666);margin-top:3px">${escapeHtml(note)}</div>` : '') +
              `</div>`;
@@ -422,27 +425,42 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes — publisher refresh</h3>
           <p class="ed-notes-help" style="margin:0 0 10px">Harvest this publisher's most-notable recipes. <b>Pick a mode</b> (it sets the fetch / verify / score options for you), choose a <b>discovery source</b>, then <b>🔄 Refresh</b>. ★ = kept; “in corpus” = already ingested.</p>
-          <div id="harvestModes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:0 0 6px">
-            ${[
-              ['open','🟢 Auto · open site','Fetch → verify → keep top-N → ingest. Normal, reachable sites.'],
-              ['blocked','🔴 Auto · blocked site','Unblocker + full render, verify, keep top-N, ingest. Anti-bot — hands-off but paid (1 render each).'],
-              ['curate','✋ Curate · score & pick','<b>Ingests nothing.</b> Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or 📋 Queue (free, your browser). Best for anti-bot / junk-heavy exports.'],
-              ['gated','🔒 Gated · human capture only','<b>The server can never read this one.</b> Discovers, scores and ranks as usual, but pays for NO page fetch and blocks ⚙ Process selected. Ingest from the cohort with 📋 Queue, where your browser is signed in. For true paywalls (177milkstreet).'],
-            ].map(([v,t,s]) => `<label class="hm-card" style="cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:9px 11px;display:block;transition:background .12s"><input type="radio" name="harvestMode" value="${v}" style="margin-right:6px"><b style="font-size:.9em">${t}</b><span style="display:block;margin-top:3px;font-size:.76em;color:var(--muted);line-height:1.35">${s}</span></label>`).join('')}
-          </div>
-          <p class="ed-notes-help" style="margin:0 0 12px;font-size:.78em">Mode sets the <b>fetch strategy · render · verify · score-only</b> options for you — fine-tune any of them below if needed.</p>
-
-          <div class="src-groups" id="srcGroups">
-            <div class="src-group" data-src="serp">
-              <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${(d.harvest_source || 'serp') === 'serp' ? 'checked' : ''}>
-                Google — site: search <span class="src-sub">SERP; depth set in pages of ~10 results</span></label>
-              <div class="ed-form-grid">
-                ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
-                ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
-              </div>
+          <!-- ① INTENT. Four peers in a 2x2; see .hm-grid for why not auto-fit. -->
+          <div class="cfg-panel">
+            <div class="cfg-head"><span class="cfg-step">1</span>Mode
+              <span class="cfg-note">sets fetch · render · verify · score-only for you — fine-tune in step 4</span></div>
+            <div id="harvestModes" class="hm-grid">
+              ${[
+                ['open','🟢 Auto · open site','Fetch → verify → keep top-N → ingest. Normal, reachable sites.'],
+                ['blocked','🔴 Auto · blocked site','Unblocker + full render, verify, keep top-N, ingest. Anti-bot — hands-off but paid (1 render each).'],
+                ['curate','✋ Curate · score &amp; pick','<b>Ingests nothing.</b> Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or 📋 Queue (free, your browser). Best for anti-bot / junk-heavy exports.'],
+                ['gated','🔒 Gated · human capture only','<b>The server can never read this one.</b> Discovers, scores and ranks as usual, but pays for NO page fetch and blocks ⚙ Process selected. Ingest from the cohort with 📋 Queue, where your browser is signed in. For true paywalls (177milkstreet).'],
+              ].map(([v,t,s]) => `<label class="hm-card"><span class="hm-title"><input type="radio" name="harvestMode" value="${v}">${t}</span><span class="hm-desc">${s}</span></label>`).join('')}
             </div>
+          </div>
+
+          <!-- ② SHARED SCOPE, above the sources on purpose: these apply to Google
+               AND the SEMrush export, and sitting above both is what says so. -->
+          <div class="cfg-panel">
+            <div class="cfg-head"><span class="cfg-step">2</span>Scope &amp; limits
+              <span class="cfg-note">applies to every source below</span></div>
+            <div class="ed-form-grid">
+              ${field('f_recipe_path', 'Recipe URL path', d.recipe_path || '', { ph: 'recipes (blank = no scope)' })}
+              ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
+            </div>
+            <p class="ed-notes-help" style="margin:8px 0 0;font-size:.8em">Path = the segment the publisher's recipes live under (<code>recipes</code> → keeps only <code>${escapeHtml(d.domain || 'domain.com')}/recipes/…</code>), a single-prefix KEEP filter applied before any fetch. Leave <b>blank</b> where there's no clean prefix — a scoped SEMrush export or a verbatim query does the same job better. Separate from the domain identity; the record stays <code>${escapeHtml(d.domain || 'domain.com')}</code>.</p>
+            <div class="ed-form-grid" style="margin-top:14px">
+              ${field('f_exclude_words', 'Exclude sections — skip these URL sections', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
+            </div>
+          </div>
+
+          <!-- ③ WHERE THE CANDIDATES COME FROM. Each source owns only its own fields. -->
+          <div class="cfg-panel">
+            <div class="cfg-head"><span class="cfg-step">3</span>Discovery source
+              <span class="cfg-note">where the candidate URLs come from</span></div>
+          <div class="src-groups" id="srcGroups">
             <div class="src-group" data-src="backlinks_file">
-              <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source === 'backlinks_file' ? 'checked' : ''}>
+              <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source !== 'serp' ? 'checked' : ''}>
                 SEMrush Top-Pages export <span class="src-sub">Organic Research → Pages (by TRAFFIC) — our default. Old backlinks-pages exports still auto-detected. URL-form filenames (<code>https___www.domain…-organic.PagesV3…</code>) are matched too.</span></label>
               <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below (SEMrush <b>Organic Research → Pages</b>) → press <b>Export</b> → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
@@ -462,25 +480,39 @@
               <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Seeded once when the domain was created. For anything the plain link can't reach — a subdomain, a path, a multi-condition filter — build the query in SEMrush, copy the URL from the address bar, and paste it here.</p>
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
             </div>
+            <div class="src-group" data-src="serp">
+              <label class="src-head"><input type="radio" name="harvestSource" value="serp" ${d.harvest_source === 'serp' ? 'checked' : ''}>
+                Google — site: search <span class="src-sub">SERP; depth set in pages of ~10 results</span></label>
+              <div class="ed-form-grid">
+                ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
+                ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
+              </div>
+            </div>
+          </div>
           </div>
 
-          <div class="ed-form-grid" style="margin:4px 0 2px">
-            ${field('f_recipe_path', 'Recipe URL path — scopes EVERY source', d.recipe_path || '', { ph: 'recipes (blank = no scope)' })}
-            ${field('f_keep_top_n', 'Keep top N (all sources)', d.keep_top_n || 10, { type: 'number' })}
-          </div>
-          <p class="ed-notes-help" style="margin:0 0 8px;font-size:.8em">The URL path segment the publisher's recipes live under (e.g. <code>recipes</code> → keeps only <code>${escapeHtml(d.domain || 'domain.com')}/recipes/…</code>). A single-prefix KEEP filter applied to <b>every</b> source — Google, and the SEMrush file — so off-path clutter (galleries, videos, section indexes) is dropped before any fetch. Leave <b>blank</b> for publishers with no clean prefix (use a verbatim query instead). Separate from the domain identity — the record stays <code>${escapeHtml(d.domain || 'domain.com')}</code>.</p>
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px">
+          <!-- ④ PUBLISHER SETTINGS. Was a wall of paragraph-length checkbox labels
+               scattered either side of the Run button; now one scannable list with
+               the reasoning demoted to help text. Same ids, same semantics. -->
+          <div class="cfg-panel">
+            <div class="cfg-head"><span class="cfg-step">4</span>Publisher settings
+              <span class="cfg-note">facts about this site + fine-tuning</span></div>
+          <div class="opt-list">
+          <label class="opt">
             <input type="checkbox" id="f_check_recipe" checked>
-            <span>Verify each is a recipe (is_recipe) — <i>uncheck for paywalled publishers where a fetch can't see the recipe</i></span>
+            <span class="opt-t">Verify each is a recipe <span style="font-weight:400;color:var(--muted)">(is_recipe)</span></span>
           </label>
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
+          <p class="opt-h">Uncheck for paywalled publishers where a fetch can't see the recipe — the check would drop every page.</p>
+          <label class="opt">
             <input type="checkbox" id="f_harvestable_skip" ${Number(d.harvestable) === 0 ? 'checked' : ''}>
-            <span>Skip this publisher — no mechanical way to list recipes (Google refresh won't run)</span>
+            <span class="opt-t">Skip this publisher entirely</span>
           </label>
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
+          <p class="opt-h">No mechanical way to list its recipes — the refresh won't run at all.</p>
+          <label class="opt">
             <input type="checkbox" id="f_paywall" ${Number(d.paywall) === 1 ? 'checked' : ''}>
-            <span>Gated / premium publisher (paywall) — harvest trusts it (skips fetch-verify). This is the <b>fact</b> that it's gated, not a claim that it's penalized: whether its pages are actually starved is measured separately below.</span>
+            <span class="opt-t">Gated / premium publisher <span style="font-weight:400;color:var(--muted)">(paywall)</span></span>
           </label>
+          <p class="opt-h">The <b>fact</b> that it's gated — not a claim that it's penalised. Whether its pages are actually starved of links is measured separately, below. Harvest trusts it and skips fetch-verify.</p>
           <!-- OUTSIDE the label on purpose: this renders a block element, and a
                <div> nested in the label's <span> is invalid — the parser closes
                the span (and can close the label) to place it, restructuring the
@@ -488,7 +520,7 @@
           ${obtainableHtml(d)}
           ${paywallStatusHtml(d)}
           ${Number(d.paywall) === 1 ? `
-          <div class="ed-field" style="margin:2px 0 6px 26px;max-width:520px">
+          <div class="ed-field">
             <label for="f_paywall_discount">DA discount override (%)</label>
             <input id="f_paywall_discount" type="number" step="0.1" min="0.1" max="99.9"
                    value="${d.paywall_adj_source === 'manual' && d.paywall_da_discount_pct != null ? Number(d.paywall_da_discount_pct) : ''}"
@@ -498,30 +530,35 @@
               <b>leaves this publisher alone</b> — clear the box to hand it back.
             </div>
           </div>` : ''}
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 2px">
+          <label class="opt">
             <input type="checkbox" id="f_trust_extraction" ${Number(d.trust_extraction) === 1 ? 'checked' : ''}>
-            <span><b>Trust extraction</b> — this publisher's recipes have an unconventional layout the cheap is-recipe gate wrongly drops (e.g. Boston Globe's story-format recipes with no "Ingredients" heading, or the Guardian going straight from "serves 2" into the list). Keep its candidates past the structure gate + LLM catch so the full extractor decodes them. <b>Applies to EVERY batch</b> — the host is matched per candidate, so it also affects dish batches that happen to surface this publisher, not just its own harvest. <i>Safe for recipe-only publishers, where nearly every page is a recipe. For a GENERAL-NEWS host it also opens dish batches to its non-recipe pages, and a SEMrush URL filter does not constrain those (SERP picks the candidates) — scope it another way.</i></span>
+            <span class="opt-t">Trust extraction</span>
           </label>
-          <div class="ed-form-grid" style="margin:4px 0 2px">
-            ${field('f_exclude_words', 'Exclude sections (skip these URL sections — e.g. restaurant chef news)', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
+          <p class="opt-h">For an unconventional layout the cheap is-recipe gate wrongly drops — Boston Globe's story-format recipes with no "Ingredients" heading, the Guardian going straight from "serves 2" into the list. Keeps candidates past the structure gate so the full extractor decodes them. <b>Applies to every batch</b>, matched per candidate, so it also affects dish batches that surface this publisher. Safe for recipe-only sites; on a general-news host it opens dish batches to non-recipe pages too.</p>
+          <label class="opt">
+            <input type="checkbox" id="f_score_only">
+            <span class="opt-t">Score only — ingest nothing</span>
+          </label>
+          <p class="opt-h">Rank the URLs by Moz (zero fetches or renders), then pick from the <b>☰ Scored cohort</b> below. For anti-bot or expensive sites where fetch-to-verify is the costly mistake.</p>
+          <!-- R4. Persistent publisher property, not a per-run choice: the harvest
+               and /process-selected both enforce it server-side, so it cannot be
+               forgotten on the next run the way the Score-only tick can. -->
+          <label class="opt">
+            <input type="checkbox" id="f_human_capture_only" ${Number(d.human_capture_only) === 1 ? 'checked' : ''}>
+            <span class="opt-t">Human capture only <span style="font-weight:400;color:var(--muted)">(true paywall)</span></span>
+          </label>
+          <p class="opt-h">The server can <i>never</i> read this publisher's recipe bodies. Discover, score and rank as usual, but pay for no page fetch and refuse <b>⚙ Process selected</b>. Ingest from the cohort with <b>📋 Queue (manual)</b>, where your browser is signed in.</p>
           </div>
-          <div class="ed-actions" style="margin:10px 0 6px">
+          </div>
+
+          <!-- ⑤ RUN. Last, and nothing after it — options used to sit BELOW the
+               button, so the eye passed the action before the settings. -->
+          <div class="ed-actions" style="margin:14px 0 6px">
             <button type="button" class="ed-btn" id="refreshTopBtn" title="Run the query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
             <button type="button" class="ed-btn danger" id="cancelTopBtn" title="Stop a running harvest (active only while a refresh is running — aborts after the current candidate)" disabled>✋ Cancel</button>
             <button type="button" class="ed-btn danger" id="clearTopBtn" title="Wipe the current stored list (start over)">🗑 Clear list</button>
             <span class="ed-save-hint" id="topHint"></span>
           </div>
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;font-size:.86em">
-            <input type="checkbox" id="f_score_only">
-            <span><b>Score only</b> — rank the URLs by Moz (zero fetches/renders) and ingest <i>nothing</i>. Then open the <b>☰ Scored cohort</b> below, check the worthy ones, and <b>⚙ Process selected</b> to ingest just those via the unblocker. For anti-bot / expensive sites where fetch-to-verify is the costly mistake.</span>
-          </label>
-          <!-- R4. Persistent publisher property, not a per-run choice: the harvest
-               and /process-selected both enforce it server-side, so it cannot be
-               forgotten on the next run the way the Score-only tick can. -->
-          <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;font-size:.86em">
-            <input type="checkbox" id="f_human_capture_only" ${Number(d.human_capture_only) === 1 ? 'checked' : ''}>
-            <span><b>Human capture only</b> — the server can <i>never</i> read this publisher's recipe bodies (true paywall). Discover, score and rank as usual, but pay for no page fetch, and refuse <b>⚙ Process selected</b>. Ingest from the cohort with <b>📋 Queue (manual)</b>, where your browser is signed in.</span>
-          </label>
           <pre id="topLog" style="display:none;max-height:240px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;margin:0 0 10px;white-space:pre-wrap;"></pre>
 
           <!-- Recipes already in the corpus from this domain (browse/jump). Lifted
@@ -1068,11 +1105,10 @@
       document.querySelectorAll('#harvestModes .hm-card').forEach(c => {
         const i = c.querySelector('input'); const on = i && i.value === mode;
         if (i) i.checked = on;
-        // Quiet selection: a paper lift + a slightly firmer edge, not the clay fill
-        // this used to paint. The radio is already accent-tinted and the unselected
-        // cards sit on transparent, so the state reads without shouting.
-        c.style.background = on ? 'var(--ed-paper)' : 'transparent';
-        c.style.borderColor = on ? 'var(--ed-key)' : 'var(--line)';
+        // Selection is a class now, not inline styles — .hm-card.is-active owns the
+        // quiet paper lift, matching how .src-group.is-active marks the chosen
+        // source. One selection idiom on the page instead of two.
+        c.classList.toggle('is-active', !!on);
       });
       if (dirty){ const b = $('#saveBtn'); if (b) b.disabled = false; }
     }
