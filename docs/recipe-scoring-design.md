@@ -546,11 +546,145 @@ shift-scale remap toward the placeholder.
 
 ---
 
+## 11c. PA ranks ENDORSEMENT, not DEMAND — and within a publisher it is the only ranker — MEASURED 2026-08-12
+
+§12 records that `corr(PA, log external links) = +0.905` within a domain. That stands. PA is
+an excellent measure of third-party endorsement. **This section is about the other question:
+how well PA predicts whether anyone reads the page.**
+
+Measured against SEMrush per-URL traffic already stored on `collection_members`, within each
+publisher (so DA is held constant by construction):
+
+| domain | n | corr(PA, traffic) |
+|---|---|---|
+| toriavey.com | 222 | +0.425 |
+| allrecipes.com | 2,000 | +0.362 |
+| bonappetit.com | 250 | +0.263 |
+| bbcgoodfood.com | 319 | +0.217 |
+| recipetineats.com | 953 | +0.211 |
+| budgetbytes.com | 984 | +0.202 |
+| eatingwell.com | 250 | +0.168 |
+| skinnytaste.com | 217 | +0.158 |
+| loveandlemons.com | 249 | +0.126 |
+| cooking.nytimes.com | 391 | +0.104 |
+| latimes.com | 246 | +0.087 |
+| bostonglobe.com | 250 | +0.015 |
+| dianekochilas.com | 97 | **−0.012** |
+
+**Median +0.185 across 12 publishers and ~6,300 pages — PA explains roughly 3% of
+within-site traffic variance** (r² ≈ 0.034). No publisher exceeds +0.43.
+
+Both facts are true and compatible: PA tracks *links* almost perfectly and *demand* barely at
+all. **Links are not demand.** A page can be widely cited and rarely cooked, and — far more
+commonly — widely cooked and never linked, because home cooks do not run blogs.
+
+### Why this is load-bearing rather than a curiosity
+
+    rank_score = 0.70 · pct(OU) + 0.30 · pct(power)
+    OU    = PA − bar(DA)
+    power = DA + PA
+
+Within one publisher **DA is constant.** So `OU` is `PA` plus a constant, `power` is `PA` plus
+a constant, and both percentiles are monotone in PA. **Within a domain, 100% of `rank_score`
+is PA** — the 70/30 blend collapses to a single axis. Publisher selection therefore orders a
+site's pages by a signal that explains ~3% of their demand.
+
+This does **not** impugn the blend between publishers, where DA varies and the two axes are
+genuinely independent — that is the two-stage rule (§1) and it is not in question. The defect
+is narrower and worse: a between-site metric is being asked to rank *within* a site. It is
+also exactly what the traffic-exceptionalism work predicted — 71% of traffic variance is
+between-SITE, so within-site is precisely where PA has least to say.
+
+### What it costs — dianekochilas.com, 97 pages, DA 49 throughout
+
+| page | traffic | PA | rank_score | selected |
+|---|---|---|---|---|
+| Greek Baklava | **698** | 31 | 0.211 | no |
+| Detox water | 313 | 29 | 0.157 | no |
+| Broccoli & cauliflower salad | 207 | 29 | 0.157 | no |
+| Classic Dolmades | 206 | 29 | 0.157 | no |
+| Greek Salad | 157 | 35 | 0.351 | no |
+| Classic Moussaka | 149 | 32 | 0.243 | no |
+| Octopus with Orange & Olives | **21** | 40 | 0.573 | **yes — #1** |
+| Tsoureki | 20 | 40 | 0.573 | yes |
+| Skordostoumbi | 11 | 40 | 0.573 | yes |
+
+It rejected baklava, moussaka, dolmades and Greek salad — the canonical dishes of the cuisine —
+and selected octopus with orange and olives at 21 visits.
+
+**Three alternative explanations were tested and ruled out**, which is what makes the PA
+reading solid rather than a story:
+
+* *A paywall penalty.* The domain is flagged `paywall=1`; `pa_gap_v1` returned `inconclusive`
+  (gap +0.6, effect 0.09 against a needed 1.0). Not starved. The flag itself looks wrong —
+  the site is not gated.
+* *A DA penalty.* Real but separate, and it caps the *site*, not the ordering within it: DA 49
+  → power 89 → the 40th corpus percentile, so nothing on the domain can exceed ~0.80 without a
+  97th-percentile OU page. That explains the low ceiling; it does not explain octopus over
+  baklava.
+* *Split authority — recipes syndicated to PBS.* **Falsified.** pbs.org carries no recipes of
+  hers; the only *My Greek Table* page is the show landing page at 131 traffic, and
+  `mygreektable.com` has no indexed presence. Broadcast authority does not become web
+  authority: a TV audience does not produce backlinks.
+
+### The signal is already in the table
+
+`collection_members.traffic` and `.traffic_pct` are populated on all 97 of her rows, and on
+every `backlinks_file` publisher — from the SEMrush export the harvest already reads. **The
+demand signal sits in the same row as the endorsement signal that is being used instead.**
+Nothing needs to be bought.
+
+### Do not simply swap PA for traffic
+
+Ranking her members by traffic puts baklava, moussaka and dolmades on top, which reads
+right — and "it reads right" is exactly the reasoning that produced the mistake in
+`docs/ai-editor-mediation.md`. Before changing the ranker, score both ways across several
+publishers and check which ordering better predicts pages people actually open. Open
+questions that a test has to answer:
+
+* Traffic is only present on the `backlinks_file` path. A `serp`-sourced publisher has none —
+  does the within-site term degrade to PA, or does the publisher not get ranked at all?
+* Traffic rewards head-term targeting (`docs/ai-editor-mediation.md`), which is arguably the
+  right signal for a home-cook product but is not a quality measure.
+* Her top two pages by traffic are **articles, not recipes** (gyro history 4,617;
+  spanakopita ingredients 1,827). A demand-ranked pipeline that only looks at recipe pages
+  still cannot see what her audience actually arrives for.
+
+### The third channel: authority that never touches the web
+
+Both signals we have — PA (links) and traffic (organic search) — are web-native. Diane
+Kochilas is a PBS series host with numerous published cookbooks, and **neither of those
+produces the thing either metric counts.** A television audience does not write blog posts, and
+a reader who cooks from a printed cookbook generates no page view and no backlink. Her
+reputation is real and largely converts to **book sales and broadcast reach**, both invisible
+here by construction.
+
+This is not the paywall problem (a measurable suppression we can correct for) and not the DA
+ceiling (a real property of the link graph). It is a **whole channel of authority the corpus
+has no instrument for**, and it will systematically undervalue exactly the sources an
+editorially-serious product most wants: cookbook authors, chefs, broadcasters — people whose
+standing was established off the web and who treat their site as a companion rather than a
+business.
+
+Worth noting the direction of the error. Under-measuring here does not merely lose a good
+source; it **inverts** the intent — a content-farm page with no author and good SEO outranks a
+James Beard-winning author's own recipe, on a metric neither of them was competing on.
+
+**A possible instrument already half-exists.** The planned `chefs` master table (a normalised
+record parallel to `domains`) is the natural home for an author-authority signal, and the
+product-commerce pipeline already resolves Amazon listings, ratings and review counts for
+kitchen goods — the same machinery points at cookbooks. Published-title count, ratings and
+awards would be an authority axis genuinely orthogonal to PA, attached to the *author* rather
+than the *page*. Unbuilt, and not to be hand-waved into the ranker without the same
+both-ways test demanded above.
+
+---
+
 ## 12. Disproved — do not re-argue these
 
 | claim | status |
 |---|---|
-| "the authority signal is hardly meaningful" | **FALSE.** corr(PA, log external links) = **+0.905** within a domain (smittenkitchen, n=114). PA *is* third-party endorsement. |
+| "the authority signal is hardly meaningful" | **FALSE.** corr(PA, log external links) = **+0.905** within a domain (smittenkitchen, n=114). PA *is* third-party endorsement. **But see §11c: the same PA correlates only +0.185 with within-site TRAFFIC (median, 12 publishers, ~6,300 pages). PA measures endorsement well and demand barely — and within a publisher it is the only thing ranking.** Both entries are true; do not use either to argue the other. |
 | ranking has an age bias (old pages accumulate links) | **FALSE.** corr(publish year, PA) = **+0.530** — newer pages score higher. |
 | internal linking explains that | **FALSE.** canonical-variant numbers killed it. |
 | "keywords lead traffic by 2-3 months" | **OVERSTATED.** From porridge alone. At n=5,064: r=+0.12 raw, +0.19 partial. |
@@ -585,5 +719,12 @@ shift-scale remap toward the placeholder.
   since nothing visible depends on it (§11b).
 * **Artifact scoring is the only cold-start signal.** The cook-rework validators already grade
   soundness and the result is discarded.
+* **Within-publisher ranking is single-axis and near-blind** (§11c). `rank_score` collapses to
+  PA inside a domain, and PA explains ~3% of within-site traffic variance. The demand signal
+  is already stored on `collection_members.traffic`. Needs a both-ways test, not a swap.
+* **Off-web authority has no instrument** (§11c). Cookbooks and broadcast produce neither
+  backlinks nor organic search, so PBS hosts and published authors are undervalued by
+  construction. Candidate home: the planned `chefs` table + the existing Amazon
+  product-resolution pipeline pointed at published titles.
 * **This still ranks provenance and demand, never the dish.** An AI cannot know what tastes
   better; anything claiming otherwise is laundering a guess.
