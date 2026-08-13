@@ -373,6 +373,7 @@
       loadRejects(d.name);
       loadCandidates(d.name);
       loadEditorsChoice(d.name);
+      attachRunningRefresh(d.name);   // a job already running must be VISIBLE on open
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
       $('#eclist').addEventListener('click', (e) => {
@@ -701,13 +702,49 @@
       }
     }
 
+    // If a refresh for this dish is ALREADY in flight, show it. Previously the
+    // live log only ever appeared in the tab that started the run: reload the
+    // page, open the dish from another window, or come back later and a running
+    // job was completely invisible — the page looked idle while a job wrote its
+    // ledger. That invisibility is what makes someone press Refresh again and
+    // meet a bare "HTTP 409".
+    //
+    // Also disables the Refresh button while it runs, so the second click that
+    // produced the 409 cannot happen in the first place.
+    async function attachRunningRefresh(dishName){
+      try {
+        const r = await fetch(`/jobs?entity_ref=${encodeURIComponent('dish:' + dishName)}&limit=5`);
+        if (!r.ok) return;
+        const jobs = await r.json().catch(() => []);
+        const live = (Array.isArray(jobs) ? jobs : []).find(
+          j => j.status === 'running' || j.status === 'queued');
+        if (!live) return;
+        const btn = $('#refreshBtn');
+        if (btn){ btn.disabled = true; btn.textContent = 'Refreshing…'; }
+        flash(`“${dishName}” is refreshing now (job #${live.id}) — live log below.`);
+        streamDishLog(live.id, dishName);
+      } catch (_){ /* visibility is a nicety; never break the detail render */ }
+    }
+
     async function doRefresh(d){
       const btn = $('#refreshBtn');
       btn.disabled = true; btn.textContent = 'Queuing…';
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/refresh`, { method: 'POST' });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok && r.status !== 202) throw new Error(data.detail || `HTTP ${r.status}`);
+        // 409 = a refresh for this dish is ALREADY running. That is the guard
+        // working, not a failure — and the server returns the in-flight job_id
+        // precisely "so the UI can attach to that stream instead". Attaching
+        // beats reporting: the user clicked Refresh because they wanted to see
+        // it run, and it IS running.
+        if (r.status === 409 && data.job_id) {
+          flash(`“${d.name}” is already refreshing (job #${data.job_id}) — attaching to it.`);
+          streamDishLog(data.job_id, d.name);
+          return;
+        }
+        // The 409 body has no `detail` key, so the old fallthrough rendered a
+        // bare "HTTP 409" and threw the job id away.
+        if (!r.ok && r.status !== 202) throw new Error(data.detail || data.error || `HTTP ${r.status}`);
         // Phase 4: run the job OUT-OF-PROCESS — the server spawns
         // `python -m jobs exec --job-id N`, so the UI stays responsive, jobs for
         // different dishes run in parallel without interfering, and a server
