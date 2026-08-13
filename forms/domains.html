@@ -168,8 +168,9 @@
     // with no trace it ever ran.
     //
     // Deliberately NOT a modal on every action — that trains people to dismiss it.
-    // The visible banner is the primary signal; the confirms fire only on the two
-    // paths that actually destroy work.
+    // The SAVE BUTTON's own appearance is the ambient signal (see paintSaveState);
+    // a prompt fires only on the two paths that actually destroy work — switching
+    // records and leaving the page. Nothing interrupts you for merely typing.
     function isDirty(){
       const b = document.getElementById('saveBtn');
       return !!(b && !b.disabled);
@@ -182,35 +183,33 @@
         `You have unsaved changes on this domain.\n\n${action}\n\n`
         + 'OK = discard them.  Cancel = stay and Save first.');
     }
-    // Persistent, always-visible while dirty. This is the part that stops the
-    // "I thought it saved" failure — the state is on screen, not implied by a
-    // button's enabled-ness.
-    function paintDirtyBanner(){
-      let el = document.getElementById('dirtyBanner');
+    // THE SAVE BUTTON IS THE INDICATOR. An earlier pass added a fixed purple
+    // "Unsaved changes" banner, and it was wrong twice over: it appeared on every
+    // keystroke (a nag, not a warning — exactly the dismiss-training this file's
+    // own comment warned against), and it existed only because the state was
+    // invisible on the control that owns it. `.ed-btn:disabled` is opacity .55,
+    // which on a filled primary button still reads as clickable.
+    //
+    // So: make the button say it. Inactive and quiet when there is nothing to
+    // save, accented and explicit when there is. Nothing is interrupted, and the
+    // answer to "did that take?" is where the eye already is.
+    function paintSaveState(){
+      const b = document.getElementById('saveBtn');
+      if (!b) return;
       const on = isDirty();
-      if (!el){
-        if (!on) return;
-        el = document.createElement('div');
-        el.id = 'dirtyBanner';
-        el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;'
-          + 'z-index:9999;background:#8250df;color:#fff;padding:9px 16px;border-radius:999px;'
-          + 'box-shadow:0 4px 14px rgba(0,0,0,.22);font-size:.86em;display:flex;gap:10px;'
-          + 'align-items:center';
-        el.innerHTML = '<span>Unsaved changes</span>';
-        const b = document.createElement('button');
-        b.type = 'button'; b.textContent = 'Save now';
-        b.style.cssText = 'background:#fff;color:#8250df;border:0;border-radius:999px;'
-          + 'padding:4px 12px;font:inherit;font-weight:600;cursor:pointer';
-        b.addEventListener('click', () => document.getElementById('saveBtn')?.click());
-        el.appendChild(b);
-        document.body.appendChild(el);
-      }
-      el.style.display = on ? 'flex' : 'none';
+      if (b.dataset.dirtyPainted === (on ? '1' : '0')) return;   // don't fight the DOM
+      b.dataset.dirtyPainted = on ? '1' : '0';
+      b.classList.toggle('primary', on);
+      b.classList.toggle('ed-save-clean', !on);
+      b.textContent = on ? 'Save changes' : 'Saved';
+      b.title = on ? 'Unsaved changes on this domain' : 'No changes to save';
     }
     // Poll rather than hook every mutation site: the flag is flipped from a dozen
     // places (field edits, both enrich buttons, mode cards), and a poll cannot be
     // forgotten when a thirteenth is added.
-    setInterval(paintDirtyBanner, 400);
+    setInterval(paintSaveState, 300);
+    // Remove the old banner if a cached page still has one in the DOM.
+    document.getElementById('dirtyBanner')?.remove();
     // Backstop for the one path an in-app guard cannot see: closing or reloading
     // the tab. Browsers ignore custom text here — the string is required, not shown.
     window.addEventListener('beforeunload', (e) => {
@@ -544,6 +543,9 @@
               <button type="button" class="ed-btn" id="userscriptBtn" style="font-size:.8em;display:none" title="ZERO-CLICK FREE: the BCC capture userscript (Tampermonkey) walks the CHECKED pages in your real browser, beating anti-bot, saving each to master, paced 8–25s. Tracked as a job. Install once from /forms/bcc-capture.user.js">⚡ Run userscript</button>
               <label id="slowWrap" class="ed-check" style="display:none;font-size:.76em;gap:4px;align-items:center" title="Slower delays (30–60s) for touchy / rate-limiting sites"><input type="checkbox" id="usSlow"> slow</label>
             </div>
+            <!-- What the row checkboxes are for, and — once we have measured this
+                 publisher — which of the three routes actually works on it. -->
+            <p id="pickHint" style="display:none;font-size:.78em;line-height:1.45;margin:0 0 10px"></p>
             <ol class="ed-t10" id="domainCohortList"><li class="ed-empty-fit">Open or refresh to load the scored cohort.</li></ol>
           </details>
 
@@ -572,7 +574,9 @@
         </details>
 
         <div class="ed-actions">
-          <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
+          <!-- Starts in the CLEAN state (a freshly rendered record has nothing to
+               save), so there is no accent flash before paintSaveState's first tick. -->
+          <button type="button" class="ed-btn ed-save-clean" id="saveBtn" title="No changes to save">Saved</button>
           <button type="button" class="ed-btn" id="enrichBtn" title="Profile this site with a quick LLM query (story, language, country, cuisine, logo)">✨ Enrich</button>
           <button type="button" class="ed-btn" id="deepEnrichBtn" title="Deep research: Moz facts (Brand Authority, referring domains, ranking keywords) + a grounded LLM profile">🔬 Deep enrich</button>
           <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
@@ -823,7 +827,44 @@
         ['#processSelBtn', '#queueCapBtn', '#userscriptBtn', '#slowWrap'].forEach(sel => {
           const b = $(sel); if (b) b.style.display = pickable ? 'inline-flex' : 'none';
         });
+        paintPickHint(pickable);
       } catch (e) { el.innerHTML = `<div class="ed-empty-fit">Couldn’t load cohort (${escapeHtml(String(e.message || e))}).</div>`; }
+    }
+
+    // WHAT THE CHECKBOXES ARE FOR, said in the UI rather than left to be learned.
+    // Ticking a row means "put this recipe in the corpus"; the three buttons are
+    // three ROUTES to do that, and which one works is a property of the publisher,
+    // not a preference. We already measure it — record_acquisition_outcome writes
+    // content_obtainable / obtainable_n / obtainable_tried on every harvest — so
+    // the page can just say so instead of letting someone spend renders to find out.
+    //
+    // 177milkstreet: 1 of 9 obtained via the paid unblocker (11%). The other 8 are
+    // real recipes behind a real paywall; the curator's own signed-in browser reads
+    // them for free. Without this line the obvious button is the wrong one.
+    function paintPickHint(pickable){
+      const host = $('#pickHint'); if (!host) return;
+      const d = (selected && domains[selected]) || {};
+      if (!pickable){ host.style.display = 'none'; return; }
+      const tried = Number(d.obtainable_tried || 0);
+      const got = Number(d.obtainable_n || 0);
+      let msg = 'Tick the rows worth keeping, then choose how to fetch them.';
+      let warn = false;
+      if (tried >= 4){
+        const pct = Math.round((got / tried) * 100);
+        if (pct < 40){
+          warn = true;
+          msg = `Tick the rows worth keeping — then use ⚡ Run userscript or 📋 Queue. `
+              + `Measured here: only ${got} of ${tried} (${pct}%) came through the paid `
+              + `unblocker, so ⚙ Process selected mostly spends renders for nothing. `
+              + `Your signed-in browser reads these; the server cannot.`;
+        } else {
+          msg = `Tick the rows worth keeping, then choose how to fetch them. `
+              + `Measured here: ${got} of ${tried} (${pct}%) come through ⚙ Process selected.`;
+        }
+      }
+      host.textContent = msg;
+      host.style.display = 'block';
+      host.style.color = warn ? 'var(--ed-warn)' : 'var(--muted)';
     }
 
     // Publisher refresh: run the (verbatim) query → verify recipes → Moz-score →

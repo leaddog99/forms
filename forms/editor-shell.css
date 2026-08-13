@@ -287,6 +287,16 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-btn.danger:hover{ background:var(--ed-warn-bg); border-color:var(--ed-warn); }
 .ed-btn.done{ color:var(--ed-ok); border-color:#dde0c4; background:#f7f8ef; }
 .ed-btn:disabled{ opacity:.55; cursor:default; }
+/* Save, with nothing to save. The two states must be distinguishable AT A
+   GLANCE — that is what lets the button carry the unsaved-work signal instead of
+   an interrupting banner. `:disabled`'s opacity .55 alone is not enough on a
+   filled primary button: dimmed accent still reads as "press me". This drops the
+   fill entirely, so "Saved" is visibly inert next to an accented "Save changes". */
+.ed-btn.ed-save-clean{
+  background:transparent; border-color:var(--line); color:var(--muted);
+  font-weight:400;
+}
+.ed-btn.ed-save-clean:disabled{ opacity:1; }   /* the muted palette IS the disabled cue */
 .ed-save-hint{ font-size:.8em; color:var(--muted); margin-left:auto; }
 
 /* ---------- Mobile: list becomes an overlay drawer ---------- */

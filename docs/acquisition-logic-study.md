@@ -402,15 +402,41 @@ The gate is read, not guessed: `jsonld_declares_gated()` checks schema.org's own
 `isAccessibleForFree` on the node and on any `hasPart` WebPageElement. Milk Street sets it
 honestly — `false`, with `cssSelector: .paywalled-content`.
 
-**Milk Street is crackable.** The unblocker returns full page content; only the JSON-LD is
-truncated. That settles the "partial capture" question — we do not need to store a 3-of-10
-teaser, because we are not limited to the teaser.
-
 ### Verified on job 822 (live)
 
 `KEEP json-ld` on the recipe pages that were `DROP no-struct` in job 820, while
 `177milkstreet.com/recipes` — the INDEX page — still correctly drops at `phrase=0`.
 Control: recipetineats (normal `<script>` JSON-LD) unaffected.
+
+| | job 820 | job 822 |
+|---|---|---|
+| candidates kept | 2 | **9** |
+| saved to master | 1 | 1 |
+| skipped at 0 ingredients | 1 | 8 |
+
+### CORRECTION — Milk Street is NOT "crackable"
+
+An earlier draft of this section claimed the unblocker returns full page content and only
+the JSON-LD is truncated. **That was generalised from one page and job 822 disproves it.**
+The run measured its own answer:
+
+    obtainability: 177milkstreet.com -> unblocker_render
+                   (1 of 9 extracted via unblocker_render (11% yield))
+
+The Jordanian flatbread is the 11%, not the rule; the other 8 returned 0 ingredients
+because the body really is gated. The one that came through is a short recipe whose method
+Milk Street shows in full — not evidence that the paywall is porous.
+
+**So R8's value is not access, it is CLASSIFICATION.** Those 8 pages are now filed as
+*recipes we could not obtain* rather than *pages with no recipe structure*. That is the
+difference between a publisher that looks worthless and one that is a known, measured,
+human-capture target — and it is exactly the R4 "gated — human capture only" mode, which
+now has a real example and a real number attached to it.
+
+The partial-capture question therefore stays open and does NOT get answered by "we have
+full access": we still must not store a 3-of-10 teaser, and for these pages the route that
+works is the curator's own signed-in browser (📋 Queue / ⚡ Run userscript), not the paid
+unblocker.
 
 ---
 

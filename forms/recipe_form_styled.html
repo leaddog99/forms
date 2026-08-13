@@ -2682,7 +2682,14 @@
       const deleteBtn = document.getElementById('deleteBtn');
       // Honor in-flight Save (data-busy) the same way Enrich does —
       // don't re-enable a button mid-request.
-      if (saveBtn && !saveBtn.dataset.busy) saveBtn.disabled = !hasContent;
+      if (saveBtn && !saveBtn.dataset.busy) {
+        // `hasContent` is NOT "has changes" — it was the whole dirty story here,
+        // which is why this form could not have the unsaved-work guard the domain
+        // editor got: a loaded-but-untouched recipe looked identical to one with
+        // an hour of edits in it. paintRecipeSaveState() owns the real answer.
+        saveBtn.disabled = !hasContent;
+        paintRecipeSaveState();
+      }
       if (clearBtn) clearBtn.disabled = !hasContent;
       if (deleteBtn) deleteBtn.disabled = !isSavedToDb;
       // Enrich: need at least a name (enrich_recipe needs SOMETHING to
@@ -2690,6 +2697,119 @@
       // toggled by the click handler so we don't fight it here.
       if (enrichBtn && !enrichBtn.dataset.busy) enrichBtn.disabled = !name;
     }
+
+    // ── Real dirty tracking ─────────────────────────────────────────────────
+    // A SNAPSHOT of every editable control, not a proxy for one. The save payload
+    // is assembled inline inside the submit handler, so there is no reusable
+    // "collect the form" function to diff against; scanning the DOM is both
+    // independent of that and immune to a new field being added and forgotten —
+    // the ingredient/step rows are inputs too, so add/remove changes the
+    // signature on its own.
+    //
+    // Deliberately NOT excluding fields the app writes programmatically (a landed
+    // screenshot URL, an auto-derived chapter): those ARE unsaved changes. The
+    // point is to answer "would closing this tab lose something?", and there the
+    // answer is yes regardless of who typed it.
+    let _formBaseline = null;
+    function formSignature(){
+      const form = document.getElementById('recipeForm');
+      if (!form) return '';
+      const parts = [];
+      const seq = {};
+      form.querySelectorAll('input, textarea, select').forEach(el => {
+        if (el.type === 'file' || el.type === 'button' || el.type === 'submit') return;
+        // Ingredient/step/equipment/note rows carry NO id and NO name. Keying
+        // those by a global running index made every row after an insertion or
+        // deletion re-key, so one added row read as "everything below it changed"
+        // — a diff of 20 phantom fields. Scope the index to the row's own list, so
+        // a change is attributed where it happened. Order still counts (ingredient
+        // order is meaningful), it is just no longer coupled across lists.
+        let key = el.id || el.name;
+        if (!key) {
+          const box = el.closest('ul, ol, tbody, fieldset');
+          const scope = (box && box.id) || 'anon';
+          seq[scope] = (seq[scope] || 0) + 1;
+          key = scope + '#' + seq[scope];
+        }
+        parts.push(key + '' +
+          ((el.type === 'checkbox' || el.type === 'radio') ? (el.checked ? '1' : '0')
+                                                           : (el.value || '')));
+      });
+      return parts.join('');
+    }
+    // Call after LOAD, SAVE and CLEAR — the three moments the form legitimately
+    // matches what is stored. NOT after an extract: a fresh extract is unsaved
+    // work by definition, and rebaselining there would hide exactly the case
+    // this exists to protect.
+    function markFormClean(){
+      _formBaseline = formSignature();
+      paintRecipeSaveState();
+    }
+    // A load is not finished when loadForm returns. Hero onload, the metadata
+    // fetch, the scoring hydrate and the deep-link (/r/<uuid>) path all write to
+    // the form afterwards, and a baseline taken before them marks a freshly
+    // loaded, untouched recipe as dirty — measured: 61 fields at baseline vs 62
+    // a moment later, which then read as a 20-field diff.
+    //
+    // So don't guess a delay: watch until the form stops moving. Bounded, and it
+    // rebaselines on whatever it settles at, so a slow tail cannot leave the form
+    // permanently "dirty" — nor can it wait forever if something writes on a timer.
+    let _settleTimer = null;
+    function markFormCleanWhenSettled(maxMs = 4000){
+      if (_settleTimer) clearInterval(_settleTimer);
+      let last = formSignature(), stable = 0, waited = 0;
+      _settleTimer = setInterval(() => {
+        const now = formSignature();
+        waited += 250;
+        if (now === last) { stable++; } else { last = now; stable = 0; }
+        if (stable >= 2 || waited >= maxMs) {
+          clearInterval(_settleTimer); _settleTimer = null;
+          markFormClean();
+        }
+      }, 250);
+    }
+    function isRecipeDirty(){
+      if (_formBaseline === null) return false;   // nothing loaded yet
+      return formSignature() !== _formBaseline;
+    }
+    // Two-state Save, mirroring the domain editor so the two pages read the same:
+    // muted "Saved" when there is nothing to write, accented "Save" when there is.
+    // No banner — an interruption on every keystroke trains people to dismiss it
+    // (see the domains editor, where exactly that was removed).
+    //
+    // No new CSS: this page already styles `button.primary:disabled` with a muted
+    // fill, so disabling on clean IS the inactive look. The label carries the rest.
+    function paintRecipeSaveState(){
+      const b = document.getElementById('saveBtn');
+      if (!b || b.dataset.busy) return;
+      const seq = (document.getElementById('recipe_seq_id')?.value || '').trim();
+      const name = (document.getElementById('name')?.value || '').trim();
+      const heroUrl = (document.getElementById('heroImageUrl')?.value || '').trim();
+      const desc = (document.getElementById('description')?.value || '').trim();
+      const uuid = (document.getElementById('recipe_id')?.value || '').trim();
+      const hasContent = !!(name || desc || uuid || heroUrl);
+      // NEVER-SAVED rows always keep Save live. A first save must not depend on
+      // the baseline being right — if this tracker is ever wrong, the failure has
+      // to be a redundant save, never a form that refuses to save at all.
+      const clean = hasContent && !!seq && !isRecipeDirty();
+      const want = clean ? '0' : '1';
+      if (b.dataset.dirtyPainted !== want){
+        b.dataset.dirtyPainted = want;
+        b.textContent = clean ? 'Saved' : 'Save';
+        b.title = clean ? 'No changes to save' : '';
+      }
+      if (hasContent && seq) b.disabled = clean;
+    }
+    // The flag is flipped from many places (field edits, extract, enrich, image
+    // drops, cook rework). Poll rather than hook each one — a poll cannot be
+    // forgotten when the next one is added.
+    setInterval(paintRecipeSaveState, 300);
+    // The one path an in-app guard cannot see: closing or reloading the tab.
+    // Browsers ignore custom text — the string is required, not shown.
+    window.addEventListener('beforeunload', (e) => {
+      if (!isRecipeDirty()) return;
+      e.preventDefault(); e.returnValue = '';
+    });
 
     // Scoring strip — PA / DA / OU / Recipe-text score chips at the top
     // of the form. Show whatever's in recipe._scoring; hide the strip
@@ -4267,6 +4387,10 @@
       stepList.querySelectorAll('textarea').forEach(autoGrow);
 
       updateButtonStates();
+      // The form now matches the stored row — this is the baseline every later
+      // edit is measured against. Taken once the form STOPS MOVING, because the
+      // async tail of this load keeps writing after loadForm returns.
+      markFormCleanWhenSettled();
 
       // Land at the TOP of the form. See feedback_post_extract_scroll.
       // Three pins, escalating in delay, because the form has multiple
@@ -4585,6 +4709,11 @@
 
       try {
         await postSave(false);
+        // Written — the form is now what the DB holds. Rebaseline so Save goes
+        // quiet and beforeunload stops guarding work that is no longer at risk.
+        // Inside the try: a FAILED save must stay dirty. Settle-based, because a
+        // save can repopulate the form (seq_id, permalink, scoring) afterwards.
+        markFormCleanWhenSettled(3000);
       } finally {
         if (_saveBtn) {
           delete _saveBtn.dataset.busy;
@@ -4983,6 +5112,9 @@
       clearScoringStrip();
       populateMetaPanel(null);   // hide the processing-metadata panel on a fresh form
       updateButtonStates();
+      // An empty form has nothing at risk — rebaseline so the tab can be closed
+      // without a browser prompt about work that was just deliberately discarded.
+      markFormClean();
     };
 
     loadRecipes();
