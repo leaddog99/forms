@@ -43,7 +43,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from input.pipeline.url_scoring import (  # noqa: E402
     score_url_via_moz, _apply_moz_scores, ensure_metabase_url_table,
-    normalize_url,
+    normalize_url, apply_moz_scores,
 )
 
 DB_PATH = str(PROJECT_ROOT / "recipes.db")
@@ -130,20 +130,12 @@ def update_recipe_scoring(d: dict, scores: dict) -> tuple[float | None, float | 
     so the caller can report deltas."""
     s = d.get("_scoring") or {}
     old_pa = s.get("pageAuthority")
-    s["pageAuthority"] = scores["page_authority"]
-    s["domainAuthority"] = scores["domain_authority"]
-    s["ouScore"] = scores["ou_score"]
-    # power is DA+PA and was one of the manufactured zeros, so recompute it from
-    # the values just measured rather than leaving a 0 beside a real PA.
-    try:
-        s["power"] = float(scores["domain_authority"]) + float(scores["page_authority"])
-    except (TypeError, ValueError):
-        s.pop("power", None)
-    # Provenance for the PA just written (docs/recipe-scoring-design §11b).
-    if scores.get("moz_http_code") is not None:
-        s["mozHttpCode"] = scores["moz_http_code"]
-    if scores.get("raw_title") and not s.get("rawTitle"):
-        s["rawTitle"] = scores["raw_title"]
+    # ONE writer — power (DA+PA), the mozHttpCode provenance and the fill-only
+    # rawTitle rule all live in url_scoring.apply_moz_scores. This copy had the
+    # power recompute; the live extract path did not, which is how the two
+    # drifted. No paywall stamp: this is a bulk PA refresh, and the caller
+    # re-stamps adjustments as its own pass.
+    apply_moz_scores(s, scores, stamp_paywall=False)
     d["_scoring"] = s
     return old_pa, scores["page_authority"]
 

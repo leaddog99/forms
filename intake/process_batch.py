@@ -136,37 +136,32 @@ def pre_scored_from_entry(entry: dict) -> dict:
     ou = _val(entry.get("ou"))
     domain = _val(entry.get("domain"))
     title = _val(entry.get("title"))
-    if pa is not None:
-        out["pageAuthority"] = float(pa)
-    if da is not None:
-        out["domainAuthority"] = float(da)
-    if ou is not None:
-        out["ouScore"] = float(ou)
-    # Provenance for the PA above: Moz's http_code at the moment it was scored.
-    # >0 measured, 0 placeholder (never written by the current gate), absent =
-    # scored before 2026-08-04 and therefore unverified. See moz_http_status().
     code = _val(entry.get("moz_http_code"))
-    if code is not None:
-        out["mozHttpCode"] = int(code)
-    # power (DA+PA) + the two in-cohort percentile ranks rank_by_blend stamped
-    # on the entry (0..1) — carried as 0-100 so the authority commentary can
-    # place the page on the exceptionality×clout 2x2, not just read raw OU.
-    #
-    # ABSENT IS NOT ZERO (fixed 2026-07-30). These used to be written straight
-    # through, which put `power: 0.0` on 1,778 master rows — 51% of the corpus —
-    # whose DA and PA were both real. Cause: `power` and the percentiles come
-    # from the BATCH ENTRY, whose Moz call had returned 0/0 for small sites,
-    # while pageAuthority/domainAuthority above were written from a later
-    # successful scoring. The zeros then propagated into powerPercentile and the
-    # whole field block (every affected row has fieldN: 0), so anything ranking
-    # on the stored percentiles pinned half the corpus to the floor of the power
-    # dimension. A value we could not compute must be OMITTED, never written as
-    # a number that reads as "measured, and it's nothing".
-    #
-    # power is DERIVED here rather than trusted: da+pa is the same rule
-    # blend._power() applies, and it is right whenever DA and PA are.
-    if pa is not None and da is not None:
-        out["power"] = float(da) + float(pa)
+    # The Moz half of the block goes through the ONE writer
+    # (url_scoring.apply_moz_scores), which owns the rules that five hand-rolled
+    # copies of this assignment used to each restate differently:
+    #   * ABSENT IS NOT ZERO (fixed 2026-07-30). These used to be written
+    #     straight through, which put `power: 0.0` on 1,778 master rows — 51% of
+    #     the corpus — whose DA and PA were both real. The zeros propagated into
+    #     powerPercentile and the whole field block, pinning half the corpus to
+    #     the floor of the power dimension.
+    #   * power is DERIVED, not trusted: da+pa is the same rule blend._power()
+    #     applies, and recomputing it is what keeps it from going stale.
+    #   * mozHttpCode is the PA's provenance: >0 measured, 0 = Moz answered with
+    #     nothing, absent = scored before 2026-08-04 and unverified.
+    # No paywall stamp here: the batch stamps it later, per-entry, once the
+    # cohort is known.
+    apply_moz_scores(out, {
+        "page_authority": float(pa) if pa is not None else None,
+        "domain_authority": float(da) if da is not None else None,
+        "ou_score": float(ou) if ou is not None else None,
+        "moz_http_code": int(code) if code is not None else None,
+    }, stamp_paywall=False)
+
+    # The two in-cohort percentile ranks rank_by_blend stamped on the entry
+    # (0..1) — carried as 0-100 so the authority commentary can place the page on
+    # the exceptionality×clout 2x2, not just read raw OU. Cohort-derived, so they
+    # stay here rather than in the shared Moz writer.
     # A percentile is meaningless without the cohort it was ranked within, so a
     # degenerate cohort (no field stats, or all-zero power) yields no percentile
     # rather than 0.0.
@@ -309,6 +304,10 @@ from input.pipeline.config import (  # noqa: E402
     SAVE_GATE_MIN_INGREDIENTS as BATCH_MIN_INGREDIENTS,
     SAVE_GATE_MIN_INSTRUCTIONS as BATCH_MIN_INSTRUCTIONS,
 )
+# The one writer of the Moz half of `_scoring`, used by pre_scored_from_entry
+# above. Imported here because this is where the project root joins sys.path;
+# function bodies resolve names at call time, so the ordering is fine.
+from input.pipeline.url_scoring import apply_moz_scores  # noqa: E402
 
 
 def _batch_save_worthy(recipe: dict) -> tuple[bool, str]:

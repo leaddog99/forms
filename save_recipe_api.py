@@ -97,11 +97,15 @@ except Exception as e:
     raise
 
 try:
-    from input.pipeline.url_utils import normalize_url
+    from input.pipeline.url_utils import normalize_url, unwrap_wayback, is_wayback
     from input.pipeline import (
         ensure_metabase_url_table,
         get_or_create_url_metadata,
         get_metabase_url,
+    )
+    from input.pipeline.url_scoring import (
+        MOZ_UNCRAWLED_RETRY_DAYS, MOZ_SCORING_FIELDS, scoring_url,
+        apply_moz_scores, clear_moz_scores,
     )
     from input.pipeline.token_journal import (
         ensure_bcc_token_journal_table,
@@ -656,31 +660,16 @@ def _attach_moz_scoring(recipe, url_normalized):
             meta = get_or_create_url_metadata(conn, url_normalized, fallback_title=fallback_title)
             if not meta:
                 return
-            scoring = recipe.get("_scoring") or {}
-            if meta.get("page_authority") is not None:
-                scoring["pageAuthority"] = meta["page_authority"]
-            if meta.get("domain_authority") is not None:
-                scoring["domainAuthority"] = meta["domain_authority"]
-            if meta.get("ou_score") is not None:
-                scoring["ouScore"] = meta["ou_score"]
-            if meta.get("root_domain"):
-                scoring["rootDomain"] = meta["root_domain"]
-            if meta.get("raw_title") and not scoring.get("rawTitle"):
-                scoring["rawTitle"] = meta["raw_title"]
-            # Provenance rides along with the PA it describes (see moz_http_status).
-            if meta.get("moz_http_code") is not None:
-                scoring["mozHttpCode"] = meta["moz_http_code"]
-            # Paywall DA-adjustment, STAMPED AT SCORING TIME so the adjustment a
-            # page was actually scored under is stored with it — queryable in SQL
-            # via the adjusted_da / adjusted_ou_score / effective_ou_score columns
-            # without running the pipeline, and still readable after a later
-            # recalibration moves the number.
-            try:
-                from input.pipeline.url_scoring import stamp_paywall_adjustment
-                stamp_paywall_adjustment(scoring, url_normalized)
-            except Exception as _e:
-                print(f"[WARN] paywall DA-adjustment stamp skipped: {_e}")
-            recipe["_scoring"] = scoring
+            # ONE writer (input.pipeline.url_scoring.apply_moz_scores). This
+            # block used to assign the six fields by hand and, alone among the
+            # writers, never wrote `power` — which is why 201 personal and 1,481
+            # master rows carried a measured PA that no power-blend ranking could
+            # see. It also stamps the paywall DA-adjustment AT SCORING TIME, so
+            # the adjustment a page was actually scored under is stored with it —
+            # queryable via the adjusted_da / effective_ou_score columns without
+            # running the pipeline, and still readable after a recalibration.
+            recipe["_scoring"] = apply_moz_scores(
+                recipe.get("_scoring") or {}, meta, url=url_normalized)
     except Exception as e:
         print(f"[WARN] Moz scoring at extract failed for {url_normalized!r}: {e}")
 
@@ -4425,15 +4414,12 @@ def get_dish_fit_data_endpoint(name: str):
             # time): https://web.archive.org/web/<ts>id_/https://real...
             # Unwrap to the embedded live URL so it matches the cohort's
             # live URL (agnolotti's mosthungry.com row).
+            # scoring_url = unwrap_wayback + normalize_url, the same pair the
+            # metabase key uses. Was a hand-rolled find("/http") scan here — the
+            # third independent copy of this unwrap. One canonical form or the
+            # comparison above silently fails again.
             def _canon(u):
-                if not u:
-                    return ""
-                pos = u.find("web.archive.org/web/")
-                if pos != -1:
-                    h = u.find("/http", pos)
-                    if h != -1:
-                        u = u[h + 1:]
-                return normalize_url(u)
+                return scoring_url(u) if u else ""
             saved_urls = {
                 _canon(r[0]) for r in conn.execute(
                     "SELECT json_extract(data, '$._source.originalUrl') "
@@ -8845,10 +8831,16 @@ def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
 # not measure it, and 0 is not a legal measured value for any of them — Moz PA/DA
 # are >= 1 for any page it has crawled, and a cohort percentile of exactly 0.0
 # alongside fieldN 0 means there was no cohort, not that the recipe came last.
-_MOZ_SCORING_KEYS = ("pageAuthority", "domainAuthority", "ouScore", "power",
-                     "ouPercentile", "powerPercentile", "fieldAvgPower",
-                     "fieldMaxPower", "fieldMinPower", "fieldN",
-                     "dishCompetitivenessPct")
+# The authority half comes from MOZ_SCORING_FIELDS — the same tuple
+# apply_moz_scores writes and clear_moz_scores removes — minus mozHttpCode
+# (see below). The cohort half is batch-derived and belongs to this module.
+# One list of "what the Moz writer touches", so a field added there cannot be
+# forgotten by the sanitizer that has to recognise its unmeasured zero.
+_MOZ_SCORING_KEYS = tuple(
+    k for k in MOZ_SCORING_FIELDS if k != "mozHttpCode"
+) + ("ouPercentile", "powerPercentile", "fieldAvgPower",
+     "fieldMaxPower", "fieldMinPower", "fieldN",
+     "dishCompetitivenessPct")
 # Of those, the COHORT-derived ones — computed only when a batch ranked this row
 # against its peers. For these, 0.0 is a LEGAL measurement: PERCENT_RANK gives
 # exactly 0.0 to the bottom-ranked member of every cohort, and fieldMinPower is
@@ -8902,7 +8894,15 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
     dropped = [k for k in _strip_keys
                if k in scoring and isinstance(scoring[k], (int, float))
                and not isinstance(scoring[k], bool) and float(scoring[k]) == 0.0]
-    if not dropped:
+    # An UNSCORED row needs the explanation just as much as a zero-stripped one —
+    # arguably more, since there is nothing on screen to interpret. Observed
+    # 2026-08-13 on the sun-sentinel swordfish bookmarklet grab: the form now
+    # submits nulls rather than 0.0 (the absent-not-zero fix working as intended),
+    # so `dropped` was empty, this function returned here, and the note that
+    # exists precisely to stop someone digging through logs was never written.
+    # The trigger is the STATE (no page authority), not the repair.
+    _unscored = scoring.get("pageAuthority") is None
+    if not dropped and not _unscored:
         return
     for k in dropped:
         scoring.pop(k, None)
@@ -8913,7 +8913,7 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
     # survived, Moz answered fine and only the dish-cohort signals were absent
     # (a recipe saved outside a batch has no cohort to be a percentile of). Saying
     # "no Moz data" there would send the reader to the wrong place.
-    if _field_n > 0:
+    if _field_n > 0 and dropped:
         # It WAS in a batch — fieldN proves it. Do not repeat the no-cohort story.
         reason = (f"ranked in a cohort of {int(_field_n)}; the dropped field(s) "
                   f"{dropped} arrived as an unmeasured 0 from the caller")
@@ -8926,18 +8926,33 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
             with _db() as conn:
                 ensure_metabase_url_table(conn)
                 row = get_metabase_url(conn, url_normalized) if url_normalized else None
-            if row and not row.get("moz_last_scored"):
-                reason = ("Moz has not crawled this URL yet — common for a recently "
-                          "published article; re-score later rather than treating it as zero")
-            elif not row:
+            if not row:
                 reason = "URL was never submitted to Moz"
+            else:
+                # Read the PROVENANCE, not the timestamp. moz_http_code 0 is Moz
+                # saying "I answered, I have nothing" — a measured fact, now
+                # persisted. The old test here was `not moz_last_scored`, which
+                # meant the same thing only for as long as the uncrawled case
+                # left that column NULL; it no longer does, precisely so the
+                # 4-row probe stops repeating. See _record_moz_uncrawled.
+                code = row.get("moz_http_code")
+                if code is not None and int(code) == 0:
+                    reason = ("Moz has not crawled this URL yet — common for a recently "
+                              "published article; re-score later rather than treating it "
+                              f"as zero (retried every {MOZ_UNCRAWLED_RETRY_DAYS} days)")
+                elif not row.get("moz_last_scored"):
+                    reason = ("URL is in the Moz queue but has no answer yet — no score "
+                              "was recorded, and none was invented")
         except Exception:
             pass
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     scoring["scoringNote"] = f"{reason} (checked {stamp})"
     recipe["_scoring"] = scoring
-    print(f"[SCORING] dropped {len(dropped)} unmeasured zero(s) "
-          f"{dropped} for {url_normalized or '(no url)'} — {reason}")
+    if dropped:
+        print(f"[SCORING] dropped {len(dropped)} unmeasured zero(s) "
+              f"{dropped} for {url_normalized or '(no url)'} — {reason}")
+    else:
+        print(f"[SCORING] unscored: {url_normalized or '(no url)'} — {reason}")
 
 
 def _save_recipe_core(payload: dict) -> dict:
@@ -9043,6 +9058,21 @@ def _save_recipe_core(payload: dict) -> dict:
     table = _recipes_table_for(user_id)
     source = recipe_dict.get("_source") or {}
     raw_source_url = source.get("originalUrl") or ""
+    # A Wayback URL reaching this point is the TRANSPORT that fetched the page,
+    # never the page's identity. Stored as-is it makes archive.org the recipe's
+    # publisher: the row scores archive.org's authority, the mandatory
+    # attribution link points at the archive instead of the author, and the same
+    # recipe fetched directly later does not dedupe against it. 16 rows had to be
+    # repaired on 2026-08-13 (scripts/unwrap_wayback_urls.py) — repairing them
+    # without fixing this line just schedules the next repair.
+    # The exact snapshot is preserved on `_source.archiveUrl`, so HOW we got the
+    # page is not lost; `_source.origin` already records "archive.org".
+    if is_wayback(raw_source_url):
+        source.setdefault("archiveUrl", raw_source_url)
+        raw_source_url = unwrap_wayback(raw_source_url)
+        source["originalUrl"] = raw_source_url
+        recipe_dict["_source"] = source
+        print(f"[SOURCE] Wayback transport unwrapped to publisher identity: {raw_source_url}")
     normalized_source_url = normalize_url(raw_source_url) if raw_source_url else ""
     if normalized_source_url and normalized_source_url != raw_source_url:
         source["originalUrl"] = normalized_source_url

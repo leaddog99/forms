@@ -1849,6 +1849,17 @@
           </div>
         </div>
 
+        <!-- WHY there is no score. A grab of a same-day article comes back with
+             every authority chip on an em-dash, and the reason (Moz has not
+             crawled it yet) was written to _scoring.scoringNote but displayed
+             nowhere — so "it didn't do any scoring" could only be answered by
+             reading the database. The note is the answer; put it where the
+             em-dashes are. Hidden whenever the row scored normally. -->
+        <div class="score-commentary hidden" id="scoringNoteBox">
+          <span class="score-label">No score — why</span>
+          <p id="scoringNoteText"></p>
+        </div>
+
         <!-- Score commentary — the editorial reading of the numbers above
              (OU x power quadrant + residual). Read-only here; the editable
              field stays in the Editorial section, and this mirrors it so the
@@ -3099,6 +3110,25 @@
         hasMatch
       );
       if (strip) strip.classList.toggle('hidden', !hasAny);
+
+      // Surface the reason the authority chips are empty. Only when they ARE
+      // empty: on a normally-scored row the note explains a cohort quirk the
+      // curator did not ask about, and a permanent explanatory box trains people
+      // to stop reading it. textContent — the note is data.
+      (function () {
+        const box = document.getElementById('scoringNoteBox');
+        const txt = document.getElementById('scoringNoteText');
+        if (!box || !txt) return;
+        const unscored = (sc.pageAuthority === null || sc.pageAuthority === undefined);
+        const note = (sc.scoringNote || '').trim();
+        if (note && unscored) {
+          txt.textContent = note;
+          box.classList.remove('hidden');
+        } else {
+          txt.textContent = '';
+          box.classList.add('hidden');
+        }
+      })();
 
       updatePublicScore(sc);
       setScoreCommentary(recipe && recipe.editorial && recipe.editorial.scoreCommentary);

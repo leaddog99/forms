@@ -1,7 +1,34 @@
 # URL normalization. One canonical form across the system so the metabase_url
 # table key is stable and joins are trivial.
 
+import re
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+
+# A Wayback URL is a TRANSPORT, never an identity:
+#   https://web.archive.org/web/20251011133422id_/https://site/path  ->  https://site/path
+# The modifier after the timestamp (id_, im_, js_, cs_, if_ …) asks Wayback for
+# the raw asset; it is part of how we fetched, not of what we fetched.
+#
+# THE CANONICAL COPY. Three near-identical regexes existed independently — in
+# to_markdown/html_to_markdown.py, an inline `_canon` closure in save_recipe_api.py,
+# and scripts/unwrap_wayback_urls.py — each written when a different consumer hit
+# the same problem, and none of them covering the scoring path where it costs money.
+_WAYBACK_RE = re.compile(
+    r"^https?://web\.archive\.org/web/[^/]*?/(?P<orig>https?://.+)$",
+    re.IGNORECASE,
+)
+
+
+def unwrap_wayback(url: str) -> str:
+    """The publisher URL inside a Wayback snapshot URL; the input unchanged if
+    it is not one. Idempotent, so it is safe to call at every layer."""
+    m = _WAYBACK_RE.match((url or "").strip())
+    return m.group("orig") if m else (url or "")
+
+
+def is_wayback(url: str) -> bool:
+    """True when `url` is a Wayback snapshot wrapper."""
+    return bool(_WAYBACK_RE.match((url or "").strip()))
 
 # Query params we always drop. Blocklist (not allowlist) so unfamiliar
 # site-specific params like ?recipeId=42 survive.

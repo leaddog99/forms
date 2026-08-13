@@ -551,6 +551,14 @@ class ScoringMetadata(BaseModel):
     # scoring strip. None/0 when unknown (SERP-discovered or no SEMrush data).
     traffic: Optional[float] = None
     trafficPct: Optional[float] = None
+    # WHY this row has no authority numbers, in plain language, written by
+    # _sanitize_scoring at the save boundary. Undeclared until 2026-08-13 and so
+    # dropped by this model on every round-trip — the same silent loss documented
+    # above for mozHttpCode, and with the same consequence: a curator looking at
+    # a strip of em-dashes had no way to tell "Moz hasn't crawled this yet" from
+    # "something broke". Never a substitute for a value: it explains an absence,
+    # it does not fill one.
+    scoringNote: Optional[str] = None
 
 class ClassificationMetadata(BaseModel):
     confidence: int = 0

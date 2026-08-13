@@ -13,7 +13,24 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import requests
 from dotenv import load_dotenv
 
-from input.pipeline.url_utils import normalize_url, root_domain
+from input.pipeline.url_utils import normalize_url, root_domain, unwrap_wayback, is_wayback
+
+
+def scoring_url(url: str) -> str:
+    """The URL authority actually belongs to — the publisher's page, never the
+    transport that reached it.
+
+    Wayback is a fetch fallback for pages that are dead or blocking us. Scoring
+    the snapshot URL scores archive.org: measured 2026-08-13, all 97 scored
+    archive rows in metabase_url carry the IDENTICAL PA 47 / DA 94 / OU 0.049 —
+    archive.org's own authority — and 16 recipe rows were ranked on it. The
+    other 28 archive rows never scored at all and were re-probed on every
+    access, 4 billed Moz rows at a time, for a URL Moz will never have data on.
+
+    One function, applied at both the Moz call and the metabase key, so the
+    score and the row it lands on can never disagree about which page they mean.
+    """
+    return normalize_url(unwrap_wayback(url))
 
 load_dotenv()
 logger = logging.getLogger("pipeline.url_scoring")
@@ -26,6 +43,13 @@ MOZ_TIMEOUT_SECONDS = 8
 # row is older than this (matches the CLI script's --days default so manual
 # and interactive paths agree on what "stale" means).
 MOZ_REFRESH_TTL_DAYS = 30
+# Retry cadence for a URL Moz answered about but has NO data for (http_code 0) —
+# nearly always an article published in the last few days. Much shorter than the
+# score TTL because the expected event (Moz crawls it) happens on that timescale,
+# but NOT zero: before this existed, an uncrawled row kept moz_last_scored NULL,
+# so every re-extract re-ran the full 4-variant probe and paid 4 Moz rows to be
+# told "no data" again. Measured 2026-08-13: 50 such rows in metabase_url.
+MOZ_UNCRAWLED_RETRY_DAYS = 3
 
 # --- Per-domain canonical-variant learning (Moz ROW reduction) ---------------
 # Moz bills PER TARGET URL in the batch. score_url_via_moz probes up to 4 variants
@@ -344,6 +368,14 @@ def _moz_lookup(url: str) -> tuple[Optional[dict], Optional[int]]:
     """
     if not url:
         return None, None
+    # Score the publisher, not the transport. Done HERE as well as at the
+    # metabase key so a direct caller (the batch _moz_score, a rescore script)
+    # cannot bill a probe for archive.org by handing us a snapshot URL. The
+    # unwrap is idempotent, so the double application is free.
+    if is_wayback(url):
+        unwrapped = unwrap_wayback(url)
+        logger.info("Wayback URL scored as its publisher: %s -> %s", url, unwrapped)
+        url = unwrapped
     if not MOZ_ACCESS_ID or not MOZ_SECRET_KEY:
         logger.info("Moz creds missing — skipping scoring for %s", url)
         return None, None
@@ -529,14 +561,25 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
         "domain_authority": row["domain_authority"],
         "ou_score": row["ou_score"],
         "moz_last_scored": row["moz_last_scored"],
+        # PROVENANCE — was written to the table by _apply_moz_scores but omitted
+        # from this projection, so every reader that goes through here saw None.
+        # `_attach_moz_scoring`'s "if meta.get('moz_http_code') is not None" could
+        # therefore never fire: measured 2026-08-13, 1,277 metabase_url rows carried
+        # a code while only 77 recipe rows had ever received one (those came from
+        # the batch path, which reads the score dict directly and bypasses this).
+        "moz_http_code": row["moz_http_code"],
         "first_seen": row["first_seen"],
         "last_accessed": row["last_accessed"],
     }
 
 
 def get_metabase_url(conn: sqlite3.Connection, url: str) -> Optional[dict]:
-    """Look up a metabase row for `url` (normalized). Returns None if absent."""
-    norm = normalize_url(url)
+    """Look up a metabase row for `url` (normalized). Returns None if absent.
+
+    Keys on `scoring_url`, matching get_or_create_url_metadata — a reader handed
+    a Wayback URL must land on the same row the writer created, or the caller
+    sees "never submitted to Moz" for a page that was just scored."""
+    norm = scoring_url(url)
     if not norm:
         return None
     conn.row_factory = sqlite3.Row
@@ -586,6 +629,49 @@ def _apply_moz_scores(conn: sqlite3.Connection, url: str, scores: dict, now_iso:
     conn.commit()
 
 
+def _record_moz_uncrawled(conn: sqlite3.Connection, url: str, code: int, now_iso: str) -> None:
+    """Persist the MEASURED fact that Moz answered and has no data for this URL.
+
+    PA/DA/OU stay NULL — absent, never a fabricated 0. What gets written is the
+    provenance (`moz_http_code`, normally 0) plus `moz_last_scored`, and both
+    matter for a different reason:
+
+      * `moz_http_code = 0` makes "Moz has nothing on this page" a SQL-queryable
+        fact instead of something only reproducible by re-running the pipeline.
+        Before this, the whole table had ZERO such rows — the finding was
+        computed on every lookup and discarded every time.
+      * `moz_last_scored` stops the re-probe. `_is_moz_stale(None)` is True, so
+        a never-stamped row re-ran the full 4-variant probe on every single
+        extract of that URL, forever, to be told "no data" again each time.
+
+    A row stamped this way is retried on the shorter MOZ_UNCRAWLED_RETRY_DAYS
+    cadence, because the thing we are waiting for (Moz crawling a fresh article)
+    happens in days, not the 30 of the score TTL.
+    """
+    conn.execute(
+        "UPDATE metabase_url SET moz_http_code = ?, moz_last_scored = ? WHERE url = ?",
+        (int(code), now_iso, url),
+    )
+    conn.commit()
+
+
+def _moz_score_and_record(conn: sqlite3.Connection, url: str, now_iso: str) -> None:
+    """One Moz lookup, and record whichever of the two OUTCOMES came back.
+
+    Both are results. The old code kept only the first — `if scores:` — so the
+    second silently wrote nothing at all, which is how a page could come back
+    from a bookmarklet grab with no score AND no explanation of why.
+    """
+    scores, code = _moz_lookup(url)
+    if scores:
+        _apply_moz_scores(conn, url, scores, now_iso)
+    elif code is not None:
+        # Moz ANSWERED (code 0 = crawled nothing). Distinct from a network/creds
+        # failure, where code is None and there is nothing to record — leaving
+        # the row unstamped is right there, so the next access retries.
+        _record_moz_uncrawled(conn, url, code, now_iso)
+
+
 def get_or_create_url_metadata(
     conn: sqlite3.Connection,
     url: str,
@@ -600,7 +686,8 @@ def get_or_create_url_metadata(
     inline. Always bumps last_accessed. Returns the row as a dict.
     Pass `refresh_if_stale_days=0` to disable the staleness check.
     """
-    norm = normalize_url(url)
+    # The publisher's URL, not the Wayback wrapper that may have fetched it.
+    norm = scoring_url(url)
     if not norm:
         return None
 
@@ -614,12 +701,19 @@ def get_or_create_url_metadata(
         conn.execute("UPDATE metabase_url SET last_accessed = ? WHERE url = ?", (now, norm))
         conn.commit()
 
-        if refresh_if_stale_days > 0 and _is_moz_stale(existing["moz_last_scored"], refresh_if_stale_days):
-            scores = score_url_via_moz(norm)
-            if scores:
-                _apply_moz_scores(conn, norm, scores, now)
+        # A row we already know Moz has NO data for gets the short retry cadence:
+        # we are waiting on a crawl, not on a score going stale. Without this the
+        # 30-day TTL would sit on a three-day-old article for a month.
+        _ttl = refresh_if_stale_days
+        try:
+            if int(existing["moz_http_code"]) == 0:
+                _ttl = min(refresh_if_stale_days, MOZ_UNCRAWLED_RETRY_DAYS)
+        except (TypeError, ValueError, IndexError, KeyError):
+            pass
+        if _ttl > 0 and _is_moz_stale(existing["moz_last_scored"], _ttl):
             # If scoring fails (creds missing, network), leave existing scores
             # intact — better stale than zeroed.
+            _moz_score_and_record(conn, norm, now)
         return _row_to_dict(conn.execute("SELECT * FROM metabase_url WHERE url = ?", (norm,)).fetchone())
 
     # New row. Insert with what we know now, then attempt Moz scoring inline.
@@ -633,9 +727,7 @@ def get_or_create_url_metadata(
     conn.commit()
 
     if score_if_new:
-        scores = score_url_via_moz(norm)
-        if scores:
-            _apply_moz_scores(conn, norm, scores, now)
+        _moz_score_and_record(conn, norm, now)
 
     return _row_to_dict(conn.execute("SELECT * FROM metabase_url WHERE url = ?", (norm,)).fetchone())
 
@@ -824,5 +916,119 @@ def stamp_paywall_adjustment(scoring: dict, url: str = "",
         return True
     except Exception:
         return False
+
+
+# ── the ONE writer of the Moz half of `_scoring` ────────────────────────────
+# Every field this touches. Named so a reader can see the block's Moz-derived
+# surface in one place, and so `clear_moz_scores` cannot fall out of step with
+# what `apply_moz_scores` writes.
+MOZ_SCORING_FIELDS = ("pageAuthority", "domainAuthority", "ouScore",
+                      "power", "mozHttpCode")
+
+
+def apply_moz_scores(scoring: dict, scores: Optional[dict], *, url: str = "",
+                     stamp_paywall: bool = True) -> dict:
+    """Write a Moz result into a recipe's `_scoring` block. The single writer.
+
+    There were five hand-rolled copies of this assignment — the batch
+    (process_batch), the live extract (_attach_moz_scoring), and three scripts —
+    and they had drifted, exactly as duplicated write paths do. Measured
+    2026-08-13, before this existed:
+
+      * `power` was written by two of them. The live extract path — the one
+        every bookmarklet grab goes through — never wrote it, so 201 of 351
+        personal rows and 1,481 of 5,017 master rows carried a real PA with no
+        power at all, silently absent from any power-blend ranking.
+      * 57 master rows had `power != DA + PA`: a later writer refreshed PA and
+        left the power computed from the OLD one. A derived value maintained in
+        five places is a derived value that is wrong in at least one.
+
+    `scores` accepts the snake_case shape used by BOTH producers — the Moz
+    lookup (`_moz_lookup`) and a metabase_url row (`_row_to_dict`) — because
+    they already agree on key names. Absent keys are left alone rather than
+    written as 0: the whole point of the ABSENT-IS-NOT-ZERO rule is that a
+    missing measurement must stay missing.
+
+    Returns the same dict, mutated, for convenience.
+    """
+    if not isinstance(scoring, dict):
+        scoring = {}
+    if not scores:
+        return scoring
+
+    pa = scores.get("page_authority")
+    da = scores.get("domain_authority")
+    if pa is not None:
+        scoring["pageAuthority"] = float(pa)
+    if da is not None:
+        scoring["domainAuthority"] = float(da)
+    if scores.get("ou_score") is not None:
+        scoring["ouScore"] = scores["ou_score"]
+
+    # power is DERIVED, never carried: da+pa is the rule blend._power() applies,
+    # and recomputing it here is what stops it going stale behind a PA refresh.
+    # Derived from what is now IN the block (not from `scores`), so a call that
+    # updates only PA still lands on the correct total.
+    _pa, _da = scoring.get("pageAuthority"), scoring.get("domainAuthority")
+    if _pa is not None and _da is not None:
+        scoring["power"] = float(_da) + float(_pa)
+    else:
+        # One half missing means the sum is unknowable — drop any previous
+        # value rather than leave a number that no longer describes this row.
+        scoring.pop("power", None)
+
+    # Provenance rides with the PA it describes (see moz_http_status): >0
+    # measured, 0 = Moz answered with nothing, absent = never verified.
+    if scores.get("moz_http_code") is not None:
+        scoring["mozHttpCode"] = scores["moz_http_code"]
+    if scores.get("root_domain"):
+        scoring["rootDomain"] = scores["root_domain"]
+    elif url:
+        # Derive it from the identity URL when the score dict carries none — the
+        # Moz result doesn't include one, so a repair that refreshed PA/DA left
+        # `rootDomain` pointing at whatever wrote it last. 54 rows sat with
+        # rootDomain "archive.org" beside a correct publisher PA, and that field
+        # is not cosmetic: stamp_paywall_adjustment falls back to it when the URL
+        # can't resolve a domains row.
+        rd = root_domain(url)
+        if rd:
+            scoring["rootDomain"] = rd
+    # Fill only — a title already on the block came from the page itself and is
+    # better than Moz's index copy.
+    if scores.get("raw_title") and not scoring.get("rawTitle"):
+        scoring["rawTitle"] = scores["raw_title"]
+
+    # A real score answers the question the note was explaining.
+    if scoring.get("pageAuthority") is not None:
+        scoring.pop("scoringNote", None)
+
+    if stamp_paywall:
+        # Best-effort: the adjustment is an enrichment, and a calibration DB
+        # problem must not cost us the measurement we just obtained.
+        try:
+            stamp_paywall_adjustment(scoring, url or "")
+        except Exception as e:      # pragma: no cover - defensive
+            logger.warning("paywall DA-adjustment stamp skipped for %s: %s", url, e)
+    return scoring
+
+
+def clear_moz_scores(scoring: dict, *, note: str = "") -> dict:
+    """Remove the Moz-derived values and say why, for when a score turns out to
+    describe something other than this page.
+
+    The counterpart to `apply_moz_scores`, and the reason both live here: a
+    wrong number outranks a missing one and never gets revisited, so "we no
+    longer believe this" has to be as easy to express as "here is a score".
+    """
+    if not isinstance(scoring, dict):
+        return {}
+    for k in MOZ_SCORING_FIELDS:
+        scoring.pop(k, None)
+    for k in ("adjustedDomainAuthority", "adjustedOuScore",
+              "paywallDiscountPct", "paywallAdjMethod"):
+        scoring.pop(k, None)
+    if note:
+        scoring["scoringNote"] = note
+    return scoring
 
 

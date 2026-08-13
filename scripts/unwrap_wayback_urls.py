@@ -39,21 +39,31 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from input.pipeline.url_utils import normalize_url  # noqa: E402
+from input.pipeline.url_utils import normalize_url, unwrap_wayback, is_wayback  # noqa: E402
 
 DB = "recipes.db"
 
-# /web/<timestamp><modifier?>/<original>. The modifier (id_, im_, js_ …) tells
-# Wayback to serve the raw asset; it is part of the transport, never the identity.
-WAYBACK = re.compile(
-    r"^https?://web\.archive\.org/web/\d+(?:id_|im_|if_|js_|cs_)?/(?P<orig>https?://.+)$",
-    re.IGNORECASE,
-)
+# Tables that hold recipes. `recipes` was missing from the first pass, so two
+# user rows kept an archive identity after master_recipes had been cleaned.
+TABLES = ("master_recipes", "recipes")
+
+# archive.org's OWN authority, which is what Moz returns when you score a
+# snapshot URL instead of the page it archived. Every such row is identical —
+# PA 47 / DA 94 / OU 0.049 — which is what makes them safe to identify by value.
+# These rows are the SECOND failure mode: 13 of them had already had their
+# originalUrl unwrapped by the first run of this script, so a scan for archive
+# URLs no longer finds them, while the score they are ranked on is still
+# archive.org's. Unwrapping the identity without re-scoring only hides it.
+ARCHIVE_PA, ARCHIVE_DA = 47.0, 94.0
 
 
 def unwrap(url: str) -> str | None:
-    m = WAYBACK.match(url or "")
-    return m.group("orig") if m else None
+    """The publisher URL inside an archive URL, or None if not one.
+
+    Delegates to the canonical helper (input.pipeline.url_utils) — this module
+    used to carry its own regex, one of three independent copies, none of which
+    the Moz scoring path consulted."""
+    return unwrap_wayback(url) if is_wayback(url) else None
 
 
 def main() -> int:
@@ -64,63 +74,92 @@ def main() -> int:
     args = ap.parse_args()
     apply = args.apply
 
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=30)
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT id, url_normalized, data FROM master_recipes "
-        "WHERE json_extract(data,'$._source.originalUrl') LIKE '%web.archive.org%'"
-    ).fetchall()
-    print(f"{len(rows)} row(s) with an archive.org identity")
 
-    # Existing keys, so unwrapping never silently creates a second row for a
-    # recipe we already hold directly.
-    existing = {}
-    for rid, un in conn.execute("SELECT id, url_normalized FROM master_recipes"):
-        existing.setdefault(un, rid)
+    all_rows, planned, skipped, stale = [], [], [], []
+    for tbl in TABLES:
+        rows = conn.execute(
+            f"SELECT id, url_normalized, data FROM {tbl} "
+            "WHERE json_extract(data,'$._source.originalUrl') LIKE '%web.archive.org%'"
+        ).fetchall()
+        all_rows.extend((tbl, r) for r in rows)
+        print(f"{tbl}: {len(rows)} row(s) with an archive.org identity")
 
-    planned, skipped = [], []
-    for r in rows:
-        d = json.loads(r["data"])
-        src = d.get("_source") or {}
-        arc = src.get("originalUrl") or ""
-        orig = unwrap(arc)
-        if not orig:
-            skipped.append((r["id"], "unparseable", arc))
-            continue
-        norm = normalize_url(orig)
-        clash = existing.get(norm)
-        if clash is not None and clash != r["id"]:
-            skipped.append((r["id"], f"duplicate of id {clash}", orig))
-            continue
-        planned.append((r["id"], arc, orig, norm, d))
+        # Existing keys, so unwrapping never silently creates a second row for a
+        # recipe we already hold directly.
+        existing = {}
+        for rid, un in conn.execute(f"SELECT id, url_normalized FROM {tbl}"):
+            existing.setdefault(un, rid)
 
-    print(f"  to unwrap : {len(planned)}")
-    print(f"  skipped   : {len(skipped)}")
-    for rid, why, u in skipped:
-        print(f"    id={rid:<6} {why:<22} {u[:70]}")
+        for r in rows:
+            d = json.loads(r["data"])
+            src = d.get("_source") or {}
+            arc = src.get("originalUrl") or ""
+            orig = unwrap(arc)
+            if not orig:
+                skipped.append((tbl, r["id"], "unparseable", arc))
+                continue
+            norm = normalize_url(orig)
+            clash = existing.get(norm)
+            if clash is not None and clash != r["id"]:
+                skipped.append((tbl, r["id"], f"duplicate of id {clash}", orig))
+                continue
+            planned.append((tbl, r["id"], arc, orig, norm, d))
+
+        # SECOND failure mode: identity already unwrapped by an earlier run, but
+        # the SCORE is still the one Moz returned for the snapshot. A scan for
+        # archive URLs cannot see these — 13 of them, ranked on archive.org.
+        n_before = len(stale)
+        # `rootDomain = archive.org` is the DISCRIMINATING signal, and the value
+        # match alone is not: washingtonpost.com is genuinely DA 94, and 7 of its
+        # thin /recipes/ pages genuinely measure PA 47. Verified against Moz —
+        # fabricated WaPo URLs return http_code 0 (rejected) while two real ones
+        # returned 47 and 55 — so those rows are measurements, not placeholders.
+        # Without this clause every run re-scored them to reach the same numbers.
+        for r in conn.execute(
+            f"SELECT id, url_normalized, data FROM {tbl} WHERE "
+            "json_extract(data,'$._scoring.pageAuthority') = ? AND "
+            "json_extract(data,'$._scoring.domainAuthority') = ? AND "
+            "json_extract(data,'$._scoring.rootDomain') = 'archive.org' AND "
+            "COALESCE(json_extract(data,'$._source.originalUrl'),'') "
+            "NOT LIKE '%web.archive.org%'",
+            (ARCHIVE_PA, ARCHIVE_DA),
+        ).fetchall():
+            d = json.loads(r["data"])
+            target = (d.get("_source") or {}).get("originalUrl") or r["url_normalized"]
+            stale.append((tbl, r["id"], target))
+        print(f"{tbl}: {len(stale) - n_before} row(s) carrying archive.org's own "
+              f"PA {ARCHIVE_PA:.0f}/DA {ARCHIVE_DA:.0f}")
+
+    print(f"\n  to unwrap        : {len(planned)}")
+    print(f"  to re-score only : {len(stale)}")
+    print(f"  skipped          : {len(skipped)}")
+    for tbl, rid, why, u in skipped:
+        print(f"    {tbl}.{rid:<6} {why:<22} {u[:64]}")
 
     if planned:
         print("\n  sample:")
-        for rid, arc, orig, _n, _d in planned[:5]:
-            print(f"    id={rid}\n      from {arc[:96]}\n      to   {orig[:96]}")
+        for tbl, rid, arc, orig, _n, _d in planned[:5]:
+            print(f"    {tbl}.{rid}\n      from {arc[:92]}\n      to   {orig[:92]}")
 
     if not apply:
         print("\nDRY RUN — nothing written. Re-run with --apply.")
         return 0
 
     Path(args.backup).parent.mkdir(parents=True, exist_ok=True)
-    json.dump([{k: r[k] for k in r.keys()} for r in rows],
+    json.dump([{"table": t, **{k: r[k] for k in r.keys()}} for t, r in all_rows],
               open(args.backup, "w", encoding="utf-8"),
               indent=2, ensure_ascii=False, default=str)
-    print(f"\nbacked up {len(rows)} row(s) -> {args.backup}")
+    print(f"\nbacked up {len(all_rows)} row(s) -> {args.backup}")
 
     now = datetime.now(timezone.utc).isoformat()
-    for rid, arc, orig, norm, d in planned:
+    for tbl, rid, arc, orig, norm, d in planned:
         src = d.get("_source") or {}
         src["archiveUrl"] = arc          # keep the exact snapshot we read
         src["originalUrl"] = orig        # identity = the publisher's page
         d["_source"] = src
-        conn.execute("UPDATE master_recipes SET data = ?, url_normalized = ?, updated_at = ? "
+        conn.execute(f"UPDATE {tbl} SET data = ?, url_normalized = ?, updated_at = ? "
                      "WHERE id = ?", (json.dumps(d, indent=2), norm, now, rid))
     conn.commit()
     print(f"unwrapped {len(planned)} row(s)")
@@ -128,27 +167,43 @@ def main() -> int:
     if args.rescore:
         from input.pipeline import url_scoring as us
         us.reset_moz_row_stats()
-        scored = dropped = 0
-        for rid, _arc, orig, _n, _d in planned:
-            s = us.score_url_via_moz(orig)
-            if not s:
-                dropped += 1
-                continue
-            row = conn.execute("SELECT data FROM master_recipes WHERE id = ?", (rid,)).fetchone()
+        # Both populations need the same repair — score the PUBLISHER url.
+        # score_url_via_moz unwraps internally now, so either form works; pass
+        # the unwrapped one so the log names the page we actually mean.
+        targets = ([(t, rid, orig) for t, rid, _a, orig, _n, _d in planned]
+                   + [(t, rid, u) for t, rid, u in stale])
+        scored = cleared = 0
+        for tbl, rid, target in targets:
+            s = us.score_url_via_moz(target)
+            row = conn.execute(f"SELECT data FROM {tbl} WHERE id = ?", (rid,)).fetchone()
             d = json.loads(row["data"])
             sc = d.get("_scoring") or {}
-            sc["pageAuthority"] = s["page_authority"]
-            sc["domainAuthority"] = s["domain_authority"]
-            sc["ouScore"] = s["ou_score"]
-            if s.get("moz_http_code") is not None:
-                sc["mozHttpCode"] = s["moz_http_code"]   # provenance, §11b
+            if not s:
+                # Moz has nothing for the publisher URL either. Do NOT leave
+                # archive.org's numbers in place looking measured — clear them.
+                # Absent is the honest state; a wrong number outranks a missing
+                # one and never gets revisited. clear_moz_scores also drops the
+                # paywall adjustment derived from the DA we just removed.
+                us.clear_moz_scores(
+                    sc, note=("cleared archive.org's authority (PA 47/DA 94) — that score "
+                              "was Moz's reading of the Wayback snapshot, not of this "
+                              "publisher; Moz has no data for the publisher URL"))
+                d["_scoring"] = sc
+                conn.execute(f"UPDATE {tbl} SET data = ? WHERE id = ?",
+                             (json.dumps(d, indent=2), rid))
+                cleared += 1
+                continue
+            # ONE writer: PA/DA/OU + derived power + the mozHttpCode provenance.
+            # No paywall stamp — a repair pass re-states measurements, and the
+            # adjustment is re-stamped by the calibration job that owns it.
+            us.apply_moz_scores(sc, s, stamp_paywall=False)
             d["_scoring"] = sc
-            conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
+            conn.execute(f"UPDATE {tbl} SET data = ? WHERE id = ?",
                          (json.dumps(d, indent=2), rid))
             scored += 1
         conn.commit()
         st = us.moz_row_stats()
-        print(f"re-scored {scored}, still unscoreable {dropped} "
+        print(f"re-scored {scored}, cleared as unscoreable {cleared} "
               f"(moz rows {st['rows']}, uncrawled {st['uncrawled']})")
 
     print("integrity:", conn.execute("PRAGMA quick_check").fetchone()[0])
