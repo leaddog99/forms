@@ -273,8 +273,10 @@ never fetched." Any tuning of the phrase scorer against that bucket is tuning ag
 * **R7 — classify blocked responses as `fetch-failed`, not `no-struct`.** ✅ **SHIPPED
   2026-08-13** — see §6c below. The plan ("call `_looks_blocked()` and return None") was
   half right: reusing the detector was correct, returning `None` was not.
-* **R8 — parse JSON-LD in `<meta name="application/ld+json">`.** A contained addition to
-  `extract_recipe_jsonld`; Milk Street will not be the only publisher doing this.
+* **R8 — parse JSON-LD in `<meta name="application/ld+json">`.** ✅ **SHIPPED 2026-08-13**
+  — see §6d. "A contained addition to `extract_recipe_jsonld`" was the wrong shape: done
+  that way it would have made the corpus WORSE, because what Milk Street puts in that tag
+  is a paywall teaser. It became two functions instead.
 * **R9 — measure, then maybe add, the other extruct syntaxes.** Run microdata/microformat/rdfa
   across a real sample of `no-struct` rejects first. Add only what the sample proves.
 
@@ -357,6 +359,58 @@ instead of claiming its recipe structure was missing.
 
 `└─` raises `UnicodeEncodeError` on this host's cp1252 stdout and would kill a harvest
 mid-run; the sub-line is `why:`. (Em dashes are fine — cp1252 has one.)
+
+---
+
+## 6d. R8 as built — two questions, not one (SHIPPED 2026-08-13)
+
+177milkstreet.com publishes every recipe's schema.org Recipe in a
+`<meta name="application/ld+json" content="…">` tag (HTML-escaped) rather than a
+`<script type="application/ld+json">` block. extruct correctly reads only the script form,
+so a **180 KB page carrying a complete Recipe declaration scored ZERO structure**. Job 820:
+8 of 10 candidates dropped as `no-recipe-structure`.
+
+R7 is what made this diagnosable. That run logged **zero FETCH-FAIL** — the pages were
+genuinely fetched, so the residual really was a structure problem and not a block. Before
+R7 the two were indistinguishable.
+
+### Why "a contained addition to `extract_recipe_jsonld`" was the wrong shape
+
+What is in that meta tag is a **paywall teaser**, and it is built to look like a recipe:
+
+    recipeIngredient: [
+      "All-purpose flour, for dusting",
+      "Flaky Pie Pastry, in a 4½-inch disk and refrigerated",
+      "2 1/4 to 2½ pounds (4 to 6 medium) Honeycrisp apples",
+      "... and more. Sign up for full access to all ingredients and instructions."
+    ]
+    recipeInstructions: [ one HowToStep ]
+
+Meanwhile the page BODY, fetched through the unblocker, is complete — the Jordanian
+flatbread extracted from markdown as 3 ingredients and 4 steps, which is the whole recipe
+(shrak really is flour, salt, water). So handing the teaser to the content path would have
+**replaced good content with an advert in the ingredient list**.
+
+### The split
+
+| function | question | gated teaser |
+|---|---|---|
+| `page_declares_recipe()` | IS this a recipe? | **counts** — the candidate filter asks this |
+| `extract_recipe_jsonld()` | GIVE me the recipe | **refuses** — whatever it returns is ingested |
+
+The gate is read, not guessed: `jsonld_declares_gated()` checks schema.org's own
+`isAccessibleForFree` on the node and on any `hasPart` WebPageElement. Milk Street sets it
+honestly — `false`, with `cssSelector: .paywalled-content`.
+
+**Milk Street is crackable.** The unblocker returns full page content; only the JSON-LD is
+truncated. That settles the "partial capture" question — we do not need to store a 3-of-10
+teaser, because we are not limited to the teaser.
+
+### Verified on job 822 (live)
+
+`KEEP json-ld` on the recipe pages that were `DROP no-struct` in job 820, while
+`177milkstreet.com/recipes` — the INDEX page — still correctly drops at `phrase=0`.
+Control: recipetineats (normal `<script>` JSON-LD) unaffected.
 
 ---
 
