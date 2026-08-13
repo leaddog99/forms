@@ -6334,6 +6334,11 @@ def collections_leaderboard_endpoint(limit: int = 50, selected_only: bool = True
             "fit_used": bool(fit and fit.get("used"))}
 
 
+# Job types whose "worker" is the curator's BROWSER, not a process we spawned.
+# Nothing polls the cancel flag for these, so a cancel must be terminal at once.
+_BROWSER_DRIVEN_JOB_TYPES = {"userscript_capture"}
+
+
 @app.post("/jobs/{job_id}/cancel")
 def cancel_job_endpoint(job_id: int):
     """Request COOPERATIVE cancellation of a queued/running job. Jobs run out-of-
@@ -6342,8 +6347,21 @@ def cancel_job_endpoint(job_id: int):
     'cancelled'. 409 if the job isn't live."""
     with _db() as conn:
         ok = jobs_lib.request_cancel(conn, job_id)
-    if not ok:
-        raise HTTPException(status_code=409, detail="Job is not queued/running — nothing to cancel.")
+        if not ok:
+            raise HTTPException(status_code=409, detail="Job is not queued/running — nothing to cancel.")
+        # BROWSER-DRIVEN jobs have no in-process worker to poll the flag. A
+        # userscript_capture run advances only when the script in the curator's
+        # browser posts the next page, so if the script never engages — pop-up
+        # blocked, extension off, hash lost on a redirect — the flag is set and
+        # NOTHING EVER READS IT. Job 826 sat 'running' with cancel_requested=1 and
+        # could not be cleared from the UI, holding its entity lock so the run
+        # could not even be retried. Cooperative cancel needs a cooperator; here
+        # there is none, so close it out now.
+        row = conn.execute("SELECT type, status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row and (row[0] or "") in _BROWSER_DRIVEN_JOB_TYPES:
+            jobs_lib.mark_finished(conn, job_id, status="cancelled",
+                                   error_detail="cancelled by curator (browser-driven job)")
+            return {"job_id": job_id, "cancel_requested": True, "cancelled": True}
     return {"job_id": job_id, "cancel_requested": True}
 
 
@@ -9599,8 +9617,14 @@ async def save_recipe(request: Request):
     # This means a non-staff member who somehow crafts a bcc_hints
     # payload still gets 403'd at the master gate below — no privilege
     # escalation.
+    # `master` joins `dish` as a target hint. A PUBLISHER capture from the domains
+    # cohort queue has no dish to name, which is why that flow previously had to
+    # nudge the form through localStorage['sidebar:user_id'] — a global that a bare
+    # bookmarklet press never set (a Milk Street grab landed in user 5's library)
+    # and that, once set, persisted to mis-target the next personal grab. Same
+    # channel, same actor gate below: the hint says WHERE, the permission says WHO.
     hints = payload.get("bcc_hints")
-    if isinstance(hints, dict) and (hints.get("dish") or "").strip():
+    if isinstance(hints, dict) and ((hints.get("dish") or "").strip() or hints.get("master")):
         payload["user_id"] = 0
 
     # Gate master writes here, before threading off the DB work. The

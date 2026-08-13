@@ -957,7 +957,14 @@
         warn.querySelector('#cqClose').onclick = () => warn.remove();
         return;
       }
-      try { localStorage.setItem('sidebar:user_id', '0'); } catch (e) { /* private mode */ }
+      // Destination travels ON THE TAB (#bcc-master), read by bookmarklet.js, instead of
+      // a persistent localStorage flag. That flag failed both ways: a bookmarklet press
+      // outside this queue got none (a Milk Street grab landed in user 5's library), and
+      // once written it stuck around to mis-target a later personal grab.
+      // `_bcc_master=1` is the SAME hint channel the dish-rescue path uses
+      // (#_bcc_dish=…), parsed by bookmarklet.js and honoured server-side, where the
+      // hint chooses the target and `edit_master` still gates the actor.
+      const withMaster = u => (u || '') + (String(u || '').includes('#') ? '&' : '#') + '_bcc_master=1';
       const norm = u => (u || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
       const slug = u => { try { return decodeURIComponent(new URL(u).pathname).replace(/^\/|\/$/g, '') || u; } catch { return u; } };
       let idx = 0, done = 0, poll = null;
@@ -986,21 +993,45 @@
           `<div style="display:flex;gap:6px;flex-wrap:wrap">` +
           (finished ? '' :
             `<button class="ed-btn" id="cqOpen" style="font-size:.82em">↗ Open &amp; capture</button>` +
+            `<button class="ed-btn" id="cqAll" style="font-size:.82em" title="Open every remaining URL as its own tab, then click your bookmarklet in each at your own pace">↗↗ Open all ${Math.max(0, queue.length - idx)}</button>` +
             `<button class="ed-btn" id="cqSaved" style="font-size:.82em" title="If the auto-detect didn't fire after your bookmarklet saved">✓ Saved → next</button>` +
             `<button class="ed-btn" id="cqSkip" style="font-size:.82em">Skip ▶</button>`) +
           `<button class="ed-btn danger" id="cqClose" style="font-size:.82em">Close</button></div>`;
         if (!finished){
           ov.querySelector('#cqOpen').onclick = openCurrent;
+          ov.querySelector('#cqAll').onclick = openAll;
           ov.querySelector('#cqSaved').onclick = () => advance(true);
           ov.querySelector('#cqSkip').onclick = () => advance(false);
         }
         ov.querySelector('#cqClose').onclick = () => { stop(); ov.remove(); loadDomainTop(domain); loadDomainCohort(domain); loadDomainRecipes(domain); };
       };
+      // OPEN THEM ALL. The curator's suggestion, and the right shape for a job the
+      // human is doing anyway: no self-advancing machinery to go wrong, no waiting
+      // on a poll — just N tabs, each already marked for master, worked through at
+      // whatever pace suits. The stepper above stays for a long queue.
+      const openAll = () => {
+        stop();
+        const rest = queue.slice(idx);
+        if (!rest.length){ render('Queue complete.'); return; }
+        let opened = 0;
+        rest.forEach(u => { if (window.open(withMaster(u), '_blank', 'noopener')) opened++; });
+        if (opened < rest.length){
+          render(`Opened ${opened} of ${rest.length} — the browser blocked the rest. `
+               + `Allow pop-ups for this page, or use ↗ Open & capture one at a time.`);
+          return;
+        }
+        // Every URL is now in front of the curator, so the stepper's cursor would
+        // only lie about what is left. Mark them reviewed and let the cohort reload
+        // report what actually landed.
+        idx = queue.length;
+        render(`Opened all ${opened} in tabs — click your bookmarklet in each. `
+             + `They save to Master. Close this when you're done.`);
+      };
       const openCurrent = () => {
         stop();
         if (idx >= queue.length){ render('Queue complete.'); return; }
         const url = queue[idx];
-        window.open(url, '_blank', 'noopener');
+        window.open(withMaster(url), '_blank', 'noopener');
         render('Opened in a new tab — click your bookmarklet there. Auto-advances when it lands; or hit "Saved → next".');
         poll = setInterval(async () => {
           try {

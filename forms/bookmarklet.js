@@ -643,13 +643,22 @@
         const params = new URLSearchParams(hash);
         const dish = params.get('_bcc_dish');
         const run = params.get('_bcc_run');
+        // A PUBLISHER capture has no dish to name, but is just as much a corpus
+        // grab. Same hint channel, so there is ONE way to say "this belongs to
+        // master" — the previous mechanism (the queue writing
+        // localStorage['sidebar:user_id']='0') was a global that a bookmarklet
+        // press outside the queue never set, and that persisted afterwards to
+        // mis-target the next personal grab.
+        const master = params.get('_bcc_master');
         if (dish) bccHints.dish = dish;
         if (run) bccHints.run = run;
-        if (dish || run) {
+        if (master) bccHints.master = true;
+        if (dish || run || master) {
           // Rebuild a URL without our hints in the fragment so source_url
           // reflects what the source site sees, not our internal plumbing.
           params.delete('_bcc_dish');
           params.delete('_bcc_run');
+          params.delete('_bcc_master');
           const remaining = params.toString();
           canonicalSourceUrl = location.origin + location.pathname + location.search
             + (remaining ? '#' + remaining : '');
