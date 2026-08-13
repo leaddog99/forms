@@ -129,6 +129,47 @@
       </div>
     </section>
 
+    <!-- ========== USERSCRIPT BLOCK (desktop only) ==========
+         The bookmarklet grabs ONE page you are reading. This grabs a QUEUE the
+         domains editor hands it, walking the pages in this browser so anti-bot
+         and paywalls see a signed-in human instead of our server. Desktop only:
+         Tampermonkey is a desktop extension. -->
+    <section id="userscript-block" hidden>
+      <div class="card">
+        <h3>Bulk capture — optional</h3>
+        <p style="margin:0 0 12px">For ingesting a whole publisher at once from
+          <strong>Domains → Scored cohort → ⚡ Run userscript</strong>. Only needed if you
+          curate publishers; the bookmarklet above is enough for everyday grabbing.</p>
+        <ol style="margin:0 0 14px">
+          <li><strong>Install Tampermonkey</strong> once —
+            <a href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo"
+               target="_blank" rel="noopener">Chrome</a> ·
+            <a href="https://addons.mozilla.org/firefox/addon/tampermonkey/"
+               target="_blank" rel="noopener">Firefox</a> ·
+            <a href="https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd"
+               target="_blank" rel="noopener">Edge</a>.
+          </li>
+          <li>Then click the button below. Tampermonkey recognises a
+            <code>.user.js</code> address and shows its own <strong>Install</strong> page.</li>
+        </ol>
+        <div class="drag-row">
+          <a id="userscriptLink" class="drag" href="#">Install capture userscript</a>
+        </div>
+        <p class="note" style="text-align:center">Already have it? The same button
+          offers an <strong>update</strong> when the version changes.</p>
+      </div>
+
+      <div class="card">
+        <h3>If you just see a wall of code</h3>
+        <p style="margin:0 0 10px">Then Tampermonkey isn't installed or isn't watching that
+          address — the browser is showing the file instead of offering to install it.
+          Install the extension, reload, and click again.</p>
+        <p class="note"><strong>Gated publishers:</strong> sign in to the site first (Milk
+          Street, ATK). Your session is the entire point — the script reads the page as
+          <em>you</em>, which is how it gets recipes our server is refused.</p>
+      </div>
+    </section>
+
     <p class="switch">
       <a href="#" id="switchLink">Show <span id="switchTarget">desktop</span> instructions instead</a>
     </p>
@@ -169,6 +210,11 @@
       LOADER = buildLoader(base);
       document.getElementById('rawCode').textContent = LOADER;
       document.getElementById('dragLink').setAttribute('href', LOADER);
+      // Same PUBLIC base as the bookmarklet: this page may be open on localhost
+      // while the browser that runs the script reaches us through the tunnel, and
+      // the userscript posts captures back to the origin it was installed from.
+      var us = document.getElementById('userscriptLink');
+      if (us) us.setAttribute('href', base.replace(/\/+$/, '') + '/forms/bcc-capture.user.js');
       try {
         var host = new URL(/:\/\//.test(base) ? base : 'https://' + base).hostname;
         document.querySelectorAll('.pop-host').forEach(function (el) { el.textContent = host; });
@@ -192,6 +238,7 @@
     function show(which) {
       var iosBlock = document.getElementById('ios-block');
       var desktopBlock = document.getElementById('desktop-block');
+      var userscriptBlock = document.getElementById('userscript-block');
       var switchTarget = document.getElementById('switchTarget');
       if (which === 'ios') {
         iosBlock.hidden = false;
@@ -202,6 +249,9 @@
         desktopBlock.hidden = false;
         switchTarget.textContent = 'iOS';
       }
+      // Tampermonkey is a desktop extension — offering the userscript on iOS would
+      // be an install path that cannot complete.
+      if (userscriptBlock) userscriptBlock.hidden = (which === 'ios');
     }
     show(isIOS ? 'ios' : 'desktop');
 
