@@ -45,7 +45,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 from urllib.parse import urlparse
 
 import numpy as np
@@ -89,7 +89,7 @@ FETCH_TIMEOUT_S = 10
 # more silent drops from UA mismatch. See [[single-path]].
 from to_markdown.html_to_markdown import (
     fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
-    fetch_via_unblocker, unblocker_available,
+    fetch_via_unblocker, unblocker_available, blocked_reason,
 )
 from intake.translate import (
     detect_language, translate_markdown, translate_title, is_translation_plausible,
@@ -294,12 +294,40 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _fetch_for_filter(url: str, *, unblocker: bool = False,
-                      render: bool = False) -> Optional[tuple[str, bool, str, str]]:
-    """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld, lang_code, source).
-    Returns None on any failure (HTTP error, timeout, parse error).
+class FilterFetch(NamedTuple):
+    """The result of fetching one candidate for the is-recipe filter.
 
-    Three signals returned in one round-trip:
+    Replaces a bare `Optional[tuple]`, where every failure collapsed to None and
+    the caller could only write "fetch-failed" with no reason. That opacity is
+    what let a captcha stub (HTTP 202, 213 bytes) be recorded as
+    `no-recipe-structure` — a claim about content we never received.
+
+    `ok` False ⇒ `failure` is a short human phrase saying WHY, suitable for both
+    the run log and the ledger reason. `ok` True ⇒ the three signals are valid.
+    """
+    ok: bool
+    text: str = ""
+    has_recipe_jsonld: bool = False
+    lang: str = ""
+    source: str = "direct"
+    failure: Optional[str] = None
+
+    @classmethod
+    def failed(cls, why: str) -> "FilterFetch":
+        return cls(ok=False, failure=why)
+
+
+def _fetch_for_filter(url: str, *, unblocker: bool = False,
+                      render: bool = False) -> FilterFetch:
+    """Fetch a URL and return a `FilterFetch` — either the filter signals or an
+    explicit reason we could not get the page.
+
+    A failure is NEVER anonymous: `ok=False` always carries `failure`, a phrase
+    the run log and the ledger both print. This is the R7 restructure — the old
+    bare-`None` return forced the caller to invent a verdict ("no recipe
+    structure") for pages it had never actually received.
+
+    Three signals returned in one round-trip when `ok`:
       - `text` — phrase-scored against RECIPE_PHRASES for the English-
                   language is_recipe check.
       - `has_recipe_jsonld` — True iff the page publishes a
@@ -332,12 +360,28 @@ def _fetch_for_filter(url: str, *, unblocker: bool = False,
         # fact; nothing read it at the point where it saves a credit.
         resp, _meta = fetch_with_full_fallback(
             url, timeout=FETCH_TIMEOUT_S, unblocker=unblocker, render=render)
+    except Exception as ex:
+        return FilterFetch.failed(f"{type(ex).__name__}: {str(ex)[:120]}")
+    src = (_meta or {}).get("source") or "direct"
+    # REFUSE a response we did not actually receive the page from, BEFORE scoring
+    # it. fetch_with_full_fallback accepts any 2xx, so a challenge interstitial
+    # arrives looking like a success; phrase-scoring it yields 0 and the caller
+    # concludes "not a recipe" about a page it never saw. The detector for this
+    # already existed (`blocked_reason`) but was consulted only when deciding
+    # whether to spend on the paid tier — never on the path that writes the verdict.
+    # strict=True: this decides the candidate's FATE, not whether to spend a
+    # credit. An eager false positive here throws away a real recipe.
+    why = blocked_reason(resp, strict=True)
+    if why:
+        return FilterFetch.failed(f"{why} [via {src}]")
+    try:
         text, jsonld, lang = _response_to_filter_signals(resp)
-        # Carry the fetch SOURCE (direct | unblocker | wayback) so the candidate log
-        # can show where each page's content actually came from.
-        return text, jsonld, lang, (_meta or {}).get("source") or "direct"
-    except Exception:
-        return None
+    except Exception as ex:
+        return FilterFetch.failed(f"parse failed — {type(ex).__name__}: {str(ex)[:100]}")
+    # Carry the fetch SOURCE (direct | unblocker | wayback) so the candidate log
+    # can show where each page's content actually came from.
+    return FilterFetch(ok=True, text=text, has_recipe_jsonld=jsonld,
+                       lang=lang, source=src)
 
 
 def _response_to_filter_signals(resp) -> tuple[str, bool, str]:
@@ -372,7 +416,7 @@ def _fetch_text(url: str) -> Optional[str]:
     """Legacy single-return shim. Returns just the text component;
     callers needing JSON-LD detection should use _fetch_for_filter."""
     result = _fetch_for_filter(url)
-    return result[0] if result is not None else None
+    return result.text if result.ok else None
 
 
 # Score we stamp on entries whose JSON-LD detection passes them
@@ -647,6 +691,16 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             return False
         if resp2 is None:
             return False
+        # Same refusal as `_fetch_for_filter`: a rendered response can ALSO be a
+        # challenge stub. Scoring it yields 0 and the caller would file the page
+        # `no-recipe-structure` — the exact mislabel R7 exists to stop. Stamp the
+        # reason so the drop site can say "blocked", not "not a recipe".
+        why2 = blocked_reason(resp2, strict=True)
+        if why2:
+            e["_blocked_reason"] = f"{why2} [rendered]"
+            print(f"      [render-escalate] {url}\n"
+                  f"      why: {why2} — refusing to score a page we never received")
+            return False
         try:
             text2, jsonld2, lang2 = _response_to_filter_signals(resp2)
         except Exception as ex:
@@ -775,13 +829,21 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             # (mark_render_required) and must keep meaning "a render RESCUED this",
             # not "we started rendered because we already knew".
             e["_rendered_upfront"] = True
-        if result is None:
+        if not result.ok:
             e["recipe_score"] = 0
-            e["_dropped_reason"] = "fetch-failed"
+            # The reason travels with the drop. `fetch-failed` keeps its prefix so
+            # the ledger's _REASON_MAP still classifies it (longest-prefix match),
+            # while the suffix says WHAT we saw — the difference between "this page
+            # is not a recipe" and "we were served a captcha".
+            e["_dropped_reason"] = f"fetch-failed: {result.failure}"
             dropped.append(e)
+            # ASCII only in log lines: the job runner's stdout is cp1252 on this
+            # host and box-drawing characters raise UnicodeEncodeError mid-harvest.
             print(f"  [{i:>2}/{len(entries)}] {'':<9} FETCH-FAIL  {url}")
+            print(f"                        why: {result.failure}")
             continue
-        text, has_recipe_jsonld, lang_code, src = result
+        text, has_recipe_jsonld, lang_code, src = (
+            result.text, result.has_recipe_jsonld, result.lang, result.source)
         e["_fetch_source"] = src
         # Decision-line prefix carrying the fetch source (direct | unblocker | wayback),
         # so every post-fetch KEEP/DROP line shows where the content came from — aligned
@@ -851,6 +913,14 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 print(f"{_dl} KEEP trust  phrase={score:>2}{tag}  {url}")
             elif _render_rescue(e, url, i):
                 continue
+            elif e.get("_blocked_reason"):
+                # The render escalation got a challenge stub, not the page. This is
+                # an ACQUISITION failure, not a judgment about the content — it must
+                # not be filed as "no recipe structure" (overturnable → salvageable).
+                e["_dropped_reason"] = f"fetch-failed: {e['_blocked_reason']}"
+                dropped.append(e)
+                print(f"{_dl} FETCH-FAIL  {url}\n"
+                      f"                        why: {e['_blocked_reason']}")
             else:
                 e["_dropped_reason"] = "no-recipe-structure"
                 dropped.append(e)
@@ -1537,8 +1607,11 @@ def build_batch(
     # authority-rank them: Moz DA/PA -> OU via this dish's fit -> compare to the
     # cut bar (the #N winner's OU). Recorded as rejects so the dish UI flags the
     # ones that "would have qualified" for a Playwright/bookmarklet recovery.
+    # startswith, not ==: fetch failures now carry their reason inline
+    # ("fetch-failed: blocked — thin body ..."), and an exact match here would
+    # have quietly excluded the very blocks this salvage exists to recover.
     fetch_fails = [e for e in dropped_not_recipe
-                   if e.get("_dropped_reason") == "fetch-failed"]
+                   if (e.get("_dropped_reason") or "").startswith("fetch-failed")]
     fetch_fail_candidates: list[dict] = []
     if fetch_fails:
         bar = float(final[-1]["ou"]) if final and isinstance(final[-1].get("ou"), (int, float)) else None

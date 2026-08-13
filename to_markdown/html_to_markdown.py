@@ -488,30 +488,99 @@ def fetch_via_unblocker(url: str, *, timeout: int = UNBLOCKER_TIMEOUT_SECONDS,
 # Anti-bot challenge / interstitial signatures. A site like a Hearst property
 # (thepioneerwoman.com) answers a bot with HTTP **200** carrying a tiny JS-challenge
 # stub instead of the page — so the fetch "succeeds" but has no content. These markers
-# (+ the small-body heuristic in _looks_blocked) detect that so an unblocker-enabled
-# domain escalates to the paid tier instead of returning the useless stub.
-_BLOCK_MARKERS = (
-    "px-captcha", "perimeterx", "_pxhd", "pardon our interruption",
-    "access to this page has been denied", "captcha-delivery", "datadome",
-    "just a moment...", "challenge-platform", "incapsula", "_incapsula_",
-    "enable javascript and cookies", "are you a robot", "verify you are human",
+# (+ the small-body heuristic) detect that so an unblocker-enabled domain escalates
+# to the paid tier instead of returning the useless stub.
+#
+# TWO TIERS, because they are not equally good evidence — measured 2026-08-13:
+# jamieoliver.com served a REAL 767KB recipe page (HTTP 200) that contained
+# "challenge-platform", because Cloudflare injects its passive JSD probe
+# (/cdn-cgi/challenge-platform/scripts/jsd/main.js) into pages it serves normally.
+# Treating that as proof of a block would have discarded every Jamie Oliver recipe.
+
+# HARD — text that appears only ON a challenge/denial page. Sufficient on its own.
+_HARD_BLOCK_MARKERS = (
+    "px-captcha", "pardon our interruption",
+    "access to this page has been denied", "just a moment...",
+    "are you a robot", "verify you are human",
 )
 
+# AMBIENT — vendor script/cookie names that ride along on SUCCESSFULLY served
+# pages too. Corroborating only: meaningful when the body is also not a real page.
+_AMBIENT_BLOCK_MARKERS = (
+    "perimeterx", "_pxhd", "captcha-delivery", "datadome",
+    "challenge-platform", "incapsula", "_incapsula_",
+    "enable javascript and cookies",
+)
 
-def _looks_blocked(resp: requests.Response) -> bool:
-    """Did a 200 actually return an anti-bot challenge/interstitial stub instead of the
-    page? Used ONLY to decide whether to escalate an unblocker-ENABLED domain to the paid
-    tier, so a slightly eager match merely spends one credit (never wrong for a domain we
-    already flagged as blocked). A known challenge marker OR a suspiciously small body
-    with no JSON-LD / <article> (a real recipe page is large + structured) counts."""
+# Union — preserved under its original name so existing importers keep working.
+_BLOCK_MARKERS = _HARD_BLOCK_MARKERS + _AMBIENT_BLOCK_MARKERS
+
+
+# Thin-body thresholds. Two, because the same signal answers two questions whose
+# cost of being wrong is wildly different:
+#   SPEND (escalate to the paid tier?) — a false positive costs one credit, so be
+#       eager. 15KB: a real recipe page with its nav/head/footer clears this easily.
+#   VERDICT (refuse the response outright?) — a false positive DISCARDS A REAL
+#       RECIPE, so demand near-certainty. A challenge stub is a few hundred bytes;
+#       even a minimal hand-written recipe page carries >2KB of head + markup.
+# Splitting them is the point: the eager number was safe only for the spend
+# question, and it was never intended to decide what a page IS.
+_THIN_SPEND_CHARS = 15000
+_THIN_VERDICT_CHARS = 2000
+
+
+def blocked_reason(resp: requests.Response, *, strict: bool = False) -> Optional[str]:
+    """WHY this response looks like a challenge/interstitial rather than the page —
+    or None if it looks real.
+
+    Returns a short, specific, loggable phrase. A caller that refuses a response
+    must be able to say what it saw: "fetch-failed" with no reason is the defect
+    this replaces. Measured 2026-08-13, tiffycooks.com returned HTTP 202 / 213
+    bytes / a captcha stub and was filed `no-recipe-structure` — a statement about
+    page content we had never received.
+
+    Two signals, reported separately because they mean different things and call
+    for different remedies:
+      - a KNOWN challenge marker  → the origin actively blocked us (escalate/unblocker)
+      - a thin body with no structure → an interstitial or an unrendered JS shell
+
+    `strict=True` for callers deciding a candidate's FATE (see the threshold note
+    above); leave it False for callers deciding only whether to spend a credit.
+    """
     try:
         body = resp.text or ""
     except Exception:
-        return False
+        return None
     low = body.lower()
-    if any(m in low for m in _BLOCK_MARKERS):
-        return True
-    return len(body) < 15000 and "ld+json" not in low and "<article" not in low
+    for m in _HARD_BLOCK_MARKERS:
+        if m in low:
+            return f"blocked — challenge page, marker {m!r} ({len(body)} bytes)"
+    limit = _THIN_VERDICT_CHARS if strict else _THIN_SPEND_CHARS
+    looks_unstructured = "ld+json" not in low and "<article" not in low
+    thin = len(body) < limit and looks_unstructured
+    if thin:
+        ambient = [m for m in _AMBIENT_BLOCK_MARKERS if m in low]
+        # Name the vendor when we can — "blocked by datadome" is actionable in a
+        # way "thin body" is not. The thin body is what makes it a block; the
+        # ambient marker only says WHO.
+        by = f", served by {ambient[0]!r}" if ambient else ""
+        return (f"blocked — thin body, no JSON-LD and no <article>{by} "
+                f"({len(body)} bytes < {limit}; too small to be the page)")
+    if not strict and any(m in low for m in _AMBIENT_BLOCK_MARKERS):
+        # SPEND path only: an ambient vendor marker on a full page is weak evidence,
+        # but escalating costs one credit and this preserves the long-standing
+        # behaviour. Never reached on the verdict path, where it would be a false
+        # accusation against a page we actually received.
+        hit = next(m for m in _AMBIENT_BLOCK_MARKERS if m in low)
+        return f"possible anti-bot vendor {hit!r} present ({len(body)} bytes)"
+    return None
+
+
+def _looks_blocked(resp: requests.Response) -> bool:
+    """Boolean form of `blocked_reason`, kept for the escalation call sites that
+    only need yes/no. Used to decide whether to escalate an unblocker-ENABLED
+    domain to the paid tier, so a slightly eager match merely spends one credit."""
+    return blocked_reason(resp) is not None
 
 
 def fetch_with_full_fallback(url: str, *,
@@ -657,19 +726,16 @@ def _is_recipe_type(node_type: Any) -> bool:
 # as text/html (e.g. e-sofia.gr). We strip it and retry.
 _XML_DECL_RE = re.compile(r"^\s*<\?xml[^>]*\?>", re.IGNORECASE)
 
-# Un-wrap a Wayback Machine URL to the original publisher URL it archived:
-# `https://web.archive.org/web/<ts>id_/https://site/path` -> `https://site/path`.
+# Un-wrap a Wayback Machine URL to the original publisher URL it archived.
 # Wayback is a fetch *transport* for dead live pages; provenance, cache-key, and
 # Moz scoring must key on the real publisher, not archive.org (DA 94). This
 # handles the case where the INPUT url is already an archive URL (the batch
 # stamps the working snapshot as the entry url for dead pages).
-_WAYBACK_RE = re.compile(r"^https?://web\.archive\.org/web/[^/]+/(https?://.+)$",
-                         re.IGNORECASE)
-
-
-def _unwrap_wayback_url(u: str) -> str:
-    m = _WAYBACK_RE.match(u or "")
-    return m.group(1) if m else (u or "")
+#
+# The regex now lives in input.pipeline.url_utils — this was one of three
+# independent copies, and the one place that most needed it (Moz scoring) had
+# none of them. Thin alias so existing call sites here are untouched.
+from input.pipeline.url_utils import unwrap_wayback as _unwrap_wayback_url  # noqa: E402
 
 
 def extract_recipe_jsonld(html: str, base_url: str) -> list[dict]:

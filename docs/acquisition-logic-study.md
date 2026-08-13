@@ -270,9 +270,9 @@ never fetched." Any tuning of the phrase scorer against that bucket is tuning ag
 
 ### Recommendations (R7–R9)
 
-* **R7 — classify blocked responses as `fetch-failed`, not `no-struct`.** Call the existing
-  `_looks_blocked()` in `_fetch_for_filter` and return None on a hit. Smallest change, biggest
-  correctness win, and it activates the salvage path that already exists.
+* **R7 — classify blocked responses as `fetch-failed`, not `no-struct`.** ✅ **SHIPPED
+  2026-08-13** — see §6c below. The plan ("call `_looks_blocked()` and return None") was
+  half right: reusing the detector was correct, returning `None` was not.
 * **R8 — parse JSON-LD in `<meta name="application/ld+json">`.** A contained addition to
   `extract_recipe_jsonld`; Milk Street will not be the only publisher doing this.
 * **R9 — measure, then maybe add, the other extruct syntaxes.** Run microdata/microformat/rdfa
@@ -280,6 +280,83 @@ never fetched." Any tuning of the phrase scorer against that bucket is tuning ag
 
 None of these changes what "is a recipe" means. They change whether we answer that question
 about the page we actually received.
+
+---
+
+## 6c. R7 as built — a failure must say why (SHIPPED 2026-08-13)
+
+The brief was *"a fetch failed needs an explanation in the log"* and *"restructure the
+component for clarity"* — not a one-line early return. Four things came out of it, and two
+were bugs the restructure exposed rather than defects it set out to fix.
+
+### The shape change
+
+`_fetch_for_filter` returned `Optional[tuple]`. Every distinct failure — timeout, 404,
+captcha, parse error — collapsed into the same `None`, so the caller could only write a
+bare `"fetch-failed"`. It now returns a **`FilterFetch` NamedTuple** whose `ok=False`
+branch *always* carries `failure`, a human phrase. The reason reaches three places at once:
+the run log (`why: …` under the FETCH-FAIL line), the entry's `_dropped_reason`, and the
+ledger via `classify()` (longest-prefix on `fetch-failed` still matches, so the suffix is
+free). Nothing anonymous survives.
+
+### Two verdict paths, not one
+
+`_fetch_for_filter` was the obvious site. The render escalation had the same defect one
+level down: a rendered response that was itself a challenge stub scored 0 and the caller
+filed it `no-recipe-structure`. Both now refuse before scoring.
+
+### The threshold split — the part that was nearly wrong
+
+`_looks_blocked`'s own docstring said it was safe *"ONLY to decide whether to escalate …
+so a slightly eager match merely spends one credit."* Reusing it unchanged on the verdict
+path violated that contract: there an eager match **discards a real recipe**. Hence two
+thresholds — `_THIN_SPEND_CHARS = 15000` (eager, unchanged, credit at risk) and
+`_THIN_VERDICT_CHARS = 2000` (strict, recipe at risk), selected by `strict=`.
+
+### The marker tiers — the part that *was* wrong
+
+Measured against 40 previously-kept recipes, the first strict implementation refused 4.
+Two were **767 KB real pages from jamieoliver.com**. Cause: `challenge-platform` matches
+Cloudflare's *passive* JSD probe (`/cdn-cgi/challenge-platform/scripts/jsd/main.js`),
+which Cloudflare injects into pages it serves **normally**. The marker list had been
+treating vendor plumbing as proof of a block — tolerable when it cost a credit, ruinous
+as a verdict.
+
+Markers are now two tiers:
+
+| Tier | Examples | Meaning |
+|---|---|---|
+| **HARD** | `px-captcha`, `pardon our interruption`, `just a moment...`, `verify you are human` | Text that appears only *on* a challenge page. Sufficient alone. |
+| **AMBIENT** | `challenge-platform`, `datadome`, `perimeterx`, `incapsula` | Vendor plumbing that rides along on served pages. Corroborating only — it names *who* blocked us once the thin body has established *that* we were blocked. |
+
+`_BLOCK_MARKERS` remains as the union so existing importers are untouched.
+
+### Measured result
+
+| Set | n | Refused |
+|---|---|---|
+| Previously-kept recipes (random `master_recipes`) | 40 | 1 — and genuinely blocked today (1,115 b Cloudflare) |
+| Known blocks (tiffycooks 213 b, bostonchefs 1,142 b, kalofagas 836 b) | 3 | 3 |
+
+`tiffycooks.com/super-easy-creamy-spicy-chicken-miso-ramen/` — the page that started
+this — now reads:
+
+    blocked — thin body, no JSON-LD and no <article> (213 bytes < 2000; too small to be the page)
+
+instead of claiming its recipe structure was missing.
+
+### Two bugs the restructure surfaced
+
+* `_fetch_text` did `result[0]` — under the NamedTuple that is now `ok`, i.e. it would
+  have returned `True` as the page text. Fixed to `result.text`.
+* The Phase-A salvage filter tested `_dropped_reason == "fetch-failed"` **exactly**, so
+  the newly-labelled blocks would have been excluded from the very recovery path R7
+  exists to feed. Changed to `startswith`.
+
+### Log lines are ASCII
+
+`└─` raises `UnicodeEncodeError` on this host's cp1252 stdout and would kill a harvest
+mid-run; the sub-line is `why:`. (Em dashes are fine — cp1252 has one.)
 
 ---
 
