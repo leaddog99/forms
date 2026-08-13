@@ -417,18 +417,34 @@
           setTimeout(function () { rej(new Error('screenshot timed out')); }, 45000);
         })
       ]);
-      // Client-side downscale + JPEG encoding before upload. Long edge
-      // capped at 2000px (matches the server's _MAX_LONG_EDGE) and
-      // encoded at JPEG q=0.85 (matches the server's downscale).
-      const MAX_LONG = 2000;
+      // Client-side downscale + JPEG encoding before upload.
+      //
+      // CAP THE WIDTH, NOT THE LONG EDGE. A recipe capture is a tall ribbon, so
+      // the long edge is the HEIGHT — and scaling the height down to 2000 drags
+      // the width with it. On a desktop (1200 x 3000) that still left 800px of
+      // width and looked fine; on a PHONE (390 CSS px x DPR 3 = 1170 wide, and
+      // 18000 tall for a long page) it scaled by 0.11 and produced a 65 x 2000
+      // sliver. Measured 2026-08-13: four phone captures stored at 65x35, 81x43,
+      // 115x61 and 138x74 — correctly proportioned, unreadably small.
+      //
+      // Width is the dimension that matters: the server frames the capture to an
+      // above-fold window of width x (427/800) and never upscales, so whatever
+      // width arrives is the ceiling on quality. A second guard bounds total
+      // pixels, which is what actually protects a phone's encoder (and Safari's
+      // canvas limit) — the thing the long-edge cap was reaching for.
+      const MAX_W = 1600;
+      const MAX_PIXELS = 12e6;
       let outW = canvas.width;
       let outH = canvas.height;
-      const longEdge = Math.max(outW, outH);
+      let scale = 1;
+      if (outW > MAX_W) scale = MAX_W / outW;
+      if (outW * outH * scale * scale > MAX_PIXELS) {
+        scale = Math.sqrt(MAX_PIXELS / (outW * outH));
+      }
       let dataUrl;
-      if (longEdge > MAX_LONG) {
-        const scale = MAX_LONG / longEdge;
-        outW = Math.round(canvas.width * scale);
-        outH = Math.round(canvas.height * scale);
+      if (scale < 1) {
+        outW = Math.max(1, Math.round(canvas.width * scale));
+        outH = Math.max(1, Math.round(canvas.height * scale));
         const c2 = document.createElement('canvas');
         c2.width = outW;
         c2.height = outH;
