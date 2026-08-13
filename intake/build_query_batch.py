@@ -294,7 +294,8 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     return kept, dropped
 
 
-def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[str, bool, str, str]]:
+def _fetch_for_filter(url: str, *, unblocker: bool = False,
+                      render: bool = False) -> Optional[tuple[str, bool, str, str]]:
     """Fetch a URL and return (lower-cased plain text, has_recipe_jsonld, lang_code, source).
     Returns None on any failure (HTTP error, timeout, parse error).
 
@@ -324,7 +325,13 @@ def _fetch_for_filter(url: str, *, unblocker: bool = False) -> Optional[tuple[st
     so step 3's filter sees the same response step 7's extract would.
     """
     try:
-        resp, _meta = fetch_with_full_fallback(url, timeout=FETCH_TIMEOUT_S, unblocker=unblocker)
+        # R2: `render` is passed when the DOMAIN is already known to need a real
+        # browser (render_required). Without it the filter always fetched static
+        # first, got a JS shell, and escalated — paying twice on every page of a
+        # domain we had ALREADY learned about. mark_render_required wrote that
+        # fact; nothing read it at the point where it saves a credit.
+        resp, _meta = fetch_with_full_fallback(
+            url, timeout=FETCH_TIMEOUT_S, unblocker=unblocker, render=render)
         text, jsonld, lang = _response_to_filter_signals(resp)
         # Carry the fetch SOURCE (direct | unblocker | wayback) so the candidate log
         # can show where each page's content actually came from.
@@ -457,6 +464,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       domain_lang: str | None = None,
                       exclude_words=None, should_cancel=None,
                       render_escalate: bool = True,
+                      render: bool = False,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -602,6 +610,12 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         now qualifies; on failure it leaves the caller's original verdict/score intact."""
         if not _render_ready:
             return False
+        # R2: the capture was ALREADY the rendered variant (render_required domain, or
+        # a prior escalation), so re-rendering asks the same question again. This is
+        # what made 177milkstreet log "still scores N rendered" and then pay to
+        # discover it a second time at extract.
+        if e.get("_rendered_upfront") or e.get("_render_escalated"):
+            return False
         # Skip pages that already returned their full text — they're genuinely not a
         # recipe, not a JS shell, so a render won't change the answer (saves a credit).
         if len(e.get("_cap_text") or "") >= _render_thin_chars:
@@ -620,14 +634,21 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             _probe_counts[host] = _probe_counts.get(host, 0) + 1
             probed = True
         try:
-            res = fetch_via_unblocker(url, render=True)
+            # R1: go through fetch_with_full_fallback, NOT fetch_via_unblocker.
+            # Only the former consults the page cache — the direct unblocker call
+            # bypassed it in BOTH directions, so this rendered page was never
+            # stored and the winner-extract had to fetch it again. Measured
+            # 2026-08-13 on 177milkstreet: 54 unblocker calls for 20 URLs.
+            # The harvest already wraps this whole phase in page_cache.enabled().
+            resp2, _meta2 = fetch_with_full_fallback(
+                url, timeout=FETCH_TIMEOUT_S, unblocker=True, render=True)
         except Exception as ex:
             print(f"      [render-escalate] {type(ex).__name__}: {ex}")
             return False
-        if not res:
+        if resp2 is None:
             return False
         try:
-            text2, jsonld2, lang2 = _response_to_filter_signals(res[0])
+            text2, jsonld2, lang2 = _response_to_filter_signals(resp2)
         except Exception as ex:
             print(f"      [render-escalate] parse failed: {type(ex).__name__}: {ex}")
             return False
@@ -741,7 +762,19 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 dropped.append(e)
                 print(f"  [{i:>2}/{len(entries)}] KW-SKIP     {url}")
                 continue
-        result = _fetch_for_filter(url, unblocker=unblocker)
+        # R2: render up front when this domain is ALREADY known to need a browser
+        # (run-level `render` from the publisher's render_required, or the
+        # per-entry `_allow_render` the dish batch stamps for render-eligible
+        # hosts). Otherwise the static fetch is a guaranteed JS shell and the
+        # escalation below pays for the same page a second time.
+        _render_now = bool(render or e.get("_allow_render"))
+        result = _fetch_for_filter(url, unblocker=unblocker, render=_render_now)
+        if _render_now:
+            # Already the rendered variant — the escalation has nothing left to try.
+            # DELIBERATELY not `_render_escalated`: that flag drives the auto-learn
+            # (mark_render_required) and must keep meaning "a render RESCUED this",
+            # not "we started rendered because we already knew".
+            e["_rendered_upfront"] = True
         if result is None:
             e["recipe_score"] = 0
             e["_dropped_reason"] = "fetch-failed"

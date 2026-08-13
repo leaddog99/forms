@@ -211,13 +211,25 @@ it should land *after* R1–R3 or it will be re-argued when the structure change
 
 ---
 
-## 7. Open questions for the curator
+## 7. Open questions — ANSWERED 2026-08-13
 
-1. **Is a `NEVER` domain worth keeping in the corpus at all?** It still has DA/PA and can be
-   scored, ranked and linked — the recipes just can't be ingested. That may be fine (the
-   product links out anyway) or it may be dead weight.
-2. **Should the bookmarklet path be promoted from a fallback to the *primary* method for
-   gated publishers?** For pattern 6 it is the only method that works, and it is free.
-3. **Pattern 9** — dianekochilas' best page by traffic (4,617) is an *article*, not a recipe,
-   and is correctly dropped. Is there a second collection type for explainers, or do we accept
-   the blind spot?
+1. **Is a `NEVER` domain worth keeping in the corpus at all?** → **YES.** It keeps its DA/PA
+   and stays scoreable, rankable and linkable; only ingestion is impossible. So `NEVER` must
+   suppress *fetching*, never membership — the domain stays a first-class publisher whose
+   recipes we point at rather than hold.
+2. **Should the bookmarklet be promoted from fallback to the PRIMARY method for gated
+   publishers?** → **YES.** For pattern 6 it is the only thing that works and it is free, so
+   the UI should present it as the route for such a domain rather than as a consolation after
+   an automated run has already failed and been paid for.
+3. **A second collection type for explainers** (dianekochilas' best page by traffic, 4,617, is
+   an article) → **TBD.**
+
+### R1/R2 status — SHIPPED 2026-08-13
+
+Verified on 177milkstreet (`render_required=1`), 3 URLs: **3 unblocker calls, no escalation**,
+against ~12 before. The rendered pages land in `page_cache` under `variant='render'` — the
+variant extract asks for on such a domain — so the second fetch is now a hit.
+
+R3–R6 remain open, and answers 1 and 2 above shape R3/R4: `content_obtainable = NEVER` gates
+the fetch only, and the fourth mode should offer the bookmarklet as the method, not as an
+apology.

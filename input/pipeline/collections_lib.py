@@ -982,11 +982,28 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     recipe_pass = found
     if check_recipe and found:
         from intake.build_query_batch import _is_recipe_filter
+        # R2: a publisher already LEARNED to need a real browser should be fetched
+        # rendered from the first request. Read here rather than threaded through
+        # the job handler because the harvest already knows the domain, and this
+        # keeps the caller's signature unchanged. mark_render_required wrote this
+        # flag; until now nothing read it where it saves a credit.
+        _render_upfront = False
+        try:
+            from input.pipeline import domains_lib as _dl
+            with _dl._connect(_dl._DEFAULT_DB) as _c:
+                _row = _dl.get_domain(_c, domain)
+            _render_upfront = bool((_row or {}).get("render_required"))
+        except Exception as _e:
+            print(f"  [harvest] render_required lookup skipped: {type(_e).__name__}: {_e}")
+        if _render_upfront:
+            print(f"  [harvest] {domain} is render_required — fetching rendered up front "
+                  f"(skips the known-doomed static fetch on every page)")
         kept, _dropped = _is_recipe_filter(   # _dropped: full entry dicts, ledgered below
             [{"url": l, "title": t} for l, t in found],
             capture_source="domain_harvest",
             capture_provenance={"domain": domain, "discover_source": source},
             unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
+            render=_render_upfront,
             exclude_words=exclude_words,
             keyword_prescreen=keyword_prescreen, prescreen_domain=domain,
             domain_lang=domain_lang,
