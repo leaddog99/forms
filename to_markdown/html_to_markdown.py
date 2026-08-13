@@ -1077,6 +1077,37 @@ def extract_og_image(soup: BeautifulSoup, base_url: str) -> str:
     return extract_og_meta(soup, base_url).get("image", "")
 
 
+def markdown_from_html(html: str, source_url: str = "") -> str:
+    """Canonical markdown from HTML we ALREADY HAVE — no fetch.
+
+    Same three steps `html_to_markdown` runs (select_main_content →
+    clean_for_markdown → markdownify) so a browser-supplied page and a
+    server-fetched one are reduced identically. Factored out for the userscript
+    capture path, where the HTML comes from the curator's signed-in browser and
+    the server cannot fetch it at all: on a gated publisher that DOM is the only
+    place the recipe exists.
+
+    Not a parallel pipeline — one converter, two sources of HTML.
+    """
+    if not html:
+        return ""
+    soup = BeautifulSoup(html, "lxml")
+    title = ""
+    if soup.title and soup.title.string:
+        title = soup.title.string.strip()
+    main = select_main_content(soup)
+    clean_for_markdown(main)
+    body_md = markdownify(str(main), heading_style="ATX", strip=STRIP_TAGS).strip()
+    parts: list[str] = []
+    if title:
+        parts.append(f"# {title}\n")
+    if source_url:
+        parts.append(f"URL: {source_url}\n")
+    parts.append("## PAGE CONTENT\n")
+    parts.append(body_md)
+    return "\n".join(parts).strip()
+
+
 def html_to_markdown(url: str, timings: Optional[dict] = None, *,
                      unblocker: bool = False, render: bool = False) -> dict:
     """Fetch a URL and produce canonical markdown for recipe extraction.

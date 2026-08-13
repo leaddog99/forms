@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         BCC recipe capture queue
 // @namespace    https://tbotb.com/bcc
-// @version      0.1
+// @version      0.2
 // @description  Zero-click score-only path #2 — walks a queue of recipe URLs in YOUR real
-//               browser (beating anti-bot for free), captures each page's JSON-LD, saves
-//               to the BCC master, and self-advances with human-paced delays.
+//               browser (beating anti-bot AND paywalls for free), captures each page's
+//               JSON-LD *and* its rendered body, saves to the BCC master, and
+//               self-advances with human-paced delays.
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
 // @connect      *
@@ -24,19 +25,50 @@
   if (!API || !JOB || !HOST) return;
 
   // ---- helpers -------------------------------------------------------------
+  function pushNodes(out, d) {
+    var arr = Array.isArray(d) ? d : [d];
+    arr.forEach(function (o) {
+      if (o && o['@graph']) { o['@graph'].forEach(function (g) { out.push(g); }); }
+      else { out.push(o); }
+    });
+  }
   function harvestJsonLd() {
     var out = [];
     document.querySelectorAll('script[type="application/ld+json"]').forEach(function (s) {
-      try {
-        var d = JSON.parse(s.textContent);
-        var arr = Array.isArray(d) ? d : [d];
-        arr.forEach(function (o) {
-          if (o && o['@graph']) { o['@graph'].forEach(function (g) { out.push(g); }); }
-          else { out.push(o); }
-        });
-      } catch (e) {}
+      try { pushNodes(out, JSON.parse(s.textContent)); } catch (e) {}
+    });
+    // ALSO the meta-tag variant. 177milkstreet publishes every recipe as
+    // <meta name="application/ld+json" content="{...}"> — not what the spec says,
+    // but real, and a script-tag-only scan reports "no recipe here" on a page that
+    // plainly declares one. The server learned this (R8); the browser copy has to
+    // learn it too, because they are separate implementations.
+    document.querySelectorAll('meta[name="application/ld+json"]').forEach(function (m) {
+      try { pushNodes(out, JSON.parse(m.getAttribute('content') || '')); } catch (e) {}
     });
     return out;
+  }
+  // Does the page's own structured data admit it is only showing a teaser?
+  // schema.org has a flag for it and gated publishers set it honestly.
+  function declaresGated(ld) {
+    return ld.some(function (o) {
+      if (!o) return false;
+      if (o.isAccessibleForFree === false || String(o.isAccessibleForFree).toLowerCase() === 'false') return true;
+      var parts = o.hasPart;
+      if (!parts) return false;
+      return (Array.isArray(parts) ? parts : [parts]).some(function (p) {
+        return p && (p.isAccessibleForFree === false ||
+                     String(p.isAccessibleForFree).toLowerCase() === 'false');
+      });
+    });
+  }
+  // The rendered page, as YOUR signed-in browser sees it. On a gated publisher this
+  // is the only copy of the recipe that exists — the JSON-LD is a teaser and the
+  // server cannot fetch the page at all. Capped so a heavy page can't blow the POST.
+  function pageHtml() {
+    var root = document.querySelector('main, article, [itemtype*="Recipe"], #main, .recipe')
+            || document.body;
+    var html = root ? root.innerHTML : '';
+    return html.length > 900000 ? html.slice(0, 900000) : html;
   }
   function hasRecipe(ld) {
     return ld.some(function (o) {
@@ -70,17 +102,28 @@
   // ---- the loop ------------------------------------------------------------
   (async function () {
     var ld = harvestJsonLd();
-    // STUB / BLOCK DETECTION: a real recipe page has Recipe JSON-LD. If it's absent, we
-    // very likely got a challenge/stub (rate-tripped) — back off and stop, don't hammer.
-    if (!hasRecipe(ld)) {
-      say('no recipe found here — looks blocked/rate-limited. Stopping; resume later.', '#7a1f1f');
+    var gated = declaresGated(ld);
+    var body = pageHtml();
+    // STUB / BLOCK DETECTION. Absent Recipe JSON-LD USED to mean "challenge stub", and
+    // the run stopped. That was wrong twice over: some publishers put their JSON-LD in a
+    // meta tag (now read above), and a gated publisher's page carries the real recipe in
+    // the DOM while its JSON-LD is only a teaser. Stopping there aborted the whole queue
+    // on page 1 for exactly the sites this script exists to capture.
+    //
+    // The honest test is now: do we have EITHER usable structured data OR a page body
+    // worth sending? Only when both are missing is this a stub.
+    if (!hasRecipe(ld) && body.length < 2000) {
+      say('nothing readable here — looks blocked/rate-limited. Stopping; resume later.', '#7a1f1f');
       try { await post('/domains/' + HOST + '/userscript/finish', { job_id: JOB, reason: 'blocked' }); } catch (e) {}
       return;
     }
+    if (gated) say('paywalled page — sending what your session can see…');
     var r;
     try {
       r = await post('/domains/' + HOST + '/userscript/capture',
-        { job_id: JOB, url: location.href.split('#')[0], jsonld: ld });
+        // `html` is what makes a gated publisher work: the server cannot fetch this
+        // page, so the DOM your session rendered is the only copy of the recipe.
+        { job_id: JOB, url: location.href.split('#')[0], jsonld: ld, html: body });
     } catch (e) {
       say('could not reach BCC (' + (e.message || e) + ') — stopping.', '#7a1f1f');
       return;

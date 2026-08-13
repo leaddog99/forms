@@ -5896,13 +5896,32 @@ def _userscript_log(log_filename: str, line: str) -> None:
         pass
 
 
-def _capture_jsonld_to_master(host: str, url: str, jsonld: list, rank: int = 0) -> dict:
-    """Build a recipe from BROWSER-captured JSON-LD (NO server fetch — the userscript's
-    real browser already bypassed the anti-bot) and save it to master as a kind='top'
-    publisher member. Free jsonld-direct lane, falls back to the markdown LLM. Returns
-    {saved, name?, reason?}."""
+def _capture_jsonld_to_master(host: str, url: str, jsonld: list, rank: int = 0,
+                              page_html: str = "") -> dict:
+    """Build a recipe from a BROWSER-captured page (NO server fetch — the userscript's
+    real browser already bypassed the anti-bot / paywall) and save it to master as a
+    kind='top' publisher member. Returns {saved, name?, reason?}.
+
+    Three lanes, in order of fidelity:
+      1. clean JSON-LD           — free, exact, the common case
+      2. the page's own HTML     — for publishers whose JSON-LD is absent or is a
+                                   deliberate TEASER. 177milkstreet ships 3 of N
+                                   ingredients plus "... and more. Sign up for full
+                                   access"; trusting that would store an advert as a
+                                   recipe. The signed-in DOM has the real thing.
+      3. JSON-LD through the LLM — last resort, unchanged.
+    """
     recipe = None
+    gated = False
     if jsonld:
+        try:
+            from to_markdown.html_to_markdown import jsonld_declares_gated
+            gated = jsonld_declares_gated(jsonld)
+        except Exception:
+            gated = False
+    # A gated block is a teaser BY THE PUBLISHER'S OWN DECLARATION — skip lane 1
+    # rather than let it win over the full page body we were handed.
+    if jsonld and not gated:
         try:
             from extract.jsonld_to_recipe import best_recipe_jsonld
             block = best_recipe_jsonld(jsonld)
@@ -5910,6 +5929,22 @@ def _capture_jsonld_to_master(host: str, url: str, jsonld: list, rank: int = 0) 
                                       source_url=url, title="")
         except Exception as e:
             print(f"[USERSCRIPT] jsonld_to_recipe raised: {type(e).__name__}: {e}")
+    # Lane 2. Also runs when lane 1 produced something too thin to keep — a teaser
+    # that parses is still a teaser.
+    if page_html and (recipe is None or gated
+                      or not _is_cacheable(recipe, min_ings=SAVE_GATE_MIN_INGREDIENTS,
+                                           min_steps=SAVE_GATE_MIN_INSTRUCTIONS)[0]):
+        try:
+            from to_markdown.html_to_markdown import markdown_from_html
+            md = markdown_from_html(page_html, source_url=url)
+            if md:
+                print(f"[USERSCRIPT] {'gated JSON-LD' if gated else 'no usable JSON-LD'}"
+                      f" — extracting from the captured page body ({len(md)} chars): {url}")
+                body_recipe = markdown_to_recipe(md, source_name=host, source_url=url, title="")
+                if body_recipe:
+                    recipe = body_recipe
+        except Exception as e:
+            print(f"[USERSCRIPT] page-body extract raised: {type(e).__name__}: {e}")
     if recipe is None and jsonld:
         try:
             blob = f"*Source: {url}*\n\n```json\n{json.dumps(jsonld, indent=2)}\n```\n"
@@ -5917,7 +5952,7 @@ def _capture_jsonld_to_master(host: str, url: str, jsonld: list, rank: int = 0) 
         except Exception as e:
             print(f"[USERSCRIPT] markdown fallback raised: {type(e).__name__}: {e}")
     if not recipe:
-        return {"saved": False, "reason": "no recipe JSON-LD on page (stub/blocked?)"}
+        return {"saved": False, "reason": "no recipe found on page (stub/blocked/paywalled?)"}
     ok, reason = _is_cacheable(recipe, min_ings=SAVE_GATE_MIN_INGREDIENTS,
                                min_steps=SAVE_GATE_MIN_INSTRUCTIONS)
     if not ok:
@@ -5982,6 +6017,10 @@ def userscript_capture_endpoint(domain: str, payload: dict = Body(...)):
     job_id = payload.get("job_id")
     url = (payload.get("url") or "").strip()
     jsonld = payload.get("jsonld") or []
+    # The page's own HTML, sent by newer userscripts. Required for publishers whose
+    # JSON-LD is absent or a paywall teaser — there the signed-in DOM is the only
+    # copy of the recipe that exists. Older userscripts omit it; lane 1 still works.
+    page_html = payload.get("html") or ""
     if not job_id or not url:
         raise HTTPException(status_code=400, detail="job_id + url required")
     with _db() as conn:
@@ -5998,7 +6037,8 @@ def userscript_capture_endpoint(domain: str, payload: dict = Body(...)):
     attempted = set(result.get("attempted") or [])
     saved = list(result.get("saved") or [])
 
-    res = _capture_jsonld_to_master(host, url, jsonld, rank=len(saved) + 1)
+    res = _capture_jsonld_to_master(host, url, jsonld, rank=len(saved) + 1,
+                                    page_html=page_html)
     attempted.add(url)
     if res.get("saved"):
         saved.append(url)
