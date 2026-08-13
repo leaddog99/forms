@@ -65,6 +65,17 @@ EDITABLE_FIELDS = (
     "harvest_source", # discovery source: 'serp' (Google site:) or 'backlinks_file' (SEMrush export)
     "harvestable",    # 0 = no mechanical recipe access; skip publisher refresh
     "paywall",        # gated premium publisher (FACT: is it gated — not "is it penalized")
+    # R4 — HUMAN CAPTURE ONLY. A publisher whose recipe BODY the server can never
+    # obtain, however much we spend: 177milkstreet returns title/hero/headnote and
+    # then "To access this recipe, you need to be a member." Distinct from
+    # `paywall` (which is about SCORING — gated pages earn fewer links, so OU needs
+    # the DA haircut) and from `harvestable` (which skips the publisher entirely).
+    # Here the URLs are worth discovering, scoring and ranking; only the paid
+    # CONTENT fetch is futile. Ingestion happens through the curator's signed-in
+    # browser instead. A domain property, not a per-run checkbox, because a
+    # per-run choice is one someone has to remember every time — and forgetting it
+    # costs a render per URL to rediscover a paywall we already measured.
+    "human_capture_only",
     # Curator override for the DA haircut. Setting it flips paywall_adj_source
     # to 'manual', which makes the calibration job leave the row alone; clearing
     # it (blank/None) hands ownership back to the job on its next run.
@@ -313,6 +324,11 @@ _SEMRUSH_FILTER_COLUMNS = {
     "obtainable_n": "INTEGER",         # saves behind a positive verdict
     "obtainable_tried": "INTEGER",     # attempts behind it — n/tried is the YIELD
     "obtainable_streak": "INTEGER NOT NULL DEFAULT 0",  # consecutive runs that saved NOTHING
+    # R4. CURATED, unlike the measured columns above — it is a decision ("stop
+    # paying to find out") that the measurement informs but does not make. The
+    # harvest still discovers, scores and ranks; only the paid content fetch is
+    # skipped, and ingestion routes to the curator's signed-in browser.
+    "human_capture_only": "INTEGER NOT NULL DEFAULT 0",
     # VESTIGIAL LATCH, kept deliberately and pinned to 1 on every row. Nothing
     # regenerates semrush_report_url any more, so this flag no longer decides
     # anything — it stays as a belt-and-braces guard in case a generation path
@@ -588,6 +604,26 @@ def content_obtainable(conn, domain: str) -> str:
     except Exception:
         return "unknown"
     return ((row[0] if row else None) or "unknown").lower()
+
+
+def human_capture_only(conn, domain: str) -> bool:
+    """R4 — is this publisher's recipe BODY unobtainable by the server at any price?
+
+    True means: discover, score and rank its URLs as normal, but never spend a
+    fetch trying to ingest one. 177milkstreet returns title, hero, headnote and
+    then "To access this recipe, you need to be a member" — measured yield 1 of 9
+    (11%), and the one that worked had its method above the paywall.
+
+    Checked at the two places money is spent: the harvest's winner-extract loop
+    and /domains/<d>/process-selected. Falls OPEN (False) on any error — a
+    lookup failure must not silently stop a publisher being harvested.
+    """
+    try:
+        row = conn.execute("SELECT human_capture_only FROM domains WHERE domain = ?",
+                           (_canon_host(domain),)).fetchone()
+    except Exception:
+        return False
+    return bool(row and row[0])
 
 
 def paywall_adjustment_is_manual(conn, domain) -> bool:

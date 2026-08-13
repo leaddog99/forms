@@ -5835,6 +5835,19 @@ def process_selected_endpoint(domain: str, payload: dict = Body(...)):
     urls = [u for u in (raw if isinstance(raw, list) else [raw]) if u]
     if not urls:
         raise HTTPException(status_code=400, detail="No URLs selected to process.")
+    # R4 — refuse at the point money is spent. This endpoint drives ONE paid render
+    # per URL; on a human-capture-only publisher every one of them buys a paywall
+    # notice. The UI already steers away from the button, but a guard that lives
+    # only in the UI is not a guard — it is a suggestion that a stale page, a
+    # second tab or a direct POST walks straight past.
+    with _db() as conn:
+        if domains_lib.human_capture_only(conn, host):
+            raise HTTPException(status_code=409, detail=(
+                f"{host} is marked HUMAN CAPTURE ONLY: the server cannot obtain its "
+                f"recipe bodies at any price, so this would spend {len(urls)} render(s) "
+                f"to reach a paywall notice. Use ⚡ Run userscript or 📋 Queue (manual) "
+                f"instead — your browser is signed in and ours is not. To override, "
+                f"clear 'Human capture only' on the domain record."))
     with _db() as conn:
         entity_ref = f"process-selected:{host}"
         existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)

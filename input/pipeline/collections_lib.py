@@ -990,9 +990,23 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             from input.pipeline import domains_lib as _dl0
             with _dl0._connect(_dl0._DEFAULT_DB) as _c0:
                 _obt = _dl0.content_obtainable(_c0, domain)
+                _human_only = _dl0.human_capture_only(_c0, domain)
         except Exception:
             _obt = "unknown"
-        if _obt == "never":
+            _human_only = False
+        # R4 — the CURATED twin of content_obtainable='never'. Same outcome, but
+        # reached by a decision instead of by waiting for the streak to prove it
+        # again. 177milkstreet is the worked example: the body is never in the
+        # response at any price, so every run that "verifies" it pays a render to
+        # rediscover a paywall we have already measured (1 of 9, 11%).
+        if _human_only:
+            print(f"  [harvest] {domain} is HUMAN-CAPTURE-ONLY (curator-set) — "
+                  f"discovering and scoring, but paying for no page fetches.")
+            print(f"  [harvest] Ingest these from the cohort with the userscript or "
+                  f"bookmarklet, where YOUR browser is signed in and ours is not.")
+            check_recipe = False
+            score_only = True
+        elif _obt == "never":
             print(f"  [harvest] {domain} is content_obtainable=NEVER — skipping all "
                   f"page fetches (measured: repeated runs extracted nothing).")
             print(f"  [harvest] Its recipes are captured by BOOKMARKLET/userscript, "
