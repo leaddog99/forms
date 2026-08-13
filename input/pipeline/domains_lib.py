@@ -293,6 +293,26 @@ _ENRICH_COLUMNS = {
 # seeded default, or paste a URL built in the SEMrush UI. See
 # seed_semrush_pages_url for the full argument.
 _SEMRUSH_FILTER_COLUMNS = {
+    # ── OBTAINABILITY (R3, 2026-08-13) ───────────────────────────────────────
+    # The axis `paywall` could not express. Measured 2026-08-13:
+    # cooking.nytimes.com and 177milkstreet.com carry IDENTICAL flags
+    # (paywall=1, unblocker, render_required=1) and cost 1.1 vs 54 unblocker
+    # calls per saved recipe. `paywall` is a BUSINESS fact — is this publisher
+    # gated. Whether we can actually obtain the recipe is a TECHNICAL fact, it
+    # is orthogonal, and it is the one that should drive spending.
+    #
+    # MEASURED, never curated: set from run outcomes, so ATK and Milk Street
+    # differ by evidence rather than by a hand-written special case. A per-domain
+    # exception drifts; a measured capability maintains itself.
+    #
+    # 'never' gates FETCHING ONLY, never membership — the publisher keeps its
+    # DA/PA and stays scoreable, rankable and linkable. We stop trying to hold
+    # its recipes; we do not stop pointing at them.
+    "content_obtainable": "TEXT NOT NULL DEFAULT 'unknown'",  # unknown|direct|unblocker|unblocker_render|never
+    "obtainable_at": "TEXT",           # when last determined (ISO)
+    "obtainable_n": "INTEGER",         # saves behind a positive verdict
+    "obtainable_tried": "INTEGER",     # attempts behind it — n/tried is the YIELD
+    "obtainable_streak": "INTEGER NOT NULL DEFAULT 0",  # consecutive runs that saved NOTHING
     # VESTIGIAL LATCH, kept deliberately and pinned to 1 on every row. Nothing
     # regenerates semrush_report_url any more, so this flag no longer decides
     # anything — it stays as a belt-and-braces guard in case a generation path
@@ -485,6 +505,89 @@ def clear_paywall_da_adjustment(conn, domain, *, status=None, note=None, n=None)
          _canon_host(domain)),
     )
     conn.commit()
+
+
+# How many consecutive zero-save runs before we stop fetching a publisher. Two,
+# not one: a single bad run is a bad export, an outage, or a site change. Two in
+# a row is a property of the publisher.
+OBTAINABLE_FAIL_STREAK = 2
+
+
+def record_acquisition_outcome(conn, domain: str, *, attempted: int, saved: int,
+                               method: str) -> dict:
+    """Learn whether this publisher's recipes can actually be obtained, from what
+    a run just did. Called once per publisher refresh.
+
+    `method` is how the run fetched ('direct' | 'unblocker' | 'unblocker_render').
+    A save PROVES obtainability by that method. A run that attempted real
+    extractions and saved NOTHING is evidence against; `OBTAINABLE_FAIL_STREAK`
+    consecutive such runs marks the domain `never`.
+
+    Deliberately asymmetric: one success clears the streak instantly, because
+    obtainability is proven by a single existence case, while impossibility can
+    only ever be inferred from repetition. Cheaper to re-try a recovered
+    publisher than to permanently write off a working one.
+    """
+    ensure_domains_table(conn)
+    host = _canon_host(domain)
+    # Create a minimal row if absent, mirroring set_paywall_da_adjustment. Without
+    # this the UPDATE below silently matches zero rows and the fail streak never
+    # advances — the verdict would reset on every run and `never` could never be
+    # reached. (Caught by the state-machine test, where two zero-save runs both
+    # reported streak=1.)
+    now0 = _now()
+    if not domain_exists(conn, host):
+        conn.execute(
+            "INSERT INTO domains (domain, root_domain, created_at, updated_at) VALUES (?,?,?,?)",
+            (host, root_domain(host) or host, now0, now0))
+        conn.commit()
+    row = get_domain(conn, host) or {}
+    prev = (row.get("content_obtainable") or "unknown").lower()
+    streak = int(row.get("obtainable_streak") or 0)
+    now = _now()
+
+    if saved > 0:
+        verdict, streak = (method or "unknown"), 0
+        pct = (100.0 * saved / attempted) if attempted else 0.0
+        # YIELD, not just the verdict. One save proves obtainability, so a
+        # publisher that yields 1 of 17 reads "obtainable" — technically true and
+        # practically useless. 177milkstreet did exactly that at 54 unblocker
+        # calls per save. Recording saved/tried lets the record say "works, badly"
+        # instead of forcing that into a binary it does not fit, and leaves the
+        # write-off decision with a human who can see the number.
+        note = f"{saved} of {attempted} extracted via {method} ({pct:.0f}% yield)"
+    elif attempted <= 0:
+        # Nothing was even tried (score-only, or everything cut before extract).
+        # Not evidence either way — leave the verdict and the streak alone.
+        return {"domain": host, "content_obtainable": prev, "streak": streak,
+                "changed": False, "note": "no extraction attempted"}
+    else:
+        streak += 1
+        verdict = "never" if streak >= OBTAINABLE_FAIL_STREAK else prev
+        note = (f"0 of {attempted} extracted (streak {streak}/{OBTAINABLE_FAIL_STREAK})")
+
+    conn.execute(
+        "UPDATE domains SET content_obtainable = ?, obtainable_at = ?, "
+        "obtainable_n = ?, obtainable_tried = ?, obtainable_streak = ?, "
+        "updated_at = ? WHERE domain = ?",
+        (verdict, now,
+         saved if saved > 0 else row.get("obtainable_n"),
+         attempted if saved > 0 else row.get("obtainable_tried"),
+         streak, now, host))
+    conn.commit()
+    return {"domain": host, "content_obtainable": verdict, "streak": streak,
+            "saved": saved, "tried": attempted,
+            "changed": verdict != prev, "note": note}
+
+
+def content_obtainable(conn, domain: str) -> str:
+    """'unknown' | a working method | 'never'. Read before spending on fetches."""
+    try:
+        row = conn.execute("SELECT content_obtainable FROM domains WHERE domain = ?",
+                           (_canon_host(domain),)).fetchone()
+    except Exception:
+        return "unknown"
+    return ((row[0] if row else None) or "unknown").lower()
 
 
 def paywall_adjustment_is_manual(conn, domain) -> bool:

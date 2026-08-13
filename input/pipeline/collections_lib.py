@@ -980,6 +980,26 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # foreign slugs. exclude_words (the curator's own taxonomy) is still honored. When
     # check_recipe is OFF (trusted/paywalled — no fetch), exclude_words is applied inline.
     recipe_pass = found
+    # R3: a publisher MEASURED as unobtainable stops being fetched. It keeps its
+    # membership, its DA/PA and its place in the corpus — we simply stop paying to
+    # rediscover that its recipes are not in the HTML. Degrades to the score-only
+    # path (discover + Moz-rank, zero fetches), which is what a curator was already
+    # choosing manually as a euphemism for "don't burn money".
+    if check_recipe and found:
+        try:
+            from input.pipeline import domains_lib as _dl0
+            with _dl0._connect(_dl0._DEFAULT_DB) as _c0:
+                _obt = _dl0.content_obtainable(_c0, domain)
+        except Exception:
+            _obt = "unknown"
+        if _obt == "never":
+            print(f"  [harvest] {domain} is content_obtainable=NEVER — skipping all "
+                  f"page fetches (measured: repeated runs extracted nothing).")
+            print(f"  [harvest] Its recipes are captured by BOOKMARKLET/userscript, "
+                  f"where your browser is authenticated and ours is not. Scoring only.")
+            check_recipe = False
+            score_only = True
+
     if check_recipe and found:
         from intake.build_query_batch import _is_recipe_filter
         # R2: a publisher already LEARNED to need a real browser should be fetched

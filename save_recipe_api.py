@@ -5676,6 +5676,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     except Exception as e:
         print(f"[PUBLISHER-REFRESH] domain-block retire failed: {type(e).__name__}: {e}")
     extracted = 0
+    attempted = 0        # R3: extractions TRIED — the denominator obtainability is judged on
     saved_urls: list[str] = []
     for m in pool:
         if extracted >= keep:
@@ -5690,6 +5691,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         # the candidate loop's [N/120] format so the log shows which selected winner is
         # being processed and how many were selected.
         seq_prefix = f"[PUBLISHER-REFRESH] [{extracted + 1}/{keep}]"
+        attempted += 1
         if await _extract_publisher_url_to_master(
                 url, host, extracted + 1, "/domains/refresh-top", seq_prefix,
                 traffic=m.get("traffic"), traffic_pct=m.get("traffic_pct")):
@@ -5717,6 +5719,28 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
             print(f"[PUBLISHER-REFRESH] re-flagged {len(keys)} ledger winner(s) to match master")
         except Exception as e:
             print(f"[PUBLISHER-REFRESH] re-flag selected failed: {type(e).__name__}: {e}")
+
+    # R3: learn whether this publisher's recipes can actually be OBTAINED, from
+    # what this run just did. `paywall` says whether it is gated (a business
+    # fact); this says whether we can get the content (a technical one). They are
+    # orthogonal — cooking.nytimes.com and 177milkstreet.com are both gated and
+    # cost 1.1 vs 54 unblocker calls per save — and only the second should drive
+    # spending. Measured, so ATK and Milk Street differ by evidence rather than by
+    # a hand-written exception.
+    try:
+        with _db() as _oc:
+            _rr = bool((domains_lib.get_domain(_oc, host) or {}).get("render_required"))
+            _method = ("unblocker_render" if (unblocker and _rr) else
+                       "unblocker" if unblocker else "direct")
+            _obt = domains_lib.record_acquisition_outcome(
+                _oc, host, attempted=attempted, saved=extracted, method=_method)
+        print(f"[PUBLISHER-REFRESH] obtainability: {host} -> "
+              f"{_obt['content_obtainable']} ({_obt['note']})")
+        if _obt.get("changed") and _obt["content_obtainable"] == "never":
+            print(f"[PUBLISHER-REFRESH] {host} marked NEVER — future runs will score "
+                  f"without fetching. Capture its recipes with the bookmarklet.")
+    except Exception as e:
+        print(f"[PUBLISHER-REFRESH] obtainability record skipped: {type(e).__name__}: {e}")
 
     # Recalibrate the paywall DA-adjustment when a GATED publisher just gained
     # rows. The refresh is the event that changes the evidence — a monthly timer

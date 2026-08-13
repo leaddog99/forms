@@ -286,6 +286,34 @@
     // call for different actions (harvest it / wait for rows / accept that it
     // isn't penalized). A blank field would make all five look identical, and
     // identical to a publisher nobody ever evaluated.
+    // Obtainability — MEASURED, never curated. Separate from `paywall` on purpose:
+    // that says whether the publisher is gated (business), this says whether we can
+    // actually get the recipe (technical). NYT is both gated and obtainable; Milk
+    // Street is gated and effectively not, and they carried identical flags.
+    // Shows the YIELD because "obtainable" alone hides 1-of-17.
+    function obtainableHtml(d){
+      const v = (d.content_obtainable || 'unknown').toLowerCase();
+      const n = d.obtainable_n, tried = d.obtainable_tried;
+      const yieldTxt = (n != null && tried) ? ` — ${n} of ${tried} extracted (${Math.round(100*n/tried)}% yield)` : '';
+      if (v === 'unknown') {
+        return `<div style="margin:6px 0;padding:6px 8px;border-left:3px solid #999;background:rgba(0,0,0,.03);font-size:.85em">`
+          + `<b>Obtainability: not yet measured</b>`
+          + `<div style="color:var(--muted,#666);margin-top:3px">A refresh that tries extractions will decide this from what it actually gets.</div></div>`;
+      }
+      if (v === 'never') {
+        return `<div style="margin:6px 0;padding:6px 8px;border-left:3px solid #b3261e;background:rgba(179,38,30,.06);font-size:.85em">`
+          + `<b style="color:#b3261e">Obtainability: NEVER — page fetches are skipped</b>`
+          + `<div style="color:var(--muted,#666);margin-top:3px">Repeated runs extracted nothing, so refreshes now score without fetching. `
+          + `This publisher stays in the corpus and keeps its DA/PA, rank and links — only ingestion stops. `
+          + `<b>Capture its recipes with the bookmarklet</b>, where your browser is authenticated and ours is not.</div></div>`;
+      }
+      const low = (n != null && tried && (n / tried) < 0.34);
+      return `<div style="margin:6px 0;padding:6px 8px;border-left:3px solid ${low ? '#9a6700' : '#1a7f37'};background:rgba(0,0,0,.03);font-size:.85em">`
+        + `<b style="color:${low ? '#9a6700' : '#1a7f37'}">Obtainable via ${escapeHtml(v.replace(/_/g,' + '))}</b>${escapeHtml(yieldTxt)}`
+        + (low ? `<div style="color:var(--muted,#666);margin-top:3px">Low yield — most pages cost a fetch and produce nothing. The bookmarklet may be cheaper than a refresh here.</div>` : '')
+        + `</div>`;
+    }
+
     function paywallStatusHtml(d){
       if (Number(d.paywall) !== 1) return '';
       const st = d.paywall_adj_status, note = d.paywall_adj_note || '';
@@ -457,6 +485,7 @@
                <div> nested in the label's <span> is invalid — the parser closes
                the span (and can close the label) to place it, restructuring the
                control that owns the paywall checkbox. -->
+          ${obtainableHtml(d)}
           ${paywallStatusHtml(d)}
           ${Number(d.paywall) === 1 ? `
           <div class="ed-field" style="margin:2px 0 6px 26px;max-width:520px">
