@@ -1948,8 +1948,16 @@
               <a id="pageScreenshotLink" href="#" target="_blank" rel="noopener"
                  title="Open source page in new tab"
                  style="display:block;width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);text-decoration:none">
+                <!-- ASPECT MUST MATCH THE CAPTURE, or object-fit:cover silently
+                     eats the edges. Every screenshot this pipeline produces is
+                     framed to screenshot_pipeline.VIEWPORT_W / CAPTURE_HEIGHT
+                     (1500x800 = 1.875:1, stored as 800x427). Displaying that in a
+                     3/2 (1.5:1) box makes `cover` scale it to 125% of the box
+                     width to fill the height — cropping 12.5% off EACH SIDE of
+                     every screenshot, which reads as "too wide, not in the frame".
+                     15/8 is the same ratio written as the server writes it. -->
                 <img id="pageScreenshotImg" src="" alt=""
-                     style="width:100%;display:block;aspect-ratio:3/2;object-fit:cover" />
+                     style="width:100%;display:block;aspect-ratio:15/8;object-fit:cover" />
               </a>
             </div>
             <!-- Source how-to video (the page's schema.org VideoObject).
