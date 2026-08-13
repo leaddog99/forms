@@ -211,6 +211,78 @@ it should land *after* R1–R3 or it will be re-argued when the structure change
 
 ---
 
+## 6b. `no-recipe-structure` is three different failures wearing one label — MEASURED 2026-08-13
+
+`no-recipe-structure` is the largest is_recipe drop reason in the ledger (100). Sampling real
+rejects and re-fetching them shows it is **not one thing**, and only one of the three is a
+correct verdict:
+
+| # | actual cause | example | verdict | remedy |
+|---|---|---|---|---|
+| A | **Genuinely not a recipe** | `dianekochilas.com/what-is-mahlepi/`, `eatnpark.com/MenuItem/…` | correct — an article and a menu item | none |
+| B | **Structured data we don't look for** | `177milkstreet.com/recipes/…` | **our bug** | parse it |
+| C | **A blocked fetch, misfiled** | `tiffycooks.com/…miso-ramen/` | **our bug, and the diagnosis is inverted** | classify as fetch-failed |
+
+### B — the parser looks in one place
+
+`extract_recipe_jsonld` calls `extruct.extract(..., syntaxes=["json-ld"])` and
+`_response_to_filter_signals` only ever consults that. Two gaps:
+
+* **JSON-LD outside a `<script>` tag.** Milk Street publishes the whole Recipe object in
+  `<meta name="application/ld+json" content="…">`, HTML-escaped. Every parser that looks for
+  `<script type="application/ld+json">` — including ours — finds nothing. The object is
+  complete and valid; it is simply in an attribute.
+* **The other syntaxes are never requested.** `extruct` also supports `microdata`,
+  `microformat` (hRecipe) and `rdfa`, all of which carry `recipeIngredient`. We ask for
+  none of them, so a site marking up recipes in microdata reads as structure-less.
+
+Worth stating precisely: in the 4-URL sample, microdata/microformat/rdfa found nothing that
+JSON-LD didn't. **The measured gap is the meta-tag case; the other syntaxes are a
+hypothesis, not a finding.** Test before building.
+
+### C — a 202 with a captcha is scored as a recipe page
+
+`tiffycooks.com/super-easy-creamy-spicy-chicken-miso-ramen/` — unambiguously a recipe — returns:
+
+    status 202 · 213 bytes · "captcha" present · visible text length 0
+
+`fetch_with_full_fallback` accepts any 2xx (`if 200 <= resp.status_code < 300`), so the stub
+is returned as a success, phrase-scored at 0, and filed **`no-recipe-structure`**.
+
+That label is not merely imprecise, it is the *opposite* of the truth. It asserts a fact about
+the page's content when we never saw the page. Consequences:
+
+* the fetch-fail **salvage path never fires**, because the row isn't `fetch-failed`
+* the curator and the AI editor read "not a recipe" for a page that is one
+* the domain never learns it is blocked, so `mark_render_required` / unblocker escalation
+  aren't triggered either
+
+**The detector for this already exists.** `_looks_blocked()` (html_to_markdown.py:501) tests
+exactly these signals — challenge markers, or a small body with no JSON-LD and no `<article>`.
+It is consulted **only** when deciding whether to escalate to the paid unblocker tier, and
+never on the path that writes the reject reason.
+
+### Why this matters beyond the label
+
+Every count built on `no-recipe-structure` is a blend of three populations. "100 pages had no
+recipe structure" is really "some number were articles, some we failed to parse, and some we
+never fetched." Any tuning of the phrase scorer against that bucket is tuning against noise.
+
+### Recommendations (R7–R9)
+
+* **R7 — classify blocked responses as `fetch-failed`, not `no-struct`.** Call the existing
+  `_looks_blocked()` in `_fetch_for_filter` and return None on a hit. Smallest change, biggest
+  correctness win, and it activates the salvage path that already exists.
+* **R8 — parse JSON-LD in `<meta name="application/ld+json">`.** A contained addition to
+  `extract_recipe_jsonld`; Milk Street will not be the only publisher doing this.
+* **R9 — measure, then maybe add, the other extruct syntaxes.** Run microdata/microformat/rdfa
+  across a real sample of `no-struct` rejects first. Add only what the sample proves.
+
+None of these changes what "is a recipe" means. They change whether we answer that question
+about the page we actually received.
+
+---
+
 ## 7. Open questions — ANSWERED 2026-08-13
 
 1. **Is a `NEVER` domain worth keeping in the corpus at all?** → **YES.** It keeps its DA/PA
