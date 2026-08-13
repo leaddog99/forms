@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 import sys
@@ -80,6 +81,11 @@ def ensure_jobs_table(conn: sqlite3.Connection) -> None:
     have = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
     if "cancel_requested" not in have:
         conn.execute("ALTER TABLE jobs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0")
+    # OS pid of the process that took this job. Jobs run OUT OF PROCESS, so
+    # "is this row's owner still alive?" is the only honest way to tell an
+    # interrupted job from a running one — see reset_interrupted_jobs.
+    if "pid" not in have:
+        conn.execute("ALTER TABLE jobs ADD COLUMN pid INTEGER")
     conn.commit()
 
 
@@ -107,20 +113,75 @@ def is_cancel_requested(conn: sqlite3.Connection, job_id: int) -> bool:
     return bool(row and row[0])
 
 
+def pid_alive(pid: Optional[int]) -> bool:
+    """Is this OS process still running? Unknown pid → treated as NOT alive, so
+    rows written before the pid column existed still get cleaned up.
+
+    No psutil in this environment, and `os.kill(pid, 0)` is NOT a liveness probe
+    on Windows (os.kill there terminates), so the Windows branch asks the kernel
+    directly via OpenProcess + GetExitCodeProcess.
+    """
+    if not pid:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            k32 = ctypes.windll.kernel32
+            h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+            if not h:
+                return False
+            try:
+                code = ctypes.c_ulong()
+                ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+                return bool(ok) and code.value == STILL_ACTIVE
+            finally:
+                k32.CloseHandle(h)
+        os.kill(int(pid), 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True          # exists, we just may not signal it
+    except Exception:
+        return True          # can't tell → assume alive; never wipe on ignorance
+
+
 def reset_interrupted_jobs(conn: sqlite3.Connection) -> int:
-    """Called at startup. Any job left as 'running' is interrupted —
-    the prior process died with it in flight. Mark as
-    error:interrupted so it doesn't sit forever. Returns the count
-    reset for logging."""
+    """Called at startup. A job left as 'running' whose OWNING PROCESS IS GONE is
+    interrupted — mark it error so it stops blocking new enqueues for its entity.
+    Returns the count reset, for logging.
+
+    The liveness check is the whole point. This used to reset EVERY 'running' row
+    on the theory that the prior process had died — but jobs run out of process,
+    so merely importing this app (a script, a REPL, a one-off `python -c`) ran the
+    same startup and wiped the status of a job running healthily elsewhere. It hit
+    job 784, and again on 2026-08-13 job 822: a live 177milkstreet harvest was
+    marked `error` mid-run by an unrelated import, while the worker carried on and
+    finished successfully. The row lied about the work.
+
+    `BCC_SKIP_JOB_RESET` (set by the jobs CLI) remains as a blunt opt-out, but it
+    only ever protected callers who knew to set it. This protects the rest.
+    """
     now = datetime.now(timezone.utc).isoformat()
-    cur = conn.execute(
+    rows = conn.execute(
+        "SELECT id, pid FROM jobs WHERE status='running'"
+    ).fetchall()
+    dead = [r[0] for r in rows if not pid_alive(r[1])]
+    alive = len(rows) - len(dead)
+    if alive:
+        print(f"[JOBS] left {alive} running job(s) alone — their process is still up")
+    if not dead:
+        return 0
+    conn.executemany(
         "UPDATE jobs SET status='error', "
-        "error_detail='interrupted by uvicorn restart', "
-        "finished_at=? WHERE status='running'",
-        (now,),
+        "error_detail='interrupted — owning process is gone', "
+        "finished_at=? WHERE id=?",
+        [(now, jid) for jid in dead],
     )
     conn.commit()
-    return cur.rowcount
+    return len(dead)
 
 
 # ============================================================
@@ -223,9 +284,12 @@ def find_next_ready(conn: sqlite3.Connection) -> Optional[dict]:
 
 def mark_running(conn: sqlite3.Connection, job_id: int, log_filename: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    # Stamp the OWNER. Without it, reset_interrupted_jobs can only assume that a
+    # 'running' row belongs to a dead process, and that assumption is wrong every
+    # time a second process merely IMPORTS the app while a job is in flight.
     conn.execute(
-        "UPDATE jobs SET status='running', started_at=?, log_filename=? WHERE id=?",
-        (now, log_filename, job_id),
+        "UPDATE jobs SET status='running', started_at=?, log_filename=?, pid=? WHERE id=?",
+        (now, log_filename, os.getpid(), job_id),
     )
     conn.commit()
 
