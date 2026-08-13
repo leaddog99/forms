@@ -158,6 +158,66 @@
       return rows.sort(sorters[sortKey] || sorters.domain);
     }
 
+    // ── Unsaved-work protection ──────────────────────────────────────────────
+    // The dirty flag already existed as `saveBtn.disabled` — an enabled Save
+    // button IS "there are unsaved changes". Nothing consumed it, so work could
+    // vanish three ways: switching records (the common one), closing the tab, or
+    // simply forgetting. Deep enrich makes that expensive — it costs ~16 Moz rows
+    // plus a Sonnet call and persists NOTHING by design ("Returns the SUGGESTED
+    // fields (does not save)"), so an unsaved research result is money on the floor
+    // with no trace it ever ran.
+    //
+    // Deliberately NOT a modal on every action — that trains people to dismiss it.
+    // The visible banner is the primary signal; the confirms fire only on the two
+    // paths that actually destroy work.
+    function isDirty(){
+      const b = document.getElementById('saveBtn');
+      return !!(b && !b.disabled);
+    }
+    // Called before anything that would rebuild or leave the form. Returns false
+    // to abort. No prompt when nothing is dirty, so the common path stays silent.
+    function confirmDiscard(action){
+      if (!isDirty()) return true;
+      return window.confirm(
+        `You have unsaved changes on this domain.\n\n${action}\n\n`
+        + 'OK = discard them.  Cancel = stay and Save first.');
+    }
+    // Persistent, always-visible while dirty. This is the part that stops the
+    // "I thought it saved" failure — the state is on screen, not implied by a
+    // button's enabled-ness.
+    function paintDirtyBanner(){
+      let el = document.getElementById('dirtyBanner');
+      const on = isDirty();
+      if (!el){
+        if (!on) return;
+        el = document.createElement('div');
+        el.id = 'dirtyBanner';
+        el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;'
+          + 'z-index:9999;background:#8250df;color:#fff;padding:9px 16px;border-radius:999px;'
+          + 'box-shadow:0 4px 14px rgba(0,0,0,.22);font-size:.86em;display:flex;gap:10px;'
+          + 'align-items:center';
+        el.innerHTML = '<span>Unsaved changes</span>';
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = 'Save now';
+        b.style.cssText = 'background:#fff;color:#8250df;border:0;border-radius:999px;'
+          + 'padding:4px 12px;font:inherit;font-weight:600;cursor:pointer';
+        b.addEventListener('click', () => document.getElementById('saveBtn')?.click());
+        el.appendChild(b);
+        document.body.appendChild(el);
+      }
+      el.style.display = on ? 'flex' : 'none';
+    }
+    // Poll rather than hook every mutation site: the flag is flipped from a dozen
+    // places (field edits, both enrich buttons, mode cards), and a poll cannot be
+    // forgotten when a thirteenth is added.
+    setInterval(paintDirtyBanner, 400);
+    // Backstop for the one path an in-app guard cannot see: closing or reloading
+    // the tab. Browsers ignore custom text here — the string is required, not shown.
+    window.addEventListener('beforeunload', (e) => {
+      if (!isDirty()) return;
+      e.preventDefault(); e.returnValue = '';
+    });
+
     function renderList(){
       const rows = sortedRows();
       $('#count').textContent = `(${rows.length})`;
@@ -169,7 +229,14 @@
         li.innerHTML =
           `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
           `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
-        li.addEventListener('click', () => { selected = d.domain; renderList(); renderDetail(); nav.afterSelect(); });
+        // GUARDED record switch. renderDetail() rebuilds the form from scratch, so
+        // clicking another domain silently destroys unsaved work — and beforeunload
+        // cannot help, because the page never unloads. This is the escape route that
+        // loses a deep-enrich result: the research is only in the form until Save.
+        li.addEventListener('click', () => {
+          if (!confirmDiscard(`Switch to ${d.domain}?`)) return;
+          selected = d.domain; renderList(); renderDetail(); nav.afterSelect();
+        });
         ul.appendChild(li);
       }
       updateDueCount();
@@ -1152,9 +1219,13 @@
         renderKeywords(kwJson);
         $('#saveBtn').disabled = false;
         if (hint){
-          hint.style.color = data.recognized ? '' : 'var(--ed-warn)';
+          // Say NOT SAVED explicitly. This call costs ~16 Moz rows + a Sonnet
+          // call and writes nothing to the database — the result lives only in
+          // these inputs until Save. "Researched" alone reads as "done".
+          hint.style.color = 'var(--ed-warn)';
           const ba = data.brand_authority != null ? `BA ${data.brand_authority}` : 'no Moz data';
-          hint.textContent = `Researched (${ba}) — review the profile and Save.`;
+          hint.innerHTML = `Researched (${escapeHtml(ba)}) — <b>NOT SAVED YET</b>. `
+            + 'Review the profile, then press Save or this is discarded.';
         }
       } catch (e) {
         if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Deep enrich failed: ${e.message || e}`; }
@@ -1265,7 +1336,10 @@
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
       $('#newDomain').focus();
-      $('#cancelBtn').addEventListener('click', () => { selected = null; renderList(); renderDetail(); });
+      $('#cancelBtn').addEventListener('click', () => {
+        if (!confirmDiscard('Close this domain without saving?')) return;
+        selected = null; renderList(); renderDetail();
+      });
       $('#createBtn').addEventListener('click', doCreate);
     }
 
@@ -1472,7 +1546,10 @@
     $('#page').addEventListener('change', _markDirty);
     // URL-field ↗/⧉ icons are wired globally by LibraryShell (urlControl/_ensureUrlCtl) —
     // no per-form handler needed. See memory/feedback_url_field_control.
-    $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderDetail(); nav.afterSelect(); });
+    $('#addToggle').addEventListener('click', () => {
+      if (!confirmDiscard('Start a new domain?')) return;
+      selected = '__new__'; renderList(); renderDetail(); nav.afterSelect();
+    });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
     $('#sort').addEventListener('change', (e) => { sortKey = e.target.value; renderList(); });
     // Scored cohort now lives in its own persistent .ed-accordion panel (loadDomainCohort),
