@@ -282,10 +282,17 @@
         <section class="ed-block">
           <details class="ed-accordion" id="ecAcc">
             <summary>Editor's Choice <span class="ed-pill" id="ecCount" style="margin-left:6px"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 12px">Pin a recipe URL to this dish. The next <b>Refresh</b> adds it to the candidate pool and scores it like any result — it appears in the winners above <b>if it ranks</b>. A pin is a membership, so the same recipe can be pinned to several dishes.</p>
-            <div style="display:flex;gap:8px;margin:0 0 12px">
-              <input type="url" id="ecUrl" placeholder="https://… recipe URL to pin" style="flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit">
-              <button type="button" class="ed-btn" id="ecAddBtn">Pin</button>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Give a recipe this dish's <b>Editor's Choice</b>. It is ingested immediately and shown as an award above the ranked list — it does <b>not</b> compete: no minimum-score gate, never ranked against the algorithmic winners, and it survives every Refresh. Its PA/DA/OU are still shown, marked <i>not ranked</i>, so the award is measured but not judged. An award is a membership, so the same recipe can be awarded for several dishes.</p>
+            <div style="display:flex;gap:8px;margin:0 0 8px">
+              <input type="url" id="ecUrl" placeholder="https://… recipe URL" style="flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit">
+              <button type="button" class="ed-btn" id="ecAddBtn">Award</button>
+            </div>
+            <!-- The citation. This is the whole justification for overriding the
+                 statistical pass, so it is a first-class field rather than an
+                 optional afterthought — an award with no stated reason is
+                 indistinguishable later from a mis-click. -->
+            <div style="margin:0 0 12px">
+              <textarea id="ecNote" rows="2" placeholder="Why this deserves inclusion — the citation shown with the award (e.g. 'the reference method for clear broth: 9L water, bones broken, skimmed not stirred')" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit;resize:vertical"></textarea>
             </div>
             <ol class="ed-t10" id="eclist"><li class="ed-empty-fit">Loading…</li></ol>
           </details>
@@ -541,14 +548,19 @@
                         a.da != null ? `DA ${Math.round(a.da)}` : null,
                         a.ou != null ? `OU ${Number(a.ou).toFixed(1)}` : null]
                        .filter(Boolean).join(' · ');
-          return `<li class="ed-t10-row" style="border-left:3px solid #8250df;background:rgba(130,80,223,.05)">
-            <span class="ed-t10-main">
-              <span class="ed-t10-name">
-                <span style="color:#8250df;font-weight:600;font-size:.82em;letter-spacing:.02em">★ EDITOR'S CHOICE</span>
-                &nbsp;<a href="${a.recipe_id ? `/r/${encodeURIComponent(a.recipe_id)}` : escapeHtml(a.source_url || '#')}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>
-              </span>
-              <span class="ed-t10-sub">${escapeHtml(host)}${nums ? ` — ${escapeHtml(nums)} <i>(not ranked)</i>` : ''}${a.note ? ` · ${escapeHtml(a.note)}` : ''}</span>
+          // The citation gets its own line, quoted. It is the justification for
+          // overriding the statistical pass, so it should read as the reason the
+          // award exists — not as metadata trailing the domain name.
+          const cite = a.note
+            ? `<div style="margin-top:5px;padding-left:9px;border-left:2px solid rgba(130,80,223,.35);color:var(--muted,#555);font-style:italic;font-size:.88em">${escapeHtml(a.note)}</div>`
+            : `<div style="margin-top:5px;color:var(--muted,#999);font-size:.82em">No citation given — <i>why does this deserve inclusion?</i></div>`;
+          return `<li class="ed-t10-row" style="border-left:3px solid #8250df;background:rgba(130,80,223,.05);display:block;padding:9px 11px">
+            <span class="ed-t10-name">
+              <span style="color:#8250df;font-weight:600;font-size:.82em;letter-spacing:.02em">★ EDITOR'S CHOICE</span>
+              &nbsp;<a href="${a.recipe_id ? `/r/${encodeURIComponent(a.recipe_id)}` : escapeHtml(a.source_url || '#')}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>
             </span>
+            <div class="ed-t10-sub">${escapeHtml(host)}${nums ? ` — ${escapeHtml(nums)} <i>(not ranked)</i>` : ''}</div>
+            ${cite}
           </li>`;
         }).join('');
         // Winners list — same-origin /r/<id> link (resolves on any host).
@@ -595,14 +607,22 @@
 
     async function addPin(name){
       const inp = $('#ecUrl'); const url = (inp.value || '').trim();
+      const noteEl = $('#ecNote'); const note = (noteEl?.value || '').trim();
       if (!url){ inp.focus(); return; }
       const btn = $('#ecAddBtn'); btn.disabled = true;
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(name)}/editors-choice`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, note }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        // The award is recorded even if the fetch failed; say so rather than
+        // letting it look like nothing happened until someone hunts for it.
+        if (d && d.ingested === false) {
+          alert('Award recorded, but the recipe could not be fetched — it will not '
+              + 'appear until the page loads. Check the URL, or re-award to retry.');
+        }
         inp.value = '';
+        if (noteEl) noteEl.value = '';
         const acc = $('#ecAcc'); if (acc) acc.open = true;
         await loadEditorsChoice(name);
       } catch (e){ alert('Could not pin: ' + (e.message || e)); }
