@@ -40,6 +40,14 @@ _TRACKING_PARAMS = {
     # SERP hits of the SAME page differ only here and dodge dedup (seen: Google now
     # decorates organic results with srsltid, which fetched one page 4x in a batch).
     "srsltid", "gclsrc", "dclid", "gbraid", "wbraid", "gad_source", "_gl",
+    # Dotdash Meredith newsletter/aggregator decoration (EatingWell, Food & Wine,
+    # Serious Eats, MyRecipes — one publisher group, one param set). Worse than
+    # the Google case above: `bvee` is a MILLISECOND TIMESTAMP, so every click
+    # mints a unique URL and the same recipe would save as a NEW recipe each
+    # time. Measured 2026-08-13 on a phone capture of eatingwell.com/
+    # melting-zucchini-11798596, which arrived carrying all six and was stored
+    # under a 300-character identity with its own screenshot row.
+    "hid", "did", "lr_input", "lctg", "bvee", "kw",
 }
 
 
