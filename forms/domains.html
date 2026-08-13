@@ -725,10 +725,15 @@
           ? (m.rank_score <= 1 ? m.rank_score * 100 : m.rank_score).toFixed(1) : '—';
         const da = (typeof m.da === 'number') ? Math.round(m.da) : '—';
         const pa = (typeof m.pa === 'number') ? Math.round(m.pa) : '—';
-        // Curation checkbox (non-ingested rows only): tick the worthy ones → ⚙ Process
-        // selected ingests just those via the unblocker.
-        const pick = m.ingested ? '' :
-          `<input type="checkbox" class="ms-pick" data-url="${escapeHtml(m.url || '')}" title="select to process into master" style="flex:0 0 auto;width:15px;height:15px;accent-color:var(--accent)">`;
+        // Curation checkbox: tick the worthy ones → ⚙ Process selected ingests just
+        // those via the unblocker. An already-ingested row has nothing to select, but
+        // it still needs to OCCUPY the slot — rendering '' dropped the control's width
+        // and every corpus row shifted left, leaving the list with a jagged edge.
+        // The tick is not decoration: it answers "why has this row no checkbox?"
+        // in place, which an invisible spacer would not.
+        const pick = m.ingested
+          ? `<span class="ms-pick-done" title="already in the corpus — nothing to select" aria-label="already in the corpus" style="flex:0 0 auto;width:15px;height:15px;line-height:15px;text-align:center;color:var(--muted);font-size:11px">✓</span>`
+          : `<input type="checkbox" class="ms-pick" data-url="${escapeHtml(m.url || '')}" title="select to process into master" style="flex:0 0 auto;width:15px;height:15px;accent-color:var(--accent)">`;
         return `<li class="ed-t10-row"${m.selected ? '' : ' style="opacity:.62"'}>` +
           pick +
           `<span class="ed-t10-rank">${m.rank || i + 1}</span>${thumb}` +
