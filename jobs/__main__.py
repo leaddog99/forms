@@ -137,6 +137,38 @@ def _enqueue_dish_refresh(name: str) -> tuple[int | None, str | None]:
 #  Subcommands
 # ============================================================
 
+def _coerce_param(v: str):
+    """Turn a `--param k=v` string into the type the handler expects.
+
+    argparse hands back strings, and a handler testing `if params["score_only"]`
+    sees `"False"` — a NON-EMPTY STRING, therefore TRUE. On 2026-08-13 that
+    silently turned a full 177milkstreet publisher refresh into a score-only run:
+    exit code 0, "done — discovered=10 … stored=10", and not one page fetched.
+    The UI path sends real JSON booleans, so the two entry points disagreed about
+    what the same job meant.
+
+    A CLI that can only express strings cannot drive a JSON-param job runner.
+    Empty stays empty (`--param exclude_words=` means "no words"), and anything
+    unrecognised passes through as the original string.
+    """
+    s = v.strip()
+    low = s.lower()
+    if low in ("true", "yes", "on"):
+        return True
+    if low in ("false", "no", "off"):
+        return False
+    if low in ("none", "null"):
+        return None
+    try:
+        return int(s)
+    except ValueError:
+        pass
+    try:
+        return float(s)
+    except ValueError:
+        return v
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     """Enqueue a fresh job and run it. --dish is sugar for the dish_* types
     (sets params.dish_name + entity_ref so the in-flight guard works and the
@@ -160,7 +192,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"--param must be key=value, got {kv!r}")
             return 1
         k, v = kv.split("=", 1)
-        params[k] = v
+        params[k] = _coerce_param(v)
     entity_ref = args.entity_ref
     with _connect(api.DB_PATH) as conn:
         if entity_ref:
