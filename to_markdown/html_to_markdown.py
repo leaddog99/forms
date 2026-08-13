@@ -20,6 +20,7 @@ The JSON-LD section is omitted when no Recipe block is found. Page chrome
 (nav, footer, aside, script, style) is stripped before markdownify runs.
 """
 import copy
+import html as html_lib
 import json
 import random
 import re
@@ -775,7 +776,118 @@ def extract_recipe_jsonld(html: str, base_url: str) -> list[dict]:
         for nested in item.get("@graph", []) or []:
             if isinstance(nested, dict) and _is_recipe_type(nested.get("@type")):
                 out.append(nested)
+    if not out:
+        # Meta-tag JSON-LD, but NEVER a gated teaser. This function feeds the
+        # CONTENT path: whatever it returns is ingested as the recipe. Milk
+        # Street's teaser would arrive as 3 ingredients plus the literal string
+        # "... and more. Sign up for full access…" and one step, replacing the
+        # full method the markdown path reads correctly today. A teaser must not
+        # be allowed to outrank the real page. `page_declares_recipe()` exists
+        # for the callers that only need to know IF this is a recipe.
+        meta_nodes = _recipe_jsonld_in_meta(html, base_url)
+        usable = [n for n in meta_nodes if not jsonld_declares_gated([n])]
+        if meta_nodes and not usable:
+            print(f"[jsonld] meta Recipe declares isAccessibleForFree=false "
+                  f"(teaser) — not used as content: {base_url}")
+        elif usable:
+            print(f"[jsonld] recovered {len(usable)} Recipe block(s) from a "
+                  f"<meta name='application/ld+json'> tag: {base_url}")
+        out.extend(usable)
     return out
+
+
+def page_declares_recipe(html: str, base_url: str) -> bool:
+    """Does this page declare itself a Recipe in structured data — even a gated
+    teaser? The IS-IT-A-RECIPE question, which is not the same question as
+    "give me the recipe".
+
+    The candidate filter wants this one: a paywalled Milk Street page IS a
+    recipe, and dropping it as `no-recipe-structure` was a false statement about
+    the page. Whether we can READ it is decided later, by the extractor working
+    on the full markdown, which for this publisher usually succeeds.
+    """
+    # Cheap check first: the meta variant is a regex over the raw HTML, while
+    # extract_recipe_jsonld runs extruct over the whole document. Ordering it
+    # this way also keeps the harvest log quiet — the content-path messages
+    # belong to the content path, not to a yes/no question asked per candidate.
+    if _recipe_jsonld_in_meta(html, base_url):
+        return True
+    return bool(extract_recipe_jsonld(html, base_url))
+
+
+# `<meta name="application/ld+json" content="{...}">` — the JSON-LD payload in a
+# meta tag's content attribute instead of a <script> block. Not what the spec
+# says, but real: 177milkstreet.com publishes every recipe this way, and extruct
+# (correctly) only reads <script type="application/ld+json">, so a 180 KB page
+# carrying a complete schema.org Recipe scored ZERO structure and was rejected
+# as "no recipe structure" — a statement about the page that was simply false.
+_META_JSONLD_RE = re.compile(
+    r'<meta\b[^>]*\bname\s*=\s*["\']application/ld\+json["\'][^>]*>',
+    re.IGNORECASE,
+)
+_META_CONTENT_RE = re.compile(r'\bcontent\s*=\s*"([^"]*)"|\bcontent\s*=\s*\'([^\']*)\'',
+                              re.IGNORECASE | re.DOTALL)
+
+
+def jsonld_declares_gated(nodes: list[dict]) -> bool:
+    """Does this page's own structured data say the recipe is behind a paywall?
+
+    schema.org has an explicit flag for it, and 177milkstreet.com sets it
+    honestly: `isAccessibleForFree: false` plus a `hasPart` WebPageElement
+    naming the gated selector (`.paywalled-content`). Publishers do this so
+    search engines don't index a teaser as the article.
+
+    It matters because the teaser is DESIGNED to look like a recipe. Milk
+    Street's Tarte Tatin ships 3 real ingredients followed by the literal
+    string "... and more. Sign up for full access to all ingredients and
+    instructions." as a fourth, plus one instruction step. Ingested naively
+    that is a recipe row with an advert in its ingredient list.
+
+    Reading the flag turns a guess into the publisher's own statement.
+    """
+    for node in nodes or []:
+        if not isinstance(node, dict):
+            continue
+        free = node.get("isAccessibleForFree")
+        if free is False or str(free).strip().lower() in ("false", "no"):
+            return True
+        for part in node.get("hasPart", []) or []:
+            if not isinstance(part, dict):
+                continue
+            pfree = part.get("isAccessibleForFree")
+            if pfree is False or str(pfree).strip().lower() in ("false", "no"):
+                return True
+    return False
+
+
+def _recipe_jsonld_in_meta(html: str, base_url: str) -> list[dict]:
+    """Recipe JSON-LD hidden in a meta tag's `content` attribute.
+
+    A FALLBACK, tried only when the conforming <script> path found nothing, so a
+    page that publishes both is still read the standard way. The content
+    attribute is HTML-escaped (&quot; for every JSON quote), which is why it
+    survives inside an attribute at all — unescape before parsing.
+    """
+    found: list[dict] = []
+    for tag in _META_JSONLD_RE.findall(html or ""):
+        m = _META_CONTENT_RE.search(tag)
+        if not m:
+            continue
+        raw = html_lib.unescape(m.group(1) if m.group(1) is not None else m.group(2))
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError) as e:
+            print(f"[jsonld] meta-tag JSON-LD unparseable for {base_url!r}: {e}")
+            continue
+        for node in (payload if isinstance(payload, list) else [payload]):
+            if not isinstance(node, dict):
+                continue
+            if _is_recipe_type(node.get("@type")):
+                found.append(node)
+            for nested in node.get("@graph", []) or []:
+                if isinstance(nested, dict) and _is_recipe_type(nested.get("@type")):
+                    found.append(nested)
+    return found
 
 
 # Selectors tried as candidate "main content" roots, in declarative priority

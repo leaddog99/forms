@@ -89,7 +89,7 @@ FETCH_TIMEOUT_S = 10
 # more silent drops from UA mismatch. See [[single-path]].
 from to_markdown.html_to_markdown import (
     fetch_with_ua_fallback, fetch_with_full_fallback, extract_recipe_jsonld,
-    fetch_via_unblocker, unblocker_available, blocked_reason,
+    fetch_via_unblocker, unblocker_available, blocked_reason, page_declares_recipe,
 )
 from intake.translate import (
     detect_language, translate_markdown, translate_title, is_translation_plausible,
@@ -388,10 +388,19 @@ def _response_to_filter_signals(resp) -> tuple[str, bool, str]:
     """Derive the three filter signals (lower-cased visible text, has_recipe_jsonld,
     lang_code) from an already-fetched response. Shared by `_fetch_for_filter` and
     the render-escalation path so both score the page exactly the same way."""
-    # JSON-LD lives in <script type="application/ld+json"> blocks —
+    # JSON-LD usually lives in <script type="application/ld+json"> blocks —
     # extract BEFORE we strip scripts for phrase-scoring text.
+    #
+    # `page_declares_recipe`, not `extract_recipe_jsonld`: this is the IS-IT-A-
+    # RECIPE question, and it counts a GATED declaration too. 177milkstreet.com
+    # publishes its Recipe JSON-LD in a <meta name="application/ld+json"> tag
+    # with isAccessibleForFree=false; every page scored 0 structure and dropped
+    # as "no-recipe-structure", which was simply false about the page. Whether
+    # we can READ it is a later question, answered by the extractor on the full
+    # markdown — which for this publisher usually succeeds (the Jordanian
+    # flatbread came through complete: 3 ingredients, 4 steps).
     try:
-        has_recipe_jsonld = bool(extract_recipe_jsonld(resp.text, resp.url))
+        has_recipe_jsonld = page_declares_recipe(resp.text, resp.url)
     except Exception as e:
         print(f"      JSON-LD parse error for {getattr(resp, 'url', '?')!r}: {e}")
         has_recipe_jsonld = False
