@@ -1082,10 +1082,9 @@ def markdown_from_html(html: str, source_url: str = "") -> str:
 
     Same three steps `html_to_markdown` runs (select_main_content →
     clean_for_markdown → markdownify) so a browser-supplied page and a
-    server-fetched one are reduced identically. Factored out for the userscript
-    capture path, where the HTML comes from the curator's signed-in browser and
-    the server cannot fetch it at all: on a gated publisher that DOM is the only
-    place the recipe exists.
+    server-fetched one are reduced identically. Factored out when a caller needs
+    to reduce HTML it already holds — a browser-supplied capture, a cached body —
+    rather than re-fetching a page the server may not even be able to reach.
 
     Not a parallel pipeline — one converter, two sources of HTML.
     """

@@ -1002,15 +1002,16 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         if _human_only:
             print(f"  [harvest] {domain} is HUMAN-CAPTURE-ONLY (curator-set) — "
                   f"discovering and scoring, but paying for no page fetches.")
-            print(f"  [harvest] Ingest these from the cohort with the userscript or "
-                  f"bookmarklet, where YOUR browser is signed in and ours is not.")
+            print(f"  [harvest] Ingest these from the cohort with the manual queue "
+                  f"(open each page, click the bookmarklet), where YOUR browser is "
+                  f"signed in and ours is not.")
             check_recipe = False
             score_only = True
         elif _obt == "never":
             print(f"  [harvest] {domain} is content_obtainable=NEVER — skipping all "
                   f"page fetches (measured: repeated runs extracted nothing).")
-            print(f"  [harvest] Its recipes are captured by BOOKMARKLET/userscript, "
-                  f"where your browser is authenticated and ours is not. Scoring only.")
+            print(f"  [harvest] Its recipes are captured by BOOKMARKLET, where your "
+                  f"browser is authenticated and ours is not. Scoring only.")
             check_recipe = False
             score_only = True
 

@@ -426,8 +426,8 @@
             ${[
               ['open','🟢 Auto · open site','Fetch → verify → keep top-N → ingest. Normal, reachable sites.'],
               ['blocked','🔴 Auto · blocked site','Unblocker + full render, verify, keep top-N, ingest. Anti-bot — hands-off but paid (1 render each).'],
-              ['curate','✋ Curate · score & pick','<b>Ingests nothing.</b> Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or ⚡ userscript (free). Best for anti-bot / junk-heavy exports.'],
-              ['gated','🔒 Gated · human capture only','<b>The server can never read this one.</b> Discovers, scores and ranks as usual, but pays for NO page fetch and blocks ⚙ Process selected. Ingest from the cohort with ⚡ userscript / 📋 Queue, where your browser is signed in. For true paywalls (177milkstreet).'],
+              ['curate','✋ Curate · score & pick','<b>Ingests nothing.</b> Moz-rank only (0 fetches). Then check the worthy ones in the cohort → ⚙ Process selected (paid) or 📋 Queue (free, your browser). Best for anti-bot / junk-heavy exports.'],
+              ['gated','🔒 Gated · human capture only','<b>The server can never read this one.</b> Discovers, scores and ranks as usual, but pays for NO page fetch and blocks ⚙ Process selected. Ingest from the cohort with 📋 Queue, where your browser is signed in. For true paywalls (177milkstreet).'],
             ].map(([v,t,s]) => `<label class="hm-card" style="cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:9px 11px;display:block;transition:background .12s"><input type="radio" name="harvestMode" value="${v}" style="margin-right:6px"><b style="font-size:.9em">${t}</b><span style="display:block;margin-top:3px;font-size:.76em;color:var(--muted);line-height:1.35">${s}</span></label>`).join('')}
           </div>
           <p class="ed-notes-help" style="margin:0 0 12px;font-size:.78em">Mode sets the <b>fetch strategy · render · verify · score-only</b> options for you — fine-tune any of them below if needed.</p>
@@ -520,7 +520,7 @@
                forgotten on the next run the way the Score-only tick can. -->
           <label class="ed-check" style="display:flex;gap:8px;align-items:center;margin:2px 0 6px;font-size:.86em">
             <input type="checkbox" id="f_human_capture_only" ${Number(d.human_capture_only) === 1 ? 'checked' : ''}>
-            <span><b>Human capture only</b> — the server can <i>never</i> read this publisher's recipe bodies (true paywall). Discover, score and rank as usual, but pay for no page fetch, and refuse <b>⚙ Process selected</b>. Ingest from the cohort with <b>⚡ Run userscript</b> / <b>📋 Queue</b>, where your browser is signed in.</span>
+            <span><b>Human capture only</b> — the server can <i>never</i> read this publisher's recipe bodies (true paywall). Discover, score and rank as usual, but pay for no page fetch, and refuse <b>⚙ Process selected</b>. Ingest from the cohort with <b>📋 Queue (manual)</b>, where your browser is signed in.</span>
           </label>
           <pre id="topLog" style="display:none;max-height:240px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;margin:0 0 10px;white-space:pre-wrap;"></pre>
 
@@ -548,8 +548,6 @@
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
               <button type="button" class="ed-btn" id="processSelBtn" style="font-size:.8em;display:none" title="Extract the CHECKED rows into master via the unblocker (1 render each)">⚙ Process selected</button>
               <button type="button" class="ed-btn" id="queueCapBtn" style="font-size:.8em;display:none" title="FREE manual queue: opens each CHECKED page so you click your bookmarklet — no unblocker cost. (ROUGH prototype — UI redesign tomorrow.)">📋 Queue (manual)</button>
-              <button type="button" class="ed-btn" id="userscriptBtn" style="font-size:.8em;display:none" title="ZERO-CLICK FREE: the BCC capture userscript (Tampermonkey) walks the CHECKED pages in your real browser, beating anti-bot, saving each to master, paced 8–25s. Tracked as a job. Install once from /forms/bcc-capture.user.js">⚡ Run userscript</button>
-              <label id="slowWrap" class="ed-check" style="display:none;font-size:.76em;gap:4px;align-items:center" title="Slower delays (30–60s) for touchy / rate-limiting sites"><input type="checkbox" id="usSlow"> slow</label>
             </div>
             <!-- What the row checkboxes are for, and — once we have measured this
                  publisher — which of the three routes actually works on it. -->
@@ -610,7 +608,6 @@
       $('#refreshTopBtn').addEventListener('click', () => doRefreshTop(d.domain));
       $('#processSelBtn')?.addEventListener('click', () => processSelected(d.domain));
       $('#queueCapBtn')?.addEventListener('click', () => captureQueue(d.domain));
-      $('#userscriptBtn')?.addEventListener('click', () => runUserscriptQueue(d.domain));
       $('#clearTopBtn').addEventListener('click', () => doClearTop(d.domain));
       $('#exportUploadBtn')?.addEventListener('click', () => $('#exportUploadInput')?.click());
       $('#exportUploadInput')?.addEventListener('change', (e) => uploadExport(d.domain, e.target.files[0]));
@@ -829,10 +826,10 @@
         renderDomainTop(rows, true, '#domainCohortList');
         const cnt = $('#domainCohortCount');
         if (cnt) cnt.textContent = rows.length ? `(${d.selected_count || 0}★ / ${d.count || rows.length} scored)` : '';
-        // ⚙ Process selected / queue / userscript operate on checked also-rans — show them
+        // ⚙ Process selected / 📋 Queue operate on checked also-rans — show them
         // only when the cohort has rows not already in the corpus.
         const pickable = rows.some(m => !m.ingested);
-        ['#processSelBtn', '#queueCapBtn', '#userscriptBtn', '#slowWrap'].forEach(sel => {
+        ['#processSelBtn', '#queueCapBtn'].forEach(sel => {
           const b = $(sel); if (b) b.style.display = pickable ? 'inline-flex' : 'none';
         });
         paintPickHint(pickable);
@@ -868,12 +865,12 @@
         proc.title = gated
           ? 'Disabled — this publisher is HUMAN CAPTURE ONLY. The server cannot read its '
             + 'recipe bodies, so this would spend one render each to reach a paywall. '
-            + 'Use ⚡ Run userscript or 📋 Queue.'
+            + 'Use 📋 Queue (manual).'
           : 'Extract the CHECKED rows into master via the unblocker (1 render each)';
       }
       if (gated){
-        host.textContent = 'Tick the rows worth keeping, then use ⚡ Run userscript or '
-          + '📋 Queue (manual). This publisher is marked HUMAN CAPTURE ONLY — the server '
+        host.textContent = 'Tick the rows worth keeping, then use 📋 Queue (manual) — open '
+          + 'each page and click your bookmarklet. This publisher is HUMAN CAPTURE ONLY — the server '
           + 'cannot read its recipe bodies at any price, so ⚙ Process selected is off.'
           + (tried >= 4 ? `  Measured: ${got} of ${tried} obtained by the server.` : '');
         host.style.display = 'block';
@@ -884,7 +881,7 @@
         const pct = Math.round((got / tried) * 100);
         if (pct < 40){
           warn = true;
-          msg = `Tick the rows worth keeping — then use ⚡ Run userscript or 📋 Queue. `
+          msg = `Tick the rows worth keeping — then use 📋 Queue (manual). `
               + `Measured here: only ${got} of ${tried} (${pct}%) came through the paid `
               + `unblocker, so ⚙ Process selected mostly spends renders for nothing. `
               + `Your signed-in browser reads these; the server cannot.`;
@@ -927,7 +924,7 @@
     // queue. The app drives the OPENING of each checked page; the human clicks their
     // bookmarklet to save it (the real browser beats the anti-bot — no unblocker cost).
     // We auto-advance by polling /top: a URL flips to ingested once the bookmarklet saves
-    // it to master. The per-page bookmarklet click is irreducible WITHOUT a userscript/
+    // it to master. The per-page bookmarklet click is irreducible without an
     // extension (a web app can't inject into a third-party tab) — see docs.
     async function captureQueue(domain){
       const queue = Array.from(document.querySelectorAll('#domainCohortList .ms-pick:checked'))
@@ -1045,61 +1042,6 @@
       render('Ready — review the URL below, then Open & capture or Skip.');
     }
 
-    // Score-only path #2 ZERO-CLICK: hand the checked URLs to the Tampermonkey userscript.
-    // Server opens a tracked `userscript_capture` job + returns the first URL; we open it
-    // with the #bcc-capture hash, and the installed userscript walks the rest in the real
-    // browser (free, beats anti-bot), paced 8–25s (or slow 30–60s).
-    async function runUserscriptQueue(domain){
-      const picks = Array.from(document.querySelectorAll('#domainCohortList .ms-pick:checked'))
-        .map(c => c.dataset.url).filter(Boolean);
-      const hint = $('#topHint');
-      if (!picks.length){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Check at least one row to queue.'; } return; }
-      const slow = $('#usSlow')?.checked || false;
-      if (!confirm(`Run the userscript over ${picks.length} page(s)? It opens a tab and walks them in your real browser (free), pausing ${slow ? '30–60' : '8–25'}s between each.\n\nRequires the BCC capture userscript installed in Tampermonkey (install once from /forms/bcc-capture.user.js).`)) return;
-      const btn = $('#userscriptBtn'); const restore = () => { if (btn){ btn.disabled = false; btn.textContent = '⚡ Run userscript'; } };
-      if (btn){ btn.disabled = true; btn.textContent = '⏳ Starting…'; }
-      // OPEN THE TAB NOW, inside the click's user gesture. The window.open used to
-      // happen AFTER `await fetch(...)`, by which point the activation is spent and
-      // Chrome blocks the pop-up silently — the job was created, the hint claimed
-      // "Userscript launched", and nothing ever ran. Job 825 sat at attempted=0 for
-      // 20 minutes that way. bookmarklet.js already opens synchronously for exactly
-      // this reason; this path had drifted from it.
-      const win = window.open('', '_blank');
-      if (win){
-        win.document.write('<p style="font:15px Georgia,serif;padding:24px">'
-          + 'Starting BCC capture…</p>');
-      }
-      try {
-        const r = await fetch(`/domains/${encodeURIComponent(domain)}/userscript/start`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: picks, slow }) });
-        const data = await r.json().catch(() => ({}));
-        if (r.status === 409){ if (hint) hint.textContent = 'A userscript run is already in flight for this domain.'; if (data.stream_url) streamRefresh(data.stream_url, domain, data.job_id); if (win) win.close(); restore(); return; }
-        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        // Navigate the ALREADY-OPEN tab to page 1 with the capture hash → the
-        // installed userscript takes over from there.
-        const hash = '#bcc-capture=' + encodeURIComponent(location.origin + '|' + data.job_id + '|' + data.host);
-        if (!win){
-          // Say so instead of claiming success. A blocked pop-up is the one failure
-          // where the job exists, the UI looks fine, and nothing whatsoever happens.
-          if (hint){
-            hint.style.color = 'var(--ed-warn)';
-            hint.textContent = `Pop-up blocked — job #${data.job_id} is queued but no tab opened. `
-              + `Allow pop-ups for this page and press ⚡ Run userscript again, or open this `
-              + `URL manually: ${data.next_url + hash}`;
-          }
-          restore();
-          return;
-        }
-        win.location.href = data.next_url + hash;
-        if (hint){ hint.style.color = ''; hint.textContent = `Userscript launched (job #${data.job_id}) — watch the opened tab; ${data.total} queued.`; }
-        streamRefresh(data.stream_url, domain, data.job_id);   // job log + reload-on-done
-        restore();
-      } catch (e){
-        if (win) win.close();   // don't strand a blank tab when the start failed
-        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Userscript start failed: ' + (e.message || e); }
-        restore();
-      }
-    }
 
     // Harvest MODE — one intent picker that sets the scattered low-level flags. The raw
     // controls (fetch strategy / render / verify / score-only) stay editable below as the
@@ -1243,12 +1185,8 @@
           .then(fresh => { domains[domain] = fresh; renderList(); }).catch(() => {});
         if (status === 'cancelled' || cancelled){ done('Cancelled.', false); return; }
         if (status === 'error'){ done(`Refresh errored — ${errorMsg || 'see the job log'}.`, true); return; }
-        if (res && Array.isArray(res.saved)){   // userscript_capture job
-          done(`Userscript run finished — saved ${res.saved.length} of ${res.total || 0} into master.`);
-          return;
-        }
         if (res && res.score_only){
-          done(`Scored ${res.stored || 0} candidates (no fetch/ingest). Open ☰ Scored cohort, check the worthy ones, then ⚙ Process selected.`);
+          done(`Scored ${res.stored || 0} candidates (no fetch/ingest). Open ☰ Scored cohort, check the worthy ones, then ⚙ Process selected — or 📋 Queue if the publisher is gated.`);
           return;
         }
         if (res && res.ingested !== undefined){   // process-selected job
