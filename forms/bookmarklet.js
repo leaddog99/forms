@@ -379,11 +379,25 @@
       const targetH = Math.max(target.scrollHeight, target.offsetHeight, rect.height);
       const targetW = Math.max(target.scrollWidth, target.offsetWidth, rect.width);
 
+      // WINDOW WIDTH DECIDES WHICH MEDIA QUERIES RUN, so it must match the layout
+      // the user is actually looking at. This passed
+      // max(targetW, document.body.scrollWidth), and scrollWidth is routinely
+      // inflated by an overflowing ad or embed — on a phone that laid the clone
+      // out at ~1900px, so DESKTOP css applied inside a 390px-wide capture: the
+      // article column rendered at a quarter width, the hero image clipped off
+      // the right, the text microscopic. It was always this broken; at 65-73px
+      // wide the result was simply too small to read as wrong (measured on two
+      // captures from 2026-08-13 01:59 and 02:05, before any change).
+      //
+      // innerWidth is the honest answer — the viewport the page is currently
+      // rendered for. Falling back to targetW keeps the element from being laid
+      // out narrower than the region we are about to capture.
+      const viewW = Math.max(window.innerWidth || 0, targetW);
       const shotPromise = html2canvas(target, {
         height: targetH,
         width: targetW,
         windowHeight: targetH,
-        windowWidth: Math.max(targetW, document.body.scrollWidth),
+        windowWidth: viewW,
         useCORS: true, allowTaint: false, logging: false,
         backgroundColor: '#ffffff', imageTimeout: 8000,
         onclone: function (d) {
