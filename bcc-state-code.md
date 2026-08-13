@@ -4241,11 +4241,172 @@ orphans 0. Backup: `docs/reports/coquilles-dedupe-backup.json`.
 
 ---
 
+## Session 2026-08-13 (afternoon) — the paywall discount finally computed, and a screenshot rabbit hole
+
+The morning entry above covers R7 and the "why didn't it score?" chain. This is the
+afternoon: R8/R6/R4, the calibration paying off, a feature deleted, and a long failure
+of method at the end that is worth reading before touching the screenshot path again.
+
+### R8 — meta-tag JSON-LD, and the teaser trap
+
+177milkstreet publishes every recipe's schema.org Recipe in a
+`<meta name="application/ld+json" content="…">` tag. extruct reads only the `<script>`
+form, so a **180 KB page carrying a complete Recipe declaration scored ZERO structure** —
+8 of 10 candidates dropped as `no-recipe-structure`. R7 is what made this diagnosable: the
+run logged **zero FETCH-FAIL**, so the residual really was a structure problem.
+
+The recommended fix ("a contained addition to `extract_recipe_jsonld`") would have made the
+corpus WORSE, because what is in that tag is a **paywall teaser**: 3 of N ingredients plus
+the literal string *"… and more. Sign up for full access to all ingredients and
+instructions."* and one step. So it became two functions —
+
+| function | question | gated teaser |
+|---|---|---|
+| `page_declares_recipe()` | IS this a recipe? | **counts** (the candidate filter asks this) |
+| `extract_recipe_jsonld()` | GIVE me the recipe | **refuses** (whatever it returns is ingested) |
+
+`jsonld_declares_gated()` reads schema.org's own `isAccessibleForFree` on the node and on
+any `hasPart`. Milk Street sets it honestly.
+
+### Milk Street is NOT crackable — settled, do not re-derive
+
+Measured: `1 of 9 extracted via unblocker_render (11% yield)`. The unblocker gets title,
+hero, author, times and headnote, then *"To access this recipe, you need to be a member."*
+**There are no ingredients and no method in the response.** Verified against two pages held
+in FULL (austrian-potato-salad 12 ing, gateau-basque 14 ing): both return the paywall
+notice today. Nothing regressed — it was always this way. **The nine complete Milk Street
+recipes in the corpus came from the curator's signed-in browser.** The Jordanian flatbread
+is the 11% because its short method sits above the paywall; generalising that one page into
+"Milk Street is crackable" is the mistake that re-opened this and cost hours.
+See [[project_milkstreet_gated]] and docs/acquisition-logic-study.md §6d.
+
+### R4 — "Gated · human capture only"
+
+New `domains.human_capture_only`. Deliberately NOT a reuse of existing flags:
+`paywall` is a SCORING fact, `harvestable` skips the publisher entirely, `score_only` is the
+right behaviour but a **per-run checkbox** — forgetting it costs a render per URL to
+rediscover a paywall already measured. R4 is a property of the publisher, enforced
+server-side in the harvest AND at `/domains/{d}/process-selected` (409). It is the CURATED
+twin of the measured `content_obtainable='never'` latch. 177milkstreet is set to it.
+
+**ATK is NOT gated** — measured, not assumed: two ATK pages fetch complete, free, with
+Recipe JSON-LD and no paywall words. A publisher can be link-poor (ATK's paywall tax is the
+largest in the corpus) while its HTML stays readable. That distinction is the whole point of
+keeping the two flags separate.
+
+### THE DISCOUNT COMPUTED
+
+Captured 6 more Milk Street recipes by hand to clear `MIN_N = 12`, then ran the calibration:
+
+| publisher | n | gap | effect | verdict |
+|---|---|---|---|---|
+| americastestkitchen.com | 23→33 | 16.26 | **5.19** | **−56.7% → −52.6%** |
+| 177milkstreet.com | 13 | 12.37 | 3.06 | **−51.4%** |
+| bostonglobe.com | 32 | 7.98 | 1.17 | −27.0% (just clears the 1.0 floor) |
+| cooking.nytimes.com | 176 | **−1.5** | −0.41 | `no_penalty` — gated pages score ABOVE free peers |
+| latimes.com | 52 | 3.03 | 0.42 | `inconclusive` |
+
+Milk Street's rows moved from OU −4.08…+7.92 to **+8.30…+20.30** — nine of thirteen were at
+or below zero, structurally unable to win a dish cohort. ATK's top rows went ~2 → ~18.
+NYT clearing as `no_penalty` is the gate working: not every paywall is taxed.
+
+`calibrate(persist=True)` re-stamps internally, so a follow-up `restamp_recipes` correctly
+reports 0. That is not the silent-zero bug from the morning.
+
+### ATK's first publisher refresh (job 829)
+
+Never harvested before — its 33 rows had arrived one or two at a time across 15 dates from
+dish batches and bookmarklet grabs. First run: 20 discovered → 14 kept → **10 extracted**,
+131s, ~13s per recipe. All 5 `no-struct` drops were category pages (`/recipes/chicken`,
+`/recipes/all`, `/recipes/paleo`) — the filter working. Obtainability now measured at
+`direct — 10 of 10 (100%)`.
+
+### The userscript capture queue is GONE
+
+3 runs over 7 weeks (jobs 358, 825, 826), **0 recipes ever**. Worse than inert: it reported
+"Userscript launched" when the pop-up had been blocked, and left a `running` job nothing
+could cancel, holding the publisher's entity lock. Removed from code, forms AND db.
+Its job is done by the manual queue (**↗↗ Open all N** → click the bookmarklet), which
+works. Kept from the effort: `markdown_from_html()`, `jsonld_declares_gated()`,
+`page_declares_recipe()`.
+
+### Capture always targets master
+
+The cohort queue nudged the form via `localStorage['sidebar:user_id']='0'` — which a
+bookmarklet press OUTSIDE the queue never set (a Milk Street capture landed in user 5's
+library) and which, once written, PERSISTED to mis-target the next personal grab. Replaced
+with `_bcc_master=1` on the opened tab, reusing the SAME hint channel as `#_bcc_dish=…`.
+A first pass invented a separate marker; that was a parallel pipeline for a question the
+codebase had already answered, and it was removed.
+
+### Two landmines fixed
+
+- **jobs CLI `--param` had no type coercion.** `score_only=False` arrived as the STRING
+  `"False"` — truthy — silently turning a full harvest into a score-only run that reported
+  a green "done … stored=10" having fetched nothing.
+- **`reset_interrupted_jobs` assumed every 'running' row was dead.** Jobs run out of
+  process, so merely IMPORTING the app wiped a healthy job's status. It killed job 784
+  before, and job 822 during this session. Now `mark_running` stamps `os.getpid()` and the
+  reset only touches rows whose process is genuinely gone (Windows: OpenProcess +
+  GetExitCodeProcess — `os.kill(pid,0)` TERMINATES on Windows, it is not a probe).
+
+### Domains page redesign
+
+Five ordered steps — ① Mode (a real 2×2; auto-fit produced a 3+1 orphan) → ② Scope & limits
+(**above** the sources, which is what says they apply to both) → ③ Discovery source
+(**SEMrush first and default**; SERP is barely used now) → ④ Publisher settings (one
+scannable list; a 7-line paragraph had been serving as a checkbox label) → ⑤ Run, with
+nothing after it. New in components.css: `.cfg-panel`, `.hm-grid`, `.opt-list`,
+`.opt-status`.
+
+### Process notes — the screenshot rabbit hole
+
+Four hours went into a picture, and the method was wrong, not just the fixes.
+
+- **Four independent faults stacked on one symptom**: a 12.5%-per-side display crop
+  (`aspect-ratio:3/2` on a 1.875:1 capture); a long-edge cap that destroyed WIDTH on a
+  portrait ribbon (65×35 phone captures); `windowWidth` from an inflated
+  `document.body.scrollWidth`, so DESKTOP media queries ran inside a phone-width capture;
+  and `bvee`, a **millisecond timestamp** in the URL that minted a new recipe identity on
+  every newsletter click.
+- **I fixed them one at a time without confirming which one the curator was looking at**,
+  so each fix moved the symptom instead of closing it. The rule that would have saved the
+  evening: *get the artefact first* — pull the bytes, measure them, and only then change
+  code. Two phone captures from 01:59 and 02:05 were 73×39 and 72×38, which proved the path
+  had been broken before the session started; that measurement existed the whole time.
+- **I resized the curator's browser window to phone dimensions and left it that way**, then
+  spent a round diagnosing a symptom I had caused.
+- **I deleted the 622×332 phone capture as an "orphan" before understanding it** — the best
+  evidence available, destroyed.
+- **A blanket revert took a CORRECT fix down with it.** The next phone capture came back
+  67×36 within minutes, proving the width cap had been right. Re-applied the two capture
+  fixes; deliberately left the display `aspect-ratio` change out, because that is a change
+  to a page the curator needs stable.
+- **Cache-buster churn is a real cost.** `components.css` was bumped three times in one
+  session against no-cache HTML, so reloads landed on different CSS/markup combinations —
+  "it seems to jump around". Bump once, at the end.
+
+---
+
 ## START HERE — state of play as of 2026-08-13
 
-**Branch `split/enrichment-api`, pushed (6741a82, 2e7a5a9, c424fa3). Server restarted and
-current.** Data repairs of 2026-08-13 are IN `recipes.db` — 1,739 rows re-derived, 28
-re-scored, 53 `rootDomain` corrected, 1 row merged. Refresh the dump before relying on it.
+**Branch `split/enrichment-api`, pushed through 03eb655. Server restarted and current.**
+
+Data changes of 2026-08-13 are IN `recipes.db` — morning: 1,739 rows power-re-derived, 28
+re-scored off archive.org, 53 `rootDomain` corrected, 1 row merged. Afternoon: the paywall
+calibration APPLIED (7 publishers; Milk Street −51.4%, ATK −52.6%), ATK's first publisher
+refresh (+10 recipes), 6 Milk Street recipes hand-captured to clear n=12, the
+`userscript_capture` job type and its 3 rows deleted.
+
+**Do first when you return:** one phone bookmarklet grab. The two capture fixes (width cap
++ `windowWidth`) are in but have never been tested TOGETHER on a real phone — that is the
+only open question from the screenshot work. Pull the stored bytes and measure them; do not
+judge by eye. Anything under 320px wide is now refused outright, so a bad capture leaves NO
+screenshot rather than a smudge.
+
+**Still reverted on purpose:** the recipe form's screenshot `aspect-ratio: 3/2` → `15/8`.
+It IS a real 12.5%-per-side crop of every screenshot, server and browser alike, but it is a
+change to a page that needed to be left stable. Re-apply when convenient (8e0cdfc).
 
 ### The product thesis (read this first — unchanged, still settled)
 
@@ -4425,14 +4586,14 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
   * Verify before building: how the bookmarklet's STAGING step behaves when it lands in
     a tab that already holds a staged capture, and whether the recipe form's
     localStorage store-context fights a URL-supplied record.
-- **R8 and R9 are still open** (`docs/acquisition-logic-study.md`): parse JSON-LD in
-  `<meta name="application/ld+json">` (Milk Street), and MEASURE microdata/microformat/rdfa
-  across a real sample of `no-struct` rejects before adding any of them. R7 is shipped, and
-  it changed what that sample means — reject reasons now separate "we never got the page"
-  from "the page has no recipe structure", so the measurement is finally worth taking.
-- **Still open from R1-R6:** R4 (a fourth harvest mode, "gated — human capture only"),
-  R5 (acquisition rows in the ledger), R6 (skip the extract render-retry when escalation
-  already failed).
+- **R9 is still open** (`docs/acquisition-logic-study.md`): MEASURE
+  microdata/microformat/rdfa across a real sample of `no-struct` rejects before adding any
+  of them. R7 and R8 are shipped, and between them they changed what that sample means —
+  reject reasons now separate "we never got the page" from "the page has no recipe
+  structure", and meta-tag JSON-LD no longer counts as missing. The measurement is finally
+  worth taking.
+- **Still open from R1-R6:** R5 only (acquisition rows in the ledger). R4 shipped as
+  `domains.human_capture_only`; R6 shipped as `_render_retry_would_help`.
 - **The unsaved-work guard is done for domains, NOT for `dishes_v2.html`** (identical
   structure, the fix lifts directly) or the recipe form (which needs a real dirty flag
   first — `saveBtn.disabled` there means "has content", not "is clean").
