@@ -4403,6 +4403,28 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
   `check_embeddings.py`; snapshot capture; `user_api_keys`.
   (The archive-47 rows are DONE — see 2026-08-13.)
 
+- **DEFERRED — tab explosion / page stacking.** Every bookmarklet capture and every
+  "new" spawns a tab, so they pile up. Design settled in discussion 2026-08-13, NOT built:
+  * **One tab per PAGE TYPE is browser-native** — `window.open(url, 'bcc-recipe')` reuses
+    the tab already holding that name. Per type (recipe / dish / domain / review), never
+    per record, or the explosion just returns. A tab opened manually has no name and
+    can't be adopted; that's the known gap.
+  * **Do NOT build a prev/next stack.** Give records real URLs and let history BE the
+    stack: `pushState` + `popstate` buys back/forward, the back gesture, reopen-closed-tab
+    and session restore. A JS-held stack dies on refresh and can't be shared or bookmarked.
+  * Cheapest shape needing zero server work: query params on the existing static pages
+    (`domains.html?domain=…`, `dishes_v2.html?dish=…`), read from `location.search` on
+    load. Pretty paths need a catch-all route and can come later. **The recipe form
+    already does this** — it serves `/r/<uuid>` and rewrites the URL on Clear.
+  * **The hazard is unsaved work.** Many tabs is messy but SAFE; reuse is destructive —
+    capture #20 lands where #19 is still unsaved. Reuse must be gated on a real dirty
+    check. That was the blocker on the recipe form and it is now cleared (2026-08-13:
+    real snapshot-diff dirty flag). `dishes_v2.html` still has no guard at all.
+  * Keep an escape hatch: honour ctrl/cmd-click for a genuine new tab — comparing two
+    recipes side by side is sometimes the point.
+  * Verify before building: how the bookmarklet's STAGING step behaves when it lands in
+    a tab that already holds a staged capture, and whether the recipe form's
+    localStorage store-context fights a URL-supplied record.
 - **R8 and R9 are still open** (`docs/acquisition-logic-study.md`): parse JSON-LD in
   `<meta name="application/ld+json">` (Milk Street), and MEASURE microdata/microformat/rdfa
   across a real sample of `no-struct` rejects before adding any of them. R7 is shipped, and
