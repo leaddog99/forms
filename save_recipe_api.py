@@ -466,6 +466,14 @@ def _auto_enrich_applies(user_id: int) -> bool:
 # crawled it, or what an operator would do about it — a member capturing a
 # recipe is a customer of the product, not an operator of the pipeline. Staff
 # still get the full diagnostic; see the redaction at the /recipes boundary.
+# How many consecutive failed captures retire a row from the nightly sweep, and
+# how long before it is tried again. Two rather than one: a single failure is a
+# transient (a slow page, a restart mid-render) and retiring on it would quietly
+# shrink coverage. 90 days because the causes seen are publisher-side and slow-
+# moving — a TLS chain, a paywall, a timeout — not things that change weekly.
+SCREENSHOT_FAIL_LATCH = 2
+SCREENSHOT_RETRY_DAYS = 90
+
 GENERIC_UNSCORED_NOTE = (
     "Score not yet available for this page — it usually appears within a few days.")
 
@@ -7219,7 +7227,10 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
         from input.pipeline.screenshot_pipeline import screenshot_id_for
         from datetime import timedelta
         counts = {"scanned": 0, "no-shot": 0, "no-blob": 0, "changed": 0,
-                  "aged": 0, "captured": 0, "failed": 0, "skipped": 0}
+                  "aged": 0, "captured": 0, "failed": 0, "skipped": 0,
+                  # Always present, so a run that latched nothing still says 0
+                  # rather than omitting the key and reading as "not implemented".
+                  "latched": 0}
         media = sqlite3.connect(MEDIA_DB_PATH, timeout=30)
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(days=max_age_days) if max_age_days > 0 else None
@@ -7282,6 +7293,17 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
                         continue
                     if mode == "stale" and reason in ("no-shot",):
                         continue
+                    # Skip a row that has already failed repeatedly, until its
+                    # retry window opens. Counted separately so "we are not trying"
+                    # never looks like "we tried and it worked".
+                    _fails = int((src.get("screenshotFailures") or 0))
+                    if _fails >= SCREENSHOT_FAIL_LATCH:
+                        _last = str(src.get("screenshotLastFailedAt") or "")
+                        _retry_at = (datetime.now(timezone.utc)
+                                     - timedelta(days=SCREENSHOT_RETRY_DAYS)).isoformat()
+                        if _last and _last > _retry_at:
+                            counts["latched"] = counts.get("latched", 0) + 1
+                            continue
                     counts[reason] += 1
 
                     before = (d.get("_source") or {}).get("pageScreenshot")
@@ -7289,8 +7311,35 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
                     after = (d.get("_source") or {}).get("pageScreenshot")
                     if not after:
                         counts["failed"] += 1
+                        # LATCH IT. Measured 2026-08-14: the SAME 45 rows failed on
+                        # six consecutive nights (jobs 778->835) — 45 attempted, 45
+                        # failed, 0% success — while `scanned` climbed 5,186->5,549.
+                        # A capture that has never once worked is not a transient
+                        # miss, and at limit=100 those 45 would eat HALF the nightly
+                        # budget forever.
+                        #
+                        # Latched WITH AN EXPIRY, not permanently: washingtonpost
+                        # times out and edibleboston fails TLS, and either could be
+                        # fixed by the publisher or by us. SCREENSHOT_RETRY_DAYS
+                        # later the row is eligible again, so a site that starts
+                        # working is picked up without anyone remembering to clear
+                        # a flag.
+                        _src = d.get("_source") or {}
+                        _n = int(_src.get("screenshotFailures") or 0) + 1
+                        _src["screenshotFailures"] = _n
+                        _src["screenshotLastFailedAt"] = datetime.now(timezone.utc).isoformat()
+                        d["_source"] = _src
+                        conn.execute(f"UPDATE {table} SET data = ? WHERE id = ?",
+                                     (json.dumps(d, indent=2), rid))
+                        conn.commit()
                         continue
                     counts["captured"] += 1
+                    # Recovered — clear the latch so the counter can't creep up over
+                    # years of unrelated misses and quietly retire a working page.
+                    _src = d.get("_source") or {}
+                    if _src.pop("screenshotFailures", None) is not None:
+                        _src.pop("screenshotLastFailedAt", None)
+                        d["_source"] = _src
                     if after != before:
                         conn.execute(f"UPDATE {table} SET data = ? WHERE id = ?",
                                      (json.dumps(d, indent=2), rid))
