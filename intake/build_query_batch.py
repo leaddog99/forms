@@ -1303,16 +1303,54 @@ _GENERIC_2L_TLDS = {"io", "co", "ai", "me", "tv", "cc", "ly", "fm", "gg", "app",
 _SITE_TLD_RE = re.compile(r"site:\s*(?:https?://)?(?:www\.)?[^\s/]*\.([a-z]{2})\b",
                           re.IGNORECASE)
 
+# A query written in a NON-LATIN script is as strong a foreign-locale signal as
+# `site:.gr` — it can only match foreign-language pages. Ranges cover the scripts
+# we actually harvest in: Greek, Cyrillic, Hebrew, Arabic, Thai, the CJK block
+# (Chinese/Japanese kanji), kana, and Hangul. Latin-with-accents (French,
+# Spanish, Italian) is deliberately NOT here: those queries also match English
+# pages, so the script tells us nothing. Those languages need the explicit dish
+# locale field.
+_NON_LATIN_RANGES = (
+    (0x0370, 0x03FF),   # Greek
+    (0x0400, 0x04FF),   # Cyrillic
+    (0x0590, 0x05FF),   # Hebrew
+    (0x0600, 0x06FF),   # Arabic
+    (0x0E00, 0x0E7F),   # Thai
+    (0x3040, 0x30FF),   # Hiragana + Katakana
+    (0x3400, 0x4DBF),   # CJK Unified Extension A
+    (0x4E00, 0x9FFF),   # CJK Unified
+    (0xAC00, 0xD7AF),   # Hangul syllables
+)
+
+
+def _query_is_non_latin(q: str) -> bool:
+    """True when the query carries characters from a non-Latin script."""
+    return any(any(lo <= ord(ch) <= hi for lo, hi in _NON_LATIN_RANGES)
+               for ch in (q or ""))
+
 
 def _query_targets_foreign_country(queries: list[str]) -> bool:
-    """TEMPORARY heuristic: True when a query pins results to a country via a
-    `site:.<ccTLD>` operator (e.g. `site:.gr`). Such batches harvest
-    low-authority foreign publishers that the global/US-calibrated OU baseline
-    scores negative almost by construction, so the min-OU floor is relaxed for
-    them (see `_min_ou_filter`). Replace once dishes carry an explicit
-    locale/country field — see docs/dish-variants-membership.md §5/§7.
+    """TEMPORARY heuristic: True when a query can only be answered by foreign
+    pages — either it pins results to a country via a `site:.<ccTLD>` operator
+    (e.g. `site:.gr`), or it is WRITTEN in a non-Latin script (e.g. `担担面`).
+    Such batches harvest low-authority foreign publishers that the
+    global/US-calibrated OU baseline scores negative almost by construction, so
+    the min-OU floor is relaxed for them (see `_min_ou_filter`).
+
+    The script test was added 2026-08-14 after the Dan Dan Noodles run: the
+    query was `担担面`, which pins results to Chinese-language pages just as
+    hard as `site:.cn` would, but tripped none of the ccTLD checks. Both of
+    that run's min-OU drops were its Chinese pages (OU -7.64 and -3.04) — the
+    exact cull this relax exists to prevent.
+
+    Replace once dishes carry an explicit locale/country field — see
+    docs/dish-variants-membership.md §5/§7. Note this only ever relaxes a
+    FLOOR; ranking still orders on OU, so a genuinely weak foreign page still
+    loses on rank.
     """
     for q in queries or []:
+        if _query_is_non_latin(q):
+            return True
         for m in _SITE_TLD_RE.finditer(q or ""):
             tld = m.group(1).lower()
             if tld != "us" and tld not in _GENERIC_2L_TLDS:
