@@ -37,6 +37,7 @@ from __future__ import annotations
 import hashlib
 import io
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from PIL import Image, ImageOps
@@ -109,10 +110,52 @@ def _fetch_image_via_unblocker(url: str) -> Optional[bytes]:
         return None
 
 
+# Query strings that are a CDN RESIZE DIRECTIVE rather than an identifier. An
+# og:image often points at a thumbnail-sized derivative, so rehosting the URL as
+# given banks a postage stamp forever. Qiniu (`?imageView2/1/w/300/h/200/...`,
+# used by chuimg/xiachufang) is the case that surfaced this; the width/height
+# forms cover Cloudinary, imgix, WordPress and friends.
+_RESIZE_QUERY_HINTS = ("imageview2", "imagemogr", "/w/", "w=", "width=",
+                       "h=", "height=", "resize", "fit=", "size=")
+
+
+def _full_size_variant(url: str) -> Optional[str]:
+    """The same image without its resize query, when the query looks like a
+    resize directive. None when there is nothing worth trying."""
+    try:
+        parts = urlsplit(url)
+    except Exception:
+        return None
+    if not parts.query:
+        return None
+    q = parts.query.lower()
+    if not any(h in q for h in _RESIZE_QUERY_HINTS):
+        return None
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
 def _fetch_image_bytes(url: str) -> Optional[bytes]:
     """Direct browser-UA GET; on failure (an anti-bot CDN blocking the direct download)
     retry the download THROUGH the web unblocker so anti-bot publishers' images still rehost
-    locally instead of leaving a blank/hotlinked remote URL."""
+    locally instead of leaving a blank/hotlinked remote URL.
+
+    When the URL carries a resize directive, try the un-parameterized original
+    FIRST and keep it only if it is genuinely bigger. Self-validating rather than
+    pattern-trusting: a CDN that needs its query to serve anything at all just
+    fails the probe and we fall through to the URL as given. Measured 2026-08-14
+    on xiachufang — `?imageView2/1/w/300/h/200/q/75` yields 300x200 / 16 KB, the
+    bare path 1080x1440 / 240 KB.
+    """
+    full = _full_size_variant(url)
+    if full and full != url:
+        cand = _fetch_image_direct(full)
+        if cand and len(cand) > 0:
+            small = _fetch_image_direct(url)
+            if small is None or len(cand) > len(small):
+                print(f"[image_pipeline] using full-size original "
+                      f"({len(cand)}B vs {len(small) if small else 0}B): {full[:90]}")
+                return cand
+            return small
     direct = _fetch_image_direct(url)
     return direct if direct is not None else _fetch_image_via_unblocker(url)
 

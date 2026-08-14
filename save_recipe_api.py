@@ -10461,15 +10461,29 @@ def extract_recipe_from_url(
             if val:
                 src[src_key] = val
         og_image_url = (og_meta.get("image") or "").strip()
-        if og_image_url and not src.get("previewImage"):
+        # COOPT ANY REMOTE HERO, not just a missing one. The old gate ("previewImage
+        # is empty") treated "already set" as "already ours" — but several paths
+        # populate previewImage with the publisher's REMOTE url, and those rows then
+        # skipped the coopt and hotlinked forever. That is fine until the CDN refuses
+        # to be hotlinked: chuimg (xiachufang) serves the image to us server-side but
+        # returns 403 to a browser sending OUR referer, so the recipe form showed no
+        # hero at all while a server-side fetch of the same url said 200.
+        #
+        # Non-English rows hit this every time — they always take the markdown-LLM
+        # path (the JSON-LD fast lane is skipped for translation), which is one of
+        # the paths that pre-fills previewImage.
+        _prev = (src.get("previewImage") or "").strip()
+        _ours = ("/generated/" in _prev) or _prev.startswith("/screenshot/")
+        _coopt_target = _prev if (_prev and not _ours) else og_image_url
+        if _coopt_target and not _ours:
             try:
                 from input.pipeline.image_pipeline import coopt_image
                 t_coopt = time.perf_counter()
-                cooped = coopt_image(og_image_url)
+                cooped = coopt_image(_coopt_target)
                 timings["image_coopt_ms"] = int((time.perf_counter() - t_coopt) * 1000)
                 if cooped:
                     src["previewImage"] = cooped
-                    print(f"[OG-IMAGE] cooped {og_image_url[:80]!r} -> {cooped}")
+                    print(f"[OG-IMAGE] cooped {_coopt_target[:80]!r} -> {cooped}")
             except Exception as e:
                 print(f"[OG-IMAGE] coopt failed (continuing): {e}")
         recipe["_source"] = src
