@@ -141,6 +141,29 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # Falls back to `name` when blank.
     if "display_name" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN display_name TEXT")
+    # SOURCE LANGUAGE (ISO 639-1) — the language this dish HARVESTS IN, which is
+    # a property of the dish, not of any one query string. NULL/'' = English (the
+    # instance's base language), which is the overwhelming majority; set it only
+    # for a dish deliberately sourced from foreign-language publishers.
+    #
+    # Load-bearing today for exactly one thing: it relaxes the min-OU floor, because
+    # the OU baseline is calibrated on a US/English corpus and scores foreign
+    # publishers negative almost by construction (see _min_ou_filter). Until now
+    # that was GUESSED from the query text — `site:.gr` at first, then non-Latin
+    # script — and guessing failed the Dan Dan Noodles run, where the query `担担面`
+    # tripped neither and both of the run's min-OU drops were its Chinese pages.
+    #
+    # Deliberately NOT derived from `queries`: a dish can source foreign pages with
+    # a Latin-script query ("tonkotsu ramen", "gratin dauphinois"), which no amount
+    # of cleverness about the query string can detect. That is the whole reason
+    # this is a stored field and not a smarter regex.
+    #
+    # §7 of docs/dish-variants-membership.md reserves this same column as the hard
+    # pre-filter for variant matching (a Greek spanakopita and a US one are
+    # identity-degenerate, so the vector cannot separate them). That is NOT built
+    # here — this adds the column, the editor control and the harvest behaviour.
+    if "source_language" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN source_language TEXT")
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -596,7 +619,8 @@ def row_to_dict(row: tuple) -> dict:
      created_at, updated_at, last_run_log_filename, auto_enrich,
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
-     identity_card_json, competitiveness_pct, field_clout, display_name) = row
+     identity_card_json, competitiveness_pct, field_clout, display_name,
+     source_language) = row
     try:
         queries_raw = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -648,6 +672,9 @@ def row_to_dict(row: tuple) -> dict:
         # ready-to-show value without repeating the fallback.
         "display_name": (display_name or "").strip() or name,
         "display_name_set": bool((display_name or "").strip()),
+        # '' rather than None: the editor's <select> matches on string equality,
+        # and "not stated" is a real, selectable option rather than a missing one.
+        "source_language": (source_language or "").strip().lower(),
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -658,7 +685,7 @@ _SELECT_ALL_COLS = (
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
-    "competitiveness_pct, field_clout, display_name"
+    "competitiveness_pct, field_clout, display_name, source_language"
 )
 
 
@@ -908,7 +935,16 @@ _PATCHABLE = {
     # {q, n, gl, hl}. Both accepted, both write the same column.
     "queries", "query_rows", "top_n_serpapi", "top_n_final",
     "refresh_ttl_days", "notes", "auto_enrich",
-    "description", "display_name",
+    "description", "display_name", "source_language",
+}
+
+# ISO 639-1 codes the translator can actually handle — _LANG_NAMES in
+# intake/translate.py is the source of truth; '' clears the field back to
+# "not stated". Validated rather than free-text because a typo'd 'ch' would
+# silently read as foreign and lift the OU floor on an English dish.
+_SOURCE_LANGS = {
+    "en", "zh", "ja", "ko", "el", "it", "fr", "es", "de", "pt",
+    "ru", "tr", "ar", "he", "nl", "pl", "sv", "th", "vi", "hi",
 }
 
 
@@ -1013,6 +1049,22 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
                 params.append(stripped)
             else:
                 sets.append("display_name = NULL")
+
+    if "source_language" in patch:
+        sl = patch["source_language"]
+        if sl is None or (isinstance(sl, str) and not sl.strip()):
+            # Explicitly cleared -> back to inferring from the query text.
+            sets.append("source_language = NULL")
+        else:
+            if not isinstance(sl, str):
+                raise ValueError("source_language must be a string or null")
+            code = sl.strip().lower()[:2]
+            if code not in _SOURCE_LANGS:
+                raise ValueError(
+                    f"source_language {sl!r} is not a supported ISO 639-1 code "
+                    f"({', '.join(sorted(_SOURCE_LANGS))})")
+            sets.append("source_language = ?")
+            params.append(code)
 
     extras = set(patch.keys()) - _PATCHABLE
     if extras:

@@ -83,6 +83,17 @@
     let term = '';
     let sortKey = 'attention';
     let _limits = { serpapi: 200, final: 200 };   // dish caps from System → Limits
+    // Harvest languages. Mirrors _LANG_NAMES in intake/translate.py — that list is
+    // the source of truth (it decides what the translator can actually handle), so
+    // add a language THERE first and reflect it here. '' = not stated.
+    const SOURCE_LANGS = [
+      ['', '— not stated (guess from the query) —'],
+      ['en', 'English'], ['zh', 'Chinese'], ['ja', 'Japanese'], ['ko', 'Korean'],
+      ['el', 'Greek'], ['it', 'Italian'], ['fr', 'French'], ['es', 'Spanish'],
+      ['de', 'German'], ['pt', 'Portuguese'], ['ru', 'Russian'], ['tr', 'Turkish'],
+      ['ar', 'Arabic'], ['he', 'Hebrew'], ['nl', 'Dutch'], ['pl', 'Polish'],
+      ['sv', 'Swedish'], ['th', 'Thai'], ['vi', 'Vietnamese'], ['hi', 'Hindi'],
+    ];
 
     /* ----------------------------- derivations ----------------------------- */
     const fitOf = (d) => d.last_ou_fit || {};
@@ -259,6 +270,19 @@
             <div class="ed-field"><label for="f_serp">SERP candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
             <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" max="${_limits.final}" value="${d.top_n_final ?? ''}"></div>
             <div class="ed-field"><label for="f_ttl">Refresh TTL (days)</label><input id="f_ttl" type="number" min="1" value="${d.refresh_ttl_days == null ? '' : d.refresh_ttl_days}" placeholder="blank = manual only"></div>
+            <div class="ed-field"><label for="f_srclang">Sources in <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(harvest language)</span></label>
+              <select id="f_srclang">
+                ${SOURCE_LANGS.map(([code, label]) =>
+                  `<option value="${code}" ${(d.source_language || '') === code ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+              <div style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px">
+                Set this when the dish is sourced from foreign-language publishers. The OU
+                baseline is calibrated on English sites and scores them negative almost by
+                construction, so the minimum-OU floor is lifted for a foreign dish.
+                Blank = guess from the search text, which fails on a Latin-script query
+                like <code>tonkotsu ramen</code>.
+              </div>
+            </div>
             <div class="ed-field"><label>Auto-enrich on save</label>
               <div class="d-check"><input id="f_enrich" type="checkbox" ${d.auto_enrich ? 'checked' : ''}><label for="f_enrich">run enrich_recipe on each kept row (~$0.05/row)</label></div>
             </div>
@@ -680,6 +704,9 @@
         notes: $('#f_notes').value.trim(),
         auto_enrich: $('#f_enrich').checked,
         display_name: ($('#f_display') ? $('#f_display').value.trim() : '') || null,
+        // '' (not null) is meaningful: it clears a stated locale and hands the
+        // dish back to the query-text guess.
+        source_language: ($('#f_srclang') ? $('#f_srclang').value : ''),
       };
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
       try {

@@ -1358,6 +1358,47 @@ def _query_targets_foreign_country(queries: list[str]) -> bool:
     return False
 
 
+def dish_source_language(dish: Optional[str]) -> str:
+    """The ISO 639-1 language a dish harvests in, '' when unset or unknown.
+
+    Read through a fresh read-only connection rather than threaded in as a
+    parameter: `build_batch` already knows the dish NAME, and the name is the
+    identity ([[feedback_cli_args_identity_not_query]]). Never raises — a
+    missing table, a missing row or a missing column all mean "no locale
+    stated", which is the same as English here.
+    """
+    if not dish:
+        return ""
+    try:
+        import sqlite3
+        with sqlite3.connect("file:recipes.db?mode=ro", uri=True, timeout=5) as conn:
+            row = conn.execute(
+                "SELECT source_language FROM dishes WHERE name = ?", (dish,)
+            ).fetchone()
+        return ((row[0] or "").strip().lower()[:2] if row else "")
+    except Exception:
+        return ""
+
+
+def _batch_is_foreign_locale(queries: list[str], dish: Optional[str]) -> tuple[bool, str]:
+    """(is_foreign, why) for this batch, stated fact first, guess second.
+
+    Order matters. A dish that DECLARES `source_language` has been given an
+    answer by the curator and no inference should be able to overrule it —
+    including the negative case: a dish explicitly marked `en` is domestic even
+    if some query happens to carry a `site:.gr` operator, because the operator
+    might be scoping one sub-query of an English dish.
+    """
+    lang = dish_source_language(dish)
+    if lang:
+        # Compare against THIS instance's base language, not a hardcoded 'en' —
+        # a Greek-hosted instance harvesting Greek dishes is domestic, and its
+        # English dishes are the foreign ones ([[project_portable_package]]).
+        base = (normalize_lang(instance_base_language()) or "en")[:2]
+        return (lang != base, f"dish locale={lang}")
+    return (_query_targets_foreign_country(queries), "inferred from query")
+
+
 def _min_ou_filter(entries: list[dict], *,
                    drop_below_threshold: bool = True) -> tuple[list[dict], list[dict]]:
     """Drop entries whose Moz OU score is below MIN_OU_SCORE (default 0.0).
@@ -1630,13 +1671,18 @@ def build_batch(
         print(f"      -> paywall PA-remap lifted {_n_remap} premium-publisher entr(ies)")
     ou_fit = _compute_custom_ou(entries)
 
-    # Foreign-locale batches (e.g. `site:.gr`) harvest low-authority
-    # publishers the global/US-calibrated OU baseline scores negative by
-    # construction; relax the negative-OU floor so they aren't culled for
-    # being non-US. TEMPORARY heuristic off the query text until dishes carry
-    # an explicit locale (docs/dish-variants-membership.md §5/§7).
-    foreign_locale = _query_targets_foreign_country(queries)
-    relax_note = "  — RELAXED (foreign-locale batch)" if foreign_locale else ""
+    # Foreign-locale batches harvest low-authority publishers the global/
+    # US-calibrated OU baseline scores negative by construction; relax the
+    # negative-OU floor so they aren't culled for being non-US.
+    #
+    # The DISH'S OWN `source_language` is authoritative when set — it is a stated
+    # fact about what this dish harvests. The query-text heuristic stays as the
+    # fallback for dishes that have not been given a locale yet (and for the
+    # ad-hoc/no-dish path, which has no row to read), so nothing that worked
+    # before stops working.
+    foreign_locale, locale_src = _batch_is_foreign_locale(queries, dish)
+    relax_note = (f"  — RELAXED (foreign-locale batch, {locale_src})"
+                  if foreign_locale else "")
     print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE}){relax_note}")
     entries, dropped_low_ou = _min_ou_filter(entries, drop_below_threshold=not foreign_locale)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_low_ou)}")
