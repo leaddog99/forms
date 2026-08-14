@@ -462,6 +462,12 @@ def _auto_enrich_applies(user_id: int) -> bool:
 # Keller's roast chicken, 157 chars) with a little room below it; the junk cases
 # sat at 7 and 132 chars. See the note in _is_cacheable.
 SINGLE_STEP_MIN_CHARS = 150
+# The same floor for a method written in a dense script (CJK). Set from the
+# measured ratio on the case that exposed it — 77 Chinese characters carrying
+# what took 315 in English, ~4x — so 150/4 ≈ 40, kept at 40 rather than rounded
+# down further because the junk cases were short on BOTH axes anyway (7 and 132
+# characters with 1 ingredient, killed by the ingredient floor regardless).
+SINGLE_STEP_MIN_CJK_CHARS = 40
 
 
 def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
@@ -511,10 +517,24 @@ def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tup
         # failure mode we are guarding is a paywall stub or a sidebar carousel,
         # and those are short.
         prose = 0
+        cjk = 0
         for s in steps:
-            text = s.get("text") if isinstance(s, dict) else s
-            prose += len(str(text or "").strip())
-        if real_steps >= 1 and prose >= SINGLE_STEP_MIN_CHARS:
+            text = str((s.get("text") if isinstance(s, dict) else s) or "").strip()
+            prose += len(text)
+            cjk += sum(1 for ch in text if 0x2e80 <= ord(ch) <= 0x9fff
+                       or 0x3040 <= ord(ch) <= 0x30ff or 0xac00 <= ord(ch) <= 0xd7af)
+        # A DENSE SCRIPT SAYS THE SAME THING IN FAR FEWER CHARACTERS, so a
+        # character floor calibrated on English rejects an equivalent CJK method.
+        # Measured on m.xiachufang.com/recipe/107744561: the identical method is
+        # 77 characters in Chinese and 315 in English — a 4x difference in length
+        # for the same four cooking actions. A recipe that survives translation is
+        # judged on its English text and never reaches this branch; one saved
+        # untranslated (curator choice, or a translation we declined) would be
+        # refused for being written in Chinese, which is not a quality signal.
+        floor = SINGLE_STEP_MIN_CHARS
+        if prose and (cjk / prose) >= 0.30:
+            floor = SINGLE_STEP_MIN_CJK_CHARS
+        if real_steps >= 1 and prose >= floor:
             return True, (f"ok (single {prose}-char method paragraph; publisher "
                           f"did not enumerate steps)")
         return False, f"fewer than {min_steps} instructions ({real_steps})"

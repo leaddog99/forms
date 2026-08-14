@@ -475,6 +475,19 @@ _QUANTITY_RE = re.compile(r"\b\d+(?:[.,]\d+)?\s*(?:g|kg|mg|ml|l|tbsp|tsp|cup|cup
 _INTEGER_RE = re.compile(r"\b\d{1,3}\b")
 
 
+# The length-ratio floor below assumes translated English runs within ~30% of the
+# source's CHARACTER count, which holds for Latin-script sources and does not hold
+# for a dense script. A CJK page packs the same meaning into far fewer characters,
+# and the surrounding markdown (JSON-LD, URLs, syntax) does not shrink with it, so
+# a perfectly good zh->en translation lands well under the Latin floor.
+#
+# Measured on m.xiachufang.com/recipe/107744561 (6,007-char source): two runs of
+# the SAME input scored ratio 0.45 and 0.38 — one passed, one was thrown away as
+# "suspect" and the recipe saved in Chinese. The floor was sitting inside the
+# run-to-run noise band, which is the worst place for a guard to sit.
+_NON_LATIN_MIN_LENGTH_RATIO = 0.22
+
+
 def is_translation_plausible(original: str, translated: str, *, min_length_ratio: float = 0.4) -> tuple[bool, str]:
     """Return (ok, reason). Used as a safety net BEFORE handing the
     translated markdown to the is_recipe LLM check — prefer dropping a
@@ -498,12 +511,19 @@ def is_translation_plausible(original: str, translated: str, *, min_length_ratio
         return False, "empty translation"
 
     # 1. Length ratio. Translated English of a recipe is usually within
-    #    ±30% of the source; below 40% suggests truncation.
+    #    ±30% of the source; below 40% suggests truncation. That holds for a
+    #    Latin-script source. For a dense script the same meaning occupies far
+    #    fewer source characters, so the honest floor is much lower — see
+    #    _NON_LATIN_MIN_LENGTH_RATIO. Detected from the SOURCE, so an English
+    #    page is never affected.
     orig_len = len(original or "")
     if orig_len > 200:
+        floor = min_length_ratio
+        if script_language(original):
+            floor = min(min_length_ratio, _NON_LATIN_MIN_LENGTH_RATIO)
         ratio = len(translated) / orig_len
-        if ratio < min_length_ratio:
-            return False, f"length ratio {ratio:.2f} < {min_length_ratio}"
+        if ratio < floor:
+            return False, f"length ratio {ratio:.2f} < {floor}"
     else:
         # Tiny source — a near-empty fetch (paywall / JS-only / anti-bot stub) or a
         # bare title. The recipe-aware translator INVENTS a full recipe body when
