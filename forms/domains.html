@@ -258,6 +258,9 @@
     // Language is stored as the ISO 639-1 two-letter code (the recipe-filter phrase packs are
     // keyed on it). Blank = use the instance's system default language. Curator picks from a
     // dropdown so the stored value is always clean (no more 'gr' vs 'el' / free-text drift).
+    // Mirrors _LANG_NAMES in intake/translate.py — that list is what the translator
+    // can actually handle, so a language missing HERE is a language the curator
+    // cannot record even though the pipeline supports it.
     const LANG_OPTIONS = [
       { v: '', l: '(default — system language)' },
       { v: 'en', l: 'en — English' }, { v: 'el', l: 'el — Greek' },
@@ -265,9 +268,25 @@
       { v: 'fr', l: 'fr — French' }, { v: 'de', l: 'de — German' },
       { v: 'pt', l: 'pt — Portuguese' }, { v: 'tr', l: 'tr — Turkish' },
       { v: 'nl', l: 'nl — Dutch' },
+      { v: 'zh', l: 'zh — Chinese' }, { v: 'ja', l: 'ja — Japanese' },
+      { v: 'ko', l: 'ko — Korean' }, { v: 'ru', l: 'ru — Russian' },
+      { v: 'ar', l: 'ar — Arabic' }, { v: 'he', l: 'he — Hebrew' },
+      { v: 'pl', l: 'pl — Polish' }, { v: 'sv', l: 'sv — Swedish' },
+      { v: 'th', l: 'th — Thai' }, { v: 'vi', l: 'vi — Vietnamese' },
+      { v: 'hi', l: 'hi — Hindi' },
     ];
     function langOptions(sel){
-      return LANG_OPTIONS.map(o => `<option value="${o.v}"${o.v === (sel || '') ? ' selected' : ''}>${o.l}</option>`).join('');
+      // A <select> whose stored value matches NO option silently falls back to the
+      // first one, and the next save writes that back — so an unrelated edit
+      // DESTROYS the field without anyone touching it. That is exactly how
+      // m.xiachufang.com lost language='zh' on 2026-08-14 (zh was absent from the
+      // list above). Never let the control misrepresent what is stored: surface an
+      // unknown value as its own selected option instead of dropping it.
+      const cur = sel || '';
+      const known = LANG_OPTIONS.some(o => o.v === cur);
+      const opts = known ? LANG_OPTIONS
+                         : [...LANG_OPTIONS, { v: cur, l: `${cur} — (stored value)` }];
+      return opts.map(o => `<option value="${o.v}"${o.v === cur ? ' selected' : ''}>${o.l}</option>`).join('');
     }
     // Normalize a messy language value (code/country/name) to its ISO 639-1 two-letter form so
     // it matches a dropdown option. Mirrors validators.normalize_lang (server side).
