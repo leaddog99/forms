@@ -402,6 +402,13 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
 # catches everything the JSON-LD path doesn't.
 # =====================================================================
 
+# How much method text an UNENUMERATED single instruction must carry to count as a
+# real method. Set at the lowest real example measured in the corpus (Thomas
+# Keller's roast chicken, 157 chars) with a little room below it; the junk cases
+# sat at 7 and 132 chars. See the note in _is_cacheable.
+SINGLE_STEP_MIN_CHARS = 150
+
+
 def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
     """Refuse to cache rows that look like a bad extraction (paywall,
     404, picked-the-wrong-recipe sidebar carousel). Returns
@@ -425,6 +432,36 @@ def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tup
         if str(text or "").strip():
             real_steps += 1
     if real_steps < min_steps:
+        # A SINGLE SUBSTANTIAL PARAGRAPH IS A METHOD, NOT A FAILED EXTRACTION.
+        # Counting steps assumes the publisher numbered them. Plenty don't:
+        # m.xiachufang.com/recipe/107744561 ships its whole method as ONE string
+        # in its own JSON-LD ("marinate 10 min ... wrap in foil ... 205C for 20
+        # ... open foil, 5 more"), four real actions in one paragraph. We
+        # reproduced it faithfully and then refused to save it.
+        #
+        # Measured over the corpus 2026-08-14 — exactly 6 of 5,593 rows have a
+        # single instruction, and length separates them cleanly:
+        #     7 chars / 1 ing   Pork Rice                     <- junk
+        #   132 chars / 1 ing   'Parmesan Chicken | Recipes'  <- junk (title suffix
+        #                                                        = wrong node)
+        #   157 chars / 5 ing   Thomas Keller's Roast Chicken <- real
+        #   239 chars / 7 ing   Spaghetti and Meatballs       <- real
+        #   276 chars / 7 ing   Raita                         <- real
+        #   315 chars / 6 ing   Air Fryer Garlic Pork Ribs    <- real
+        # (median TOTAL instruction text on multi-step rows: 1,053 chars.)
+        #
+        # So: accept one step only when it carries real METHOD text. The
+        # ingredient floor above has already run, which is what kills both junk
+        # rows independently — this is deliberately belt-and-braces, because the
+        # failure mode we are guarding is a paywall stub or a sidebar carousel,
+        # and those are short.
+        prose = 0
+        for s in steps:
+            text = s.get("text") if isinstance(s, dict) else s
+            prose += len(str(text or "").strip())
+        if real_steps >= 1 and prose >= SINGLE_STEP_MIN_CHARS:
+            return True, (f"ok (single {prose}-char method paragraph; publisher "
+                          f"did not enumerate steps)")
         return False, f"fewer than {min_steps} instructions ({real_steps})"
     return True, "ok"
 
