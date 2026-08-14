@@ -10304,6 +10304,21 @@ def extract_recipe_from_url(
                     md_result["markdown"] = xr.translated_markdown
                     md_result["has_jsonld"] = False
                     md_result["jsonld"] = []
+                    # ...AND drop the pre-translation jsonld-direct recipe. It was
+                    # built above from the ORIGINAL-language JSON-LD, and the lane
+                    # selection reads `_src_rec` directly, NOT md_result — so
+                    # emptying md_result['jsonld'] alone does not stop it. Measured
+                    # 2026-08-14 on the first m.xiachufang.com harvest: 3 of 8 rows
+                    # shipped wholly in Chinese (name + ingredients + steps, 71-80%
+                    # CJK) and they were EXACTLY the 3 whose JSON-LD was rich enough
+                    # for the fast lane to accept. The better-structured the page,
+                    # the worse the result — and we paid 27-53s per page to translate
+                    # markdown that was then discarded.
+                    #
+                    # current_source_fp is deliberately NOT cleared: it is the RAW
+                    # source fingerprint for cache revalidation and must stay
+                    # source-to-source, pre-translation, or every row churns.
+                    _src_rec = None
                     translation_meta = {
                         "originalLanguage": xr.source_language,
                         "originalLanguageName": xr.source_language_name,

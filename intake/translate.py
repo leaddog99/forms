@@ -152,6 +152,60 @@ def detect_language(
 
 # === Translation ==================================================
 
+# Languages written in a NON-LATIN script. Rules 1 and 2 below tell the model to
+# PRESERVE an unfamiliar dish name in its original spelling, which is correct for
+# a Latin-script source — "Spanakorizo" and "avgolemono" are readable English
+# words once transliterated. For these languages it is not: preserving the
+# original leaves the reader with 糍粑, which carries no information at all to
+# someone who cannot read the script.
+#
+# Measured 2026-08-14 on the first m.xiachufang.com harvest: 3 of 8 rows came back
+# with `name` still in Chinese (糍粑 · 蒜末炒茄子🍆好吃又简单的家常菜 · 潮汕清心丸)
+# while `_source.originalTitle` had captured the raw title correctly. The slot for
+# the original was doing its job; the translated name was the gap.
+_NON_LATIN_SCRIPT_LANGS = {"zh", "ja", "ko", "el", "ru", "ar", "he", "th", "hi"}
+
+
+def _non_latin_title_rule(src_lang: str) -> str:
+    """Extra prompt rule for non-Latin-script sources: the TITLE must end up
+    readable in English. Returns '' for Latin-script languages, whose existing
+    preserve-the-original behaviour already yields readable text.
+
+    Shape matches what this corpus already does — 28 of its 29 non-Latin titles
+    are publisher-supplied "English (原文)" (redhousespice, omnivorescookbook,
+    maangchi). This makes our translated rows match the house style rather than
+    inventing a second convention.
+    """
+    if (src_lang or "").lower()[:2] not in _NON_LATIN_SCRIPT_LANGS:
+        return ""
+    return """
+
+TITLE RULE (this source is written in a non-Latin script — overrides rules 1 and 2
+for the TITLE ONLY):
+The FIRST heading of the document is the dish title. It MUST be readable by someone
+who cannot read the source script, so it may NEVER be left as the bare original.
+Render it as:
+
+    English name (romanization, 原文)
+
+- English name: what an English cookbook would call this dish. Translate it even if
+  rule 1 would normally preserve it.
+- romanization: pinyin / romaji / revised-romanization etc., ONLY when the dish is
+  known in English by that name (Mantou, Ciba, Zha Jiang Mian). Omit otherwise.
+- 原文: the original-script name, in parentheses.
+
+Examples of the required shape:
+    糍粑                     -> Ciba (Glutinous Rice Cakes, 糍粑)
+    蒸馒头                   -> Steamed Buns (Mantou, 蒸馒头)
+    潮汕清心丸               -> Chaoshan Qingxin Wan (Sweet Rice Dumplings, 潮汕清心丸)
+
+Strip site furniture from the title — navigation boilerplate, the publisher's name,
+and template words like 【步骤图】 / 的做法 / 的做法步骤 ("step-by-step", "how to make")
+are NOT part of the dish name. Keep the dish, drop the scaffolding.
+
+Everywhere OTHER than the title, rules 1 and 2 still apply unchanged."""
+
+
 _TRANSLATION_SYSTEM = """You are translating a web recipe page from {src_lang_name} to English.
 This is for a culinary search index, so accuracy of cooking-specific detail matters more
 than literary polish.
@@ -288,7 +342,8 @@ def translate_markdown(markdown: str, src_lang: str) -> TranslationResult:
     msg = llm.create(
         operation="translate_markdown", model=_TRANSLATION_MODEL,
         max_tokens=_TRANSLATION_MAX_TOKENS,
-        system=_TRANSLATION_SYSTEM.format(src_lang_name=src_name) + _glossary_block(src_lang),
+        system=(_TRANSLATION_SYSTEM.format(src_lang_name=src_name)
+                + _non_latin_title_rule(src_lang) + _glossary_block(src_lang)),
         messages=[{
             "role": "user",
             "content": _TRANSLATION_USER.format(
@@ -318,7 +373,13 @@ def translate_title(title: str, src_lang: str) -> str:
     HALLUCINATE a full recipe body, or return a chatty refusal), this asks for ONLY
     the translated title string. For the collection/listicle title guard, where we
     need the English form of a non-English SERP title. Raises on API error; caller
-    decides how to handle (the filter treats failure as 'skip the check')."""
+    decides how to handle (the filter treats failure as 'skip the check').
+
+    Deliberately does NOT get `_non_latin_title_rule`. That rule produces the DISPLAY
+    form ("Ciba (Glutinous Rice Cakes, 糍粑)"), and this function's only consumer is
+    the collection/listicle guard, which phrase-matches on words like "recipes"
+    plural. Feeding it a parenthesised bilingual string would add tokens the guard
+    then has to match around. Bare English is what it wants."""
     if not title or not title.strip():
         return ""
     src_name = _LANG_NAMES.get(src_lang, src_lang.upper())
