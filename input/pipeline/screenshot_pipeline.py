@@ -324,6 +324,27 @@ def crop_above_fold(raw_bytes: bytes) -> Optional[bytes]:
 # opinion about what "too small to be a page" means.
 MIN_USABLE_W = 320
 
+# A capture can be the right SIZE and still contain nothing. html2canvas returns a
+# correctly-shaped blank when it cannot rasterize a page, and the headless path
+# produces one for a cookie wall or a loading skeleton — both look like successes
+# to every check we had.
+#
+# Threshold measured over all 6,619 stored screenshots on 2026-08-14, using the
+# standard deviation of luminance:
+#
+#     21 rows sit at EXACTLY 0.000   (pure single-colour; xiachufang, southernliving,
+#                                     timoleondiamantis, cbsnews, archive.org, ...)
+#     1st percentile of the rest     = 10.06
+#
+# So real page views and blanks are separated by an enormous gap. REFUSE below 2.0
+# (the entire frame is one tone — unambiguous), and merely WARN up to 8.0, where a
+# near-blank cluster lives that is probably junk but that we will not destroy on a
+# guess: e.g. 11 timoleondiamantis captures at 3.38 and 3 marthastewart at 1.21,
+# each group byte-identical to its siblings — the signature of one shared template,
+# not of eleven different recipes.
+MIN_USABLE_STDDEV = 2.0
+SUSPECT_STDDEV = 8.0
+
 
 def _to_blob_jpeg(raw_bytes: bytes, *, max_w: int = 800, quality: int = 65) -> Optional[bytes]:
     """Downscale + re-encode the raw capture to a compact JPEG. The page
@@ -343,6 +364,22 @@ def _to_blob_jpeg(raw_bytes: bytes, *, max_w: int = 800, quality: int = 65) -> O
                   f"recipe keeps no screenshot rather than a smudge. (A tall mobile "
                   f"capture scaled by its long edge is the usual cause.)")
             return None
+        # Right size, no content. Same principle as the width guard: no screenshot is
+        # honest and re-capturable, a blank one is a permanent wrong answer that reads
+        # as a rendering bug on every surface that shows it.
+        from PIL import ImageStat
+        _sd = ImageStat.Stat(im.convert("L")).stddev[0]
+        if _sd < MIN_USABLE_STDDEV:
+            print(f"[screenshot] REFUSED a {im.width}x{im.height} capture — it is BLANK "
+                  f"(luminance stddev {_sd:.2f} < {MIN_USABLE_STDDEV}; a real page view "
+                  f"measures 10+). Nothing stored. Usual causes: html2canvas could not "
+                  f"rasterize the page, or the headless capture photographed a cookie "
+                  f"wall / loading skeleton.")
+            return None
+        if _sd < SUSPECT_STDDEV:
+            print(f"[screenshot] WARNING: {im.width}x{im.height} capture is nearly blank "
+                  f"(luminance stddev {_sd:.2f}). Stored anyway — below "
+                  f"{MIN_USABLE_STDDEV} it would be refused. Worth an eyeball.")
         if im.width > max_w:
             h = max(1, round(im.height * max_w / im.width))
             im = im.resize((max_w, h), Image.LANCZOS)
