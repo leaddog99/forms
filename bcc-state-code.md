@@ -4475,6 +4475,70 @@ whose record existed but whose bytes were missing.) Two honest options: latch th
 `content_obtainable='never'` latches, or find out what the 45 have in common. Nobody has
 looked at the list yet, and it should be looked at before it is latched.
 
+### `mixed_media` — the PA haircut was never really about paywalls (job 841)
+
+Chasing why a Chinese forum recipe was culled at OU −7.64 ended somewhere much bigger. The
+curator's question was the pivot: *the domain is really more like a newspaper, shouldn't it
+be scored like the Globe?*
+
+It should. `pa_gap_v1` corrects a page measured against an expectations bar it did not
+build. A paywall causes that. So does a domain whose authority is earned by NON-recipe
+content — and only the first was eligible, because the trigger was `WHERE paywall = 1`.
+
+New curated `domains.mixed_media`, OR'd into that trigger. Six flagged, all `adjusted`:
+
+| domain | what it is | n | gap | effect | discount |
+|---|---|---|---|---|---|
+| ab.gr | supermarket chain | 20 | 12.72 | 3.31 | **−56.7%** |
+| andrewzimmern.com | TV personality | 30 | 10.86 | 2.44 | **−45.0%** |
+| bostonchefs.com | restaurant directory | 17 | 8.62 | 2.08 | **−40.9%** |
+| marthastewart.com | lifestyle portal | 107 | 10.81 | 2.21 | **−35.6%** |
+| jamieoliver.com | chef brand (TV/books) | 41 | 9.31 | 2.12 | **−33.1%** |
+| washingtonpost.com | newspaper | 32 | 8.67 | 3.07 | **−28.7%** |
+
+**THE FREE POOL WAS THE CONTAMINATED PART.** Flagging a publisher also removes it from the
+free reference, and the yardstick got materially cleaner: **bostonglobe 27.1% → 36.3%**, and
+**latimes flipped `inconclusive` → `adjusted` −21.4%**. latimes was never untaxed; it was
+being compared against a peer pool that included starved general-interest domains. Anyone
+re-reading the 08-13 calibration table should know its free baseline was low.
+
+Job 841: flagged 13, adjusted 10, restamped **321 master + 18 personal**. Effect on rows:
+
+| host | mean OU before | after | rows above 0 |
+|---|---|---|---|
+| marthastewart.com | −0.30 | **+10.51** | 19/107 → **107/107** |
+| ab.gr | −1.68 | +11.04 | 1/20 → 20/20 |
+| bostonchefs.com | −1.98 | +6.63 | 4/17 → 17/17 |
+| bostonglobe.com | −0.85 | +10.11 | 7/32 → 32/32 |
+
+~152 rows crossed from at-or-below zero to above it — rows that were structurally unable to
+win a dish cohort.
+
+**Checked for overcorrection, and it is not one.** Every flagged publisher landing 100%
+above zero looks alarming until you measure the free pool: **97.8% of the 4,592 unflagged
+rows are already above zero** (mean +11.05, median +11.65). The adjusted rows land at mean
++11.40 / median +10.66 — on top of the free distribution, not above it. Being above zero is
+the NORM here; the flagged publishers were the anomaly. The one honest caveat: the
+correction is a per-publisher CONSTANT, so it lifts a weak page and a strong one equally —
+adjusted p10 is +7.46 against the free pool's +4.66, a compressed lower tail.
+
+**Not flagged, deliberately:** epicurious.com (gap 2.96 → would earn −10.6%). Its authority
+really is food-and-recipe authority, which is the case the flag is NOT for. Also
+bbs.wenxuecity.com — gap **22.0**, effect **5.77**, the most starved thing measured in this
+corpus, but n=1 against MIN_N=12. The non-Latin query fix is what actually saves that row.
+
+**A pure recipe blog running below its DA cohort must NEVER be flagged** — that is a weaker
+site, and discounting it manufactures a permanent bonus for mediocrity. The first sweep of
+this got it wrong by testing all 18 unflagged domains with n≥12 and reporting them as one
+list; budgetbytes, wellplated, toriavey and the Greek pure-recipe cluster were in there. The
+curator's "it should only be mixed media domains" is the correct cut.
+
+**OPEN — the live server holds a stale copy.** `_PAYWALL_ADJ_CACHE` in `url_scoring` is
+per-process with NO TTL. Job 841 ran out of process and cleared only its own. Stored
+`adjustedOuScore` values are correct (they were restamped), so anything reading stored data
+is fine; only live recomputation inside the server process uses the old table. **Restart the
+BCC service to clear it** — needs admin, see [[project_restart_zombie_port]].
+
 ### Dan Dan Noodles is a thin cohort
 
 25 SERP results, **17 dropped as not-a-recipe**, 8 survived to Moz, 6 saved. `ou_fit` came
