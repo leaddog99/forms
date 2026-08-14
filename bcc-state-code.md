@@ -4690,13 +4690,134 @@ icing and cannot carry the offer by itself — the membership needs several feat
 that together read as "why I want to be a member of this club." Do not plan a paywall around
 cook view alone. What the other checkboxes are is **OPEN** and is the next product question.
 
+## Session log — 2026-08-14 (late) — the redaction pass, and two designs written down
+
+After the multilingual bug day, three threads: a security pass on what we tell
+users, screenshot policy now that it is a display asset, and two designs recorded
+rather than built.
+
+### End users were being shown our plumbing
+
+Two leaks, then a systemic one.
+
+- The unscored-save note said *"Moz has not crawled this URL yet…"*, and
+  `/url-metadata` said *"Row exists; Moz scoring not yet run (set MOZ creds and
+  run refresh script)."* The second names a vendor AND tells a customer to run a
+  script only we can run.
+- Worse: **31 endpoints an ordinary member reaches echo the raw exception**.
+  Demonstrated live as a Free-tier member — `POST /images/fetch` returned
+  `ConnectionError: HTTPSConnectionPool(host=…, port=443)`. A sqlite error names
+  our columns; an SDK error names the model and provider.
+
+Fixed with ONE `HTTPException` handler rather than 31 edits, on the same
+principle as the unscored-note redaction: **a rule applied in one place cannot be
+forgotten by the 32nd endpoint.** 5xx only — 4xx details are written for the user
+and are the actionable half of the API. Staff keep the full text; the check fails
+CLOSED. Non-staff get "Something went wrong on our end. Your work wasn't lost."
+
+**Audit result:** the two end-user pages (`recipe_form_styled.html`, `cook.html`)
+are clean in SHIPPED text; remaining vendor mentions there are HTML/JS comments.
+Admin surfaces are deliberately untouched — `domains.html` carries 39 SEMrush and
+18 Moz references and should. Standing rule: [[feedback_no_vendor_names_to_users]].
+
+### The screenshot is a DISPLAY asset now, not a provenance signal
+
+The curator wants it as blurry card wallpaper. That reframing changes what the
+failures cost, and the refresh job turned out to already be the design he
+described — `screenshot_refresh`, nightly, `limit` as the real control.
+
+- `max_age_days` was **365**, so the age-refresh had NEVER fired (`aged: 0` every
+  run). Set to **30**, `limit` 200 → **100**: a 56-day rolling cycle at ~7 min of
+  Chromium nightly. Deliberately half the throughput of the 200 option — the host
+  has confirmed Intel 13th-gen degradation with an RMA pending
+  ([[project_host_thermal_shutdowns]]), and this is permanent nightly load.
+- **24 blank blobs deleted** so they re-shoot. As provenance a white rectangle was
+  merely useless; as wallpaper it renders a blank card.
+- **The 45 nightly failures are latched** (2 strikes, 90-day retry, a success
+  clears the counter). At limit=100 they would have eaten HALF the budget forever.
+
+**Why 45 rows have no screenshot — it is four different things, and half are not
+failures:** 36 point at `bestcooksclub.com` (OUR OWN domain — the URL currently
+resolves to the edit form, so shooting it is circular; **this self-resolves when
+the production display page ships**, and those rows will need their latch cleared),
+12 have no URL at all (typed / photo / PDF imports — these need a display
+FALLBACK, and they are a growing population), 33 washingtonpost (times out at the
+HTTP level), 10 edibleboston (**SSLError, not a block** — possibly recoverable).
+
+**Would the unblocker help? Mostly no.** It returns HTML; screenshots come from a
+Playwright child process with no proxy plumbed in. For WaPo you would render the
+paywall (the Milk Street lesson). For edibleboston's TLS failure a proxy might
+work — but that is 10 rows of 5,594, and the cheaper test is whether Playwright
+already tolerates a cert `requests` rejects.
+
+### Two designs written down, nothing built
+
+**`docs/recipe-activity-and-engagement.md`.** Two systems that must not be one
+table: a per-record ACTIVITY log (what the system did) and an ENGAGEMENT log
+(what people did). The activity log answers the day's recurring failure — the
+system acts and the record does not show it. Its key decision: **keyed on
+`url_normalized`, in its own table, NOT in the record**, because publisher and
+dish refreshes are delete-and-replace and an in-record log dies exactly when the
+interesting thing happens. `metabase_url` is the existence proof — 7,102 URLs
+against 5,594 recipes, already outliving row churn.
+
+**The profile is wanted, and the doc says so plainly.** Curator: *"we are after
+the user profile that's created out of those collected activities."* The
+resolution of that against years of arguing about data collection is that the
+objection was never to KNOWING things — it is to a profile that is secret, serves
+someone else, is inescapable, follows you across sites, is hoarded, or is sold.
+Each is separable. The test recorded: **would we show the user their own profile,
+in full, without embarrassment?** Most of the machinery exists — identity cards,
+embeddings, chapters — so a taste profile is a centroid of what someone kept,
+weighted **cooked > captured > viewed**. Unresolved: cross-user aggregation, and
+`cook_complete` is the strongest available signal and is not recorded at all.
+
+### Also shipped
+
+- **`domains.extract_notes` is finally READ** — appended to the extraction prompt
+  as publisher-specific guidance (the curator raised this repeatedly and was right;
+  the field existed since the table was created, described as "capture hints", and
+  was wired to nothing). Seeded on m.xiachufang.com and confirmed firing:
+  `[EXTRACT] publisher hint applied (319 chars)`.
+- **DA now refreshes from the harvest's own Moz rows** (median of the run), which
+  also makes `da_last_scored` real — the form has always rendered a "DA scored"
+  pill from a column nothing wrote.
+- **2 orphan columns dropped**; `obtainable_streak` KEPT after checking — it is
+  actively written and reads 0 only because no publisher has hit the streak.
+  "Never differs from default" is not the same as dead.
+- **Hero images now fetched SERVER-SIDE from a URL** (~122 bytes over the phone
+  instead of a download-and-re-upload), because mobile is spotty. 300x200 → 900x1600.
+
+### Open
+
+- **The server has not been restarted since `464f2de`.** Nothing in the last third of the
+  day is live.
+- **The admin Refresh button is DEFERRED, not rejected.** Reprocess the stored URL as if
+  delete-and-add, recompute everything, redisplay, wait for save. It is currently the only
+  way to fix one bad record without a bulk job. Held so the redaction shipped clean.
+- **36 latched URLs point at `bestcooksclub.com`** and will be shootable the moment a
+  production display page exists. Clear their latch then.
+- **12 recipes have no URL at all** (typed / photo / PDF). They can never have a screenshot
+  and need a display FALLBACK — a growing population, not an edge case.
+- **edibleboston's 10 failures are an SSLError, not a block.** Cheapest test is whether
+  Playwright already tolerates a cert `requests` rejects — before reaching for a proxy.
+- **`cook_complete` is not recorded anywhere.** It is the single strongest engagement
+  signal in the system and the design doc depends on it.
+- **Cross-user aggregation is the unresolved privacy question** — recorded, not decided.
+- **Cook mode is not a conversion driver by itself** (curator, explicit). It needs other
+  checkboxes beside it before the membership pitch closes.
+
+---
+
 ---
 
 ## START HERE — state of play as of 2026-08-14
 
-**Branch `split/enrichment-api`. Server RESTARTED 15:36 and current through `2da3181`, but
-NOT through the four commits after it — `98a064f` (save gate), `7c674fc` (enrich policy),
-`894765c`/`613b7c8` (the save buttons) all need another restart to take effect.**
+**Branch `split/enrichment-api`. The SERVER IS STALE — it has not been restarted since the
+late-session work.** Everything from `464f2de` (extract_notes) forward is on disk and not in
+the running process: the server-side hero fetch, the scoring-note surfacing, the two save
+buttons, **both redaction fixes**, and the screenshot latch. Restart FIRST; almost nothing
+from the last third of 2026-08-14 is testable until you do.
 
 **Jobs pick up new code immediately** — they run out of process via
 `Popen([sys.executable, "-m", "jobs", "exec", ...])`. Only the SERVER process holds stale
@@ -4705,28 +4826,43 @@ harvests do not.
 
 **DO FIRST when you return:** restart, then re-capture
 `m.xiachufang.com/recipe/107744561` with Chrome translate OFF. Everything for it is in
-place — translation, both images, and now the relaxed save gate — but that row has never
-completed a save (it failed the old `fewer than 3 instructions` gate). That single capture
-exercises six of the nine fixes at once.
+place — translation, both images, the relaxed save gate, and now the publisher's
+`extract_notes` hint — but that row has never completed a save. That single capture
+exercises most of the day's fixes at once.
 
 Data changes of 2026-08-13 are IN `recipes.db` — morning: 1,739 rows power-re-derived, 28
 re-scored off archive.org, 53 `rootDomain` corrected, 1 row merged. Afternoon: the paywall
-calibration APPLIED (7 publishers; Milk Street −51.4%, ATK −52.6%), ATK's first publisher
+calibration APPLIED (7 publishers; Milk Street -51.4%, ATK -52.6%), ATK's first publisher
 refresh (+10 recipes), 6 Milk Street recipes hand-captured to clear n=12, the
 `userscript_capture` job type and its 3 rows deleted.
 
-Data changes of 2026-08-14 (evening, on top of the morning's): `m.xiachufang.com` created
-(NEW publisher, `language=zh`, `fetch_strategy=plain`, mobile host on purpose); jobs 842
-(killed by my own timeout), 843 (2 candidates — the dedupe bug) and 844 (25 → 8 clean rows);
-`mixed_media` set on six publishers and calibration job 841 applied; Dan Dan Noodles given
-`source_language='zh'`. Publisher-refresh is DELETE-AND-REPLACE, so 842's rows were wiped by
-843 — including the three Chinese-language rows, which is why no cleanup was needed.
+Data changes of 2026-08-14 (evening): `m.xiachufang.com` created (NEW publisher,
+`language=zh`, `fetch_strategy=plain`, mobile host on purpose, and now the first domain with
+a live `extract_notes` hint); jobs 842 (killed by my own timeout), 843 (2 candidates — the
+dedupe bug) and 844 (25 -> 8 clean rows); `mixed_media` set on six publishers and calibration
+job 841 applied (10 publishers adjusted, ~152 rows crossed above the OU floor); Dan Dan
+Noodles given `source_language='zh'`. **24 blank screenshot blobs DELETED** so they re-shoot,
+and **45 chronically-failing URLs latched** off the nightly queue. Publisher-refresh is
+DELETE-AND-REPLACE, so 842's rows were wiped by 843.
 
 Data changes of 2026-08-14 (morning): **+202 master rows** (151 publisher / 51 dish). Five publisher
 refreshes — redhousespice.com (NEW, 28), tasteatlas.com (NEW, 5, `unblocker`),
 mygreekdish.com (40), sallysbakingaddiction.com (40), latimes.com (40). Four dish refreshes
 — Oatmeal Cookies (replaced 10), Egg Foo Young (NEW, 20), Chinese BBQ Pork (NEW, 20),
 Dan Dan Noodles (NEW, 6). latimes recalibration re-ran at n=246 and stayed `inconclusive`.
+
+**Screenshot policy changed** — it is a DISPLAY asset now (blurry card wallpaper), not just
+provenance. `screenshot_refresh` runs nightly at `max_age_days: 30`, `limit: 100`: a 56-day
+rolling cycle, ~7 min of Chromium. Deliberately half throughput — the host has an RMA pending
+for confirmed 13th-gen degradation. **36 of the 45 latched URLs are our OWN domain** and
+self-resolve when the production display page ships; clear their latch then.
+
+**Spend to date: ~$215 on the Anthropic API since May, entirely separate from the $200/mo
+subscription.** The console billing page is the only place it appears.
+
+**Two designs are written and unbuilt** — `docs/recipe-activity-and-engagement.md` (§7 says
+build the activity log + its four chokepoints first) and the admin **Refresh button** on the
+recipe form (reprocess the stored URL as if delete-and-add; deliberately deferred).
 
 **The phone bookmarklet grab is STILL OPEN.** The two capture fixes (width cap +
 `windowWidth`) have never been tested TOGETHER on a real phone. Pull the stored bytes and
@@ -4778,15 +4914,14 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
 ### Do first
 
-0. **CALIBRATE THE AI EDITOR — this is the decision everything else waits on.**
-   Ramen/795 verdicts are in `run_mediations` (dish form -> **Considered** panel).
-   **19 of 20 ranks moved, 6 of 20 demoted.** Read the six demotes and say whether you
-   agree. That is not a question the model can answer about itself, and it decides
-   whether verdicts ever get authority. Cost was $0.44/run, opus-4-8.
-1. **Phase 2 — give verdicts effect** (`docs/ai-editor-mediation.md`), ONLY after (0).
-   Needs override plumbing: **an Editor's Choice pin is candidacy, not override** —
-   `_pinned` is written twice and read NOWHERE, so a pin re-enters the pool and must clear
-   the same OU floor we want overturned. This bites curator pins today too.
+0. **RESTART THE SERVER**, then re-capture `m.xiachufang.com/recipe/107744561` with Chrome
+   translate OFF. See the DO FIRST note above — it exercises most of 2026-08-14 at once.
+1. **The activity log** — `docs/recipe-activity-and-engagement.md` §7. One table keyed on
+   `url_normalized` (NOT `recipe_id` — publisher/dish refreshes are delete-and-replace) and
+   four chokepoint writes. It would have caught six of the nine bugs found on 2026-08-14,
+   and it has no privacy surface. The engagement half waits for the production display page.
+   **The AI editor's SELECTION role stays cancelled** (2026-08-12: demand data inverted its
+   ranking). Its future is commentary on the algorithmic top-10, never re-ranking.
 2. **`docs/dish-candidates-from-keywords.md`** — spec written, nothing built. A
    `dish_candidate_scan` job + candidates table + review surface. PROPOSE, NEVER CREATE.
 3. **Add high-ratio keywords as QUERIES to existing dishes** — clearest is the singular
