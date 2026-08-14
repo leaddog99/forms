@@ -461,6 +461,14 @@ def _auto_enrich_applies(user_id: int) -> bool:
 # real method. Set at the lowest real example measured in the corpus (Thomas
 # Keller's roast chicken, 157 chars) with a little room below it; the junk cases
 # sat at 7 and 132 chars. See the note in _is_cacheable.
+# What a NON-STAFF user is told when a row could not be scored. Deliberately
+# says nothing about which vendor we buy authority data from, why they haven't
+# crawled it, or what an operator would do about it — a member capturing a
+# recipe is a customer of the product, not an operator of the pipeline. Staff
+# still get the full diagnostic; see the redaction at the /recipes boundary.
+GENERIC_UNSCORED_NOTE = (
+    "Score not yet available for this page — it usually appears within a few days.")
+
 SINGLE_STEP_MIN_CHARS = 150
 # The same floor for a method written in a dense script (CJK). Set from the
 # measured ratio on the case that exposed it — 77 Chinese characters carrying
@@ -9609,7 +9617,24 @@ async def save_recipe(request: Request):
         caller_uid = (caller or {}).get("user_id")
         if caller_uid is not None and int(caller_uid) > 0:
             payload["user_id"] = int(caller_uid)
-    return await asyncio.to_thread(_save_recipe_core, payload)
+    result = await asyncio.to_thread(_save_recipe_core, payload)
+
+    # REDACT OPERATIONAL DETAIL FOR NON-STAFF. A member who bookmarklets a
+    # recipe is an END USER of a product, not an operator of our pipeline: the
+    # names of the data vendors we buy from, and instructions like "set MOZ
+    # creds and run refresh", are ours and mean nothing to them. Done HERE, at
+    # the response boundary, rather than in the form — client-side redaction
+    # only hides the string, it still ships it.
+    try:
+        if isinstance(result, dict) and (result.get("unscoredNote") or "").strip():
+            if not auth_lib.is_staff(_resolve_caller(request) or {}):
+                result["unscoredNote"] = GENERIC_UNSCORED_NOTE
+    except Exception:
+        # Never fail a save over message cosmetics — but fail CLOSED, to the
+        # generic text, so an error here cannot leak the detailed one.
+        if isinstance(result, dict) and result.get("unscoredNote"):
+            result["unscoredNote"] = GENERIC_UNSCORED_NOTE
+    return result
 
 
 # Read-only metadata lookup for the form's collapsible metadata section.

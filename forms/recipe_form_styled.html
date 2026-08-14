@@ -7082,9 +7082,12 @@
         if (!m.exists) {
           metadataStatus.textContent = 'No metabase row yet — will be created on next save.';
         } else if (!m.moz_last_scored) {
-          metadataStatus.textContent = 'Row exists; Moz scoring not yet run (set MOZ creds and run refresh script).';
+          // Vendor-neutral: an end user who bookmarklets a recipe is a customer of
+          // the product, not an operator of our pipeline. "set MOZ creds and run
+          // refresh script" was an instruction only we could act on.
+          metadataStatus.textContent = 'Score not yet available for this page.';
         } else {
-          metadataStatus.textContent = 'Moz last scored: ' + fmtDate(m.moz_last_scored);
+          metadataStatus.textContent = 'Score updated ' + fmtDate(m.moz_last_scored);
         }
         metadataLoadedForUrl = url;
       } catch (err) {

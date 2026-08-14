@@ -4849,6 +4849,21 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
 ### Known-open
 
+- **AUDIT EVERY USER-FACING STRING FOR VENDOR NAMES.** A member who bookmarklets a recipe is
+  a customer of the product, not an operator of our pipeline — they must never be shown which
+  data vendors we buy from, nor told to perform an operator action. Caught 2026-08-14: an
+  unscored save surfaced *"Moz has not crawled this URL yet … retried every 3 days"*, and
+  `/url-metadata` rendered *"Row exists; Moz scoring not yet run (set MOZ creds and run
+  refresh script)"*. Both replaced; non-staff now get `GENERIC_UNSCORED_NOTE`
+  ("Score not yet available for this page — it usually appears within a few days"), redacted
+  at the **/recipes response boundary** on `auth_lib.is_staff`, failing CLOSED to the generic
+  text. Client-side redaction is not enough — it still ships the string.
+  **Audit as of 2026-08-14:** the two end-user pages (`recipe_form_styled.html`, `cook.html`)
+  are clean in SHIPPED text; remaining hits are HTML/JS comments only. Admin surfaces
+  (`domains.html` 39 SEMrush / 18 Moz, `dishes_v2.html`, `dish-keywords.html`,
+  `product_collections.html`) are curator tools and are deliberately left alone. Re-run the
+  grep before shipping any new user-facing message. See
+  [[feedback_no_vendor_names_to_users]].
 - **`skip_jsonld_fast_lane` is still dead code** — set in three places in `intake/translate.py`,
   read in none. `16f66fe` fixed the SYMPTOM (nulling `_src_rec`); the flag that was meant to
   express the rule is still unwired, so the next path that reaches for JSON-LD can repeat it.
