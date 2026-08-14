@@ -94,6 +94,62 @@ class TranslationResult:
 
 _HTML_LANG_RE = re.compile(r'<html[^>]*\blang\s*=\s*["\']([a-zA-Z]{2,3})', re.IGNORECASE)
 
+# Writing systems that CANNOT appear in English text. Presence at any real density
+# is proof of language in a way a statistical model's verdict is not.
+_SCRIPT_RANGES = (
+    ("ja", ((0x3040, 0x309F), (0x30A0, 0x30FF))),      # kana — checked BEFORE han,
+                                                       # since Japanese mixes both
+    ("ko", ((0xAC00, 0xD7AF), (0x1100, 0x11FF))),      # hangul
+    ("zh", ((0x3400, 0x4DBF), (0x4E00, 0x9FFF))),      # han
+    ("el", ((0x0370, 0x03FF),)),                       # greek
+    ("ru", ((0x0400, 0x04FF),)),                       # cyrillic
+    ("he", ((0x0590, 0x05FF),)),
+    ("ar", ((0x0600, 0x06FF),)),
+    ("th", ((0x0E00, 0x0E7F),)),
+    ("hi", ((0x0900, 0x097F),)),
+)
+# 5% of the sample AND at least 20 characters. An English page that merely NAMES a
+# foreign dish ("担担面") lands far below this; a page actually written in the script
+# lands far above. Measured 2026-08-14 on the failing bookmarklet capture: 14%.
+_SCRIPT_MIN_RATIO = 0.05
+_SCRIPT_MIN_CHARS = 20
+
+
+def script_language(text: str) -> Optional[str]:
+    """ISO 639-1 for a non-Latin writing system present at real density, else None.
+
+    Exists because statistical detection is unreliable on the BOOKMARKLET's staged
+    markdown, which dilutes the page's prose with a fenced JSON-LD block (English
+    keys), URLs and markdown punctuation. Measured 2026-08-14: a xiachufang capture
+    was 14% Han and fasttext still called it 'en', so `is_non_english` was False and
+    the whole translation step was skipped IN SILENCE — the recipe saved with Chinese
+    name, ingredients and method. The URL path never hit this because real HTML
+    carries <html lang="zh">.
+
+    A character count cannot be fooled by dilution the way a whole-document
+    classifier can, so this runs as an override rather than a fallback.
+    """
+    if not text:
+        return None
+    sample = text[:4000]
+    counts: dict[str, int] = {}
+    for ch in sample:
+        o = ord(ch)
+        for lang, ranges in _SCRIPT_RANGES:
+            if any(lo <= o <= hi for lo, hi in ranges):
+                counts[lang] = counts.get(lang, 0) + 1
+                break
+    if not counts:
+        return None
+    # Japanese writes kana AND han; any kana at all settles it as ja, not zh.
+    if counts.get("ja", 0) >= max(5, _SCRIPT_MIN_CHARS // 4):
+        lang, n = "ja", counts["ja"] + counts.get("zh", 0)
+    else:
+        lang, n = max(counts.items(), key=lambda kv: kv[1])
+    if n >= _SCRIPT_MIN_CHARS and (n / len(sample)) >= _SCRIPT_MIN_RATIO:
+        return lang
+    return None
+
 
 def detect_language(
     html: str,
@@ -114,6 +170,17 @@ def detect_language(
     Returns 'en' as a conservative default if detection fails entirely
     (better to skip translation than mistranslate an English page).
     """
+    # 0. NON-LATIN SCRIPT PRESENT AT REAL DENSITY — decisive, and checked FIRST.
+    #    A page whose body is 14% Han is not English no matter what <html lang> or a
+    #    classifier says. Publishers mislabel <html lang> constantly (an English
+    #    template serving foreign content), and the classifier is diluted by the
+    #    bookmarklet's JSON-LD/URL scaffolding. Counting characters is fooled by
+    #    neither. Only fires for scripts English cannot use, so an English page is
+    #    never affected.
+    _script = script_language(visible_text or html or "")
+    if _script:
+        return _script
+
     # 1. <html lang="...">
     m = _HTML_LANG_RE.search(html or "")
     if m:
