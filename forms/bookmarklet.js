@@ -271,19 +271,42 @@
     // Primary: fetch with credentials. Works for same-origin paywalled
     // images (cookies ride along) and CORS-enabled CDNs. Cap latency
     // so the bookmarklet doesn't stall on hanging requests.
-    try {
-      const res = await Promise.race([
-        fetch(heroUrl, { credentials: 'include' }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('fetch timeout')), 6000))
-      ]);
-      if (res.ok) {
-        const blob = await res.blob();
-        if (blob && blob.size > 0 && (blob.type || '').startsWith('image/')) return blob;
-      } else {
-        console.log('[recipe-bookmarklet] hero fetch HTTP', res.status);
+    //
+    // THEN retry WITHOUT credentials. This is not belt-and-braces, it is the
+    // common case for a third-party image CDN: per the Fetch spec, a wildcard
+    // `Access-Control-Allow-Origin: *` is REJECTED when the request's
+    // credentials mode is 'include' — the wildcard is only honoured for
+    // anonymous requests. So `credentials:'include'` POISONS exactly the CDNs
+    // that are most willing to serve us.
+    //
+    // Measured 2026-08-14 on i2.chuimg.com (xiachufang's image CDN): it
+    // returns `Access-Control-Allow-Origin: *`, so the credentialed fetch
+    // fails CORS and the un-credentialed one succeeds. Before this, both the
+    // fetch and the canvas fallback (tainted, no crossorigin attr on the
+    // <img>) failed, the coopt returned null, and the recipe kept the
+    // publisher's remote URL — which then 403'd in the browser because that
+    // CDN is referer-gated. One missing retry cost us the whole hero.
+    for (const creds of ['include', 'omit']) {
+      try {
+        const res = await Promise.race([
+          fetch(heroUrl, { credentials: creds }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('fetch timeout')), 6000))
+        ]);
+        if (res.ok) {
+          const blob = await res.blob();
+          if (blob && blob.size > 0 && (blob.type || '').startsWith('image/')) {
+            console.log('[recipe-bookmarklet] hero fetched credentials=' + creds +
+                        ' (' + blob.size + ' bytes)');
+            return blob;
+          }
+        } else {
+          console.log('[recipe-bookmarklet] hero fetch HTTP', res.status,
+                      'credentials=' + creds);
+        }
+      } catch (e) {
+        console.log('[recipe-bookmarklet] hero fetch error (credentials=' + creds + '):',
+                    e && e.message);
       }
-    } catch (e) {
-      console.log('[recipe-bookmarklet] hero fetch error:', e && e.message);
     }
     // Fallback: the image is already rendered in the DOM, draw it to a
     // canvas. Works when CORS-fetch is blocked but the <img> tag was
