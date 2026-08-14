@@ -4553,10 +4553,161 @@ and 0 rejects respectively — the [[project_fetchfail_salvage]] Phase B backlog
 
 ---
 
+## Session log — 2026-08-14 (evening) — one Chinese recipe, nine bugs, and every one of them reported success
+
+Started as "why is this recipe's title still in Chinese?" and turned into the most productive
+bug day of the month. **The thread through all of it: nine separate defects, and not one of
+them raised an error.** Harvests said `stored=1`. Extracts said `translated=True`. Saves
+returned 200. The system was lying politely in nine different places.
+
+### The nine, and what each one was really doing
+
+| # | commit | what it claimed | what was true |
+|---|---|---|---|
+| 1 | `84504cd` | run is domestic | query was `担担面`; ccTLD-only detector missed it |
+| 2 | `f759d9c` | locale inferred from query | locale is a DISH fact, not a string property |
+| 3 | `16f66fe` | `translated=True` | recipe built from pre-translation JSON-LD |
+| 4 | `c92e176` | `discovered=2` | 10,000-row export collapsed to 2 by a dedupe key |
+| 5 | `74f4e2b` | domain saved fine | `language='zh'` silently destroyed by a `<select>` |
+| 6 | `d8692e9` | hero image stored | remote URL that 403s in the browser, at 300×200 |
+| 7 | `9a4df46` | screenshot captured | pure white, 1 unique colour |
+| 8 | `f333799` | hero fetch failed | our own `credentials:'include'` broke CORS |
+| 9 | `2da3181` | page is English | 14% Han, diluted by JSON-LD scaffolding |
+
+### The two worth reading twice
+
+**#3 — the fast lane ate the translation.** The page's Recipe JSON-LD is parsed once, ABOVE
+the language handling, to build the cache fingerprint — correct, since the fingerprint must
+be source-to-source. That same `_src_rec` object was then reused as the EXTRACTION result
+further down. Translation cleared `md_result['jsonld']` intending to force the LLM path, but
+the lane selection reads `_src_rec`, so clearing `md_result` did nothing. The split was
+exact: rows whose JSON-LD had ≥2 ingredients and ≥2 steps shipped in Chinese; rows logging
+`not eligible (only 1 instruction step)` fell through to the LLM and came out English.
+**The better-structured the page, the worse the result.** And `skip_jsonld_fast_lane` — the
+flag that exists to express precisely this — is set in three places and read in none.
+
+**#4 — one dedupe key erased a publisher.** `_recipe_path_key` drops numeric path segments
+so `/recipe/21014/slug/` and `/recipe/slug/` are one recipe. Correct when a slug survives.
+On xiachufang, where URLs are `/recipe/100634884/` with no slug, NOTHING survives the strip
+and all 10,000 rows key to `('xiachufang.com','recipe')`. The fix detects the collapse by
+RESULT rather than maintaining a list of numeric-id publishers, and logs loudly when it
+fires. 2 → 25 URLs; redhousespice unaffected.
+
+### xiachufang.com — the new publisher, and what it cost to learn
+
+Largest Chinese recipe site by a wide margin (Semrush: ~50× the runner-up's organic traffic;
+the only one of six candidates that is a pure recipe site by URL structure). Harvested as
+**`m.xiachufang.com`** on purpose — `www` serves a slide-captcha (滑动验证) to a plain fetch,
+the mobile host returns the full page WITH Recipe JSON-LD. `robots.txt` sets `Crawl-delay: 10`
+and **our fetch path honours no crawl delay at all** — keep runs small.
+
+Job 844 (post-fix): 25 discovered → 25 passed → **8 extracted, all 0% CJK**. Titles came out
+in the corpus's house style unprompted — `Taiwanese Braised Pork Rice (台湾卤肉饭)`,
+`Xiaolongbao (Shanghai Soup Dumplings, 小笼包)`.
+
+**Chrome auto-translate is a trap on the bookmarklet path.** The morning's wenxuecity capture
+looked perfect because the CURATOR'S BROWSER had translated the page — the tell was
+`Xia Chu Fang (Download Kitchen)`, Google rendering 下厨房 with 下 as *download*. Our Haiku
+translator has a culinary prompt and left it alone. Free translation, but we inherit Google's
+errors, lose the original, and the output depends on a browser setting. **Test with translate
+OFF.**
+
+### Process notes
+
+- **Three cousins of the same bug class** turned up in one day: a flag set-but-never-read
+  (`skip_jsonld_fast_lane`), state cleared in one variable while a second still held it
+  (`_src_rec`), and a control that could not represent its own stored value (the language
+  `<select>`, which silently destroyed `zh` on an unrelated save). All three reported success.
+- **I killed my own job** by wrapping it in `timeout 900`; it died mid-save at 8 of 10 and
+  left an orphaned `running` row holding the publisher lock. The PID-aware reset from 08-13
+  cleaned it correctly. Don't wrap a long job in a timeout — background it.
+- **The curator's bookmarklet test ran on OUR OWN form** (`localhost:8009/r/<uuid>`), which
+  produced a plausible-looking capture with a method list and no ingredients. The bookmarklet
+  should refuse to run on our own origin — UNBUILT, and it would have saved a round.
+- **A dropdown is state you can forget; a button is a decision.** My first pass at the enrich
+  control was a `auto|always|never` select. The curator replaced it with two buttons and was
+  right: a mode you set once and forget can fire the expensive path on a save you never
+  thought about.
+
+### Money — the first real accounting
+
+| period | API spend |
+|---|---|
+| 2026-08-14 | **$4.97** |
+| August (13 days) | **$62.46** |
+| since 2026-05-15 (journal start) | **$215.29** |
+
+~$4.80/day, ≈$145/mo at current pace. Haiku 4.5 is **$141 of the $215** — the right shape
+($1/$5 per MTok vs Opus at $5/$25). Sonnet 4.6 $50, Sonnet 5 $15, Opus 4.8 $9.72 (44 calls,
+the AI editor). Also in the journal: `gpt-4o`/`gpt-4o-mini`, 354 calls — a **third bill**, on
+OpenAI, not priced here.
+
+**API billing is entirely separate from the $200/mo Claude subscription** — different system,
+different invoice, at platform.claude.com. Console check is unfinished: the browser had no
+authenticated session and signing in is the curator's to do. Suspected explanation is a
+prepaid credit balance with auto-reload, which is silent by design.
+
+**The line that grows:** `translate_markdown` ran 34 times today at 183k in / 96k out. Every
+foreign-language page costs a full-page Haiku translation ON TOP of extraction (~40s, about
+half the per-recipe wall clock). That is the cost of harvesting non-English publishers.
+
+### Enrichment policy — settled
+
+**Auto-enrich was never asked for.** It arrived 2026-05-21 inside a five-theme `EOD` commit
+and is not listed among that commit's own highlights. It also never re-enriched on every save
+— it has always been idempotent, firing only when `classification.story` is empty (measured:
+199 master saves, 75 fires, 124 skips). The reason it deserved a control is **latency, not
+money**: median **9.7s**, max **30.4s** added to a save.
+
+Where it landed (`7c674fc`, `613b7c8`):
+
+- **MASTER** — `[Save]` enriches a row with no story (unchanged); `[Save & Re-Enrich]` is the
+  one thing saving does NOT do, refresh an existing story. The plain Enrich button is HIDDEN
+  there, because saving already does it.
+- **PERSONAL** — no auto-enrich at all. The Enrich button is the only route, and it now shows
+  only on a tier that includes it (`users.subscription_tier`, mirroring `_AUTO_ENRICH_TIERS`).
+- Two things to settle **before** selling it: a per-user opt-in (a Premium user must be able
+  to decline ~10s on every save — wants a nullable `users.auto_enrich`), and **metering**.
+  Spend is journaled per `user_id` but nothing enforces a ceiling, and enrichment is the most
+  expensive per-save operation we have. Decide the cap before the first paying user.
+
+### Free vs paid — decided, do not re-argue
+
+**Master enrichment stays visible to everyone, including free tier.** It follows from the
+existing thesis rather than adding to it: *free to browse, membership to KEEP*; the conversion
+moment is CAPTURE (layer 2), and *the free layer is not generosity, it is the channel*.
+Gating layer 1 would wall off the shop window and hide the editorial content from crawlers
+on the same surface that carries `ItemList` + `Review` JSON-LD. The clean line is ownership,
+not quality:
+
+| | whose content | who pays | who sees |
+|---|---|---|---|
+| master enrichment | ours | us, once per recipe | **everyone** |
+| personal enrichment | theirs | them (paid tier) | the owner |
+
+**COOK MODE IS NOT A CONVERSION DRIVER ON ITS OWN** (curator, 2026-08-14). It is layer-4
+icing and cannot carry the offer by itself — the membership needs several feature checkboxes
+that together read as "why I want to be a member of this club." Do not plan a paywall around
+cook view alone. What the other checkboxes are is **OPEN** and is the next product question.
+
+---
+
 ## START HERE — state of play as of 2026-08-14
 
-**Branch `split/enrichment-api`, pushed through 03eb655. Server up and current. No code has
-changed since 2026-08-13 — 08-14 was a harvest-only day.**
+**Branch `split/enrichment-api`. Server RESTARTED 15:36 and current through `2da3181`, but
+NOT through the four commits after it — `98a064f` (save gate), `7c674fc` (enrich policy),
+`894765c`/`613b7c8` (the save buttons) all need another restart to take effect.**
+
+**Jobs pick up new code immediately** — they run out of process via
+`Popen([sys.executable, "-m", "jobs", "exec", ...])`. Only the SERVER process holds stale
+code, which is why the bookmarklet, the forms and interactive extract lag a restart while
+harvests do not.
+
+**DO FIRST when you return:** restart, then re-capture
+`m.xiachufang.com/recipe/107744561` with Chrome translate OFF. Everything for it is in
+place — translation, both images, and now the relaxed save gate — but that row has never
+completed a save (it failed the old `fewer than 3 instructions` gate). That single capture
+exercises six of the nine fixes at once.
 
 Data changes of 2026-08-13 are IN `recipes.db` — morning: 1,739 rows power-re-derived, 28
 re-scored off archive.org, 53 `rootDomain` corrected, 1 row merged. Afternoon: the paywall
@@ -4564,19 +4715,26 @@ calibration APPLIED (7 publishers; Milk Street −51.4%, ATK −52.6%), ATK's fi
 refresh (+10 recipes), 6 Milk Street recipes hand-captured to clear n=12, the
 `userscript_capture` job type and its 3 rows deleted.
 
-Data changes of 2026-08-14: **+202 master rows** (151 publisher / 51 dish). Five publisher
+Data changes of 2026-08-14 (evening, on top of the morning's): `m.xiachufang.com` created
+(NEW publisher, `language=zh`, `fetch_strategy=plain`, mobile host on purpose); jobs 842
+(killed by my own timeout), 843 (2 candidates — the dedupe bug) and 844 (25 → 8 clean rows);
+`mixed_media` set on six publishers and calibration job 841 applied; Dan Dan Noodles given
+`source_language='zh'`. Publisher-refresh is DELETE-AND-REPLACE, so 842's rows were wiped by
+843 — including the three Chinese-language rows, which is why no cleanup was needed.
+
+Data changes of 2026-08-14 (morning): **+202 master rows** (151 publisher / 51 dish). Five publisher
 refreshes — redhousespice.com (NEW, 28), tasteatlas.com (NEW, 5, `unblocker`),
 mygreekdish.com (40), sallysbakingaddiction.com (40), latimes.com (40). Four dish refreshes
 — Oatmeal Cookies (replaced 10), Egg Foo Young (NEW, 20), Chinese BBQ Pork (NEW, 20),
 Dan Dan Noodles (NEW, 6). latimes recalibration re-ran at n=246 and stayed `inconclusive`.
 
-**Do first when you return:** one phone bookmarklet grab — STILL OPEN, nothing on 08-14
-touched it. The two capture fixes (width cap + `windowWidth`) are in but have never been
-tested TOGETHER on a real phone — that is the only open question from the screenshot work.
-Pull the stored bytes and measure them; do not judge by eye. Anything under 320px wide is
-now refused outright, so a bad capture leaves NO screenshot rather than a smudge. (All 08-14
-captures were server-side harvest-path and came back healthy at 800×427, which tests
-nothing about the browser path.)
+**The phone bookmarklet grab is STILL OPEN.** The two capture fixes (width cap +
+`windowWidth`) have never been tested TOGETHER on a real phone. Pull the stored bytes and
+measure them; do not judge by eye. Under 320px wide is refused, and as of `9a4df46` a BLANK
+capture is refused too, so a bad grab leaves NO screenshot rather than a smudge. Desktop
+bookmarklet captures on xiachufang came back blank (640×341, stddev 0.00) TWICE and were
+correctly refused, with the deferred server capture filling in — so that fallback is proven,
+but html2canvas failing on that publisher is unexplained and needs the browser console.
 
 **Still reverted on purpose:** the recipe form's screenshot `aspect-ratio: 3/2` → `15/8`.
 It IS a real 12.5%-per-side crop of every screenshot, server and browser alike, but it is a
@@ -4641,8 +4799,9 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
 ### Current numbers (measured 2026-08-14)
 
-- master_recipes **5,157** · personal **427** · dishes **163** · domains **325**
-  (was 4,921 / 423 / 159 / 322 on 08-12)
+- master_recipes **5,166** · personal **428** · dishes **163** · domains **326**
+  (was 4,921 / 423 / 159 / 322 on 08-12). The evening's net is small because the
+  publisher refresh is DELETE-AND-REPLACE — job 843 wiped job 842's rows.
 - candidate ledger **700 rows across 7 runs** · mediations **25** (Ramen only)
 - cook-reworked: **16** rows with a non-empty `_cook` (0.3%)
 - SEMrush API units **~26,100** — a ONE-TIME grant. Smallest purchasable package is
@@ -4690,6 +4849,21 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
 ### Known-open
 
+- **`skip_jsonld_fast_lane` is still dead code** — set in three places in `intake/translate.py`,
+  read in none. `16f66fe` fixed the SYMPTOM (nulling `_src_rec`); the flag that was meant to
+  express the rule is still unwired, so the next path that reaches for JSON-LD can repeat it.
+- **The bookmarklet will happily capture our own app.** Fired on `/r/<uuid>` it produced a
+  plausible-looking recipe — method list, screenshot, no ingredients — and cost a debugging
+  round. It should refuse to run on our own origin.
+- **html2canvas returns a BLANK capture on m.xiachufang.com** — 640×341, stddev 0.00, twice.
+  The guard now refuses it and the deferred server capture fills in, so the outcome is
+  correct, but the cause is unknown. Needs the browser console on a real capture; the
+  bookmarklet already logs its own diagnostics.
+- **24 blank screenshots are already in media.db** across 10 publishers (timoleondiamantis 8,
+  southernliving 6, marthastewart 3, …) plus 22 in the warn band. `9a4df46` guards new writes
+  only. Look at the list before latching them — the commonality is the useful part.
+- **`scripts/backfill_coopt_images.py` needs the same remote-vs-ours logic** as `d8692e9`, or
+  it will keep skipping rows whose `previewImage` is a remote URL that 403s in a browser.
 - **The nightly `screenshot_refresh` fails the same 45 rows every run** — 45 attempted, 45
   failed, six consecutive nights (jobs 778→835), while `scanned` climbed 5,186→5,549. A
   fixed unrecoverable set that nothing latches, so the job pays for 45 doomed captures in
