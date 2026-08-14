@@ -1073,6 +1073,23 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
             round(float(da) * (1.0 - pct / 100.0), 2)
             if (manual and isinstance(da, (int, float)) and da) else None)
 
+    # DA is a PAID Moz measurement and it goes stale, so when it changes, record
+    # when. The domain form has always rendered a "DA scored <date>" pill from
+    # `da_last_scored` — and nothing ever wrote the column, so the pill could not
+    # appear on any of 326 rows. Stamping here is what makes the existing UI real.
+    # Only on an actual CHANGE: re-saving the form with the same number is not a
+    # rescore, and stamping it would quietly reset the staleness clock.
+    if "domain_authority" in sets:
+        _prev = (get_domain(conn, host) or {}).get("domain_authority")
+        _new = sets["domain_authority"]
+        try:
+            _changed = (_new is not None) and (
+                _prev is None or abs(float(_new) - float(_prev)) > 1e-9)
+        except (TypeError, ValueError):
+            _changed = _new != _prev
+        if _changed:
+            sets["da_last_scored"] = _now()
+
     sets["updated_at"] = _now()
     assignments = ", ".join(f"{k} = ?" for k in sets)
     conn.execute(

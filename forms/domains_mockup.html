@@ -114,7 +114,7 @@
       story:"Condé Nast's recipe hub — a deep, well-tested archive drawing on the Gourmet and Bon Appétit back catalogs.",
       logo_url:'https://logo.clearbit.com/epicurious.com',
       country:'United States', language:'en', cuisine_focus:'', ethnicity:'',
-      fetch_strategy:'plain', render_required:0, custom_extractor:'',
+      fetch_strategy:'plain', render_required:0,
       extract_notes:'JSON-LD Recipe reliable. Individual recipes live under /recipes/food/views/.',
       harvest_source:'serp', serp_query:'', search_pages:10,
       harvest_records:100, harvest_ttl_days:90, backlinks_dir:'',
@@ -171,7 +171,6 @@
             ${field('f_allowed','Allowed (ingest from this site)', d.allowed===1, { checkbox:true })}
           </div>
           ${field('f_extract_notes','Extraction notes', d.extract_notes, { textarea:true, full:true, minh:64, ph:'JSON-LD reliable · needs www for Moz…' })}
-          ${field('f_custom_extractor','Custom extractor (module path)', d.custom_extractor, { full:true, ph:'intake.parsers.foo' })}
         </section>
 
         <!-- ═══ HARVEST ═══ -->

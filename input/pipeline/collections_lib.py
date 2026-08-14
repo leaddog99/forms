@@ -1131,6 +1131,34 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         else:
             _drop(url, title, "moz-unavailable", "moz")
             print(f"  [{i:>2}/{n_rp}] MOZ-FAIL  {url}")
+    # STAMP THE PUBLISHER'S DA FROM THIS RUN. Moz returns domain_authority on
+    # every URL it scores, so a harvest of N pages measures the same publisher's
+    # DA N times and — until now — threw all N away. `domains.domain_authority`
+    # was therefore whatever someone last typed by hand, going quietly stale
+    # between harvests, and `da_last_scored` was never written at all.
+    #
+    # Median, not max: canonical-variant probing can return a neighbouring host's
+    # figure, and one outlier should not move the publisher's recorded authority.
+    # Written through update_domain so it takes the single validated write path
+    # (which also stamps da_last_scored on an actual change).
+    try:
+        from input.pipeline.db import connect as _dbconn
+        from input.pipeline import domains_lib as _dl_da
+        _das = sorted(float(r["da"]) for r in scored if r.get("da") is not None)
+        if _das:
+            _median = _das[len(_das) // 2] if len(_das) % 2 else (
+                (_das[len(_das) // 2 - 1] + _das[len(_das) // 2]) / 2.0)
+            with _dbconn() as _dc:
+                _prev = (_dl_da.get_domain(_dc, domain) or {}).get("domain_authority")
+                if _dl_da.update_domain(_dc, domain, {"domain_authority": _median}) is not None:
+                    if _prev is None or abs(float(_prev) - _median) > 1e-9:
+                        print(f"  [harvest] DA refreshed for {domain}: "
+                              f"{_prev if _prev is not None else '—'} -> {_median:g} "
+                              f"(median of {len(_das)} Moz rows this run)")
+    except Exception as e:
+        # A stale DA is not worth failing a harvest over.
+        print(f"  [harvest] DA stamp skipped ({type(e).__name__}: {e})")
+
     _ms = _us.moz_row_stats()
     print(f"  [harvest] Moz rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
           f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old "
