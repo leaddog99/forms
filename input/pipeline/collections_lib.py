@@ -716,6 +716,22 @@ def _recipe_path_key(url):
     return (root_domain(url), "/".join(s.lower() for s in segs))
 
 
+def _recipe_full_path_key(url):
+    """Dedup key that KEEPS numeric segments — the fallback for publishers whose
+    recipe URLs are numeric-id-only (`/recipe/100634884/`). For those, the alias
+    key above is not merely coarse, it is catastrophic: with no slug to survive
+    the digit-strip, EVERY recipe on the site collapses to one key.
+
+    Measured 2026-08-14 on m.xiachufang.com: a 10,000-row SEMrush export produced
+    exactly 2 candidates, because 9,999 of them keyed to ('xiachufang.com',
+    'recipe'). Selected by `_read_backlinks_file`'s collapse guard, never by
+    guessing per publisher."""
+    segs = [s for s in urlparse(url).path.strip("/").split("/") if s]
+    while segs and segs[-1].split(".")[0].lower() in ("detail", "index", "amp", ""):
+        segs.pop()
+    return (root_domain(url), "/".join(s.lower() for s in segs))
+
+
 def _read_backlinks_file(domain, want, extra_dir=None):
     """Discovery from a local SEMrush page export, ranked by REFERRING DOMAINS desc
     (distinct linking sites — a robust authority marker, harder to game than raw
@@ -803,15 +819,36 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         except Exception as e:
             print(f"  [dish-keywords] capture skipped ({type(e).__name__}: {e})")
     rows.sort(key=lambda x: -x[2])   # rank desc (domains or traffic)
-    out, seen, meta = [], set(), {}
-    for url, title, _r, traffic, tpct, seq in rows:
-        key = _recipe_path_key(url)            # collapse id / slug / detail.aspx aliases
-        if key not in seen:
-            seen.add(key)
-            out.append((url, title))           # keep the highest-ranked variant
-            meta[url] = {"traffic": traffic, "traffic_pct": tpct, "file_seq": seq}
-        if len(out) >= want:
-            break
+
+    def _dedupe(keyfn):
+        out, seen, meta = [], set(), {}
+        for url, title, _r, traffic, tpct, seq in rows:
+            key = keyfn(url)
+            if key not in seen:
+                seen.add(key)
+                out.append((url, title))       # keep the highest-ranked variant
+                meta[url] = {"traffic": traffic, "traffic_pct": tpct, "file_seq": seq}
+            if len(out) >= want:
+                break
+        return out, meta
+
+    out, meta = _dedupe(_recipe_path_key)      # collapse id / slug / detail.aspx aliases
+    # ALIAS-COLLAPSE GUARD. The alias key drops numeric path segments so
+    # /recipe/21014/slug/ and /recipe/slug/ are one recipe. On a publisher whose
+    # URLs carry NO slug (/recipe/100634884/), nothing survives the digit-strip and
+    # the whole site keys to ('host','recipe') — 10,000 rows in, 1 candidate out.
+    # Detect it by RESULT rather than by guessing which publishers are numeric-id:
+    # if deduping threw away most of what we asked for while the file plainly had
+    # the rows, redo it on the full path. Loud, because silently harvesting 1 of 25
+    # reads as "the publisher only has one recipe".
+    _asked = min(want, len(rows))
+    if len(out) < max(2, _asked // 2) < len(rows):
+        alt, alt_meta = _dedupe(_recipe_full_path_key)
+        if len(alt) > len(out):
+            print(f"  [harvest] alias-dedupe collapsed {len(rows)} rows to {len(out)}; "
+                  f"this publisher's URLs are numeric-id-only — re-deduped on the full "
+                  f"path: {len(alt)} URLs")
+            out, meta = alt, alt_meta
     print(f"  [harvest] SEMrush file {os.path.basename(path)}: {len(out)} URLs (by {rank_label})")
     # File the export into the tracked archive. Here, at the point it is
     # CONSUMED, is the one place every backlinks_file harvest passes through —
