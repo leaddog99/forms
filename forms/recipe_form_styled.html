@@ -97,6 +97,25 @@
       margin: 0 auto;
     }
 
+    /* Per-save enrich control. Reads as a setting beside the buttons, not as
+       another button — it changes what Save does rather than doing something. */
+    .enrich-mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: .82rem;
+      color: var(--muted, #6b5b4f);
+      vertical-align: middle;
+    }
+    .enrich-mode select {
+      font: inherit;
+      padding: 3px 6px;
+      border: 1px solid var(--ed-line, #e2d6c3);
+      border-radius: 6px;
+      background: #fff;
+      color: inherit;
+    }
+
     .container {
       display: grid;
       grid-template-columns: 1fr;
@@ -2403,6 +2422,20 @@
   <footer class="action-footer">
     <div class="button-row">
       <button type="submit" form="recipeForm" class="primary" id="saveBtn">Save</button>
+      <!-- Per-save enrich control. Only master (user_id 0) writes auto-enrich at
+           all, so the select is hidden for personal saves rather than shown
+           inert. AUTO is the default and is what already happened: enrich only a
+           row with no story yet. The reason this is worth a control is LATENCY,
+           not money — measured over 75 real fires: median 9.7s, max 30.4s added
+           to the save. The ~$0.05 is the smaller half of the cost. -->
+      <label id="enrichModeWrap" class="enrich-mode" style="display:none">
+        <span>Enrich</span>
+        <select id="enrichMode" title="Auto = enrich only if this row has no story yet (the default). Always = re-run and refresh an existing story. Never = skip; you can still use the Enrich button later.">
+          <option value="auto" selected>auto</option>
+          <option value="always">always</option>
+          <option value="never">never</option>
+        </select>
+      </label>
       <button type="button" id="enrichBtn" class="secondary">Enrich</button>
       <!-- Cook-rework: turns the recipe into the validated step-anchored _cook
            (POST /recipes/<id>/cook-rework, out-of-process). Visible only on a
@@ -3600,6 +3633,10 @@
       const isMaster = (uid === 0);
       chk.checked = isMaster;
       sel.disabled = isMaster;
+      // Auto-enrich is a master-only behaviour, so the control follows the same
+      // switch rather than sitting there doing nothing on a personal save.
+      const em = document.getElementById('enrichModeWrap');
+      if (em) em.style.display = isMaster ? '' : 'none';
       if (!isMaster && !Number.isNaN(uid)) {
         if (![...sel.options].some(o => Number(o.value) === uid)) {
           const opt = document.createElement('option');
@@ -4527,6 +4564,10 @@
         // falsy, so `|| 1` silently rewrote every master save to user 1. Preserve
         // a valid 0; only fall back to 1 on NaN/empty.
         user_id: (() => { const v = parseInt(getValOr("user_id", "1"), 10); return Number.isNaN(v) ? 1 : v; })(),
+        // Per-save enrich control (master only; server ignores it otherwise).
+        // Omitted when the select is absent so an older form build keeps the
+        // server's own default rather than sending an empty string.
+        _enrich: (document.getElementById("enrichMode")?.value || undefined),
         name: document.getElementById("name").value,
         description: document.getElementById("description").value,
         recipeIngredient: getIngredients(),

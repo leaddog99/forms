@@ -9245,15 +9245,25 @@ def _save_recipe_core(payload: dict) -> dict:
     # enrich manually later via the form's Enrich button. Live form
     # saves (no _skip flag set) preserve the original auto-enrich
     # behavior for master writes.
-    skip_auto_enrich = bool(payload.get("_skip_auto_enrich"))
-    if _auto_enrich_applies(user_id) and not skip_auto_enrich:
+    # `_skip_auto_enrich` is the LEGACY boolean the batch jobs still send; `_enrich`
+    # is the per-save control ("auto" | "always" | "never"). Both are honoured, and
+    # an explicit `_enrich` wins, so nothing that sends the old flag changes.
+    _mode = str(payload.get("_enrich") or "").strip().lower()
+    if _mode not in ("auto", "always", "never"):
+        _mode = "never" if payload.get("_skip_auto_enrich") else "auto"
+    if _auto_enrich_applies(user_id) and _mode != "never":
         cls = recipe_dict.get("classification") or {}
         story = (cls.get("story") or "").strip()
         name = (recipe_dict.get("name") or "").strip()
         ingredients = recipe_dict.get("recipeIngredient") or []
-        if not story and name and ingredients:
+        # AUTO enriches only a row that has no story yet — the "pay once" property.
+        # ALWAYS re-runs even when a story exists, which is the only way to refresh
+        # a stale one at save time (the form's Enrich button is the other route).
+        _wanted = (_mode == "always") or not story
+        if _wanted and name and ingredients:
             try:
-                print(f"[SAVE-ENRICH] master row missing story; calling enrich_recipe")
+                print(f"[SAVE-ENRICH] enrich_recipe (mode={_mode}, "
+                      f"{'no story yet' if not story else 'refreshing existing story'})")
                 t_enrich = time.perf_counter()
                 _inject_dish_competitiveness(recipe_dict)
                 enrich_recipe(recipe_dict, usage_log=save_usage_log)
