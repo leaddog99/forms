@@ -314,7 +314,11 @@
     }
 
     function paywallStatusHtml(d){
-      if (Number(d.paywall) !== 1) return '';
+      // Either flag makes a publisher eligible for the gap calibration, so either
+      // one has a verdict worth showing. Keying this on `paywall` alone would
+      // leave a mixed-media domain with its discount applied and nothing on
+      // screen saying so.
+      if (Number(d.paywall) !== 1 && Number(d.mixed_media) !== 1) return '';
       const st = d.paywall_adj_status, note = d.paywall_adj_note || '';
       // A BLOCK, not an inline tail. This used to be appended after the paywall
       // checkbox's label text, so it opened with " · " as a separator; once the
@@ -513,13 +517,18 @@
             <span class="opt-t">Gated / premium publisher <span style="font-weight:400;color:var(--muted)">(paywall)</span></span>
           </label>
           <p class="opt-h">The <b>fact</b> that it's gated — not a claim that it's penalised. Whether its pages are actually starved of links is measured separately, below. Harvest trusts it and skips fetch-verify.</p>
+          <label class="opt">
+            <input type="checkbox" id="f_mixed_media" ${Number(d.mixed_media) === 1 ? 'checked' : ''}>
+            <span class="opt-t">Mixed media <span style="font-weight:400;color:var(--muted)">(authority earned elsewhere)</span></span>
+          </label>
+          <p class="opt-h">The domain's authority comes from something <b>other than</b> its recipes — a newspaper, a forum, a lifestyle portal, a supermarket, a restaurant directory. Its recipe pages are then judged against a bar the rest of the site built, the same fault a paywall causes. Tick it for what the site <b>is</b>, not for scoring badly: a pure recipe site with weak pages is just a weaker site. Eligibility only — the discount is still measured below, and a site that isn't starved gets none.</p>
           <!-- OUTSIDE the label on purpose: this renders a block element, and a
                <div> nested in the label's <span> is invalid — the parser closes
                the span (and can close the label) to place it, restructuring the
                control that owns the paywall checkbox. -->
           ${obtainableHtml(d)}
           ${paywallStatusHtml(d)}
-          ${Number(d.paywall) === 1 ? `
+          ${(Number(d.paywall) === 1 || Number(d.mixed_media) === 1) ? `
           <div class="ed-field">
             <label for="f_paywall_discount">DA discount override (%)</label>
             <input id="f_paywall_discount" type="number" step="0.1" min="0.1" max="99.9"
@@ -1451,6 +1460,7 @@
         harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp',
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
         paywall: $('#f_paywall')?.checked ? 1 : 0,
+        mixed_media: $('#f_mixed_media')?.checked ? 1 : 0,
         // Empty string (not null) clears the override and returns the publisher
         // to automatic calibration — the server distinguishes the two.
         paywall_da_discount_pct: ($('#f_paywall_discount')?.value ?? '').trim(),

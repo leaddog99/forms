@@ -4424,17 +4424,20 @@ notice the yield, cancel, change ONE thing, re-run. Total cost of the wrong firs
 because the alternative — letting a bad-strategy run finish "successfully" with a quarter of
 the recipes — is the failure mode that produces a publisher who looks harvested and isn't.
 
-### latimes: 5× the sample, same verdict
+### latimes stayed inconclusive — but the reason was the reference pool
 
-The 2026-08-13 calibration table had latimes at n=52, gap 3.03, `inconclusive`. Today's
-harvest pushed the stored sample to **n=246** and it is *still* `inconclusive` (78 master +
-33 personal rows restamped, `discount_pct` null). That is not a coverage problem waiting on
-more data — it is the answer. latimes' gated pages are not systematically PA-starved the way
-Milk Street's and ATK's are, and no amount of additional n is going to move it. The gate is
-doing its job; a paywall is not automatically a tax. Same shape as NYT clearing `no_penalty`.
+Job 840 re-ran the recalibration after the harvest and returned `inconclusive` again
+(78 master + 33 personal rows restamped, `discount_pct` null).
 
-Current calibration state: bostonglobe n=250, latimes n=246, cooking.nytimes n=116,
-americastestkitchen n=40, 177milkstreet n=31.
+**Do not read publisher sample size off `pa_cal_n`.** That column belongs to the SUPERSEDED
+shift-and-scale method and is retained read-only; it shows latimes at 246 while the live
+`pa_gap_v1` sample is **n=42**. Reading 246 as "the sample grew 5×" was wrong on 2026-08-14
+and the mistake is easy to repeat, because both numbers sit on the same domain row.
+
+The verdict itself turned out NOT to be a property of latimes at all — see the mixed-media
+entry below. Once PA-starved general-interest domains are removed from the free reference
+pool, latimes' gap goes 6.32 at effect 1.25 and it flips to **`adjusted`, −21.4%**. It was
+inconclusive because the yardstick was contaminated, not because it isn't taxed.
 
 ### Two harvests ran on seven-week-old exports — flag, not a failure
 

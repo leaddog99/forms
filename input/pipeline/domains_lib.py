@@ -76,6 +76,24 @@ EDITABLE_FIELDS = (
     # per-run choice is one someone has to remember every time — and forgetting it
     # costs a render per URL to rediscover a paywall we already measured.
     "human_capture_only",
+    # MIXED MEDIA — the domain's authority is earned by content that is NOT its
+    # recipes: a newspaper (washingtonpost), a general forum (wenxuecity), a
+    # lifestyle portal (marthastewart), a supermarket chain (ab.gr), a restaurant
+    # directory (bostonchefs), a TV personality's site (andrewzimmern). DA is
+    # measured across the WHOLE domain, so on these the recipe section is judged
+    # against an expectations bar its own news/listings/crafts built — the exact
+    # structural fault the paywall haircut corrects, arriving by a different
+    # route. Feeds the SAME `pa_gap_v1` calibration.
+    #
+    # CURATED, never inferred: there is no reliable signal for it. `recipe_path`
+    # looks like a proxy and is not — it is set on washingtonpost and epicurious
+    # but NOT on marthastewart or bostonglobe, which are as mixed as either.
+    #
+    # NOT a quality judgment. A pure recipe blog whose pages run below its DA
+    # cohort is simply a weaker site and must NOT be flagged — discounting it
+    # manufactures a permanent bonus for being mediocre, which is the failure
+    # mode paywall_calibration's MIN_EFFECT gate exists to prevent.
+    "mixed_media",
     # Curator override for the DA haircut. Setting it flips paywall_adj_source
     # to 'manual', which makes the calibration job leave the row alone; clearing
     # it (blank/None) hands ownership back to the job on its next run.
@@ -329,6 +347,11 @@ _SEMRUSH_FILTER_COLUMNS = {
     # harvest still discovers, scores and ranks; only the paid content fetch is
     # skipped, and ingestion routes to the curator's signed-in browser.
     "human_capture_only": "INTEGER NOT NULL DEFAULT 0",
+    # CURATED. 1 = the domain's authority is earned by non-recipe content, so its
+    # recipe pages are judged against a bar they did not build. Widens the
+    # pa_gap_v1 calibration beyond gated publishers — same fault, different cause.
+    # See the EDITABLE_FIELDS entry for why this cannot be inferred.
+    "mixed_media": "INTEGER NOT NULL DEFAULT 0",
     # VESTIGIAL LATCH, kept deliberately and pinned to 1 on every row. Nothing
     # regenerates semrush_report_url any more, so this flag no longer decides
     # anything — it stays as a belt-and-braces guard in case a generation path

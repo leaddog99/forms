@@ -173,25 +173,35 @@ def compute_gap(rows: list[dict], free_rows: list[dict]) -> dict:
             "da_adjusted": round(adjusted, 1), "discount_pct": round(discount, 1)}
 
 
-def _explain(res: dict) -> str:
+def _explain(res: dict, cause: str = "paywall") -> str:
     """One line a curator can act on, for the domain record and the job log.
 
     Every 'no adjustment' outcome has a different remedy — harvest the
     publisher, wait for more rows, or accept that it isn't penalized — and a
-    blank field tells you none of them."""
+    blank field tells you none of them.
+
+    `cause` is why the publisher is eligible ('paywall' | 'mixed_media' |
+    'both'), so the line names the right reason. Telling the curator that
+    washingtonpost.com is "gated but earning normal authority" would be a
+    plain falsehood in the field they read to make the decision."""
     s = res.get("status")
     n, gap = res.get("n"), res.get("pa_gap")
+    why = {"paywall": "the paywall flag",
+           "mixed_media": "the mixed-media flag",
+           "both": "the paywall and mixed-media flags"}.get(cause, "the flag")
+    normal = ("Gated, but earning normal authority" if cause == "paywall" else
+              "Mixed-media, but its recipe pages earn normal authority" if cause == "mixed_media"
+              else "Flagged, but earning normal authority")
     if s == "adjusted":
         return (f"Pages run {gap:.1f} PA below free publishers at DA "
                 f"{res['da_measured']:.0f} (effect {res['effect']:.2f} of the peer "
                 f"spread, n={n}); DA discounted {res['discount_pct']:.1f}%.")
     if s == "no_rows":
-        return ("No scored recipes for this publisher yet, so the paywall flag has "
+        return (f"No scored recipes for this publisher yet, so {why} has "
                 "never been tested. Run a publisher refresh to gather evidence.")
     if s == "no_penalty":
         return (f"Not starved: its pages match or beat free publishers at the same DA "
-                f"(gap {gap:+.1f}). Gated, but earning normal authority — no discount "
-                f"is warranted.")
+                f"(gap {gap:+.1f}). {normal} — no discount is warranted.")
     if s == "low_confidence":
         return (f"Only {n} scored recipes (need {res.get('min_n', MIN_N)}). A gap of "
                 f"{gap:+.1f} is showing but the sample is too thin to act on.")
@@ -215,8 +225,24 @@ def calibrate(conn, *, persist: bool = True) -> dict:
     Reads master_recipes directly: the corpus IS the sample, so unlike the old
     method there is no SERP harvest, no Moz spend, and nothing to keep in sync."""
     domains_lib.ensure_domains_table(conn)
-    flagged = [r[0] for r in conn.execute(
-        "SELECT domain FROM domains WHERE paywall = 1 ORDER BY domain")]
+    # TWO CAUSES, ONE FAULT. A gated publisher's recipe pages are link-starved
+    # because readers cannot reach them; a MIXED-MEDIA domain's are link-starved
+    # because the DA was earned by news / listings / crafts that the recipe
+    # section never contributed to. Either way the page is measured against an
+    # expectations bar it did not build, which is precisely what the gap method
+    # corrects. Measured 2026-08-14: washingtonpost.com runs 8.7 PA below free
+    # peers at DA 94 and bbs.wenxuecity.com 22.0 below at DA 71 — larger than
+    # bostonglobe.com's 7.98, and neither is gated.
+    #
+    # The flag only makes a publisher ELIGIBLE. Every guard downstream still
+    # applies: MIN_N, MIN_EFFECT, window stability, and `gap <= 0` -> no_penalty.
+    # So mis-flagging a site that is not actually starved costs nothing.
+    flagged_rows = conn.execute(
+        "SELECT domain, COALESCE(paywall,0), COALESCE(mixed_media,0) FROM domains "
+        "WHERE paywall = 1 OR mixed_media = 1 ORDER BY domain").fetchall()
+    flagged = [r[0] for r in flagged_rows]
+    cause_of = {r[0]: ("both" if r[1] and r[2] else "mixed_media" if r[2] else "paywall")
+                for r in flagged_rows}
     if not flagged:
         return {"method": METHOD, "flagged": 0, "results": []}
 
@@ -283,7 +309,8 @@ def calibrate(conn, *, persist: bool = True) -> dict:
 
         res = compute_gap([r for r in rows if r["owner"] == dom], free_rows)
         res["domain"] = dom
-        res["note"] = _explain(res)
+        res["cause"] = cause_of.get(dom, "paywall")
+        res["note"] = _explain(res, res["cause"])
         results.append(res)
         if not persist:
             continue
