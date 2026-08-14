@@ -1204,6 +1204,42 @@ def init_db():
 # Initialize the app without lifespan for now to avoid hanging
 app = FastAPI()
 
+
+# ONE PLACE THAT DECIDES WHAT A NON-STAFF CALLER IS TOLD WHEN SOMETHING BREAKS.
+#
+# 31 endpoints an ordinary member can reach raise `detail=f"...: {e}"` — the raw
+# exception, straight to the client. A sqlite error names columns and tables; an
+# SDK error names the model and provider we call; an OSError names a path on this
+# machine. None of that is meaningful to someone capturing a recipe, and all of it
+# is ours.
+#
+# Fixed HERE rather than at 31 call sites, for the same reason the unscored-note
+# redaction lives at the response boundary: a rule applied in one place cannot be
+# forgotten by the 32nd endpoint. The detailed text is still LOGGED in full, and
+# staff still receive it — an operator debugging a failure needs the real error.
+#
+# 5xx only. 4xx details are written for the user ("Recipe must have a name",
+# "url is required") and are the actionable half of the API; blanketing those
+# would make the product worse, not safer.
+GENERIC_SERVER_ERROR = (
+    "Something went wrong on our end. Your work wasn't lost — please try again.")
+
+
+@app.exception_handler(HTTPException)
+async def _redact_server_errors(request: Request, exc: HTTPException):
+    detail = exc.detail
+    if exc.status_code >= 500:
+        print(f"[HTTP {exc.status_code}] {request.method} {request.url.path} :: {detail}")
+        try:
+            staff = auth_lib.is_staff(_resolve_caller(request) or {})
+        except Exception:
+            staff = False          # fail CLOSED — an auth hiccup must not leak
+        if not staff:
+            detail = GENERIC_SERVER_ERROR
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail},
+                        headers=getattr(exc, "headers", None))
+
+
 # Initialize DB immediately instead of using lifespan
 print("[SETUP] Initializing database...")
 init_db()
