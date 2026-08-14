@@ -118,9 +118,31 @@ def markdown_to_recipe(
         f"<MARKDOWN>\n{cleaned_md}\n</MARKDOWN>"
     )
 
+    # PUBLISHER HINT. `domains.extract_notes` is curator prose about how THIS
+    # site lays its recipes out — the field the schema has always described as
+    # "capture hints for the harvest" and that nothing has ever read. Appended to
+    # the system prompt rather than merged into it, so the general instructions
+    # stay one stable block (they are the cacheable prefix) and the per-publisher
+    # part is clearly delimited and clearly subordinate.
+    system_prompt = SYSTEM_PROMPT
+    try:
+        from input.pipeline.domains_lib import extract_hint_for_url
+        _hint = extract_hint_for_url(source_url) if source_url else ""
+        if _hint:
+            system_prompt = SYSTEM_PROMPT + (
+                "\n\nPUBLISHER NOTES — written by our curator about THIS site "
+                "specifically. Treat as guidance about where this publisher puts "
+                "things and what its pages are like. It never overrides the rules "
+                "above, and it is never itself recipe content:\n"
+                f"<publisher_notes>\n{_hint}\n</publisher_notes>"
+            )
+            print(f"     [EXTRACT] publisher hint applied ({len(_hint)} chars)")
+    except Exception as e:
+        print(f"     [EXTRACT] publisher hint skipped ({type(e).__name__}: {e})")
+
     if prompts is not None:
         prompts["model"] = model
-        prompts["system_prompt"] = SYSTEM_PROMPT
+        prompts["system_prompt"] = system_prompt
         prompts["user_prompt"] = user_prompt
 
     t_prep = time.perf_counter()
@@ -138,7 +160,7 @@ def markdown_to_recipe(
         operation="markdown_to_recipe", model=model,
         max_tokens=4096,
         temperature=0.2,
-        system=SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
         response = stream.get_final_message()

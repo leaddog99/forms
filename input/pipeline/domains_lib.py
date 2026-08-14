@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timedelta, timezone
@@ -647,6 +648,58 @@ def human_capture_only(conn, domain: str) -> bool:
     except Exception:
         return False
     return bool(row and row[0])
+
+
+# Longest hint we will paste into an extraction prompt. Generous enough for real
+# publisher guidance, short enough that a field someone pasted an essay (or a
+# whole page) into cannot quietly dominate the system prompt.
+EXTRACT_HINT_MAX_CHARS = 1200
+
+# A hint that is only a URL is not guidance — `extract_notes` has been used as a
+# scratchpad (cooking.nytimes.com holds a pasted SEMrush link), and pasting that
+# into an extraction prompt would be worse than sending nothing.
+_URLISH_RE = re.compile(r"^\s*<?https?://\S+>?\s*$", re.IGNORECASE)
+
+
+def extract_hint_for_url(url_or_host: str, db_path: str = _DEFAULT_DB) -> str:
+    """Publisher-specific extraction guidance for this URL, or '' when none.
+
+    `extract_notes` has existed since the table was created, is described in this
+    module's own header as "capture hints for the harvest", is editable in the
+    domain form — and until now was read by NOTHING. This is the read side.
+
+    The text goes into the extraction system prompt as publisher context. It is
+    prose written by the curator for the model, deliberately not a mini-language:
+    the same free-text-hint shape the review extractors already use per source
+    ([[project_review_extractor_variants]]).
+
+    Resolves by walking UP the host labels, because `domains` is keyed at
+    full-host grain while a recipe URL may sit on a subdomain — the same walk
+    `adjustment_for_url` does, and the reason an equality check silently matched
+    0 of NYT's rows.
+
+    Never raises: a hint is an enhancement, and a lookup failure must not stop an
+    extraction that would otherwise succeed.
+    """
+    try:
+        host = _canon_host(url_or_host)
+        if not host:
+            return ""
+        labels = host.split(".")
+        candidates = [".".join(labels[i:]) for i in range(max(1, len(labels) - 1))]
+        import sqlite3 as _sq
+        with _sq.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5) as conn:
+            for cand in candidates:
+                row = conn.execute(
+                    "SELECT extract_notes FROM domains WHERE domain = ?", (cand,)
+                ).fetchone()
+                note = (row[0] or "").strip() if row else ""
+                if not note or _URLISH_RE.match(note):
+                    continue
+                return note[:EXTRACT_HINT_MAX_CHARS]
+    except Exception:
+        return ""
+    return ""
 
 
 def paywall_adjustment_is_manual(conn, domain) -> bool:
