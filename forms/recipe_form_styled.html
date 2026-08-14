@@ -1207,6 +1207,10 @@
 
     #feedback.success { background: #e8f5e9; color: #2e7d32; border-left: 3px solid #2e7d32; }
     #feedback.error { background: #fdf2f2; color: #c0392b; border-left: 3px solid #c0392b; }
+    /* Amber, and deliberately NOT auto-cleared by showFeedback (only 'success'
+       is): a save that stored the recipe but could not score it is a real
+       outcome the user should still be able to read a minute later. */
+    #feedback.warn { background: #fff8e6; color: #8a6100; border-left: 3px solid #d79a2b; }
     #feedback:empty { display: none; }
 
     .empty-state { text-align: center; padding: 20px; color: var(--muted); font-size: 0.85em; }
@@ -3600,6 +3604,9 @@
     // an unresolved identity hides the button rather than dangling it.
     const ENRICH_TIERS = ['premium', 'admin'];
     let _enrichEntitled = false;
+    // True once a SAVED recipe is loaded (has a DB row id). Gates
+    // "Save & Re-Enrich", which only makes sense on an update.
+    let _isSavedRecipe = false;
     (function resolveEnrichEntitlement() {
       const shell = window.LibraryShell || window.libraryShell;
       if (!shell || !shell.fetchAuth) return;
@@ -3639,7 +3646,7 @@
       //               show it only on a tier that includes enrichment.
       const reBtn = document.getElementById('saveReenrichBtn');
       const enBtn = document.getElementById('enrichBtn');
-      if (reBtn) reBtn.style.display = isMaster ? '' : 'none';
+      if (reBtn) reBtn.style.display = (isMaster && _isSavedRecipe) ? '' : 'none';
       if (enBtn) enBtn.style.display = isMaster ? 'none' : (_enrichEntitled ? '' : 'none');
       if (!isMaster && !Number.isNaN(uid)) {
         if (![...sel.options].some(o => Number(o.value) === uid)) {
@@ -4153,6 +4160,15 @@
         reworkBtn.style.display = isSaved ? '' : 'none';
         reworkBtn.textContent = (r && r._cook) ? 'Re-rework' : 'Rework for cooking';
       }
+      // "Save & Re-Enrich" is meaningless on a FIRST save: a new master row has
+      // no story, so a plain Save enriches it anyway. Offering both makes the
+      // user choose between two buttons that do the same thing, and implies the
+      // cheap one skips enrichment. It earns its place only on an UPDATE, where
+      // a story already exists and re-running is the one thing Save won't do.
+      // Same `recipe.id` signal reworkBtn uses — the DB row id, which a
+      // freshly-extracted recipe does not have.
+      _isSavedRecipe = !!recipe.id;
+      syncStoreControls();
       // BCC Permalink: server returns the canonical bestcooksclub.com/r/<id>
       // URL on every recipe GET. Populate the read-only field; the Copy
       // button writes it to the clipboard.
@@ -4753,7 +4769,21 @@
           }
           // Success feedback after the click handler clears it.
           const overrideMsg = forceSave ? ' (override)' : '';
-          showFeedback(`Recipe ${verb}${seqMsg}${overrideMsg} — pick a recipe or paste/drop another.`, 'success');
+          // Say WHY there is no score. Scoring runs at save, and this handler
+          // clears the form immediately after — so the scoring strip the user
+          // was looking at predates the scoring entirely, and an unscored row
+          // used to just show blank chips with no explanation anywhere. The
+          // reason exists (`_scoring.scoringNote`); this is the one moment it
+          // can still be delivered. Warning, not success: nothing failed, but
+          // the row is missing something the user may want to act on.
+          const unscored = (result.unscoredNote || '').trim();
+          if (unscored) {
+            showFeedback(
+              `Recipe ${verb}${seqMsg}${overrideMsg} — but NOT SCORED: ${unscored}`,
+              'warn');
+          } else {
+            showFeedback(`Recipe ${verb}${seqMsg}${overrideMsg} — pick a recipe or paste/drop another.`, 'success');
+          }
         } else {
           showFeedback(`Error: ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`, 'error');
         }
@@ -5133,6 +5163,11 @@
       // doesn't inherit the previous row's provenance keys.
       _loadedSource = {};
       _loadedSourceImage = [];
+      // Clear leaves an UNSAVED form, so "Save & Re-Enrich" must go with it —
+      // otherwise it lingers from the row that was just cleared and offers to
+      // re-enrich a recipe that is no longer loaded.
+      _isSavedRecipe = false;
+      try { syncStoreControls(); } catch (e) { /* controls not built yet */ }
       // form.reset() only resets controls with a `name` attribute.
       // The recipe form has MANY name-less inputs (URL, hero image,
       // affiliate URL, BCC permalink, source title, several

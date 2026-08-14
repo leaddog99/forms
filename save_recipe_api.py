@@ -9526,11 +9526,27 @@ def _save_recipe_core(payload: dict) -> dict:
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+    # WHY THERE IS NO SCORE. Scoring happens HERE, at save — but the form
+    # clears itself on a successful save (the 2026-05-29 "each save is a
+    # discrete transaction" UX), so the scoring strip the user is looking at was
+    # populated at EXTRACT time, before any scoring existed. The reason was
+    # written to `_scoring.scoringNote` and displayed to nobody. Return it so
+    # the save confirmation can say it out loud.
+    _unscored_note = ""
+    try:
+        _sc = (recipe_dict.get("_scoring") or {})
+        if _sc.get("pageAuthority") is None:
+            _unscored_note = (_sc.get("scoringNote") or "").strip()
+    except Exception:
+        _unscored_note = ""
+
     return {
         "recipe_id": recipe_id,
         "id": seq_id,
         "adopted": adopted,
         "bccUrl": _bcc_permalink(recipe_id),
+        # '' when the row scored normally — the caller shows this only when set.
+        "unscoredNote": _unscored_note,
     }
 
 
