@@ -2139,12 +2139,40 @@ async def fetch_image_from_url(request: Request):
 
     import requests as _rq
     MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+    # PREFER THE FULL-SIZE ORIGINAL. Publishers routinely advertise a resize
+    # derivative as their canonical image — m.xiachufang.com puts
+    # `..._1080w_1920h.jpg?imageView2/1/w/300/h/200/q/75` in its own JSON-LD
+    # Recipe.image, so taking the URL at face value banks a 300x200 postage
+    # stamp of a picture whose filename states the real dimensions. The strip
+    # lives HERE rather than in the bookmarklet so there is one implementation,
+    # on the machine with the good connection.
+    _fetch_url = source_url
     try:
-        # stream=True so we can size-check before fully buffering
-        resp = _rq.get(source_url, timeout=30, stream=True, headers={
+        from input.pipeline.image_pipeline import _full_size_variant
+        _full = _full_size_variant(source_url)
+    except Exception:
+        _full = None
+
+    def _open(u):
+        r = _rq.get(u, timeout=30, stream=True, headers={
             "User-Agent": "BCC-image-coopt/1.0 (recipes.tbotb.com)",
         })
-        resp.raise_for_status()
+        r.raise_for_status()
+        return r
+
+    try:
+        # stream=True so we can size-check before fully buffering
+        if _full and _full != source_url:
+            try:
+                resp = _open(_full)
+                _fetch_url = _full
+                print(f"[IMAGES] full-size original used: {_full[:90]}")
+            except Exception as e:
+                print(f"[IMAGES] full-size probe failed ({type(e).__name__}); "
+                      f"using the URL as given")
+                resp = _open(source_url)
+        else:
+            resp = _open(source_url)
     except _rq.RequestException as e:
         raise HTTPException(status_code=502,
                             detail=f"Source fetch failed: {type(e).__name__}: {e}")

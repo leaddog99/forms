@@ -338,6 +338,46 @@
       return null;
     }
     console.log('[recipe-bookmarklet] hero image URL:', heroUrl);
+
+    // MOBILE FIRST: ask the SERVER to fetch it, sending a URL (~100 bytes)
+    // instead of an image. On a public CDN this means ZERO image bytes cross
+    // the phone's connection — which matters, because the alternative is
+    // downloading the picture and then uploading it again over the same spotty
+    // link. The server also strips CDN resize params (see /images/fetch), so
+    // this path additionally yields the full-size original rather than the
+    // thumbnail a publisher may advertise.
+    //
+    // We do NOT try to predict whether the server can reach it. Paywalled,
+    // signed-CDN and session-gated images are exactly why the browser path
+    // below exists; we just try the cheap route first and fall back on any
+    // failure.
+    try {
+      const res = await Promise.race([
+        fetch(API + '/images/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: heroUrl }),
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 20000)),
+      ]);
+      if (res.ok) {
+        const { url } = await res.json();
+        if (url) {
+          console.log('[recipe-bookmarklet] hero fetched SERVER-SIDE (no image bytes over this connection):', url);
+          return url;
+        }
+      } else {
+        console.log('[recipe-bookmarklet] server-side hero fetch HTTP', res.status,
+                    '— falling back to browser fetch');
+      }
+    } catch (e) {
+      console.log('[recipe-bookmarklet] server-side hero fetch failed:', e && e.message,
+                  '— falling back to browser fetch');
+    }
+
+    // Browser fallback: the image needs THIS session to be readable (paywall,
+    // signed URL, cookie-gated CDN). Costs a download plus an upload on the
+    // user's connection, which is why it is second.
     const blob = await captureHeroImageBytes(heroUrl);
     if (!blob) return null;
     try {
