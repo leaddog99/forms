@@ -4388,9 +4388,108 @@ Four hours went into a picture, and the method was wrong, not just the fixes.
 
 ---
 
-## START HERE — state of play as of 2026-08-13
+## Session log — 2026-08-14 — a pure harvest day: five publishers, two new, and three things the runs quietly told us
 
-**Branch `split/enrichment-api`, pushed through 03eb655. Server restarted and current.**
+**No code changed today.** `git status` shows only `recipes.sql.gz` and four SEMrush exports.
+This was an operations session — nine jobs, +202 master rows — and the value in writing it
+down is not the row count, it is the three standing conditions the runs exposed.
+
+### What ran
+
+| job | target | discovered → kept → extracted | note |
+|---|---|---|---|
+| 830 | Oatmeal Cookies | 86 → 69 → **10** | delete-and-replace, 10 prior rows dropped |
+| 831 | Egg Foo Young | 88 → 51 → **20** | new dish |
+| 832 | Chinese BBQ Pork | 87 → 60 → **20** | new dish |
+| 833 | redhousespice.com | 125 → 114 → **25** | new publisher |
+| 834 | Dan Dan Noodles(担担面) | 25 → 8 → **6** | new dish, thin cohort |
+| 835 | screenshot_refresh | scanned 5,549 | captured 6, **failed 45** |
+| 836/837 | tasteatlas.com | 20 → 20 → **5** | 836 cancelled, 837 re-ran on the unblocker |
+| 838 | mygreekdish.com | 160 → 159 → **40** | ran on a **June** export |
+| 839 | sallysbakingaddiction.com | 160 → 152 → **40** | ran on a **June** export |
+| 840 | latimes.com | 160 → 157 → **40** | recalibration still `inconclusive` |
+
+The 202 new master rows split 151 publisher / 51 dish. All 199 that carry a kind are `top`.
+New publishers: **redhousespice.com** (28 rows, DA unscored, `plain`) and **tasteatlas.com**
+(5 rows, DA 70, `unblocker`). `woocancook.com` was created as a discovery side-effect with
+0 rows.
+
+### tasteatlas needed the unblocker — and the cancel cost 22 seconds
+
+Job 836 ran `plain` and was killed at 6 of 20 candidates. Job 837 re-ran the identical
+params with `unblocker: true` and completed 20 of 20, and the domain is now stamped
+`fetch_strategy='unblocker'`. This is the diagnosis loop working exactly as it should:
+notice the yield, cancel, change ONE thing, re-run. Total cost of the wrong first guess was
+22 seconds, because the cancel landed before the expensive extraction phase. Worth naming
+because the alternative — letting a bad-strategy run finish "successfully" with a quarter of
+the recipes — is the failure mode that produces a publisher who looks harvested and isn't.
+
+### latimes: 5× the sample, same verdict
+
+The 2026-08-13 calibration table had latimes at n=52, gap 3.03, `inconclusive`. Today's
+harvest pushed the stored sample to **n=246** and it is *still* `inconclusive` (78 master +
+33 personal rows restamped, `discount_pct` null). That is not a coverage problem waiting on
+more data — it is the answer. latimes' gated pages are not systematically PA-starved the way
+Milk Street's and ATK's are, and no amount of additional n is going to move it. The gate is
+doing its job; a paywall is not automatically a tax. Same shape as NYT clearing `no_penalty`.
+
+Current calibration state: bostonglobe n=250, latimes n=246, cooking.nytimes n=116,
+americastestkitchen n=40, 177milkstreet n=31.
+
+### Two harvests ran on seven-week-old exports — flag, not a failure
+
+`mygreekdish.com` used an export dated **2026-06-22** and `sallysbakingaddiction.com` one
+dated **2026-06-28**, both pulled from `~/Downloads` rather than `input/`. redhousespice and
+tasteatlas ran same-day exports; latimes ran a 9-day-old one.
+
+This matters because of [[project_two_stage_selection]]: **harvest SELECTS on last month's
+traffic, and OU only RANKS inside the pool that selection produced.** A June export selects
+on May traffic. The 80 rows those two runs contributed are real recipes and the extraction
+is sound — nothing needs undoing — but they were chosen by a signal two months stale, which
+is a different pool than a fresh export would have offered. Not worth re-running today;
+worth knowing when either publisher's numbers get read.
+
+Related: the two fresh exports were written to `input/` at run time and now sit in
+`input/semrush/`. The ATK (08-13) and NYT (08-12) exports in that folder were already
+consumed by jobs 829 and 810/811 — they are untracked files, not pending work.
+
+### The screenshot refresh has been retrying the same 45 rows for six days
+
+| job | date | scanned | no-shot | captured | failed |
+|---|---|---|---|---|---|
+| 778 | 08-09 | 5,186 | 51 | 6 | **45** |
+| 791 | 08-10 | 5,207 | 45 | 0 | **45** |
+| 799 | 08-11 | 5,265 | 45 | 0 | **45** |
+| 806 | 08-12 | 5,330 | 45 | 0 | **45** |
+| 817 | 08-13 | 5,455 | 45 | 0 | **45** |
+| 835 | 08-14 | 5,549 | 45 | 6 | **45** |
+
+Identical every night: 45 attempted, 45 failed, 0% success, six runs running. The scanned
+column grows and that number does not move. These are a fixed set of rows the capture path
+cannot handle, and nothing marks them as unrecoverable — so the nightly job pays for 45
+doomed captures forever. (The 6 `captured` on 08-14 are the separate `no-blob` bucket, rows
+whose record existed but whose bytes were missing.) Two honest options: latch them the way
+`content_obtainable='never'` latches, or find out what the 45 have in common. Nobody has
+looked at the list yet, and it should be looked at before it is latched.
+
+### Dan Dan Noodles is a thin cohort
+
+25 SERP results, **17 dropped as not-a-recipe**, 8 survived to Moz, 6 saved. `ou_fit` came
+back `below_min_n` so no cohort curve was fitted at all — the OU numbers on those 6 rows are
+raw, not fitted. One query, `serpapi_per_query: 25`. The other three dish runs pulled 50-60
+per query across 2 queries and landed 51-69 in the fitted pool. If Dan Dan Noodles is meant
+to be a real dish page it needs more queries, per the sourcing-instrument rule
+([[project_dish_variants_membership]], and the `dishes.queries` entry under Settled).
+
+Standing across all four dish runs: `fetch-failed (likely anti-bot)` accounted for 4, 5, 5
+and 0 rejects respectively — the [[project_fetchfail_salvage]] Phase B backlog, still unbuilt.
+
+---
+
+## START HERE — state of play as of 2026-08-14
+
+**Branch `split/enrichment-api`, pushed through 03eb655. Server up and current. No code has
+changed since 2026-08-13 — 08-14 was a harvest-only day.**
 
 Data changes of 2026-08-13 are IN `recipes.db` — morning: 1,739 rows power-re-derived, 28
 re-scored off archive.org, 53 `rootDomain` corrected, 1 row merged. Afternoon: the paywall
@@ -4398,11 +4497,19 @@ calibration APPLIED (7 publishers; Milk Street −51.4%, ATK −52.6%), ATK's fi
 refresh (+10 recipes), 6 Milk Street recipes hand-captured to clear n=12, the
 `userscript_capture` job type and its 3 rows deleted.
 
-**Do first when you return:** one phone bookmarklet grab. The two capture fixes (width cap
-+ `windowWidth`) are in but have never been tested TOGETHER on a real phone — that is the
-only open question from the screenshot work. Pull the stored bytes and measure them; do not
-judge by eye. Anything under 320px wide is now refused outright, so a bad capture leaves NO
-screenshot rather than a smudge.
+Data changes of 2026-08-14: **+202 master rows** (151 publisher / 51 dish). Five publisher
+refreshes — redhousespice.com (NEW, 28), tasteatlas.com (NEW, 5, `unblocker`),
+mygreekdish.com (40), sallysbakingaddiction.com (40), latimes.com (40). Four dish refreshes
+— Oatmeal Cookies (replaced 10), Egg Foo Young (NEW, 20), Chinese BBQ Pork (NEW, 20),
+Dan Dan Noodles (NEW, 6). latimes recalibration re-ran at n=246 and stayed `inconclusive`.
+
+**Do first when you return:** one phone bookmarklet grab — STILL OPEN, nothing on 08-14
+touched it. The two capture fixes (width cap + `windowWidth`) are in but have never been
+tested TOGETHER on a real phone — that is the only open question from the screenshot work.
+Pull the stored bytes and measure them; do not judge by eye. Anything under 320px wide is
+now refused outright, so a bad capture leaves NO screenshot rather than a smudge. (All 08-14
+captures were server-side harvest-path and came back healthy at 800×427, which tests
+nothing about the browser path.)
 
 **Still reverted on purpose:** the recipe form's screenshot `aspect-ratio: 3/2` → `15/8`.
 It IS a real 12.5%-per-side crop of every screenshot, server and browser alike, but it is a
@@ -4465,9 +4572,10 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 5. **A public-voice commentary variant** — the card cannot use `scoreCommentary`; it names
    PA/DA/OU.
 
-### Current numbers (measured 2026-08-12)
+### Current numbers (measured 2026-08-14)
 
-- master_recipes **4,921** · personal **423** · dishes **159** · domains **322**
+- master_recipes **5,157** · personal **427** · dishes **163** · domains **325**
+  (was 4,921 / 423 / 159 / 322 on 08-12)
 - candidate ledger **700 rows across 7 runs** · mediations **25** (Ramen only)
 - cook-reworked: **16** rows with a non-empty `_cook` (0.3%)
 - SEMrush API units **~26,100** — a ONE-TIME grant. Smallest purchasable package is
@@ -4515,6 +4623,15 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
 ### Known-open
 
+- **The nightly `screenshot_refresh` fails the same 45 rows every run** — 45 attempted, 45
+  failed, six consecutive nights (jobs 778→835), while `scanned` climbed 5,186→5,549. A
+  fixed unrecoverable set that nothing latches, so the job pays for 45 doomed captures in
+  perpetuity. LOOK AT THE LIST before latching it — the commonality is the useful part.
+- **Two publishers were harvested on June exports** (mygreekdish 06-22,
+  sallysbakingaddiction 06-28, both from `~/Downloads`). Their 80 rows were SELECTED on a
+  two-month-stale traffic signal — see [[project_two_stage_selection]]. Extraction is sound;
+  the pool is what's suspect. Re-run on fresh exports before reading either publisher's
+  numbers.
 - **26 master rows are still missing a real percentile.** `_sanitize_scoring` used to
   delete a bottom-of-cohort 0.0 as if it were unmeasured; the bug is fixed going forward
   but those rows lost the value. Recomputable from their cohorts — not done, because it
