@@ -402,6 +402,61 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
 # catches everything the JSON-LD path doesn't.
 # =====================================================================
 
+# === Auto-enrich policy ==============================================
+#
+# WHO PAYS decides who gets it. Enrichment is ~$0.05 and ~10s of Haiku per row
+# (provenance + classification + editorial), so it is deliberately NOT free for
+# everyone.
+#
+#   MASTER (user_id == 0)  -> always. The corpus is ours, the cost is ours, and
+#                             the "no un-enriched master row" invariant is what
+#                             lets every future claimer inherit rich data
+#                             through static_subset.
+#   A REAL USER            -> only if their tier includes it. Today: NOBODY.
+#
+# ANTICIPATED, NOT YET SOLD. `users.subscription_tier` already exists and today
+# holds 'Free' | 'Premium' | 'Admin' | NULL. When enrichment becomes a paid
+# add-on, add the qualifying tiers to _AUTO_ENRICH_TIERS below and this starts
+# working with no other change. Two things to settle BEFORE flipping it:
+#   1. It must be a per-user OPT-IN, not just a tier property — a Premium user
+#      who does not want to wait ~10s on every save must be able to decline.
+#      That wants a `users.auto_enrich` column (nullable; NULL = follow tier),
+#      which is why the check below is a function and not an inline tier test.
+#   2. Metering. Token spend is already journaled per user_id in
+#      bcc_token_journal, so per-user cost is answerable — but nothing enforces
+#      a ceiling, and enrichment is the most expensive per-save operation we
+#      have. Decide the cap before the first paying user, not after.
+# See [[project_multiuser_reality]] (marginal user ~$0.05/mo today; this would
+# change that number materially) and [[project_portable_package]].
+_AUTO_ENRICH_TIERS: frozenset[str] = frozenset()   # empty = paid tier not sold yet
+
+
+def _auto_enrich_applies(user_id: int) -> bool:
+    """True when a save to `user_id` should auto-enrich.
+
+    Master always. Real users only when their tier qualifies AND they have not
+    opted out — neither of which is true today, so this returns False for every
+    human. Kept as a function so turning enrichment on for paying users is a
+    data change plus a tier list, not a rewrite of the save path.
+    """
+    if user_id == 0:
+        return True
+    if not _AUTO_ENRICH_TIERS:
+        return False
+    try:
+        with _db() as conn:
+            row = conn.execute(
+                "SELECT subscription_tier FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        tier = (row[0] if row else "") or ""
+        return tier.strip().lower() in {t.lower() for t in _AUTO_ENRICH_TIERS}
+    except Exception as e:
+        # Never let a policy lookup fail a SAVE. Erring to "no enrich" also errs
+        # to "no surprise charge", which is the safe direction for a paid feature.
+        print(f"[SAVE-ENRICH] tier lookup failed for user {user_id} ({e}); not enriching")
+        return False
+
+
 # How much method text an UNENUMERATED single instruction must carry to count as a
 # real method. Set at the lowest real example measured in the corpus (Thomas
 # Keller's roast chicken, 157 chars) with a little room below it; the junk cases
@@ -9191,7 +9246,7 @@ def _save_recipe_core(payload: dict) -> dict:
     # saves (no _skip flag set) preserve the original auto-enrich
     # behavior for master writes.
     skip_auto_enrich = bool(payload.get("_skip_auto_enrich"))
-    if user_id == 0 and not skip_auto_enrich:
+    if _auto_enrich_applies(user_id) and not skip_auto_enrich:
         cls = recipe_dict.get("classification") or {}
         story = (cls.get("story") or "").strip()
         name = (recipe_dict.get("name") or "").strip()
