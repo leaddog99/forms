@@ -147,3 +147,7 @@ cache/
 # Excel lock files (~$name.xlsx) — created when a workbook is open; they would
 # otherwise ride along into input/semrush on the next `git add`.
 ~$*
+
+# Scratch/handoff files — session notes, continuation texts, throwaway scripts.
+# Nothing in here is source; treat it as writable by anyone at any time.
+temp/
