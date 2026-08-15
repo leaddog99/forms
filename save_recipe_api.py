@@ -9726,7 +9726,7 @@ async def save_recipe(request: Request):
 # URL is passed as a query param to avoid edge cases with slashes in path
 # params, and is re-normalized server-side regardless of what the client sent.
 @app.get("/url-metadata")
-def get_url_metadata(url: str):
+def get_url_metadata(url: str, request: Request = None):
     if not url:
         raise HTTPException(status_code=400, detail="url is required")
     try:
@@ -9752,7 +9752,7 @@ def get_url_metadata(url: str):
     if not row:
         # Empty shape so the form can render placeholder fields without
         # branching on null vs missing.
-        return {
+        return _redact_metadata_keys({
             "url": normalize_url(url),
             "root_domain": "",
             "raw_title": "",
@@ -9763,9 +9763,46 @@ def get_url_metadata(url: str):
             "first_seen": None,
             "last_accessed": None,
             "exists": False,
-        }
+        }, request)
     row["exists"] = True
-    return row
+    return _redact_metadata_keys(row, request)
+
+
+# The vendor's name is not only in our PROSE — it is in our FIELD NAMES, and a
+# key is as readable as a sentence to anyone with devtools open. The 2026-08-14
+# sweep caught the messages and missed these, because structured data does not
+# look like a message. /url-metadata is on the public-host allowlist
+# (host_gate.py) and the recipe form calls it, so a member receives this body.
+#
+# Renamed rather than dropped: the form legitimately shows "Score updated <date>",
+# so the VALUE is the customer's business and only the vendor-named KEY is ours.
+# moz_http_code is dropped outright — it is a diagnostic with no user meaning.
+_METADATA_STAFF_ONLY_KEYS = ("moz_http_code",)
+_METADATA_KEY_RENAMES = {"moz_last_scored": "score_updated_at"}
+
+
+def _redact_metadata_keys(row: dict, request) -> dict:
+    """Strip vendor-named keys from a /url-metadata body for non-staff callers.
+
+    Fails CLOSED: any error resolving the caller redacts. Staff get the row
+    unchanged AND the renamed alias, so one client shape works for both.
+    """
+    if not isinstance(row, dict):
+        return row
+    try:
+        staff = bool(auth_lib.is_staff(_resolve_caller(request) or {})) if request else False
+    except Exception:
+        staff = False
+    out = dict(row)
+    for src, dst in _METADATA_KEY_RENAMES.items():
+        if src in out:
+            out[dst] = out[src]          # alias for every caller...
+            if not staff:
+                out.pop(src, None)       # ...but only staff keep the original key
+    if not staff:
+        for k in _METADATA_STAFF_ONLY_KEYS:
+            out.pop(k, None)
+    return out
 
 
 @app.get("/public-score")

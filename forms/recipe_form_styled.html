@@ -7079,15 +7079,19 @@
         document.getElementById('meta_first_seen').value = fmtDate(m.first_seen);
         document.getElementById('meta_last_accessed').value = fmtDate(m.last_accessed);
 
+        // The scored-at date arrives as score_updated_at; the vendor-named key it
+        // replaced is sent to staff only (see _redact_metadata_keys). Read the
+        // neutral key first and fall back, so one code path serves both.
+        const scoredAt = m.score_updated_at || m.moz_last_scored;
         if (!m.exists) {
           metadataStatus.textContent = 'No metabase row yet — will be created on next save.';
-        } else if (!m.moz_last_scored) {
+        } else if (!scoredAt) {
           // Vendor-neutral: an end user who bookmarklets a recipe is a customer of
           // the product, not an operator of our pipeline. "set MOZ creds and run
           // refresh script" was an instruction only we could act on.
           metadataStatus.textContent = 'Score not yet available for this page.';
         } else {
-          metadataStatus.textContent = 'Score updated ' + fmtDate(m.moz_last_scored);
+          metadataStatus.textContent = 'Score updated ' + fmtDate(scoredAt);
         }
         metadataLoadedForUrl = url;
       } catch (err) {

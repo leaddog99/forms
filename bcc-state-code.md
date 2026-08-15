@@ -4804,6 +4804,14 @@ weighted **cooked > captured > viewed**. Unresolved: cross-user aggregation, and
 - **`cook_complete` is not recorded anywhere.** It is the single strongest engagement
   signal in the system and the design doc depends on it.
 - **Cross-user aggregation is the unresolved privacy question** — recorded, not decided.
+- **DEFERRED to the display work (2026-08-15, curator): raw PA/DA/OU on
+  `/url-metadata`.** The endpoint hands the raw trio to any caller, and it is on the
+  public-host allowlist. `/public-score` exists precisely so stars are quantised
+  server-side — "a page that receives the raw numbers has published the ranking method
+  to anyone who opens devtools." The two are in tension for a MEMBER. Gating the trio to
+  staff costs the curator nothing but removes the score strip for members, so it is a
+  product decision and waits for the production display surface. The vendor-named KEYS
+  (`moz_last_scored`, `moz_http_code`) were fixed separately and are staff-only now.
 - **Cook mode is not a conversion driver by itself** (curator, explicit). It needs other
   checkboxes beside it before the membership pitch closes.
 
