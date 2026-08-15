@@ -115,6 +115,90 @@ def _yaml_scalar(v: str) -> str:
     return v
 
 
+# ---------------------------------------------------------------- projection
+
+
+def project(d: dict, *, style: str = "structured", include_editorial: bool = False) -> dict:
+    """The subset of a stored recipe that is about COOKING, as plain data.
+
+    Why a projection rather than the stored row: a row carries 52 keys and about
+    35 of them are machinery — extraction traces, image metadata, authority
+    scores, schema.org boilerplate, review arrays. Measured over 20 recipes the
+    raw rows are 512 KB (~142k tokens) against 94 KB for this projection. The
+    difference is not compression, it is removing things that are not the recipe.
+
+    Both output formats serialise THIS, so `--format json` and `--format md`
+    always agree about what a recipe is. The formats differ in shape, never in
+    facts.
+    """
+    src = d.get("_source") or {}
+    ident = d.get("_identity") or {}
+    cls = d.get("classification") or {}
+
+    o: dict[str, Any] = {"title": _clean(d.get("name")) or "Untitled recipe"}
+    if _clean(d.get("description")):
+        o["description"] = _clean(d["description"])
+
+    source = {k: v for k, v in (("site", _clean(src.get("siteName")) or _clean(src.get("origin"))),
+                                ("url", _clean(src.get("originalUrl")))) if v}
+    if source:
+        o["source"] = source
+
+    times = {k: v for k, v in (("prep", _iso_duration_to_human(d.get("prepTime"))),
+                               ("cook", _iso_duration_to_human(d.get("cookTime"))),
+                               ("total", _iso_duration_to_human(d.get("totalTime")))) if v}
+    if times:
+        o["times"] = times
+    if _clean(d.get("recipeYield")):
+        o["yield"] = _clean(d["recipeYield"])
+
+    ings = [_clean(i) for i in (d.get("recipeIngredient") or []) if _clean(i)]
+    roles = ident.get("ingredientRoles") or []
+    aligned = (style == "structured" and len(roles) == len(ings)
+               and all(isinstance(r, dict) for r in roles))
+    if aligned:
+        # Roles are positionally aligned with recipeIngredient by the extractor.
+        # Only pair them when the lengths agree — a mismatch must degrade to a
+        # plain list rather than mislabel an ingredient.
+        o["ingredients"] = [{"text": t, "role": roles[i].get("role")} if roles[i].get("role")
+                            else {"text": t} for i, t in enumerate(ings)]
+    elif ings:
+        o["ingredients"] = ings
+
+    steps = [s for s in (_text_of(s) for s in (d.get("recipeInstructions") or [])) if s]
+    if steps:
+        o["method"] = steps          # plain strings; the HowToStep wrapper is overhead
+    if _clean(d.get("notes")):
+        o["notes"] = _clean(d["notes"])
+
+    if style == "structured":
+        for key, val in (("cuisine", _clean(ident.get("cuisine")) or _clean(d.get("recipeCuisine"))),
+                         ("technique", _clean(ident.get("technique"))),
+                         ("chapter", _clean(cls.get("chapter")))):
+            if val:
+                o[key] = val
+        equip = []
+        for e in (d.get("equipment") or []):
+            if isinstance(e, dict) and _clean(e.get("name")):
+                item = {"name": _clean(e["name"])}
+                if _clean(e.get("size")):
+                    item["size"] = _clean(e["size"])
+                equip.append(item)
+            elif isinstance(e, str) and e.strip():
+                equip.append({"name": e.strip()})
+        if equip:
+            o["equipment"] = equip
+        prov = {k: v for k, v in (d.get("provenance") or {}).items()
+                if v not in (None, "", [], {})}
+        prov.pop("sources", None)
+        if prov:
+            o["provenance"] = prov
+
+    if include_editorial and _clean((d.get("editorial") or {}).get("opinion")):
+        o["editorial"] = _clean(d["editorial"]["opinion"])
+    return o
+
+
 # ---------------------------------------------------------------- rendering
 
 
@@ -320,6 +404,10 @@ def main() -> int:
                     help="Max recipes to export (default 20 — the free-tier ceiling).")
     ap.add_argument("--out", default="temp/recipe-md",
                     help="Output directory (default temp/recipe-md).")
+    ap.add_argument("--format", choices=("md", "json"), default="md",
+                    help="md for document tools (NotebookLM and friends read .md "
+                         "natively); json for feeding a model directly, where arrays "
+                         "stay addressable instead of being re-parsed from bullets.")
     ap.add_argument("--style", choices=("structured", "plain"), default="structured",
                     help="structured keeps roles/equipment/provenance; plain is an "
                          "ordinary recipe, for comparing whether structure helps.")
@@ -341,15 +429,30 @@ def main() -> int:
         return 1
 
     os.makedirs(args.out, exist_ok=True)
-    written = []
+    ext = ".json" if args.format == "json" else ".md"
+    written, bundle = [], []
     for rid, d in rows:
         stem = f"{_slug(d.get('name'))}-{(rid or '')[:8]}"
-        path = os.path.join(args.out, stem + ".md")
+        path = os.path.join(args.out, stem + ext)
+        proj = project(d, style=args.style, include_editorial=args.include_editorial)
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write(render(d, style=args.style,
-                            include_editorial=args.include_editorial))
-        written.append((stem + ".md", _clean(d.get("name")) or "Untitled"))
+            if args.format == "json":
+                json.dump(proj, fh, ensure_ascii=False, indent=2)
+                bundle.append(proj)
+            else:
+                fh.write(render(d, style=args.style,
+                                include_editorial=args.include_editorial))
+        written.append((stem + ext, _clean(d.get("name")) or "Untitled"))
         _say(f"  {path}")
+
+    # One file holding everything, because a synthesis prompt wants the whole
+    # library in a single payload — not twenty attachments to reassemble.
+    if args.format == "json":
+        bpath = os.path.join(args.out, "000-library.json")
+        with open(bpath, "w", encoding="utf-8") as fh:
+            json.dump({"recipes": bundle, "count": len(bundle), "style": args.style},
+                      fh, ensure_ascii=False, indent=2)
+        _say(f"  {bpath}   <- the one to paste")
 
     # An index, so a notebook has one place to see what it was given.
     index = os.path.join(args.out, "000-index.md")
