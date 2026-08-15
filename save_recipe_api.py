@@ -2810,9 +2810,15 @@ async def auth_signup(request: Request):
             # and the address is one the person just typed as their own.
             raise HTTPException(status_code=409,
                                 detail="An account with that email already exists. Sign in instead.")
+        # subscription_tier is set EXPLICITLY. Leaving it out wrote NULL, and a
+        # NULL tier is not the same thing as the Free tier — it is "we never
+        # decided", which then reads as no-entitlement everywhere by accident
+        # rather than by policy ([[absent is not zero]]). Every self-signup is a
+        # Free member; say so in the row.
         cur = conn.execute(
-            "INSERT INTO users (email, name, status, role, created_at, updated_at) "
-            "VALUES (?, ?, 'free', 'member', ?, ?)", (email, name, now, now))
+            "INSERT INTO users (email, name, status, subscription_tier, role, "
+            "                   created_at, updated_at) "
+            "VALUES (?, ?, 'free', 'Free', 'member', ?, ?)", (email, name, now, now))
         uid = cur.lastrowid
         auth_lib.set_user_password(conn, uid, password)   # commits
         auth_lib.ensure_email_verification_columns(conn)
