@@ -115,9 +115,9 @@ def convert_endpoint(body: ConvertBody) -> dict:
             density_g_per_ml=density, grams_per_item=per_item,
         )
     except KeyError as e:  # unknown ingredient
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except ValueError as e:  # unknown unit / missing bridge constant
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return {
         "amount": r.amount, "to_unit": r.to_unit, "grams": r.grams,
         "canonical": canonical, "path": r.path,
@@ -205,7 +205,7 @@ def measures_create(body: MeasureBody) -> dict:
     try:
         new_id = measures_store.create_row(body.model_dump())
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return measures_store.get_row(new_id)
 
 
@@ -260,9 +260,9 @@ def measures_estimate(body: EstimateBody) -> dict:
         out = estimate_cup_weight(body.name, aliases=tuple(body.aliases),
                                   description=body.description)
     except EstimateError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"estimate failed: {e}")
+        raise HTTPException(status_code=502, detail=f"estimate failed: {e}") from e
     # Log the LLM cost to Enrich's own journal (best-effort, never breaks).
     usage = out.pop("usage", [])
     try:
@@ -296,14 +296,14 @@ def enrich_endpoint(body: EnrichBody) -> EnrichResponse:
     try:
         result = enrich(req)
     except EnrichmentError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except SealError as e:
         # public profile asked for, but the record has no source link to point at
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))  # bad profile, etc.
+        raise HTTPException(status_code=400, detail=str(e)) from e  # bad profile, etc.
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"enrichment failed: {e}")
+        raise HTTPException(status_code=500, detail=f"enrichment failed: {e}") from e
     return EnrichResponse(
         recipe=result.recipe, embedding=result.embedding, meta=result.meta,
     )

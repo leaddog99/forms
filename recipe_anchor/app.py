@@ -35,7 +35,7 @@ def from_url(body: UrlIn) -> RecipeDoc:
     try:
         return build_from_url(body.url)
     except Exception as e:  # surface pipeline errors cleanly
-        raise HTTPException(status_code=502, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @app.post("/recipe/from-text", response_model=RecipeDoc)

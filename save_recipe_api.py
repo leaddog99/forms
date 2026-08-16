@@ -1534,7 +1534,7 @@ def cook_ask_endpoint(payload: dict = Body(...)):
                       "text": chef_ask(recipe, question, current_step=current_step, usage_log=usage_log)}
     except Exception as e:
         print(f"[ERROR] /cook/ask({recipe_id}): {e}")
-        raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.")
+        raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.") from e
     _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
     if result.get("kind") == "action":
         return {"action": result.get("action"), "step": result.get("step")}
@@ -1611,7 +1611,7 @@ async def cook_listen(audio: UploadFile = File(...)):
         text = await run_in_threadpool(transcribe, data)
     except Exception as e:
         print(f"[ERROR] /cook/listen: {e}")
-        raise HTTPException(status_code=503, detail="Speech recognition is unavailable.")
+        raise HTTPException(status_code=503, detail="Speech recognition is unavailable.") from e
     return {"text": text}
 
 
@@ -1630,7 +1630,7 @@ def cook_speak(payload: dict = Body(...)):
         audio, hit = synthesize_cached(text, MEDIA_DB_PATH)
     except Exception as e:
         print(f"[ERROR] /cook/speak: {e}")
-        raise HTTPException(status_code=503, detail="Voice synthesis is unavailable.")
+        raise HTTPException(status_code=503, detail="Voice synthesis is unavailable.") from e
     return Response(content=audio, media_type="audio/mpeg",
                     headers={"X-TTS-Cache": "hit" if hit else "miss"})
 
@@ -1700,7 +1700,7 @@ def recipe_memberships_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
         raise
     except Exception as e:
         print(f"[ERROR] recipe_memberships({recipe_id!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/recipes/{recipe_id}")
@@ -1761,7 +1761,7 @@ def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
         raise
     except Exception as e:
         print(f"[ERROR] Error in get_recipe({recipe_id}): {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 def _master_result_row(d: dict, rid: str, *, dish=None, rank_score=None, distance=None) -> dict:
@@ -1974,7 +1974,7 @@ def similar_master_recipes(payload: dict = Body(...)):
             }
     except Exception as e:
         print(f"[ERROR] similar_master_recipes failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Similar lookup failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Similar lookup failed: {e}") from e
 
 
 # --- Ingredient synonym dictionary (ACD) -------------------------------------
@@ -2003,7 +2003,7 @@ def upsert_ingredient_synonym(payload: dict = Body(...)):
                 conn, canon, payload.get("synonyms") or [],
                 payload.get("category"), payload.get("note"))
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
         ingredients_lib.load_map(conn)  # refresh the in-process cache
     return g
 
@@ -2141,7 +2141,7 @@ def claim_recipe(recipe_id: str, target_user_id: int = Form(...)):
     except Exception as e:
         print(f"[ERROR] claim_recipe({recipe_id} -> user {target_user_id}) failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Claim failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Claim failed: {e}") from e
 # === Image generation (DALL-E 3) ===
 # Per-recipe dish image generation. Restored 2026-05-26 from the deleted
 # image_gen_openai.py (commit 143e016^). Live form path:
@@ -2167,7 +2167,9 @@ async def fetch_image_from_url(request: Request):
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="JSON body required")
+        # `from None` deliberately: the JSON decode error names a byte offset the
+        # caller cannot act on, and "JSON body required" is the whole message.
+        raise HTTPException(status_code=400, detail="JSON body required") from None
     source_url = ((body or {}).get("url") or "").strip()
     if not source_url:
         raise HTTPException(status_code=400, detail="`url` is required")
@@ -2227,7 +2229,7 @@ async def fetch_image_from_url(request: Request):
             resp = _open(source_url)
     except _rq.RequestException as e:
         raise HTTPException(status_code=502,
-                            detail=f"Source fetch failed: {type(e).__name__}: {e}")
+                            detail=f"Source fetch failed: {type(e).__name__}: {e}") from e
 
     content_type = (resp.headers.get("content-type") or "").lower().split(";")[0].strip()
     if not content_type.startswith("image/"):
@@ -2378,7 +2380,7 @@ async def generate_recipe_image_endpoint(
     try:
         recipe_dict = json.loads(row[0])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Recipe data unreadable: {e}")
+        raise HTTPException(status_code=500, detail=f"Recipe data unreadable: {e}") from e
     name = (recipe_dict.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400,
@@ -2415,9 +2417,9 @@ async def generate_recipe_image_endpoint(
                 status_code=400,
                 detail="That image request was blocked by the content filter. "
                        "Keep the tweak to dish-styling notes (ingredients, plating, lighting).",
-            )
+            ) from e
         raise HTTPException(status_code=500,
-                            detail=f"Image generation failed: {type(e).__name__}: {e}")
+                            detail=f"Image generation failed: {type(e).__name__}: {e}") from e
 
     out_path = GENERATED_DIR / f"{recipe_id}.jpg"
     out_path.write_bytes(img_bytes)
@@ -2473,7 +2475,7 @@ def list_users():
             ]
     except Exception as e:
         print(f"[ERROR] list_users failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 # === Auth (pre-Ghost stub) ===
@@ -3057,7 +3059,7 @@ async def create_user(request: Request):
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     name = (payload.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
@@ -3093,10 +3095,10 @@ async def create_user(request: Request):
     except sqlite3.IntegrityError as e:
         # uniq_users_email collision is the only expected IntegrityError
         # here — surface as 409 so the UI can show a useful message.
-        raise HTTPException(status_code=409, detail=f"User already exists: {e}")
+        raise HTTPException(status_code=409, detail=f"User already exists: {e}") from e
     except Exception as e:
         print(f"[ERROR] create_user failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.patch("/users/{user_id}")
@@ -3112,7 +3114,7 @@ async def update_user(user_id: int, request: Request):
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
 
     allowed = {"name", "email", "status", "subscription_tier", "ghost_uuid", "role"}
     sets = []
@@ -3167,10 +3169,10 @@ async def update_user(user_id: int, request: Request):
     except HTTPException:
         raise
     except sqlite3.IntegrityError as e:
-        raise HTTPException(status_code=409, detail=f"Conflict: {e}")
+        raise HTTPException(status_code=409, detail=f"Conflict: {e}") from e
     except Exception as e:
         print(f"[ERROR] update_user({user_id}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.delete("/users/{user_id}")
@@ -3200,7 +3202,7 @@ def delete_user(user_id: int):
         raise
     except Exception as e:
         print(f"[ERROR] delete_user({user_id}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 # === Dishes (the dish library) ===
@@ -3235,7 +3237,7 @@ def list_dishes_endpoint():
             return dishes
     except Exception as e:
         print(f"[ERROR] list_dishes failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/dishes/suggestions")
@@ -3309,7 +3311,7 @@ def suggested_dishes_endpoint(min_count: int = 3):
             return out
     except Exception as e:
         print(f"[ERROR] suggested_dishes failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/dishes/{name}")
@@ -3324,7 +3326,7 @@ def get_dish_endpoint(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] get_dish({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/dishes")
@@ -3344,12 +3346,12 @@ async def create_dish_endpoint(request: Request):
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     try:
         name, queries, top_serp, top_final, ttl, notes, auto_enrich, description = \
             dishes_lib.validate_create_payload(payload)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     try:
         with _db() as conn:
             created = dishes_lib.create_dish(
@@ -3366,12 +3368,14 @@ async def create_dish_endpoint(request: Request):
             created = dishes_lib.get_dish(conn, name) or created
             return created
     except sqlite3.IntegrityError:
-        # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name
+        # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name.
+        # `from None`: the handler is already specific to this one integrity
+        # error, so the chained IntegrityError restates what the comment says.
         raise HTTPException(status_code=409,
-                            detail=f"Dish {name!r} already exists")
+                            detail=f"Dish {name!r} already exists") from None
     except Exception as e:
         print(f"[ERROR] create_dish failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.patch("/dishes/{name}")
@@ -3385,7 +3389,7 @@ async def update_dish_endpoint(name: str, request: Request):
     try:
         patch = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     if "name" in patch:
         raise HTTPException(
             status_code=400,
@@ -3397,7 +3401,7 @@ async def update_dish_endpoint(name: str, request: Request):
             try:
                 updated = dishes_lib.update_dish(conn, name, patch)
             except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+                raise HTTPException(status_code=400, detail=str(e)) from e
             if updated is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
             # update_dish re-embeds inside the write, so an edit made by a
@@ -3409,7 +3413,7 @@ async def update_dish_endpoint(name: str, request: Request):
         raise
     except Exception as e:
         print(f"[ERROR] update_dish({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.patch("/dishes/{name}/rejects/{reject_id}")
@@ -3424,7 +3428,7 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     status = (payload.get("status") or "").strip().lower()
     notes_raw = payload.get("notes")
     notes = notes_raw.strip() if isinstance(notes_raw, str) else None
@@ -3450,10 +3454,10 @@ async def update_dish_reject_status(name: str, reject_id: int, request: Request)
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] update_dish_reject_status({name!r},{reject_id}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/extract-product")
@@ -3504,7 +3508,7 @@ async def save_product_endpoint(request: Request):
             return catalog_store.save_product(conn, product, merge_into=body.get("merge_into"))
     except Exception as e:
         print(f"[SAVE-PRODUCT] failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Save error: {e}")
+        raise HTTPException(status_code=500, detail=f"Save error: {e}") from e
 
 
 @app.post("/product-fact-voice")
@@ -3533,7 +3537,7 @@ def product_catalog_endpoint():
         with _db() as conn:
             return catalog_store.list_catalog(conn)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Catalog error: {e}")
+        raise HTTPException(status_code=500, detail=f"Catalog error: {e}") from e
 
 
 @app.get("/products/list")
@@ -3722,7 +3726,7 @@ async def collection_create_endpoint(request: Request):
                     print(f"[COLLECTION] taxonomy match skipped: {e}")
         return c
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.put("/product-collections/{name}")
@@ -3775,7 +3779,7 @@ async def collection_medal_endpoint(name: str, request: Request):
             ok = cst.set_medal(conn, name, (body.get("asin") or "").strip(),
                                body.get("medal") or "")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found.")
     return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
@@ -3834,7 +3838,7 @@ async def curated_create_endpoint(request: Request):
                     print(f"[CURATE] taxonomy match skipped: {e}")
         return c
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.put("/curated-collections/{name}")
@@ -3845,7 +3849,7 @@ async def curated_update_endpoint(name: str, request: Request):
         with _db() as conn:
             c = ccs.update_collection(conn, name, body)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if c is None:
         raise HTTPException(status_code=404, detail="Curated collection not found.")
     return c
@@ -3941,10 +3945,10 @@ async def reviews_find_endpoint(request: Request):
                 want=int(body.get("want") or 12),
                 extra_terms=(body.get("extra_terms") or ""))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] /reviews/find({product!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search error: {e}") from e
 
 
 @app.post("/reviews/ingest-url")
@@ -3989,7 +3993,7 @@ async def review_create_endpoint(request: Request):
         with _db() as conn:
             r = review_store.create_review(conn, patch)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return r
 
 
@@ -4104,7 +4108,7 @@ async def extract_review_endpoint(request: Request):
             with _db() as conn:
                 return review_sources.ingest_review(conn, md, url=url, captured_at=captured_at)
         except (ValueError, NotImplementedError) as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise HTTPException(status_code=422, detail=str(e)) from e
 
     # Entity-locked on the page: re-tapping the bookmarklet on a page already being
     # ingested joins the run in flight rather than paying for a second extraction.
@@ -4274,7 +4278,7 @@ def list_dish_top_recipes(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] list_dish_top_recipes({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 # Editor's Choice — a curator AWARD over a (dish, url) membership. Ingested to
@@ -4306,7 +4310,7 @@ def list_dish_editors_choice(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] list_dish_editors_choice({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/candidates")
@@ -4370,7 +4374,7 @@ def list_run_candidates(collection_type: str = "dish", collection_key: str = "",
         raise
     except Exception as e:
         print(f"[ERROR] list_run_candidates failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/dishes/{name}/editors-choice")
@@ -4417,12 +4421,12 @@ async def add_dish_editors_choice(name: str, request: Request, payload: dict = B
             print(f"[EDITORS-CHOICE] ingest failed for {url}: {type(e).__name__}: {e}")
         return {"ok": True, "pin": pin, "ingested": ingested}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
         print(f"[ERROR] add_dish_editors_choice({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.delete("/dishes/{name}/editors-choice")
@@ -4458,7 +4462,7 @@ def remove_dish_editors_choice(name: str, request: Request, url_normalized: str 
         raise
     except Exception as e:
         print(f"[ERROR] remove_dish_editors_choice({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/dishes/{name}/cohort")
@@ -4518,7 +4522,7 @@ def list_dish_cohort(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] list_dish_cohort({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/dishes/{name}/rejects")
@@ -4547,7 +4551,7 @@ def list_dish_rejects(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] list_dish_rejects({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.delete("/dishes/{name}")
@@ -4572,7 +4576,7 @@ def delete_dish_endpoint(name: str, request: Request):
         raise
     except Exception as e:
         print(f"[ERROR] delete_dish({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/dishes/{name}/fit-data")
@@ -4647,7 +4651,7 @@ def get_dish_fit_data_endpoint(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] get_dish_fit_data({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 # =========================================================================
@@ -4692,7 +4696,7 @@ def list_chapters_endpoint():
         return rows
     except Exception as e:
         print(f"[ERROR] list_chapters failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 def _chapter_known(name: str) -> bool:
@@ -4727,10 +4731,10 @@ def create_chapter_endpoint(payload: dict = Body(...)):
             create_chapter(conn, name, (notes or "").strip() or None)
             return get_chapter_detail(conn, name)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] create_chapter failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Create error: {e}")
+        raise HTTPException(status_code=500, detail=f"Create error: {e}") from e
 
 
 @app.delete("/chapters/{name}")
@@ -4752,10 +4756,10 @@ def delete_chapter_endpoint(name: str):
         return {"ok": True, "deleted": name}
     except ValueError as e:
         msg = str(e)
-        raise HTTPException(status_code=(404 if "not found" in msg else 409), detail=msg)
+        raise HTTPException(status_code=(404 if "not found" in msg else 409), detail=msg) from e
     except Exception as e:
         print(f"[ERROR] delete_chapter({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}") from e
 
 
 @app.get("/chapters/{name}")
@@ -4788,7 +4792,7 @@ def get_chapter_endpoint(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] get_chapter({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/chapters/{name}/recipes")
@@ -4817,7 +4821,7 @@ def chapter_recipes_endpoint(name: str):
         return [{"url": u, "da": da, "pa": pa} for u, da, pa in rows]
     except Exception as e:
         print(f"[ERROR] chapter_recipes({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/chapters/{name}/top-recipes")
@@ -4836,7 +4840,7 @@ def chapter_top_recipes_endpoint(name: str):
         return {"chapter": name, "count": len(recs), "recipes": recs}
     except Exception as e:
         print(f"[ERROR] chapter_top_recipes({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/chapters/{name}/refresh")
@@ -4859,7 +4863,7 @@ def refresh_chapter_endpoint(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] refresh_chapter({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+        raise HTTPException(status_code=500, detail=f"Refresh error: {e}") from e
 
 
 @app.post("/chapters/refresh-all")
@@ -4875,7 +4879,7 @@ def refresh_all_chapters_endpoint():
             )
     except Exception as e:
         print(f"[ERROR] refresh_all_chapters failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Refresh error: {e}")
+        raise HTTPException(status_code=500, detail=f"Refresh error: {e}") from e
 
 
 @app.patch("/chapters/{name}")
@@ -4899,7 +4903,7 @@ def patch_chapter_endpoint(name: str, payload: dict = Body(...)):
         raise
     except Exception as e:
         print(f"[ERROR] patch_chapter({name!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
 
 
 # =========================================================================
@@ -4924,7 +4928,7 @@ def list_system_config_endpoint():
             return list_settings(conn)
     except Exception as e:
         print(f"[ERROR] list_system_config failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/system-config")
@@ -4963,7 +4967,7 @@ def update_system_config_endpoint(request: Request, payload: dict = Body(...)):
         raise
     except Exception as e:
         print(f"[ERROR] update_system_config failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
 
 
 # =========================================================================
@@ -4991,7 +4995,7 @@ def list_scheduled_jobs_endpoint():
         return {"jobs": jobs, "handler_types": sorted(jobs_lib.list_handler_types())}
     except Exception as e:
         print(f"[ERROR] list_scheduled_jobs failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/scheduled-jobs/{name}")
@@ -5011,10 +5015,10 @@ def upsert_scheduled_job_endpoint(name: str, payload: dict = Body(...)):
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] upsert_scheduled_job failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
 
 
 @app.delete("/scheduled-jobs/{name}")
@@ -5030,7 +5034,7 @@ def delete_scheduled_job_endpoint(name: str):
         raise
     except Exception as e:
         print(f"[ERROR] delete_scheduled_job failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}") from e
 
 
 @app.post("/scheduled-jobs/{name}/run")
@@ -5057,7 +5061,7 @@ def run_scheduled_job_now_endpoint(name: str, request: Request):
             creationflags=_detached_flags(),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}") from e
     return {"name": name, "job_id": job_id, "spawned": True,
             "stream_url": f"/jobs/{job_id}/stream"}
 
@@ -5082,7 +5086,7 @@ def list_cook_kb_endpoint(status: Optional[str] = None):
                     "confidences": list(cook_kb.CONFIDENCES)}
     except Exception as e:
         print(f"[ERROR] list_cook_kb failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/cook-kb/import")
@@ -5103,7 +5107,7 @@ def import_cook_kb_endpoint(payload: dict = Body(...), overwrite: bool = False):
             return cook_kb.import_drafts(conn, entries, overwrite=ow)
     except Exception as e:
         print(f"[ERROR] import_cook_kb failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Import error: {e}")
+        raise HTTPException(status_code=500, detail=f"Import error: {e}") from e
 
 
 @app.post("/cook-kb/{kb_id}")
@@ -5115,10 +5119,10 @@ def upsert_cook_kb_endpoint(kb_id: str, payload: dict = Body(...)):
             cook_kb.ensure_cook_kb_table(conn)
             return cook_kb.upsert_kb(conn, kb_id, payload)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] upsert_cook_kb failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
 
 
 @app.post("/cook-kb/{kb_id}/status")
@@ -5136,10 +5140,10 @@ def set_cook_kb_status_endpoint(kb_id: str, payload: dict = Body(...)):
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] set_cook_kb_status failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
 
 
 @app.delete("/cook-kb/{kb_id}")
@@ -5155,7 +5159,7 @@ def delete_cook_kb_endpoint(kb_id: str):
         raise
     except Exception as e:
         print(f"[ERROR] delete_cook_kb failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}") from e
 
 
 # =========================================================================
@@ -5176,7 +5180,7 @@ def list_domains_endpoint():
             return domains_lib.list_domains(conn)
     except Exception as e:
         print(f"[ERROR] list_domains failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/domains")
@@ -5193,10 +5197,10 @@ def create_domain_endpoint(request: Request, payload: dict = Body(...)):
         with _db() as conn:
             return domains_lib.create_domain(conn, host, payload)
     except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] create_domain failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Create error: {e}")
+        raise HTTPException(status_code=500, detail=f"Create error: {e}") from e
 
 
 @app.get("/domains/{domain}/backlinks-file")
@@ -5338,7 +5342,7 @@ def harvest_worklist_endpoint():
                 } for d in items]}
     except Exception as e:
         print(f"[ERROR] harvest_worklist failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/semrush-inbox/scan")
@@ -5391,7 +5395,7 @@ def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
                 "results": results}
     except Exception as e:
         print(f"[ERROR] semrush_inbox_scan failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Scan error: {e}")
+        raise HTTPException(status_code=500, detail=f"Scan error: {e}") from e
 
 
 @app.get("/dish-keywords")
@@ -5494,7 +5498,7 @@ def url_words_sweep_endpoint():
         return res
     except Exception as e:
         print(f"[ERROR] url_words_sweep failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Sweep error: {e}")
+        raise HTTPException(status_code=500, detail=f"Sweep error: {e}") from e
 
 
 @app.get("/domains/{domain}")
@@ -5510,7 +5514,7 @@ def get_domain_endpoint(domain: str):
         raise
     except Exception as e:
         print(f"[ERROR] get_domain({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/domains/{domain}/recipes")
@@ -5524,7 +5528,7 @@ def domain_recipes_endpoint(domain: str):
             return domains_lib.recipes_for_domain(conn, domain)
     except Exception as e:
         print(f"[ERROR] domain_recipes({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 async def _extract_url_to_master_as_editors_choice(url: str, dish_name: str,
@@ -6071,7 +6075,7 @@ def process_selected_endpoint(domain: str, payload: dict = Body(...)):
             cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=_detached_flags())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to spawn process-selected job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn process-selected job: {e}") from e
     return JSONResponse(status_code=202, content={
         "job_id": job_id, "status": "queued", "domain": host, "count": len(urls),
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
@@ -6180,7 +6184,7 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
             cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=_detached_flags())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to spawn refresh job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn refresh job: {e}") from e
     return JSONResponse(status_code=202, content={
         "job_id": job_id, "status": "queued", "domain": host,
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
@@ -6198,7 +6202,7 @@ def clear_domain_top_endpoint(domain: str):
         return {"domain": host, "cleared": n}
     except Exception as e:
         print(f"[ERROR] clear_domain_top({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Clear error: {e}")
+        raise HTTPException(status_code=500, detail=f"Clear error: {e}") from e
 
 
 @app.get("/domains/{domain}/top")
@@ -6218,7 +6222,7 @@ def domain_top_endpoint(domain: str, all: int = 0):
                 "selected_count": sum(1 for r in top if r.get("selected")), "top": top}
     except Exception as e:
         print(f"[ERROR] domain_top({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/semrush-ranks")
@@ -6230,7 +6234,7 @@ def semrush_ranks_status_endpoint():
         with _db() as conn:
             return {"regions": semrush_ranks.region_stats(conn)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/semrush-ranks/refresh")
@@ -6262,7 +6266,7 @@ def refresh_semrush_ranks_endpoint(payload: dict = Body(default={})):
             cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=_detached_flags())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to spawn ranks refresh job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn ranks refresh job: {e}") from e
     return JSONResponse(status_code=202, content={
         "job_id": job_id, "status": "queued",
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
@@ -6294,7 +6298,7 @@ def rescore_domains_endpoint(payload: dict = Body(default={})):
             cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=_detached_flags())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to spawn domain scoring job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn domain scoring job: {e}") from e
     return JSONResponse(status_code=202, content={
         "job_id": job_id, "status": "queued",
         "stream_url": f"/jobs/{job_id}/stream", "status_url": f"/jobs/{job_id}"})
@@ -6381,7 +6385,7 @@ def enrich_domain_endpoint(request: Request, domain: str):
         raise
     except Exception as e:
         print(f"[ERROR] enrich_domain({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Enrich error: {e}")
+        raise HTTPException(status_code=500, detail=f"Enrich error: {e}") from e
 
 
 @app.post("/domains/{domain}/deep-enrich")
@@ -6409,7 +6413,7 @@ def deep_enrich_domain_endpoint(domain: str):
         raise
     except Exception as e:
         print(f"[ERROR] deep_enrich_domain({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Deep enrich error: {e}")
+        raise HTTPException(status_code=500, detail=f"Deep enrich error: {e}") from e
 
 
 @app.patch("/domains/{domain}")
@@ -6422,10 +6426,10 @@ def patch_domain_endpoint(request: Request, domain: str, payload: dict = Body(..
         with _db() as conn:
             return domains_lib.update_domain(conn, domain, payload)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] patch_domain({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Update error: {e}")
+        raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
 
 
 # =========================================================================
@@ -6547,7 +6551,7 @@ def delete_domain_endpoint(domain: str, request: Request, cascade: int = 0):
         raise
     except Exception as e:
         print(f"[ERROR] delete_domain({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Delete error: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete error: {e}") from e
 
 
 # =========================================================================
@@ -6603,7 +6607,7 @@ def admin_list_rows(model: str, request: Request):
                 "rows": [dict(zip(cols, r)) for r in rows]}
     except Exception as e:
         print(f"[ERROR] admin_list({model!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.post("/admin/{model}")
@@ -6638,10 +6642,10 @@ def admin_create_row(request: Request, model: str, payload: dict = Body(...)):
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] admin_create({model!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.patch("/admin/{model}/{row_id}")
@@ -6670,10 +6674,10 @@ def admin_update_row(request: Request, model: str, row_id: int, payload: dict = 
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[ERROR] admin_update({model!r}, {row_id}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.delete("/admin/{model}/{row_id}")
@@ -6693,7 +6697,7 @@ def admin_delete_row(request: Request, model: str, row_id: int):
         raise
     except Exception as e:
         print(f"[ERROR] admin_delete({model!r}, {row_id}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/status-messages/active")
@@ -6712,7 +6716,7 @@ def status_messages_active():
         return out
     except Exception as e:
         print(f"[ERROR] status_messages_active failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 @app.get("/messages")
@@ -6730,7 +6734,7 @@ def messages_endpoint(category: str, order: str = "", count: int = 0, fallback: 
         return {"category": category, "order": order or None, "messages": msgs}
     except Exception as e:
         print(f"[ERROR] messages({category!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 # =========================================================================
@@ -7457,7 +7461,7 @@ async def _handle_realrank_research_job(job: dict) -> dict:
     try:
         summary = await asyncio.to_thread(_run)
     except KeyboardInterrupt as e:      # raised by research_product's cancel checkpoint
-        raise jobs_lib.JobCancelled(str(e))
+        raise jobs_lib.JobCancelled(str(e)) from e
     print(f"[REALRANK] {summary}")
     return summary
 
@@ -7544,7 +7548,7 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
     try:
         summary = await asyncio.to_thread(_run)
     except KeyboardInterrupt as e:
-        raise jobs_lib.JobCancelled(str(e))
+        raise jobs_lib.JobCancelled(str(e)) from e
     print(f"[COLLECTION] {summary}")
     return summary
 
@@ -7638,7 +7642,7 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
     try:
         summary = await asyncio.to_thread(_run)
     except KeyboardInterrupt as e:
-        raise jobs_lib.JobCancelled(str(e))
+        raise jobs_lib.JobCancelled(str(e)) from e
     except Exception as e:
         # A failed run leaves a record on the collection, not just a job row: the editor is
         # where the curator looks, and "nothing happened" is the worst thing it can say.
@@ -8129,7 +8133,7 @@ def cook_rework_endpoint(recipe_id: str, request: Request, user_id: int = PLACEH
             creationflags=_detached_flags(),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}") from e
     return {"recipe_id": recipe_id, "job_id": job_id, "spawned": True,
             "stream_url": f"/jobs/{job_id}/stream"}
 
@@ -8186,7 +8190,7 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
         answer = chef_ask(recipe, question, operation="notes_chat")
     except Exception as e:
         print(f"[ERROR] /recipes/{recipe_id}/notes-ask: {e}")
-        raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.")
+        raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.") from e
     finally:
         llm.flush()   # write the buffered notes_chat usage to the journal
     return {"answer": answer}
@@ -8223,7 +8227,7 @@ def equipment_products_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
                     m["catalog_products"] = products_for_ws_category(conn, m["ws_category_id"], limit=6)
         except Exception as e:
             print(f"[ERROR] /recipes/{recipe_id}/equipment-products: {e}")
-            raise HTTPException(status_code=503, detail="Equipment matching is unavailable right now.")
+            raise HTTPException(status_code=503, detail="Equipment matching is unavailable right now.") from e
     return {"recipe_id": recipe_id, "count": len(matches), "equipment_matches": matches}
 
 
@@ -8240,7 +8244,7 @@ def list_ws_categories_endpoint():
                 "ORDER BY headline, section, subcategory, leaf"
             ).fetchall()
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"ws_categories unavailable: {e}")
+            raise HTTPException(status_code=500, detail=f"ws_categories unavailable: {e}") from e
     out = []
     for rid, hl, sec, sub, leaf, path, url, desc, samp, source, has in rows:
         prods = [p for p in (samp or "").split("; ") if p.strip()]
@@ -8265,7 +8269,7 @@ def match_ws_categories_endpoint(q: str, k: int = 5):
             res = match_equipment_name(q, conn, k=max(1, min(int(k), 10)))
         except Exception as e:
             print(f"[ERROR] /ws-categories/match: {e}")
-            raise HTTPException(status_code=503, detail="Matching is unavailable right now.")
+            raise HTTPException(status_code=503, detail="Matching is unavailable right now.") from e
     return {"query": q, **res}
 
 
@@ -8329,7 +8333,7 @@ def create_ws_category_endpoint(payload: dict = Body(...)):
         emb = _ws_embed_blob(path, description, products)
     except Exception as e:
         print(f"[ERROR] create ws-category embed: {e}")
-        raise HTTPException(status_code=503, detail="Embedding is unavailable right now.")
+        raise HTTPException(status_code=503, detail="Embedding is unavailable right now.") from e
     with _db() as conn:
         cur = conn.execute(
             "INSERT INTO ws_categories (headline, section, subcategory, leaf, ws_path, url, "
@@ -8371,7 +8375,7 @@ def update_ws_category_endpoint(cat_id: int, payload: dict = Body(...)):
             emb = _ws_embed_blob(path, description, products)
         except Exception as e:
             print(f"[ERROR] update ws-category embed: {e}")
-            raise HTTPException(status_code=503, detail="Embedding is unavailable right now.")
+            raise HTTPException(status_code=503, detail="Embedding is unavailable right now.") from e
         conn.execute(
             "UPDATE ws_categories SET headline=?, section=?, subcategory=?, leaf=?, ws_path=?, "
             "description=?, products_sample=?, embedding=? WHERE id=?",
@@ -8412,7 +8416,7 @@ def relink_product_classes_endpoint():
             res = relink_product_classes(conn)
         except Exception as e:
             print(f"[ERROR] /product-classes/relink: {e}")
-            raise HTTPException(status_code=503, detail=f"Relink failed: {e}")
+            raise HTTPException(status_code=503, detail=f"Relink failed: {e}") from e
     return res
 
 
@@ -8426,7 +8430,7 @@ def ws_category_products_endpoint(cat_id: int, limit: int = 12):
             prods = products_for_ws_category(conn, cat_id, limit=max(1, min(int(limit), 50)))
         except Exception as e:
             print(f"[ERROR] /ws-categories/{cat_id}/products: {e}")
-            raise HTTPException(status_code=503, detail="Product lookup unavailable.")
+            raise HTTPException(status_code=503, detail="Product lookup unavailable.") from e
     return {"ws_category_id": cat_id, "count": len(prods), "products": prods}
 
 
@@ -8568,7 +8572,7 @@ def _spawn_job_runner(job_id: int) -> None:
         print(f"[JOBSPAWN] out-of-process: python -m jobs exec --job-id {job_id}")
     except Exception as e:
         print(f"[JOBSPAWN] failed to spawn runner for #{job_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to spawn runner: {e}") from e
 
 
 @app.get("/jobs/{job_id}/stream")
@@ -8828,7 +8832,7 @@ def list_recipes(user_id: int = PLACEHOLDER_USER_ID, summary: int = 0,
     except Exception as e:
         print(f"[ERROR] Error in list_recipes: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 def _grade_recipe_on_save(recipe_dict: dict, *, user_id: int) -> None:
@@ -9151,13 +9155,13 @@ def _save_recipe_core(payload: dict) -> dict:
         print("[OK] Recipe model validation passed")
     except ValidationError as e:
         print(f"[ERROR] Validation error: {e}")
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
         print(f"[ERROR] Error processing request: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=400, detail=f"Bad input: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad input: {e}") from e
 
     # Save-quality gate. Refuse rows below the minimum-ingredients /
     # minimum-instructions floor so the recipes/master_recipes tables
@@ -9632,7 +9636,7 @@ def _save_recipe_core(payload: dict) -> dict:
     except Exception as e:
         print(f"[ERROR] Database error: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
     # WHY THERE IS NO SCORE. Scoring happens HERE, at save — but the form
     # clears itself on a successful save (the 2026-05-29 "each save is a
@@ -9671,7 +9675,7 @@ async def save_recipe(request: Request):
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     # Manual-from-reject rescues: when the bookmarklet harvested a dish
     # hint from #_bcc_dish=… the staged data carries bcc_hints. The form
     # threads them into the save payload. The hint determines the TARGET
@@ -9763,7 +9767,7 @@ def get_url_metadata(url: str, request: Request = None):
                     row = get_metabase_url(conn, url)
     except Exception as e:
         print(f"[ERROR] url-metadata lookup failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Lookup error: {e}")
+        raise HTTPException(status_code=500, detail=f"Lookup error: {e}") from e
     if not row:
         # Empty shape so the form can render placeholder fields without
         # branching on null vs missing.
@@ -9901,7 +9905,7 @@ def delete_recipe(recipe_id: str, request: Request, user_id: int = PLACEHOLDER_U
     except Exception as e:
         print(f"[ERROR] Error deleting recipe: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
 # Extract recipe from image (no save). Image is OCR'd to markdown via the
@@ -9970,7 +9974,7 @@ async def extract_from_image_endpoint(
                 print(f"[ERROR] image_to_markdown failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}")
+                raise HTTPException(status_code=500, detail=f"Vision extraction error: {e}") from e
 
             if not md or not md.strip():
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
@@ -9998,7 +10002,7 @@ async def extract_from_image_endpoint(
                 print(f"[ERROR] markdown_to_recipe failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+                raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
             if recipe is None:
                 print("[ERROR] Extraction failed - no result")
@@ -10046,7 +10050,7 @@ async def extract_from_image_endpoint(
     except Exception as e:
         print(f"[ERROR] Error extracting from image: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+        raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
 
 # Extract recipe from a PDF upload (no save). Mirrors /extract-from-image
@@ -10109,7 +10113,7 @@ async def extract_from_pdf_endpoint(
                 print(f"[ERROR] pdf_bytes_to_markdown failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                raise HTTPException(status_code=500, detail=f"PDF extraction error: {e}")
+                raise HTTPException(status_code=500, detail=f"PDF extraction error: {e}") from e
 
             if not md or not md.strip():
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
@@ -10135,7 +10139,7 @@ async def extract_from_pdf_endpoint(
                 print(f"[ERROR] markdown_to_recipe failed: {e}")
                 print(f"[ERROR] Traceback: {traceback.format_exc()}")
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+                raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
             if recipe is None:
                 _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
@@ -10158,7 +10162,7 @@ async def extract_from_pdf_endpoint(
     except Exception as e:
         print(f"[ERROR] Error extracting from PDF: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+        raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
 
 # Extract recipe from markdown text (no save). Canonical path: markdown ->
@@ -10328,7 +10332,7 @@ async def extract_from_markdown_endpoint(
                     print(f"[ERROR] Extraction failed: {e}")
                     print(f"[ERROR] Traceback: {traceback.format_exc()}")
                     _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
-                    raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+                    raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
                 if recipe is None:
                     print("[ERROR] Extraction failed - no result")
@@ -10367,7 +10371,7 @@ async def extract_from_markdown_endpoint(
     except Exception as e:
         print(f"[ERROR] Error extracting from markdown: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Extraction error: {e}")
+        raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
 
 def _extract_via_enrichment_api(md_result, page_lang, timings, prompts,
@@ -10948,8 +10952,8 @@ async def extract_from_url_endpoint(
         # errors are prefixed in the message; everything else is a 500.
         msg = str(e)
         if msg.startswith("Failed to fetch/convert URL"):
-            raise HTTPException(status_code=502, detail=msg)
-        raise HTTPException(status_code=500, detail=msg)
+            raise HTTPException(status_code=502, detail=msg) from e
+        raise HTTPException(status_code=500, detail=msg) from e
 
 
 @app.get("/screenshot-status")
@@ -11011,7 +11015,7 @@ async def enrich_recipe_endpoint(request: Request):
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     recipe = payload.get("recipe")
     if not isinstance(recipe, dict) or not recipe:
         raise HTTPException(status_code=400, detail="recipe object required in body")
@@ -11058,7 +11062,7 @@ async def enrich_recipe_endpoint(request: Request):
         print(f"[ERROR] enrich_recipe failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
-        raise HTTPException(status_code=500, detail=f"Enrichment error: {e}")
+        raise HTTPException(status_code=500, detail=f"Enrichment error: {e}") from e
 
     timings["total_ms"] = int((time.perf_counter() - t_start) * 1000)
     timings["path"] = "enrich-api" if _USE_ENRICHMENT_API else "enrich-only"
@@ -11086,7 +11090,7 @@ async def measure_recipe_endpoint(request: Request):
     try:
         payload = await request.json()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Bad JSON: {e}") from e
     ingredients = payload.get("recipeIngredient") or []
     if not isinstance(ingredients, list) or not ingredients:
         raise HTTPException(status_code=400, detail="recipeIngredient list required")
@@ -11106,7 +11110,7 @@ async def measure_recipe_endpoint(request: Request):
     except Exception as e:
         print(f"[ERROR] measure failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Measurement error: {e}")
+        raise HTTPException(status_code=500, detail=f"Measurement error: {e}") from e
 
     _journal_usage(meta.get("usage") or [], recipe_id=recipe_id, user_id=user_id)
     return {

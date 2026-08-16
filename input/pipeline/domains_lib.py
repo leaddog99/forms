@@ -1053,7 +1053,10 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
         try:
             pct = float(raw) if manual else None
         except (TypeError, ValueError):
-            raise ValueError("paywall_da_discount_pct must be a number, or blank to clear")
+            # `from None`: float()'s own message quotes the bad string back at the
+            # curator, which is noise next to what they actually need to do.
+            raise ValueError(
+                "paywall_da_discount_pct must be a number, or blank to clear") from None
         if manual and not (0 < pct < 100):
             raise ValueError("paywall_da_discount_pct must be between 0 and 100 (exclusive)")
         sets["paywall_da_discount_pct"] = pct
