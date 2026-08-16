@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#
+# pre-commit — block the class of bug that keeps costing us harvests.
+#
+# Four undefined-name bugs shipped before anyone ran a linter that was already
+# installed. Each was a single name in a branch ordinary use does not reach, so
+# nothing exercised it until a batch job did — and by then it had paid for an
+# extract, an identity card and a screenshot before failing:
+#
+#   skip_auto_enrich  every harvest save, silently, for a day
+#   cal_by_host       the global domain-scoring fit
+#   llm               POST /url-words/sweep, permanently 500
+#   extract_og_image  swallowed by `except Exception: return ""`
+#
+# ruff finds all four in under a second without executing anything.
+#
+# DESIGN: only STAGED python files, and only rules that mean "this is broken",
+# never "this is untidy". A hook that argues about style gets bypassed within a
+# week and then protects nothing. The repo currently carries 319 style findings
+# and this hook deliberately ignores every one of them.
+#
+# Install (once):  git config core.hooksPath scripts/hooks
+# Bypass (rare):   git commit --no-verify
+set -uo pipefail
+
+# Rules that are always a bug, never a preference.
+#   F821  undefined name          <- all four of ours
+#   F822  undefined name in __all__
+#   F811  redefinition of unused name (the second def silently wins)
+#   E9    syntax / IO errors
+BLOCKING="F821,F822,F811,E9"
+
+# Prefer the project venv; fall back to whatever python is on PATH.
+PY=""
+for candidate in \
+    "C:/Users/john/PyCharm/venv/Scripts/python.exe" \
+    "$(git rev-parse --show-toplevel 2>/dev/null)/.venv/Scripts/python.exe" \
+    "$(git rev-parse --show-toplevel 2>/dev/null)/.venv/bin/python" \
+    "python3" "python"; do
+    if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
+        PY="$candidate"; break
+    fi
+done
+if [ -z "$PY" ]; then
+    echo "pre-commit: no python found — skipping lint (commit allowed)." >&2
+    exit 0
+fi
+
+# Staged python files only. -z + read -d handles paths with spaces; ACMR skips
+# deletions, which would otherwise be passed to ruff as missing files.
+mapfile -d '' STAGED < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py')
+[ ${#STAGED[@]} -eq 0 ] && exit 0
+
+# If ruff itself is missing, say so once and let the commit through. A missing
+# tool must not become a wall between the author and their own repository.
+if ! "$PY" -m ruff --version >/dev/null 2>&1; then
+    echo "pre-commit: ruff not installed in $PY — skipping lint (commit allowed)." >&2
+    echo "            install with: $PY -m pip install ruff" >&2
+    exit 0
+fi
+
+if ! "$PY" -m ruff check --select "$BLOCKING" --force-exclude "${STAGED[@]}"; then
+    echo
+    echo "-----------------------------------------------------------------"
+    echo " COMMIT BLOCKED — the above are bugs, not style."
+    echo
+    echo " F821/F822 undefined name .... it will raise NameError when reached"
+    echo " F811      redefined ......... the earlier definition is dead code"
+    echo " E9        syntax error ...... the file cannot run"
+    echo
+    echo " Fix them, or 'git commit --no-verify' if you know better."
+    echo "-----------------------------------------------------------------"
+    exit 1
+fi
+
+# Everything else is advisory: printed so it is visible, never blocking.
+ADVISORY=$("$PY" -m ruff check --statistics --force-exclude "${STAGED[@]}" 2>/dev/null \
+           | grep -E '^\s*[0-9]+' | head -5)
+if [ -n "$ADVISORY" ]; then
+    echo "pre-commit: staged files also have (not blocking) —"
+    echo "$ADVISORY" | sed 's/^/    /'
+fi
+exit 0
