@@ -240,7 +240,10 @@ def compute_global_fit(conn: sqlite3.Connection,
         "weight": float(weight),
         "ou_quantiles": _build_quantiles(ou_vals),
         "power_quantiles": _build_quantiles(pw_vals),
-        "n_paywall_calibrated": len(cal_by_host),
+        # `cal_by_host` never existed — the dict is adj_by_host, built at the top of
+        # this function and used for the fit itself. A rename left this behind, and it
+        # only fires when the global fit is recomputed, so it sat undetected.
+        "n_paywall_calibrated": len(adj_by_host),
         "computed_at": now_iso,
     }
     _store_fit(conn, fit)

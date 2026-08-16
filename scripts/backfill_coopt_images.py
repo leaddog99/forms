@@ -91,6 +91,10 @@ def _fetch_og_image(source_url: str) -> str:
         if not (200 <= resp.status_code < 300):
             return ""
         soup = BeautifulSoup(resp.text, "lxml")
+        # Import was missing, so this raised NameError on every call — and the bare
+        # `except Exception: return ""` below swallowed it, making a permanently broken
+        # function look exactly like a page with no og:image. The silent kind.
+        from to_markdown.html_to_markdown import extract_og_image
         return extract_og_image(soup, resp.url)
     except Exception:
         return ""

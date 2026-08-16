@@ -5483,6 +5483,10 @@ def url_words_sweep_endpoint():
     Haiku call, and INSERT the results into the two word lists (incremental). The utility
     behind the self-learning recipe-URL pre-filter. Synchronous (one model call)."""
     from input.pipeline import url_word_lists
+    import llm  # gateway: journal the classify call. Was missing, so this endpoint
+                # raised NameError on every call and returned a 500 — caught by the
+                # except below, which made a permanent breakage look like a runtime
+                # failure. Every other llm.enter() caller imports it locally the same way.
     try:
         llm.enter(recipe_id=None, user_id=0)   # journal the classify call
         res = url_word_lists.sweep_master_urls(db_path=DB_PATH)
