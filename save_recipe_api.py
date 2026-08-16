@@ -9423,8 +9423,13 @@ def _save_recipe_core(payload: dict) -> dict:
                     print(f"[SAVE-ENRICH] WARN: no story produced after {dt}ms")
             except Exception as e:
                 print(f"[SAVE-ENRICH] FAILED (continuing save): {e}")
-    elif user_id == 0 and skip_auto_enrich:
-        print(f"[SAVE-ENRICH] skipped (dish auto_enrich=off)")
+    elif user_id == 0 and _mode == "never":
+        # Was `skip_auto_enrich` — a name that stopped existing when the flag became
+        # the three-way `_enrich` mode, and nothing caught it because this branch is
+        # only reached when a caller explicitly opts OUT. Publisher-refresh does
+        # exactly that, so every harvest save raised NameError AFTER paying for the
+        # extract, the identity card and the screenshot. Read the resolved mode.
+        print("[SAVE-ENRICH] skipped (caller opted out)")
 
     # === Identity card generation ==========================================
     # Every recipe (master or personal) gets a structured dish identity
