@@ -68,18 +68,54 @@ with named camps, and saying so is more useful and more honest than picking one.
 
 ---
 
-## 2. Three inputs, in priority order
+## 2. Three kinds of authority, answering three different questions
 
-| Input | Source | Answers |
-|---|---|---|
-| **Canon** | External, researched per dish | What do the authorities say? |
-| **Corpus** | SQL over our member recipes | What does the field actually do? |
-| **Recipe** | The row being scored | What does *this one* do? |
+"Authority" is not one thing, and treating it as one is what makes the Accademia and
+Marcella Hazan look like rivals when they are not.
 
-Canon leads because it is the input a closed-world tool structurally cannot have, and
-the one that caught six errors above. Corpus statistics calibrate it — they say how far
-practice has drifted from canon, which is itself interesting. The recipe is what gets
-placed.
+| Kind | Example | Answers | Shape |
+|---|---|---|---|
+| **Definitional** (de jure) | Accademia, AVPN, DOP/TSG | *What counts as this dish?* | **Thin by design** — a specification, not a teaching text |
+| **Instructional** | Hazan, Child, Lewis, Dunlop, Cook's Illustrated, Serious Eats | *How do I make it well?* | Rich; explains why; can disagree with the registry and with each other |
+| **De facto** | Traffic, references, what people actually cook | *What do people expect it to taste like?* | Measured, not declared |
+
+The Accademia text being thin is not a weakness — it is a **boundary**, and boundaries
+are short. It tells you veal is out and garlic is out. It does not tell you how to get
+a silky ragù, and it does not claim to. Hazan does, at length, and is the reference for
+Italian cooking in English. They are not competing; they answer different questions.
+
+That resolves the apparent conflict on milk timing. The registry says halfway through;
+Hazan says first. **A considered deviation by a recognised authority is categorically
+different from a blog deviating** — the first makes a dimension *contested*, the second
+makes it a variant. So `dish_canon.weight` cannot be a single scalar: authority is
+per-kind, and a dimension's verdict must record which kind it rests on.
+
+Mapping to the rubric:
+
+- **Definitional** authority sets `identity_bearing` — does deviating make it a
+  different dish?
+- **Instructional** authority supplies `verdict` and `rationale` on technique.
+- **De facto** authority is the position distribution — and it must be reported
+  **two ways**.
+
+### Count versus reach
+
+A raw count says how many recipes take a position. **Traffic says how many people have
+actually eaten that version.** Those differ, and the difference is the finding.
+
+If 3 of 30 bolognese recipes are 40-minute versions but hold most of the traffic, then
+the de facto bolognese in an English-speaking kitchen *is* the fast one, whatever the
+registry says. A rubric that only counts recipes would report that as a fringe position
+and be badly wrong about the world.
+
+**We have the data but not yet the coverage.** `collection_members.traffic` is
+populated on 14,641 of 16,179 rows — but those arrive through the **publisher** harvest
+(a SEMrush Top Pages file), and dish harvests come through SERP with no traffic figure.
+So on the dishes that matter here the coverage is thin: Bolognese 8 of 30, Caesar Salad
+5 of 20, Crab Cakes 3 of 30. Traffic-weighted positions are the right design and are
+**blocked on backfilling traffic for dish-harvested rows**, not on any new idea.
+
+Until then, report counts and say plainly that they are counts.
 
 ---
 
@@ -235,6 +271,28 @@ marinière*, Thai mussels and a dozen others, each of which might deserve its ow
 **Proposed gate: coherence ≥ 0.80 to derive a rubric.** Below ~0.40 the entry should be
 treated as a browse collection instead, and possibly split into real dishes. This also
 gives the dish taxonomy a health metric it does not currently have.
+
+### Measured, all 164 dishes (2026-08-16)
+
+| Band | Count | Meaning |
+|---|---|---|
+| **DISH** ≥ 0.80 | **66** | rubric viable today |
+| **MIXED** 0.40–0.79 | **61** | review; several want splitting |
+| **COLLECTION** < 0.40 | **37** | not a dish |
+
+Full table at `temp/dish_coherence.tsv`. The bottom of the list sorts into clean types
+— **ingredients** (Blood Orange 0.10, Swordfish 0.15, Lingonberry 0.12, Orzo 0.12),
+**pasta shapes** (Tagliatelle 0.10), **condiments** (Hoisin Sauce 0.10, Dijon 0.22),
+**cuisines** (Cajun 0.18) and **categories** (Ramen 0.20, Mussels & Moules 0.13). None
+of those can carry a rubric, and saying so is useful in itself.
+
+**One caveat before acting on the number: low coherence has two causes.** Most of the
+bottom really is a collection. But *Kolokithopita* (0.10) and *Gemista* (0.17) are
+single real dishes whose members disagree about the NAME — "zucchini pie" versus
+"kolokithopita", "gemista" versus "yemista". That is transliteration variance in
+`likelyDish`, not a taxonomy fault, and demoting them would be wrong. The gate should
+therefore flag for review rather than auto-exclude, and a name-clustering pass (the
+embeddings already exist) would separate the two causes.
 
 ### Is there canon? — the ladder, not a binary
 
