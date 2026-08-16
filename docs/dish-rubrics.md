@@ -77,7 +77,7 @@ Marcella Hazan look like rivals when they are not.
 |---|---|---|---|
 | **Definitional** (de jure) | Accademia, AVPN, DOP/TSG | *What counts as this dish?* | **Thin by design** — a specification, not a teaching text |
 | **Instructional** | Hazan, Child, Lewis, Dunlop, Cook's Illustrated, Serious Eats | *How do I make it well?* | Rich; explains why; can disagree with the registry and with each other |
-| **De facto** | Traffic, references, what people actually cook | *What do people expect it to taste like?* | Measured, not declared |
+| **De facto** | The dish's members themselves | *What do people expect it to taste like?* | Already measured — membership required surviving a traffic-selected harvest |
 
 The Accademia text being thin is not a weakness — it is a **boundary**, and boundaries
 are short. It tells you veal is out and garlic is out. It does not tell you how to get
@@ -95,27 +95,105 @@ Mapping to the rubric:
 - **Definitional** authority sets `identity_bearing` — does deviating make it a
   different dish?
 - **Instructional** authority supplies `verdict` and `rationale` on technique.
-- **De facto** authority is the position distribution — and it must be reported
-  **two ways**.
+- **De facto** authority is the position distribution — which is already reach-weighted
+  by construction, because every member survived a traffic-selected harvest (see below).
 
-### Count versus reach
+### Tested authority is the workhorse, not the registry
 
-A raw count says how many recipes take a position. **Traffic says how many people have
-actually eaten that version.** Those differ, and the difference is the finding.
+Registries are the flattering example and the rare one. **The sources with real cook
+cred — America's Test Kitchen, Cook's Illustrated, Cook's Country, Milk Street, Serious
+Eats — are the ones that will actually carry this**, for three reasons:
 
-If 3 of 30 bolognese recipes are 40-minute versions but hold most of the traffic, then
-the de facto bolognese in an English-speaking kitchen *is* the fast one, whatever the
-registry says. A rubric that only counts recipes would report that as a fringe position
-and be badly wrong about the world.
+1. **Coverage.** A dozen dishes have a registry. These publishers have tested thousands.
+2. **They answer the rubric's question.** A registry says what counts; ATK says "we made
+   it forty times and here is what changed." For *should the meat be browned separately*
+   the tested source is more authoritative than the traditional one.
+3. **They publish their reasoning.** Their verdicts arrive with a stated why, which is
+   exactly what `rationale` needs. A registry gives a rule with no reason.
 
-**We have the data but not yet the coverage.** `collection_members.traffic` is
-populated on 14,641 of 16,179 rows — but those arrive through the **publisher** harvest
-(a SEMrush Top Pages file), and dish harvests come through SERP with no traffic figure.
-So on the dishes that matter here the coverage is thin: Bolognese 8 of 30, Caesar Salad
-5 of 20, Crab Cakes 3 of 30. Traffic-weighted positions are the right design and are
-**blocked on backfilling traffic for dish-harvested rows**, not on any new idea.
+Two honest qualifications. These are **commercial publishers with a house palate** —
+ATK optimises for American home kitchens, Milk Street explicitly rethinks classics.
+Their best practice is considered opinion, and the rubric must attribute it rather than
+launder it into fact. And their verdicts can be excellent *and* non-canonical at the
+same time, which is precisely why fidelity and quality are separate axes (§7):
 
-Until then, report counts and say plainly that they are counts.
+| Axis | Fed by |
+|---|---|
+| **Fidelity** — how close to canon | Definitional authority |
+| **Quality** — how good of its kind | Tested / methodological authority |
+| **Reach** — what people actually cook | Traffic |
+
+**General culinary knowledge** — the model's own — is admissible as a fourth basis, but
+it is unattributed and uncheckable, so it ranks last and must be labelled `general`
+rather than dressed as a source. Showing our work is the positioning.
+
+### Which is answerable from our own corpus — where we have them
+
+These publishers are already members. "What does Serious Eats do on this dimension" is a
+query, not a fetch. Coverage as of 2026-08-16:
+
+| Publisher | rows | dishes | note |
+|---|---|---|---|
+| NYT Cooking | 182 | 59 | paywalled |
+| Serious Eats | 52 | **44** | **unpaywalled, DA 89 — the workhorse** |
+| Food52 | 51 | 11 | |
+| Epicurious | 47 | 7 | |
+| America's Test Kitchen | 33 | 13 | paywalled |
+| Milk Street | 13 | 1 | paywalled, human-capture-only |
+| Cook's Illustrated / Cook's Country | **0** | 0 | domain rows exist, nothing harvested |
+
+**Across the 66 rubric-viable dishes: 19 have two or more authority recipes, 19 have
+exactly one, and 28 have none.**
+
+That 42% gap is the finding. The uncovered list is *Chicken Noodle Soup, Spaghetti and
+Meatballs, Beef Stew, Chicken Piccata, Quiche Lorraine* — dishes these publishers have
+certainly covered. **It is a harvest gap, not an authority gap.** Dish harvests select
+on traffic and OU; nothing has ever gone looking for a specific publisher's take on a
+specific dish.
+
+### Two things that follow
+
+**A curated `culinary_authority` flag on `domains`.** Which publishers have cook cred is
+an editorial judgement, exactly like `paywall` and `mixed_media`, and belongs in the
+table rather than in a code constant. It lets corpus statistics be reported three ways:
+all members, authority-weighted, traffic-weighted.
+
+**A targeted harvest mode: authority-seeking rather than traffic-seeking.** For each
+rubric-viable dish, go and get the flagged publishers' version. That is a different
+selection rule from anything we run today and it is bounded — 28 dishes × a handful of
+publishers.
+
+Its limit is the paywalls: ATK, Cook's Country, Milk Street and NYT are all gated, and
+the unblocker does not help (settled with Milk Street). Those need the curator's
+signed-in browser through the manual capture queue. **Serious Eats is unpaywalled at
+DA 89 and already spans 44 dishes** — it should be the first target, and it may be
+enough on its own to lift most of the 28.
+
+### Reach is already in the set — by construction
+
+An earlier draft of this note argued that positions must be traffic-weighted or the
+rubric would mistake a popular position for a fringe one. **That was wrong, and the
+reason matters.**
+
+Members of a dish are not thirty arbitrary recipes. They are survivors of the two-stage
+selection: **the harvest SELECTS on last month's traffic, and OU RANKS within that
+pool.** Every member is already a traffic winner *and* already out-performs what its
+domain authority predicts. So counting positions across a dish's members is not
+"what thirty blogs happen to do" — it is **what the winning field does**, which is the
+de facto axis, already applied.
+
+That collapses a whole line of worry. Backfilling `traffic` onto dish-harvested rows
+would refine the ordering *within* a set of winners; it is a nice-to-have, not a
+blocker, and the rubric can ship without it.
+
+It also sharpens what the rubric actually adds. The existing selection captures reach
+and authority-for-its-weight. The two things it has **never** selected for are:
+
+1. **Definitional canon** — no harvest has ever gone looking for a registry.
+2. **Tested method** — no harvest has ever gone looking for the publisher who ran the
+   experiment.
+
+Those are the gaps, and they are exactly what §2 fills. Reach is not a gap.
 
 ---
 
@@ -428,6 +506,9 @@ per-recipe output is a *report card*.
    in the activity/engagement design.
 5. **Equipment normalisation limits pairing dimensions** — 3,004 distinct equipment
    names across 33,729 mentions, 261 ways to write "skillet".
+6. **Does an authority-seeking harvest need its own job type,** or is it the existing
+   dish refresh with a publisher filter? 28 of 66 dishes have no tested-authority
+   member, and four of the obvious targets are paywalled.
 
 ---
 
