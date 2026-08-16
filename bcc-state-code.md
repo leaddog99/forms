@@ -4817,15 +4817,169 @@ weighted **cooked > captured > viewed**. Unresolved: cross-user aggregation, and
 
 ---
 
+## Session log — 2026-08-15/16 — pricing found, a bug class closed
+
+Two threads that turned out to be the same thread: what we sell, and why the code
+keeps failing quietly.
+
+### The tier design, argued down to two tiers
+
+Wrote **The Membership Ladder** (artifact; source at `temp/tier-design.html`) and
+then rewrote it three times as the curator knocked out my assumptions. Worth
+recording the ARGUMENTS, because the conclusions moved a long way.
+
+- **Cook mode is not the anchor.** Curator: *"the single source for all recipes
+  with easy and powerful (vector) search, and a curated library from the bigs AND
+  the long tail including foreign sourced sites... to me it pales."* Correct, and
+  the data agrees — cook mode exists on **16 of 5,169** master recipes (0.3%). It
+  is a metered feature inside Member now, not a tier.
+- **No Household tier.** I had lifted a 5-seat family plan from Duolingo, where it
+  works because four children each learn separately. *"i don't think there are a
+  lot of people who need 5 memberships in a family... like nobody."* A kitchen has
+  one cook. Two tiers, deliberately.
+- **Price higher.** The curator's fixed-asset accounting product went $600 to
+  $2,500 and from a pittance to thousands of sales. The subscription data agrees:
+  high-priced apps convert download-to-paid at **2.7% vs 1.5%**, trial-start 9.8%
+  vs 4.3%. Member moved from $4.99 to **$8.99/mo, $79/yr**.
+- **Search free, save paid.** The curator's line, and it is the original thesis
+  stated exactly. Everything that helps you FIND is free — that is the Google half,
+  and Google is free because ads pay, a bargain we decline. Everything that follows
+  from KEEPING is the membership. **Free is the whole product with a number on it:
+  20 recipes, nothing crippled.**
+- **Commerce funds the free tier**, and it is tier-independent — a free user who
+  buys a Dutch oven (~$5.40 at kitchen's 4.5%) is worth more than a member who buys
+  nothing. That inverts freemium logic and is why free got generous. **Display ads
+  declined** despite $12-30 RPM: the whole positioning is that publisher pages are
+  ad-choked and we are the clean alternative.
+
+**Two corrections inside the document, both from bad first queries.**
+`LIKE '%"_cook"%'` matched 4,922 rows; a real parse found **16**. Editorial blocks
+are on **190** rows, not 5,169. The 3.7% enrichment rate is NOT a coverage failure
+— auto-enrich on master saves is about a week old, so it measures elapsed time.
+**All six accounts are fictitious**, so every behavioural number in the doc is
+unevidenced and now says so.
+
+**The corpus capital finding:** do NOT pre-buy cook rework. It is one-time per
+recipe, cached in the row, and master rows are shared — so on-demand turns
+**$1,091 into roughly $21** for the first hundred recipes anyone actually cooks.
+
+### The synthesis experiment — it works, and it counts badly
+
+Built `scripts/export_markdown.py` to test a claim the tier design leans on and
+nothing had verified. `--format md|json` share one `project()` so they cannot
+disagree about facts; `--dish` / `--domain` filter on the INDEXED columns
+(`dish_key`, `source_host` — the json_extract equivalent is a full scan, 163 ms
+against 1.5 ms).
+
+Fed 30 crab cake recipes (29 publishers) to NotebookLM. The output ranked them on
+**procedural structure** — technical precision vs parallel coordination vs
+sub-recipe partitioning — an axis nobody publishes. It caught that the TV Dinner
+interleaves four dishes chronologically, that Mansaf quarantines bread-making into
+steps 8-13, and that Serious Eats has zero filler INSIDE while being breaded
+outside.
+
+**Then I verified every falsifiable claim, and the split is clean:**
+
+| | |
+|---|---|
+| Judgments | **all sound** — including "Cookie Rookie: 1 tbsp baking powder", confirmed exactly: a real error in a published recipe |
+| Counts | **all wrong** — "egg in 20 of the recipes" (actually 30/30), "exactly half ban vegetables" (17/30), saltine camp 6 named (10 actual) |
+
+**The model does judgment; code must do arithmetic.** A synthesis feature should
+compute field statistics in SQL and hand them over — the same boundary the
+cook-view work already draws.
+
+**The standardization is half-built**, which the same test exposed:
+**59,366 ingredient lines, ZERO parsed** into amount/unit/item; equipment has
+**3,004 distinct names across 33,729 mentions, 261 ways to write "skillet"**.
+Roles are strong; quantities do not exist. That is why "rank by crab-to-filler
+ratio" cannot be answered, and it is the measured blocker on the best queries.
+
+### A bug class, closed
+
+`lidiasitaly.com` looked hung. It was **failing every save** —
+`NameError: skip_auto_enrich`, left behind by my own rename. That branch only runs
+when a caller explicitly opts OUT, which is exactly what the three batch paths do,
+so every interactive save was fine and every harvest save died. The cost shape is
+the bad part: it fires AFTER the extract, identity card and screenshot are paid
+for. Job 856: 10 failures, 0 saves.
+
+Then ran `ruff check --select F821` — **already installed, never run** — and it
+found **three more of the identical bug in under a second**: `cal_by_host`, a
+missing `import llm` (so `/url-words/sweep` has always 500'd), and a missing
+`extract_og_image` sitting inside `except Exception: return ""`.
+
+**Asked whether it was time for a deep refactor. It is not.** 61,418 lines, 11,299
+in `save_recipe_api.py`, **3 test files**. All four bugs were single undefined
+names in branches ordinary use does not reach — a linter problem, not an
+architecture problem — and restructuring without tests reproduces this exact
+failure mode at scale. Order: linter, then a smoke test on the save path, then
+carve one bounded piece at a time.
+
+- **`scripts/hooks/pre-commit` installed** (`git config core.hooksPath scripts/hooks`).
+  Blocks F821/F822/F811/E9 on STAGED files; everything else advisory. Deliberately
+  no style enforcement — 319 style findings exist, and a hook that argues about
+  style gets bypassed within a week and then protects nothing.
+- **All 152 B904 sites fixed** — every raise inside an except now names its cause.
+  AST transform, not regex, because multi-line raises, nested handlers and closures
+  each defeat a regex. One real bug on the way worth remembering: **`ast` col_offset
+  is a UTF-8 BYTE offset, not a character index** — an em-dash in a user-facing
+  string pushed ` from e` onto the next line and broke the file.
+
+### Also shipped
+
+- **topsecretrecipes.com skipped entirely** — paid gate, and unlike Milk Street
+  there is no bookmarklet path either, because the curator holds no subscription.
+  `harvestable=0` plus `system_config.disallowed_domains` (the live blocking
+  mechanism; `domains.allowed=0` is retired). Row KEPT as the record of the
+  measurement, so a future run cannot rediscover and re-pay for it.
+- **`/url-metadata` leaked vendor names in its FIELD KEYS** (`moz_last_scored`,
+  `moz_http_code`) to any member — the previous sweep caught prose and missed
+  structured data. Renamed for non-staff; staff keep both.
+- **Persona chip** on the recipe form: user_id, tier and role from `/auth/me` only.
+  Written because "am I admin right now?" was unanswerable without devtools.
+- **Signup wrote a NULL tier** on every self-signup. Now explicit `'Free'`.
+- **lidiasitaly.com harvested** (40 rows) and anthonymichaelcontrino.com (11).
+
+### Open
+
+- **The server is STALE** — nothing from 2026-08-15 onward is in the running
+  process. Jobs are unaffected; they launch fresh.
+- **Ingredient quantity parsing is the recommended next build.** Roughly $21 for
+  the whole corpus at identity-card rates, and it unblocks scaling, shopping lists,
+  "what can I make from what I have", and every numeric comparison.
+- **The structured-vs-plain A/B was never run.** `temp/crab-md` against a
+  `--style plain` export. The crab answer leaned on method text; roles and
+  equipment barely featured, so the front matter has not yet earned its keep.
+- **Click ledger and engagement log wait for real users** — with six fictitious
+  accounts there is no traffic to measure.
+- **Advisory lint debt:** 57 unused imports, 21 E702, 20 E402.
+- **`users.status` and `subscription_tier` still overlap**, and account 8
+  (`comped`) has a NULL tier on purpose — Free is probably wrong, Premium may be
+  right.
+
 ---
 
-## START HERE — state of play as of 2026-08-14
+---
 
-**Branch `split/enrichment-api`. The SERVER IS STALE — it has not been restarted since the
-late-session work.** Everything from `464f2de` (extract_notes) forward is on disk and not in
-the running process: the server-side hero fetch, the scoring-note surfacing, the two save
-buttons, **both redaction fixes**, and the screenshot latch. Restart FIRST; almost nothing
-from the last third of 2026-08-14 is testable until you do.
+## START HERE — state of play as of 2026-08-16
+
+**Branch `split/enrichment-api`, clean and pushed through `8e9b461`. The SERVER IS STALE.**
+It was last restarted 2026-08-15 15:17, and everything since is on disk only: the
+`/url-metadata` field-key redaction, the persona chip, the explicit Free tier on signup,
+the harvest-save `NameError` fix, three more undefined-name fixes, and 152 exception
+chains. **Jobs are unaffected** — they run out of process via `Popen` and load current
+code at launch, which is why the lidiasitaly harvest succeeded while the form is still
+running yesterday's bugs. Restart before testing anything interactive.
+
+**A pre-commit hook is now live** — `git config core.hooksPath scripts/hooks`. It blocks
+F821/F822/F811/E9 on staged files and prints everything else as advisory. If a commit is
+ever refused, the message says which rule and how to bypass; do not disable it silently.
+
+**Recommended next build: parse ingredient quantities.** 59,366 lines, zero parsed, and it
+is the measured blocker on every numeric question the synthesis pitch depends on. ~$21 for
+the whole corpus at identity-card rates — cheaper than finishing enrichment ($115) and two
+orders below cook rework.
 
 **Jobs pick up new code immediately** — they run out of process via
 `Popen([sys.executable, "-m", "jobs", "exec", ...])`. Only the SERVER process holds stale
@@ -4923,7 +5077,13 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 ### Do first
 
 0. **RESTART THE SERVER**, then re-capture `m.xiachufang.com/recipe/107744561` with Chrome
-   translate OFF. See the DO FIRST note above — it exercises most of 2026-08-14 at once.
+   translate OFF. Still the cheapest way to exercise a large batch of fixes at once, and it
+   has now been outstanding for two days.
+0b. **Parse ingredient quantities** — the recommended build. `recipeIngredient` is 59,366
+   plain strings and `_identity.ingredientRoles` already tags each one, so the parser has a
+   scaffold: add amount / unit / item alongside the role. Unblocks scaling, combined shopping
+   lists, "what can I make from what I have", and any ratio question. Verify against the crab
+   cake corpus, where "rank by crab-to-filler ratio" currently cannot be answered.
 1. **The activity log** — `docs/recipe-activity-and-engagement.md` §7. One table keyed on
    `url_normalized` (NOT `recipe_id` — publisher/dish refreshes are delete-and-replace) and
    four chokepoint writes. It would have caught six of the nine bugs found on 2026-08-14,
