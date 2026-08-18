@@ -3635,7 +3635,8 @@
     // actually be used. Mirrors _AUTO_ENRICH_TIERS on the server — that is the
     // enforcement; this is only whether the control is offered. Starts false so
     // an unresolved identity hides the button rather than dangling it.
-    const ENRICH_TIERS = ['premium', 'admin'];
+    // Retained for reference only — the server decides via auth.enrich_available.
+    const ENRICH_TIERS = ['premium', 'admin'];  // eslint-disable-line no-unused-vars
     let _enrichEntitled = false;
     // True once a SAVED recipe is loaded (has a DB row id). Gates
     // "Save & Re-Enrich", which only makes sense on an update.
@@ -3719,12 +3720,23 @@
         .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
         .then(auth => {
           renderPersona(auth);
+          // THE SERVER OWNS THIS. It used to be decided here against a local
+          // ENRICH_TIERS list, which drifted from the server's _AUTO_ENRICH_TIERS
+          // (empty — enrichment is not sold) and hid the button from four of six
+          // accounts to protect a feature nobody is charged for.
+          //
+          // When the server does not send the field it is running older code, so
+          // fall back to "any signed-in user". That is the correct answer while
+          // enrichment is unsold, and it means this fix does not wait on a restart.
           const tier = ((auth && auth.user && auth.user.subscription_tier) || '').trim().toLowerCase();
-          _enrichEntitled = ENRICH_TIERS.includes(tier);
+          _enrichEntitled = (auth && auth.enrich_available !== undefined)
+            ? !!auth.enrich_available
+            : !!(auth && auth.user);
           if (!_enrichEntitled) {
-            console.info('[enrich] control hidden — tier ' +
-              (tier ? '"' + tier + '"' : '(not signed in)') +
-              ' is not in [' + ENRICH_TIERS.join(', ') + ']');
+            console.info('[enrich] control hidden — ' +
+              (auth && auth.user
+                ? 'server says enrichment is not available on tier "' + tier + '"'
+                : 'not signed in'));
           }
           syncStoreControls();   // re-run now that we know
         })

@@ -431,6 +431,22 @@ def _journal_usage(usage_log, *, recipe_id=None, user_id=PLACEHOLDER_USER_ID):
 _AUTO_ENRICH_TIERS: frozenset[str] = frozenset()   # empty = paid tier not sold yet
 
 
+def _enrich_available(user: dict | None) -> bool:
+    """Should the UI offer the Enrich button to this caller?
+
+    While enrichment is NOT sold (`_AUTO_ENRICH_TIERS` empty) it is available to
+    any resolved user — there is no paid tier to withhold it from, and the
+    endpoint is open to every role anyway. Once tiers are sold this narrows to
+    those tiers automatically, with no client change.
+    """
+    if not user:
+        return False
+    if not _AUTO_ENRICH_TIERS:
+        return True
+    tier = (user.get("subscription_tier") or "").strip().lower()
+    return tier in {t.lower() for t in _AUTO_ENRICH_TIERS}
+
+
 def _auto_enrich_applies(user_id: int) -> bool:
     """True when a save to `user_id` should auto-enrich.
 
@@ -2633,6 +2649,14 @@ def auth_me(request: Request):
         "role": role,
         "permissions": auth_lib.permissions_for(role),
         "is_staff": auth_lib.is_staff(user),
+        # Whether the UI should OFFER the Enrich control. Computed here so the
+        # policy lives in one place: the form used to carry its own tier list
+        # (['premium','admin']) while _AUTO_ENRICH_TIERS was empty, and the two
+        # drifted — the button vanished for four of six accounts to protect a
+        # feature that is not sold. Note /enrich-recipe itself only requires
+        # own_recipes, which every role holds, so hiding the button never gated
+        # anything; it only decided what our own UI does.
+        "enrich_available": _enrich_available(user),
         # True when this account HAS a staff role but hasn't presented the
         # curator password, so `role` above has been locked down to 'member'.
         # The UI can offer an unlock prompt rather than pretending the account
