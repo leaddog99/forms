@@ -2642,6 +2642,10 @@ def auth_me(request: Request):
             "role": "anonymous",
             "permissions": [],
             "is_staff": False,
+            # Present and false rather than absent. A field that only sometimes
+            # appears is how the client ends up guessing, which is the drift this
+            # endpoint now exists to prevent.
+            "enrich_available": False,
         }
     role = user.get("role") or "member"
     return {
