@@ -4960,17 +4960,122 @@ carve one bounded piece at a time.
 
 ---
 
+## Session log — 2026-08-17/20 — a rubric designed and parked, a regression closed
+
+### The dish rubric — designed, then parked
+
+`docs/dish-rubrics.md` (a65d5d9, a39d6bf, 21a39b4). **Design only; the curator
+parked it 2026-08-20 with nothing built.** Do not resume unless asked. The
+reasoning is worth keeping because it cost real analysis:
+
+- **The Bolognese experiment worked and then proved why it could not be trusted.**
+  A closed-world notebook tool given 30 Bolognese recipes produced a genuine
+  evaluation framework and rejected the majority on garlic — correctly. But it was
+  **luck**: it held because Hazan, Lidia and Vincenzo happened to be among the 30.
+  Against the Accademia recipe deposited with the Bologna Chamber of Commerce
+  (20 April 2023, read through our own `to_markdown/pdf_to_markdown.py`), its
+  master recipe agreed on garlic and **contradicted canon on six other points**,
+  including recommending veal the registry explicitly forbids.
+- **The useful reading is not "it was wrong".** It synthesised Hazan, who really
+  does milk-first. There are competing authorities; a closed-world read cannot say
+  which one it landed on. So dimensions can be **contested with named camps**.
+- **Three kinds of authority, three questions.** Definitional (Accademia — thin BY
+  DESIGN, it states a boundary), instructional (Hazan, ATK, Serious Eats — rich,
+  explains why), de facto (what people cook). The curator's point that the Italian
+  sources read thin is explained by the first: boundaries are short.
+- **Reach is already in the set.** I had argued positions must be traffic-weighted.
+  Wrong — members survived the two-stage selection, so counting positions across a
+  dish's members ALREADY is the de facto axis. What selection has never selected
+  for is definitional canon and tested method.
+- **Coherence, measured across all 164 dishes** (`temp/dish_coherence.tsv`):
+  66 dish-shaped (>=0.80), 61 mixed, **37 are collections, not dishes** — Blood
+  Orange 0.10 across 18 distinct dishes, Swordfish, Tagliatelle, Hoisin Sauce.
+  Caveat: Kolokithopita and Gemista score low because members disagree about the
+  NAME, not because they are collections. Gate must flag for review, not exclude.
+
+### Serious Eats authority harvest
+
+Tested-authority coverage of the 66 dish-shaped dishes: **28 uncovered -> 11**.
+18 recipes saved across 17 dishes. Throwaway scripts in `temp/`.
+
+Three things it surfaced that outlive the rubric:
+
+- **A `site:` SERP returns the NEAREST page, not the right dish.** It offered a
+  savory crinkle pie for Galaktoboureko, baked ziti for Pastitsio, a Spanish bean
+  salad for Gigantes Plaki. Gate any targeted harvest on the extractor's own
+  `_identity.likelyDish`, NOT on URL tokens — a token screen wrongly rejects
+  Schwarma->shawarma and Tabouleh->tabbouleh, which are just transliterations.
+  One still slipped: Shopska Salata -> "Salata Falahiyeh" scored 0.5 on the shared
+  token "salata". Deleted by hand (id 8236). The real fix is semantic similarity
+  over embeddings we already have.
+- **6 duplicate dish entries** share a modal likelyDish: Spaghetti alla Nerano ~
+  alla Nerano · Pastitsio ~ Pastitcio (Greece) · Cacciatore ~ Italian Braised
+  Chicken · Meatloaf ~ Turkey Meatloaf · Chicken Thighs Bone In ~ Boneless ·
+  Shrimp with Tomatoes and Feta ~ Saganaki. Some true dupes, some deliberate
+  variants — a curator call, untouched. Merging the true ones closes 3 of the 11
+  remaining coverage gaps for free.
+- **My own bug, caught by my own gate.** `extract_recipe_from_url` returns the
+  ENDPOINT shape `{success, recipe_id, recipe, ...}`; the recipe is nested under
+  `["recipe"]`. I passed the wrapper, so the identity gate found no `_identity`
+  and rejected all 23. It failed CLOSED — without the gate, 23 near-empty rows
+  would have been written with dish stamps. Argument for gates that verify content
+  rather than trusting the pipeline.
+
+### The enrich button regression (3da9f75, 7f7e61b)
+
+The Enrich button had **vanished from the user recipe form for 4 of 6 accounts**,
+including every Free one — the accounts used to test the member experience.
+
+Cause was mine: on 2026-08-15 I gave the form its own
+`ENRICH_TIERS = ['premium','admin']` while the server's `_AUTO_ENRICH_TIERS` is
+`frozenset()` — "paid tier not sold yet". The two drifted and the client won, so
+the UI withheld a feature nobody is charged for.
+
+**Hiding it was never a gate.** `/enrich-recipe` requires only `own_recipes`,
+which every role including member holds. Visibility only decided what our own UI
+does — exactly what that endpoint's comment warns about client checks.
+
+`/auth/me` now returns **`enrich_available`**, computed by `_enrich_available()`
+beside the tier policy it reads: true for any resolved user while enrichment is
+unsold, narrowing automatically the moment `_AUTO_ENRICH_TIERS` is populated, with
+no client change. Verified both ways, and live on the restarted server — uid 2,
+tier Free, role member -> `enrich_available: True`.
+
+**This is the same shape as the `skip_auto_enrich` NameError:** one policy
+duplicated in two places that silently diverged. The lint hook cannot catch it —
+both halves are valid code. The entitlements table from the tier design is what
+would.
+
+### Data changes
+
+- **+~99 master rows** from three publisher harvests: panlasangpinoy.com (31),
+  shop.legalseafoods.com (30), bakewithzoha.com (20), plus the 18 Serious Eats.
+- **`shop.legalseafoods.com` has 30 rows and NO domain row**; the domain row is
+  `legalseafoods.com` with 0 rows. The recipes are genuine (`/blogs/recipes/`,
+  3-22 ingredients). Bookkeeping only: counts will not roll up and a future
+  refresh of `legalseafoods.com` will look for the wrong host. The domains table
+  is full-host grain, so this wants a `shop.` row or a redirect rule. NOT fixed.
+
+### Open
+
+- **Ingredient quantity parsing remains the recommended next build.** 59,366
+  ingredient lines, ZERO parsed into amount/unit/item. ~$21 for the corpus at
+  identity-card rates. Blocks scaling, shopping lists, "what can I make from what
+  I have", and every ratio question — including the one the rubric work wanted.
+- The server is current through `3da9f75`; `7f7e61b` (cosmetic, anonymous branch
+  of /auth/me) lands on the next restart.
+
 ---
 
-## START HERE — state of play as of 2026-08-16
+---
 
-**Branch `split/enrichment-api`, clean and pushed through `8e9b461`. The SERVER IS STALE.**
-It was last restarted 2026-08-15 15:17, and everything since is on disk only: the
-`/url-metadata` field-key redaction, the persona chip, the explicit Free tier on signup,
-the harvest-save `NameError` fix, three more undefined-name fixes, and 152 exception
-chains. **Jobs are unaffected** — they run out of process via `Popen` and load current
-code at launch, which is why the lidiasitaly harvest succeeded while the form is still
-running yesterday's bugs. Restart before testing anything interactive.
+## START HERE — state of play as of 2026-08-20
+
+**Branch `split/enrichment-api`, clean and pushed through `7f7e61b`.** The server was
+restarted 2026-08-18 19:30 and is current through `3da9f75`; only `7f7e61b` (cosmetic —
+the anonymous branch of `/auth/me`) awaits the next restart. **Jobs always run current
+code** — they launch out of process via `Popen` — so only the server and the forms ever
+lag a restart.
 
 **A pre-commit hook is now live** — `git config core.hooksPath scripts/hooks`. It blocks
 F821/F822/F811/E9 on staged files and prints everything else as advisory. If a commit is
@@ -5076,9 +5181,9 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
 
 ### Do first
 
-0. **RESTART THE SERVER**, then re-capture `m.xiachufang.com/recipe/107744561` with Chrome
-   translate OFF. Still the cheapest way to exercise a large batch of fixes at once, and it
-   has now been outstanding for two days.
+0. **`m.xiachufang.com/recipe/107744561` has still never completed a save.** Re-capture it
+   with Chrome translate OFF — the cheapest way to exercise a large batch of multilingual
+   fixes at once. Outstanding since 2026-08-14.
 0b. **Parse ingredient quantities** — the recommended build. `recipeIngredient` is 59,366
    plain strings and `_identity.ingredientRoles` already tags each one, so the parser has a
    scaffold: add amount / unit / item alongside the role. Unblocks scaling, combined shopping
