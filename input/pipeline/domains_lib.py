@@ -1050,6 +1050,25 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     if "paywall_da_discount_pct" in sets:
         raw = sets["paywall_da_discount_pct"]
         manual = raw not in (None, "")
+        # A BLANK does not always mean "clear it". The domain form renders this
+        # input only when the stored adjustment is MANUAL — a measured one shows
+        # as read-only text — so every save of a CALIBRATED publisher posts an
+        # empty string. Treating that as an instruction silently destroyed the
+        # calibration: shop.legalseafoods.com lost a 68.4% discount that way 19
+        # minutes after it was computed, just by the record being opened.
+        #
+        # Clearing is only meaningful against a manual override — the one case
+        # where a value was actually on screen to be cleared. A blank against a
+        # measured adjustment is the form saying nothing, so say nothing back.
+        _cur = get_domain(conn, host) or {} if not manual else {}
+        if (not manual
+                and (_cur.get("paywall_adj_source") or "") != "manual"
+                and _cur.get("paywall_da_discount_pct") is not None):
+            sets.pop("paywall_da_discount_pct", None)
+            print(f"[DOMAIN] {host}: ignored blank paywall_da_discount_pct — "
+                  f"keeping the measured {_cur['paywall_da_discount_pct']}% adjustment")
+            raw = manual = None
+    if "paywall_da_discount_pct" in sets:
         try:
             pct = float(raw) if manual else None
         except (TypeError, ValueError):
