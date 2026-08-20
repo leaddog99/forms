@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse, StreamingResponse, Response, FileRes
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from pydantic import ValidationError
+import hashlib
 import sqlite3
 import unicodedata
 import uuid
@@ -1438,6 +1439,52 @@ app.add_middleware(
 # level 5 because the marginal bytes past that cost more CPU than they save
 # wall-clock (0.07s to compress the 6.89 MB list).
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+
+
+class _NoGzipForSSE:
+    """Keep GZipMiddleware away from Server-Sent Events.
+
+    FOUND IN USE, 2026-08-20, hours after adding compression: a publisher-refresh
+    job ran to completion and wrote a 127KB log, and BOTH job-log viewers showed
+    nothing at all while it ran. The job was fine; the transport was not.
+
+    /jobs/<id>/stream is an SSE endpoint, and SSE only works because each event
+    is flushed as it is produced. Compression is a buffering operation — it
+    holds bytes back to find something to compress — so gzipping a live stream
+    turns "one line at a time" into "everything, eventually". The endpoint
+    already sends `X-Accel-Buffering: no`, but that is a request to an upstream
+    PROXY and says nothing to middleware running inside this app.
+
+    Content negotiation happens before a handler is chosen, so the response's
+    content-type is not known when GZipMiddleware makes its decision. What IS
+    known is what the client asked for: EventSource always sends
+    `Accept: text/event-stream`. Dropping Accept-Encoding on those requests
+    means GZipMiddleware sees a client that does not want compression and leaves
+    the stream alone, without reaching into its internals.
+
+    Registered AFTER GZipMiddleware deliberately: Starlette builds the stack in
+    reverse, so the last middleware added is the OUTERMOST and runs first — which
+    is the only order in which the header can be removed before gzip reads it.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            headers = scope.get("headers") or []
+            wants_sse = any(
+                k == b"accept" and b"text/event-stream" in v.lower()
+                for k, v in headers
+            )
+            if wants_sse:
+                scope = dict(scope)
+                scope["headers"] = [(k, v) for k, v in headers
+                                    if k != b"accept-encoding"]
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_NoGzipForSSE)
 
 # --- Public-host gate -------------------------------------------------------
 # bestcooksclub.com (customers) and recipes.tbotb.com (staff) are the same app
@@ -10061,18 +10108,33 @@ def _save_recipe_core(payload: dict) -> dict:
             if seq_id is not None:
                 try:
                     from input.pipeline.embeddings import (
-                        compose_recipe_text, embed_text, vec_to_bytes,
+                        EMBED_MODEL, compose_recipe_text, embed_text, vec_to_bytes,
                     )
                     from input.pipeline import vector_store
                     txt = compose_recipe_text(recipe_dict)
                     if txt.strip():
                         rec_vec = embed_text(txt)
+                        # PROVENANCE, stamped with the vector rather than after
+                        # it. Saving has always written the embedding and never
+                        # said what text produced it, so every newly saved row
+                        # arrived with a NULL embedding_text_hash — and a NULL
+                        # hash can never match, which means check_embeddings
+                        # cannot tell "current" from "stale" and reembed_identity
+                        # redoes the row on every pass. That is how the
+                        # 2026-08-06 composer-order bug went unnoticed across
+                        # 41% of the corpus. `dishes` stamped these three from
+                        # the start; the recipe tables never did.
+                        _emb_hash = hashlib.sha256(txt.encode("utf-8")).hexdigest()
+                        _emb_now = datetime.now(timezone.utc).isoformat()
                         if user_id == 0:
                             # Master: store the source-of-truth vector + the
                             # derived KNN index the recommender reads.
                             conn.execute(
-                                "UPDATE master_recipes SET embedding = ? WHERE id = ?",
-                                (vec_to_bytes(rec_vec), seq_id),
+                                "UPDATE master_recipes SET embedding = ?, "
+                                "embedding_model = ?, embedding_text_hash = ?, "
+                                "embedding_updated_at = ? WHERE id = ?",
+                                (vec_to_bytes(rec_vec), EMBED_MODEL, _emb_hash,
+                                 _emb_now, seq_id),
                             )
                             vector_store.enable_vec(conn)
                             ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
@@ -10111,8 +10173,11 @@ def _save_recipe_core(payload: dict) -> dict:
                                       f"d={best['distance']:.3f} confident={confident}  candidates="
                                       + ", ".join(f"{m['name']}({m['distance']:.2f})" for m in cands))
                             conn.execute(
-                                "UPDATE recipes SET embedding = ?, data = ? WHERE id = ?",
-                                (vec_to_bytes(rec_vec), json.dumps(recipe_dict), seq_id),
+                                "UPDATE recipes SET embedding = ?, data = ?, "
+                                "embedding_model = ?, embedding_text_hash = ?, "
+                                "embedding_updated_at = ? WHERE id = ?",
+                                (vec_to_bytes(rec_vec), json.dumps(recipe_dict),
+                                 EMBED_MODEL, _emb_hash, _emb_now, seq_id),
                             )
                 except Exception as e:
                     print(f"[VEC] recipe embed/match failed: {e}")
