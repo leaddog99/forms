@@ -3998,7 +3998,7 @@
       if (next === _searchQuery) return;   // nothing to re-render
       _searchQuery = next;
       syncSearchControls();
-      renderRecipes();
+      loadRecipes();          // the server does the matching now, not the cache
     }
 
     function clearSearch() {
@@ -4007,14 +4007,14 @@
       if (!_searchQuery) { syncSearchControls(); return; }
       _searchQuery = '';
       syncSearchControls();
-      renderRecipes();
+      loadRecipes();
       if (el) el.focus();
     }
 
-    const LIST_CHUNK = 60;          // ~6 screens of sidebar on an iPad
-    let _listWindow = null;         // { rows, buildCard, rendered }
+    let _listWindow = null;         // retained for the reset path
     let _listObserver = null;
     let _listSentinel = null;
+    let _listBuildCard = null;      // set by renderRecipes; see renderListRows
 
     // The list's scroll container. Resolved by id, NOT via the top-level
     // `sidebar` const — that one is declared far below this point in the same
@@ -4027,7 +4027,7 @@
     function _listObs() {
       if (!_listObserver) {
         _listObserver = new IntersectionObserver(entries => {
-          if (entries.some(e => e.isIntersecting)) appendListChunk();
+          if (entries.some(e => e.isIntersecting)) loadMoreRecipes();
         }, {
           // The sidebar is the scroll container (overflow-y: auto), not the
           // page. rootMargin buys roughly a screen of lead time so the next
@@ -4039,8 +4039,8 @@
       return _listObserver;
     }
 
-    // Detach the sentinel and forget the current window. Safe to call when
-    // there is no window — every render path starts with this.
+    // Detach the sentinel. Safe to call when there is none — every load
+    // starts with this.
     function resetListWindow() {
       if (_listSentinel) {
         if (_listObserver) _listObserver.unobserve(_listSentinel);
@@ -4049,100 +4049,192 @@
       _listWindow = null;
     }
 
-    function startListWindow(rows, buildCard) {
-      resetListWindow();
-      listEl.innerHTML = '';
-      // A re-filter or re-sort makes the old scroll offset meaningless — and
-      // worse, if the new result set is shorter the container stays scrolled
-      // past the end and the user sees an empty box. Always start at the top.
-      const root = listScrollRoot();
-      if (root) root.scrollTop = 0;
-      _listWindow = { rows, buildCard, rendered: 0 };
-      appendListChunk();
-    }
-
-    function appendListChunk() {
-      const w = _listWindow;
-      if (!w || w.rendered >= w.rows.length) return;
-      const end = Math.min(w.rendered + LIST_CHUNK, w.rows.length);
+    // Put `rows` on screen. `replace` for a fresh load, append for a new page.
+    // The card builder is captured by renderRecipes (it closes over the field
+    // pickers) and parked here, because pages arrive from loadMoreRecipes which
+    // is not inside renderRecipes' scope.
+    function renderListRows(rows, { replace }) {
+      if (!_listBuildCard) return;
+      if (replace) {
+        listEl.innerHTML = '';
+        // A re-filter or re-sort makes the old scroll offset meaningless — and
+        // if the new result set is shorter the container would stay scrolled
+        // past the end, showing an empty box. Always start at the top.
+        const root = listScrollRoot();
+        if (root) root.scrollTop = 0;
+      }
       // One fragment, one reflow — appending cards individually costs a layout
       // pass each.
       const frag = document.createDocumentFragment();
-      for (let i = w.rendered; i < end; i++) frag.appendChild(w.buildCard(w.rows[i]));
+      rows.forEach(r => frag.appendChild(_listBuildCard(r)));
       listEl.appendChild(frag);
-      w.rendered = end;
-
-      if (w.rendered < w.rows.length) {
-        if (!_listSentinel) {
-          _listSentinel = document.createElement('li');
-          _listSentinel.className = 'list-sentinel';
-          _listSentinel.setAttribute('aria-hidden', 'true');
-        }
-        // appendChild MOVES an already-parented node, so this keeps the one
-        // sentinel pinned to the end of the list rather than accumulating one
-        // per chunk.
-        listEl.appendChild(_listSentinel);
-        // unobserve/observe, NOT a bare observe(). IntersectionObserver only
-        // calls back when the intersection STATE CHANGES, and observe() on an
-        // already-observed target is a no-op. Move the sentinel while it is
-        // still on screen — a reader parked at the bottom of the list, or a
-        // chunk too short to fill a tall sidebar — and it goes from
-        // intersecting to intersecting, so no callback ever comes and the list
-        // stalls at one chunk. A FRESH observe() always delivers an initial
-        // observation, which either appends the next chunk (still visible, so
-        // the cascade continues) or reports not-intersecting and stops. That
-        // makes "keep filling until the sentinel is genuinely below the fold"
-        // the terminating condition, instead of "until the user happens to
-        // scroll in a way that produces a transition".
-        const obs = _listObs();
-        obs.unobserve(_listSentinel);
-        obs.observe(_listSentinel);
-      } else {
-        // Everything is rendered — nothing left to trigger.
-        resetListWindow_keepRows(w);
-      }
+      syncListSentinel();
     }
 
-    // End-of-list teardown: drop the sentinel but keep _listWindow, so a
-    // later call can still see that the window is complete rather than
-    // treating it as "never started".
-    function resetListWindow_keepRows(w) {
-      if (_listSentinel) {
-        if (_listObserver) _listObserver.unobserve(_listSentinel);
-        if (_listSentinel.parentNode) _listSentinel.remove();
+    function appendListChunk(rows) { renderListRows(rows, { replace: false }); }
+
+    // The sentinel exists only while the SERVER says there are more rows.
+    function syncListSentinel() {
+      if (!_listHasMore) {
+        resetListWindow();
+        return;
       }
-      _listWindow = w;
+      if (!_listSentinel) {
+        _listSentinel = document.createElement('li');
+        _listSentinel.className = 'list-sentinel';
+        _listSentinel.setAttribute('aria-hidden', 'true');
+      }
+      // appendChild MOVES an already-parented node, so this keeps the one
+      // sentinel pinned to the end rather than accumulating one per page.
+      listEl.appendChild(_listSentinel);
+      // unobserve/observe, NOT a bare observe(). IntersectionObserver only
+      // calls back when the intersection STATE CHANGES, and observe() on an
+      // already-observed target is a no-op. Move the sentinel while it is still
+      // on screen — a reader parked at the bottom, or a page too short to fill
+      // a tall sidebar — and it goes from intersecting to intersecting, so no
+      // callback ever comes and the list stalls on one page. A FRESH observe()
+      // always delivers an initial observation, which either fetches the next
+      // page (still visible, so the cascade continues) or reports
+      // not-intersecting and stops.
+      const obs = _listObs();
+      obs.unobserve(_listSentinel);
+      obs.observe(_listSentinel);
     }
 
+    // ---------- Server-paged list state --------------------------------
+    // _recipesCache holds the pages FETCHED SO FAR, not the whole collection.
+    // That is the change: the list used to pull every row so it could filter
+    // and sort locally, which cost 660KB and 2.0s on master. The server now
+    // filters, sorts, counts and pages, and this only accumulates what has
+    // actually been scrolled to.
+    const LIST_PAGE = 100;      // rows per request
+    let _listTotal = 0;         // every row this owner has
+    let _listMatched = 0;       // rows matching the current filters
+    let _listOffset = 0;        // where the next page starts
+    let _listHasMore = false;
+    let _listLoading = false;   // in-flight guard: the scroll sentinel can fire
+                                // again before a page lands, and without this
+                                // the same offset is requested twice and the
+                                // rows appear twice.
+    let _listFacets = {};       // latest per-facet counts, for the dropdowns
+    let _listSeq = 0;           // request generation; a slow reply from an
+                                // abandoned filter must not overwrite a newer one
+
+    function _listQuery(offset) {
+      const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+      const p = new URLSearchParams({
+        user_id: uid,
+        sort: document.getElementById('sidebar_sort')?.value || 'updated_desc',
+        limit: String(LIST_PAGE),
+        offset: String(offset),
+      });
+      if (_searchQuery) p.set('q', _searchQuery);
+      const chapter = document.getElementById('sidebar_chapter')?.value || '';
+      if (chapter) p.set('chapter', chapter);
+      return `${API}/recipes/search?${p.toString()}`;
+    }
+
+    // Fetch page 0 and replace the list. Every filter/sort/store change lands here.
     async function loadRecipes() {
-      listEl.innerHTML = '<li class="empty-state">Loading...</li>';
+      const seq = ++_listSeq;
+      _listLoading = true;
+      resetListWindow();
+      listEl.innerHTML = '<li class="empty-state">Loading…</li>';
       try {
-        const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
-        // summary=1 → slim list projection (just the fields the cards render).
-        // sort= is the SERVER's job now. It used to be done here, over the whole
-        // cache, which only worked because the whole cache was present — the
-        // moment the fetch is paginated a client-side sort orders one page and
-        // calls it the answer. Ordering belongs where the rows are.
-        const sortKey = (document.getElementById('sidebar_sort')?.value || 'updated_desc');
-        const res = await fetch(`${API}/recipes?user_id=${encodeURIComponent(uid)}`
-                                + `&summary=1&sort=${encodeURIComponent(sortKey)}`);
-        const data = await res.json();
-        _recipesCache = Array.isArray(data) ? data : [];
+        const res = await fetch(_listQuery(0));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const d = await res.json();
+        if (seq !== _listSeq) return;          // superseded — drop it
+        _recipesCache = Array.isArray(d.rows) ? d.rows : [];
+        _listTotal   = d.total   || 0;
+        _listMatched = d.matched || 0;
+        _listOffset  = _recipesCache.length;
+        _listHasMore = !!d.hasMore;
+        _listFacets  = d.facets || {};
+        applyFacetsToControls();
         renderRecipes();
       } catch (err) {
-        _recipesCache = [];
+        if (seq !== _listSeq) return;
+        _recipesCache = []; _listTotal = _listMatched = _listOffset = 0;
+        _listHasMore = false;
         listEl.innerHTML = '<li class="empty-state">Failed to load recipes</li>';
+      } finally {
+        if (seq === _listSeq) _listLoading = false;
       }
     }
 
-    function renderRecipes() {
-      const chapterEl = document.getElementById('sidebar_chapter');
-      const countEl = document.getElementById('sidebarCount');
-      // The APPLIED query — set by applySearch(), not by whatever is currently
-      // sitting in the input. Half-typed text must not filter the list.
-      const q = _searchQuery;
-      const chapterFilter = (chapterEl && chapterEl.value) || '';
+    // Fetch the NEXT page and append. Called by the scroll sentinel.
+    async function loadMoreRecipes() {
+      if (_listLoading || !_listHasMore) return;
+      const seq = _listSeq;
+      _listLoading = true;
+      try {
+        const res = await fetch(_listQuery(_listOffset));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const d = await res.json();
+        if (seq !== _listSeq) return;          // filters changed mid-flight
+        const rows = Array.isArray(d.rows) ? d.rows : [];
+        _recipesCache = _recipesCache.concat(rows);
+        _listOffset += rows.length;
+        _listHasMore = !!d.hasMore && rows.length > 0;
+        appendListChunk(rows);
+        updateListCount();
+      } catch (err) {
+        // Leave what is already rendered alone; the sentinel will retry on the
+        // next scroll rather than blanking a list the user is reading.
+        _listHasMore = true;
+      } finally {
+        if (seq === _listSeq) _listLoading = false;
+      }
+    }
 
+    // Header count. Shows matches/total once a filter narrows the set, matching
+    // what it did when the filtering was local.
+    function updateListCount() {
+      const el = document.getElementById('sidebarCount');
+      if (!el) return;
+      el.textContent = (_listMatched === _listTotal)
+        ? `${_listTotal}` : `${_listMatched}/${_listTotal}`;
+    }
+
+    // Rebuild the chapter dropdown from the CASCADED facet counts, so it only
+    // ever offers chapters that still have rows under the other active filters.
+    // That is what makes a zero-result selection unreachable rather than merely
+    // unlikely. The current selection is preserved even if it has dropped out
+    // of the list, so the control never silently reinterprets itself.
+    function applyFacetsToControls() {
+      const sel = document.getElementById('sidebar_chapter');
+      const counts = _listFacets && _listFacets.chapter;
+      if (!sel || !Array.isArray(counts)) return;
+      const current = sel.value;
+      sel.innerHTML = '';
+      const all = document.createElement('option');
+      all.value = ''; all.textContent = 'All chapters';
+      sel.appendChild(all);
+      const seen = new Set();
+      counts.slice().sort((a, b) => String(a.value).localeCompare(String(b.value)))
+            .forEach(({ value, count }) => {
+        if (!value) return;
+        seen.add(value);
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = `${value} (${count})`;
+        sel.appendChild(o);
+      });
+      if (current && !seen.has(current)) {
+        const o = document.createElement('option');
+        o.value = current;
+        o.textContent = `${current} (0)`;
+        sel.appendChild(o);
+      }
+      sel.value = current;
+    }
+
+    // Draws whatever loadRecipes/loadMoreRecipes put in _recipesCache. It reads
+    // no control values any more: the query is assembled in _listQuery and
+    // answered by the server, so the search term, chapter and sort are inputs
+    // to the FETCH, not to the render.
+    function renderRecipes() {
       // HTML-entity decoder for fields that arrive double-encoded from
       // some JSON-LD sources (e.g. titles with "&amp;" instead of "&").
       // Uses a throwaway <textarea> so it handles every named + numeric
@@ -4288,32 +4380,19 @@
         } catch { return ''; }
       };
 
-      // Filter
-      let rows = _recipesCache.slice();
-      if (q) {
-        rows = rows.filter(r =>
-          getName(r).toLowerCase().includes(q) ||
-          getBatch(r).toLowerCase().includes(q)
-        );
-      }
-      if (chapterFilter) {
-        rows = rows.filter(r => getChapter(r) === chapterFilter);
-      }
+      // NEITHER FILTERED NOR SORTED HERE. Both are the server's, and it also
+      // returned the counts. _recipesCache is the pages fetched so far, already
+      // matching and already in order — rendering it verbatim is the only way
+      // the list can be trusted once it is paged, since anything this function
+      // decided would only be deciding it about the rows that happen to have
+      // arrived.
+      const rows = _recipesCache;
+      updateListCount();
 
-      // NOT SORTED HERE. The rows arrive in the order the server chose
-      // (SORT_SQL in save_recipe_api.py, keyed by the same sidebar_sort value).
-      // Filtering above preserves that order, so search and chapter results
-      // stay in the chosen sort without re-ordering anything.
-
-      // Header counter
-      const total = _recipesCache.length;
-      const shown = rows.length;
-      if (countEl) countEl.textContent = (shown === total) ? `${total}` : `${shown}/${total}`;
-
-      // Empty / no-match states. resetListWindow() first: these paths blow the
-      // list away with innerHTML, and a sentinel still under observation would
-      // be left orphaned (and the observer would hold the detached node).
-      if (_recipesCache.length === 0) {
+      // Empty states. resetListWindow() first: these paths blow the list away
+      // with innerHTML, and a sentinel still under observation would be left
+      // orphaned (with the observer holding the detached node).
+      if (_listTotal === 0) {
         resetListWindow();
         listEl.innerHTML = '<li class="empty-state">No recipes yet.<br>Create your first one!</li>';
         return;
@@ -4492,9 +4571,9 @@
         return item;
       };
 
-      // Hand the filtered+sorted array to the windowed renderer. Only the
-      // first LIST_CHUNK cards get built now; the rest arrive on scroll.
-      startListWindow(rows, buildCard);
+      // Park the builder so paged appends can reach it, then draw page one.
+      _listBuildCard = buildCard;
+      renderListRows(rows, { replace: true });
     }
 
     // ============================================================
@@ -4546,10 +4625,12 @@
       const searchClearBtn = document.getElementById('sidebar_search_clear');
       if (searchClearBtn) searchClearBtn.addEventListener('click', clearSearch);
       syncSearchControls();
+      // Chapter is a SERVER filter now, so this refetches. Re-rendering would
+      // only re-draw the page already in hand, which is a subset of the matches.
       const chapterEl = document.getElementById('sidebar_chapter');
       if (chapterEl) chapterEl.addEventListener('change', () => {
         persistSidebarState();
-        renderRecipes();
+        loadRecipes();
       });
       // Re-FETCH, not re-render: the order is decided server-side now, so a
       // local re-render would just redraw the previous ordering.
