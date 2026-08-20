@@ -1434,7 +1434,14 @@
     }
 
     /* Modal dialog */
-    dialog#errorDialog {
+    dialog#errorDialog,
+    dialog#filterDialog {
+      /* A modal <dialog> is centred by the UA's `margin: auto`, and the global
+         `* { margin: 0 }` reset at the top of this file was silently killing it
+         — both dialogs opened pinned to the top-left corner. Restored here
+         rather than exempting dialog from the reset, so the reset keeps doing
+         its job everywhere else. (Pre-existing; the error dialog had it too.) */
+      margin: auto;
       border: none;
       border-radius: 18px;
       padding: 0;
@@ -1446,7 +1453,8 @@
       font-family: Georgia, serif;
     }
 
-    dialog#errorDialog::backdrop {
+    dialog#errorDialog::backdrop,
+    dialog#filterDialog::backdrop {
       background: rgba(30, 20, 10, 0.45);
       backdrop-filter: blur(2px);
     }
@@ -1478,6 +1486,89 @@
     }
 
     .modal-actions button { padding: 10px 18px; font-size: 0.92em; }
+
+    /* ---- Search criteria dialog ---------------------------------------
+       Reuses the errorDialog shell (border, radius, backdrop, action row);
+       only the body grid is new. Facet rows are label-over-control so long
+       cuisine names are not truncated on a phone. */
+    dialog#filterDialog { max-width: 520px; }
+    .filter-grid { display: grid; gap: 14px; }
+    .filter-row { display: grid; gap: 5px; }
+    .filter-row label {
+      font-family: var(--sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+      font-size: 0.72em;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--ink-muted, #666);
+    }
+    .filter-row select,
+    .filter-row input[type="search"] {
+      width: 100%;
+      padding: 9px 10px;
+      font-family: inherit;
+      font-size: 0.95em;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .filter-row select:focus,
+    .filter-row input[type="search"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft, #faf3ee);
+    }
+    /* Live match count. It is the whole point of cascading the options —
+       the user sees what a selection costs BEFORE applying it. */
+    .filter-count {
+      font-family: var(--sans, -apple-system, sans-serif);
+      font-size: 0.88em;
+      color: var(--ink-muted, #666);
+      padding-top: 4px;
+      min-height: 1.2em;
+    }
+    .filter-count strong { color: var(--accent); font-weight: 600; }
+    .filter-count.none strong { color: #b3261e; }
+    .modal-actions .spacer { margin-right: auto; }
+
+    /* Sidebar trigger. Shows how many facets are active so the state is
+       visible without opening the dialog — a filtered list that looks
+       unfiltered is how people conclude records have gone missing. */
+    .sidebar-controls .filter-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: 0.9em;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .sidebar-controls .filter-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft, #faf3ee);
+    }
+    .sidebar-controls .filter-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft, #faf3ee);
+    }
+    .sidebar-controls .filter-btn svg { width: 15px; height: 15px; }
+    .sidebar-controls .filter-btn .badge {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 0.8em;
+      line-height: 1.5;
+    }
 
     /* ============================================================
        RESPONSIVE — mobile (≤720px). The desktop layout uses fixed
@@ -1758,6 +1849,41 @@
       <button type="button" id="errorDialogCloseBtn" class="secondary">Close</button>
     </div>
   </dialog>
+  <!-- Search criteria. Every control here is a SERVER filter, and every
+       dropdown is rebuilt from the cascaded facet counts each time a selection
+       changes, so an option that would return nothing is never offered. The
+       match count updates as you go — the point of cascading is seeing what a
+       choice costs before committing to it. -->
+  <dialog id="filterDialog">
+    <div class="modal-inner">
+      <h3>Find recipes</h3>
+      <div class="filter-grid">
+        <div class="filter-row">
+          <label for="filter_q">Text</label>
+          <input type="search" id="filter_q" placeholder="Words in the title…"
+                 enterkeyhint="search" autocomplete="off" />
+        </div>
+        <div class="filter-row">
+          <label for="filter_chapter">Chapter</label>
+          <select id="filter_chapter"><option value="">Any chapter</option></select>
+        </div>
+        <div class="filter-row">
+          <label for="filter_cuisine">Cuisine</label>
+          <select id="filter_cuisine"><option value="">Any cuisine</option></select>
+        </div>
+        <div class="filter-row">
+          <label for="filter_ethnicity">Ethnicity / region</label>
+          <select id="filter_ethnicity"><option value="">Any ethnicity</option></select>
+        </div>
+        <div class="filter-count" id="filterCount"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button type="button" id="filterClearBtn" class="secondary spacer">Clear all</button>
+      <button type="button" id="filterCancelBtn" class="secondary">Cancel</button>
+      <button type="button" id="filterApplyBtn" class="primary">Show recipes</button>
+    </div>
+  </dialog>
   <input type="file" id="imageFallbackInput" accept="image/*" style="display:none" />
 
   <!-- Fixed branding header. Sidebar toggle lives inside the header at
@@ -1823,10 +1949,20 @@
           </svg>
         </button>
       </div>
-      <select id="sidebar_chapter">
-        <option value="">All chapters</option>
-        <!-- populated from CHAPTERS by populateSidebarChapterOptions() -->
-      </select>
+      <!-- Chapter moved into the criteria dialog alongside cuisine and
+           ethnicity: one filter surface that grows by adding a row, rather
+           than a sidebar that grows a dropdown per facet. The hidden input
+           keeps chapter's persistence key working unchanged. -->
+      <input type="hidden" id="sidebar_chapter" value="" />
+      <input type="hidden" id="sidebar_cuisine" value="" />
+      <input type="hidden" id="sidebar_ethnicity" value="" />
+      <button type="button" id="filterOpenBtn" class="filter-btn" title="Search criteria">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>
+        </svg>
+        <span id="filterBtnLabel">Filters</span>
+      </button>
       <select id="sidebar_sort">
         <!-- options auto-populated from SORT_ORDERS at page load -->
       </select>
@@ -3551,20 +3687,12 @@
     // Populate the sidebar's chapter filter from the same CHAPTERS list
     // that drives the form's classification_chapter select. Runs once at
     // page load — the list doesn't change at runtime.
-    (function populateSidebarChapterOptions() {
-      const sel = document.getElementById('sidebar_chapter');
-      if (!sel) return;
-      CHAPTERS.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = c;
-        sel.appendChild(opt);
-      });
-      const u = document.createElement('option');
-      u.value = "Uncertain";
-      u.textContent = "Uncertain";
-      sel.appendChild(u);
-    })();
+    // (populateSidebarChapterOptions used to fill a sidebar <select> from the
+    //  static CHAPTERS list. The chapter filter now lives in the criteria
+    //  dialog and is built from the server's CASCADED facet counts instead, so
+    //  it offers only chapters that still have rows and shows how many. The
+    //  static list would have offered all 26 regardless, including any with
+    //  nothing in them.)
 
     // ============================================================
     // Sidebar sort engine — data-driven multi-field sort
@@ -3688,12 +3816,21 @@
     // The user_id, sort, and chapter filter survive reloads (the user
     // expects to come back to the same view). Search box is
     // intentionally NOT persisted — searches are transient queries.
-    const SIDEBAR_PERSIST_KEYS = ['user_id', 'sidebar_sort', 'sidebar_chapter'];
+    const SIDEBAR_PERSIST_KEYS = ['user_id', 'sidebar_sort'];
     // …but only these come BACK on load. `user_id` is still written (see
     // applySelfCollection below) and deliberately not read here: a page open
     // always starts on your own collection, never on whichever one you happened
     // to be looking at last.
-    const SIDEBAR_RESTORE_KEYS = ['sidebar_sort', 'sidebar_chapter'];
+    //
+    // THE FACET FILTERS ARE NOT PERSISTED AT ALL, and that follows from the same
+    // rule. They were briefly, and it produced this: set cuisine=Greek +
+    // chapter=Appetizers while browsing master, reload, land on your own
+    // collection — which has no Greek appetizers — and the app opens on "0 of
+    // 135" and an empty list, with no visible cause. A filter belongs to the
+    // collection it was chosen against, and the collection does not survive a
+    // reload, so neither can the filter. Sort is different and does persist: no
+    // sort order can empty a list.
+    const SIDEBAR_RESTORE_KEYS = ['sidebar_sort'];
     function persistSidebarState() {
       SIDEBAR_PERSIST_KEYS.forEach(id => {
         const el = document.getElementById(id);
@@ -4101,6 +4238,148 @@
       obs.observe(_listSentinel);
     }
 
+    // ---------- Search criteria dialog ---------------------------------
+    // The facets this UI offers. ONE list drives the query parameters, the
+    // dialog's dropdowns, the persisted keys and the active-filter badge, so a
+    // new facet is one entry here plus one row of markup — it cannot end up
+    // filtered-but-not-shown or shown-but-not-filtered. Mirrors FACET_COLUMNS
+    // in save_recipe_api.py, which is the server half of the same list.
+    const FILTER_FACETS = ['chapter', 'cuisine', 'ethnicity'];
+    const FACET_ANY_LABEL = { chapter: 'Any chapter', cuisine: 'Any cuisine',
+                              ethnicity: 'Any ethnicity' };
+    let _filterSeq = 0;         // same generation guard as the list
+
+    const _filterEl = f => document.getElementById('filter_' + f);
+    const _appliedEl = f => document.getElementById('sidebar_' + f);
+
+    // What the DIALOG currently has selected — which is not yet what the list
+    // is filtered by. The two only meet on Show recipes.
+    function _draftFilters() {
+      const d = { q: (document.getElementById('filter_q')?.value || '').trim() };
+      FILTER_FACETS.forEach(f => { d[f] = _filterEl(f)?.value || ''; });
+      return d;
+    }
+
+    // Ask the server what is still reachable given the draft. limit=1 because
+    // this call wants the COUNTS, not the rows — the page is fetched once, on
+    // apply, rather than on every dropdown change.
+    async function refreshFilterFacets() {
+      const seq = ++_filterSeq;
+      const draft = _draftFilters();
+      const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+      const p = new URLSearchParams({ user_id: uid, limit: '1' });
+      if (draft.q) p.set('q', draft.q);
+      FILTER_FACETS.forEach(f => { if (draft[f]) p.set(f, draft[f]); });
+      const countEl = document.getElementById('filterCount');
+      if (countEl) countEl.textContent = 'Counting…';
+      try {
+        const res = await fetch(`${API}/recipes/search?${p.toString()}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const d = await res.json();
+        if (seq !== _filterSeq) return;                 // a newer edit won
+        FILTER_FACETS.forEach(f => fillFacetSelect(f, (d.facets || {})[f], draft[f]));
+        if (countEl) {
+          const n = d.matched || 0;
+          countEl.classList.toggle('none', n === 0);
+          countEl.innerHTML = (n === d.total)
+            ? `All <strong>${d.total}</strong> recipes`
+            : `<strong>${n}</strong> of ${d.total} recipes`;
+        }
+      } catch (e) {
+        if (seq !== _filterSeq) return;
+        if (countEl) countEl.textContent = 'Could not reach the server.';
+      }
+    }
+
+    // Rebuild one dropdown from its cascaded counts. Options are alphabetical
+    // rather than by count: a picker you scan by name should not reorder itself
+    // every time another facet changes.
+    function fillFacetSelect(facet, counts, selected) {
+      const sel = _filterEl(facet);
+      if (!sel) return;
+      sel.innerHTML = '';
+      const any = document.createElement('option');
+      any.value = ''; any.textContent = FACET_ANY_LABEL[facet] || 'Any';
+      sel.appendChild(any);
+      const seen = new Set();
+      (Array.isArray(counts) ? counts.slice() : [])
+        .sort((a, b) => String(a.value).localeCompare(String(b.value)))
+        .forEach(({ value, count }) => {
+          if (!value) return;
+          seen.add(value);
+          const o = document.createElement('option');
+          o.value = value;
+          o.textContent = `${value} (${count})`;
+          sel.appendChild(o);
+        });
+      // A selection the cascade has ruled out stays visible, marked (0). Making
+      // it disappear would silently reinterpret the control as "Any" and show
+      // the user a wider result set than they asked for.
+      if (selected && !seen.has(selected)) {
+        const o = document.createElement('option');
+        o.value = selected;
+        o.textContent = `${selected} (0)`;
+        sel.appendChild(o);
+      }
+      sel.value = selected || '';
+    }
+
+    function openFilterDialog() {
+      const dlg = document.getElementById('filterDialog');
+      if (!dlg) return;
+      // Seed the draft from what is actually applied, so opening and cancelling
+      // is a no-op.
+      const qEl = document.getElementById('filter_q');
+      if (qEl) qEl.value = _searchQuery || '';
+      FILTER_FACETS.forEach(f => {
+        const sel = _filterEl(f);
+        if (sel) fillFacetSelect(f, [], _appliedEl(f)?.value || '');
+      });
+      refreshFilterFacets();
+      if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    }
+
+    function closeFilterDialog() {
+      const dlg = document.getElementById('filterDialog');
+      if (!dlg) return;
+      if (typeof dlg.close === 'function') dlg.close(); else dlg.removeAttribute('open');
+    }
+
+    function applyFilterDialog() {
+      const draft = _draftFilters();
+      FILTER_FACETS.forEach(f => {
+        const el = _appliedEl(f);
+        if (el) el.value = draft[f];
+      });
+      _searchQuery = (draft.q || '').toLowerCase();
+      const sb = document.getElementById('sidebar_search');
+      if (sb) sb.value = draft.q || '';
+      syncSearchControls();
+      persistSidebarState();
+      closeFilterDialog();
+      loadRecipes();
+    }
+
+    function clearFilterDialog() {
+      const qEl = document.getElementById('filter_q');
+      if (qEl) qEl.value = '';
+      FILTER_FACETS.forEach(f => { const sel = _filterEl(f); if (sel) sel.value = ''; });
+      refreshFilterFacets();
+    }
+
+    // Show the active-filter count on the trigger. A filtered list that looks
+    // unfiltered is how people conclude their recipes have gone missing.
+    function syncFilterButton() {
+      const btn = document.getElementById('filterOpenBtn');
+      const label = document.getElementById('filterBtnLabel');
+      if (!btn || !label) return;
+      const n = FILTER_FACETS.filter(f => (_appliedEl(f)?.value || '')).length;
+      btn.classList.toggle('active', n > 0);
+      label.innerHTML = n
+        ? `Filters <span class="badge">${n}</span>`
+        : 'Filters';
+    }
+
     // ---------- Server-paged list state --------------------------------
     // _recipesCache holds the pages FETCHED SO FAR, not the whole collection.
     // That is the change: the list used to pull every row so it could filter
@@ -4129,8 +4408,10 @@
         offset: String(offset),
       });
       if (_searchQuery) p.set('q', _searchQuery);
-      const chapter = document.getElementById('sidebar_chapter')?.value || '';
-      if (chapter) p.set('chapter', chapter);
+      for (const f of FILTER_FACETS) {
+        const v = document.getElementById('sidebar_' + f)?.value || '';
+        if (v) p.set(f, v);
+      }
       return `${API}/recipes/search?${p.toString()}`;
     }
 
@@ -4151,7 +4432,7 @@
         _listOffset  = _recipesCache.length;
         _listHasMore = !!d.hasMore;
         _listFacets  = d.facets || {};
-        applyFacetsToControls();
+        syncFilterButton();
         renderRecipes();
       } catch (err) {
         if (seq !== _listSeq) return;
@@ -4197,38 +4478,6 @@
         ? `${_listTotal}` : `${_listMatched}/${_listTotal}`;
     }
 
-    // Rebuild the chapter dropdown from the CASCADED facet counts, so it only
-    // ever offers chapters that still have rows under the other active filters.
-    // That is what makes a zero-result selection unreachable rather than merely
-    // unlikely. The current selection is preserved even if it has dropped out
-    // of the list, so the control never silently reinterprets itself.
-    function applyFacetsToControls() {
-      const sel = document.getElementById('sidebar_chapter');
-      const counts = _listFacets && _listFacets.chapter;
-      if (!sel || !Array.isArray(counts)) return;
-      const current = sel.value;
-      sel.innerHTML = '';
-      const all = document.createElement('option');
-      all.value = ''; all.textContent = 'All chapters';
-      sel.appendChild(all);
-      const seen = new Set();
-      counts.slice().sort((a, b) => String(a.value).localeCompare(String(b.value)))
-            .forEach(({ value, count }) => {
-        if (!value) return;
-        seen.add(value);
-        const o = document.createElement('option');
-        o.value = value;
-        o.textContent = `${value} (${count})`;
-        sel.appendChild(o);
-      });
-      if (current && !seen.has(current)) {
-        const o = document.createElement('option');
-        o.value = current;
-        o.textContent = `${current} (0)`;
-        sel.appendChild(o);
-      }
-      sel.value = current;
-    }
 
     // Draws whatever loadRecipes/loadMoreRecipes put in _recipesCache. It reads
     // no control values any more: the query is assembled in _listQuery and
@@ -4625,13 +4874,28 @@
       const searchClearBtn = document.getElementById('sidebar_search_clear');
       if (searchClearBtn) searchClearBtn.addEventListener('click', clearSearch);
       syncSearchControls();
-      // Chapter is a SERVER filter now, so this refetches. Re-rendering would
-      // only re-draw the page already in hand, which is a subset of the matches.
-      const chapterEl = document.getElementById('sidebar_chapter');
-      if (chapterEl) chapterEl.addEventListener('change', () => {
-        persistSidebarState();
-        loadRecipes();
+      // Criteria dialog. Selections cascade live inside it (each change asks
+      // the server what is still reachable, with limit=1 so it costs counts and
+      // not rows); the LIST is refetched once, on Show recipes.
+      const fOpen = document.getElementById('filterOpenBtn');
+      if (fOpen) fOpen.addEventListener('click', openFilterDialog);
+      const fApply = document.getElementById('filterApplyBtn');
+      if (fApply) fApply.addEventListener('click', applyFilterDialog);
+      const fCancel = document.getElementById('filterCancelBtn');
+      if (fCancel) fCancel.addEventListener('click', closeFilterDialog);
+      const fClear = document.getElementById('filterClearBtn');
+      if (fClear) fClear.addEventListener('click', clearFilterDialog);
+      FILTER_FACETS.forEach(f => {
+        const sel = document.getElementById('filter_' + f);
+        if (sel) sel.addEventListener('change', refreshFilterFacets);
       });
+      const fq = document.getElementById('filter_q');
+      if (fq) fq.addEventListener('keydown', e => {
+        // Enter recounts rather than submitting — same rule as the sidebar box:
+        // the text only takes effect when the user says so.
+        if (e.key === 'Enter') { e.preventDefault(); refreshFilterFacets(); }
+      });
+      syncFilterButton();
       // Re-FETCH, not re-render: the order is decided server-side now, so a
       // local re-render would just redraw the previous ordering.
       const sortEl = document.getElementById('sidebar_sort');
