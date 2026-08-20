@@ -1869,6 +1869,32 @@ def recipe_memberships_endpoint(recipe_id: str, user_id: int = PLACEHOLDER_USER_
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+# NOTE ON PLACEMENT: this route MUST be declared before /recipes/{recipe_id}
+# below. FastAPI matches in declaration order, so a later /recipes/search would
+# be swallowed by the {recipe_id} pattern and arrive as a lookup for a recipe
+# whose id is the literal string "search". The implementation lives beside
+# list_recipes and _recipe_list_data (search for _recipes_search_impl) where the
+# rest of the list machinery is; only the decorator has to be up here.
+@app.get("/recipes/search")
+def search_recipes(
+    user_id: int = PLACEHOLDER_USER_ID,
+    q: str = "",
+    cuisine: str = "",
+    ethnicity: str = "",
+    chapter: str = "",
+    sort: str = "",
+    limit: int = 200,
+    offset: int = 0,
+    facets: int = 1,
+):
+    """Faceted recipe search: one page of rows PLUS the counts every dropdown
+    needs, in a single round trip. See _recipes_search_impl for the why."""
+    return _recipes_search_impl(
+        user_id=user_id, q=q, cuisine=cuisine, ethnicity=ethnicity,
+        chapter=chapter, sort=sort, limit=limit, offset=offset, facets=facets,
+    )
+
+
 @app.get("/recipes/{recipe_id}")
 def get_recipe(recipe_id: str, user_id: int = PLACEHOLDER_USER_ID):
     table = _recipes_table_for(user_id)
@@ -9088,6 +9114,161 @@ DEFAULT_SORT = "updated_desc"
 # recipes. `summary=1` returns the slim list projection (the sidebar uses it —
 # big payload win); `limit`/`offset` paginate (0 = all, the default). Default
 # (no params) preserves the prior full-data behavior for any other consumer.
+# ---------------------------------------------------------------------------
+# Faceted search
+# ---------------------------------------------------------------------------
+# The filterable facets. Each maps a query parameter to the indexed generated
+# column that answers it — never a json_extract, which is the whole point of
+# those columns (SELECT DISTINCT cuisine: 471ms through JSON, 0.4ms through the
+# indexed column). Adding a facet is one entry here: the WHERE, the dropdown,
+# and the cascade all read this table, so they cannot drift apart.
+FACET_COLUMNS = {
+    "cuisine": "cuisine",
+    "ethnicity": "ethnicity",
+    "chapter": "chapter",
+}
+
+
+def _search_where(user_id: int, filters: dict, q: str, *, skip: str = ""):
+    """Build the WHERE for a search, optionally omitting ONE facet.
+
+    `skip` is what makes the dropdowns cascade without dead-ending. A facet's
+    own list is counted with every OTHER filter applied but not its own: pick
+    Greek and the chapter list narrows to the 25 chapters that actually have
+    Greek recipes, while the cuisine list still shows every cuisine, so you can
+    switch away from Greek instead of having to clear it first. Counting a facet
+    against its own filter would collapse it to the single value you chose.
+    """
+    clauses = ["user_id = ?"]
+    params: list = [user_id]
+    for key, col in FACET_COLUMNS.items():
+        if key == skip:
+            continue
+        val = (filters.get(key) or "").strip()
+        if val:
+            clauses.append(f"{col} = ?")
+            params.append(val)
+    if q:
+        # The text match is NOT inlined here — it is pre-resolved into a temp
+        # table by _materialise_text_match and joined in, because this predicate
+        # is the expensive one and every caller would otherwise re-run it. See
+        # that function for the numbers.
+        clauses.append("id IN (SELECT id FROM temp.q_match)")
+    return " AND ".join(clauses), params
+
+
+def _materialise_text_match(conn, user_id: int, q: str) -> None:
+    """Resolve the free-text match ONCE into temp.q_match.
+
+    `bcc_sortkey` is a Python callback, so every row it touches is a round trip
+    out of SQLite. A search issues five queries — the match count, the page, and
+    one count per facet — and inlining the predicate made all five re-scan:
+    ~43,000 callbacks and 964ms for q='chocolate'. Resolving it once and joining
+    the resulting ids costs one scan: 202ms.
+
+    The recipe name goes through the fold so "bechamel" finds "Béchamel" and
+    "chef johns" finds "Chef John’s". The BATCH name does not — all four batch
+    names in the corpus are ASCII, and folding them was half the callbacks for a
+    field present on 25 rows of 5,435. SQL-native lower() is exact there.
+
+    Temp tables are per-connection and _db() hands out a fresh connection per
+    request, so this cannot leak between callers.
+    """
+    needle = f"%{_sort_key_fold(q)}%"
+    conn.execute("DROP TABLE IF EXISTS temp.q_match")
+    conn.execute(
+        f"CREATE TEMP TABLE q_match AS "
+        f"SELECT id FROM {_recipes_table_for(user_id)} "
+        f"WHERE user_id = ? AND (bcc_sortkey(recipe_name) LIKE ? "
+        f"       OR lower(json_extract(data,'$._batch.name')) LIKE ?)",
+        [user_id, needle, needle.lower()],
+    )
+
+
+def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
+                         chapter: str, sort: str, limit: int, offset: int,
+                         facets: int) -> dict:
+    """One page of matching rows plus every dropdown's options, in one request.
+
+    Returns an ENVELOPE, unlike GET /recipes which returns a bare array. The
+    counts are the reason: a list UI has to say "129 of 5,435" and populate its
+    filters, and issuing four more requests to learn that would undo the saving.
+    GET /recipes keeps its array shape for the full-record consumers.
+    """
+    table = _recipes_table_for(user_id)
+    filters = {"cuisine": cuisine, "ethnicity": ethnicity, "chapter": chapter}
+    q = (q or "").strip()
+
+    order_by = SORT_SQL.get(sort) or SORT_SQL[DEFAULT_SORT]
+    limit = max(1, min(int(limit or 200), 1000))
+    offset = max(0, int(offset or 0))
+
+    try:
+        with _db() as conn:
+            if q:
+                _materialise_text_match(conn, user_id, q)
+            where, params = _search_where(user_id, filters, q)
+            matched = conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {where}", params
+            ).fetchone()[0]
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE user_id = ?", [user_id]
+            ).fetchone()[0]
+
+            rows = conn.execute(
+                f"SELECT id, recipe_id, user_id, data, source_changed_at, "
+                f"created_at, updated_at FROM {table} WHERE {where} "
+                f"ORDER BY {order_by} LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+
+            out = []
+            for row in rows:
+                try:
+                    data = json.loads(row[3])
+                except json.JSONDecodeError as e:
+                    print(f"[SEARCH] skipping unparseable recipe {row[1]}: {e}")
+                    continue
+                out.append({
+                    "id": row[0], "recipe_id": row[1], "user_id": row[2],
+                    "data": _recipe_list_data(data),
+                    "source_changed_at": row[4], "created_at": row[5],
+                    "updated_at": row[6], "bccUrl": _bcc_permalink(row[1]),
+                })
+
+            facet_counts: dict = {}
+            if facets:
+                for key, col in FACET_COLUMNS.items():
+                    fw, fp = _search_where(user_id, filters, q, skip=key)
+                    facet_counts[key] = [
+                        {"value": v, "count": n}
+                        for v, n in conn.execute(
+                            f"SELECT {col}, COUNT(*) FROM {table} WHERE {fw} "
+                            f"AND {col} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1 ASC",
+                            fp,
+                        ).fetchall()
+                    ]
+    except Exception as e:
+        print(f"[ERROR] recipe search failed: {e}")
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+    print(f"[SEARCH] user={user_id} q={q!r} {filters} sort={sort or DEFAULT_SORT} "
+          f"-> {matched}/{total}, returning {len(out)} from offset {offset}")
+    return {
+        "rows": out,
+        "total": total,
+        "matched": matched,
+        "limit": limit,
+        "offset": offset,
+        "hasMore": offset + len(out) < matched,
+        "sort": sort or DEFAULT_SORT,
+        "filters": {k: v for k, v in filters.items() if v},
+        "q": q,
+        "facets": facet_counts,
+    }
+
+
 @app.get("/recipes")
 def list_recipes(user_id: int = PLACEHOLDER_USER_ID, summary: int = 0,
                  limit: int = 0, offset: int = 0, sort: str = DEFAULT_SORT):
