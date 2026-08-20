@@ -401,6 +401,38 @@ def _derive_primary_ingredients(roles: list) -> list[str]:
     return [t[2] for t in ranked]
 
 
+# Strings a model reaches for instead of leaving a field empty. The tool schema
+# already says "Empty string when genuinely unknown" for cuisine and ethnicity,
+# so these are contract violations, not a vocabulary we should carry — and they
+# are exactly the values that would otherwise show up as a selectable option in
+# a cuisine dropdown built from SELECT DISTINCT.
+_PLACEHOLDERS = {
+    "<unknown>", "unknown", "n/a", "na", "none", "null", "undefined",
+    "other", "various", "unspecified", "tbd", "-", "--", "?", "??",
+}
+# Only the free-text identity fields. NOT likelyDish — "Unknown" there would be
+# a real (if unhelpful) dish name, and blanking it would break cohort matching.
+_SCRUBBED_FIELDS = ("cuisine", "ethnicity", "technique")
+
+
+def _scrub_placeholders(card: dict) -> dict:
+    """Normalise a model's stand-in text to the empty string the schema asks for.
+
+    Found 2026-08-20 while building the cuisine/ethnicity facets: one master row
+    carried a literal "<UNKNOWN>" cuisine AND ethnicity. One row in 5,876 is
+    nothing on its own — but a facet dropdown is built by SELECT DISTINCT, so a
+    single bad value is as visible as a common one, and it is offered to the
+    user as though it were a cuisine. Absent must read as absent
+    (feedback_absent_not_zero); the sink should not have to know the model's
+    vocabulary of evasions.
+    """
+    for f in _SCRUBBED_FIELDS:
+        v = card.get(f)
+        if isinstance(v, str) and v.strip().lower() in _PLACEHOLDERS:
+            card[f] = ""
+    return card
+
+
 def _attach_primary(card: dict) -> dict:
     """Stamp primaryIngredients onto the card from its ingredientRoles.
     The card returned by the LLM has only the fact fields + likelyDish;
@@ -408,7 +440,7 @@ def _attach_primary(card: dict) -> dict:
     card["primaryIngredients"] = _derive_primary_ingredients(
         card.get("ingredientRoles") or []
     )
-    return card
+    return _scrub_placeholders(card)
 
 
 def generate_identity_card_for_recipe(recipe: dict, *,

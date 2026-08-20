@@ -1092,8 +1092,34 @@ def init_db():
                         f"THEN substr({_host}, 1, instr({_host},'?') - 1) ELSE {_host} END")
             _host_final = (f"lower(CASE WHEN {_host_nq} LIKE 'www.%' "
                            f"THEN substr({_host_nq}, 5) ELSE {_host_nq} END)")
+            # FACET COLUMNS. Everything the search UI can filter or sort on gets a
+            # real, indexed SQL surface — reaching into JSON with json_extract at
+            # query time is what made DISTINCT cuisine cost 471ms while the
+            # indexed source_host equivalent cost 14.6ms over 6.5x more distinct
+            # values. The dropdowns are built by SELECT DISTINCT against these,
+            # scoped to the filters already chosen, so they have to be cheap.
+            #
+            # Source is `_identity` (the structured identity card), NOT
+            # provenance.ethnicity (6.2% coverage on master) and NOT the
+            # site-declared recipeCuisine (86%, and it is whatever the publisher
+            # typed). _identity.cuisine and .ethnicity are on 100% of rows in both
+            # tables and are URL-static — the card travels with the recipe through
+            # claim / cache / promote — so a facet built on them stays put.
+            #
+            # TRIM + NULLIF because a facet must distinguish "not set" from "set
+            # to blank": a '' would otherwise be offered as a selectable cuisine.
+            # Semantic junk ("<UNKNOWN>") is scrubbed at the extractor instead —
+            # see extract/identity_card._scrub_placeholders — because the sink
+            # should not have to know the model's vocabulary of evasions.
+            def _facet(path):
+                return f"NULLIF(TRIM(COALESCE(json_extract(data,'{path}'),'')),'')"
+
             for _tbl in ("master_recipes", "recipes"):
                 for _gc, _type, _expr in (
+                    ("cuisine", "TEXT", _facet('$._identity.cuisine')),
+                    ("ethnicity", "TEXT", _facet('$._identity.ethnicity')),
+                    ("chapter", "TEXT", _facet('$.classification.chapter')),
+                    ("recipe_name", "TEXT", _facet('$.name')),
                     ("ou_score", "REAL", "json_extract(data,'$._scoring.ouScore')"),
                     ("domain_authority", "REAL", "json_extract(data,'$._scoring.domainAuthority')"),
                     ("page_authority", "REAL", "json_extract(data,'$._scoring.pageAuthority')"),
@@ -1175,6 +1201,12 @@ def init_db():
                              f"ON {_tbl}(ou_score)")
                 conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_power "
                              f"ON {_tbl}(power)")
+                # Facet indexes. (user_id, col) because every list/facet query
+                # filters by owner first, so the owner has to lead or the index
+                # is only half usable.
+                for _fc in ("cuisine", "ethnicity", "chapter", "recipe_name"):
+                    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_{_fc} "
+                                 f"ON {_tbl}(user_id, {_fc})")
             # Same source-of-truth embedding on USER recipes: every save embeds
             # the recipe so its vector is available for dish-matching, "find
             # similar", dedup, and recommendations (not single-use). 2026-06-02.
@@ -9008,14 +9040,14 @@ def _recipe_list_data(d: dict) -> dict:
 #            already DA+PA, and SQLite's NULL arithmetic makes it NULL unless
 #            BOTH operands exist — exactly the client's "one measured signal is
 #            UNMEASURED, not half-powerful".
-_NAME_SQL = "bcc_sortkey(json_extract(data,'$.name'))"
-_CHAPTER_SQL = "bcc_sortkey(json_extract(data,'$.classification.chapter'))"
+# Read the FACET COLUMNS, not json_extract. They already carry the
+# TRIM/NULLIF normalisation, so "absent" and "blank" are the same NULL here and
+# a plain NULLS LAST reproduces the client's '' -> U+FFFF blank-sinking without
+# a CASE. `rank` has no column: it lives on 25 rows of 5,435, so it is not worth
+# one until something other than this sort reads it.
+_NAME_SQL = "bcc_sortkey(recipe_name)"
+_CHAPTER_SQL = "bcc_sortkey(chapter)"
 _RANK_SQL = "json_extract(data,'$._batch.rank')"
-
-
-def _text_last(expr: str) -> str:
-    """Blank/absent text sorts last, mirroring the client's '' -> U+FFFF."""
-    return f"CASE WHEN {expr} IS NULL OR {expr} = '' THEN 1 ELSE 0 END"
 
 
 # EVERY sort ends in a total order. Measured over the 5,435 master rows, the
@@ -9039,16 +9071,14 @@ _AUTHORITY_TAIL = f"traffic DESC NULLS LAST, {_TOTAL}"
 SORT_SQL = {
     "updated_desc": f"updated_at DESC, {_TOTAL}",
     "created_desc": f"created_at DESC, {_TOTAL}",
-    "name_asc":     f"{_text_last(_NAME_SQL)}, {_NAME_SQL} ASC, {_TOTAL}",
+    "name_asc":     f"{_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
     "ou_desc":      f"ou_score DESC NULLS LAST, {_AUTHORITY_TAIL}",
     "pa_desc":      f"page_authority DESC NULLS LAST, {_AUTHORITY_TAIL}",
     "power_desc":   f"power DESC NULLS LAST, page_authority DESC NULLS LAST, {_AUTHORITY_TAIL}",
-    "chapter_asc":  f"{_text_last(_CHAPTER_SQL)}, {_CHAPTER_SQL} ASC, "
-                    f"{_text_last(_NAME_SQL)}, {_NAME_SQL} ASC, {_TOTAL}",
+    "chapter_asc":  f"{_CHAPTER_SQL} ASC NULLS LAST, {_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
     "quality":      f"ou_score DESC NULLS LAST, recipe_score DESC NULLS LAST, "
                     f"updated_at DESC, {_AUTHORITY_TAIL}",
-    "batch_rank":   f"{_RANK_SQL} ASC NULLS LAST, {_text_last(_NAME_SQL)}, "
-                    f"{_NAME_SQL} ASC, {_TOTAL}",
+    "batch_rank":   f"{_RANK_SQL} ASC NULLS LAST, {_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
 }
 DEFAULT_SORT = "updated_desc"
 
