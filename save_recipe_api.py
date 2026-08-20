@@ -31,6 +31,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
@@ -1296,6 +1297,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compress anything worth compressing. The list endpoints return JSON that is
+# almost all repeated keys, so it deflates to ~17% of its raw size — measured
+# 2026-08-20 on GET /recipes?user_id=0&summary=1: 6.89 MB -> 1.18 MB.
+#
+# Cloudflare already does this for traffic arriving through the tunnel, so the
+# win here is for clients that reach the app DIRECTLY (LAN address, localhost,
+# a job, the bookmarklet). Those were downloading the full uncompressed body.
+# Doubly-compressing is not a risk: CF sees the Content-Encoding and passes it
+# through rather than re-encoding.
+#
+# 1 KB floor so tiny JSON replies don't pay the gzip framing overhead, and
+# level 5 because the marginal bytes past that cost more CPU than they save
+# wall-clock (0.07s to compress the 6.89 MB list).
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 # --- Public-host gate -------------------------------------------------------
 # bestcooksclub.com (customers) and recipes.tbotb.com (staff) are the same app
@@ -8806,16 +8822,53 @@ async def start_job_runner():
 # Slim projection for the list/sidebar. The sidebar (recipe_form_styled.html
 # loadRecipes/renderRecipes) only renders these fields — keep ONLY them so the
 # list payload drops the heavy body (ingredients/instructions/_cook/_measurements/
-# nutrition/_identity/embedding-adjacent prose…). At user_id=0 that's ~702 rows ×
-# ~19KB ≈ 13MB → ~700KB (audit 2026-06-15). Nested shape preserved so the
+# nutrition/_identity/embedding-adjacent prose…). Nested shape preserved so the
 # sidebar's r.data.* pickers work unchanged. If the sidebar ever renders a new
 # field, ADD it here (else the card silently loses it) — see the getter list in
 # recipe_form_styled.html renderRecipes().
+#
+# SIZE, and why this keeps needing attention: the original audit (2026-06-15)
+# measured 702 master rows at ~13MB full / ~700KB slim. The corpus is now 5,435
+# rows and the same projection weighed 6.89MB — the projection did not regress,
+# the corpus grew 7.7x underneath it. Anything kept here is multiplied by the
+# whole table, so "harmless little field" is not a category that exists.
+#
+# What is deliberately NOT here (measured 2026-08-20, master, 5,435 rows):
+#   classification.story  0.37MB  } read only by renderRecipes' isEnriched(),
+#   editorial.opinion     0.22MB  } which was defined and never called. Dead.
+#   image (when a preview 1.64MB   getImage() prefers _source.previewImage and
+#     image exists)               falls back to image[]; 5,295 of 5,435 rows
+#                                 carried both, so the fallback was dead weight
+#                                 on 97% of rows. Still emitted for the 140
+#                                 pre-coopt rows that have no previewImage.
+#   exceptionalism.basis' 0.45MB  renderExcBadge (library-shell.js) builds its
+#     match_* / sigma_observed    tooltip from grade/score and basis.{model, n,
+#                                 sigma_effective} ONLY. The match provenance is
+#                                 still in the full record the card fetches on
+#                                 click; it was never on screen from the list.
+# Those are per-field sizes and do not sum exactly to the total, which also
+# loses the JSON key overhead of the containers they emptied. End to end, over
+# all 5,435 master rows and with byte-for-byte parity checked on every field
+# the cards read: 6.89MB -> 4.40MB raw, 1.18MB -> 0.66MB gzipped.
+_EXC_BASIS_KEYS = ("model", "n", "sigma_effective")
+
+
+def _slim_exceptionalism(exc):
+    """Grade + score + the three basis fields the badge tooltip prints."""
+    if not isinstance(exc, dict):
+        return exc
+    out = {"score": exc.get("score"), "grade": exc.get("grade")}
+    basis = exc.get("basis")
+    if isinstance(basis, dict):
+        out["basis"] = {k: basis[k] for k in _EXC_BASIS_KEYS if k in basis}
+    return out
+
+
 def _recipe_list_data(d: dict) -> dict:
     out: dict = {"name": d.get("name")}
     cls = d.get("classification") or {}
     if cls:
-        out["classification"] = {"chapter": cls.get("chapter"), "story": cls.get("story")}
+        out["classification"] = {"chapter": cls.get("chapter")}
     sc = d.get("_scoring") or {}
     if sc:
         out["_scoring"] = {k: sc.get(k) for k in
@@ -8828,14 +8881,15 @@ def _recipe_list_data(d: dict) -> dict:
         out["_batch"] = {"rank": b.get("rank"), "name": b.get("name")}
     m = d.get("_master")
     if isinstance(m, dict):
-        out["_master"] = {"exceptionalism": m.get("exceptionalism")}
+        out["_master"] = {"exceptionalism": _slim_exceptionalism(m.get("exceptionalism"))}
     if d.get("_grade") is not None:
-        out["_grade"] = d.get("_grade")
-    if d.get("image") is not None:
+        out["_grade"] = _slim_exceptionalism(d.get("_grade"))
+    # Only the image the card will actually use. previewImage is the cooped
+    # local copy and getImage() prefers it; shipping the original image[] too
+    # just to have it lose a comparison is the single fattest thing this
+    # projection used to do.
+    if not (src.get("previewImage") or "").strip() and d.get("image") is not None:
         out["image"] = d.get("image")
-    ed = d.get("editorial") or {}
-    if ed.get("opinion"):
-        out["editorial"] = {"opinion": ed.get("opinion")}
     pv = d.get("provenance") or {}
     if pv.get("author"):
         out["provenance"] = {"author": pv.get("author")}

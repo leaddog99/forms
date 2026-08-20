@@ -295,7 +295,59 @@
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
 
+    /* Search row — input plus its two 36px touch targets. */
+    .sidebar-controls .search-row {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+    }
+    .sidebar-controls .search-row input[type="search"] { flex: 1 1 auto; min-width: 0; }
+    /* Kill the WebKit native ✕: it fires on `input`, which this search
+       deliberately no longer listens to, so it would clear the box while the
+       list still showed the old results. The explicit Clear button is the
+       only way to unapply a search. */
+    .sidebar-controls .search-row input[type="search"]::-webkit-search-cancel-button {
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .sidebar-controls .search-btn {
+      flex: 0 0 auto;
+      width: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink-muted, #666);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .sidebar-controls .search-btn svg { width: 16px; height: 16px; }
+    .sidebar-controls .search-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft, #faf3ee);
+    }
+    .sidebar-controls .search-btn:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .sidebar-controls .search-btn[hidden] { display: none; }
+
     .recipe-list { list-style: none; }
+
+    /* Scroll sentinel for the windowed list. Needs real height so the
+       IntersectionObserver has something to intersect; 1px is enough and
+       reads as nothing. */
+    .recipe-list .list-sentinel {
+      height: 1px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
 
     /* NYT-Cooking-style list row. No card containers — just rows
        separated by a hairline rule. White background, near-black ink,
@@ -1748,7 +1800,29 @@
           <input type="checkbox" id="master_toggle" /> <span>Master</span>
         </label>
       </div>
-      <input type="search" id="sidebar_search" placeholder="Search recipes…" />
+      <!-- Search is SUBMITTED, not live. Typing does nothing until Search
+           (or Enter) is pressed — a keystroke-by-keystroke filter re-rendered
+           the whole list on every letter, which is unusable on a tablet once
+           the corpus is in the thousands. Clear only appears once a search is
+           actually applied. -->
+      <div class="search-row">
+        <input type="search" id="sidebar_search" placeholder="Search recipes…"
+               enterkeyhint="search" autocomplete="off" />
+        <button type="button" id="sidebar_search_go" class="search-btn"
+                title="Search recipes" aria-label="Search recipes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+        </button>
+        <button type="button" id="sidebar_search_clear" class="search-btn clear"
+                title="Clear search" aria-label="Clear search" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
       <select id="sidebar_chapter">
         <option value="">All chapters</option>
         <!-- populated from CHAPTERS by populateSidebarChapterOptions() -->
@@ -3833,6 +3907,149 @@
     // ============================================================
     let _recipesCache = [];
 
+    // ---------- Windowed rendering -------------------------------------
+    // The filtered+sorted array can be thousands of rows; the sidebar shows
+    // about nine at a time. Build a chunk, park a sentinel <li> after it, and
+    // build the next chunk when the sentinel scrolls into view.
+    //
+    // Filtering and sorting still run over the WHOLE cache in renderRecipes —
+    // only the DOM is windowed. That is deliberate: it means search still
+    // searches everything and sort still sorts everything, so this change has
+    // no effect on what the list says, only on how much of it exists at once.
+    // (The day the fetch itself is paginated, THAT is when filter+sort have to
+    // move server-side or search will quietly only search page one.)
+    // The search term currently APPLIED to the list. Kept separate from the
+    // input's value so typing is free: the list only changes when the user
+    // presses Search / Enter, or Clear.
+    let _searchQuery = '';
+
+    function syncSearchControls() {
+      const clearBtn = document.getElementById('sidebar_search_clear');
+      if (clearBtn) clearBtn.hidden = !_searchQuery;
+    }
+
+    function applySearch() {
+      const el = document.getElementById('sidebar_search');
+      const next = ((el && el.value) || '').trim().toLowerCase();
+      if (next === _searchQuery) return;   // nothing to re-render
+      _searchQuery = next;
+      syncSearchControls();
+      renderRecipes();
+    }
+
+    function clearSearch() {
+      const el = document.getElementById('sidebar_search');
+      if (el) el.value = '';
+      if (!_searchQuery) { syncSearchControls(); return; }
+      _searchQuery = '';
+      syncSearchControls();
+      renderRecipes();
+      if (el) el.focus();
+    }
+
+    const LIST_CHUNK = 60;          // ~6 screens of sidebar on an iPad
+    let _listWindow = null;         // { rows, buildCard, rendered }
+    let _listObserver = null;
+    let _listSentinel = null;
+
+    // The list's scroll container. Resolved by id, NOT via the top-level
+    // `sidebar` const — that one is declared far below this point in the same
+    // scope, and the first render happens at boot, before it initialises. A
+    // plain reference would throw ReferenceError from the temporal dead zone,
+    // and `if (sidebar)` does not protect against that: the guard itself is
+    // the throwing read.
+    function listScrollRoot() { return document.getElementById('sidebar'); }
+
+    function _listObs() {
+      if (!_listObserver) {
+        _listObserver = new IntersectionObserver(entries => {
+          if (entries.some(e => e.isIntersecting)) appendListChunk();
+        }, {
+          // The sidebar is the scroll container (overflow-y: auto), not the
+          // page. rootMargin buys roughly a screen of lead time so the next
+          // chunk is already in place by the time the user reaches it.
+          root: listScrollRoot(),
+          rootMargin: '600px 0px',
+        });
+      }
+      return _listObserver;
+    }
+
+    // Detach the sentinel and forget the current window. Safe to call when
+    // there is no window — every render path starts with this.
+    function resetListWindow() {
+      if (_listSentinel) {
+        if (_listObserver) _listObserver.unobserve(_listSentinel);
+        if (_listSentinel.parentNode) _listSentinel.remove();
+      }
+      _listWindow = null;
+    }
+
+    function startListWindow(rows, buildCard) {
+      resetListWindow();
+      listEl.innerHTML = '';
+      // A re-filter or re-sort makes the old scroll offset meaningless — and
+      // worse, if the new result set is shorter the container stays scrolled
+      // past the end and the user sees an empty box. Always start at the top.
+      const root = listScrollRoot();
+      if (root) root.scrollTop = 0;
+      _listWindow = { rows, buildCard, rendered: 0 };
+      appendListChunk();
+    }
+
+    function appendListChunk() {
+      const w = _listWindow;
+      if (!w || w.rendered >= w.rows.length) return;
+      const end = Math.min(w.rendered + LIST_CHUNK, w.rows.length);
+      // One fragment, one reflow — appending cards individually costs a layout
+      // pass each.
+      const frag = document.createDocumentFragment();
+      for (let i = w.rendered; i < end; i++) frag.appendChild(w.buildCard(w.rows[i]));
+      listEl.appendChild(frag);
+      w.rendered = end;
+
+      if (w.rendered < w.rows.length) {
+        if (!_listSentinel) {
+          _listSentinel = document.createElement('li');
+          _listSentinel.className = 'list-sentinel';
+          _listSentinel.setAttribute('aria-hidden', 'true');
+        }
+        // appendChild MOVES an already-parented node, so this keeps the one
+        // sentinel pinned to the end of the list rather than accumulating one
+        // per chunk.
+        listEl.appendChild(_listSentinel);
+        // unobserve/observe, NOT a bare observe(). IntersectionObserver only
+        // calls back when the intersection STATE CHANGES, and observe() on an
+        // already-observed target is a no-op. Move the sentinel while it is
+        // still on screen — a reader parked at the bottom of the list, or a
+        // chunk too short to fill a tall sidebar — and it goes from
+        // intersecting to intersecting, so no callback ever comes and the list
+        // stalls at one chunk. A FRESH observe() always delivers an initial
+        // observation, which either appends the next chunk (still visible, so
+        // the cascade continues) or reports not-intersecting and stops. That
+        // makes "keep filling until the sentinel is genuinely below the fold"
+        // the terminating condition, instead of "until the user happens to
+        // scroll in a way that produces a transition".
+        const obs = _listObs();
+        obs.unobserve(_listSentinel);
+        obs.observe(_listSentinel);
+      } else {
+        // Everything is rendered — nothing left to trigger.
+        resetListWindow_keepRows(w);
+      }
+    }
+
+    // End-of-list teardown: drop the sentinel but keep _listWindow, so a
+    // later call can still see that the window is complete rather than
+    // treating it as "never started".
+    function resetListWindow_keepRows(w) {
+      if (_listSentinel) {
+        if (_listObserver) _listObserver.unobserve(_listSentinel);
+        if (_listSentinel.parentNode) _listSentinel.remove();
+      }
+      _listWindow = w;
+    }
+
     async function loadRecipes() {
       listEl.innerHTML = '<li class="empty-state">Loading...</li>';
       try {
@@ -3850,11 +4067,12 @@
     }
 
     function renderRecipes() {
-      const searchEl = document.getElementById('sidebar_search');
       const chapterEl = document.getElementById('sidebar_chapter');
       const sortEl = document.getElementById('sidebar_sort');
       const countEl = document.getElementById('sidebarCount');
-      const q = ((searchEl && searchEl.value) || '').trim().toLowerCase();
+      // The APPLIED query — set by applySearch(), not by whatever is currently
+      // sitting in the input. Half-typed text must not filter the list.
+      const q = _searchQuery;
       const chapterFilter = (chapterEl && chapterEl.value) || '';
       const sortKey = (sortEl && sortEl.value) || 'updated_desc';
 
@@ -3905,12 +4123,12 @@
         return exc;
       };
       const isStale    = r => !!r.source_changed_at;
-      const isEnriched = r => {
-        const d = r.data || {};
-        const story = d.classification && d.classification.story;
-        const opin  = d.editorial && d.editorial.opinion;
-        return !!((story && story.trim()) || (opin && opin.trim()));
-      };
+      // (An isEnriched() picker used to live here, reading classification.story
+      //  and editorial.opinion. It was never called by anything — but the list
+      //  projection kept shipping both fields for it, 0.82MB across the master
+      //  table. Removed together with the fields on 2026-08-20; if an
+      //  "enriched" mark comes back to the card, re-add both here AND in
+      //  _recipe_list_data, or the card silently reads undefined.)
 
       // Thumbnail for sidebar card. Prefer the cooped og:image (locally
       // hosted, no hotlinking, no Mixed Content risk, consistent 3:2 or
@@ -4024,19 +4242,26 @@
       const shown = rows.length;
       if (countEl) countEl.textContent = (shown === total) ? `${total}` : `${shown}/${total}`;
 
-      // Empty / no-match states
+      // Empty / no-match states. resetListWindow() first: these paths blow the
+      // list away with innerHTML, and a sentinel still under observation would
+      // be left orphaned (and the observer would hold the detached node).
       if (_recipesCache.length === 0) {
+        resetListWindow();
         listEl.innerHTML = '<li class="empty-state">No recipes yet.<br>Create your first one!</li>';
         return;
       }
       if (rows.length === 0) {
+        resetListWindow();
         listEl.innerHTML = '<li class="empty-state">No matches.<br>Loosen the filters.</li>';
         return;
       }
 
-      // Render. textContent for user fields (XSS); attribute setters for URLs.
-      listEl.innerHTML = '';
-      rows.forEach(r => {
+      // Build ONE card. textContent for user fields (XSS); attribute setters
+      // for URLs. Returns the <li> rather than appending it, so the windowed
+      // renderer below decides how many of these actually get built — at 5,435
+      // master rows the old render-everything loop put ~75,600 elements in the
+      // DOM in one synchronous pass, which is what made the iPad crawl.
+      const buildCard = r => {
         const item = document.createElement('li');
         item.className = 'recipe-item';
 
@@ -4046,9 +4271,14 @@
         const imgUrl = getImage(r);
         if (imgUrl) {
           const img = document.createElement('img');
+          // loading BEFORE src, deliberately. Setting src first can start the
+          // fetch immediately on a still-detached element, which defeats the
+          // lazy attribute and fires a request per card the moment the list
+          // renders. Order is free; the bug it avoids is not.
+          img.loading = 'lazy';
+          img.decoding = 'async';
           img.src = imgUrl;
           img.alt = '';
-          img.loading = 'lazy';
           // If the URL 404s or hotlink-blocks, swap to the placeholder
           // glyph rather than show a broken-image icon.
           img.onerror = () => {
@@ -4191,8 +4421,12 @@
           } catch (e) { /* fall through to the slim row below */ }
           loadForm(r);   // degraded fallback if the full fetch fails
         };
-        listEl.appendChild(item);
-      });
+        return item;
+      };
+
+      // Hand the filtered+sorted array to the windowed renderer. Only the
+      // first LIST_CHUNK cards get built now; the rest arrive on scroll.
+      startListWindow(rows, buildCard);
     }
 
     // ============================================================
@@ -4228,8 +4462,20 @@
           loadRecipes();
         });
       }
+      // Search is submitted, never live (see the markup note). Enter or the
+      // magnifier applies it; the ✕ unapplies it. Not persisted across loads.
       const searchEl = document.getElementById('sidebar_search');
-      if (searchEl) searchEl.addEventListener('input', renderRecipes);  // not persisted
+      if (searchEl) {
+        searchEl.addEventListener('keydown', e => {
+          if (e.key === 'Enter') { e.preventDefault(); applySearch(); searchEl.blur(); }
+          else if (e.key === 'Escape') { clearSearch(); }
+        });
+      }
+      const searchGoBtn = document.getElementById('sidebar_search_go');
+      if (searchGoBtn) searchGoBtn.addEventListener('click', applySearch);
+      const searchClearBtn = document.getElementById('sidebar_search_clear');
+      if (searchClearBtn) searchClearBtn.addEventListener('click', clearSearch);
+      syncSearchControls();
       const chapterEl = document.getElementById('sidebar_chapter');
       if (chapterEl) chapterEl.addEventListener('change', () => {
         persistSidebarState();
