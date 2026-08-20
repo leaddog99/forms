@@ -37,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from typing import Optional
 from pydantic import ValidationError
 import sqlite3
+import unicodedata
 import uuid
 import asyncio
 import json
@@ -137,12 +138,89 @@ print("[START] Starting API setup...")
 DB_PATH = "recipes.db"
 
 
+# Typographic characters that appear in recipe titles and would otherwise sort
+# above every letter. Mapped to the ASCII the same title uses elsewhere in the
+# corpus — this is a normalisation, not a preference.
+_TYPOGRAPHIC = {
+    "‘": "'", "’": "'",          # curly single quotes
+    "“": '"', "”": '"',          # curly double quotes
+    "–": "-", "—": "-",          # en / em dash
+    "−": "-",                          # minus sign
+    " ": " ",                          # non-breaking space
+}
+
+
+def _sort_key_fold(s):
+    """Sort key for TEXT columns, matching what the browser was doing.
+
+    The recipe sidebar sorted names client-side with
+
+        localeCompare(other, undefined, { sensitivity: 'base' })
+
+    which ignores BOTH case and accents. Moving that sort into SQL naively —
+    `COLLATE NOCASE` — folds case but not accents, and that is not a rounding
+    error: over the 5,435 master names it reorders 1,083 positions, the first at
+    index 395, where "Basic Béchamel Sauce" jumps from before "Basic bread
+    recipe" to long after it. A-Z that puts the accented titles in a different
+    place is a visible regression, not an implementation detail.
+
+    NFKD splits an accented letter into base + combining mark; dropping the
+    combining marks leaves the base letter, and casefold() handles case. Applied
+    as an ORDER BY expression it is evaluated once per row into the sorter
+    record, not once per comparison — measured at 475ms over master against
+    496ms for plain NOCASE, i.e. free, because the cost of that query is reading
+    the JSON rather than ordering it. (Registering it as a COLLATION instead
+    costs 842ms, since that form really does call back per comparison.)
+
+    Typographic characters are folded to their ASCII equivalents for a reason
+    the verification found rather than predicted: the corpus contains BOTH
+    "Chef John's Spaghetti al Tonno" and "Chef John’s Buttermilk Biscuits",
+    and U+2019 sorts far above any letter by code point, so the two Chef John
+    recipes landed in different parts of the alphabet. Same for "BA’s Best
+    Hash Browns" vs "Bavarian ... Strudel", and en/em dashes in
+    "Bougatsa – Greek-Style Custard Pastry".
+
+    Four foldings were measured against the browser comparator over all 5,435
+    master names, counting inversions (pairs the server orders one way and the
+    browser the other):
+
+        accent-fold only ............ 45
+        + typographic to ASCII ...... 26   <- this one
+        + also drop apostrophes ..... 42
+        + drop ALL punctuation ...... 114
+
+    Dropping all punctuation is the intuitive move and it is the WORST of the
+    four — ICU weights punctuation low but not to zero, so removing it entirely
+    overshoots as badly as ignoring it undershoots. Spaces are kept for the same
+    reason; ICU weights them, and dropping them would re-order "Char Siu"
+    against "CharSiu".
+
+    The residual 26 of 5,435 (0.5%) are genuine ICU collation subtleties that
+    cannot be reproduced without PyICU (not installed, and not worth a native
+    dependency for this). They are all adjacent-name orderings inside the same
+    letter. NOT byte-identical to ICU, deliberately, and measured rather than
+    assumed — if that 0.5% ever matters, the fix is PyICU, not more folding.
+    """
+    if s is None:
+        return None
+    return "".join(
+        _TYPOGRAPHIC.get(ch, ch)
+        for ch in unicodedata.normalize("NFKD", str(s))
+        if not unicodedata.combining(ch)
+    ).casefold()
+
+
 def _db() -> sqlite3.Connection:
     """The ONE connection factory for the server (was 120+ sites each carrying
     their own timeout=). 30s busy_timeout so concurrent writers — the out-of-process
     harvest/cook jobs and the server — WAIT for the WAL lock instead of failing with
     'database is locked'. Mirrors input/pipeline/db.connect for the library side."""
-    return sqlite3.connect(DB_PATH, timeout=30)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    # Registered HERE so every query in the app can order text the same way;
+    # a per-endpoint registration is how two call sites end up sorting
+    # differently. deterministic=True lets SQLite use it in an index later.
+    conn.create_function("bcc_sortkey", 1, _sort_key_fold, deterministic=True)
+    return conn
 
 
 def _detached_flags() -> int:
@@ -1209,6 +1287,22 @@ def init_db():
                 "CREATE INDEX IF NOT EXISTS idx_mr_likelydish ON master_recipes(json_extract(data,'$._identity.likelyDish'))",
                 "CREATE INDEX IF NOT EXISTS idx_recipes_likelydish ON recipes(json_extract(data,'$._identity.likelyDish'))",
                 "CREATE INDEX IF NOT EXISTS idx_mr_chapter ON master_recipes(json_extract(data,'$.classification.chapter'))",
+                # The sidebar's DEFAULT sort, and the only one that had no index:
+                # WHERE user_id = ? ORDER BY updated_at DESC planned as a full SCAN
+                # plus a temp B-tree, which is why "Last modified (newest)" measured
+                # 187ms on master while the indexed OU sort measured 4ms — the
+                # cheapest list in the app was paying the most. DESC in the index so
+                # the scan direction matches; user_id leads because every list query
+                # filters on it.
+                "CREATE INDEX IF NOT EXISTS idx_master_recipes_user_updated "
+                "ON master_recipes(user_id, updated_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_recipes_user_updated "
+                "ON recipes(user_id, updated_at DESC)",
+                # Same shape for "Date added (newest)".
+                "CREATE INDEX IF NOT EXISTS idx_master_recipes_user_created "
+                "ON master_recipes(user_id, created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_recipes_user_created "
+                "ON recipes(user_id, created_at DESC)",
                 "DROP INDEX IF EXISTS idx_drdp_dish",                  # prefix of idx_drdp_dish_rank
                 "DROP INDEX IF EXISTS idx_dish_editors_choice_dish",   # prefix of the (dish,url) unique
             ):
@@ -8896,6 +8990,69 @@ def _recipe_list_data(d: dict) -> dict:
     return out
 
 
+# ORDER BY for every entry in the sidebar's SORT_ORDERS table
+# (recipe_form_styled.html). The two must stay in step: a key the client offers
+# and the server does not know falls back to updated_desc, which would silently
+# ignore the user's choice, so ADD BOTH SIDES when adding a sort.
+#
+# Null handling is not incidental — it is the contract the client comparator
+# already established and this has to reproduce:
+#   numbers  missing sorts LAST in BOTH directions, because null means "not
+#            measured" and must never outrank a real value ([[absent is not
+#            zero]]). SQLite puts NULLs first in ASC and last in DESC, so ASC
+#            needs an explicit NULLS LAST and DESC gets one anyway for clarity.
+#   text     the client mapped '' to U+FFFF so blanks sort last; the CASE does
+#            the same for NULL and ''.
+#   power    DERIVED as DA+PA, never read from the stored `_scoring.power`
+#            (which is 0 on ~51% of master rows). The generated column is
+#            already DA+PA, and SQLite's NULL arithmetic makes it NULL unless
+#            BOTH operands exist — exactly the client's "one measured signal is
+#            UNMEASURED, not half-powerful".
+_NAME_SQL = "bcc_sortkey(json_extract(data,'$.name'))"
+_CHAPTER_SQL = "bcc_sortkey(json_extract(data,'$.classification.chapter'))"
+_RANK_SQL = "json_extract(data,'$._batch.rank')"
+
+
+def _text_last(expr: str) -> str:
+    """Blank/absent text sorts last, mirroring the client's '' -> U+FFFF."""
+    return f"CASE WHEN {expr} IS NULL OR {expr} = '' THEN 1 ELSE 0 END"
+
+
+# EVERY sort ends in a total order. Measured over the 5,435 master rows, the
+# share of rows sitting in a tie group is: page_authority 99.9%, power 99.9%,
+# recipe_score 99.9%, batch rank 99.8%, chapter 100%, ou_score 92.9%, name 15.8%
+# — and created_at 0%. Ties are the normal case here, not the edge, because PA
+# saturates (0e2be0a measured the same thing from the other end).
+#
+# Without a total order the list is genuinely non-deterministic: SQLite's sorter
+# is not stable, so two identical requests can return tied rows in different
+# order, and any LIMIT/OFFSET paging on top of that can show a row twice or skip
+# it entirely. The browser was no better — its stable sort merely FROZE whatever
+# arbitrary order the fetch arrived in, which looked deterministic and wasn't.
+#
+# The tail follows the ruling already made in 0e2be0a for authority ranking:
+# traffic DESC where we have it, insertion order otherwise. `id` last makes the
+# order total, since it is unique and never null.
+_TOTAL = "id ASC"
+_AUTHORITY_TAIL = f"traffic DESC NULLS LAST, {_TOTAL}"
+
+SORT_SQL = {
+    "updated_desc": f"updated_at DESC, {_TOTAL}",
+    "created_desc": f"created_at DESC, {_TOTAL}",
+    "name_asc":     f"{_text_last(_NAME_SQL)}, {_NAME_SQL} ASC, {_TOTAL}",
+    "ou_desc":      f"ou_score DESC NULLS LAST, {_AUTHORITY_TAIL}",
+    "pa_desc":      f"page_authority DESC NULLS LAST, {_AUTHORITY_TAIL}",
+    "power_desc":   f"power DESC NULLS LAST, page_authority DESC NULLS LAST, {_AUTHORITY_TAIL}",
+    "chapter_asc":  f"{_text_last(_CHAPTER_SQL)}, {_CHAPTER_SQL} ASC, "
+                    f"{_text_last(_NAME_SQL)}, {_NAME_SQL} ASC, {_TOTAL}",
+    "quality":      f"ou_score DESC NULLS LAST, recipe_score DESC NULLS LAST, "
+                    f"updated_at DESC, {_AUTHORITY_TAIL}",
+    "batch_rank":   f"{_RANK_SQL} ASC NULLS LAST, {_text_last(_NAME_SQL)}, "
+                    f"{_NAME_SQL} ASC, {_TOTAL}",
+}
+DEFAULT_SORT = "updated_desc"
+
+
 # List recipes for the given owner. user_id=0 returns the master collection
 # (master_recipes table); any other value returns that owner's personal
 # recipes. `summary=1` returns the slim list projection (the sidebar uses it —
@@ -8903,13 +9060,23 @@ def _recipe_list_data(d: dict) -> dict:
 # (no params) preserves the prior full-data behavior for any other consumer.
 @app.get("/recipes")
 def list_recipes(user_id: int = PLACEHOLDER_USER_ID, summary: int = 0,
-                 limit: int = 0, offset: int = 0):
+                 limit: int = 0, offset: int = 0, sort: str = DEFAULT_SORT):
     table = _recipes_table_for(user_id)
-    print(f"[LIST] List recipes user_id={user_id} table={table} summary={summary} limit={limit}")
+    # An unknown key means the client offers a sort this server has never heard
+    # of — almost always a deploy skew. Fall back to the default rather than
+    # 400, but SAY SO: silently ignoring the user's chosen order is the failure
+    # mode where the list looks fine and is simply wrong.
+    order_by = SORT_SQL.get(sort)
+    if order_by is None:
+        if sort != DEFAULT_SORT:
+            print(f"[LIST] unknown sort {sort!r} — falling back to {DEFAULT_SORT}")
+        order_by = SORT_SQL[DEFAULT_SORT]
+    print(f"[LIST] List recipes user_id={user_id} table={table} summary={summary} "
+          f"limit={limit} sort={sort}")
     try:
         with _db() as conn:
             sql = (f"SELECT id, recipe_id, user_id, data, source_changed_at, created_at, updated_at "
-                   f"FROM {table} WHERE user_id = ? ORDER BY updated_at DESC")
+                   f"FROM {table} WHERE user_id = ? ORDER BY {order_by}")
             params: list = [user_id]
             if limit and limit > 0:
                 sql += " LIMIT ? OFFSET ?"

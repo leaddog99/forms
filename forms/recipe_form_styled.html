@@ -3569,6 +3569,17 @@
     // ============================================================
     // Sidebar sort engine — data-driven multi-field sort
     // ============================================================
+    // ---------------------------------------------------------------
+    // REFERENCE IMPLEMENTATION — no longer orders the list.
+    //
+    // Ordering moved to SQL (SORT_SQL in save_recipe_api.py) so that it still
+    // means something once the fetch is paginated. These are kept because they
+    // are the SPECIFICATION the SQL was checked against — the null-sinking
+    // rules, the '' -> U+FFFF blank handling, and the accent/case-insensitive
+    // name comparison all originate here, and re-verifying a future sort means
+    // running the server's order against this comparator over the same rows.
+    // Delete these and the next person has nothing to check against.
+    // ---------------------------------------------------------------
     // SORT_FIELDS is the type-aware accessor table. Each entry knows
     // how to pull a value from a recipe row and what type it is
     // (str/num/date) so the comparator can compare correctly without
@@ -4107,9 +4118,14 @@
       listEl.innerHTML = '<li class="empty-state">Loading...</li>';
       try {
         const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
-        // summary=1 → slim list projection (just the fields the cards render);
-        // keeps the master-list payload ~700KB instead of ~13MB of full recipes.
-        const res = await fetch(`${API}/recipes?user_id=${encodeURIComponent(uid)}&summary=1`);
+        // summary=1 → slim list projection (just the fields the cards render).
+        // sort= is the SERVER's job now. It used to be done here, over the whole
+        // cache, which only worked because the whole cache was present — the
+        // moment the fetch is paginated a client-side sort orders one page and
+        // calls it the answer. Ordering belongs where the rows are.
+        const sortKey = (document.getElementById('sidebar_sort')?.value || 'updated_desc');
+        const res = await fetch(`${API}/recipes?user_id=${encodeURIComponent(uid)}`
+                                + `&summary=1&sort=${encodeURIComponent(sortKey)}`);
         const data = await res.json();
         _recipesCache = Array.isArray(data) ? data : [];
         renderRecipes();
@@ -4121,13 +4137,11 @@
 
     function renderRecipes() {
       const chapterEl = document.getElementById('sidebar_chapter');
-      const sortEl = document.getElementById('sidebar_sort');
       const countEl = document.getElementById('sidebarCount');
       // The APPLIED query — set by applySearch(), not by whatever is currently
       // sitting in the input. Half-typed text must not filter the list.
       const q = _searchQuery;
       const chapterFilter = (chapterEl && chapterEl.value) || '';
-      const sortKey = (sortEl && sortEl.value) || 'updated_desc';
 
       // HTML-entity decoder for fields that arrive double-encoded from
       // some JSON-LD sources (e.g. titles with "&amp;" instead of "&").
@@ -4286,9 +4300,10 @@
         rows = rows.filter(r => getChapter(r) === chapterFilter);
       }
 
-      // Sort — data-driven via SORT_ORDERS lookup.
-      const orderDef = SORT_ORDERS[sortKey] || SORT_ORDERS.updated_desc;
-      rows.sort(makeComparator(orderDef.order));
+      // NOT SORTED HERE. The rows arrive in the order the server chose
+      // (SORT_SQL in save_recipe_api.py, keyed by the same sidebar_sort value).
+      // Filtering above preserves that order, so search and chapter results
+      // stay in the chosen sort without re-ordering anything.
 
       // Header counter
       const total = _recipesCache.length;
@@ -4536,10 +4551,12 @@
         persistSidebarState();
         renderRecipes();
       });
+      // Re-FETCH, not re-render: the order is decided server-side now, so a
+      // local re-render would just redraw the previous ordering.
       const sortEl = document.getElementById('sidebar_sort');
       if (sortEl) sortEl.addEventListener('change', () => {
         persistSidebarState();
-        renderRecipes();
+        loadRecipes();
       });
     })();
 
