@@ -1028,6 +1028,14 @@ def init_db():
                     ("power", "REAL", "json_extract(data,'$._scoring.domainAuthority') + "
                                       "json_extract(data,'$._scoring.pageAuthority')"),
                     ("source_host", "TEXT", _host_final),
+                    # SEMrush per-page monthly organic traffic, on ~54% of master
+                    # rows (publisher harvests carry it; SERP-sourced dish harvests
+                    # do not). Exposed as a column so it can be the ORDER BY
+                    # tiebreaker when the authority score ties — which it does
+                    # constantly, because PA saturates: 23 of shop.legalseafoods'
+                    # 30 recipes share PA=30, and allrecipes has 18 distinct PA
+                    # values across 153 rows. Ties were being broken on `m.id`.
+                    ("traffic", "REAL", "json_extract(data,'$._scoring.traffic')"),
                     # The is-recipe confidence, on ~100% of rows.
                     ("recipe_score", "REAL", "json_extract(data,'$._scoring.recipeScore')"),
                     # The STORED percentiles, exposed for AUDIT rather than for
@@ -1819,7 +1827,13 @@ def _dish_cohort_ranked(conn, dish_name: str, want: int, exclude_recipe_id=None)
         LEFT JOIN dish_run_data_points dp
           ON dp.dish_name = :dish AND dp.url = m.url_normalized
         WHERE json_extract(m.data, '$._master.dish') = :dish
-        ORDER BY dp.rank_score IS NULL, dp.rank_score DESC, m.id
+        -- Tiebreak on TRAFFIC when we have it, else insertion order. The authority
+        -- score ties constantly (PA saturates), and `m.id` alone is only
+        -- traffic-ordered WITHIN one harvest run — across runs each appends its
+        -- own descending sequence, so 99 tied groups contradicted traffic order.
+        -- NULLs last: SERP-sourced rows have no traffic and keep insertion order.
+        ORDER BY dp.rank_score IS NULL, dp.rank_score DESC,
+                 m.traffic IS NULL, m.traffic DESC, m.id
         """, {"dish": dish_name}).fetchall()
     out: list[dict] = []
     for rid, dj, rank_score in rows:
@@ -4199,7 +4213,7 @@ def list_dish_top_recipes(name: str):
                   AND dp.model_version = (
                       SELECT MAX(model_version) FROM dish_run_data_points
                       WHERE dish_name = :dish)
-                ORDER BY dp.rank_score DESC, m.id
+                ORDER BY dp.rank_score DESC, m.traffic IS NULL, m.traffic DESC, m.id
                 """,
                 {"dish": dish},
             ).fetchall()
@@ -4213,8 +4227,12 @@ def list_dish_top_recipes(name: str):
                       ON dp.dish_name = :dish AND dp.url = m.url_normalized
                     WHERE json_extract(m.data, '$._master.dish') = :dish
                       AND json_extract(m.data, '$._master.kind') = 'top'
+                    -- _master.rank stays primary: it IS the curated harvest order,
+                    -- and the harvest already applied traffic as ITS tiebreak. Traffic
+                    -- here only settles rows whose stored rank is equal or missing.
                     ORDER BY dp.rank_score IS NULL, dp.rank_score DESC,
-                             CAST(json_extract(m.data, '$._master.rank') AS INTEGER) ASC, m.id
+                             CAST(json_extract(m.data, '$._master.rank') AS INTEGER) ASC,
+                             m.traffic IS NULL, m.traffic DESC, m.id
                     """,
                     {"dish": dish},
                 ).fetchall()
@@ -4524,14 +4542,19 @@ def list_dish_cohort(name: str):
                            json_extract(data, '$.name') AS name,
                            COALESCE(json_extract(data, '$._source.previewImage'),
                                     json_extract(data, '$.image[0]')) AS preview_image,
-                           json_extract(data, '$._master.exceptionalism.grade') AS grade
+                           json_extract(data, '$._master.exceptionalism.grade') AS grade,
+                           MAX(traffic) AS traffic
                     FROM master_recipes
                     WHERE user_id = 0
                       AND json_extract(data, '$._master.dish') = :dish
                     GROUP BY url_normalized
                 ) m ON m.url_normalized = p.url
                 WHERE p.dish_name = :dish
-                ORDER BY p.rank_score IS NULL, p.rank_score DESC, p.url
+                -- Same tiebreak as the top-N list, so the Considered panel and the
+                -- selected list agree about order among equal scores. p.url was
+                -- alphabetical, which is not a signal at all.
+                ORDER BY p.rank_score IS NULL, p.rank_score DESC,
+                         m.traffic IS NULL, m.traffic DESC, p.url
                 """,
                 {"dish": dish},
             ).fetchall()
