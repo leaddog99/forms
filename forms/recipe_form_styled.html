@@ -3678,6 +3678,11 @@
     // expects to come back to the same view). Search box is
     // intentionally NOT persisted — searches are transient queries.
     const SIDEBAR_PERSIST_KEYS = ['user_id', 'sidebar_sort', 'sidebar_chapter'];
+    // …but only these come BACK on load. `user_id` is still written (see
+    // applySelfCollection below) and deliberately not read here: a page open
+    // always starts on your own collection, never on whichever one you happened
+    // to be looking at last.
+    const SIDEBAR_RESTORE_KEYS = ['sidebar_sort', 'sidebar_chapter'];
     function persistSidebarState() {
       SIDEBAR_PERSIST_KEYS.forEach(id => {
         const el = document.getElementById(id);
@@ -3686,7 +3691,7 @@
       });
     }
     function restoreSidebarState() {
-      SIDEBAR_PERSIST_KEYS.forEach(id => {
+      SIDEBAR_RESTORE_KEYS.forEach(id => {
         try {
           const v = localStorage.getItem('sidebar:' + id);
           if (v == null) return;
@@ -3695,6 +3700,33 @@
         } catch (e) { /* private mode / disabled */ }
       });
     }
+
+    // Point the store at WHOEVER IS USING IT, and return that id.
+    //
+    // `sidebar:user_id` is still persisted, because getSelfUserId() uses it as
+    // a legacy fallback for sessions predating `app:self_user_id`. It is no
+    // longer restored INTO the store, because it records the collection last
+    // VIEWED rather than the collection OWNED — so a single TBOTB click made
+    // master the permanent landing page for that browser. That is why the iPad
+    // opened onto 5,435 master rows: not a preference, a sticky side effect of
+    // a click made once.
+    //
+    // Personal collections run 135 and 278 rows against master's 5,435, so
+    // opening on your own is both the correct default and the cheap one. Master
+    // is still one tap on the Master toggle and stays selected for the rest of
+    // the session — it just no longer outlives the tab.
+    function applySelfCollection() {
+      const uidEl = document.getElementById('user_id');
+      if (!uidEl) return null;
+      const self = getSelfUserId();
+      uidEl.value = String(self);
+      return self;
+    }
+
+    // What applySelfCollection() decided at boot. Kept so the /auth/me reply
+    // can tell "the user has not touched the store" from "the user deliberately
+    // switched collections" and only correct the former.
+    let _bootUserId = null;
 
     // ============================================================
     // TBOTB button — one-click jump to the master cookbook
@@ -3794,6 +3826,27 @@
         .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
         .then(auth => {
           renderPersona(auth);
+          // THE SERVER IS THE AUTHORITY ON IDENTITY. applySelfCollection() ran
+          // synchronously at boot off localStorage, which is a good guess but
+          // can be stale — `app:self_user_id` outlives its session token. If
+          // /auth/me names a different user, the sidebar is showing someone
+          // else's collection, so correct it and reload.
+          //
+          // Only when the store is still exactly what boot set. Once the user
+          // has picked a collection themselves — Master, or another uid — that
+          // choice is on screen and is not ours to overrule.
+          try {
+            const serverUid = auth && auth.user && auth.user.user_id;
+            const uidEl = document.getElementById('user_id');
+            if (serverUid != null && uidEl && _bootUserId != null
+                && String(uidEl.value) === String(_bootUserId)
+                && String(serverUid) !== String(_bootUserId)) {
+              _bootUserId = serverUid;
+              uidEl.value = String(serverUid);
+              // 'change' persists it and reloads the sidebar list.
+              uidEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          } catch (e) { /* identity stays as booted; the list still works */ }
           // THE SERVER OWNS THIS. It used to be decided here against a local
           // ENRICH_TIERS list, which drifted from the server's _AUTO_ENRICH_TIERS
           // (empty — enrichment is not sold) and hid the button from four of six
@@ -4435,9 +4488,11 @@
     // ============================================================
     (function wireSidebarControls() {
       // Restore persisted state before binding handlers so the initial
-      // values land in the DOM. loadRecipes (called at boot) then picks
-      // up the restored user_id from the input value.
+      // values land in the DOM. loadRecipes (called at boot) then picks up
+      // user_id from the input — which applySelfCollection() sets to the
+      // signed-in user, not to the collection last viewed.
       restoreSidebarState();
+      _bootUserId = applySelfCollection();
       syncUserIdToggleLabel();
 
       const uidEl = document.getElementById('user_id');
