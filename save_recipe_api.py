@@ -6733,11 +6733,17 @@ def enrich_domain_endpoint(request: Request, domain: str):
 
 
 @app.post("/domains/{domain}/deep-enrich")
-def deep_enrich_domain_endpoint(domain: str):
+def deep_enrich_domain_endpoint(request: Request, domain: str):
     """Deep domain enrich: Moz V3 FACTS (brand authority, referring domains, ranking
     keywords) + a stronger LLM RESEARCH call grounded on them → a rich multi-paragraph
     `profile`. Returns the SUGGESTED fields (does not save); the editor populates them
     so the curator can review + Save. Token-journaled. ~16 Moz rows + one Sonnet call."""
+    # GATED 2026-08-21 — this was missed when its sibling /domains/{d}/enrich was
+    # gated on 2026-07-29. It took no `request` at all, so there was nothing to
+    # check with. It is the MORE expensive of the two (~16 Moz rows AND a Sonnet
+    # call, both billed to us) and it is a curator surface, so the reasoning that
+    # gated the cheap one applies with more force here.
+    _require_perm(request, "edit_master")
     from input.pipeline import domains_lib
     from extract.domain_enrich import deep_enrich_domain
     try:
@@ -9527,6 +9533,16 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                             "name": row[2],
                             "dish": n.get("dish"),
                             "similarity": round(sim, 3),
+                            # WHICH COLLECTION THIS LIVES IN. Suggestions come
+                            # from master_recipes ALWAYS — the vector index is
+                            # the master one — regardless of the user_id being
+                            # browsed. The client opens a row by
+                            # /recipes/{id}?user_id=…, and sending the browsed
+                            # user_id looked the master id up in the personal
+                            # table: 404, and a click that did nothing. Rows
+                            # carry their own user_id for exactly this reason;
+                            # suggestions now do too.
+                            "user_id": 0,
                         })
         except Exception as e:
             # A search that found nothing must not become a search that errored.
