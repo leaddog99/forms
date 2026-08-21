@@ -4360,11 +4360,24 @@
       loadRecipes();
     }
 
+    // Clear all removes the filters, not just the form's memory of them. It
+    // used to reset the draft and stop there, so the list behind stayed
+    // filtered and the badge kept its count — from the outside it read as a
+    // button that did nothing.
     function clearFilterDialog() {
       const qEl = document.getElementById('filter_q');
       if (qEl) qEl.value = '';
       FILTER_FACETS.forEach(f => { const sel = _filterEl(f); if (sel) sel.value = ''; });
+      _searchQuery = '';
+      const sb = document.getElementById('sidebar_search');
+      if (sb) sb.value = '';
+      FILTER_FACETS.forEach(f => { const el = _appliedEl(f); if (el) el.value = ''; });
+      syncSearchControls();
+      persistSidebarState();
+      // The dialog stays open — you cleared in order to choose something else,
+      // so leaving it up saves a click. The list and badge update behind it.
       refreshFilterFacets();
+      loadRecipes();
     }
 
     // Show the active-filter count on the trigger. A filtered list that looks
@@ -6033,8 +6046,19 @@
         const params = new URLSearchParams(window.location.search);
         if (params.get('recipe_id') || params.get('staged') || params.get('url')) return;
         if (window.matchMedia && window.matchMedia('(max-width: 760px)').matches) return;
-        if (window.LibraryShell && typeof LibraryShell.openSidebar === 'function') {
-          LibraryShell.openSidebar();
+        // Open it DIRECTLY rather than through LibraryShell.openSidebar().
+        // That helper reads state.sidebar, which is only populated by
+        // LibraryShell.init() — and this page calls initNav() but never init(),
+        // so state.sidebar is null and openSidebar() has always returned
+        // silently. The list never appeared until the hamburger was pressed,
+        // which read as "the sidebar does not open on its own" rather than as a
+        // wiring gap. Resolved by id for the same temporal-dead-zone reason
+        // listScrollRoot() is: the `sidebar` const is declared far below and
+        // this runs at boot.
+        const sb = document.getElementById('sidebar');
+        if (sb) {
+          sb.classList.add('open');
+          document.body.classList.add('sidebar-open');
         }
       } catch (e) { /* ignore */ }
     })();
@@ -6618,12 +6642,18 @@
       LibraryShell.initNav({ currentPage: 'recipes' });
     }
 
-    // Close sidebar when clicking outside
+    // Close sidebar when clicking outside.
     document.addEventListener('click', (e) => {
-      if (!sidebar.contains(e.target) && !sidebarToggle.contains(e.target)) {
-        sidebar.classList.remove('open');
-        syncBodyLock();
-      }
+      if (sidebar.contains(e.target) || sidebarToggle.contains(e.target)) return;
+      // A modal <dialog> renders in the TOP LAYER, which is a sibling of the
+      // sidebar rather than a descendant — so sidebar.contains() says false for
+      // every control in the criteria dialog, and pressing "Show recipes" closed
+      // the list you had just filtered. You then had to reopen the sidebar to
+      // discover it had worked. Anything inside a dialog is part of the same
+      // interaction, not a click away from it.
+      if (e.target instanceof Element && e.target.closest('dialog')) return;
+      sidebar.classList.remove('open');
+      syncBodyLock();
     });
 
     // Hero image control — the reusable ImageWell (forms/image-well.js). One
