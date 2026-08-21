@@ -1344,6 +1344,84 @@ def init_db():
                 except Exception as _ix_e:  # noqa: BLE001
                     print(f"[SETUP] perf-index skipped ({_ix_stmt[:48]}…): {_ix_e}")
 
+            # ---- FULL-TEXT SEARCH -------------------------------------------
+            # The list used to search with LIKE %needle%, a CONTIGUOUS SUBSTRING
+            # test rather than a search: "shrimp and corn chowder" could not
+            # match "Corn and Shrimp Chowder", and "corn" matched Pop-corn
+            # Shrimp because a substring has no word boundaries.
+            #
+            # `porter` stems, so "chowders" finds Chowder — the word-breaking +
+            # stemming half of what SQL Server FREETEXT gives. Accents fold via
+            # remove_diacritics so "bechamel" finds "Bechamel", matching what
+            # bcc_sortkey already does for the name sort.
+            #
+            # Columns are the two retrieval surfaces plus what bridges them:
+            #   name         what the publisher called it — what people type
+            #   dish         _identity.likelyDish, the canonical name, so
+            #                "risotto" finds every risotto whatever its title.
+            #                It is also the ONE field both engines index: the
+            #                vector embeds it and so does this.
+            #   ingredients  lets "shrimp" reach a dish whose title never says
+            #                so — 31 master rows have shrimp AND corn in their
+            #                ingredients and were invisible to search entirely
+            #   cuisine      cheap, and lets a typed word stand in for the facet
+            #
+            # A content-carrying table (not content=) so ordinary INSERT/UPDATE/
+            # DELETE by rowid work and the triggers stay readable. ~10MB.
+            for _tbl in ("master_recipes", "recipes"):
+                _fts = f"{_tbl}_fts"
+                conn.execute(
+                    f"CREATE VIRTUAL TABLE IF NOT EXISTS {_fts} USING fts5("
+                    f"  name, dish, ingredients, cuisine,"
+                    f"  tokenize='porter unicode61 remove_diacritics 2')"
+                )
+                # The ingredient list is a JSON array, flattened with json_each.
+                # Doing this in a TRIGGER rather than in Python means a row
+                # written by ANY path — server save, harvest job, migration
+                # script — lands in the index. That is the only way an index
+                # like this stays honest.
+                _cols = ("json_extract(NEW.data,'$.name'), "
+                         "json_extract(NEW.data,'$._identity.likelyDish'), "
+                         "(SELECT group_concat(value, ' ') "
+                         " FROM json_each(NEW.data, '$.recipeIngredient')), "
+                         "json_extract(NEW.data,'$._identity.cuisine')")
+                for _sfx in ("ai", "au", "ad"):
+                    conn.execute(f"DROP TRIGGER IF EXISTS {_tbl}_fts_{_sfx}")
+                conn.execute(
+                    f"CREATE TRIGGER {_tbl}_fts_ai AFTER INSERT ON {_tbl} BEGIN "
+                    f"  INSERT INTO {_fts}(rowid, name, dish, ingredients, cuisine) "
+                    f"  VALUES (NEW.id, {_cols}); END"
+                )
+                conn.execute(
+                    f"CREATE TRIGGER {_tbl}_fts_au AFTER UPDATE OF data ON {_tbl} BEGIN "
+                    f"  DELETE FROM {_fts} WHERE rowid = OLD.id; "
+                    f"  INSERT INTO {_fts}(rowid, name, dish, ingredients, cuisine) "
+                    f"  VALUES (NEW.id, {_cols}); END"
+                )
+                conn.execute(
+                    f"CREATE TRIGGER {_tbl}_fts_ad AFTER DELETE ON {_tbl} BEGIN "
+                    f"  DELETE FROM {_fts} WHERE rowid = OLD.id; END"
+                )
+                # Backfill whatever the triggers never saw. Self-healing: a row
+                # that somehow misses the index is picked up on the next boot
+                # instead of staying unsearchable forever.
+                _missing = conn.execute(
+                    f"SELECT COUNT(*) FROM {_tbl} t "
+                    f"WHERE NOT EXISTS (SELECT 1 FROM {_fts} f WHERE f.rowid = t.id)"
+                ).fetchone()[0]
+                if _missing:
+                    conn.execute(
+                        f"INSERT INTO {_fts}(rowid, name, dish, ingredients, cuisine) "
+                        f"SELECT t.id, json_extract(t.data,'$.name'), "
+                        f"       json_extract(t.data,'$._identity.likelyDish'), "
+                        f"       (SELECT group_concat(value,' ') "
+                        f"        FROM json_each(t.data,'$.recipeIngredient')), "
+                        f"       json_extract(t.data,'$._identity.cuisine') "
+                        f"FROM {_tbl} t "
+                        f"WHERE NOT EXISTS (SELECT 1 FROM {_fts} f WHERE f.rowid = t.id)"
+                    )
+                    print(f"[SETUP] {_fts}: indexed {_missing} row(s)")
+
             # Refresh query-planner statistics. WITHOUT them SQLite mis-planned the
             # dish top-10 JOIN — scanning all of master_recipes instead of using the
             # (url_normalized, user_id) index — turning a ~9ms query into a multi-
@@ -9142,6 +9220,11 @@ _TOTAL = "id ASC"
 _AUTHORITY_TAIL = f"traffic DESC NULLS LAST, {_TOTAL}"
 
 SORT_SQL = {
+    # Only meaningful alongside q= — with no text match temp.q_match does not
+    # exist, so _recipes_search_impl falls back to the default rather than
+    # letting a relevance sort reference a table that was never built.
+    "relevance":    f"(SELECT rel FROM temp.q_match WHERE id = {{T}}.id) DESC, "
+                    f"updated_at DESC, {_TOTAL}",
     "updated_desc": f"updated_at DESC, {_TOTAL}",
     "created_desc": f"created_at DESC, {_TOTAL}",
     "name_asc":     f"{_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
@@ -9204,31 +9287,112 @@ def _search_where(user_id: int, filters: dict, q: str, *, skip: str = ""):
     return " AND ".join(clauses), params
 
 
+def _fts_query(raw: str) -> str:
+    """Turn what a person typed into an FTS5 MATCH expression.
+
+    RAW INPUT CAN NEVER REACH MATCH. FTS5 has its own grammar, so an unbalanced
+    quote or a bare `-` is a syntax error, which would surface as a 500 on a
+    search box — the one place users type whatever they like. Everything is
+    quoted as a literal token and the operators are ones this function emits.
+
+    Supported, in the shape people already expect from a search box:
+        two words        -> both must appear (AND, not the OR FTS5 defaults to)
+        "exact phrase"   -> kept together
+        -word            -> excluded
+        word OR word     -> either
+
+    Bare-words-mean-AND is the important one. FTS5's implicit operator is OR, so
+    passing "shrimp corn chowder" through untouched returns everything matching
+    ANY of the three — thousands of rows, ranked plausibly enough that it looks
+    like it worked.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    tokens: list[str] = []
+    i, n = 0, len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch.isspace():
+            i += 1
+            continue
+        neg = False
+        if ch == "-" and i + 1 < n and not raw[i + 1].isspace():
+            neg, i = True, i + 1
+            ch = raw[i]
+        if ch == '"':                      # quoted phrase, to the next quote or end
+            j = raw.find('"', i + 1)
+            body = raw[i + 1:] if j == -1 else raw[i + 1:j]
+            i = n if j == -1 else j + 1
+        else:
+            j = i
+            while j < n and not raw[j].isspace():
+                j += 1
+            body = raw[i:j]
+            i = j
+        # Keep only what FTS5 tokenizes anyway; this is what makes a stray
+        # apostrophe or bracket harmless rather than fatal.
+        body = "".join(c if (c.isalnum() or c.isspace()) else " " for c in body).strip()
+        if not body:
+            continue
+        if body.upper() in ("AND", "OR", "NOT") and not neg:
+            tokens.append(body.upper())
+            continue
+        tokens.append(("NOT " if neg else "") + '"' + body + '"')
+    # Join with AND, but never around an operator — either one the user supplied
+    # or the NOT this function generates for a -exclusion. FTS5's NOT is BINARY
+    # ("a NOT b" = a and not b), so "AND NOT" is a syntax error rather than the
+    # emphasis it looks like.
+    out: list[str] = []
+    for t in tokens:
+        starts_op = t.startswith("NOT ")
+        if (out and not starts_op and t not in ("AND", "OR", "NOT")
+                and out[-1] not in ("AND", "OR", "NOT")):
+            out.append("AND")
+        out.append(t)
+    while out and out[-1] in ("AND", "OR", "NOT"):
+        out.pop()
+    # A leading NOT has no left operand and is a syntax error. It comes from a
+    # query that is nothing but exclusions ("-clam"), which FTS5 cannot express
+    # — "everything except clam" needs something to subtract from. Treated as
+    # unusable rather than guessed at.
+    if out and (out[0] == "NOT" or out[0].startswith("NOT ")):
+        return ""
+    return " ".join(out)
+
+
 def _materialise_text_match(conn, user_id: int, q: str) -> None:
-    """Resolve the free-text match ONCE into temp.q_match.
+    """Resolve the free-text match ONCE into temp.q_match, via FTS5.
 
-    `bcc_sortkey` is a Python callback, so every row it touches is a round trip
-    out of SQLite. A search issues five queries — the match count, the page, and
-    one count per facet — and inlining the predicate made all five re-scan:
-    ~43,000 callbacks and 964ms for q='chocolate'. Resolving it once and joining
-    the resulting ids costs one scan: 202ms.
+    A search issues five queries — the match count, the page, and one count per
+    facet — so the text predicate is resolved once and joined rather than
+    re-evaluated by each. That mattered enormously when this was a LIKE driven
+    by a Python callback (~43,000 callbacks, 964ms); it still matters, and the
+    temp table also carries FTS5's bm25 rank so relevance ordering is available
+    without running the match again.
 
-    The recipe name goes through the fold so "bechamel" finds "Béchamel" and
-    "chef johns" finds "Chef John’s". The BATCH name does not — all four batch
-    names in the corpus are ASCII, and folding them was half the callbacks for a
-    field present on 25 rows of 5,435. SQL-native lower() is exact there.
+    Rank is stored NEGATED. bm25() returns a more-negative number for a better
+    match, which sorts correctly ascending but reads backwards everywhere else;
+    flipping it here means `ORDER BY rel DESC` means what it says at every
+    call site.
 
     Temp tables are per-connection and _db() hands out a fresh connection per
     request, so this cannot leak between callers.
     """
-    needle = f"%{_sort_key_fold(q)}%"
+    expr = _fts_query(q)
+    table = _recipes_table_for(user_id)
     conn.execute("DROP TABLE IF EXISTS temp.q_match")
+    if not expr:
+        # The query was all punctuation. An empty FTS5 expression is a syntax
+        # error, and matching everything would silently ignore what was typed,
+        # so match nothing and let the caller report no results.
+        conn.execute("CREATE TEMP TABLE q_match (id INTEGER PRIMARY KEY, rel REAL)")
+        return
+    fts = f"{table}_fts"
     conn.execute(
         f"CREATE TEMP TABLE q_match AS "
-        f"SELECT id FROM {_recipes_table_for(user_id)} "
-        f"WHERE user_id = ? AND (bcc_sortkey(recipe_name) LIKE ? "
-        f"       OR lower(json_extract(data,'$._batch.name')) LIKE ?)",
-        [user_id, needle, needle.lower()],
+        f"SELECT rowid AS id, -bm25({fts}) AS rel FROM {fts} WHERE {fts} MATCH ?",
+        [expr],
     )
 
 
@@ -9247,6 +9411,10 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
     q = (q or "").strip()
 
     order_by = SORT_SQL.get(sort) or SORT_SQL[DEFAULT_SORT]
+    if sort == "relevance" and not q:
+        order_by = SORT_SQL[DEFAULT_SORT]
+    # Relevance reads temp.q_match, which is named per request; bind the table.
+    order_by = order_by.replace("{T}", table)
     limit = max(1, min(int(limit or 200), 1000))
     offset = max(0, int(offset or 0))
 
@@ -9300,9 +9468,59 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
+    # ---- SEMANTIC NEAR-MISSES ------------------------------------------
+    # Lexical search is exact: when the words are not there it returns nothing,
+    # which is correct and unhelpful. The identity vectors answer the other
+    # question — "what dish is this?" — so a query with no literal match can
+    # still be answered with what the user probably meant. Measured: "shrimp and
+    # corn chowder" has no lexical match anywhere in the corpus, and the vectors
+    # return lobster-and-corn chowder, chicken corn chowder, creamy corn chowder.
+    #
+    # ONLY ON A MISS, deliberately. Embedding the query is a network round trip
+    # (~200-900ms) against a search path that is otherwise ~1ms, and the facet
+    # dialog re-queries on every dropdown change. Spending that on a search that
+    # already succeeded would make the common case pay for the rare one.
+    #
+    # Returned SEPARATELY from rows, never merged into them: these did not match
+    # what was asked for, and presenting them as though they did is how a search
+    # box starts lying. The caller labels them.
+    suggestions: list = []
+    if q and matched == 0 and offset == 0:
+        try:
+            from input.pipeline.embeddings import embed_text
+            from input.pipeline import vector_store
+            with _db() as vconn:
+                vector_store.enable_vec(vconn)
+                qvec = embed_text(q)
+                near = vector_store.find_similar_master_recipes(vconn, qvec, k=6)
+                if near:
+                    ids = [n["id"] for n in near]
+                    marks = ",".join("?" * len(ids))
+                    by_id = {
+                        r[0]: r for r in vconn.execute(
+                            f"SELECT id, recipe_id, recipe_name FROM master_recipes "
+                            f"WHERE id IN ({marks})", ids)
+                    }
+                    for n in near:
+                        row = by_id.get(n["id"])
+                        if not row:
+                            continue
+                        suggestions.append({
+                            "recipe_id": row[1],
+                            "name": row[2],
+                            "dish": n.get("dish"),
+                            # cosine on unit vectors: 1 - d^2/2
+                            "similarity": round(1 - (n["distance"] ** 2) / 2, 3),
+                        })
+        except Exception as e:
+            # A search that found nothing must not become a search that errored.
+            print(f"[SEARCH] semantic suggestions unavailable: {type(e).__name__}: {e}")
+
     print(f"[SEARCH] user={user_id} q={q!r} {filters} sort={sort or DEFAULT_SORT} "
-          f"-> {matched}/{total}, returning {len(out)} from offset {offset}")
+          f"-> {matched}/{total}, returning {len(out)} from offset {offset}"
+          + (f", {len(suggestions)} suggestion(s)" if suggestions else ""))
     return {
+        "suggestions": suggestions,
         "rows": out,
         "total": total,
         "matched": matched,
