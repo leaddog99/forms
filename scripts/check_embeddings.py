@@ -47,7 +47,7 @@ load_dotenv()
 
 from input.pipeline import vector_store  # noqa: E402
 from input.pipeline.embeddings import (  # noqa: E402
-    EMBED_DIM, EMBED_MODEL, bytes_to_vec, compose_recipe_text,
+    EMBED_DIM, EMBED_MODEL, bytes_to_vec, compose_recipe_text, text_hash,
 )
 
 DB_PATH = str(PROJECT_ROOT / "recipes.db")
@@ -72,7 +72,9 @@ def ok(msg: str, quiet: bool) -> None:
 
 
 def _text_hash(text: str) -> str:
-    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+    # Delegates to the canonical definition so this check can never disagree
+    # with the writer it is checking (2026-08-21: it did, for every saved row).
+    return text_hash(text)
 
 
 def check_vectors(conn, table, quiet):

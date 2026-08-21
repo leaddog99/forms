@@ -53,7 +53,7 @@ load_dotenv()
 
 from extract.identity_card import _derive_primary_ingredients  # noqa: E402
 from input.pipeline.embeddings import (  # noqa: E402
-    EMBED_MODEL, compose_recipe_text, embed_text, vec_to_bytes,
+    EMBED_MODEL, compose_recipe_text, embed_text, text_hash, vec_to_bytes,
 )
 from input.pipeline import vector_store  # noqa: E402
 
@@ -68,7 +68,8 @@ PROVENANCE_COLUMNS = (
 
 
 def _text_hash(text: str) -> str:
-    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+    # Canonical definition lives in input.pipeline.embeddings — see text_hash.
+    return text_hash(text)
 
 
 def _now() -> str:

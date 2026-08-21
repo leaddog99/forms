@@ -22,6 +22,7 @@ dish once (and re-embed when the query list changes).
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -155,6 +156,20 @@ def compose_dish_text(dish_row: dict) -> str:
             seen.add(key)
             deduped.append(p)
     return ". ".join(deduped)
+
+
+def text_hash(text: str) -> str:
+    """The canonical provenance stamp for `embedding_text_hash`.
+
+    THE ONE definition. It lived in three places and they disagreed:
+    check_embeddings and reembed_identity truncated to 16 chars while the
+    save path stored the full 64-char digest, so every row saved through
+    the app was reported STALE forever — the same failure the stamp was
+    added to fix (a NULL hash never matches), just inverted. Truncation is
+    the incumbent format (5,906 rows) and 16 hex chars is ample for
+    change-detection, so the short form wins and everything calls this.
+    """
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
 
 
 def compose_recipe_text(recipe: dict, *, max_ingredients: int = 8) -> str:

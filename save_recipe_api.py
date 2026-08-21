@@ -10342,7 +10342,8 @@ def _save_recipe_core(payload: dict) -> dict:
             if seq_id is not None:
                 try:
                     from input.pipeline.embeddings import (
-                        EMBED_MODEL, compose_recipe_text, embed_text, vec_to_bytes,
+                        EMBED_MODEL, compose_recipe_text, embed_text, text_hash,
+                        vec_to_bytes,
                     )
                     from input.pipeline import vector_store
                     txt = compose_recipe_text(recipe_dict)
@@ -10358,7 +10359,10 @@ def _save_recipe_core(payload: dict) -> dict:
                         # 2026-08-06 composer-order bug went unnoticed across
                         # 41% of the corpus. `dishes` stamped these three from
                         # the start; the recipe tables never did.
-                        _emb_hash = hashlib.sha256(txt.encode("utf-8")).hexdigest()
+                        # embeddings.text_hash is THE definition — a local
+                        # sha256 here stored 64 chars while both readers
+                        # computed 16, so every saved row read as stale.
+                        _emb_hash = text_hash(txt)
                         _emb_now = datetime.now(timezone.utc).isoformat()
                         if user_id == 0:
                             # Master: store the source-of-truth vector + the
