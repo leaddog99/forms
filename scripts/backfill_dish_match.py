@@ -147,10 +147,16 @@ def main() -> int:
                 # `data` only. NOT updated_at — see the module docstring.
                 conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
                              (json.dumps(d), rid))
-                if is_conf:
-                    ch = ((d.get("classification") or {}).get("chapter") or None)
-                    vector_store.upsert_recipe_vector(
-                        conn, rid, vec, chapter=ch, dish=best["name"])
+                # UNCONDITIONAL, and dish=None when the match is not confident.
+                # Stamping only on a confident match works on a first pass (the
+                # index already holds None) but not on --rematch: a row demoted
+                # from confident to not would keep the OLD dish in the index
+                # while `data` said otherwise. No row was demoted on the first
+                # rematch, so this is a latent bug being closed, not one hit.
+                ch = ((d.get("classification") or {}).get("chapter") or None)
+                vector_store.upsert_recipe_vector(
+                    conn, rid, vec, chapter=ch,
+                    dish=(best["name"] if is_conf else None))
                 if n % 200 == 0:
                     conn.commit()
 
