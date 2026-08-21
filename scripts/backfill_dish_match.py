@@ -58,14 +58,21 @@ DB_PATH = os.path.join(
 # Rows with no curated dish AND no inferred one. `embedding IS NOT NULL`
 # because the match is derived from the stored vector — a row without one is a
 # coverage problem for check_embeddings, not something to fix here.
-SELECT_SQL = """
+_BASE_SQL = """
     SELECT id, data, embedding
       FROM master_recipes
      WHERE embedding IS NOT NULL
        AND json_extract(data, '$._master.dish') IS NULL
-       AND json_extract(data, '$._match')       IS NULL
-     ORDER BY id
 """
+# Default: only rows that have never been matched. --rematch drops that clause
+# so every unclaimed row is re-scored against the CURRENT dish catalog — which
+# is what you want after adding dishes, because a row already carries the best
+# match from a catalog that no longer exists. Creating "Pumpkin Pie" does not
+# move the pumpkin pies out of Cream Pie on its own.
+SELECT_SQL = (_BASE_SQL
+              + "   AND json_extract(data, '$._match') IS NULL"
+              + " ORDER BY id")
+REMATCH_SQL = _BASE_SQL + " ORDER BY id"
 
 
 def main() -> int:
@@ -73,6 +80,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="report what would change; write nothing")
     ap.add_argument("--limit", type=int, default=0, help="stop after N rows")
+    ap.add_argument("--rematch", action="store_true",
+                    help="re-score rows that ALREADY have a match, against the "
+                         "current dish catalog (run this after adding dishes)")
     ap.add_argument("--db", default=DB_PATH)
     args = ap.parse_args()
 
@@ -87,21 +97,25 @@ def main() -> int:
     conn.execute("PRAGMA busy_timeout = 30000")
     vector_store.enable_vec(conn)
 
-    rows = conn.execute(SELECT_SQL).fetchall()
+    rows = conn.execute(REMATCH_SQL if args.rematch else SELECT_SQL).fetchall()
     if args.limit:
         rows = rows[: args.limit]
 
-    print(f"[BACKFILL] {len(rows)} master rows with no dish and no match")
+    scope = ("unclaimed master rows, re-scored against the CURRENT catalog"
+             if args.rematch else "master rows with no dish and no match")
+    print(f"[BACKFILL] {len(rows)} {scope}")
     print(f"[BACKFILL] confidence threshold (L2) = {max_dist}")
     print(f"[BACKFILL] mode = {'DRY RUN (no writes)' if args.dry_run else 'APPLY'}")
     print()
 
-    confident = weak = nocand = failed = 0
+    confident = weak = nocand = failed = moved = 0
     by_dish: dict[str, int] = {}
+    moves: list = []
 
     for n, (rid, dj, blob) in enumerate(rows, 1):
         try:
             d = json.loads(dj)
+            prev = ((d.get("_match") or {}).get("dish")) or None
             vec = bytes_to_vec(blob)
             cands = vector_store.find_similar_dishes(conn, vec, k=3)
             if not cands:
@@ -140,12 +154,19 @@ def main() -> int:
                 if n % 200 == 0:
                     conn.commit()
 
+            now_dish = best["name"] if is_conf else None
+            if now_dish != prev:
+                moved += 1
+                moves.append((rid, (d.get("name") or "")[:40], prev, now_dish,
+                              round(best["distance"], 3)))
             if is_conf:
                 confident += 1
                 by_dish[best["name"]] = by_dish.get(best["name"], 0) + 1
-                name = (d.get("name") or "")[:44]
-                print(f"  [{n}/{len(rows)}] {rid:6} {name:<44} -> "
-                      f"{best['name']!r} d={best['distance']:.3f}")
+                if not args.rematch or now_dish != prev:
+                    name = (d.get("name") or "")[:44]
+                    print(f"  [{n}/{len(rows)}] {rid:6} {name:<44} -> "
+                          f"{best['name']!r} d={best['distance']:.3f}"
+                          + (f"   (was {prev!r})" if prev != now_dish else ""))
             else:
                 weak += 1
         except Exception as e:
@@ -160,6 +181,17 @@ def main() -> int:
     print(f"[BACKFILL] no confident match  {weak}   (candidates still stored)")
     print(f"[BACKFILL] no candidates       {nocand}")
     print(f"[BACKFILL] failed              {failed}")
+    if args.rematch:
+        print(f"[BACKFILL] rows that MOVED     {moved}")
+        regrouped: dict = {}
+        for rid, nm, old, new in ((m[0], m[1], m[2], m[3]) for m in moves):
+            regrouped.setdefault((old, new), 0)
+            regrouped[(old, new)] += 1
+        if regrouped:
+            print()
+            print("[BACKFILL] moves (was -> now):")
+            for (old, new), k in sorted(regrouped.items(), key=lambda kv: -kv[1]):
+                print(f"    {k:5}  {str(old):<34} -> {new}")
     if by_dish:
         print()
         print("[BACKFILL] confident matches by dish:")
