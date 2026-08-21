@@ -4613,11 +4613,27 @@
           li.appendChild(d);
         }
         li.onclick = async () => {
-          const uid = (document.getElementById('user_id')?.value || '1');
+          // Same two steps a result card takes, and it needs BOTH.
+          //
+          // Close the sidebar first: the form loads UNDERNEATH it, so on a
+          // narrow screen (the iPad especially) a suggestion that opened
+          // correctly still looked like a click that did nothing.
+          //
+          // And open it from the collection it actually lives in. Suggestions
+          // always come from master (sg.user_id === 0) even while you are
+          // browsing your own recipes; passing the browsed user_id looked a
+          // master id up in the personal table and 404'd, and `if (r.ok)`
+          // turned that into silence.
+          sidebar.classList.remove('open');
+          document.body.classList.remove('sidebar-open');   // mirror syncBodyLock
+          const uid = (sg.user_id != null
+            ? sg.user_id
+            : (document.getElementById('user_id')?.value || '1'));
           try {
             const r = await fetch(`${API}/recipes/${encodeURIComponent(sg.recipe_id)}?user_id=${encodeURIComponent(uid)}`);
-            if (r.ok) loadForm(await r.json());
-          } catch (e) { /* leave the list as it is */ }
+            if (r.ok) { loadForm(await r.json()); return; }
+            console.warn('[SEARCH] suggestion open failed:', r.status, sg.recipe_id);
+          } catch (e) { console.warn('[SEARCH] suggestion open errored:', e); }
         };
         listEl.appendChild(li);
       });
