@@ -7512,6 +7512,39 @@ async def _handle_chapter_rollups_job(job: dict) -> dict:
 jobs_lib.register_handler("chapter_rollups", _handle_chapter_rollups_job)
 
 
+async def _handle_dish_rematch_job(job: dict) -> dict:
+    """Nightly: re-score every master row that carries no curated `_master.dish`
+    against the CURRENT dish catalog.
+
+    This is NOT how new recipes get a dish — they are matched at save. It is for
+    the other direction: the catalog moves (~45-60 new dishes a month, plus
+    description/query edits that move a dish's own vector), and a row otherwise
+    keeps the best match from a catalog that no longer exists. Creating
+    "Pumpkin Pie" does not move the pumpkin pies out of Cream Pie; only a
+    re-score does.
+
+    Cheap by construction: every row already has its embedding stored and the
+    dish index is local, so this is a KNN query per row (~14s for 3,200) with no
+    embedding call and nothing billable. It writes ONLY the rows whose verdict
+    changed, so a quiet night costs reads and no writes.
+    """
+    def _run():
+        from input.pipeline import dish_match
+        with _db() as conn:
+            return dish_match.rematch_unclaimed(conn, db_path=DB_PATH)
+    summary = await asyncio.to_thread(_run)
+    moves = summary.pop("moves", [])
+    print(f"[REMATCH] {summary}")
+    for rid, old, new_dish in moves[:50]:
+        print(f"[REMATCH]   {rid}: {old!r} -> {new_dish!r}")
+    if len(moves) > 50:
+        print(f"[REMATCH]   ... {len(moves) - 50} more")
+    return summary
+
+
+jobs_lib.register_handler("dish_rematch", _handle_dish_rematch_job)
+
+
 async def _handle_ai_mediation_job(job: dict) -> dict:
     """SHADOW review of one run by the AI editor (docs/ai-editor-mediation.md).
 
@@ -9894,46 +9927,25 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
 
 
 def _stamp_dish_match(conn, recipe_dict: dict, rec_vec, *, label: str) -> bool:
-    """Infer which canonical dish a recipe is, from the vector we just built,
-    and persist it on `_match`. Returns True if `_match` was written.
+    """Infer which canonical dish a recipe is and persist it on `_match`.
 
     Gated on NOT ALREADY KNOWING THE DISH — not on which table the row is in.
-    That distinction is the bug this fixes. A master row from a dish refresh is
-    curated FOR a dish and carries `_master.dish` as ground truth, so inferring
-    one would be noise; but a master row captured interactively (bookmarklet, or
-    a hand-added URL) carries no `_master.dish` at all, and this used to run only
-    for user rows. The result was that every interactive master capture stored a
-    vector and then threw away the one thing the vector was for: the form's
-    "Matched dish" chip read "—" on rows that WERE embedded, which reads as
-    "this never got embedded".
+    A master row from a dish refresh carries `_master.dish` as ground truth; an
+    interactive capture carries nothing, and used to keep nothing.
 
-    Reuses the vector already computed — no second embed, no API call. The dish
-    index is local, so this is a sqlite-vec KNN query and nothing more.
+    The matching itself lives in input.pipeline.dish_match, shared with the
+    backfill script and the nightly dish_rematch job. It was duplicated across
+    those three and they had already drifted on whether to stamp the vec index.
+    Reuses the vector the caller computed — no second embed, no API call.
     """
-    from input.pipeline import system_config as _cfg
-    from input.pipeline import vector_store
-    # L2 distance <= MATCH_MAX_DIST is a confident match (validated 2026-06-02:
-    # Banana Bread 0.20 / Chicken Piccata 0.25 confident; Mac&Cheese 1.02 /
-    # Salmon 0.98 = no real dish in the set -> not confident).
-    max_dist = float(_cfg.get_setting("dish_match_max_distance", 0.85))
-    cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
-    if not cands:
+    from input.pipeline import dish_match as _dm
+    m = _dm.build_match(conn, rec_vec, max_dist=_dm.max_distance())
+    if not m:
         return False
-    best = cands[0]
-    confident = best["distance"] <= max_dist
-    recipe_dict["_match"] = {
-        "dish": best["name"] if confident else None,
-        "distance": round(best["distance"], 4),
-        "confident": confident,
-        "candidates": [
-            {"dish": m["name"], "distance": round(m["distance"], 4)}
-            for m in cands
-        ],
-        "matched_at": datetime.now(timezone.utc).isoformat(),
-    }
-    print(f"[MATCH] {label} -> {best['name']!r} d={best['distance']:.3f} "
-          f"confident={confident}  candidates="
-          + ", ".join(f"{m['name']}({m['distance']:.2f})" for m in cands))
+    recipe_dict["_match"] = m
+    print(f"[MATCH] {label} -> {m['candidates'][0]['dish']!r} "
+          f"d={m['distance']:.3f} confident={m['confident']}  candidates="
+          + ", ".join(f"{x['dish']}({x['distance']:.2f})" for x in m["candidates"]))
     return True
 
 
