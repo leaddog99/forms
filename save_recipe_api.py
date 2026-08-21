@@ -9484,8 +9484,22 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
     # Returned SEPARATELY from rows, never merged into them: these did not match
     # what was asked for, and presenting them as though they did is how a search
     # box starts lying. The caller labels them.
+    # Two gates, both learned from watching it misbehave.
+    #
+    # A query that produced no usable FTS expression ("((((") has no searchable
+    # content, so there is nothing to be near. Embedding it spent 700ms — the
+    # slowest path in the endpoint — to return "test" and Tonkotsu Ramen.
+    #
+    # And a floor, because a nearest neighbour always exists: cosine is a
+    # ranking, not a verdict. Real hits sit far above it ("shrimp and corn
+    # chowder" -> lobster-and-corn chowder at 0.69, "something brothy and
+    # warming" -> hot pot broth at 0.49); the junk run topped out at 0.46 with
+    # numbers trailing to 0.23. 0.45 separates those two populations on the
+    # evidence available, and is a threshold to revisit with more, not a
+    # constant anyone derived.
+    SUGGESTION_FLOOR = 0.45
     suggestions: list = []
-    if q and matched == 0 and offset == 0:
+    if q and matched == 0 and offset == 0 and _fts_query(q):
         try:
             from input.pipeline.embeddings import embed_text
             from input.pipeline import vector_store
@@ -9505,12 +9519,14 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                         row = by_id.get(n["id"])
                         if not row:
                             continue
+                        sim = 1 - (n["distance"] ** 2) / 2   # cosine on unit vectors
+                        if sim < SUGGESTION_FLOOR:
+                            continue
                         suggestions.append({
                             "recipe_id": row[1],
                             "name": row[2],
                             "dish": n.get("dish"),
-                            # cosine on unit vectors: 1 - d^2/2
-                            "similarity": round(1 - (n["distance"] ** 2) / 2, 3),
+                            "similarity": round(sim, 3),
                         })
         except Exception as e:
             # A search that found nothing must not become a search that errored.

@@ -339,6 +339,41 @@
 
     .recipe-list { list-style: none; }
 
+    /* Semantic suggestions. Deliberately NOT styled like a recipe card — they
+       are a different kind of answer, and looking like results is exactly the
+       confusion to avoid. */
+    .recipe-list .suggest-head {
+      list-style: none;
+      font-family: var(--sans, -apple-system, sans-serif);
+      font-size: 0.7em;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-muted, #666);
+      padding: 18px 4px 6px;
+      border-top: 1px solid var(--hairline, #e2e2e2);
+      margin-top: 8px;
+    }
+    .recipe-list .suggest-item {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 4px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--hairline, #e2e2e2);
+    }
+    .recipe-list .suggest-item:hover { background: var(--accent-soft, #faf3ee); }
+    .recipe-list .suggest-title {
+      font-family: Georgia, serif;
+      font-size: 0.95em;
+      color: var(--ink-strong, #121212);
+    }
+    .recipe-list .suggest-dish {
+      font-family: var(--sans, -apple-system, sans-serif);
+      font-size: 0.75em;
+      color: var(--ink-muted, #666);
+    }
+
     /* Scroll sentinel for the windowed list. Needs real height so the
        IntersectionObserver has something to intersect; 1px is enough and
        reads as nothing. */
@@ -3774,6 +3809,11 @@
     // top-to-bottom; first non-zero comparison wins. Add new sorts
     // by adding entries here — no JS rewiring needed.
     const SORT_ORDERS = {
+      // Server-side only — there is no client comparator for relevance, because
+      // bm25 is computed by the FTS index and cannot be recomputed here. It is
+      // also the only sort that is meaningless without a query, which the server
+      // guards by falling back to updated_desc.
+      relevance:     { label: "Best match",               order: [["updated_at", "desc"]] },
       updated_desc:  { label: "Last modified (newest)",   order: [["updated_at", "desc"]] },
       created_desc:  { label: "Date added (newest)",      order: [["created_at", "desc"]] },
       name_asc:      { label: "Name (A–Z)",               order: [["name", "asc"]] },
@@ -4162,11 +4202,29 @@
       if (clearBtn) clearBtn.hidden = !_searchQuery;
     }
 
+    // Searching means "find this", so order by how well it matches. Browsing
+    // means "show me the collection", so go back to the order that was chosen
+    // for it. Only ever moves between relevance and the previous choice — a
+    // deliberate pick of OU or Name while a query is active is left alone.
+    let _sortBeforeSearch = null;
+    function applyRelevanceDefault() {
+      const sel = document.getElementById('sidebar_sort');
+      if (!sel) return;
+      if (_searchQuery && sel.value !== 'relevance') {
+        _sortBeforeSearch = sel.value;
+        sel.value = 'relevance';
+      } else if (!_searchQuery && sel.value === 'relevance') {
+        sel.value = _sortBeforeSearch || 'updated_desc';
+        _sortBeforeSearch = null;
+      }
+    }
+
     function applySearch() {
       const el = document.getElementById('sidebar_search');
       const next = ((el && el.value) || '').trim().toLowerCase();
       if (next === _searchQuery) return;   // nothing to re-render
       _searchQuery = next;
+      applyRelevanceDefault();
       syncSearchControls();
       loadRecipes();          // the server does the matching now, not the cache
     }
@@ -4176,6 +4234,7 @@
       if (el) el.value = '';
       if (!_searchQuery) { syncSearchControls(); return; }
       _searchQuery = '';
+      applyRelevanceDefault();
       syncSearchControls();
       loadRecipes();
       if (el) el.focus();
@@ -4387,6 +4446,7 @@
       _searchQuery = (draft.q || '').toLowerCase();
       const sb = document.getElementById('sidebar_search');
       if (sb) sb.value = draft.q || '';
+      applyRelevanceDefault();
       syncSearchControls();
       persistSidebarState();
       closeFilterDialog();
@@ -4404,6 +4464,7 @@
       _searchQuery = '';
       const sb = document.getElementById('sidebar_search');
       if (sb) sb.value = '';
+      applyRelevanceDefault();
       FILTER_FACETS.forEach(f => { const el = _appliedEl(f); if (el) el.value = ''; });
       syncSearchControls();
       persistSidebarState();
@@ -4442,6 +4503,7 @@
                                 // the same offset is requested twice and the
                                 // rows appear twice.
     let _listFacets = {};       // latest per-facet counts, for the dropdowns
+    let _listSuggestions = [];  // semantic near-misses, only ever on a zero-match search
     let _listSeq = 0;           // request generation; a slow reply from an
                                 // abandoned filter must not overwrite a newer one
 
@@ -4478,6 +4540,7 @@
         _listOffset  = _recipesCache.length;
         _listHasMore = !!d.hasMore;
         _listFacets  = d.facets || {};
+        _listSuggestions = Array.isArray(d.suggestions) ? d.suggestions : [];
         syncFilterButton();
         renderRecipes();
       } catch (err) {
@@ -4524,6 +4587,41 @@
         ? `${_listTotal}` : `${_listMatched}/${_listTotal}`;
     }
 
+
+    // Semantic near-misses, shown ONLY when the words matched nothing. Kept
+    // visually and textually apart from results: these are what the corpus has
+    // that is CLOSE to what was asked, which is a different claim from "this is
+    // what you asked for". Merging them into the list would make a search that
+    // failed look like one that succeeded.
+    function renderSuggestions() {
+      if (!_listSuggestions.length) return;
+      const head = document.createElement('li');
+      head.className = 'suggest-head';
+      head.textContent = 'You might mean';
+      listEl.appendChild(head);
+      _listSuggestions.forEach(sg => {
+        const li = document.createElement('li');
+        li.className = 'suggest-item';
+        const t = document.createElement('span');
+        t.className = 'suggest-title';
+        t.textContent = sg.name || '[Untitled]';
+        li.appendChild(t);
+        if (sg.dish) {
+          const d = document.createElement('span');
+          d.className = 'suggest-dish';
+          d.textContent = sg.dish;
+          li.appendChild(d);
+        }
+        li.onclick = async () => {
+          const uid = (document.getElementById('user_id')?.value || '1');
+          try {
+            const r = await fetch(`${API}/recipes/${encodeURIComponent(sg.recipe_id)}?user_id=${encodeURIComponent(uid)}`);
+            if (r.ok) loadForm(await r.json());
+          } catch (e) { /* leave the list as it is */ }
+        };
+        listEl.appendChild(li);
+      });
+    }
 
     // Draws whatever loadRecipes/loadMoreRecipes put in _recipesCache. It reads
     // no control values any more: the query is assembled in _listQuery and
@@ -4694,7 +4792,14 @@
       }
       if (rows.length === 0) {
         resetListWindow();
-        listEl.innerHTML = '<li class="empty-state">No matches.<br>Loosen the filters.</li>';
+        listEl.innerHTML = '';
+        const empty = document.createElement('li');
+        empty.className = 'empty-state';
+        empty.innerHTML = _searchQuery
+          ? 'Nothing matches those words.<br>Try fewer, or loosen the filters.'
+          : 'No matches.<br>Loosen the filters.';
+        listEl.appendChild(empty);
+        renderSuggestions();
         return;
       }
 
