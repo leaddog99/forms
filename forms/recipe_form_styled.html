@@ -1291,6 +1291,26 @@
     #feedback.warn { background: #fff8e6; color: #8a6100; border-left: 3px solid #d79a2b; }
     #feedback:empty { display: none; }
 
+    /* Saved acknowledgement. The persistent signal is the button's own "Saved"
+       label; this is the momentary one that says it happened JUST NOW, on the
+       element the user is already looking at because they just clicked it.
+       Runs on the disabled/clean state, so it reads as confirmation rather
+       than as a control asking to be pressed again. */
+    @keyframes bcc-just-saved {
+      0%   { background: #2e7d32; color: #fff; transform: scale(1); }
+      15%  { background: #2e7d32; color: #fff; transform: scale(1.05); }
+      100% { background: none;    color: inherit; transform: scale(1); }
+    }
+    button#saveBtn.just-saved,
+    button#saveBtn.just-saved:disabled {
+      animation: bcc-just-saved 1.4s ease-out 1;
+      opacity: 1;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      button#saveBtn.just-saved,
+      button#saveBtn.just-saved:disabled { animation-duration: 0.01s; }
+    }
+
     .empty-state { text-align: center; padding: 20px; color: var(--muted); font-size: 0.85em; }
 
     /* Image Drop Zone */
@@ -2788,6 +2808,19 @@
       u.textContent = "Uncertain";
       sel.appendChild(u);
     })();
+
+    // Momentary "that just happened" on the Save button. Retriggered by
+    // removing the class and forcing a reflow — without that, a second save in
+    // a row would not replay the animation, and the one case that most needs
+    // acknowledging is the one where nothing else on screen changes.
+    function flashSaved() {
+      const b = document.getElementById('saveBtn');
+      if (!b) return;
+      b.classList.remove('just-saved');
+      void b.offsetWidth;
+      b.classList.add('just-saved');
+      setTimeout(() => b.classList.remove('just-saved'), 1600);
+    }
 
     function showFeedback(message, type = 'success') {
       feedback.textContent = message;
@@ -5556,24 +5589,26 @@
         if (res.ok) {
           const seqMsg = result.id != null ? ` (seq #${result.id})` : '';
           const verb = result.adopted ? 'updated existing record' : 'saved';
-          // New post-save UX (2026-05-29): clear the form + open the
-          // sidebar list. Treats each save as a discrete transaction
-          // — the user lands back at "the list" and chooses what to do
-          // next (open another recipe, or start a fresh entry). The
-          // older "reload the just-saved record back into the form"
-          // pattern was confusing on serial saves (form looked the
-          // same after each one) AND combined with the URL-field-not-
-          // cleared bug, made the next save overwrite the prior row.
-          loadRecipes();
-          // Programmatic equivalent of clicking Clear — same handler
-          // ensures every name-less field is wiped (originalUrl
-          // chief among them). Don't dispatch a click event because
-          // updateButtonStates would race with our feedback show.
-          document.getElementById("clearBtn").click();
-          // Open the sidebar so the user lands on "the list."
-          if (window.LibraryShell && typeof LibraryShell.openSidebar === 'function') {
-            try { LibraryShell.openSidebar(); } catch (e) { /* ignore */ }
-          }
+          // POST-SAVE UX, reversed 2026-08-20 at the curator's request.
+          //
+          // From 2026-05-29 this cleared the form and sent you back to the
+          // list, treating each save as a discrete transaction. The reasons
+          // were real at the time: serial saves looked identical because the
+          // record was reloaded unchanged, and a URL field that failed to clear
+          // could make the next save land on the previous row.
+          //
+          // But clearing answers "did that work?" by destroying the evidence.
+          // You save, the recipe you were reading vanishes, and you have to go
+          // find it again to confirm anything happened. Same complaint as the
+          // criteria dialog closing the sidebar behind it, and the same answer:
+          // keep what the user is looking at, and say plainly what changed.
+          //
+          // The two original hazards are handled elsewhere now — the form
+          // reloads nothing (it simply stays as saved, which is by definition
+          // what the DB holds), and populateFormFromRecipe clears the seq id so
+          // a later extract cannot inherit this row's identity. Clear is still
+          // one button away for starting something new.
+          loadRecipes();   // refresh the list so the row appears/moves
           // Success feedback after the click handler clears it.
           const overrideMsg = forceSave ? ' (override)' : '';
           // Say WHY there is no score. Scoring runs at save, and this handler
@@ -5589,7 +5624,8 @@
               `Recipe ${verb}${seqMsg}${overrideMsg} — but NOT SCORED: ${unscored}`,
               'warn');
           } else {
-            showFeedback(`Recipe ${verb}${seqMsg}${overrideMsg} — pick a recipe or paste/drop another.`, 'success');
+            showFeedback(`✓ Recipe ${verb}${seqMsg}${overrideMsg}. Still open for editing.`, 'success');
+            flashSaved();
           }
         } else {
           showFeedback(`Error: ${typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail)}`, 'error');
@@ -7547,6 +7583,17 @@
       // recipe_id is now app-minted at extract time and lives on r.id. The
       // calling extract handler sets the form field; we just don't clear it
       // here anymore.
+      //
+      // The SEQ id is different and must be cleared: it is the DB row number,
+      // and a fresh extract has no row. It used not to matter because saving
+      // wiped the form immediately afterwards; now that the form stays put, a
+      // leftover seq from the previously saved recipe would make Save paint
+      // itself "Saved" for a brand-new extraction and enable Delete against a
+      // row this form is no longer showing. Never sent to the server — it is
+      // the client's own answer to "does this exist yet" — so this is about the
+      // buttons telling the truth.
+      document.getElementById("recipe_seq_id").value = "";
+      _isSavedRecipe = false;
 
       // Basic fields
       document.getElementById("name").value = r.name || "";
