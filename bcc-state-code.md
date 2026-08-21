@@ -5069,13 +5069,187 @@ would.
 
 ---
 
-## START HERE — state of play as of 2026-08-20
+## Session log — 2026-08-20 (afternoon/evening) — the recipe list stops loading the whole corpus, and search becomes search
 
-**Branch `split/enrichment-api`, clean and pushed through `7f7e61b`.** The server was
-restarted 2026-08-18 19:30 and is current through `3da9f75`; only `7f7e61b` (cosmetic —
-the anonymous branch of `/auth/me`) awaits the next restart. **Jobs always run current
-code** — they launch out of process via `Popen` — so only the server and the forms ever
-lag a restart.
+The day started as "the sidebar is slow on the iPad" and ended with the list paged, faceted
+and full-text searchable. Sixteen commits, `fbefce3` through `f2d7d9d`.
+
+### The performance problem, measured before touching anything
+
+`GET /recipes?user_id=0&summary=1` was **6.89 MB and 2.2s**, and `renderRecipes` built
+**~75,600 DOM elements** in one synchronous pass. The slim projection's own comment still
+claimed "~700KB" — true at the 702 rows it was audited against in June, against 5,435 now.
+The projection had not regressed; the corpus grew 7.7x underneath it.
+
+Three separate costs, fixed three separate ways:
+
+- **No compression existed at all.** The server returned identical bytes whether or not the
+  client sent `Accept-Encoding`. `GZipMiddleware` plus trimming four fields the cards never
+  read (`classification.story` and `editorial.opinion` fed a dead `isEnriched()`; `image[]`
+  loses to `previewImage` on 97% of rows; `exceptionalism.basis` carries match provenance no
+  tooltip prints) took it to **4.40MB raw / 0.66MB gzipped**.
+- **The DOM.** A card FACTORY plus a windowed renderer: 75,600 elements to 880.
+- **Search ran on every keystroke** over the whole cache. Now submitted — Enter or the
+  magnifier — at the curator's request.
+
+### Then the reframe: the trigger moved, the cost did not
+
+Defaulting the sidebar to the user's own collection took boot from 660KB/2.0s to 19KB/0.25s
+— but the curator caught the framing: *"the same load problem... it doesn't go away, it's
+just triggered by a button and not the init default."* Every Master click still paid in
+full. That correction is why the rest of the day happened, and it is saved as
+`feedback_deferred_is_not_fixed`.
+
+### Sorting moved into SQL, and the verification found three things
+
+Each of the 9 sort orders was run against the browser's own comparator over the same 5,435
+rows, counting inversions. None of what it found was predicted:
+
+1. **Ties are the normal case, so neither side was deterministic.** Rows in a tie group:
+   page_authority 99.9%, power 99.9%, chapter 100%, ou_score 92.9% — and created_at **0%**.
+   created_at was also the only sort that matched, which is the experiment proving the rest
+   was tie-ordering rather than wrong ordering. Every sort now ends in a total order,
+   breaking ties on traffic then id per `0e2be0a`.
+2. **"Quality blend" had been silently broken.** Its second key is `recipeScore`, which
+   `_recipe_list_data` never shipped — so the client read `undefined` on every row and the
+   sort degraded to OU-then-date. Present on 5,434 of 5,435 rows in the DB.
+3. **The collation gap was punctuation, not accents.** Accents were the predicted problem
+   (NOCASE reorders 1,083 positions) but the residual was straight-vs-curly apostrophes in
+   "Chef John's" — the corpus holds both. Four foldings measured: accent-only 45 inversions,
+   plus-typographic-to-ASCII **26**, plus-drop-apostrophes 42, plus-drop-ALL-punctuation
+   **114**. The intuitive move is the worst of the four.
+
+`bcc_sortkey` is registered on the connection factory and deliberately NEVER in a generated
+column or index: SQLite accepts it there, and then every connection that has not registered
+it — `backup_db`, the jobs, DB Browser — fails with "no such function".
+
+### Facets, and the rule that settles them
+
+**Anything the UI can filter or sort on gets a real indexed SQL surface, never a
+json_extract at query time.** `DISTINCT cuisine + counts` cost 471ms through JSON and
+**0.4ms** through an indexed generated column — the difference between a dropdown you can
+rebuild on every selection and one you cannot.
+
+Source is `_identity`, chosen on COVERAGE: `_identity.cuisine`/`.ethnicity` are on **100%**
+of rows in both tables, against `provenance.ethnicity` at 6.2% and site-declared
+`recipeCuisine` at 86% of publisher-typed free text. 151 cuisines, 281 ethnicities. They are
+not synonyms and both are kept — ethnicity carries Roman, Sicilian, Venetian, Southern.
+
+`GET /recipes/search` returns one page AND every dropdown's options in a single request.
+Each facet is counted with every OTHER filter applied but not its own, which is what makes a
+zero-result selection unreachable rather than merely unlikely. Verified across every
+combination tried: no option is ever offered with a count of zero.
+
+### Search was never search
+
+It was `LIKE` on a contiguous substring. "shrimp and corn chowder" could not match "Corn and
+Shrimp Chowder", and "corn" matched Pop-corn Shrimp because a substring has no word
+boundaries. 31 master rows have shrimp AND corn in their ingredients and were invisible
+entirely.
+
+FTS5 over name + dish + ingredients + cuisine, `porter unicode61 remove_diacritics 2`.
+Index builds in 0.4s (~10MB), queries run 7-35ms against 380-440ms:
+
+    'chowders'      21   STEMMED — the FREETEXT half SQL Server gives you
+    'bechamel'       9   incl. Bechamel Sauce (accented in the data)
+    'risotto'       26   via likelyDish, whatever the title says
+    "Chef John's"    5   incl. BOTH apostrophe variants
+    'chowder -clam'  4   exclusion
+    '"clam chowder"' 15  phrase
+
+**Why both engines.** The identity vector deliberately excludes the title — measured
+2026-06-11, adding it nearly doubled intra-dish L2 (0.35 to 0.68). The curator spotted the
+oddity: *"the weird part is we don't embed the name."* Demonstrated: "Chef John's" has 4
+literal title matches and the vector returns NONE of them; "Ina Garten" returns Arnold
+Palmer at 0.35, the noise floor. Conversely "something brothy and warming for a cold night"
+contains no recipe words and the vector nails it. So they are not redundant engines with one
+weaker — **the corpus has two retrieval surfaces**, the name a publisher gave it and the
+dish it actually is. `likelyDish` is the one field BOTH index.
+
+Semantic runs ONLY on a lexical miss, in its own response field, never merged into rows.
+Two gates found by watching it misbehave: `((((` was embedding successfully and returning
+"test" and Tonkotsu Ramen at 700ms — the slowest path in the endpoint — so a query yielding
+no usable FTS expression is now skipped; and a **0.45 similarity floor**, because a nearest
+neighbour always exists (real hits at 0.69 and 0.49; the junk run topped out at 0.46).
+
+Also settled: raw input NEVER reaches `MATCH`. FTS5 has its own grammar, so an unbalanced
+quote or a bare `-` is a syntax error — a 500 from the one control where users type
+anything. Two grammar traps found by testing rather than reading: `NOT` is BINARY, so the
+natural-looking "AND NOT" is invalid; and a leading `NOT` has no left operand, so an
+all-exclusions query cannot be expressed and is refused rather than guessed at.
+
+### Regressions I introduced and fixed the same day
+
+- **GZip swallowed the live job log.** `/jobs/<id>/stream` is SSE, and compression is a
+  buffering operation. A publisher-refresh ran to completion, wrote a 127KB log and 30
+  recipes, and BOTH viewers showed nothing. `_NoGzipForSSE` drops `Accept-Encoding` on
+  `Accept: text/event-stream`, registered AFTER GZip because Starlette builds the stack in
+  reverse.
+- **A TDZ ReferenceError at boot** — the top-level `sidebar` const is declared ~700 lines
+  below the first render, and `if (sidebar)` does not guard that: the guard is the throwing
+  read.
+
+### UX reversals, all in the same direction
+
+The curator's framing: keep what the user is looking at.
+
+- The criteria dialog was **closing the sidebar behind it** — a modal `<dialog>` is in the
+  TOP LAYER, so `sidebar.contains(e.target)` is false for every control in it, and "Show
+  recipes" filtered the list and hid it in one gesture.
+- **Clear all only reset the draft**, leaving the list and badge filtered — it read as a
+  button that did nothing.
+- `defaultOpenSidebar()` **never worked**: it calls `LibraryShell.openSidebar()`, which reads
+  `state.sidebar`, populated only by `LibraryShell.init()` — and this page calls `initNav()`
+  and never `init()`.
+- **Saving no longer closes the recipe** (reversing 2026-05-29). The "Saved until a change is
+  detected" half was already built and simply never visible, because clearing the form wiped
+  its content out from under `paintRecipeSaveState()`.
+- **The dialogs were never centred.** `* { margin: 0 }` overrides the UA's `margin: auto`,
+  which is what centres a modal — the existing error dialog had it too.
+
+### Data cleanups
+
+`scripts/normalize_recipe_fields.py` (dry-run by default), 3,415 rows: **3,371 timestamps
+with no timezone** — proven UTC, not assumed (master #3512 has created_at naive 18:23:14 and
+updated_at aware 18:25:40+00:00, so a local reading would have it created four hours after
+it was updated); 43 names with stray whitespace incl. non-breaking spaces; 1 row with the
+literal "<UNKNOWN>" as its cuisine, ethnicity AND technique, now scrubbed at the extractor.
+
+**Embeddings: 0 failures, 0 warnings** for the first time. 1,426 rows re-embedded (~$0.002).
+The dry-run said 1,426 rather than the 48 reported stale because a NULL hash never matches —
+which reconciles both tools exactly (46 stale + 1,348 unstamped = 1,394 master). Root cause
+fixed: the save path wrote the embedding and never recorded what text produced it, so every
+new row arrived unverifiable and would be redone on every pass. `dishes` stamped
+model/hash/timestamp from the start; the recipe tables never did.
+
+### Numbers that summarise the day
+
+| | start | end |
+|---|---|---|
+| boot payload, master | 6.89 MB uncompressed | **15.7 KB** |
+| boot time | ~2.2 s | **0.042 s** |
+| DOM elements | ~75,600 | ~1,400 |
+| text search | 380-440 ms, substring | **7-35 ms**, stemmed full-text |
+| default sort, LIMIT 200 | 187 ms | **0.0 ms** |
+
+## START HERE — state of play as of 2026-08-20 (end of day)
+
+**Branch `split/enrichment-api`, pushed through `f2d7d9d`.** The server was restarted
+2026-08-20 23:01 and is current through `6d58fc0`. **One commit awaits a restart:**
+`f2d7d9d` carries the two gates on the semantic-suggestion leg (skip when the query yields
+no usable FTS expression; 0.45 similarity floor). Until that restart, a junk query like
+`((((` still returns noise suggestions — everything else in it is client-side and already
+live. **Jobs always run current code** — they launch out of process via `Popen` — so only
+the server and the forms ever lag a restart.
+
+**The recipe list was rebuilt today.** It no longer loads the collection: `GET
+/recipes/search` returns one page (100), the counts, and every dropdown's cascaded options
+in a single request, and the sidebar pages it on scroll. Boot went 6.89MB/2.2s to
+15.7KB/0.042s. Sorting, filtering and text search are ALL server-side now — a client-side
+sort over a paged fetch orders one page and calls it the answer, which is the trap this
+avoids. Search is FTS5 (stemmed, accent-folded, phrase/exclusion) with semantic near-misses
+shown separately on a zero-match. See the session log directly above for the measurements
+and for the three things the sort verification found.
 
 **A pre-commit hook is now live** — `git config core.hooksPath scripts/hooks`. It blocks
 F821/F822/F811/E9 on staged files and prints everything else as advisory. If a commit is
@@ -5091,7 +5265,32 @@ orders below cook rework.
 code, which is why the bookmarklet, the forms and interactive extract lag a restart while
 harvests do not.
 
-**DO FIRST when you return:** restart, then re-capture
+**TWO SEARCH EXTENSIONS the curator raised at the end of the day, to discuss before
+building:**
+
+1. **Search by site / publisher** — typing `atk` should find America's Test Kitchen. Not
+   indexed at all today (`atk` -> 0, `americas test kitchen` -> 0). `source_host` already
+   exists as an indexed generated column on both tables, so this is either a fifth FTS
+   column, a fourth facet dropdown, or both. A facet has the advantage that the values are
+   enumerable and cascade; free text has the advantage that `atk` is an abbreviation nobody
+   would pick from a list. Probably wants BOTH, with `_source.siteName` (the friendly name
+   the cards already display) as the searchable text and `source_host` as the facet value.
+
+2. **Search by MAJOR ingredient** — "greek with olives". Partly works already:
+   `q=olives` + `cuisine=Greek` returns 459 because the FTS `ingredients` column indexes
+   every recipeIngredient line. But that is the problem, not the win — porter stems
+   `olives` and `olive` to one root, so it is matching **olive oil**, which is in nearly
+   every Greek recipe. It finds any MENTION, not "this dish is about olives".
+   `_identity.primaryIngredients` is the field that means "about" (97.4% coverage) and is
+   NOT in the index. Adding it as its own FTS column would allow ranking or filtering on
+   primary-vs-mentioned. Note this is adjacent to, but cheaper than, the queued ingredient
+   quantity parsing — primaryIngredients is already a curated short list.
+
+**DO FIRST when you return:** restart (see above — `f2d7d9d` is waiting), then confirm a
+fresh save stamps `embedding_text_hash`, which is the fix that stops `check_embeddings`
+re-reporting every newly saved row forever.
+
+**Older DO-FIRST, still open:** re-capture
 `m.xiachufang.com/recipe/107744561` with Chrome translate OFF. Everything for it is in
 place — translation, both images, the relaxed save gate, and now the publisher's
 `extract_notes` hint — but that row has never completed a save. That single capture
