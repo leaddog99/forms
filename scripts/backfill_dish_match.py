@@ -40,6 +40,14 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# The Windows console is cp1252, and recipe names are not. Printing a Greek or
+# Chinese title raised UnicodeEncodeError mid-row on the first run and took 16
+# writes down with it — see the ordering note in the loop below.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from input.pipeline.embeddings import bytes_to_vec          # noqa: E402
 from input.pipeline import vector_store                     # noqa: E402
 from input.pipeline import system_config as _cfg            # noqa: E402
@@ -116,15 +124,11 @@ def main() -> int:
                 "matched_by": "backfill_dish_match",
             }
 
-            if is_conf:
-                confident += 1
-                by_dish[best["name"]] = by_dish.get(best["name"], 0) + 1
-                name = (d.get("name") or "")[:44]
-                print(f"  [{n}/{len(rows)}] {rid:6} {name:<44} -> "
-                      f"{best['name']!r} d={best['distance']:.3f}")
-            else:
-                weak += 1
-
+            # WRITE FIRST, REPORT SECOND. On the first run the print came
+            # first, so a title the console could not encode raised inside the
+            # progress line and the except below swallowed the row — 16 rows
+            # were counted as matched and never written. Persistence must not
+            # depend on whether a name is printable.
             if not args.dry_run:
                 # `data` only. NOT updated_at — see the module docstring.
                 conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
@@ -135,7 +139,15 @@ def main() -> int:
                         conn, rid, vec, chapter=ch, dish=best["name"])
                 if n % 200 == 0:
                     conn.commit()
-                    print(f"  … committed through row {n}")
+
+            if is_conf:
+                confident += 1
+                by_dish[best["name"]] = by_dish.get(best["name"], 0) + 1
+                name = (d.get("name") or "")[:44]
+                print(f"  [{n}/{len(rows)}] {rid:6} {name:<44} -> "
+                      f"{best['name']!r} d={best['distance']:.3f}")
+            else:
+                weak += 1
         except Exception as e:
             failed += 1
             print(f"  [{n}] row {rid} FAILED: {type(e).__name__}: {e}")
