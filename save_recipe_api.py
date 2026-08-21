@@ -9893,6 +9893,50 @@ def _sanitize_scoring(recipe: dict, url_normalized: str = "") -> None:
         print(f"[SCORING] unscored: {url_normalized or '(no url)'} — {reason}")
 
 
+def _stamp_dish_match(conn, recipe_dict: dict, rec_vec, *, label: str) -> bool:
+    """Infer which canonical dish a recipe is, from the vector we just built,
+    and persist it on `_match`. Returns True if `_match` was written.
+
+    Gated on NOT ALREADY KNOWING THE DISH — not on which table the row is in.
+    That distinction is the bug this fixes. A master row from a dish refresh is
+    curated FOR a dish and carries `_master.dish` as ground truth, so inferring
+    one would be noise; but a master row captured interactively (bookmarklet, or
+    a hand-added URL) carries no `_master.dish` at all, and this used to run only
+    for user rows. The result was that every interactive master capture stored a
+    vector and then threw away the one thing the vector was for: the form's
+    "Matched dish" chip read "—" on rows that WERE embedded, which reads as
+    "this never got embedded".
+
+    Reuses the vector already computed — no second embed, no API call. The dish
+    index is local, so this is a sqlite-vec KNN query and nothing more.
+    """
+    from input.pipeline import system_config as _cfg
+    from input.pipeline import vector_store
+    # L2 distance <= MATCH_MAX_DIST is a confident match (validated 2026-06-02:
+    # Banana Bread 0.20 / Chicken Piccata 0.25 confident; Mac&Cheese 1.02 /
+    # Salmon 0.98 = no real dish in the set -> not confident).
+    max_dist = float(_cfg.get_setting("dish_match_max_distance", 0.85))
+    cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
+    if not cands:
+        return False
+    best = cands[0]
+    confident = best["distance"] <= max_dist
+    recipe_dict["_match"] = {
+        "dish": best["name"] if confident else None,
+        "distance": round(best["distance"], 4),
+        "confident": confident,
+        "candidates": [
+            {"dish": m["name"], "distance": round(m["distance"], 4)}
+            for m in cands
+        ],
+        "matched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    print(f"[MATCH] {label} -> {best['name']!r} d={best['distance']:.3f} "
+          f"confident={confident}  candidates="
+          + ", ".join(f"{m['name']}({m['distance']:.2f})" for m in cands))
+    return True
+
+
 def _save_recipe_core(payload: dict) -> dict:
     """Synchronous core of POST /recipes. Same behavior as the endpoint —
     same return shape, same HTTPException raises — but callable
@@ -10383,49 +10427,53 @@ def _save_recipe_core(payload: dict) -> dict:
                         if user_id == 0:
                             # Master: store the source-of-truth vector + the
                             # derived KNN index the recommender reads.
-                            conn.execute(
-                                "UPDATE master_recipes SET embedding = ?, "
-                                "embedding_model = ?, embedding_text_hash = ?, "
-                                "embedding_updated_at = ? WHERE id = ?",
-                                (vec_to_bytes(rec_vec), EMBED_MODEL, _emb_hash,
-                                 _emb_now, seq_id),
-                            )
                             vector_store.enable_vec(conn)
                             ch = ((recipe_dict.get("classification") or {}).get("chapter") or None)
                             dish_for_vec = (recipe_dict.get("_master") or {}).get("dish") or None
+                            # A master row that does NOT already know its dish
+                            # gets one inferred, exactly like a user row. Dish
+                            # refreshes curate FOR a dish and carry _master.dish
+                            # as ground truth; an interactive capture carries
+                            # nothing, and used to keep nothing — embedded, but
+                            # with the "Matched dish" chip empty, which reads as
+                            # "it never got embedded".
+                            _stamped = False
+                            if not dish_for_vec:
+                                _stamped = _stamp_dish_match(
+                                    conn, recipe_dict, rec_vec,
+                                    label=f"master recipe {seq_id}")
+                                dish_for_vec = (recipe_dict.get("_match") or {}).get("dish") or None
+                            if _stamped:
+                                # _match changed the row, so `data` goes back too.
+                                # compose_recipe_text never reads _match, so the
+                                # hash stamped above is still the right one.
+                                conn.execute(
+                                    "UPDATE master_recipes SET embedding = ?, data = ?, "
+                                    "embedding_model = ?, embedding_text_hash = ?, "
+                                    "embedding_updated_at = ? WHERE id = ?",
+                                    (vec_to_bytes(rec_vec), json.dumps(recipe_dict),
+                                     EMBED_MODEL, _emb_hash, _emb_now, seq_id),
+                                )
+                            else:
+                                conn.execute(
+                                    "UPDATE master_recipes SET embedding = ?, "
+                                    "embedding_model = ?, embedding_text_hash = ?, "
+                                    "embedding_updated_at = ? WHERE id = ?",
+                                    (vec_to_bytes(rec_vec), EMBED_MODEL, _emb_hash,
+                                     _emb_now, seq_id),
+                                )
                             vector_store.upsert_recipe_vector(
                                 conn, seq_id, rec_vec, chapter=ch, dish=dish_for_vec,
                             )
                             print(f"[VEC] upserted master recipe {seq_id} (dish={dish_for_vec!r}, chapter={ch!r})")
                         else:
-                            # User recipe: store the vector AND match it to a dish
-                            # (master rows already carry _master.dish). Reuse the
-                            # vector we just computed — no second embed. L2 distance
-                            # <= MATCH_MAX_DIST is a confident match (validated
-                            # 2026-06-02: Banana Bread 0.20 / Chicken Piccata 0.25
-                            # confident; Mac&Cheese 1.02 / Salmon 0.98 = no real dish
-                            # in the set → not confident). Persisted as `_match` so
-                            # the form + future user-recipe scoring can read it.
-                            from input.pipeline import system_config as _cfg
-                            MATCH_MAX_DIST = float(_cfg.get_setting("dish_match_max_distance", 0.85))
+                            # User recipe: store the vector AND match it to a dish.
+                            # Same helper the master branch uses — the rule is
+                            # "infer a dish when the row doesn't know one", and a
+                            # user row never knows one.
                             vector_store.enable_vec(conn)
-                            cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
-                            if cands:
-                                best = cands[0]
-                                confident = best["distance"] <= MATCH_MAX_DIST
-                                recipe_dict["_match"] = {
-                                    "dish": best["name"] if confident else None,
-                                    "distance": round(best["distance"], 4),
-                                    "confident": confident,
-                                    "candidates": [
-                                        {"dish": m["name"], "distance": round(m["distance"], 4)}
-                                        for m in cands
-                                    ],
-                                    "matched_at": datetime.now(timezone.utc).isoformat(),
-                                }
-                                print(f"[MATCH] user recipe {seq_id} -> {best['name']!r} "
-                                      f"d={best['distance']:.3f} confident={confident}  candidates="
-                                      + ", ".join(f"{m['name']}({m['distance']:.2f})" for m in cands))
+                            _stamp_dish_match(conn, recipe_dict, rec_vec,
+                                              label=f"user recipe {seq_id}")
                             conn.execute(
                                 "UPDATE recipes SET embedding = ?, data = ?, "
                                 "embedding_model = ?, embedding_text_hash = ?, "
