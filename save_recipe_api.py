@@ -3578,6 +3578,7 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
     Curator surface: it names the corpus's own gaps and joins keyword demand.
     """
     _require_perm(request, "admin_ui")
+    import unicodedata as _ud
     from input.pipeline.url_word_lists import name_tokens as _nt
     STOP = {"and", "the", "with", "a", "of", "in", "recipe", "recipes", "style"}
 
@@ -3644,7 +3645,18 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
 
     with _db() as conn:
         have = {r[0] for r in conn.execute("SELECT name FROM dishes")}
-        have_l = {n.strip().lower() for n in have}
+
+        def _fold(t):
+            """Case- AND accent-insensitive key for 'does this dish exist?'.
+            Plain lower() left `Tiramisù` on the uncovered list after `Tiramisu`
+            had been created and refreshed to a full cohort — the same
+            accent-blindness that made the URL pre-filter tokenise Fricassée as
+            `fricass`. Cheap now, and it only spreads as more accented dishes
+            are added (Ragù, Fricassée)."""
+            d = _ud.normalize("NFD", t or "")
+            return "".join(ch for ch in d if not _ud.combining(ch)).strip().lower()
+
+        have_l = {_fold(n) for n in have}
         counts: dict = {}
         chapters: dict = {}
         # Indexed by idx_mr_likelydish.
@@ -3654,7 +3666,7 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
                 "  FROM master_recipes "
                 " WHERE json_extract(data,'$._identity.likelyDish') IS NOT NULL"):
             k = (ld or "").strip()
-            if not k or k.lower() in have_l:
+            if not k or _fold(k) in have_l:
                 continue
             counts[k] = counts.get(k, 0) + 1
             if ch:
