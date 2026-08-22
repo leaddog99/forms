@@ -203,3 +203,62 @@ def put(url: str, render: bool, resp, meta: Optional[dict] = None) -> None:
             )
     except Exception as e:
         print(f"[page-cache] put failed ({url}): {e}")
+
+
+def purge(retain_days: Optional[float] = None, vacuum_at_pct: int = 20) -> dict:
+    """Delete cached pages older than `retain_days` and reclaim the space.
+
+    WHY THIS HAD TO EXIST. The TTL was read-only: `get()` refuses a row older
+    than `page_cache_ttl_days` (5) and nothing ever DELETED one, so the file grew
+    by ~100KB per candidate fetched, forever. Found 2026-08-22 at 1.28 GB across
+    12,253 pages, of which 65% had never been served once and 32% were older than
+    30 days — on a host with an RMA pending for confirmed CPU degradation.
+
+    Retention defaults to 30 days, SIX TIMES the serving TTL. By the cache's own
+    contract anything past 5 days is already dead, so a 6x margin costs a little
+    disk and survives someone raising the TTL later without silently throwing
+    away pages that would then have been serveable. Note the deleted rows include
+    paid `unblocker` fetches — that is correct, because `get()` would not have
+    returned them anyway, but it is the reason not to purge aggressively.
+
+    VACUUM only above `vacuum_at_pct` free pages: it rewrites the whole file and
+    briefly needs double the disk, which is not something to do nightly for a few
+    hundred rows. Returns a summary dict for the job log.
+    """
+    if retain_days is None:
+        try:
+            from input.pipeline import system_config as _cfg
+            retain_days = float(_cfg.get_setting("page_cache_retain_days", 30))
+        except Exception:
+            retain_days = 30.0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retain_days)).isoformat()
+    out = {"retain_days": retain_days, "deleted": 0, "vacuumed": False,
+           "bytes_before": 0, "bytes_after": 0}
+    try:
+        out["bytes_before"] = os.path.getsize(_DB_PATH)
+    except Exception:
+        pass
+    try:
+        with _connect() as conn:
+            out["deleted"] = conn.execute(
+                "DELETE FROM page_fetch_cache WHERE created_at < ?", (cutoff,)).rowcount
+            conn.commit()
+            free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            total = conn.execute("PRAGMA page_count").fetchone()[0] or 1
+            pct = 100.0 * free / total
+        out["free_pct"] = round(pct, 1)
+        if pct >= vacuum_at_pct:
+            # VACUUM needs its own connection with no open transaction.
+            vc = sqlite3.connect(_DB_PATH, isolation_level=None, timeout=120)
+            vc.execute("PRAGMA busy_timeout=120000")
+            vc.execute("VACUUM")
+            vc.close()
+            out["vacuumed"] = True
+        try:
+            out["bytes_after"] = os.path.getsize(_DB_PATH)
+        except Exception:
+            pass
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+        print(f"[page-cache] purge failed: {e}")
+    return out

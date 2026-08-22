@@ -375,6 +375,19 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "Off = always re-fetch (the old behavior).",
     },
     {
+        "key": "page_cache_retain_days",
+        "value": 30.0,
+        "type": "float",
+        "category": "Harvest",
+        "label": "Harvest page-cache RETENTION (days)",
+        "description": "How long a cached raw page is KEPT on disk before the nightly "
+                       "purge deletes it. Distinct from the TTL above, which only decides "
+                       "how long a page is still SERVED. Nothing deleted rows until "
+                       "2026-08-22, when the cache had reached 1.28 GB. Default 30 — six "
+                       "times the TTL, so raising the TTL cannot silently discard pages "
+                       "that would then have been serveable.",
+    },
+    {
         "key": "page_cache_ttl_days",
         "value": 5.0,
         "type": "float",

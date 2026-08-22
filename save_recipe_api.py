@@ -7731,6 +7731,33 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
 jobs_lib.register_handler("dish_rematch", _handle_dish_rematch_job)
 
 
+async def _handle_page_cache_purge_job(job: dict) -> dict:
+    """Nightly: delete cached raw pages past their retention and reclaim the disk.
+
+    The cache's TTL was read-only — `get()` refuses a page older than
+    `page_cache_ttl_days` (5) and nothing ever deleted one — so the file grew by
+    ~100KB per candidate fetched, with no ceiling. Found 2026-08-22 at 1.28 GB
+    across 12,253 pages, 65% of which had never been served once.
+
+    Retention is `page_cache_retain_days` (30), six times the serving TTL, so
+    nothing that could still be served is touched. VACUUM only fires above 20%
+    free pages, because it rewrites the whole file and briefly needs double the
+    disk — not a nightly cost for a few hundred rows.
+    """
+    def _run():
+        from input.pipeline import page_cache
+        return page_cache.purge()
+    summary = await asyncio.to_thread(_run)
+    mb = (summary.get("bytes_before", 0) - summary.get("bytes_after", 0)) / 1e6
+    print(f"[PAGE-CACHE] purge: deleted {summary.get('deleted', 0)} rows, "
+          f"free {summary.get('free_pct')}%, vacuumed={summary.get('vacuumed')}, "
+          f"reclaimed {mb:.0f} MB")
+    return summary
+
+
+jobs_lib.register_handler("page_cache_purge", _handle_page_cache_purge_job)
+
+
 async def _handle_ai_mediation_job(job: dict) -> dict:
     """SHADOW review of one run by the AI editor (docs/ai-editor-mediation.md).
 
