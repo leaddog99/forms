@@ -2,6 +2,10 @@ r"""backup_db.py — back up recipes.db to the ADAM data disk (and refresh the
 local .sql dump that lives in git).
 
 What it does, in order:
+  0. VERIFY THE DUMP RESTORES. It has silently failed to twice — generated
+     columns (2026-07-22) and the fts5 index (2026-08-20, caught 08-22). A
+     backup nobody restores is a hypothesis, so --verify replays the gz into a
+     throwaway db and compares row counts before you trust it.
   1. Writes a fresh logical dump to ./recipes.sql — every source-of-truth table
      as CREATE + INSERT text, rows in STABLE-KEY ORDER (not rowid) so the git
      diff stays small: an unchanged row keeps its position even when a table is
@@ -111,14 +115,26 @@ def write_sql_dump(db_path: Path, out_path: Path) -> list[str]:
     sqlite_vec.load(mem)
     mem.enable_load_extension(False)
     src.backup(mem)  # page-level copy; no module needed for the copy itself
+    # EVERY DERIVED INDEX, matched by what it IS rather than by name. vec0 was
+    # handled from the start; fts5 was not, and the search work of 2026-08-20
+    # added `master_recipes_fts` — which silently broke the dump, because an
+    # FTS5 INSERT carries the hidden `rank` and table-name columns and SQLite
+    # answers "SQL logic error" on restore. Nobody noticed for two days, since a
+    # backup nobody restores is a hypothesis. (Same lesson as 2026-07-22, when
+    # generated columns broke it the first time.)
+    #
+    # Both are rebuilt for free and offline from the source-of-truth tables that
+    # ARE in this dump: vec0 from the embedding BLOBs, fts5 from master_recipes
+    # by its own triggers. Pattern-matched so the NEXT virtual table added is
+    # excluded without anyone remembering to come back here.
     vts = [
         r[0]
         for r in mem.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND sql LIKE '%USING vec0%'"
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND (sql LIKE '%USING vec0%' OR sql LIKE '%USING fts5%')"
         )
     ]
-    for vt in vts:  # dropping a vec0 vtable also drops its shadow tables
+    for vt in vts:  # dropping a vtable also drops its shadow tables
         mem.execute(f'DROP TABLE IF EXISTS "{vt}"')
 
     # Real tables in creation order; their CREATE comes with each, indexes/
@@ -236,10 +252,65 @@ def run_backup(dest: Path = DEFAULT_ADAM, no_adam: bool = False) -> dict:
     return out
 
 
+def verify_dump(gz_path: Path, live_db: Path) -> int:
+    """Replay the gz into a throwaway db and compare row counts to the live one.
+
+    THIS EXISTS BECAUSE THE DUMP HAS SILENTLY FAILED TO RESTORE TWICE — generated
+    columns on 2026-07-22, and the fts5 index on 2026-08-20 (found 08-22, two days
+    of unrestorable backups). Both times the dump was written, committed and
+    trusted without anyone replaying it. A backup nobody restores is a hypothesis.
+    """
+    import gzip as _gz
+    import tempfile
+    print(f"verifying {gz_path.name} restores…")
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td) / "restore_check.db"
+        conn = sqlite3.connect(tmp)
+        try:
+            conn.executescript(_gz.open(gz_path, "rt", encoding="utf-8").read())
+            conn.commit()
+        except Exception as e:
+            print(f"  RESTORE FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+            print("  The dump in git is NOT a usable backup. Do not commit it.",
+                  file=sys.stderr)
+            conn.close()
+            return 1
+        live = sqlite3.connect(f"file:{live_db}?mode=ro", uri=True)
+        bad = 0
+        for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                 "AND name NOT LIKE 'sqlite_%' ORDER BY name"):
+            try:
+                a = conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+                b = live.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
+            except Exception:
+                continue
+            if a != b:
+                print(f"  ROW COUNT MISMATCH {t}: restored {a} vs live {b}",
+                      file=sys.stderr)
+                bad += 1
+        if bad:
+            conn.close()
+            live.close()
+            return 1
+        n = conn.execute("SELECT COUNT(*) FROM master_recipes "
+                         "WHERE embedding IS NOT NULL").fetchone()[0]
+        print(f"  RESTORE OK — every table's row count matches, "
+              f"{n} embedding BLOBs intact")
+        # Windows will not delete a file that still has an open handle, so the
+        # TemporaryDirectory teardown raises PermissionError unless both
+        # connections are closed first.
+        conn.close()
+        live.close()
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Back up recipes.db to ADAM.")
     ap.add_argument("--dest", type=Path, default=DEFAULT_ADAM,
                     help=f"backup folder (default {DEFAULT_ADAM})")
+    ap.add_argument("--verify", action="store_true",
+                    help="replay the gz into a throwaway db and compare row "
+                         "counts; the dump has silently failed to restore twice")
     ap.add_argument("--no-adam", action="store_true",
                     help="only refresh local recipes.sql; skip the ADAM copy")
     args = ap.parse_args()
@@ -264,6 +335,8 @@ def main() -> int:
             print(f".env NOT copied: {r['env_error']}", file=sys.stderr)
     elif args.no_adam:
         print("--no-adam: skipped ADAM copy.")
+    if args.verify:
+        return verify_dump(SQL, DB)
     return 0
 
 
