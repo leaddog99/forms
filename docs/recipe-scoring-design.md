@@ -728,3 +728,68 @@ both-ways test demanded above.
   product-resolution pipeline pointed at published titles.
 * **This still ranks provenance and demand, never the dish.** An AI cannot know what tastes
   better; anything claiming otherwise is laundering a guess.
+
+---
+
+## 14. THE THREE THRESHOLDS — MEASURED 2026-08-22
+
+**Read this before touching grading.** "Is this recipe that dish?" is asked in three
+places, and the three answer differently. The result is that most graded rows are
+graded against a cohort the system elsewhere says they do not belong to.
+
+| asked by | threshold | as L2 |
+|---|---|---|
+| save path, stamping `_match` | `dish_match_max_distance` | **0.60** |
+| `/recipes/similar-master` | derives from the same setting | **0.60** |
+| **grading** (`find_best_dish_match`) | `DEFAULT_MATCH_THRESHOLD` = cosine 0.55 | **0.949** |
+
+The first two were deliberately tied together on 2026-08-06, with a comment saying
+*"One question, one bar: derive it from the same setting so the two paths cannot
+drift apart again."* **Grading was never brought onto that bar** and still carries
+its own constant.
+
+### What it costs, measured
+
+2,280 master rows are graded via an embedding match. Of the 2,263 that also carry a
+`_match` distance:
+
+| rows | share | |
+|---:|---:|---|
+| 461 | 20.4% | inside the current match bar (<= 0.60) — genuinely matched |
+| 462 | 20.4% | opened by the 0.80 -> 0.60 change on 2026-08-22 |
+| **1,336** | **59.0%** | **already beyond even the OLD 0.80 bar — pre-existing** |
+| 4 | 0.2% | beyond grading's own bar (> 0.949) |
+
+**79% of embedding-graded rows are graded against a dish their own `_match` rejects,
+and three quarters of that predates the threshold change.** Worked examples, all real:
+
+    d=0.960  grade=A+   graded against  Hungarian Goulash
+    d=0.955  grade=D+   graded against  Chicken Cacciatore
+    d=0.951  grade=A+   graded against  Pasta & Noodles - Agnolotti
+    d=0.948  grade=A+   graded against  Cobbler
+
+At L2 0.96 in a 179-dish catalog, "matched" means *nearest neighbour*, not *belongs
+to*. **The nearest neighbour always exists** — distance says how far, never whether it
+belongs, which is the entire reason a threshold exists. A grade is a comparison
+against a cohort; comparing a recipe to an unrelated cohort produces a number, not a
+measurement.
+
+### What is NOT yet known
+
+* Whether tightening grading to 0.60 is right, or whether it just moves 79% of rows
+  onto `chapter-fallback` — which may be **more** honest (a chapter is a real
+  population) or **less** informative (n is huge, so everything regresses to the mean).
+* Whether the grade actually MOVES when the cohort changes. Nobody has re-graded the
+  same row against both cohorts and compared. That is the cheap experiment, and it
+  should come before any change: both cohorts already exist, so it costs a script.
+* Whether `explicit` (a curated `_master.dish`) and `embedding-match` grades are
+  comparable at all. 2,443 rows carry an explicit dish and are graded against it;
+  the rest are graded against a guess. Those two populations may not belong on one
+  scale.
+
+### The rule this is an instance of
+
+Any threshold that answers the same question in two places must come from ONE
+setting. Three copies is how this happened; the same class produced the
+64-vs-16-char `embedding_text_hash` and the two copies of the dish matcher, both on
+the same day.

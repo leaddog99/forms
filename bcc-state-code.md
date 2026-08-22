@@ -5475,7 +5475,141 @@ real catalog gap**; it had previously been graded against *Apple Pie*.
   thing for refreshes and the catastrophic thing here.
 
 
-## START HERE — state of play as of 2026-08-21 (end of day)
+## Session log — 2026-08-22 — a pre-filter that dropped the word it searched for, a fetch tier that called a challenge a success, and three thresholds that disagree
+
+Eight commits, `a71cbf7`..`c7d5da8`, on top of the 2026-08-21 nine.
+
+### The Tiramisu harvest was dropping 80% of its own results
+
+`URL-SKIP 38 of 47`. The url pre-filter keeps a URL only if its path names a known
+food word, and **`tiramisu` was not among the 2,085 learned words**, so every
+`/tiramisu/` URL was dropped BEFORE the fetch. Waffles was also 80%, Sugar Cookies 33%.
+
+The fix is not the missing word. **A run must never pre-filter away the word it
+searched for** — whatever the dish is called is, for that run, a food word by
+definition. `url_lacks_recipe_signal` takes `extra_food`; the dish batch passes the
+dish name plus its query words. Re-run: **38 skips -> 0, scored pool 47 -> 80**, same
+20 saved but from a 70% larger field.
+
+30 words from EXISTING dish names were unknown to the list, so this was waiting for
+Bougatsa, Shopska, Tabouleh, Scoglio and the rest. 14 unambiguous ones added to the DB
+list; `betty`, `bee`, `young`, `foo`, `norma`, `lok`, `lak` deliberately NOT — measured
+that only **6 of 179 dishes have no known food token**, so the rest already pass on a
+sibling ("Bee Sting Cake" on `cake`) and adding them globally buys nothing.
+
+**And a bug in the fix itself:** it tokenised the dish NAME with the same `[^a-z]+`
+split the URL tokeniser uses — right for a slug, wrong for the name. `Fricassée` gave
+`fricass`, `Ragù` gave `rag`, neither able to match the slug it was meant to rescue.
+`name_tokens()` folds accents first. Third time accent-blindness bit in two days.
+
+### memoriediangelina: the fetch tier was calling a challenge a success
+
+Every URL fell through to Wayback; 49 of 119 candidates were lost outright. Diagnosis
+went through two wrong answers before the right one:
+
+1. *"The site is anti-bot"* — no. `curl` got 200/583KB with no UA at all.
+2. *"Our Chrome/120 UA has rotted into a block"* — partly true (Chrome/140 got the full
+   article once) but NOT the cause, and it never reproduced.
+3. **The real one:** `fetch_with_ua_fallback` stopped at the first 2xx, and this WAF
+   answers the bot UA with **`202` and a 198-byte stub**. The chain "succeeded" on UA #1
+   and never tried the browser UA behind it. Every fallback in that list was dead code
+   against exactly the sites the fallback exists for.
+
+Worse, and separately: the soft-block check was gated on `unblocker`, which is off by
+default — so a block was returned as a successful direct fetch and handed to the
+extractor. Both fixed: block-check always runs, `unblocker` only decides whether we can
+escalate, and a stub no longer ends the UA search.
+
+**Settled by measurement:** one probe through the unblocker returned 200/583KB live on
+the URL that had failed twice. Run 920 with `fetch_strategy=unblocker`:
+
+    fetch failures  49 -> 0      scored pool  67 -> 116      winners  30 -> 30
+    9 of the 30 winners are NEW — Parmigiana di Melanzane, Carciofi alla Giudia,
+    Focaccia Genovese — invisible before because their pages had no snapshot.
+
+Two traps had to be cleared first or the re-run would have lied: all 70 cached pages
+for the host were `source='wayback'` (the cache would have served them back and the
+unblocker would never have been called), and the domain had recorded
+`content_obtainable='direct', 30 of 30, 100% yield` on a run where **zero** direct
+fetches succeeded.
+
+That last one was a real bug: the verdict came from the CONFIGURED flag, not the
+transport used. Now derived from `_source.archiveUrl`, which the save path already
+stamps, with `wayback` added to the enum — a materially different state from `direct`,
+because the content is a dated snapshot and any URL without one is lost.
+
+**Process note:** hammering a live publisher during diagnosis tripped its rate limiter
+and cost the clean measurement. One probe first, then reason.
+
+### Dish coverage became a page, and "possible split" became three answers
+
+`GET /dish-coverage` + Dishes/Coverage in the admin nav. It reports the gap between
+`_identity.likelyDish` (free LLM text, 2,808 names with no dish record) and `_match.dish`
+(a CLOSED set — a KNN over `dishes_vec`, so it can only ever return a dish that already
+exists; verified 125 distinct values, 0 outside the catalog).
+
+"Possible split" was one label over three cases wanting opposite actions, so it now
+classifies: **split** (14 — different dishes sharing a word, create it), **variant**
+(121 — same identity narrower, a JUDGEMENT since `docs/collections.md` §11 says variants
+are not the M2M case), **alias** (6 — same dish another spelling, a synonym not a dish).
+Rules earned by testing against the real 143 pairs; equal token sets were the miss in the
+first cut.
+
+**Search is fed by `likelyDish`, not the dish record** — proven by `elote` returning 19
+recipes all titled "Mexican Street Corn". So uncovered dishes are already findable; the
+coverage gap costs cohorts and ranking, NOT discoverability.
+
+### Prepared for the scoring session: §14 of the scoring design
+
+**79% of embedding-graded master rows are graded against a dish their own `_match`
+rejects**, because "is this recipe that dish?" is asked in three places with three
+answers — save path 0.60 L2, similar-master 0.60 L2, **grading 0.949 L2**. The first two
+were tied together on 2026-08-06 with a comment about not letting them drift; grading was
+never brought onto that bar. 59% of the mismatch predates the 0.80 -> 0.60 change.
+Full measurement, worked examples and the three unknowns are in
+`docs/recipe-scoring-design.md` §14.
+
+## START HERE — state of play as of 2026-08-22 (end of day)
+
+**NEXT SESSION IS A SCORING ENHANCEMENT.** Read, in this order:
+`docs/recipe-scoring-design.md` **§14 first** (the three-thresholds finding, measured
+2026-08-22), then **§12 Disproved** (it exists because these error messages describe the
+wrong cause — three claims have been re-made from scratch after being disproved), then
+**§13 Open**. The memories that bind: [[project_two_stage_selection]] (GOSPEL — harvest
+SELECTS on traffic, OU RANKS within that pool; never judge OU without the selection stage
+in front), [[project_ou_power_blend]], [[project_traffic_exceptionalism]],
+[[project_paid_pa_calibration]], [[feedback_verify_with_runtime_data]].
+
+**The open question §14 leaves, and the cheap experiment that should precede any change:**
+nobody has re-graded the same row against both its `explicit`/`embedding` cohort and its
+`chapter-fallback` cohort and compared the grades. Both cohorts already exist, so it costs
+a script, not a harvest. Tightening grading to 0.60 may just move 79% of rows onto
+chapter-fallback, which could be more honest (a chapter is a real population) or less
+informative (n is huge, so everything regresses to the mean). Measure before deciding.
+
+**RESTART OWED** — three server-side commits: `b156bb5` (split/variant/alias on
+/dish-coverage), `ccce3d4` (accent-folded dish matching), `c7d5da8` (obtainability
+transport + `wayback` enum). The fetch and harvest fixes do NOT need it — jobs run out of
+process via `Popen`, so the next harvest already has them.
+
+**Verify a restart by PID START TIME, never by hitting an endpoint that already existed:**
+
+    Get-CimInstance Win32_Process -Filter "Name like 'python%'" | Select ProcessId, CreationDate
+
+(A brand-new route is the one honest exception: `/dish-coverage` answering 401 rather than
+404 proved the new code was loaded.)
+
+**`dish_match_max_distance` is 0.6** (was 0.8, changed 2026-08-22 on measured data — see
+the band table in that day's log). It governs the save path and `/recipes/similar-master`.
+It does NOT govern grading, which is the whole point of §14. Change it through
+`POST /system-config`, never by SQL: the cache is a process-global that only `set_setting`
+clears, so a direct write leaves the running server on the old value.
+
+**`dish_rematch` runs nightly at 24h**, writing only rows whose verdict changed (verified:
+a second consecutive run scans 3,223 and writes 0). It exists because the CATALOG moves,
+not because recipes arrive — new recipes are matched at save. Check it actually fired.
+
+
 
 **Branch `split/enrichment-api`, nine commits today `e2aa17f`..`e1393d1`.** The server was
 restarted twice (10:13, 10:45) and is current through `739740c`. **A THIRD RESTART IS
