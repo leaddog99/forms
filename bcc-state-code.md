@@ -5571,7 +5571,45 @@ Full measurement, worked examples and the three unknowns are in
 
 ## START HERE — state of play as of 2026-08-22 (end of day)
 
-**NEXT SESSION IS A SCORING ENHANCEMENT.** Read, in this order:
+**NEXT SESSION IS A SCORING ENHANCEMENT — the shape, stated by the curator 2026-08-22:**
+*use what we have now to select the top 20/30/40, then apply a much more intelligent,
+AI-assisted analysis to the SELECTED recipes and grade them on a different, not-so-SEO-
+centric system.*
+
+That is the two-stage gospel extended to **three**: harvest SELECTS on traffic -> OU RANKS
+within that pool -> **NEW: an intelligent layer grades the survivors on non-SEO criteria.**
+Four things bind it before any design starts:
+
+* **This is NOT the cancelled AI-editor role, and the boundary must hold.**
+  [[project_ai_editor_mediation]] cancelled the AI *selection* role on 2026-08-12 because
+  demand data inverted its ranking (its #1 had 1,075 traffic against two floor-demotes at
+  96,775 and 77,242). Its stated future was *"commentary on the algorithmic top-10, never
+  re-ranking"* — and grading an already-selected set IS that future. The AI grades what the
+  algorithm chose; it does not choose. Do not let stage 3 quietly become stage 1 again.
+* **It narrows what §14 has to be right about.** If a second layer judges quality, the SEO
+  grade's job shrinks to "produce a defensible candidate set". Cohort mismatch still decides
+  WHICH rows reach stage 3, so it is not moot — but it stops being the last word on quality,
+  which is the more forgiving requirement.
+* **A non-SEO grading vocabulary already exists in the repo and is thrown away.**
+  `cook_validators.py` has 13 validators grading instruction SOUNDNESS — unit consistency,
+  mise completeness, appearance order, no-lookback, sub-steps, bundling. Cognitive-design
+  checks, not SEO. But they run only on cook-reworked rows: **16 of 5,851 master (0.3%)**,
+  and §13 Open already records *"the cook-rework validators already grade soundness and the
+  result is discarded."* That is the nearest existing thing to what is being asked for.
+* **It is the stated product pillar.** [[project_marketing_differentiation]] — cognitively-
+  grounded instruction design — and the thesis line *"the algos already ran; here are the
+  best, ranked."*
+
+**Standing caution for the design:** [[project_two_stage_selection]] says never judge a
+ranking without the selection stage in front of it, and the AI-editor cancellation is what
+happens when a model's taste is scored against real demand. Any stage-3 grade needs a way
+to be checked against something outside itself, or it is a guess wearing a number —
+`docs/recipe-scoring-design.md` §13 closes with exactly that warning: *"This still ranks
+provenance and demand, never the dish. An AI cannot know what tastes better; anything
+claiming otherwise is laundering a guess."* Stage 3 is an attempt on that problem and
+should be held to it.
+
+**Read, in this order:
 `docs/recipe-scoring-design.md` **§14 first** (the three-thresholds finding, measured
 2026-08-22), then **§12 Disproved** (it exists because these error messages describe the
 wrong cause — three claims have been re-made from scratch after being disproved), then
