@@ -3673,18 +3673,44 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
                 chapters.setdefault(k, {})
                 chapters[k][ch] = chapters[k].get(ch, 0) + 1
 
+        # Keyword demand: ONE scan of dish_keywords into a word-posting
+        # index instead of two LIKE '%name%' table scans PER uncovered name.
+        # The old shape was 568 names x 2 scans x 171k rows ~= 68s of serving
+        # time, which rendered as an empty page (found 2026-08-22, the day
+        # after the page shipped). Candidates come from the name's rarest
+        # token (exact-word match), then the full name is substring-verified
+        # against the keyword — same matches as the LIKE, minus only keywords
+        # where that token never appears as its own word ('chili' inside
+        # 'chilis'), which for a demand HINT is noise.
+        kw_rows = conn.execute(
+            "SELECT keyword, traffic FROM dish_keywords").fetchall()
+        kw_l = [(kw or "").lower() for kw, _ in kw_rows]
+        posting: dict = {}
+        for i, k in enumerate(kw_l):
+            for w in set(re.findall(r"[a-z]+", k)):
+                posting.setdefault(w, []).append(i)
+
+        def _kw_demand(name: str):
+            nl = name.lower()
+            toks = re.findall(r"[a-z]+", nl)
+            if not toks:
+                return 0, None
+            cands = min((posting.get(t, []) for t in toks), key=len)
+            total, top_kw, top_tr = 0, None, -1
+            for i in cands:
+                if nl in kw_l[i]:
+                    tr = kw_rows[i][1] or 0
+                    total += tr
+                    if tr > top_tr:
+                        top_tr, top_kw = tr, kw_rows[i][0]
+            return total, top_kw
+
         dish_toks = [(d, _toks(d)) for d in have]
         out = []
         for name, n in counts.items():
             if n < max(1, min_recipes):
                 continue
-            like = f"%{name.lower()}%"
-            traffic = conn.execute(
-                "SELECT COALESCE(SUM(traffic),0) FROM dish_keywords "
-                " WHERE lower(keyword) LIKE ?", (like,)).fetchone()[0]
-            top = conn.execute(
-                "SELECT keyword FROM dish_keywords WHERE lower(keyword) LIKE ? "
-                " ORDER BY traffic DESC LIMIT 1", (like,)).fetchone()
+            traffic, top_kw = _kw_demand(name)
             t = _toks(name)
             best, score = None, 0.0
             for d, dt in dish_toks:
@@ -3698,7 +3724,7 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
                 "dish": name,
                 "recipes": n,
                 "traffic": int(traffic or 0),
-                "top_keyword": top[0] if top else None,
+                "top_keyword": top_kw,
                 "chapter": max(ch_map, key=ch_map.get) if ch_map else None,
                 # 0.34 keeps one shared significant word out of it while still
                 # catching Cobbler/Peach Cobbler.
