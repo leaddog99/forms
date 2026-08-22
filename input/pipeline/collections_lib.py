@@ -374,7 +374,6 @@ def _serp_image_for(domain, title):
 def _input_dir():
     """<project>/input — a fallback search location (where the tracked sample exports
     live + where the old Scan-inbox MOVED files). No longer the only/required place."""
-    import os
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -392,7 +391,6 @@ def semrush_archive_dir():
     stayed tracked, which is why the gap was invisible). Nesting them one level
     down makes them tracked with no .gitignore change and no exception to
     forget."""
-    import os
     return os.path.join(_input_dir(), "semrush")
 
 
@@ -400,7 +398,6 @@ def semrush_inbox_dir():
     """The admin-configured folder SEMrush exports are saved to (read DIRECTLY — no
     copy-into-input step). `system_config.semrush_inbox_dir` if set, else the OS
     Downloads folder. This is the DEFAULT import location for the backlinks harvest."""
-    import os
     try:
         from input.pipeline import system_config as _cfg
         d = (_cfg.get_setting("semrush_inbox_dir", "") or "").strip()
@@ -423,7 +420,6 @@ def backlinks_search_dirs(extra=None):
     PARENT FOLDER to the search set so that if the exact file is STALE (re-downloaded with
     a new timestamp, or moved), a fresh matching export in that same folder is still found
     (newest match wins) instead of the override silently failing."""
-    import os
     cand = []
     if extra:
         for e in (extra if isinstance(extra, (list, tuple)) else [extra]):
@@ -475,7 +471,6 @@ def semrush_export_key(filename):
     the domain alone treats those as versions of each other and retires data
     that is not a duplicate.
     """
-    import os
     fn = _RE_DUP_SUFFIX.sub("", os.path.basename(filename or ""))
     m = _RE_EXPORT_ORG.match(fn)
     if m:
@@ -501,7 +496,7 @@ def archive_export(path):
     is theirs. Fully non-fatal: a harvest must never fail because bookkeeping
     did.
     """
-    import os, shutil
+    import shutil
     try:
         if not path or not os.path.isfile(path):
             return None
@@ -558,7 +553,7 @@ def backlinks_file_path(domain, extra_dir=None):
     `extra_dir` (domains.backlinks_dir) may be EITHER a folder OR an EXACT FILE PATH — if it
     points at an existing file (or a folder + filename), that file is used DIRECTLY, no
     auto-detect. This is the explicit per-domain "use THIS file" override."""
-    import os, glob
+    import glob
     # Explicit file override: a full path to an .xlsx (handles quotes + ~).
     if extra_dir:
         ex = os.path.expanduser(str(extra_dir).strip().strip('"').strip("'"))
@@ -662,7 +657,6 @@ def export_prefix(path):
     `allrecipes.com_recipe-backlinks_pages.xlsx` → `allrecipes.com_recipe`;
     `bostonchefs.com_recipe-organic.PagesV3-us-….xlsx` → `bostonchefs.com_recipe`.
     Returns '' if the name isn't an export."""
-    import os
     base = os.path.basename(path)
     low = base.lower()
     cuts = [low.find(m) for m in ("-backlinks", "-organic") if low.find(m) > 0]
@@ -674,7 +668,7 @@ def scan_export_inbox(dirs):
     of `dirs` (the watched inbox — typically ~/Downloads). Returns [{"path", "prefix"}]
     newest-first. Pure discovery — the caller matches each prefix to a known domain and
     routes it (intake_export_file)."""
-    import os, glob
+    import glob
     seen, out = set(), []
     for d in dirs:
         if not d or not os.path.isdir(d):
@@ -694,7 +688,7 @@ def intake_export_file(path):
     """Move a SEMrush export from the watched inbox into <project>/input/ so the
     backlinks pipeline (backlinks_file_path) finds it. Returns the new path. A
     same-named file already in input/ is overwritten (the freshest export wins)."""
-    import os, shutil
+    import shutil
     dest_dir = _input_dir()
     dest = os.path.join(dest_dir, os.path.basename(path))
     if os.path.realpath(path) == os.path.realpath(dest):
@@ -738,7 +732,7 @@ def _read_backlinks_file(domain, want, extra_dir=None):
     backlink count). Returns [(url, title), …] for the top `want` response-200 content
     URLs in domains order. The SAME downstream pipeline (archive/collection pre-filter,
     recipe check, Moz scoring, rank, keep) then runs exactly as for Google results."""
-    import os, openpyxl
+    import openpyxl
     path = backlinks_file_path(domain, extra_dir=extra_dir)
     if not path:
         searched = backlinks_search_dirs(extra_dir)
@@ -986,6 +980,16 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         if len(found) < n_before:
             print(f"  [harvest] path-scoped to /{recipe_path}/ — dropped "
                   f"{n_before - len(found)} off-path URL(s), {len(found)} under path")
+        # A scope that drops EVERYTHING is never the intended configuration —
+        # it is a wrong value in the field (budgetbytes 2026-08-22: keep=50
+        # landed in recipe_path, three runs "succeeded" at 0 URLs before
+        # anyone read a log). Same rule as the dish pre-filter: a run must
+        # not filter away the very thing it came for, silently.
+        if n_before > 0 and not found:
+            raise ValueError(
+                f"recipe_path='/{recipe_path}/' dropped ALL {n_before} "
+                f"discovered URL(s) — the path matches nothing on this "
+                f"publisher. Fix or clear recipe_path on the domain record.")
 
     # Cheap pre-filter: drop archive/taxonomy/feed URLs (never a recipe) + collection/
     # listicle TITLES ("30 Greek Recipes", "10 Dinners") BEFORE the fetching recipe

@@ -462,17 +462,17 @@
             </div>
           </div>
 
-          <!-- ② SHARED SCOPE, above the sources on purpose: these apply to Google
-               AND the SEMrush export, and sitting above both is what says so. -->
+          <!-- ② SHARED SCOPE. recipe_path + TTL moved INTO each source box
+               (2026-08-22, curator): only one source is active per run, so the
+               per-run knobs live with the source that runs — duplicated ids
+               (_bf/_serp) over the same stored columns; the active box wins.
+               (budgetbytes: keep=50 typed into the shared path field silently
+               zeroed three harvests.) -->
           <div class="cfg-panel">
             <div class="cfg-head"><span class="cfg-step">2</span>Scope &amp; limits
               <span class="cfg-note">applies to every source below</span></div>
             <div class="ed-form-grid">
-              ${field('f_recipe_path', 'Recipe URL path', d.recipe_path || '', { ph: 'recipes (blank = no scope)' })}
               ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
-            </div>
-            <p class="ed-notes-help" style="margin:8px 0 0;font-size:.8em">Path = the segment the publisher's recipes live under (<code>recipes</code> → keeps only <code>${escapeHtml(d.domain || 'domain.com')}/recipes/…</code>), a single-prefix KEEP filter applied before any fetch. Leave <b>blank</b> where there's no clean prefix — a scoped SEMrush export or a verbatim query does the same job better. Separate from the domain identity; the record stays <code>${escapeHtml(d.domain || 'domain.com')}</code>.</p>
-            <div class="ed-form-grid" style="margin-top:14px">
               ${field('f_exclude_words', 'Exclude sections — skip these URL sections', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
             </div>
           </div>
@@ -495,9 +495,11 @@
               <p class="ed-notes-help" style="margin:2px 0 6px;font-size:.8em">Exported on a different computer than the server? The harvest reads the file from the <b>server's</b> disk — so upload it here and it lands where the harvest looks (and pins this domain to it).</p>
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', d.harvest_records || 100, { type: 'number' })}
-                ${field('f_harvest_ttl_days', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
+                ${field('f_harvest_ttl_days_bf', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
+                ${field('f_recipe_path_bf', 'Recipe URL path (blank = no scope)', d.recipe_path || '', { ph: 'recipes' })}
                 ${field('f_backlinks_dir', 'Export folder OR exact file path (blank = auto-detect newest in Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\john\\Downloads\\https___www.domain.com_-organic.PagesV3-us-….xlsx', full: true })}
               </div>
+              <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Path = the segment the publisher's recipes live under (<code>recipes</code> keeps only <code>/recipes/…</code>) — a KEEP filter applied before any fetch, and a run that a path drops to ZERO now fails loudly. Leave <b>blank</b> where there's no clean prefix.</p>
               <div class="ed-block-label" style="margin:12px 0 2px;font-size:.82em">SEMrush deep-link <span style="font-weight:400;color:var(--muted,#8a7f72)">(yours to edit — nothing regenerates it)</span></div>
               ${urlField('f_semrush_report_url', 'Deep-link — ↗ opens the report to Export', d.semrush_report_url || '', { full: true })}
               <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Seeded once when the domain was created. For anything the plain link can't reach — a subdomain, a path, a multi-condition filter — build the query in SEMrush, copy the URL from the address bar, and paste it here.</p>
@@ -509,6 +511,8 @@
               <div class="ed-form-grid">
                 ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
                 ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
+                ${field('f_harvest_ttl_days_serp', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
+                ${field('f_recipe_path_serp', 'Recipe URL path (blank = no scope)', d.recipe_path || '', { ph: 'recipes' })}
               </div>
             </div>
           </div>
@@ -689,10 +693,18 @@
       loadDomainCandidates(d.domain);  // pre-scoring drops (candidate ledger)
     }
 
+    // The active source's copy of a duplicated per-run field (_bf / _serp).
+    // recipe_path + harvest_ttl_days render in BOTH source boxes over the same
+    // stored columns; only one source runs, so the active box wins.
+    function srcVal(base){
+      const chosen = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'backlinks_file';
+      return $('#' + base + (chosen === 'serp' ? '_serp' : '_bf'));
+    }
+
     // Activate the chosen source group (highlight + enable its inputs); dim + disable
     // the other, so each source clearly owns its own settings.
     function applySrcSelection(){
-      const chosen = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp';
+      const chosen = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'backlinks_file';
       document.querySelectorAll('.src-group').forEach(g => {
         const active = g.dataset.src === chosen;
         g.classList.toggle('is-active', active);
@@ -1176,8 +1188,8 @@
       const keep = parseInt($('#f_keep_top_n')?.value, 10) || 10;
       const pages = parseInt($('#f_search_pages')?.value, 10) || 10;
       const records = parseInt($('#f_records')?.value, 10) || 100;
-      const source = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp';
-      const recipe_path = ($('#f_recipe_path')?.value || '').trim();
+      const source = (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'backlinks_file';
+      const recipe_path = (srcVal('f_recipe_path')?.value || '').trim();
       const query = ($('#f_serp_query')?.value || '').trim();
       const backlinks_dir = ($('#f_backlinks_dir')?.value || '').trim();
       const exclude_words = ($('#f_exclude_words')?.value || '').trim();
@@ -1470,13 +1482,13 @@
         extract_notes: $('#f_extract_notes').value.trim(),
         domain_authority: numOrNull($('#f_domain_authority').value),
         notes: $('#f_notes').value.trim(),
-        recipe_path: ($('#f_recipe_path')?.value || '').trim(),
+        recipe_path: (srcVal('f_recipe_path')?.value || '').trim(),
         keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
         harvest_records: numOrNull($('#f_records')?.value) || 100,
 
         serp_query: ($('#f_serp_query')?.value || '').trim(),
         search_pages: numOrNull($('#f_search_pages')?.value) || 4,
-        harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'serp',
+        harvest_source: (document.querySelector('input[name=harvestSource]:checked') || {}).value || 'backlinks_file',
         harvestable: $('#f_harvestable_skip')?.checked ? 0 : 1,
         paywall: $('#f_paywall')?.checked ? 1 : 0,
         mixed_media: $('#f_mixed_media')?.checked ? 1 : 0,
@@ -1484,7 +1496,7 @@
         // to automatic calibration — the server distinguishes the two.
         paywall_da_discount_pct: ($('#f_paywall_discount')?.value ?? '').trim(),
         trust_extraction: $('#f_trust_extraction')?.checked ? 1 : 0,
-        harvest_ttl_days: numOrNull($('#f_harvest_ttl_days')?.value) || 90,
+        harvest_ttl_days: numOrNull(srcVal('f_harvest_ttl_days')?.value) || 90,
         // SEMrush deep-link + advanced filter (semrush_report_url is DERIVED server-side).
         semrush_report_url: ($('#f_semrush_report_url')?.value || '').trim(),  // stored when uncoupled; re-derived when coupled
         backlinks_dir: ($('#f_backlinks_dir')?.value || '').trim(),

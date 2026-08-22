@@ -6674,8 +6674,11 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         # downstream (incl. the recipe filter) is identical to the SERP path.
         # Default to the domain's STORED harvest_source (a bare API refresh shouldn't
         # silently run Google when the domain is configured for the file); the UI always
-        # sends `source` explicitly. Fall back to 'serp' only when neither is set.
-        source = (payload.get("source") or row.get("harvest_source") or "serp").strip() or "serp"
+        # sends `source` explicitly. Final fallback is the SEMrush file (curator call
+        # 2026-08-22): it's the configured default everywhere else, and a missing file
+        # fails loudly below rather than silently spending SERP credits.
+        source = (payload.get("source") or row.get("harvest_source")
+                  or "backlinks_file").strip() or "backlinks_file"
         records = int(payload.get("records") or 0) or None
         # VERBATIM Google query (payload or stored serp_query) runs as-is, overrides path.
         query = (payload.get("query") or row.get("serp_query") or "").strip() or None
