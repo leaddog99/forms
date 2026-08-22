@@ -45,9 +45,15 @@ DEFAULT_USER_AGENT = (
 # 403 Chrome UAs); on failure we retry with this. Order matters: more
 # sites accept the bot UA than reject it, so this minimizes wasted
 # fetches.
+# KEEP THIS VERSION CURRENT. It is not cosmetic: WAFs increasingly treat a
+# STALE browser version as a bot signal, so a pinned UA silently rots into a
+# block. memoriediangelina.com (2026-08-22) served 403 to Chrome/120 and the
+# full 558KB article to Chrome/140 — same IP, same headers, same second. The
+# harvest read that as "site is unfetchable", fell through to Wayback for every
+# URL, and lost outright the ones with no snapshot.
 FALLBACK_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 )
 USER_AGENT_CHAIN = [DEFAULT_USER_AGENT, FALLBACK_USER_AGENT]
 DEFAULT_TIMEOUT_SECONDS = 20
@@ -650,8 +656,19 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     # actually needed. (unblocker=True just ENABLES the escalation tier for this domain.)
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
-        if unblocker and unblocker_available() and _looks_blocked(resp):
+        # BLOCK-CHECK ALWAYS, ESCALATE ONLY IF WE CAN. This used to be gated on
+        # `unblocker`, so with the paid tier OFF a soft-block was returned as a
+        # successful direct fetch — and a soft block is frequently 2xx. Seen
+        # 2026-08-22: a WAF answering 202 with a 197-byte challenge stub passed
+        # `200 <= status < 300` and would have been handed to the extractor as if
+        # it were the article. A block we cannot escalate should fall through to
+        # Wayback, which is a real page; returning the stub is silent corruption,
+        # which is worse than a clean failure.
+        _blocked = blocked_reason(resp)
+        if _blocked and unblocker and unblocker_available():
             err = requests.HTTPError(f"Soft-block challenge for {url} — escalating to unblocker")
+        elif _blocked:
+            err = requests.HTTPError(f"Soft-block challenge for {url} ({_blocked}) — no unblocker; trying Wayback")
         else:
             return resp, {"source": "direct", "ua_used": ua_used}
     except requests.HTTPError as e:
