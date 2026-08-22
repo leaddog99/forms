@@ -5232,115 +5232,308 @@ model/hash/timestamp from the start; the recipe tables never did.
 | text search | 380-440 ms, substring | **7-35 ms**, stemmed full-text |
 | default sort, LIMIT 200 | 187 ms | **0.0 ms** |
 
-## START HERE — state of play as of 2026-08-20 (end of day)
+## Session log — 2026-08-21 — three hashes that never matched, a dish match that never ran on master, and a threshold that was letting in Pumpkin Spice Latte
 
-**Branch `split/enrichment-api`, pushed through `f2d7d9d`.** The server was restarted
-2026-08-20 23:01 and is current through `6d58fc0`. **One commit awaits a restart:**
-`f2d7d9d` carries the two gates on the semantic-suggestion leg (skip when the query yields
-no usable FTS expression; 0.45 similarity floor). Until that restart, a junk query like
-`((((` still returns noise suggestions — everything else in it is client-side and already
-live. **Jobs always run current code** — they launch out of process via `Popen` — so only
-the server and the forms ever lag a restart.
+Nine commits, `e2aa17f` through `e1393d1`. Two restarts (10:13, 10:45); a third is owed.
 
-**The recipe list was rebuilt today.** It no longer loads the collection: `GET
-/recipes/search` returns one page (100), the counts, and every dropdown's cascaded options
-in a single request, and the sidebar pages it on scroll. Boot went 6.89MB/2.2s to
-15.7KB/0.042s. Sorting, filtering and text search are ALL server-side now — a client-side
-sort over a paged fetch orders one page and calls it the answer, which is the trap this
-avoids. Search is FTS5 (stemmed, accent-folded, phrase/exclusion) with semantic near-misses
-shown separately on a zero-match. See the session log directly above for the measurements
-and for the three things the sort verification found.
+### The morning's two verifications, one of which was a bug
 
-**A pre-commit hook is now live** — `git config core.hooksPath scripts/hooks`. It blocks
-F821/F822/F811/E9 on staged files and prints everything else as advisory. If a commit is
-ever refused, the message says which rule and how to bypass; do not disable it silently.
+`f2d7d9d`'s two gates went live and were checked against the running server, not by
+reading code: `((((` now returns **0 suggestions** (was noise), `atk` returns 0 (nothing
+clears the 0.45 floor), and `something brothy and warming` still returns six real
+near-misses. Worth noting `chowdr` returns 0 FTS matches but the semantic leg surfaces
+**Creamy Corn Chowder** at #4 — the typo gap is partly covered already, just not ranked.
 
-**Recommended next build: parse ingredient quantities.** 59,366 lines, zero parsed, and it
-is the measured blocker on every numeric question the synthesis pitch depends on. ~$21 for
-the whole corpus at identity-card rates — cheaper than finishing enrichment ($115) and two
-orders below cook rework.
+The `embedding_text_hash` check looked fine and wasn't. Both of the curator's morning
+saves stamped a hash — but `check_embeddings` went from 0 failures at end of yesterday to
+2, reporting 21 stale rows. The cause:
 
-**Jobs pick up new code immediately** — they run out of process via
-`Popen([sys.executable, "-m", "jobs", "exec", ...])`. Only the SERVER process holds stale
-code, which is why the bookmarklet, the forms and interactive extract lag a restart while
-harvests do not.
+    save_recipe_api      sha256(txt).hexdigest()        -> 64 chars
+    check_embeddings     sha256(txt).hexdigest()[:16]   -> 16 chars
+    reembed_identity     sha256(txt).hexdigest()[:16]   -> 16 chars
 
-**TWO SEARCH EXTENSIONS the curator raised at the end of the day, to discuss before
-building:**
+A 64-char hash can never equal a 16-char one, so **every row saved through the app read as
+STALE forever** — the same failure the stamp was added to fix (a NULL hash never matches),
+inverted. Measured, not inferred: 16 master + 5 personal rows carried a 64-char hash, and
+those were exactly the 21 the checker called stale.
 
-1. **Search by site / publisher** — typing `atk` should find America's Test Kitchen. Not
-   indexed at all today (`atk` -> 0, `americas test kitchen` -> 0). `source_host` already
-   exists as an indexed generated column on both tables, so this is either a fifth FTS
-   column, a fourth facet dropdown, or both. A facet has the advantage that the values are
-   enumerable and cascade; free text has the advantage that `atk` is an abbreviation nobody
-   would pick from a list. Probably wants BOTH, with `_source.siteName` (the friendly name
-   the cards already display) as the searchable text and `source_host` as the facet value.
+Fixed as ONE definition (`embeddings.text_hash`) that all three call, rather than patching
+the writer to match — three copies is how it drifted. The 21 rows restamped in place;
+every one was a pure truncation (`stored[:16]` equalled the freshly recomputed hash),
+which PROVES the vectors were current all along and only the stamp format was wrong. No
+re-embedding, no spend.
 
-2. **Search by MAJOR ingredient** — "greek with olives". Partly works already:
-   `q=olives` + `cuisine=Greek` returns 459 because the FTS `ingredients` column indexes
-   every recipeIngredient line. But that is the problem, not the win — porter stems
-   `olives` and `olive` to one root, so it is matching **olive oil**, which is in nearly
-   every Greek recipe. It finds any MENTION, not "this dish is about olives".
-   `_identity.primaryIngredients` is the field that means "about" (97.4% coverage) and is
-   NOT in the index. Adding it as its own FTS column would allow ranking or filtering on
-   primary-vs-mentioned. Note this is adjacent to, but cheaper than, the queued ingredient
-   quantity parsing — primaryIngredients is already a curated short list.
+### The suggestions that did nothing were two bugs wearing one symptom
 
-**DO FIRST when you return:** restart (see above — `f2d7d9d` is waiting), then confirm a
-fresh save stamps `embedding_text_hash`, which is the fix that stops `check_embeddings`
-re-reporting every newly saved row forever.
+The "You might mean" entries didn't open. Both causes produced identical silence:
 
-**Older DO-FIRST, still open:** re-capture
-`m.xiachufang.com/recipe/107744561` with Chrome translate OFF. Everything for it is in
-place — translation, both images, the relaxed save gate, and now the publisher's
-`extract_notes` hint — but that row has never completed a save. That single capture
-exercises most of the day's fixes at once.
+- **The handler never closed the sidebar.** The recipe loaded UNDERNEATH it. Result cards
+  have always closed it; this path was written without that step. On the iPad that alone
+  is the whole bug.
+- **It opened the row from the collection being BROWSED.** Suggestions always come from
+  `master_recipes` (the vector index is the master one) even while you are in your own
+  recipes, so the click asked for a master id out of the personal table. Measured: same
+  id, `200` at `user_id=0`, `404` at `user_id=5`. `if (r.ok)` turned that into silence.
 
-Data changes of 2026-08-13 are IN `recipes.db` — morning: 1,739 rows power-re-derived, 28
-re-scored off archive.org, 53 `rootDomain` corrected, 1 row merged. Afternoon: the paywall
-calibration APPLIED (7 publishers; Milk Street -51.4%, ATK -52.6%), ATK's first publisher
-refresh (+10 recipes), 6 Milk Street recipes hand-captured to clear n=12, the
-`userscript_capture` job type and its 3 rows deleted.
+Suggestions now carry `user_id: 0` — rows have always carried their own; suggestions did
+not. A failed open warns to the console instead of vanishing.
 
-Data changes of 2026-08-14 (evening): `m.xiachufang.com` created (NEW publisher,
-`language=zh`, `fetch_strategy=plain`, mobile host on purpose, and now the first domain with
-a live `extract_notes` hint); jobs 842 (killed by my own timeout), 843 (2 candidates — the
-dedupe bug) and 844 (25 -> 8 clean rows); `mixed_media` set on six publishers and calibration
-job 841 applied (10 publishers adjusted, ~152 rows crossed above the OU floor); Dan Dan
-Noodles given `source_language='zh'`. **24 blank screenshot blobs DELETED** so they re-shoot,
-and **45 chronically-failing URLs latched** off the nightly queue. Publisher-refresh is
-DELETE-AND-REPLACE, so 842's rows were wiped by 843.
+### "Does user 5 + admin unlock equal master?" — yes, and that was the wrong suspect
 
-Data changes of 2026-08-14 (morning): **+202 master rows** (151 publisher / 51 dish). Five publisher
-refreshes — redhousespice.com (NEW, 28), tasteatlas.com (NEW, 5, `unblocker`),
-mygreekdish.com (40), sallysbakingaddiction.com (40), latimes.com (40). Four dish refreshes
-— Oatmeal Cookies (replaced 10), Egg Foo Young (NEW, 20), Chinese BBQ Pork (NEW, 20),
-Dan Dan Noodles (NEW, 6). latimes recalibration re-ran at n=246 and stayed `inconclusive`.
+Minted both credentials locally and compared `/auth/me`:
 
-**Screenshot policy changed** — it is a DISPLAY asset now (blurry card wallpaper), not just
-provenance. `screenshot_refresh` runs nightly at `max_age_days: 30`, `limit: 100`: a 56-day
-rolling cycle, ~7 min of Chromium. Deliberately half throughput — the host has an RMA pending
-for confirmed 13th-gen degradation. **36 of the 45 latched URLs are our OWN domain** and
-self-resolve when the production display page ships; clear their latch then.
+| identity | role | permissions |
+|---|---|---|
+| uid 0 + master token | owner | all 9 |
+| uid 5 + master token | owner | **identical 9** |
+| uid 5, no master token | member | `own_recipes`, `staff_locked: true` |
 
-**Spend to date: ~$215 on the Anthropic API since May, entirely separate from the $200/mo
-subscription.** The console billing page is the only place it appears.
+Server-side parity is exact and the nav is permission-driven (`perm: 'edit_master'`),
+never `user_id === 0`. **The real asymmetry is the STORE TARGET, not the role.** Signing
+in as user 5 points the sidebar at your own collection; the recipe form's enrich controls
+key off that, so master shows "Save & Re-Enrich" and personal shows "Enrich". Same
+permissions, different button. Ticking the Master checkbox as user 5 restores it.
 
-**Two designs are written and unbuilt** — `docs/recipe-activity-and-engagement.md` (§7 says
-build the activity log + its four chokepoints first) and the admin **Refresh button** on the
-recipe form (reprocess the stored URL as if delete-and-add; deliberately deferred).
+Two findings fell out of the audit:
 
-**The phone bookmarklet grab is STILL OPEN.** The two capture fixes (width cap +
-`windowWidth`) have never been tested TOGETHER on a real phone. Pull the stored bytes and
-measure them; do not judge by eye. Under 320px wide is refused, and as of `9a4df46` a BLANK
-capture is refused too, so a bad grab leaves NO screenshot rather than a smudge. Desktop
-bookmarklet captures on xiachufang came back blank (640×341, stddev 0.00) TWICE and were
-correctly refused, with the deferred server capture filling in — so that fallback is proven,
-but html2canvas failing on that publisher is unexplained and needs the browser console.
+- **`/domains/{d}/deep-enrich` had NO permission check.** It took no `request` parameter,
+  so there was nothing to check with — the gate added to its sibling `/enrich` on
+  2026-07-29 missed it. It is the *more* expensive of the two (~16 Moz rows AND a Sonnet
+  call). Now `edit_master`.
+- **77 of 108 write endpoints have no permission check at all** — product/review/collection
+  CRUD, `/chapters`, `/scheduled-jobs`, `/domains/rescore`, `/cook-kb`, `/ws-categories`.
+  Some are correctly open (`/auth/login`, `/stage-markdown`). NOT swept: which surfaces
+  members may touch is a decision, not a refactor. **Open.**
 
-**Still reverted on purpose:** the recipe form's screenshot `aspect-ratio: 3/2` → `15/8`.
-It IS a real 12.5%-per-side crop of every screenshot, server and browser alike, but it is a
-change to a page that needed to be left stable. Re-apply when convenient (8e0cdfc).
+### The dish match had never run on a master row. Not once.
+
+The curator's report was "the recipes process on the master should get embedding by
+default". The recipes *were* embedded. What they never got was the dish match derived from
+the embedding, because the save path gated it on WHICH TABLE the row was in:
+
+    if user_id == 0:   # master: store vector + KNN index      <- no match, ever
+    else:              # user recipe: store vector AND match a dish
+
+The assumption was that master rows carry `_master.dish` because a dish refresh curates
+them FOR a dish. True of harvested rows; false of every interactive capture. So a
+bookmarklet capture computed a vector, stored it, and threw away the one thing the vector
+was for — the form's "Matched dish" chip read an em-dash on a row that WAS embedded, which
+reads as "never embedded".
+
+    master rows              5483
+      no _master.dish        3253  (59%)
+      carrying _match           0  <- the branch had never run there
+
+The rule is now **"infer a dish when the row doesn't know one"**, not "user rows only".
+
+### The backfill, and two bugs of my own
+
+`scripts/backfill_dish_match.py`. Free by construction — every row already has its
+embedding stored and the dish index is local, so it is a sqlite-vec KNN per row: **14s for
+3,223 rows**, no embedding call, nothing billable. Writes `data` only, NEVER `updated_at`
+(derived metadata is not an edit, and bumping it would reorder the sidebar's default sort).
+
+First run reported **16 failures, all `UnicodeEncodeError`** — raised by the PROGRESS LINE,
+not the database. The Windows console is cp1252 and the titles were Greek and Chinese, and
+because the print ran before the write, the `except` swallowed the whole row. Fixed both
+halves (UTF-8 stdout AND write-before-report, since either alone leaves the class open).
+Re-run recovered all 16, every one confident: 6 Dan Dan Noodles, 5 Greek Chickpea Soup, 2
+Galaktoboureko, Baklava, Beef Stew, Shrimp with Tomatoes and Feta — precisely the
+population the console choked on.
+
+Second: the script only re-stamped the vec index on a *confident* match. Fine on a first
+pass (the index already holds None), wrong under `--rematch`, where a demoted row would
+keep a stale dish in the index while `data` said otherwise. Closed before the threshold
+change made demotions common.
+
+### The threshold was letting in Pumpkin Spice Latte
+
+Sanity-checking the weakest matches into the new dishes found real errors at the boundary:
+Pumpkin Soup → Pumpkin Pie (0.799), **Pumpkin Spice Latte → Pumpkin Pie** (0.799), Fortune
+Cookies → Sugar Cookies (0.792), Biscuits → Sugar Cookies (0.786). So the whole
+distribution got measured — does the row's own identity-card `likelyDish` agree with the
+dish it matched?
+
+| L2 band | agree | disagree | % wrong |
+|---|---:|---:|---:|
+| 0.0-0.3 | 194 | 7 | 3% |
+| 0.3-0.4 | 104 | 17 | 14% |
+| 0.4-0.5 | 87 | 21 | 19% |
+| 0.5-0.6 | 75 | 30 | 29% |
+| 0.6-0.7 | 55 | 100 | **65%** |
+| 0.7-0.75 | 27 | 104 | **79%** |
+| 0.75-0.8 | 33 | 191 | **85%** |
+
+The metric was validated rather than trusted: the low-band "disagreements" are mostly
+artefacts of comparing names — `Pastitsio`/`Pastitcio (Greece)`,
+`Shrimp Saganaki`/`Shrimp with Tomatoes and Feta`, `Eggplant Parmesan`/`Parmigiana` are the
+same dish twice — so the low bands are BETTER than shown, while the high bands were
+confirmed by eye. **`dish_match_max_distance` 0.8 → 0.6**, set through the API so
+`set_setting` invalidated the running server's cache in-process (no restart needed).
+
+    confident matches   1045 -> 511
+    card disagrees       45% -> 14%
+
+508 rows moved, overwhelmingly demotions to `None`; every one keeps its distance and top-3
+candidates, so nothing was destroyed, only reclassified. The dishes created that morning
+were themselves the biggest over-claimers at 0.8 — adding them did not cause that, it
+exposed it.
+
+### Signal 1 and Signal 2: what the backfill said to build next
+
+Two independent signals, answering different questions.
+
+**Signal 1 — recipes held that no dish claims** (2,271 uncovered rows, 1,757 distinct
+`likelyDish`), crossed against `dish_keywords` demand. Top by both: Chili (7 recipes /
+1.29M traffic), Cheesecake (7 / 706k), Mashed Potatoes (12 / 413k), Chocolate Cake
+(10 / 350k), Hummus (6 / 325k), Pizza Dough (10 / 316k). **The trap:** the dish with the
+MOST recipes held is Melomakarona — 13 recipes, **3,618** traffic. Supply rank and demand
+rank are close to inverted at the tail. (Melomakarona and Roast Turkey are seasonal; a
+snapshot out of season undercounts them.)
+
+**Signal 2 — existing dishes absorbing recipes that aren't theirs.** Cheaper and more
+urgent, because it corrupts cohorts already ranking. **Cream Pie was functioning as a
+generic pie bucket** — pulling in Pumpkin Pie, Pecan Pie, Chicken Pot Pie and bare Pie
+Crust (13 rows). Ten dishes created: Chicken Pot Pie, Pumpkin Pie, Pie Crust, Pecan Pie,
+Pot Roast, Marinara Sauce, Waffles, Sugar Cookies, Roast Potatoes, Bougatsa. The last two
+are deliberately demand-NEGATIVE (13k and 241) — built to clean cohorts, not chase traffic.
+
+Skipped with reasons: **Vegetable Lasagna** (a variant of Lasagna, an M2M question not a
+new record), **Potato Latkes** (latkes *are* potato pancakes — the "mis-filing" may be
+correct), **Galatopita** (91 traffic, 2 recipes).
+
+The curator then ran dish refreshes on all ten. Each now holds a **full 20-recipe cohort**
+from ground-truth `_master.dish`, and **30 previously-unclaimed rows were adopted** — the
+mis-filing fixed properly rather than merely re-labelled.
+
+### The sweep becomes a nightly job, and the rewrite test becomes the default
+
+The curator's correction — *"CAN'T YOU TEST TO SEE IF THE REWRITE IS NECESSARY.. THAT
+SHOULD BE THE DEFAULT"* — was a prerequisite for scheduling, not a nicety. The old version
+stamped `data` on every row it scanned, so a nightly run would have dirtied 3,223 JSON
+blobs for ~0 real changes, inflated the WAL, and made every night's `recipes.sql` diff the
+size of the table — against a dump already at 53MB of GitHub's 100MB limit.
+
+`same_verdict()` compares dish/confident/distance and skips the write. `matched_at` is
+excluded ON PURPOSE — it changes every run, so including it would make every row look
+changed and silently defeat the test. Verified: a second consecutive run scans **3,223 rows
+and writes 0**.
+
+`input/pipeline/dish_match.py` is now the single implementation (save path, script, job).
+The copies had already drifted on whether to stamp the vec index.
+
+**What the sweep is FOR** — the premise needed correcting. New recipes are matched AT SAVE,
+so this is not how they get a dish. It is for the CATALOG moving underneath rows already
+matched: ~45-60 new dishes a month plus query/description edits that move a dish's own
+vector. *Creating "Pumpkin Pie" does not move the pumpkin pies out of Cream Pie; only a
+re-score does.* Frequency chosen from that rate — the catalog changes most days, cost is
+14s and ~0 writes, and the day's pattern was create-then-refresh-same-day. **`dish_rematch`
+registered at 24h.**
+
+### The two dishes that were not dishes
+
+`Chefs: Legal Seafood` and `Julia Child Best Recipes` were collections wearing a dish
+record, acting as match ATTRACTORS — a Beef Bourguignon matched "Julia Child Best Recipes"
+at **0.141**, the tightest distance in the corpus. The curator approved deleting them.
+
+`DELETE /dishes/{name}` **cascades**: it also deletes the dish's `kind='top'` master rows —
+10 real recipes, including three Legal Seafood clam chowder captures. So the membership was
+cleared first and the recipes kept.
+
+Two intentions reversed by looking rather than assuming:
+
+- **`retire_master_membership` was the wrong tool.** It is the shared function for exactly
+  this, and it DELETES the row when no other typed block remains. These ten carry only a
+  dish block and no publisher block, so it would have destroyed what we were protecting.
+- **`exceptionalism` was kept, not dropped.** The plan was to drop it as a grade earned in
+  a bogus cohort. Checking the basis on all ten showed every grade came from
+  `chapter-fallback` or an embedding-match against a REAL dish (Soups & Stews, Poultry,
+  Baked Stuffed Shrimp) — never the fake cohort. Independent, so it stays.
+
+`dish=None` was stamped into the vec index for all ten BEFORE the delete, so the KNN filter
+never pointed at a dish about to stop existing. Both deletes returned
+`cascaded_master_rows: 0`; `dishes` and `dishes_vec` went 179 → 177 in step.
+
+Six of the ten immediately found real homes: three clam chowders → **New England Clam
+Chowder** (0.168-0.194), two → **Crab Cakes** (0.254, 0.327), one → **Baked Stuffed
+Shrimp** (0.255). Four correctly stayed unclaimed — Baked Scallops (0.845), Key Lime Pie
+(0.782), Supremes de Volaille (0.856), Coq au Vin (0.882). **Key Lime Pie at 0.782 is a
+real catalog gap**; it had previously been graded against *Apple Pie*.
+
+### Process notes
+
+- **`system_config.get_setting()` IS the job-reset landmine's trigger.** With no `db_path`
+  it lazily imports `save_recipe_api` purely to read `DB_PATH`, and that import runs the
+  app's startup, which resets in-flight jobs. Tripped once today (nothing was running).
+  `jobs/__main__.py` calls it without one too. Pass `db_path` explicitly in any script.
+- **A display concern must never gate a data write.** The cp1252 crash cost 16 rows because
+  the progress line ran before the UPDATE.
+- **Validate the metric before trusting the finding.** The name-comparison "disagreement"
+  rate would have overstated the low bands badly; checking the low-distance disagreements
+  showed they were `Pastitsio`/`Pastitcio` renames, not errors.
+- **Read the shared helper before reusing it.** `retire_master_membership` does the right
+  thing for refreshes and the catastrophic thing here.
+
+
+## START HERE — state of play as of 2026-08-21 (end of day)
+
+**Branch `split/enrichment-api`, nine commits today `e2aa17f`..`e1393d1`.** The server was
+restarted twice (10:13, 10:45) and is current through `739740c`. **A THIRD RESTART IS
+OWED:** `e1393d1` registers the `dish_rematch` job handler, and its 24h schedule row is
+already in `scheduled_jobs` waiting for it. Until that restart the schedule references a
+handler the server does not know. Everything else from today is live. **Jobs always run
+current code** (out of process via `Popen`) — only the server and the forms lag a restart.
+
+**Verify a restart by PID START TIME, never by hitting an endpoint that already existed:**
+
+    Get-CimInstance Win32_Process -Filter "Name like 'python%'" | Select ProcessId, CreationDate
+
+**`dish_match_max_distance` is now 0.6 (was 0.8).** Changed against measured data — see the
+band table in today's log. It governs the live save path AND personal-recipe matching, not
+just the sweep. Set through `POST /system-config` so `set_setting` invalidated the running
+server's cache in-process; a direct SQL write would NOT have (the cache is a process-global
+that only `set_setting` clears).
+
+**THE ONE THING TO UNDERSTAND ABOUT DISH MATCHING.** `_match.dish` is a CLOSED set — it is
+a KNN over `dishes_vec`, built from the `dishes` table, so it can only ever return a dish
+that already exists (verified: 125 distinct values, 0 outside the catalog). The nearest
+neighbour ALWAYS exists, so distance says how far, never whether it belongs — that is what
+the threshold is for. `_identity.likelyDish` is the opposite: free LLM text, 2,940 distinct
+values of which 2,814 have no dish record. That gap IS the coverage signal, and the two
+disagreeing is a free accuracy check.
+
+**`check_embeddings` is clean** — 0 failures / 0 warnings across 5,767 master, 445
+personal, 178 dishes, 56 products; no orphans in either direction.
+
+### Do first when you return
+
+1. **Restart** (see above), then confirm `python -m jobs run dish_rematch` resolves.
+2. **`Pie Crust`'s chapter auto-derived to `Breads`** — probably wants `Pies & Pastries`.
+   One edit in the dish editor. (`Chicken Pot Pie` → `Sandwiches, Pizza & Savory Pastry`
+   looks odd but is defensible.)
+3. **Key Lime Pie is a real catalog gap** — `Legal Seafood's Key Lime Pie` sits unclaimed
+   at 0.782 and had previously been graded against *Apple Pie*.
+4. **77 of 108 write endpoints have NO permission check** (see today's log). Which surfaces
+   members may touch is a decision, not a refactor — do not sweep it blind.
+5. **`m.xiachufang.com/recipe/107744561` has still never completed a save** (outstanding
+   since 2026-08-14). Re-capture with Chrome translate OFF.
+6. **Parse ingredient quantities** — still the standing recommendation. 59,366 lines, zero
+   parsed, ~$21 for the corpus.
+
+### Dish coverage — what to build next (measured 2026-08-21)
+
+Two signals, from the dish-match backfill. **Signal 1: recipes held that no dish claims**,
+crossed against `dish_keywords` demand — Chili (7 recipes / 1.29M traffic), Cheesecake
+(7 / 706k), Mashed Potatoes (12 / 413k), Chocolate Cake (10 / 350k), Hummus (6 / 325k),
+Pizza Dough (10 / 316k). **The trap:** the dish with the MOST recipes held is Melomakarona
+— 13 recipes, 3,618 traffic. Supply and demand rank near-inverted at the tail.
+
+**Signal 2 — existing dishes absorbing recipes that are not theirs — was DONE today**
+(10 dishes created, refreshed by the curator, each now holding a 20-recipe cohort).
+Still open from it: **Vegetable Lasagna** (variant of Lasagna — an M2M question),
+**Potato Latkes** (latkes ARE potato pancakes; the "mis-filing" may be correct),
+**Galatopita** (91 traffic, 2 recipes — too thin).
+
 
 ### The product thesis (read this first — unchanged, still settled)
 
@@ -5455,6 +5648,30 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
   a full ~96-publisher refresh at a 100/mo floor.
 
 ### Known-open
+
+- **`system_config.get_setting()` IS the trigger for the import-resets-jobs landmine.**
+  With no `db_path` it lazily imports `save_recipe_api` purely to read `DB_PATH`, and that
+  import runs the app's startup, which resets in-flight jobs. This is the concrete way in
+  that the long-standing "MUST BUILD a real guard" item below keeps getting tripped — pass
+  `db_path` explicitly in any script. `jobs/__main__.py` calls it without one.
+- **77 of 108 write endpoints have no permission check** (audited 2026-08-21): product /
+  review / collection CRUD, `/chapters`, `/scheduled-jobs`, `/domains/rescore`,
+  `/cook-kb`, `/ws-categories`, `/ingredient-synonyms`, `/images`. Some are correctly open
+  (`/auth/login`, `/auth/signup`, `/stage-markdown` for the bookmarklet, `/recipes/{id}/claim`).
+  `/domains/{d}/deep-enrich` was fixed the day it was found. The rest needs a DECISION about
+  which surfaces members may touch, not a blind sweep.
+- **370 confident matches sat in the 0.70-0.80 band before the threshold moved** — that band
+  is now non-confident. It was a signal about CATALOG COVERAGE, not match quality: a thin
+  178-dish catalog forces the KNN to return the least-bad neighbour. Revisit as the catalog
+  grows.
+- **Two non-dish rows were deleted from `dishes`** (2026-08-21): `Chefs: Legal Seafood` and
+  `Julia Child Best Recipes`. They were collections wearing a dish record and acted as match
+  ATTRACTORS. Their 10 recipes were preserved by clearing membership first — `DELETE
+  /dishes/{name}` CASCADES to `kind='top'` master rows. If more collection-shaped dishes
+  turn up, that is the typed-collections model not being fully applied.
+- **`retire_master_membership` DELETES the row when no other typed block remains.** It is
+  right for a refresh and catastrophic for "unfile this but keep the recipe". Read it before
+  reusing it.
 
 - **AUDIT EVERY USER-FACING STRING FOR VENDOR NAMES.** A member who bookmarklets a recipe is
   a customer of the product, not an operator of our pipeline — they must never be shown which
