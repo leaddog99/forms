@@ -338,7 +338,13 @@ _SEMRUSH_FILTER_COLUMNS = {
     # 'never' gates FETCHING ONLY, never membership — the publisher keeps its
     # DA/PA and stays scoreable, rankable and linkable. We stop trying to hold
     # its recipes; we do not stop pointing at them.
-    "content_obtainable": "TEXT NOT NULL DEFAULT 'unknown'",  # unknown|direct|unblocker|unblocker_render|never
+    # unknown|direct|wayback|unblocker|unblocker_render|never
+    # `wayback` means the LIVE page is unreachable and only the archive worked —
+    # a materially different state from `direct`, because the content is a dated
+    # snapshot and any URL without one is lost outright. It was previously
+    # recorded as `direct`, since the verdict came from the CONFIGURED fetch flag
+    # rather than the transport actually used.
+    "content_obtainable": "TEXT NOT NULL DEFAULT 'unknown'",
     "obtainable_at": "TEXT",           # when last determined (ISO)
     "obtainable_n": "INTEGER",         # saves behind a positive verdict
     "obtainable_tried": "INTEGER",     # attempts behind it — n/tried is the YIELD

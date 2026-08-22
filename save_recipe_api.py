@@ -6432,8 +6432,38 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
     try:
         with _db() as _oc:
             _rr = bool((domains_lib.get_domain(_oc, host) or {}).get("render_required"))
-            _method = ("unblocker_render" if (unblocker and _rr) else
-                       "unblocker" if unblocker else "direct")
+            # THE TRANSPORT ACTUALLY USED, not the one we configured. This was
+            # derived from the `unblocker` flag alone, so a run that failed every
+            # live fetch and survived entirely on archive.org still recorded
+            # `direct` — memoriediangelina.com was stamped "direct, 30 of 30,
+            # 100% yield" while zero direct fetches had succeeded, which reads as
+            # "this publisher is easy" when it is the opposite.
+            #
+            # `_source.archiveUrl` is set at save time exactly when the page came
+            # from Wayback, so the saved rows already carry the truth; no new
+            # plumbing needed. Majority rules — a run mostly rescued by the
+            # archive IS a wayback run, whatever we asked for.
+            _wb = 0
+            if saved_urls:
+                # Match on url_normalized, NOT on originalUrl: the saved URL has
+                # been through Wayback unwrapping and trailing-slash handling by
+                # this point, so the two strings legitimately differ. The
+                # generated column is the canonical key and is what every other
+                # join in the pipeline uses.
+                from input.pipeline.url_utils import normalize_url as _nu
+                _keys = [(_nu(u) or u) for u in saved_urls]
+                _marks = ",".join("?" * len(_keys))
+                _wb = _oc.execute(
+                    f"SELECT COUNT(*) FROM master_recipes "
+                    f"WHERE url_normalized IN ({_marks}) "
+                    f"  AND json_extract(data, '$._source.archiveUrl') IS NOT NULL",
+                    _keys,
+                ).fetchone()[0]
+            if extracted and _wb * 2 > extracted:
+                _method = "wayback"
+            else:
+                _method = ("unblocker_render" if (unblocker and _rr) else
+                           "unblocker" if unblocker else "direct")
             _obt = domains_lib.record_acquisition_outcome(
                 _oc, host, attempted=attempted, saved=extracted, method=_method)
         print(f"[PUBLISHER-REFRESH] obtainability: {host} -> "
