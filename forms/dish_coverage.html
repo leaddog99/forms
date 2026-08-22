@@ -61,6 +61,8 @@
       font-weight:700; padding:3px 8px; border-radius:6px; white-space:nowrap; }
     .tag.new{ background:#e2efeb; color:#0f6e5c; }
     .tag.split{ background:#f5e6e7; color:#8c2f39; }
+    .tag.variant{ background:#f2ecdd; color:#7a5a12; }
+    .tag.alias{ background:#e9e9ee; color:#4a4a63; }
     .empty{ padding:34px; color:var(--muted); text-align:center; }
     .notes{ margin-top:18px; font-size:.82rem; color:var(--muted); line-height:1.55; max-width:78ch;
       display:flex; flex-direction:column; gap:7px; }
@@ -90,7 +92,9 @@
     <div class="toolbar">
       <button class="chip" data-filter="all" aria-pressed="true">All</button>
       <button class="chip" data-filter="new" aria-pressed="false">New dish</button>
-      <button class="chip" data-filter="split" aria-pressed="false">Possible split</button>
+      <button class="chip" data-filter="split" aria-pressed="false">Split</button>
+      <button class="chip" data-filter="variant" aria-pressed="false">Variant</button>
+      <button class="chip" data-filter="alias" aria-pressed="false">Alias</button>
       <button class="chip" data-filter="demand" aria-pressed="false">100k+ traffic</button>
       <select id="chap" aria-label="Chapter"><option value="">All chapters</option></select>
       <input id="q" type="search" placeholder="Search dish or keyword…" aria-label="Search dishes">
@@ -119,10 +123,16 @@
         A dish that is big on sites we have never harvested reads low or zero, and the name match
         is a substring (<em>Chili</em> catches <em>sweet chili sauce</em>). Treat it as directional
         ordering, never as a number.</span>
-      <span><b>Possible split</b> means an existing dish shares most of its words. Sometimes that is
-        only a naming variant (<em>Mac and Cheese</em> against <em>Macaroni and Cheese</em>), but
-        often it is the generic-bucket problem, where a broad dish is quietly absorbing a specific
-        one. Read each before acting &mdash; this page reports, it never creates.</span>
+      <span>Where an existing dish overlaps, the <b>relation</b> says which of three different
+        problems it is, because they want different actions. <b>Split</b> &mdash; genuinely
+        different dishes sharing a word (<em>Pasta alla Gricia</em> against <em>alla Norma</em>):
+        create the dish. <b>Variant</b> &mdash; the same identity, narrower (<em>Peach Cobbler</em>
+        against <em>Cobbler</em>): a judgement call, not an automatic split, because
+        <code>docs/collections.md</code> &sect;11 is explicit that variants are <em>not</em> the M2M
+        case &mdash; you want one winner per identity, since pooling the cohorts mis-grades the
+        minority. <b>Alias</b> &mdash; the same dish under another spelling
+        (<em>Coquilles Saint-Jacques</em> / <em>Coquilles Saint Jacques</em>): a synonym, not a
+        dish. This page reports; it never creates.</span>
       <span>Seasonal dishes read low: a traffic snapshot taken out of season undercounts them.</span>
     </div>
   </div>
@@ -132,12 +142,20 @@
     const $ = s => document.querySelector(s);
     let DATA = [], filter = 'all', chapter = '', q = '', sortKey = 'traffic', sortDir = -1;
     const fmt = n => n ? n.toLocaleString('en-US') : '—';
+    // What each relation MEANS, said where the reader is looking at it.
+    const REL = {
+      alias:   'same dish as',
+      variant: 'a narrower form of',
+      split:   'shares a word with',
+    };
     const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
     function shown(){
       return DATA.filter(r => {
-        if (filter === 'new'    && r.alias_of) return false;
-        if (filter === 'split'  && !r.alias_of) return false;
+        if (filter === 'new'     && r.alias_of) return false;
+        if (filter === 'split'   && r.relation !== 'split') return false;
+        if (filter === 'variant' && r.relation !== 'variant') return false;
+        if (filter === 'alias'   && r.relation !== 'alias') return false;
         if (filter === 'demand' && r.traffic < 100000) return false;
         if (chapter && r.chapter !== chapter) return false;
         if (q) {
@@ -161,12 +179,12 @@
       $('#body').innerHTML = rs.length ? rs.map(r => `
         <tr>
           <td><span class="dish">${esc(r.dish)}</span>
-            ${r.alias_of ? `<span class="absorbed">currently absorbed by ${esc(r.alias_of)}</span>` : ''}
+            ${r.alias_of ? `<span class="absorbed">${REL[r.relation] || 'overlaps'} ${esc(r.alias_of)}</span>` : ''}
             ${r.top_keyword ? `<span class="kw">${esc(r.top_keyword)}</span>` : ''}</td>
           <td class="r">${r.recipes}</td>
           <td class="r traffic ${r.traffic ? '' : 'zero'}">${fmt(r.traffic)}</td>
           <td class="chap">${esc(r.chapter || '—')}</td>
-          <td><span class="tag ${r.alias_of ? 'split' : 'new'}">${r.alias_of ? 'split' : 'new dish'}</span></td>
+          <td><span class="tag ${r.relation || 'new'}">${r.relation || 'new dish'}</span></td>
         </tr>`).join('')
         : '<tr><td colspan="5" class="empty">No dishes match those filters.</td></tr>';
     }
@@ -190,7 +208,7 @@
       DATA = d.rows || [];
       const held = DATA.reduce((s, r) => s + r.recipes, 0);
       const nu = DATA.filter(r => !r.alias_of).length;
-      const sp = DATA.length - nu;
+      const cnt = k => DATA.filter(r => r.relation === k).length;
       $('#tiles').innerHTML = `
         <div class="tile"><div class="l">Uncovered names</div><div class="v">${d.uncovered_names.toLocaleString('en-US')}</div>
           <div class="s">distinct likelyDish values with no dish record</div></div>
@@ -198,8 +216,9 @@
           <div class="s">${held.toLocaleString('en-US')} recipes waiting on a home</div></div>
         <div class="tile new"><div class="l">Genuinely new</div><div class="v">${nu.toLocaleString('en-US')}</div>
           <div class="s">nothing in the catalog resembles them</div></div>
-        <div class="tile split"><div class="l">Possible splits</div><div class="v">${sp.toLocaleString('en-US')}</div>
-          <div class="s">an existing dish is absorbing them</div></div>`;
+        <div class="tile split"><div class="l">Split · variant · alias</div>
+          <div class="v">${cnt('split')} &middot; ${cnt('variant')} &middot; ${cnt('alias')}</div>
+          <div class="s">different dish &middot; narrower form &middot; same dish, another spelling</div></div>`;
       const chaps = [...new Set(DATA.map(r => r.chapter).filter(Boolean))].sort();
       $('#chap').innerHTML = '<option value="">All chapters</option>'
         + chaps.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');

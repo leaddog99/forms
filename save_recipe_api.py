@@ -3578,12 +3578,69 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
     Curator surface: it names the corpus's own gaps and joins keyword demand.
     """
     _require_perm(request, "admin_ui")
-    import re as _re
+    from input.pipeline.url_word_lists import name_tokens as _nt
     STOP = {"and", "the", "with", "a", "of", "in", "recipe", "recipes", "style"}
 
+    def _sing(w):
+        # Crude singulariser so elote/elotes and ball/balls read as one word.
+        return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+
     def _toks(t):
-        return {w for w in _re.findall(r"[a-z]+", (t or "").lower())
-                if w not in STOP and len(w) > 2}
+        # name_tokens folds accents, so Sautéed and Fricassée tokenise whole.
+        return {_sing(w) for w in _nt(t) if w not in STOP}
+
+    def _ed1(a, b):
+        """True when a and b differ by at most one edit — catches Yung/Young."""
+        if abs(len(a) - len(b)) > 1:
+            return False
+        if a == b:
+            return True
+        if len(a) > len(b):
+            a, b = b, a
+        i = j = diff = 0
+        while i < len(a) and j < len(b):
+            if a[i] != b[j]:
+                diff += 1
+                if diff > 1:
+                    return False
+                if len(a) == len(b):
+                    i += 1
+                j += 1
+            else:
+                i += 1
+                j += 1
+        return True
+
+    def _relation(uncovered, existing):
+        """What KIND of overlap is this? The three cases want different actions,
+        and calling them all "possible split" implied they wanted the same one.
+
+        alias   — the same dish under another spelling (Coquilles Saint-Jacques
+                  against Coquilles Saint Jacques, Elote/Elotes, Yung/Young).
+                  Not a dish at all: a synonym.
+        variant — one name is the other plus a qualifier (Peach Cobbler against
+                  Cobbler). Same identity, narrower. docs/collections.md §11 is
+                  explicit that variants are NOT the M2M case: you want one
+                  winner per identity, because pooling the cohorts mis-grades
+                  the minority (a Trapanese loses to Genovese on traffic every
+                  time). So this is a judgement call, never an automatic split.
+        split   — genuinely different dishes that happen to share a word
+                  (Pasta alla Gricia against Pasta alla Norma, Chocolate Chip
+                  Muffins against Chocolate Chip Cookies). Create the dish.
+        """
+        U, E = _toks(uncovered), _toks(existing)
+        if not U or not E:
+            return "split"
+        if U == E:
+            return "alias"
+        if U < E or E < U:
+            return "variant"
+        ou, oe = U - E, E - U
+        if (U & E) and len(ou) == len(oe) == 1:
+            a, b = next(iter(ou)), next(iter(oe))
+            if a.startswith(b) or b.startswith(a) or _ed1(a, b):
+                return "alias"
+        return "split"
 
     with _db() as conn:
         have = {r[0] for r in conn.execute("SELECT name FROM dishes")}
@@ -3635,6 +3692,7 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
                 # catching Cobbler/Peach Cobbler.
                 "alias_of": best if score >= 0.34 else None,
                 "alias_score": round(score, 2),
+                "relation": _relation(name, best) if (best and score >= 0.34) else None,
             })
     out.sort(key=lambda r: (-r["traffic"], -r["recipes"]))
     return {
