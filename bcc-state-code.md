@@ -5559,6 +5559,43 @@ first cut.
 recipes all titled "Mexican Street Corn". So uncovered dishes are already findable; the
 coverage gap costs cohorts and ranking, NOT discoverability.
 
+### The git-side backup had not been restorable for two days
+
+Regenerating `recipes.sql.gz` and then actually REPLAYING it found the backup broken:
+`SQL logic error` at statement 275,023, an INSERT into `master_recipes_fts` carrying the
+hidden `rank` and table-name columns an fts5 table will not accept. The search work of
+2026-08-20 added that index, so **every dump since had been unrestorable** — and nobody
+noticed, because nobody replayed one.
+
+**Second time.** Generated columns did the same on 2026-07-22 and that fix did not
+generalise, so this one is by CLASS: the exclusion query matches `USING vec0` OR
+`USING fts5` (catching `recipes_fts` as well) and will catch the next virtual table with
+nobody remembering to come back. Both rebuild free from tables that ARE in the dump —
+vec0 from the embedding BLOBs, fts5 from `master_recipes` by its own triggers.
+
+**The real defect was not fts5** — it was that a dump got written, committed and trusted
+three times without being replayed once. `backup_db.py --verify` now restores the gz into
+a throwaway db and compares every table's row count, refusing the dump if anything
+differs. Verified: RESTORE OK, all counts match, 5,851 embedding BLOBs intact. Dropping
+the fts tables also took it 70.3 -> 66.7 MB.
+
+### The page cache had no delete path and had reached 1.28 GB
+
+The TTL was READ-ONLY: `get()` refuses a page older than `page_cache_ttl_days` (5) and
+nothing anywhere issued a DELETE, so the file grew ~100KB per candidate fetched with no
+ceiling. Found at **1.28 GB across 12,253 pages, 65% never served once**, on a host with
+an RMA pending.
+
+`page_cache.purge()` + nightly `page_cache_purge`. Retention is a SEPARATE setting from
+the TTL — `page_cache_retain_days` (30, six times the serving TTL) — because the TTL says
+how long a page is SERVED and retention how long it is KEPT; the margin means raising the
+TTL later cannot silently discard pages that would then have been serveable. VACUUM only
+above 20% free pages. First run: 3,894 rows, **1.28 -> 0.85 GB**. Steady state is 0
+deleted.
+
+(Two 0-byte files, `cache.db` and `pages.db`, were MINE — a diagnostic that called
+`sqlite3.connect()` on guessed filenames, which creates the file. Deleted.)
+
 ### Prepared for the scoring session: §14 of the scoring design
 
 **79% of embedding-graded master rows are graded against a dish their own `_match`
@@ -5625,10 +5662,15 @@ a script, not a harvest. Tightening grading to 0.60 may just move 79% of rows on
 chapter-fallback, which could be more honest (a chapter is a real population) or less
 informative (n is huge, so everything regresses to the mean). Measure before deciding.
 
-**RESTART OWED** — three server-side commits: `b156bb5` (split/variant/alias on
-/dish-coverage), `ccce3d4` (accent-folded dish matching), `c7d5da8` (obtainability
-transport + `wayback` enum). The fetch and harvest fixes do NOT need it — jobs run out of
-process via `Popen`, so the next harvest already has them.
+**NO RESTART OWED.** Restarted 2026-08-22 16:43; everything through `140f371` is live.
+Both new handlers verified registered by POSTing their `job_type` to `/scheduled-jobs/…`,
+which REJECTS an unknown type — so a 200 is the proof, and it does not need a fresh route
+to test against. (Careful: that endpoint upserts, so probing it overwrites `purpose`.
+Send the real body or restore it after.)
+
+**Three nightly jobs now, all 24h:** `chapter_rollups`, `dish_rematch`, `page_cache_purge`
+(plus `screenshot_refresh`). **Check each has actually fired** — none has yet reached a
+first scheduled run.
 
 **Verify a restart by PID START TIME, never by hitting an endpoint that already existed:**
 
@@ -5820,6 +5862,18 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
   a full ~96-publisher refresh at a 100/mo floor.
 
 ### Known-open
+
+- **A backup nobody restores is a hypothesis.** `recipes.sql.gz` has silently failed to
+  restore TWICE — generated columns (2026-07-22), the fts5 index (2026-08-20, found
+  08-22 after two days of unusable backups). Run `python backup_db.py --verify`, which
+  replays the gz and compares row counts. Any NEW virtual table is excluded automatically
+  now (`USING vec0` / `USING fts5` pattern), but a genuinely new failure MODE would not
+  be — so verify, do not assume.
+- **`recipes.sql.gz` is 66.7 MB** and GitHub warns on every push (hard limit 100 MB). It
+  only grows. Git LFS, splitting the dump, or excluding more rebuildable tables — a
+  decision that is coming, not urgent.
+- **`page_cache.db` holds ~0.85 GB steady** after the nightly purge. Watch that the job
+  actually fires; before 2026-08-22 nothing had ever deleted from it.
 
 - **`system_config.get_setting()` IS the trigger for the import-resets-jobs landmine.**
   With no `db_path` it lazily imports `save_recipe_api` purely to read `DB_PATH`, and that
