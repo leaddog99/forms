@@ -975,6 +975,10 @@
     { page: 'collections', label: 'Collections/Search', href: '/forms/product_collections.html', perm: 'edit_master', group: 'admin' },
     { page: 'curated-collections', label: 'Collections/Curated', href: '/forms/curated_collections.html', perm: 'edit_master', group: 'admin' },
     { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', perm: 'manage_dishes', group: 'admin' },
+    // What the corpus holds that the catalog has no record of. Slash-grouped under
+    // Dishes because it is the same subject read from the other side: Dishes lists
+    // what exists, Dishes/Coverage lists what does not yet.
+    { page: 'dish-coverage', label: 'Dishes/Coverage', href: '/forms/dish_coverage.html', perm: 'admin_ui', group: 'admin' },
     { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', perm: 'edit_master', group: 'admin' },
     { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', perm: 'admin_ui', group: 'admin' },
     { page: 'run-jobs',  label: 'Jobs/Queued', action: 'runQueuedJobs', perm: 'admin_ui', group: 'admin' },

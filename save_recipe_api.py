@@ -3559,6 +3559,92 @@ def delete_user(user_id: int):
 # step) — it imports build_query_batch in-process to do the actual work.
 
 
+@app.get("/dish-coverage")
+def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
+    """Dishes the CORPUS holds that the CATALOG has no record of.
+
+    `_match.dish` is a CLOSED set — it is a KNN over dishes_vec, built from the
+    dishes table, so it can only ever return a dish that already exists, and the
+    nearest neighbour always exists. `_identity.likelyDish` is the opposite:
+    free LLM text written at extraction with no knowledge of the catalog. The
+    gap between the two is the coverage gap, and this endpoint is that gap.
+
+    Each row also carries `alias_of` — the existing dish sharing most of its
+    words. Sometimes that is only a naming variant (Mac and Cheese against
+    Macaroni and Cheese), but often it is the generic-bucket problem, where a
+    broad dish is absorbing a specific one (Cobbler holding peach cobblers).
+    Those need reading, not bulk action, so it is reported, never applied.
+
+    Curator surface: it names the corpus's own gaps and joins keyword demand.
+    """
+    _require_perm(request, "admin_ui")
+    import re as _re
+    STOP = {"and", "the", "with", "a", "of", "in", "recipe", "recipes", "style"}
+
+    def _toks(t):
+        return {w for w in _re.findall(r"[a-z]+", (t or "").lower())
+                if w not in STOP and len(w) > 2}
+
+    with _db() as conn:
+        have = {r[0] for r in conn.execute("SELECT name FROM dishes")}
+        have_l = {n.strip().lower() for n in have}
+        counts: dict = {}
+        chapters: dict = {}
+        # Indexed by idx_mr_likelydish.
+        for ld, ch in conn.execute(
+                "SELECT json_extract(data,'$._identity.likelyDish'), "
+                "       json_extract(data,'$.classification.chapter') "
+                "  FROM master_recipes "
+                " WHERE json_extract(data,'$._identity.likelyDish') IS NOT NULL"):
+            k = (ld or "").strip()
+            if not k or k.lower() in have_l:
+                continue
+            counts[k] = counts.get(k, 0) + 1
+            if ch:
+                chapters.setdefault(k, {})
+                chapters[k][ch] = chapters[k].get(ch, 0) + 1
+
+        dish_toks = [(d, _toks(d)) for d in have]
+        out = []
+        for name, n in counts.items():
+            if n < max(1, min_recipes):
+                continue
+            like = f"%{name.lower()}%"
+            traffic = conn.execute(
+                "SELECT COALESCE(SUM(traffic),0) FROM dish_keywords "
+                " WHERE lower(keyword) LIKE ?", (like,)).fetchone()[0]
+            top = conn.execute(
+                "SELECT keyword FROM dish_keywords WHERE lower(keyword) LIKE ? "
+                " ORDER BY traffic DESC LIMIT 1", (like,)).fetchone()
+            t = _toks(name)
+            best, score = None, 0.0
+            for d, dt in dish_toks:
+                if not (t and dt):
+                    continue
+                j = len(t & dt) / len(t | dt)
+                if j > score:
+                    score, best = j, d
+            ch_map = chapters.get(name) or {}
+            out.append({
+                "dish": name,
+                "recipes": n,
+                "traffic": int(traffic or 0),
+                "top_keyword": top[0] if top else None,
+                "chapter": max(ch_map, key=ch_map.get) if ch_map else None,
+                # 0.34 keeps one shared significant word out of it while still
+                # catching Cobbler/Peach Cobbler.
+                "alias_of": best if score >= 0.34 else None,
+                "alias_score": round(score, 2),
+            })
+    out.sort(key=lambda r: (-r["traffic"], -r["recipes"]))
+    return {
+        "rows": out,
+        "uncovered_names": len(counts),
+        "catalog_size": len(have),
+        "min_recipes": min_recipes,
+    }
+
+
 @app.get("/dishes")
 def list_dishes_endpoint():
     try:

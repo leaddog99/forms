@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Dish Coverage</title>
+  <!-- Dishes the CORPUS holds that the CATALOG has no record of.
+
+       `_match.dish` is a CLOSED set — a KNN over dishes_vec, built from the
+       dishes table, so it can only ever return a dish that already exists, and
+       the nearest neighbour ALWAYS exists (distance says how far, never whether
+       it belongs — that is what the threshold is for). `_identity.likelyDish`
+       is the opposite: free LLM text written at extraction with no knowledge of
+       the catalog. The gap between the two is the coverage gap, and this page
+       is that gap. Read-only by design — it reports, it never creates.
+       Backed by GET /dish-coverage. -->
+  <style>
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+    .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 80px; }
+    h1.pt{ font-size:1.5rem; margin:0 0 2px; }
+    .sub{ color:var(--muted); margin:0 0 16px; font-size:.92rem; max-width:70ch; line-height:1.5; }
+    .sub code{ background:var(--card); padding:1px 5px; border-radius:4px; font-size:.86em; }
+
+    .tiles{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:18px; }
+    .tile{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+    .tile .v{ font-size:1.65rem; font-weight:650; line-height:1; font-variant-numeric:tabular-nums; }
+    .tile .l{ font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; margin-bottom:5px; }
+    .tile .s{ font-size:.8rem; color:var(--muted); margin-top:4px; line-height:1.4; }
+    .tile.new .v{ color:var(--accent-dark); }
+    .tile.split .v{ color:#8c2f39; }
+
+    .toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    .toolbar input[type=search],.toolbar select{ padding:8px 10px; border:1px solid var(--border);
+      border-radius:8px; background:var(--card); color:var(--ink); font:inherit; font-size:.9rem; }
+    .chip{ font:inherit; font-size:.85rem; padding:7px 13px; border-radius:8px; cursor:pointer;
+      border:1px solid var(--border); background:var(--card); color:var(--ink); }
+    .chip[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+    .count{ margin-left:auto; font-size:.82rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+    .tablewrap{ background:var(--card); border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
+    table{ border-collapse:collapse; width:100%; min-width:760px; }
+    thead th{ position:sticky; top:0; background:var(--card); z-index:2; text-align:left; padding:0;
+      border-bottom:1px solid var(--border); white-space:nowrap; }
+    thead th button{ all:unset; cursor:pointer; display:block; width:100%; padding:11px 14px;
+      font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; font-weight:700; color:var(--muted); }
+    thead th button:hover{ color:var(--ink); }
+    thead th[aria-sort] button{ color:var(--accent-dark); }
+    thead th.r button{ text-align:right; }
+    tbody td{ padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:top; font-size:.9rem; }
+    tbody tr:last-child td{ border-bottom:0; }
+    td.r{ text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .dish{ font-weight:600; }
+    .kw{ display:block; font-size:.78rem; color:var(--muted); margin-top:2px; }
+    .absorbed{ display:block; font-size:.78rem; color:#8c2f39; margin-top:3px; }
+    .traffic{ color:#9a5a0c; font-weight:600; }
+    .traffic.zero{ color:var(--muted); font-weight:400; }
+    .chap{ font-size:.8rem; color:var(--muted); white-space:nowrap; }
+    .tag{ display:inline-block; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
+      font-weight:700; padding:3px 8px; border-radius:6px; white-space:nowrap; }
+    .tag.new{ background:#e2efeb; color:#0f6e5c; }
+    .tag.split{ background:#f5e6e7; color:#8c2f39; }
+    .empty{ padding:34px; color:var(--muted); text-align:center; }
+    .notes{ margin-top:18px; font-size:.82rem; color:var(--muted); line-height:1.55; max-width:78ch;
+      display:flex; flex-direction:column; gap:7px; }
+    button:focus-visible,input:focus-visible,select:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
+</head>
+<body>
+  <!-- Shared app header: library-shell.js fills the <h1> with the brand and
+       mounts the identity badge + both burgers into .header-inner. -->
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <h1 class="pt">Dish coverage</h1>
+    <p class="sub">Dishes the corpus holds that the catalog has no record of. Every recipe's
+      identity card names what it actually is (<code>_identity.likelyDish</code>) &mdash; free text,
+      written at extraction. Matching can only ever return a dish that already exists. The gap
+      between the two is this list, and a dish has to exist here before any recipe can join it.</p>
+
+    <section class="tiles" id="tiles"></section>
+
+    <div class="toolbar">
+      <button class="chip" data-filter="all" aria-pressed="true">All</button>
+      <button class="chip" data-filter="new" aria-pressed="false">New dish</button>
+      <button class="chip" data-filter="split" aria-pressed="false">Possible split</button>
+      <button class="chip" data-filter="demand" aria-pressed="false">100k+ traffic</button>
+      <select id="chap" aria-label="Chapter"><option value="">All chapters</option></select>
+      <input id="q" type="search" placeholder="Search dish or keyword…" aria-label="Search dishes">
+      <span class="count" id="count"></span>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th style="min-width:280px"><button data-key="dish">Dish</button></th>
+          <th class="r"><button data-key="recipes">Recipes</button></th>
+          <th class="r" aria-sort="descending"><button data-key="traffic">Tracked traffic</button></th>
+          <th><button data-key="chapter">Chapter</button></th>
+          <th><button data-key="alias_of">Action</button></th>
+        </tr></thead>
+        <tbody id="body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="notes">
+      <span><b>Recipes</b> counts master rows whose identity card names this dish.
+        <b>Tracked traffic</b> is <em>not</em> search volume. <code>dish_keywords</code> holds one
+        row per harvested URL &mdash; that URL&rsquo;s top-ranking keyword and its estimated
+        traffic &mdash; across only the ~117 publishers we have run exports for. So this column
+        reads &ldquo;traffic flowing to pages about this, among the publishers we track&rdquo;.
+        A dish that is big on sites we have never harvested reads low or zero, and the name match
+        is a substring (<em>Chili</em> catches <em>sweet chili sauce</em>). Treat it as directional
+        ordering, never as a number.</span>
+      <span><b>Possible split</b> means an existing dish shares most of its words. Sometimes that is
+        only a naming variant (<em>Mac and Cheese</em> against <em>Macaroni and Cheese</em>), but
+        often it is the generic-bucket problem, where a broad dish is quietly absorbing a specific
+        one. Read each before acting &mdash; this page reports, it never creates.</span>
+      <span>Seasonal dishes read low: a traffic snapshot taken out of season undercounts them.</span>
+    </div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260809c"></script>
+  <script>
+    const $ = s => document.querySelector(s);
+    let DATA = [], filter = 'all', chapter = '', q = '', sortKey = 'traffic', sortDir = -1;
+    const fmt = n => n ? n.toLocaleString('en-US') : '—';
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    function shown(){
+      return DATA.filter(r => {
+        if (filter === 'new'    && r.alias_of) return false;
+        if (filter === 'split'  && !r.alias_of) return false;
+        if (filter === 'demand' && r.traffic < 100000) return false;
+        if (chapter && r.chapter !== chapter) return false;
+        if (q) {
+          const s = (r.dish + ' ' + (r.top_keyword||'') + ' ' + (r.alias_of||'')).toLowerCase();
+          if (!s.includes(q)) return false;
+        }
+        return true;
+      }).sort((a, b) => {
+        const A = a[sortKey], B = b[sortKey];
+        if (A == null) return 1;
+        if (B == null) return -1;
+        if (typeof A === 'string') return A.localeCompare(B) * sortDir;
+        return (A - B) * sortDir;
+      });
+    }
+
+    function render(){
+      const rs = shown();
+      $('#count').textContent = rs.length + (rs.length === 1 ? ' dish' : ' dishes') + ' · '
+        + rs.reduce((s, r) => s + r.recipes, 0).toLocaleString('en-US') + ' recipes held';
+      $('#body').innerHTML = rs.length ? rs.map(r => `
+        <tr>
+          <td><span class="dish">${esc(r.dish)}</span>
+            ${r.alias_of ? `<span class="absorbed">currently absorbed by ${esc(r.alias_of)}</span>` : ''}
+            ${r.top_keyword ? `<span class="kw">${esc(r.top_keyword)}</span>` : ''}</td>
+          <td class="r">${r.recipes}</td>
+          <td class="r traffic ${r.traffic ? '' : 'zero'}">${fmt(r.traffic)}</td>
+          <td class="chap">${esc(r.chapter || '—')}</td>
+          <td><span class="tag ${r.alias_of ? 'split' : 'new'}">${r.alias_of ? 'split' : 'new dish'}</span></td>
+        </tr>`).join('')
+        : '<tr><td colspan="5" class="empty">No dishes match those filters.</td></tr>';
+    }
+
+    async function load(){
+      let d;
+      try {
+        const r = await fetch('/dish-coverage?min_recipes=2');
+        if (!r.ok) {
+          $('#body').innerHTML = '<tr><td colspan="5" class="empty">'
+            + (r.status === 401 || r.status === 403
+               ? 'Curator tools are locked — unlock admin from the header, then reload.'
+               : 'Could not load coverage (' + r.status + ').') + '</td></tr>';
+          return;
+        }
+        d = await r.json();
+      } catch (e) {
+        $('#body').innerHTML = '<tr><td colspan="5" class="empty">Could not reach the server.</td></tr>';
+        return;
+      }
+      DATA = d.rows || [];
+      const held = DATA.reduce((s, r) => s + r.recipes, 0);
+      const nu = DATA.filter(r => !r.alias_of).length;
+      const sp = DATA.length - nu;
+      $('#tiles').innerHTML = `
+        <div class="tile"><div class="l">Uncovered names</div><div class="v">${d.uncovered_names.toLocaleString('en-US')}</div>
+          <div class="s">distinct likelyDish values with no dish record</div></div>
+        <div class="tile"><div class="l">Held by 2+ recipes</div><div class="v">${DATA.length.toLocaleString('en-US')}</div>
+          <div class="s">${held.toLocaleString('en-US')} recipes waiting on a home</div></div>
+        <div class="tile new"><div class="l">Genuinely new</div><div class="v">${nu.toLocaleString('en-US')}</div>
+          <div class="s">nothing in the catalog resembles them</div></div>
+        <div class="tile split"><div class="l">Possible splits</div><div class="v">${sp.toLocaleString('en-US')}</div>
+          <div class="s">an existing dish is absorbing them</div></div>`;
+      const chaps = [...new Set(DATA.map(r => r.chapter).filter(Boolean))].sort();
+      $('#chap').innerHTML = '<option value="">All chapters</option>'
+        + chaps.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+      render();
+    }
+
+    document.querySelectorAll('.chip[data-filter]').forEach(b => {
+      b.addEventListener('click', () => {
+        filter = b.dataset.filter;
+        document.querySelectorAll('.chip[data-filter]').forEach(x =>
+          x.setAttribute('aria-pressed', String(x === b)));
+        render();
+      });
+    });
+    $('#q').addEventListener('input', e => { q = e.target.value.trim().toLowerCase(); render(); });
+    $('#chap').addEventListener('change', e => { chapter = e.target.value; render(); });
+    document.querySelectorAll('th button[data-key]').forEach(b => {
+      b.addEventListener('click', () => {
+        const k = b.dataset.key;
+        if (k === sortKey) sortDir *= -1;
+        else { sortKey = k; sortDir = (k === 'dish' || k === 'chapter') ? 1 : -1; }
+        document.querySelectorAll('th').forEach(th => th.removeAttribute('aria-sort'));
+        b.closest('th').setAttribute('aria-sort', sortDir === 1 ? 'ascending' : 'descending');
+        render();
+      });
+    });
+    load();
+  </script>
+</body>
+</html>
