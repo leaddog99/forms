@@ -211,15 +211,26 @@ def url_excluded_by_domain(url: str, exclude_words) -> bool:
     return any(p in words for p in parts)
 
 
-def url_lacks_recipe_signal(url: str, db_path: Optional[str] = None) -> bool:
+def url_lacks_recipe_signal(url: str, db_path: Optional[str] = None,
+                            extra_food: Optional[set] = None) -> bool:
     """True (→ drop, skip the fetch) when the URL path has NO food-list token. Food
     presence is the ONLY gate — a non-food token (restaurant/chef/news) is just no
     signal, NEVER exclusionary, so a real recipe can't be dropped over an incidental
     word. The 'stop' list isn't consulted here (it only spares the SWEEP from re-asking).
     The fetch-verify still runs on survivors, so a restaurant named after a real dish
     (/restaurant/sarma/) is kept-then-dropped by verify — that's the accepted ceiling;
-    the cure for junk keeps is fixing mis-classified food tokens, not exclusion rules."""
-    return not (path_tokens(url) & get_word_sets(db_path)["food"])
+    the cure for junk keeps is fixing mis-classified food tokens, not exclusion rules.
+
+    `extra_food` is the RUN'S OWN SUBJECT — the dish being harvested. A dish refresh
+    for Tiramisu searched for tiramisu, and then dropped 48 of 94 results before the
+    fetch because `tiramisu` was not among the 2,085 learned food words. A run must
+    never pre-filter away the very word it is searching for: whatever the dish is
+    called is, for that run, a food word by definition. Passing it here fixes the
+    whole class, not one word."""
+    food = get_word_sets(db_path)["food"]
+    if extra_food:
+        food = food | {w.lower() for w in extra_food if w}
+    return not (path_tokens(url) & food)
 
 
 # ── sweep (occasional, out-of-process — the only place the model is called) ──

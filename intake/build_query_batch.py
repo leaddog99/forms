@@ -518,6 +518,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                       exclude_words=None, should_cancel=None,
                       render_escalate: bool = True,
                       render: bool = False,
+                      subject_words=None,
                       ) -> tuple[list[dict], list[dict]]:
     """Fetch each URL, decide is-this-a-recipe via JSON-LD first, then
     phrase check (with translation for non-English pages) as fallback.
@@ -790,7 +791,11 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         # the dish batch share it. See input.pipeline.url_word_lists.
         if url_prefilter:
             from input.pipeline.url_word_lists import url_lacks_recipe_signal
-            if url_lacks_recipe_signal(url):
+            # subject_words = what this run is FOR. A dish refresh must never
+            # pre-filter away the word it searched for: Tiramisu dropped 48 of 94
+            # results before the fetch because `tiramisu` was not among the 2,085
+            # learned food words (job 914, 2026-08-22).
+            if url_lacks_recipe_signal(url, extra_food=subject_words):
                 if random.random() < explore_rate:
                     # ε-exploration: verify this would-be-skip anyway → unbiased label.
                     e["_explore"] = True
@@ -1628,9 +1633,22 @@ def build_batch(
                     _e["_allow_render"] = True
     except Exception:
         pass
+    # The dish's own name (and the words of its queries) are food words FOR THIS RUN,
+    # whatever the learned list happens to know. Tokenised the same way the filter
+    # tokenises a URL path, so "Lok Lak" contributes {lok, lak}.
+    _subject_words = set()
+    try:
+        import re as _re
+        for _src in [dish or ""] + [str(_q.get("q") if isinstance(_q, dict) else _q)
+                                    for _q in (queries or [])]:
+            _subject_words |= {w for w in _re.findall(r"[a-z0-9]+", _src.lower())
+                               if len(w) > 2}
+    except Exception:
+        _subject_words = set()
     entries, dropped_not_recipe = _is_recipe_filter(
         entries, capture_source="dish_batch", capture_provenance={"dish": dish},
-        url_prefilter=_dish_url_prefilter, should_cancel=should_cancel)
+        url_prefilter=_dish_url_prefilter, should_cancel=should_cancel,
+        subject_words=_subject_words)
     # Auto-learn the JS-rendered hint from a dish batch too (symmetry with the
     # publisher harvest): any kept result that needed a render escalation flags its
     # domain so the form shows it + future runs escalate up front.
