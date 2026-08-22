@@ -1638,11 +1638,10 @@ def build_batch(
     # tokenises a URL path, so "Lok Lak" contributes {lok, lak}.
     _subject_words = set()
     try:
-        import re as _re
+        from input.pipeline.url_word_lists import name_tokens as _name_tokens
         for _src in [dish or ""] + [str(_q.get("q") if isinstance(_q, dict) else _q)
                                     for _q in (queries or [])]:
-            _subject_words |= {w for w in _re.findall(r"[a-z0-9]+", _src.lower())
-                               if len(w) > 2}
+            _subject_words |= _name_tokens(_src)
     except Exception:
         _subject_words = set()
     entries, dropped_not_recipe = _is_recipe_filter(

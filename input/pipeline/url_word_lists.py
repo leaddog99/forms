@@ -15,6 +15,7 @@ BOOTSTRAP SEED only ([[no data in code]] — the table is canonical once seeded)
 """
 import os
 import re
+import unicodedata
 import sqlite3
 from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timezone
@@ -185,6 +186,21 @@ def path_tokens(url: str) -> set:
     """Lowercase alpha word tokens (≥3 chars) from a URL path. URL-DECODED first so
     %-escaped slugs tokenize (Latin only; non-Latin scripts yield no ascii tokens)."""
     return {t for t in re.split(r"[^a-z]+", unquote(urlparse(url).path).lower())
+            if len(t) >= _MIN_TOKEN_LEN}
+
+
+def name_tokens(text: str) -> set:
+    """Word tokens from a DISH NAME, tokenised to match `path_tokens` output.
+
+    Accents are folded FIRST. Both tokenisers split on `[^a-z]+`, which is right
+    for a URL path (publishers slug to ASCII: /chicken-fricassee/) and wrong for
+    the name itself — `Fricassée` split that way yields `fricass`, `Ragù` yields
+    `rag`, and neither can ever match the URL slug they are supposed to. Folding
+    to `fricassee` / `ragu` makes the two sides agree.
+    """
+    folded = unicodedata.normalize("NFD", text or "")
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    return {t for t in re.split(r"[^a-z]+", folded.lower())
             if len(t) >= _MIN_TOKEN_LEN}
 
 
