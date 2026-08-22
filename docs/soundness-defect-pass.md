@@ -1,8 +1,10 @@
 # The Soundness Defect Pass — prompt spec
 
-**Status:** DRAFT, 2026-08-22. Nothing built. The prompt below is the deliverable of the
-2026-08-22 scoring-enhancement session; the measurement that justifies it is in that
-day's session log (the structural thinness pass over all 5,657 winners).
+**Status:** BUILT (shadow only), 2026-08-22 — `extract/defect_pass.py` +
+`scripts/defect_pass_shadow.py`, calibrated on the six traps the same day (§2). The
+gate wiring (§4) is NOT built; nothing renders or gates. The measurement that
+justifies the pass is in the 2026-08-22 session log (the structural thinness pass
+over all 5,657 winners).
 
 **Naming:** it is a *defect pass*, its output is a *defect report*. Not "the gauntlet"
 (taken — corpus-ML accept/reject), not "grading" (taken — OU exceptionalism), not
@@ -199,10 +201,24 @@ Per-row human review does not scale and is not the design. The load divides:
   overturn any one they happen to see; overturn *rate* per prompt_version is the
   drift alarm that triggers an off-cycle re-audit — review by exception, not by
   queue.
-* **Repeatability, scripted:** same recipe 3-5 runs at temp 0.2; the defect SET
-  (category + evidence) should be stable. If a recipe alternates between 0 and 2
-  major defects across runs, the pass is noise and must not gate anything. This is
-  a script, not a review.
+* **Repeatability, scripted:** same recipe 3-5 runs; the defect SET (category +
+  evidence) should be stable. If a recipe alternates between 0 and 2 major defects
+  across runs, the pass is noise and must not gate anything. This is a script, not
+  a review.
+
+### First shadow results — 50 random winners, 2026-08-22 (`prompt_version 0f3dabf0685b`, Sonnet)
+
+50/50 completed, **0 disqualifications**, 0 dropped citations. 8 rows carried
+defects: 3 majors across 2 recipes, 9 minors across 7. **Both major rows verified
+true against the stored text**: Trofie al Pesto lists `½ tbsp Parmesan` while the
+step demands `6 tablespoons` (contradiction), and Gogges' ingredient list is
+flour/water/salt only while the steps use myzithra and olive oil/butter
+(unmade_ingredient ×2). Minors are mixed (~half real page quirks like an unadded
+bay leaf; two soft false positives — one padded "resolvable ambiguity", one
+evidence/explanation line mismatch on Perfect porridge) — acceptable, since minors
+never gate. The base rate matches the structural finding: truly defective winners
+are rare (0/50 disqualifiable), which is what makes a for-cause gate cheap to
+review by exception.
 
 No correlation-with-traffic test — deliberately. Soundness is orthogonal to demand by
 design; the validation is citation-precision, not prediction.
