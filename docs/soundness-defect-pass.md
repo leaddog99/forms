@@ -42,8 +42,13 @@ cannot separate thin-bad from terse-good. That separation is judgment — this p
 ## 2. The prompt
 
 House pattern: `extract/identity_card.py` — dedicated module (`extract/defect_pass.py`),
-ordered tool_use schema, `_SYSTEM_PROMPT` hashed to `DEFECT_PROMPT_VERSION`, Haiku,
-temperature 0.2. Property order in the schema is load-bearing (facts before verdict),
+ordered tool_use schema, `_SYSTEM_PROMPT` hashed to `DEFECT_PROMPT_VERSION`. **Model is
+Sonnet, not Haiku** — decided 2026-08-22 on the six-trap calibration set: Haiku kept
+inventing defects through two rounds of targeted prompt fixes (demanded a grinding step
+against an ingredient line reading "seeds removed and ground"; a cooling step against
+"Spread over cooled cake") and inflated severity to critical. Sonnet: zero false
+positives on the traps AND full recall on two synthetically broken recipes (deleted
+meatball-forming step → critical+disqualify; injected time contradiction → major). Property order in the schema is load-bearing (facts before verdict),
 same as the identity card: the model must enumerate defects BEFORE it answers
 `disqualify`, so the verdict is forced to follow from the evidence.
 
@@ -204,9 +209,8 @@ design; the validation is citation-precision, not prediction.
 
 ## 6. Cost
 
-Haiku, one call per winner, roughly identity-card-sized input+output. At the
-identity-card price point this is corpus-wide affordable (~5.7k winners) and
-per-batch negligible (20-40 calls). Piggybacking the fields onto the main extraction
+Sonnet, one call per winner, ~$0.01/call — ~$0.30 per 20-40-winner batch,
+~$60 for the full 5.7k-winner corpus (run that once, deliberately). Piggybacking the fields onto the main extraction
 call (ChatGPT's suggestion) was considered and declined for v1: the extraction call
 must stay blind to nothing (it needs the page), while this call must stay blind to
 provenance — separate calls keep the blinding honest, and the identity card is

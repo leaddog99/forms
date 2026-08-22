@@ -40,7 +40,7 @@ from dotenv import load_dotenv                                   # noqa: E402
 load_dotenv(PROJ / ".env")                                       # before the client import
 
 from extract.defect_pass import (                                # noqa: E402
-    DEFECT_PROMPT_VERSION, run_defect_pass,
+    DEFECT_PROMPT_VERSION, _MODEL, run_defect_pass,
 )
 
 DB_PATH = PROJ / "recipes.db"
@@ -115,6 +115,8 @@ def main() -> int:
     ap.add_argument("--repeat", type=int, default=0,
                     help="repeatability mode: run each row N times, "
                          "report defect-set stability, write nothing")
+    ap.add_argument("--model", type=str, default=_MODEL,
+                    help="model override for the tier experiment")
     ap.add_argument("--force", action="store_true",
                     help="re-run rows that already have a report for the "
                          "current prompt_version (overwrites)")
@@ -134,7 +136,7 @@ def main() -> int:
         for rid, url, recipe in rows:
             sets = []
             for i in range(args.repeat):
-                rep = run_defect_pass(recipe)
+                rep = run_defect_pass(recipe, model=args.model)
                 if rep is None:
                     print(f"  #{rid} run {i + 1}: CALL FAILED")
                     continue
@@ -158,7 +160,7 @@ def main() -> int:
             if hit:
                 skipped += 1
                 continue
-        rep = run_defect_pass(recipe)
+        rep = run_defect_pass(recipe, model=args.model)
         if rep is None:
             failed += 1
             print(f"  #{rid} FAILED {url}")

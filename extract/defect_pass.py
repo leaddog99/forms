@@ -1,6 +1,6 @@
 """Soundness defect pass — material-defect audit of a stored recipe.
 
-One Haiku call per recipe answering a single question: is this recipe, AS
+One LLM call (Sonnet) per recipe answering a single question: is this recipe, AS
 STORED, materially complete and internally consistent — and if not, what
 exactly is wrong, quoted verbatim from the text?
 
@@ -21,7 +21,7 @@ per DEFECT_PROMPT_VERSION (sampled audit), never per row.
 Follows the extract/identity_card.py house pattern: ordered tool_use
 schema (facts before verdict — the model must list resolved references,
 then defects, and only then may answer disqualify), hashed prompt
-version, temperature 0.2.
+version.
 """
 from __future__ import annotations
 
@@ -130,7 +130,10 @@ _SYSTEM_PROMPT = (
     "part of the context. Flag a group reference ONLY when it genuinely "
     "cannot be resolved — e.g. two identical \"mix all ingredients\" "
     "steps over one undivided list, with no way to tell which "
-    "ingredients belong to which.\n\n"
+    "ingredients belong to which. A reference you list in "
+    "resolved_references is RESOLVED: it must not also appear as a "
+    "defect. Resolving it and flagging it are contradictory answers to "
+    "the same question.\n\n"
     "DEFECT CATEGORIES (use exactly these):\n"
     "- missing_step: an action the recipe depends on but never states "
     "(dough is shaped \"after resting\" but no rest exists; a component "
@@ -154,6 +157,16 @@ _SYSTEM_PROMPT = (
     "EVIDENCE IS MANDATORY AND VERBATIM. Every defect must carry a quote "
     "copied EXACTLY from the recipe text (the step or ingredient line it "
     "concerns). If you cannot quote it, you cannot flag it.\n\n"
+    "A DEFECT IS ABSENT OR CONTRADICTORY INFORMATION — nothing else.\n"
+    "- Preparation written in an ingredient line (\"chopped\", \"seeds "
+    "removed and ground\", \"melted\") IS stated. Do not demand a step "
+    "for it.\n"
+    "- Technique a competent cook supplies unprompted (cooling toasted "
+    "spices, choosing a pan, greasing judgment) is not missing "
+    "information. \"The recipe does not say how to do X safely/"
+    "conveniently\" is not a defect.\n"
+    "- \"Which spices?\" is answered by the ingredient list unless two "
+    "readings genuinely conflict.\n\n"
     "DO NOT INVENT DEFECTS. Most published recipes that reached this "
     "audit are sound. An empty defect list is the expected, normal "
     "outcome. Do not manufacture minor defects to appear thorough. Do "
@@ -169,7 +182,15 @@ DEFECT_PROMPT_VERSION = hashlib.sha256(
     _SYSTEM_PROMPT.encode("utf-8")
 ).hexdigest()[:12]
 
-_MODEL = "claude-haiku-4-5"
+# Sonnet, not Haiku — decided 2026-08-22 on the six-trap calibration set:
+# Haiku kept inventing defects (demanded a grinding step against an
+# ingredient line reading "seeds removed and ground"; a cooling step
+# against "Spread over cooled cake") through two rounds of targeted
+# prompt fixes, and inflated severity. Sonnet: zero false positives on
+# the traps, and full recall on two synthetically broken recipes
+# (deleted meatball-forming step -> critical+disqualify; injected time
+# contradiction -> major). Precision is this design's currency.
+_MODEL = "claude-sonnet-5"
 _MAX_TOKENS = 2000
 _TEMPERATURE = 0.2
 
@@ -211,6 +232,13 @@ def build_defect_user_prompt(recipe: dict) -> str:
     for i, (label, text) in enumerate(_iter_step_texts(recipe), 1):
         prefix = f"{i}. [{label}] " if label else f"{i}. "
         lines.append(prefix + text)
+    # Notes are part of the recipe's own text: footnote markers in the
+    # ingredient list (loveandlemons' "cooked bulgur*") often resolve here.
+    notes = (recipe.get("notes") or "").strip()
+    if notes:
+        lines.append("")
+        lines.append("NOTES:")
+        lines.append(notes)
     return "\n".join(lines)
 
 
@@ -225,20 +253,20 @@ def _fold(s: str) -> str:
     s = (s.replace("’", "'").replace("‘", "'")
           .replace("“", '"').replace("”", '"')
           .replace("–", "-").replace("—", "-"))
+    # The user prompt renders labelled steps as "[label] text"; models quote
+    # them as rendered. Brackets carry no matching information — drop them
+    # so a quoted "[Frosting] Mix..." matches the label+text haystack.
+    s = s.replace("[", " ").replace("]", " ")
     return re.sub(r"\s+", " ", s).strip()
 
 
 def recipe_haystack(recipe: dict) -> str:
-    """The text a defect is allowed to cite: name, yield, ingredient
-    lines, step labels and step texts."""
-    parts = [recipe.get("name") or ""]
-    ry = recipe.get("recipeYield")
-    parts.extend(str(y) for y in (ry if isinstance(ry, list) else [ry]) if y)
-    parts.extend(str(i) for i in recipe.get("recipeIngredient") or [])
-    for label, text in _iter_step_texts(recipe):
-        parts.append(label)
-        parts.append(text)
-    return _fold(" \n ".join(parts))
+    """The text a defect is allowed to cite — the RENDERED user prompt,
+    because that is what the model reads and quotes from. Models quote
+    steps as displayed ("4. [Frosting] Mix ..."), so validating against a
+    reassembled field list rejected honest citations for carrying the
+    number/label prefix (hit twice on 2026-08-22 before this)."""
+    return _fold(build_defect_user_prompt(recipe))
 
 
 def validate_report(report: dict, recipe: dict) -> dict:
@@ -278,14 +306,19 @@ def validate_report(report: dict, recipe: dict) -> dict:
 # The call
 # --------------------------------------------------------------------------- #
 def _call_defect_tool(user_prompt: str, *,
+                      model: str = _MODEL,
                       usage_log: Optional[list] = None) -> Optional[dict]:
     """Shared LLM call shape (identity_card pattern). Returns the raw tool
     input dict, or None on failure. Never raises."""
     try:
+        # temperature is deprecated on the Claude 5 family (400s if sent);
+        # keep it only for the Haiku 4.5 default.
+        _kw = ({"temperature": _TEMPERATURE}
+               if model.startswith("claude-haiku-4") else {})
         response = _anthropic_client.messages.create(
-            model=_MODEL,
+            model=model,
             max_tokens=_MAX_TOKENS,
-            temperature=_TEMPERATURE,
+            **_kw,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
             tools=[DEFECT_TOOL],
@@ -301,7 +334,7 @@ def _call_defect_tool(user_prompt: str, *,
         try:
             from input.pipeline.token_journal import build_usage_entry
             usage_log.append(
-                build_usage_entry("defect_pass", _MODEL, response))
+                build_usage_entry("defect_pass", model, response))
         except Exception:
             pass
 
@@ -317,6 +350,7 @@ def _call_defect_tool(user_prompt: str, *,
 
 
 def run_defect_pass(recipe: dict, *,
+                    model: str = _MODEL,
                     usage_log: Optional[list] = None) -> Optional[dict]:
     """Audit one recipe. Returns the validated `_soundness`-shaped dict
     (prompt/model stamped, citations verified), or None when the call
@@ -325,13 +359,13 @@ def run_defect_pass(recipe: dict, *,
     if not any(True for _ in _iter_step_texts(recipe)):
         return None
     raw = _call_defect_tool(build_defect_user_prompt(recipe),
-                            usage_log=usage_log)
+                            model=model, usage_log=usage_log)
     if raw is None:
         return None
     report = validate_report(raw, recipe)
     report.update({
         "prompt_version": DEFECT_PROMPT_VERSION,
-        "model": _MODEL,
+        "model": model,
         "checked_at": datetime.now(timezone.utc).isoformat(),
     })
     return report
