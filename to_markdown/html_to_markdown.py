@@ -117,11 +117,28 @@ def fetch_with_ua_fallback(url: str, *,
     uas = user_agents or USER_AGENT_CHAIN
     last_exc: Optional[Exception] = None
     last_status: Optional[int] = None
+    blocked_resp = None          # best 2xx-but-blocked answer seen, as a last resort
+    blocked_ua = None
     for ua in uas:
         try:
             resp = requests.get(url, timeout=timeout, headers={"User-Agent": ua})
             if 200 <= resp.status_code < 300:
                 _fix_response_encoding(resp)
+                # A CHALLENGE STUB IS NOT A SUCCESS, SO IT MUST NOT END THE SEARCH.
+                # The chain exists to find a UA the site accepts, and it used to
+                # stop at the first 2xx — but a WAF challenge is frequently 2xx.
+                # memoriediangelina.com (2026-08-22) answers the bot UA with
+                # `202` and a 198-byte stub, so the chain "succeeded" on UA #1 and
+                # NEVER TRIED the browser UA behind it. The site was reachable the
+                # whole time; we just stopped looking. Keep the stub aside and try
+                # the next UA; only fall back to it if every UA is blocked, so the
+                # caller still gets a response to inspect rather than an exception
+                # that loses the evidence.
+                if blocked_reason(resp) is not None:
+                    if blocked_resp is None:
+                        blocked_resp, blocked_ua = resp, ua
+                    last_status = resp.status_code
+                    continue
                 return resp, ua
             last_status = resp.status_code
             # Don't retry 404 — page genuinely doesn't exist, swapping
@@ -137,6 +154,11 @@ def fetch_with_ua_fallback(url: str, *,
     # Every UA in the chain failed. Raise the most informative thing
     # we have: a real exception if we caught one, else a synthetic
     # HTTPError carrying the last status code.
+    if blocked_resp is not None:
+        # Every UA was challenged. Hand back the stub rather than raising: the
+        # caller's own block check sees it and routes to unblocker/Wayback, and
+        # a response carries the diagnosis where an exception does not.
+        return blocked_resp, blocked_ua
     if last_exc is not None:
         raise last_exc
     raise requests.HTTPError(
