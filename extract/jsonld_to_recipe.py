@@ -130,16 +130,42 @@ def _flatten_instructions(raw: Any) -> list:
             elif isinstance(item, dict):
                 item_type = item.get("@type")
                 if item_type == "HowToSection" or (isinstance(item_type, list) and "HowToSection" in item_type):
-                    # Section wraps a list of steps.
+                    # Section wraps a list of steps. Carry the section NAME onto
+                    # each child step (HowToStep.name) — it is often the only
+                    # thing that makes the step resolvable ("Frosting
+                    # Instructions" → "Mix all ingredients except coconut").
+                    # Found on thesouthernladycooks.com 2026-08-22: dropping it
+                    # left two identical mix-everything steps with no referent.
+                    section_name = (item.get("name") or "").strip() \
+                        if isinstance(item.get("name"), str) else ""
                     for nested in item.get("itemListElement") or []:
                         if isinstance(nested, dict):
+                            nested = _strip_echo_name(nested)
+                            if section_name and not nested.get("name"):
+                                nested = {**nested, "name": section_name}
                             out.append(nested)
                         elif isinstance(nested, str):
-                            out.append(nested)
+                            if section_name:
+                                out.append({"@type": "HowToStep",
+                                            "name": section_name,
+                                            "text": nested})
+                            else:
+                                out.append(nested)
                 else:
-                    out.append(item)
+                    out.append(_strip_echo_name(item))
         return out
     return [raw]
+
+
+def _strip_echo_name(step: dict) -> dict:
+    """WPRM (and friends) emit HowToStep.name equal to the step's own text.
+    Such a name carries no information and blocks a real one (the section
+    label) from landing, so treat it as absent."""
+    name, text = step.get("name"), step.get("text")
+    if isinstance(name, str) and isinstance(text, str) and name.strip() \
+            and name.strip() == text.strip():
+        return {k: v for k, v in step.items() if k != "name"}
+    return step
 
 
 def jsonld_to_recipe(
