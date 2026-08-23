@@ -5729,6 +5729,50 @@
           // what the DB holds), and populateFormFromRecipe clears the seq id so
           // a later extract cannot inherit this row's identity. Clear is still
           // one button away for starting something new.
+          //
+          // EXCEPT the enrichment fields (found 2026-08-23): a master save
+          // auto-enriches a story-less row SERVER-SIDE inside this same POST,
+          // so the DB now holds MORE than the form — the "by definition what
+          // the DB holds" premise above is false for exactly these fields.
+          // The curator watched saves "not enrich" for a morning while 266
+          // SAVE-ENRICH log lines said otherwise. Pull the stored row and
+          // show what the save actually produced.
+          if (payload.user_id === 0 && result.recipe_id
+              && !(getValOr('classification_story') || '').trim()) {
+            (async () => {
+              try {
+                const rr = await fetch(`${API}/recipes/${encodeURIComponent(result.recipe_id)}?user_id=0`);
+                if (!rr.ok) return;
+                const saved = await rr.json();
+                const cls = saved.classification || {};
+                if (!(cls.story || '').trim()) return;   // enrich skipped/failed — nothing to show
+                const prov = saved.provenance || {};
+                const setF = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+                setF('provenance_ethnicity', prov.ethnicity);
+                setF('provenance_region', prov.originRegion);
+                setF('classification_hierarchy', cls.hierarchyPath);
+                setF('classification_confidence',
+                     (cls.confidence !== undefined && cls.confidence !== null) ? cls.confidence : '');
+                setF('classification_reasoning', cls.reasoning);
+                setF('classification_story', cls.story);
+                const ed = saved.editorial || {};
+                setF('editorial_opinion', ed.opinion);
+                setF('editorial_score_commentary', ed.scoreCommentary);
+                setF('editorial_sourcing_notes', ed.sourcingNotes);
+                ['classification_reasoning','classification_story',
+                 'editorial_opinion','editorial_score_commentary','editorial_sourcing_notes']
+                  .forEach(id => { const el = document.getElementById(id); if (el) autoGrow(el); });
+                // Keep the passthrough copy in step so a follow-up save
+                // doesn't blank what enrichment just wrote.
+                if (lastExtractedRecipe) {
+                  lastExtractedRecipe.provenance = saved.provenance || {};
+                  lastExtractedRecipe.classification = saved.classification || {};
+                  lastExtractedRecipe.editorial = saved.editorial || {};
+                }
+                showFeedback('✓ Enriched during save — story and origin fields updated below.', 'success');
+              } catch (e) { /* display-only refresh; the save itself succeeded */ }
+            })();
+          }
           loadRecipes();   // refresh the list so the row appears/moves
           // Success feedback after the click handler clears it.
           const overrideMsg = forceSave ? ' (override)' : '';
