@@ -2007,6 +2007,7 @@ def search_recipes(
     cuisine: str = "",
     ethnicity: str = "",
     chapter: str = "",
+    domain: str = "",
     sort: str = "",
     limit: int = 200,
     offset: int = 0,
@@ -2016,7 +2017,8 @@ def search_recipes(
     needs, in a single round trip. See _recipes_search_impl for the why."""
     return _recipes_search_impl(
         user_id=user_id, q=q, cuisine=cuisine, ethnicity=ethnicity,
-        chapter=chapter, sort=sort, limit=limit, offset=offset, facets=facets,
+        chapter=chapter, domain=domain, sort=sort, limit=limit, offset=offset,
+        facets=facets,
     )
 
 
@@ -9559,6 +9561,20 @@ def _search_where(user_id: int, filters: dict, q: str, *, skip: str = ""):
         if val:
             clauses.append(f"{col} = ?")
             params.append(val)
+    # Domain is a filter but NOT a facet column: it matches the url_normalized
+    # prefix (full-host grain, same as the domains master). normalize_url strips
+    # www. but keeps the original scheme, so both schemes are covered — two
+    # sargable prefix LIKEs, no leading wildcard. The picker is fed from
+    # GET /domains (friendly names), not from cascaded facet counts.
+    if skip != "domain":
+        host = (filters.get("domain") or "").strip().lower()
+        host = host.removeprefix("https://").removeprefix("http://")
+        host = host.removeprefix("www.").strip("/ ")
+        if host:
+            clauses.append(
+                "(url_normalized LIKE 'http://' || ? || '/%' "
+                "OR url_normalized LIKE 'https://' || ? || '/%')")
+            params.extend([host, host])
     if q:
         # The text match is NOT inlined here — it is pre-resolved into a temp
         # table by _materialise_text_match and joined in, because this predicate
@@ -9678,8 +9694,8 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
 
 
 def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
-                         chapter: str, sort: str, limit: int, offset: int,
-                         facets: int) -> dict:
+                         chapter: str, domain: str = "", sort: str, limit: int,
+                         offset: int, facets: int) -> dict:
     """One page of matching rows plus every dropdown's options, in one request.
 
     Returns an ENVELOPE, unlike GET /recipes which returns a bare array. The
@@ -9688,7 +9704,8 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
     GET /recipes keeps its array shape for the full-record consumers.
     """
     table = _recipes_table_for(user_id)
-    filters = {"cuisine": cuisine, "ethnicity": ethnicity, "chapter": chapter}
+    filters = {"cuisine": cuisine, "ethnicity": ethnicity, "chapter": chapter,
+               "domain": domain}
     q = (q or "").strip()
 
     order_by = SORT_SQL.get(sort) or SORT_SQL[DEFAULT_SORT]

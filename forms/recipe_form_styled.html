@@ -1930,6 +1930,15 @@
           <label for="filter_ethnicity">Ethnicity / region</label>
           <select id="filter_ethnicity"><option value="">Any ethnicity</option></select>
         </div>
+        <div class="filter-row">
+          <label for="filter_domain">Site</label>
+          <!-- Type-ahead over the domains master: shows the friendly name,
+               FILTERS on the actual host (the option text carries both;
+               resolution happens in _resolveDomainHost). -->
+          <input type="text" id="filter_domain" list="domainOptions"
+                 placeholder="Any site — type to search" autocomplete="off" />
+          <datalist id="domainOptions"></datalist>
+        </div>
         <div class="filter-count" id="filterCount"></div>
       </div>
     </div>
@@ -2011,6 +2020,9 @@
       <input type="hidden" id="sidebar_chapter" value="" />
       <input type="hidden" id="sidebar_cuisine" value="" />
       <input type="hidden" id="sidebar_ethnicity" value="" />
+      <!-- Applied domain filter: holds the resolved HOST (seriouseats.com),
+           while the dialog's visible input shows the friendly name. -->
+      <input type="hidden" id="sidebar_domain" value="" />
       <button type="button" id="filterOpenBtn" class="filter-btn" title="Search criteria">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -4335,11 +4347,77 @@
     const _filterEl = f => document.getElementById('filter_' + f);
     const _appliedEl = f => document.getElementById('sidebar_' + f);
 
+    // ---- Site (domain) filter — NOT in FILTER_FACETS on purpose. ----------
+    // The facets are selects fed by cascaded counts from the recipe rows; the
+    // site picker is a type-ahead fed from the DOMAINS MASTER, showing the
+    // friendly display name while the server filters on the actual host
+    // (url_normalized prefix). Option text carries both — "Serious Eats —
+    // seriouseats.com" — so typing matches either, and resolution is a parse.
+    let _domainIndex = null;   // [{host, display, text}] once loaded
+    async function ensureDomainOptions() {
+      if (_domainIndex) return;
+      try {
+        const r = await fetch(`${API}/domains`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const rows = await r.json();
+        _domainIndex = (Array.isArray(rows) ? rows : [])
+          .map(d => {
+            const host = (d.domain || '').trim();
+            const display = (d.display_name || '').trim() || host;
+            const n = Number(d.master_recipe_count) || 0;
+            return host ? {
+              host, display,
+              text: display === host ? host : `${display} — ${host}`,
+              label: n ? `${n} recipes` : '',
+            } : null;
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.display.localeCompare(b.display));
+        const dl = document.getElementById('domainOptions');
+        if (dl) {
+          dl.innerHTML = '';
+          _domainIndex.forEach(d => {
+            const o = document.createElement('option');
+            o.value = d.text;
+            if (d.label) o.label = d.label;
+            dl.appendChild(o);
+          });
+        }
+      } catch (e) {
+        _domainIndex = [];   // typed hosts still work; retry on next open is overkill
+      }
+    }
+    // Typed text -> host. Accepts a picked option, a bare host, a pasted URL,
+    // or a unique friendly-name fragment. Unresolvable text filters nothing.
+    function _resolveDomainHost(text) {
+      const t = (text || '').trim();
+      if (!t) return '';
+      const list = _domainIndex || [];
+      const exact = list.find(d => d.text === t || d.host === t || d.display === t);
+      if (exact) return exact.host;
+      // "Name — host" typed/edited by hand: trust the host half.
+      const dash = t.split('—').pop().trim();
+      if (dash && list.some(d => d.host === dash)) return dash;
+      // A bare host or URL that isn't (yet) a domain record still filters.
+      const hostish = t.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+      if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(hostish)) return hostish;
+      const l = t.toLowerCase();
+      const hits = list.filter(d => d.display.toLowerCase().includes(l) || d.host.includes(l));
+      return hits.length === 1 ? hits[0].host : '';
+    }
+    // Host -> the option text the visible input should show (seeding on open).
+    function _domainTextForHost(host) {
+      if (!host) return '';
+      const hit = (_domainIndex || []).find(d => d.host === host);
+      return hit ? hit.text : host;
+    }
+
     // What the DIALOG currently has selected — which is not yet what the list
     // is filtered by. The two only meet on Show recipes.
     function _draftFilters() {
       const d = { q: (document.getElementById('filter_q')?.value || '').trim() };
       FILTER_FACETS.forEach(f => { d[f] = _filterEl(f)?.value || ''; });
+      d.domain = _resolveDomainHost(_filterEl('domain')?.value);
       return d;
     }
 
@@ -4353,6 +4431,7 @@
       const p = new URLSearchParams({ user_id: uid, limit: '1' });
       if (draft.q) p.set('q', draft.q);
       FILTER_FACETS.forEach(f => { if (draft[f]) p.set(f, draft[f]); });
+      if (draft.domain) p.set('domain', draft.domain);
       const countEl = document.getElementById('filterCount');
       if (countEl) countEl.textContent = 'Counting…';
       try {
@@ -4418,6 +4497,15 @@
         const sel = _filterEl(f);
         if (sel) fillFacetSelect(f, [], _appliedEl(f)?.value || '');
       });
+      const domIn = _filterEl('domain');
+      if (domIn) {
+        // Options load async on first open; seed with the applied host either
+        // way (the raw host is a valid display until the friendly text loads).
+        domIn.value = _domainTextForHost(_appliedEl('domain')?.value || '');
+        ensureDomainOptions().then(() => {
+          if (domIn.value) domIn.value = _domainTextForHost(_appliedEl('domain')?.value || '') || domIn.value;
+        });
+      }
       refreshFilterFacets();
       if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
     }
@@ -4434,6 +4522,7 @@
         const el = _appliedEl(f);
         if (el) el.value = draft[f];
       });
+      { const el = _appliedEl('domain'); if (el) el.value = draft.domain || ''; }
       _searchQuery = (draft.q || '').toLowerCase();
       const sb = document.getElementById('sidebar_search');
       if (sb) sb.value = draft.q || '';
@@ -4452,11 +4541,13 @@
       const qEl = document.getElementById('filter_q');
       if (qEl) qEl.value = '';
       FILTER_FACETS.forEach(f => { const sel = _filterEl(f); if (sel) sel.value = ''; });
+      { const el = _filterEl('domain'); if (el) el.value = ''; }
       _searchQuery = '';
       const sb = document.getElementById('sidebar_search');
       if (sb) sb.value = '';
       applyRelevanceDefault();
       FILTER_FACETS.forEach(f => { const el = _appliedEl(f); if (el) el.value = ''; });
+      { const el = _appliedEl('domain'); if (el) el.value = ''; }
       syncSearchControls();
       persistSidebarState();
       // The dialog stays open — you cleared in order to choose something else,
@@ -4471,7 +4562,8 @@
       const btn = document.getElementById('filterOpenBtn');
       const label = document.getElementById('filterBtnLabel');
       if (!btn || !label) return;
-      const n = FILTER_FACETS.filter(f => (_appliedEl(f)?.value || '')).length;
+      const n = FILTER_FACETS.filter(f => (_appliedEl(f)?.value || '')).length
+        + ((_appliedEl('domain')?.value || '') ? 1 : 0);
       btn.classList.toggle('active', n > 0);
       label.innerHTML = n
         ? `Filters <span class="badge">${n}</span>`
@@ -4511,6 +4603,8 @@
         const v = document.getElementById('sidebar_' + f)?.value || '';
         if (v) p.set(f, v);
       }
+      { const v = document.getElementById('sidebar_domain')?.value || '';
+        if (v) p.set('domain', v); }
       return `${API}/recipes/search?${p.toString()}`;
     }
 
@@ -5047,6 +5141,16 @@
         const sel = document.getElementById('filter_' + f);
         if (sel) sel.addEventListener('change', refreshFilterFacets);
       });
+      const fDom = document.getElementById('filter_domain');
+      if (fDom) {
+        // 'change' fires on datalist pick and on blur; debounce plain typing so
+        // half-typed names don't spray count requests.
+        let _domT = null;
+        fDom.addEventListener('change', refreshFilterFacets);
+        fDom.addEventListener('input', () => {
+          clearTimeout(_domT); _domT = setTimeout(refreshFilterFacets, 400);
+        });
+      }
       const fq = document.getElementById('filter_q');
       if (fq) fq.addEventListener('keydown', e => {
         // Enter recounts rather than submitting — same rule as the sidebar box:
