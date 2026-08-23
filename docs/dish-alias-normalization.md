@@ -1,6 +1,14 @@
 # Dish-alias / canonical-name normalization (SCOPE — #2)
 
-> Status: **SCOPE** (2026-06-24). The real fix for "savory Greek pies show up as pumpkin
+> Status: **MINIMAL START SHIPPED** (2026-08-23): `dishes.aliases` JSON column +
+> exact-folded name-evidence override in `dish_match.build_match` — when the identity
+> card's `likelyDish` IS a catalog dish (name/display_name/alias, accent-folded, exact
+> equality only), it overrides the embedding verdict in both directions. First seed:
+> the Lasagna family; first sweep claimed 34 rows incl. two confident-but-wrong
+> Bolognese matches. Token-subset matching measured and REJECTED the same day
+> (Boston Cream Pie -> Cream Pie). No editor UI for aliases yet. Original scope below.
+>
+> Originally: **SCOPE** (2026-06-24). The real fix for "savory Greek pies show up as pumpkin
 > pie." Builds on the glossary (#1, `intake/glossary/el.json`) and the "native title as
 > anchor" idea. Related: `project_dish_catalog_table`, `project_dish_library`,
 > `project_identity_card`, `project_multilingual_extraction`, `feedback_no_data_in_code`.

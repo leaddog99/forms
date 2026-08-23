@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -62,16 +63,65 @@ def max_distance(conn_db_path: Optional[str] = None) -> float:
         return DEFAULT_MAX_DIST
 
 
-def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float) -> Optional[dict]:
+def _fold_name(t: str) -> str:
+    """Accent-fold + lowercase, the same treatment the coverage page uses —
+    Tiramisù and Tiramisu are one name."""
+    d = unicodedata.normalize("NFD", t or "")
+    return "".join(ch for ch in d if not unicodedata.combining(ch)).strip().lower()
+
+
+def name_index(conn: sqlite3.Connection) -> dict:
+    """folded name -> canonical dish name, over dishes.name + display_name +
+    each entry of the aliases JSON array. Exact folded equality is the ONLY
+    lookup this supports, by design: token-subset matching was measured on
+    2026-08-23 and mis-filed Boston Cream Pie under Cream Pie and a Greek
+    pasta salad under Greek Salad. 190-ish rows — cheap to rebuild per call;
+    sweeps pass one in to avoid the re-query."""
+    idx: dict = {}
+    for name, display, aliases in conn.execute(
+            "SELECT name, display_name, aliases FROM dishes"):
+        for form in (name, display):
+            f = _fold_name(form or "")
+            if f:
+                idx.setdefault(f, name)
+        try:
+            for a in json.loads(aliases or "[]"):
+                f = _fold_name(str(a))
+                if f:
+                    idx.setdefault(f, name)
+        except (ValueError, TypeError):
+            pass
+    return idx
+
+
+def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
+                likely_dish: str = "",
+                names: Optional[dict] = None) -> Optional[dict]:
     """The `_match` block for a recipe vector, or None if the dish index is
-    empty. Reuses the vector the caller already has — no embed, no API call."""
+    empty. Reuses the vector the caller already has — no embed, no API call.
+
+    NAME EVIDENCE OVERRIDES DISTANCE (2026-08-23). When the identity card's
+    `likelyDish` IS a catalog dish — exact after folding, via name/display/
+    alias — that is a literal identity claim and it wins over the embedding
+    verdict in BOTH directions: it claims a row the distance bar would
+    strand (a dozen plain lasagnas sat at 0.60-0.69, unassigned, while
+    likelyDish said "Lasagna"), and it corrects a confident-but-wrong
+    neighbour (the same akispetretzikis lasagna's nearest dish was
+    Bolognese, the sauce). The distance and candidates are still recorded —
+    the override hides nothing, and the two disagreeing stays visible."""
     cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
     if not cands:
         return None
     best = cands[0]
     confident = best["distance"] <= max_dist
-    return {
-        "dish": best["name"] if confident else None,
+    dish = best["name"] if confident else None
+    method = None
+    hit = (names if names is not None else name_index(conn)).get(
+        _fold_name(likely_dish)) if likely_dish else None
+    if hit and hit != dish:
+        dish, confident, method = hit, True, "name-exact"
+    out = {
+        "dish": dish,
         "distance": round(best["distance"], 4),
         "confident": confident,
         "candidates": [
@@ -80,6 +130,9 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float) -> Option
         ],
         "matched_at": datetime.now(timezone.utc).isoformat(),
     }
+    if method:
+        out["method"] = method
+    return out
 
 
 def same_verdict(old: Optional[dict], new: Optional[dict]) -> bool:
@@ -122,11 +175,14 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
     scanned = confident = changed = failed = 0
     moves: list[tuple] = []
 
+    names = name_index(conn)
     for n, (rid, dj, blob) in enumerate(rows, 1):
         try:
             d = json.loads(dj)
             prev = d.get("_match") or None
-            new = build_match(conn, bytes_to_vec(blob), max_dist=max_dist)
+            likely = ((d.get("_identity") or {}).get("likelyDish") or "")
+            new = build_match(conn, bytes_to_vec(blob), max_dist=max_dist,
+                              likely_dish=likely, names=names)
             scanned += 1
             if new is None:
                 continue

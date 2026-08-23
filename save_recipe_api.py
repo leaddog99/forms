@@ -10198,7 +10198,9 @@ def _stamp_dish_match(conn, recipe_dict: dict, rec_vec, *, label: str) -> bool:
     Reuses the vector the caller computed — no second embed, no API call.
     """
     from input.pipeline import dish_match as _dm
-    m = _dm.build_match(conn, rec_vec, max_dist=_dm.max_distance())
+    m = _dm.build_match(
+        conn, rec_vec, max_dist=_dm.max_distance(),
+        likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""))
     if not m:
         return False
     recipe_dict["_match"] = m

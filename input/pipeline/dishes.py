@@ -141,6 +141,14 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # Falls back to `name` when blank.
     if "display_name" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN display_name TEXT")
+    # ALIASES (JSON array of strings) — other names this exact dish answers to:
+    # spelling variants (Lasagne), native/transliterated forms (Kolokithopita),
+    # and over-specified identity-card names (Lasagna Bolognese). Matched
+    # accent-folded, EXACT-equality only, by dish_match's name-evidence
+    # override — never substring/fuzzy (docs/dish-alias-normalization.md is the
+    # design; this column is its minimal start, 2026-08-23).
+    if "aliases" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN aliases TEXT")  # JSON
     # SOURCE LANGUAGE (ISO 639-1) — the language this dish HARVESTS IN, which is
     # a property of the dish, not of any one query string. NULL/'' = English (the
     # instance's base language), which is the overwhelming majority; set it only
