@@ -5606,6 +5606,138 @@ never brought onto that bar. 59% of the mismatch predates the 0.80 -> 0.60 chang
 Full measurement, worked examples and the three unknowns are in
 `docs/recipe-scoring-design.md` §14.
 
+## Session log — 2026-08-22 (evening) — the defect pass is born, a page that was only slow, and pizza splits six ways
+
+Eleven commits, `15f18f8`..`f555f80` plus this one. The scoring-enhancement session the
+START HERE pointed at — and it went somewhere better than planned.
+
+### The ChatGPT dialog, and what was refused
+
+The curator brought a ChatGPT thread proposing a quantified finalist score:
+`BEST = wQ·Q + wU·U + ...` over seven 0-100 dimensions with invented weights.
+Verdict, now recorded in `docs/soundness-defect-pass.md` §7: the two-score
+architecture and the near-zero marginal cost insight were right (it re-derived our
+own three-stage shape); the BEST formula was the cancelled AI-editor role wearing a
+formula, the weights validated by nothing, and `outcome_potential`/`dish_fit` are
+taste-laundering (§13: "an AI cannot know what tastes better"). STOLEN: piggybacked
+structured output, pairwise-comparison idea (parked), repeatability testing.
+REFUSED: every scalar. The curator's own words named the risk: "the problem is
+it's a slippery slope." The answer that held: structure, not discipline — a thing
+you cannot ORDER BY cannot become a selector.
+
+### Measured before designed: the thinness pass
+
+The curator's motivating experience — winners "extraordinarily thin, missing steps,
+bizarre order" — was measured over all 5,657 winners before anything was built:
+
+    steps median 6; <=3 steps 10.9%; 12 rows <=2 steps (read in full)
+    naive thin flag (<=3 steps OR <100 words): 20.1% — but judgment samples: mostly INNOCENT
+    ghost-ingredient flag >=2: 18.5% — top offenders ALL the "combine all the X
+    ingredients" idiom; every one a fine recipe my token-matcher couldn't resolve
+
+The 12-row band split three ways: 8 legit-terse (tabbouleh, cocktails, NYT pie
+crust), 2 OUR extraction truncations, 1-2 simplistic-but-complete (Mississippi Pot
+Roast — structurally sound, demand-selected, editorially weak: THE COMMENTARY
+LAYER'S CASE, not a defect). Conclusion: nothing in the pipeline reads the
+instructions; code can't separate thin-bad from terse-good; that separation is
+judgment — the defect pass.
+
+### Two extraction truncations found and fixed
+
+* **#7545 Barefoot Contessa Parmesan Chicken** — 1 ingredient / 1 step (a mid-recipe
+  vinaigrette line). Stale row predating the 2026-08-11 fast-lane fix; the cache
+  already held the good extraction. Re-ingested via process-selected: 5 steps/13 ings.
+  `n_ingredients <= 2` = a perfect-precision truncation marker (1 hit corpus-wide).
+* **#8582 Sour Cream Coconut Cake** — "mix all ingredients except coconut" twice over
+  one undivided list. Root cause: the page's JSON-LD `HowToSection name="Frosting
+  Instructions"` and our flattener DISCARDED the section name; second bug under it:
+  WPRM sets every step's `name` equal to its own text, so the first fix's "only if no
+  name" guard skipped. `15f18f8`: echo-names stripped, section names land on child
+  steps. THREE cache traps in the repair: the llm_extract_cache row (deleted), the
+  REVALIDATE reuse path serving the cached recipe keyed on the WAYBACK url (why a
+  delete on the publisher url matched 0), and my own too-broad LIKE that took 16
+  other coconut-cake cache rows with it (regenerable, but sloppy).
+
+### The soundness defect pass — spec'd, built, calibrated (shadow only)
+
+`docs/soundness-defect-pass.md` + `extract/defect_pass.py` + `scripts/defect_pass_shadow.py`.
+The boundary: NO scalar of any kind; defects with VERBATIM quotes; disqualify-for-cause
+feeding the EXISTING reserve-backfill path (never reordering); taste out of scope by
+construction. The honesty layer is mechanical: code verifies every quote is a substring
+of the RENDERED user prompt (models quote steps as displayed — "4. [label] text" — a
+reassembled-fields haystack rejected honest citations twice); disqualify is honored only
+when a critical defect SURVIVES validation. Review scales per prompt_version (one ~30-row
+audit per hash), never per row — the curator's explicit requirement.
+
+**The calibration arc settled the model tier.** Haiku invented defects through two
+rounds of targeted fixes (demanded a grinding step against "seeds removed and ground";
+a cooling step against "Spread over cooled cake") and inflated severity. Sonnet: zero
+false positives on the six traps AND full recall on two synthetically broken recipes
+(deleted meatball step -> critical+disqualify; injected time contradiction -> major).
+Also settled: Claude 5 rejects `temperature` (only sent to Haiku now); a resolved
+reference cannot also be flagged; prep stated in an ingredient line needs no step;
+notes ride along and are citable. The validator killed a fabricated "[Assemble and
+serve]" label unaided, twice, from both models.
+
+**First 50-winner shadow run: 0 disqualifications**, 8 rows with defects, majors 3/3
+verified TRUE against stored text (Trofie: list "½ tbsp Parmesan" vs step "6
+tablespoons"; Gogges: ingredient list flour/water/salt, steps use myzithra+oil).
+Minors mixed; they never gate. Base rate confirms: truly broken winners are rare, so
+a for-cause gate is review-by-exception cheap.
+
+### "The coverage page is empty" — it was 68 seconds of LIKE
+
+The new /dish-coverage endpoint ran two `LIKE '%name%'` scans over 171,503
+dish_keywords rows for EACH of 568 uncovered names, ~68s per page load; "Loading…"
+read as empty, and the tunnel sometimes gave up. `54b225f`: one scan builds a
+word-posting index, candidates from the name's rarest token, full-name
+substring-verified — 0.4s, same matches minus tokens never appearing as their own
+word. The data was never missing.
+
+### budgetbytes: keep=50 in the recipe_path field, three "successful" zero-runs
+
+`recipe_path='50'` on the domain record path-scoped every run to `/50/` and dropped
+all 197 URLs — three runs REPORTED SUCCESS at 0 extracted. Cleared: 197 discovered,
+187 recipe_pass, 50 winners into master, 94% direct yield. `f555f80` makes the class
+impossible to repeat silently: **a path that drops ALL discovered URLs now raises**
+(the tiramisu rule again — a run must not filter away the thing it came for).
+Curator-directed form rework rode along: recipe_path + harvest TTL moved INTO each
+discovery-source box (duplicated `_bf`/`_serp` ids over the same stored columns; the
+active box wins via `srcVal`), shared panel keeps keep-top-N + exclude-words, and
+every `serp` fallback became `backlinks_file` — SEMrush is the default source, and a
+missing file fails loudly rather than silently spending SERP credits.
+
+### Pizza became six dishes, 60/60 saved
+
+Curator asked how to build the pizza query; demand data said don't: generic `pizza`
+(69k) is chains-and-listicles, while the real signals are specific — dough 177k,
+deep dish 75k, Detroit 39k, NY 19k. Styles are SPLITS (different procedure sharing a
+word), not variants. Created + refreshed: **Pizza Dough** (10/10, fit r²=0.77,
+n=41), **Detroit-Style Pizza** (10/10, zero rejects), **Deep Dish Pizza** (10/10,
+one reserve-backfill — the exact mechanism the defect gate will reuse),
+**New York-Style Pizza** (10/10, bottom OU 8.5, strongest), **Pizza Margherita**
+(10/10), **Greek Pizza** (10/10 — curator add; the pool answered the two-identity
+question: feta-topped dominates, with Ladenia the traditional outlier).
+Substitution niches (no-yeast, gluten-free) deliberately NOT seeded — variant
+demand, not sourcing terms.
+
+### Do next
+
+1. **RESTART OWED** — the domains-form rework + refresh-top default (`f555f80`)
+   landed AFTER the mid-session restart that served the coverage fix. One more
+   restart picks them up. (The zero-drop guard is already live — jobs run current
+   code.)
+2. **Unfile "Greek Yogurt Pizza Dough" from Greek Pizza** (rank #2) — a Pizza Dough
+   recipe matching on the word "Greek". One click in the editor; read
+   `retire_master_membership` first (it DELETES when no other block remains).
+3. **Defect pass toward teeth:** accumulate ~30 major/critical flags (larger shadow
+   sweep), curator audits them, then wire `disqualify` into the reserve-backfill
+   path. `soundness_reports` table exists; `applied=0` everywhere.
+4. **Pizza Dough fetch-fail rescues** via bookmarklet: 177milkstreet (gated),
+   pizzaeveryfriday.substack.com, brianlagerstrom.com.
+5. The 2026-08-22 START HERE's standing items (§14 cohort experiment, Pie Crust
+   chapter, Key Lime Pie, xiachufang, ingredient quantities) remain open.
+
 ## START HERE — state of play as of 2026-08-22 (end of day)
 
 **NEXT SESSION IS A SCORING ENHANCEMENT — the shape, stated by the curator 2026-08-22:**
