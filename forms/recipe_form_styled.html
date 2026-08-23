@@ -2706,19 +2706,14 @@
   <footer class="action-footer">
     <div class="button-row">
       <button type="submit" form="recipeForm" class="primary" id="saveBtn">Save</button>
-      <!-- MASTER ONLY. A master save already enriches a row that has no story
-           yet, so the plain Enrich button is redundant there and is hidden. What
-           the curator still needs is a way to REFRESH a story that already
-           exists, and that is a decision worth making at the moment of saving —
-           a second button, not a mode dropdown you can leave set and forget.
-           Costs ~$0.05 and, measured over 75 real fires, a median 9.7s (max
-           30.4s) added to the save. -->
-      <button type="button" id="saveReenrichBtn" class="secondary" style="display:none"
-              title="Save, and re-run enrichment even though this recipe already has a story. Refreshes provenance, classification and editorial.">Save &amp; Re-Enrich</button>
-      <!-- PERSONAL ONLY, and only on a tier that includes it. Enrichment is a
-           paid add-on; showing the button to someone who cannot use it is a
-           dead end. Hidden on master because saving already does it. -->
-      <button type="button" id="enrichBtn" class="secondary">Enrich</button>
+      <!-- ONE Enrich button, everywhere (curator call 2026-08-23). The old
+           split — hidden-on-master + a "Save & Re-Enrich" — confused its one
+           user twice in a day: batch rows arrive story-less (skip by design),
+           and the button they reached for wasn't there. Now: master always
+           shows Enrich (it enriches the FORM in place; Save persists it);
+           personal shows it on an entitled tier. Costs ~$0.05, ~10s. -->
+      <button type="button" id="enrichBtn" class="secondary"
+              title="Run enrichment on what's in the form — story, origin, classification, editorial. Review the result, then Save to keep it.">Enrich</button>
       <!-- Cook-rework: turns the recipe into the validated step-anchored _cook
            (POST /recipes/<id>/cook-rework, out-of-process). Visible only on a
            saved recipe. Result shows in the Cook view panel above. -->
@@ -4116,17 +4111,13 @@
       const isMaster = (uid === 0);
       chk.checked = isMaster;
       sel.disabled = isMaster;
-      // ENRICH CONTROLS FOLLOW THE STORE.
-      //   master   -> saving already enriches an un-enriched row, so the plain
-      //               Enrich button is redundant; offer "Save & Re-Enrich" for
-      //               the one thing saving does NOT do — refresh a story that
-      //               already exists.
-      //   personal -> no auto-enrich at all, so the button is the only route;
-      //               show it only on a tier that includes enrichment.
-      const reBtn = document.getElementById('saveReenrichBtn');
+      // ONE ENRICH BUTTON (2026-08-23; Save & Re-Enrich removed the same day).
+      //   master   -> always visible. Auto-enrich still covers a story-less
+      //               interactive save; the button is the explicit route for
+      //               batch rows and for refreshing an existing story.
+      //   personal -> visible on a tier that includes enrichment.
       const enBtn = document.getElementById('enrichBtn');
-      if (reBtn) reBtn.style.display = (isMaster && _isSavedRecipe) ? '' : 'none';
-      if (enBtn) enBtn.style.display = isMaster ? 'none' : (_enrichEntitled ? '' : 'none');
+      if (enBtn) enBtn.style.display = (isMaster || _enrichEntitled) ? '' : 'none';
       if (!isMaster && !Number.isNaN(uid)) {
         if (![...sel.options].some(o => Number(o.value) === uid)) {
           const opt = document.createElement('option');
@@ -5488,12 +5479,6 @@
         return;
       }
 
-      // Read-and-clear the force-reenrich flag at the TOP of the submit, before
-      // anything can fail out. Leaving it set would silently turn the NEXT plain
-      // Save into a paid re-enrich — the exact forgotten-state failure the two
-      // buttons exist to avoid.
-      const _forceReenrich = !!window.__bccForceReenrich;
-      window.__bccForceReenrich = false;
 
       // Save button busy state — mirror the Enrich pattern so the user
       // can tell the request is in flight. data-busy stops
@@ -5555,7 +5540,6 @@
         // Set ONLY by the "Save & Re-Enrich" button, and cleared the moment the
         // payload is built so a later plain Save can never inherit it. Undefined
         // on a normal save, which leaves the server on its own default.
-        _enrich: (_forceReenrich ? "always" : undefined),
         name: document.getElementById("name").value,
         description: document.getElementById("description").value,
         recipeIngredient: getIngredients(),
@@ -6001,25 +5985,6 @@
         btn.disabled = false; btn.textContent = lbl;
       }
     };
-
-    // "Save & Re-Enrich" (master only): a normal save that additionally forces
-    // enrichment to re-run even though the recipe already has a story. Sets the
-    // flag and hands off to the ONE submit path, so every save-time guard
-    // (dirty hero image, validation, busy state) still applies — a second save
-    // implementation would drift from the first.
-    (function wireSaveReenrich() {
-      const b = document.getElementById('saveReenrichBtn');
-      if (!b) return;
-      b.onclick = () => {
-        const form = document.getElementById('recipeForm');
-        if (!form) return;
-        window.__bccForceReenrich = true;
-        // requestSubmit (not submit()) so the onsubmit handler and native
-        // validation both run, exactly as clicking Save does.
-        if (form.requestSubmit) form.requestSubmit();
-        else document.getElementById('saveBtn')?.click();
-      };
-    })();
 
     // Enrich button: opt-in cultural/historical context LLM call. Builds
     // a recipe payload from the current form state (so any user edits are
