@@ -1935,8 +1935,12 @@
           <!-- Type-ahead over the domains master: shows the friendly name,
                FILTERS on the actual host (the option text carries both;
                resolution happens in _resolveDomainHost). -->
-          <input type="text" id="filter_domain" list="domainOptions"
-                 placeholder="Any site — type to search" autocomplete="off" />
+          <span style="position:relative;display:block">
+            <input type="text" id="filter_domain" list="domainOptions" style="width:100%;padding-right:30px"
+                   placeholder="Any site — type to search" autocomplete="off" />
+            <button type="button" id="filterDomainClear" title="Clear site"
+                    style="position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;cursor:pointer;font-size:1rem;line-height:1;padding:4px 6px;color:var(--muted,#8a7f72);display:none">&#10005;</button>
+          </span>
           <datalist id="domainOptions"></datalist>
         </div>
         <div class="filter-count" id="filterCount"></div>
@@ -4364,11 +4368,9 @@
           .map(d => {
             const host = (d.domain || '').trim();
             const display = (d.display_name || '').trim() || host;
-            const n = Number(d.master_recipe_count) || 0;
             return host ? {
               host, display,
               text: display === host ? host : `${display} — ${host}`,
-              label: n ? `${n} recipes` : '',
             } : null;
           })
           .filter(Boolean)
@@ -4376,17 +4378,44 @@
         const dl = document.getElementById('domainOptions');
         if (dl) {
           dl.innerHTML = '';
-          _domainIndex.forEach(d => {
-            const o = document.createElement('option');
-            o.value = d.text;
-            if (d.label) o.label = d.label;
-            dl.appendChild(o);
-          });
+          _renderDomainOptions();
         }
       } catch (e) {
         _domainIndex = [];   // typed hosts still work; retry on next open is overkill
       }
     }
+    let _domainCounts = null;   // host -> live cascaded count (facets.domain)
+    function _renderDomainOptions() {
+      const dl = document.getElementById('domainOptions');
+      if (!dl || !_domainIndex) return;
+      dl.innerHTML = '';
+      _domainIndex.forEach(d => {
+        const n = _domainCounts ? (_domainCounts[d.host] || 0) : null;
+        if (n === 0) return;           // nothing to show under current filters
+        const o = document.createElement('option');
+        o.value = d.text;
+        if (n != null) o.label = `${n} recipe${n === 1 ? '' : 's'}`;
+        dl.appendChild(o);
+      });
+    }
+    function updateDomainCounts(list) {
+      // No data (older server / failed call) = UNKNOWN, not "all zero" —
+      // zero hides options, unknown just shows them without a count.
+      if (!Array.isArray(list) || !list.length) {
+        _domainCounts = null;
+        _renderDomainOptions();
+        return;
+      }
+      _domainCounts = {};
+      list.forEach(({ value, count }) => {
+        if (value) _domainCounts[value] = count;
+      });
+      _renderDomainOptions();
+      const btn = document.getElementById('filterDomainClear');
+      const inp = document.getElementById('filter_domain');
+      if (btn && inp) btn.style.display = inp.value ? '' : 'none';
+    }
+
     // Typed text -> host. Accepts a picked option, a bare host, a pasted URL,
     // or a unique friendly-name fragment. Unresolvable text filters nothing.
     function _resolveDomainHost(text) {
@@ -4440,6 +4469,7 @@
         const d = await res.json();
         if (seq !== _filterSeq) return;                 // a newer edit won
         FILTER_FACETS.forEach(f => fillFacetSelect(f, (d.facets || {})[f], draft[f]));
+        updateDomainCounts((d.facets || {}).domain);
         if (countEl) {
           const n = d.matched || 0;
           countEl.classList.toggle('none', n === 0);
@@ -5141,8 +5171,18 @@
         const sel = document.getElementById('filter_' + f);
         if (sel) sel.addEventListener('change', refreshFilterFacets);
       });
+      const fDomClear = document.getElementById('filterDomainClear');
+      if (fDomClear) fDomClear.addEventListener('click', () => {
+        const inp = document.getElementById('filter_domain');
+        if (inp) { inp.value = ''; inp.focus(); }
+        fDomClear.style.display = 'none';
+        refreshFilterFacets();
+      });
       const fDom = document.getElementById('filter_domain');
       if (fDom) {
+        fDom.addEventListener('input', () => {
+          if (fDomClear) fDomClear.style.display = fDom.value ? '' : 'none';
+        });
         // 'change' fires on datalist pick and on blur; debounce plain typing so
         // half-typed names don't spray count requests.
         let _domT = null;

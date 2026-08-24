@@ -9761,6 +9761,24 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                             fp,
                         ).fetchall()
                     ]
+                # Site counts, LIVE from the same predicate the filter runs
+                # (host = url_normalized between :// and the next /), cascaded
+                # like every other facet (skip='domain'). The picker used to
+                # label options with domains.master_recipe_count — a stored
+                # counter that neither cascades nor matches the prefix filter,
+                # which read as "numbers that don't correlate" (curator,
+                # 2026-08-24). ~7k plain-column rows; milliseconds.
+                fw, fp = _search_where(user_id, filters, q, skip="domain")
+                host_expr = ("substr(substr(url_normalized, instr(url_normalized,'://')+3), 1, "
+                             "instr(substr(url_normalized, instr(url_normalized,'://')+3) || '/', '/') - 1)")
+                facet_counts["domain"] = [
+                    {"value": v, "count": n}
+                    for v, n in conn.execute(
+                        f"SELECT {host_expr} AS h, COUNT(*) FROM {table} WHERE {fw} "
+                        f"AND url_normalized != '' GROUP BY h ORDER BY 2 DESC, 1 ASC",
+                        fp,
+                    ).fetchall() if v
+                ]
     except Exception as e:
         print(f"[ERROR] recipe search failed: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
