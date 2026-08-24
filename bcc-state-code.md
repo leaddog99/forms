@@ -5738,6 +5738,110 @@ demand, not sourcing terms.
 5. The 2026-08-22 START HERE's standing items (§14 cohort experiment, Pie Crust
    chapter, Key Lime Pie, xiachufang, ingredient quantities) remain open.
 
+## Session log — 2026-08-23/24 — enrichment was invisible not broken, names beat distances, and every header becomes one header
+
+Fifteen commits, `15f18f8`(prior log)… then `e9d6a81`..`1458fbf`. A morning scare that
+wasn't a regression, one real matcher upgrade, an image sweep, and a pile of UI debts
+paid.
+
+### "No enrichment" was three different truths, none a regression
+
+The curator reported enrichment gone (no button, no auto-enrich) after a 15-publisher
+harvest morning. Runtime data said otherwise on every layer:
+
+* **Interactive master saves WERE enriching** — 266 SAVE-ENRICH log lines, ~9s stories
+  all morning. What was broken was the DISPLAY: the post-save handler deliberately
+  "reloads nothing (the form is by definition what the DB holds)" — a premise
+  save-enrich falsifies, since the server just wrote a story the form never had. The
+  curator watched blanks while the DB filled. `e9d6a81`: after a story-less master
+  save, fetch the stored row and populate what enrichment wrote.
+* **Batch rows arrive un-enriched BY DESIGN** — `_skip_auto_enrich` on the publisher
+  path, and dishes' `auto_enrich` off on 187 of 189. Decision: LEAVE AS-IS,
+  enrich-on-touch.
+* **The hidden Enrich button was the old master/personal split.** Curator call:
+  one button. `4b9d5bd`: Save & Re-Enrich REMOVED (with its force-flag plumbing);
+  the plain Enrich button now always shows on master, enriches the form in place,
+  Save persists. Verified live on Flammekueche (1,762-char story).
+
+Also that morning: the 2026-08-22 zero-drop guard caught its second real typo within
+12 hours (`recipe_path='/recipies/'` on sugarologie — loud error, fixed, re-run
+succeeded), and the "hung on image update" reports traced to the harvest phase's
+UNTIMESTAMPED log lines making the stream look frozen — no actual stall in any log.
+
+### The advanced search grew a Site filter — then earned its polish
+
+`4b6eb95`: `/recipes/search` takes `domain` (two sargable prefix LIKEs on
+url_normalized — scheme kept, www stripped); the dialog gets a type-ahead over
+"Display Name — host" option text; the applied value is always the HOST.
+`d2b905c` after curator feedback: the option counts were `domains.master_recipe_count`
+— a stored counter that neither cascades nor matches the predicate ("numbers that
+don't correlate"). Replaced with LIVE cascaded counts from the same query the filter
+runs (host-extraction GROUP BY as `facets.domain`); zero-count sites hidden; missing
+facet data reads as unknown, never all-zero. Plus an ✕ clear button.
+
+### Name evidence now beats the distance verdict (`0498fa5`)
+
+The akispetretzikis lasagna: likelyDish 'Lasagna Bolognese', nearest dish BOLOGNESE
+THE SAUCE at 0.6186, Lasagna behind it at 0.68 — unassigned, wrongly-neighboured, and
+a dozen plain lasagnas stranded at 0.60-0.69 with likelyDish saying 'Lasagna'.
+**When `_identity.likelyDish` exactly equals a catalog dish (name / display_name /
+alias, accent-folded), that literal identity claim overrides the embedding in BOTH
+directions** — claims stranded rows AND corrects confident-but-wrong neighbours.
+Distance + candidates stay recorded, `method='name-exact'`.
+
+* **Token-subset matching measured and REJECTED the same day**: 179 hits included
+  Boston Cream Pie → Cream Pie and Greek Pasta Salad → Greek Salad. Exact only.
+* **`dishes.aliases` (JSON) shipped** — the minimal start of
+  docs/dish-alias-normalization.md, seeded with the Lasagna family. No editor UI yet.
+* First sweep: 34 corrected (incl. two confident Bolognese mis-claims — Argiro and
+  Bon Appétit — and five 'Pastitcio (Greece)' renames). After the curator added new
+  dishes, a manual `dish_rematch` (Jobs form ▶ Run now) moved **270 rows**.
+* Grading's own matcher (§14's 0.949) deliberately NOT touched.
+
+### The image sweep: 164 imageless → 46, and a new extractor fallback
+
+lidiasitaly publishes NO og:image and no `<img>` hero — the photo lives in a
+recipe-classed container's inline background-image and the share buttons' data-image.
+`738b8d7`: extract_og_meta falls back to those two, only when the meta tags are
+absent, skipping svg/theme chrome (baked-ziti, genuinely photo-less, still returns
+none). Then the corpus-wide sweep, measured first, run on approval:
+
+    69 fixed from cached pages (joyofbaking 39 — same hiding pattern)
+    30 fixed by polite direct fetch (Greek sites, pauladeen, spainonafork…)
+    19 fixed via unblocker (bostonchefs came through)
+    ~35 remain: page genuinely has no photo (weekendbakery 25)
+    5 gated (NYT/Globe), handful of strays
+
+Two lessons paid for: `fetch_via_unblocker` returns a TUPLE (first wave burned zero
+credits failing on that), and the backfill import tripped the import-resets-jobs
+landmine again (harmless — nothing in flight — but the guard item stays open).
+
+### UI debts, each its own commit
+
+* **Coverage page had no header/burgers** (`1b7ee6c`) — markup was there, nobody
+  called `LibraryShell.initNav`. One line.
+* **Dish page couldn't cancel a running refresh** (`6aaca9c`+`4f5f436`) — the domains
+  form's cooperative-cancel pattern, wired to the stream so the attach path gets it.
+* **Search-first list panels** (`535aae9`) — dishes + domains: the search box now
+  permanently in the sidebar head, autofocused; magnifier demoted to Sort & tools;
+  page title moved into the header brand line.
+* **THE SHELL-WIDTH CONTRACT** (`b76a229` then corrected by `1458fbf`): Job Monitor
+  ran a 1200px body under a 960px header, five more pages likewise. First fix made
+  the header follow the page — which preserved the OTHER bug the curator then named:
+  headers varied form to form. Final shape: **`--shell-w: 1200px` in tokens.css is
+  the ONE header width, read by both shells; content sizes from `--shell-max`
+  (default 960, raisable per page, never wider than the rail, never a bare pixel
+  width).** Recorded in the page-shell contract memory.
+
+### Standing state
+
+* master ≈ 6,760; the defect pass remains shadow-only (50-run: 0 disqualifications,
+  majors 3/3 true); soundness gate wiring + ~30-flag audit still the next step there.
+* RESTARTS: all served as of 2026-08-24 14:43 EXCEPT the Site-picker live counts +
+  search-domain facet (`d2b905c`+) — one restart owed when convenient.
+* recipes.sql.gz at 71MB — GitHub warns every push; LFS-or-split decision pending.
+* Greek Pizza still holds the "Greek Yogurt Pizza Dough" impostor at rank #2.
+
 ## START HERE — state of play as of 2026-08-22 (end of day)
 
 **NEXT SESSION IS A SCORING ENHANCEMENT — the shape, stated by the curator 2026-08-22:**

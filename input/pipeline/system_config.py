@@ -810,10 +810,17 @@ def _load_cache(db_path: str) -> dict[str, Any]:
 
 def get_setting(key: str, default: Any = None, *, db_path: Optional[str] = None) -> Any:
     """Read a setting (cached). Falls back to the seed default, then `default`.
-    db_path defaults to save_recipe_api.DB_PATH so callers don't have to pass it."""
+
+    db_path defaults to the same literal save_recipe_api.DB_PATH holds
+    ("recipes.db", CWD-relative). It used to LAZY-IMPORT the app to read that
+    constant — and importing the app runs its full startup (2s of setup, and
+    historically the in-flight-jobs wipe that hit jobs 784 and 822 before the
+    PID-liveness check defanged it). An import that heavy to read an 11-char
+    string was the standing "import-resets-jobs landmine"; this default
+    defuses the most-travelled path onto it. Keep the two literals in step if
+    DB_PATH ever moves."""
     if db_path is None:
-        import save_recipe_api as _api  # lazy to avoid import cycle at module load
-        db_path = _api.DB_PATH
+        db_path = "recipes.db"  # == save_recipe_api.DB_PATH, without the import
     cache = _load_cache(db_path)
     if key in cache:
         return cache[key]
