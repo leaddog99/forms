@@ -22,4 +22,12 @@ REM shipped unrestorable twice, and both times nobody noticed because
 REM only hand-run backups ever verified). Worth the ~1 min at 3 AM.
 python backup_db.py --verify --dest "\\Adam\tbotb\Backups\recipes-db" >> backup.log 2>&1
 echo exit code: %ERRORLEVEL% >> backup.log
+REM Offsite tier (2026-08-24, replaces the retired git-side dump): the
+REM restore-VERIFIED .sql.gz dumps, and only those, go to Google Drive —
+REM rolling 14 days (~1GB). The fat .db copies and env.backup (PLAINTEXT
+REM API keys — must never leave ADAM unencrypted) are excluded by the
+REM include filter. rclone remote 'gdrive' = drive.file scope, authorized
+REM 2026-08-24; config in %%APPDATA%%\rclone\rclone.conf.
+"C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\recipes-db" "gdrive:BCC-Backups/recipes-db" --include "recipes_*.sql.gz" --max-age 14d --delete-excluded --stats-one-line >> backup.log 2>&1
+echo cloud sync exit code: %ERRORLEVEL% >> backup.log
 endlocal
