@@ -16,6 +16,10 @@ setlocal
 cd /d "C:\Users\john\PycharmProjects\forms"
 call "C:\Users\john\PyCharm\venv\Scripts\activate.bat"
 echo ==================== scheduled backup %DATE% %TIME% ==================== >> backup.log
-python backup_db.py --dest "\\Adam\tbotb\Backups\recipes-db" >> backup.log 2>&1
+REM --verify replays the fresh gz into a throwaway db and compares every
+REM table's row count (added to the NIGHTLY 2026-08-24 — the dump had
+REM shipped unrestorable twice, and both times nobody noticed because
+REM only hand-run backups ever verified). Worth the ~1 min at 3 AM.
+python backup_db.py --verify --dest "\\Adam\tbotb\Backups\recipes-db" >> backup.log 2>&1
 echo exit code: %ERRORLEVEL% >> backup.log
 endlocal
