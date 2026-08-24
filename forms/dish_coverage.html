@@ -139,6 +139,11 @@
 
   <script src="/forms/library-shell.js?v=20260809c"></script>
   <script>
+    // Mounts the brand, identity badge and both burgers into .app-header —
+    // the markup above is inert without this call (shipped without it,
+    // caught 2026-08-24: "no header or hamburgers").
+    LibraryShell.initNav({ currentPage: 'dish-coverage' });
+
     const $ = s => document.querySelector(s);
     let DATA = [], filter = 'all', chapter = '', q = '', sortKey = 'traffic', sortDir = -1;
     const fmt = n => n ? n.toLocaleString('en-US') : '—';
