@@ -621,9 +621,25 @@
     }
 
     /* Header: Title Left, Image Right */
+    /* TITLE, featured (2026-08-24 rework): full-width and big — it was a
+       plain field buried in the left column. The source identity (site name
+       + url) sits DIRECTLY under it, then description | image balance the
+       row below. */
+    .title-feature input {
+      font-size: 1.5em;
+      font-weight: 650;
+      padding: 10px 14px;
+    }
+    .source-line {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .source-line .form-group { margin-bottom: 0; }
     .header-row {
       display: grid;
-      grid-template-columns: 1.62fr 1fr;
+      grid-template-columns: 1fr 1.05fr;
       gap: 28px;
       margin-bottom: 24px;
       align-items: start;
@@ -647,7 +663,7 @@
       background: linear-gradient(135deg, var(--bg) 0%, var(--line) 100%);  /* neutral placeholder */
       border-radius: 20px;
       overflow: hidden;
-      min-height: 320px;
+      min-height: 380px;
     }
     /* When an image is loaded we set --hero-aspect inline; the placeholder
        state keeps min-height and no aspect-ratio. */
@@ -1352,9 +1368,9 @@
     .drop-zone {
       border: 2px dashed var(--line);
       border-radius: 16px;
-      padding: 24px;
+      padding: 12px 16px;
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       background: linear-gradient(135deg, #fffdf9 0%, var(--card) 100%);
       transition: all 0.2s ease;
       cursor: pointer;
@@ -1394,10 +1410,15 @@
     }
 
     .drop-zone-icon {
-      width: 48px;
-      height: 48px;
-      margin: 0 auto 12px;
+      width: 26px;
+      height: 26px;
+      margin: 0 auto 4px;
       color: var(--accent);
+    }
+    /* Wide screens: the zone is a target, not a hero — half the width is
+       plenty (curator, 2026-08-24). */
+    @media (min-width: 1000px) {
+      .drop-zone { max-width: 50%; }
     }
 
     .drop-zone-text {
@@ -1684,6 +1705,7 @@
         gap: 16px;
         margin-bottom: 16px;
       }
+      .source-line { grid-template-columns: 1fr; gap: 10px; }
       .recipe-columns {
         grid-template-columns: 1fr;
         gap: 16px;
@@ -2206,7 +2228,38 @@
           <div id="similarResults" hidden style="margin-top:10px;border:1px solid var(--line);border-radius:11px;padding:6px"></div>
         </div>
 
-        <!-- Header: Title/Desc Left, Image Right -->
+        <!-- Header rework 2026-08-24: TITLE featured full-width, the source
+             identity (site name + url) DIRECTLY under it, then description
+             and a larger image balancing each other on wide screens. -->
+        <div class="form-group title-feature" id="nameGroup">
+          <label for="name">Recipe Name<span class="required-star">*</span></label>
+          <input type="text" id="name" placeholder="e.g., Grandmother's Apple Pie" />
+          <div class="error-msg">Recipe name is required</div>
+        </div>
+        <div class="source-line">
+          <div class="form-group">
+            <!-- Friendly publisher name from og:site_name (e.g. "NYT
+                 Cooking" vs the raw "cooking.nytimes.com"). Stored at
+                 _source.siteName; populated on extract where the page
+                 declares it. Used in attribution + the dishes tile. -->
+            <label for="siteName">Site name</label>
+            <input type="text" id="siteName" placeholder="NYT Cooking" />
+          </div>
+          <div class="form-group">
+            <label for="originalUrl">Source URL</label>
+            <!-- name= is intentionally absent from MANY recipe-form
+                 inputs so form.reset() doesn't touch them — that
+                 pattern bit us once (the originalUrl-overwrite bug
+                 2026-05-29: form.reset() left the prior URL in the
+                 field, and the next save's URL-dedup adopted the
+                 prior recipe_id and clobbered the row). Explicit
+                 clears in clearBtn + always-write in
+                 populateFormFromRecipe + loadForm are now the
+                 single source of truth for this field's value.
+                 Open/copy/clear icons attach at init (attachUrlControls). -->
+            <input type="text" id="originalUrl" placeholder="https://..." />
+          </div>
+        </div>
         <div class="header-row">
           <div class="header-left">
             <!-- Cookbook chapter (24-value flat enum from
@@ -2219,11 +2272,6 @@
                 <option value=""></option>
                 <!-- Options populated from JS CHAPTERS at init -->
               </select>
-            </div>
-            <div class="form-group" id="nameGroup">
-              <label for="name">Recipe Name<span class="required-star">*</span></label>
-              <input type="text" id="name" placeholder="e.g., Grandmother's Apple Pie" />
-              <div class="error-msg">Recipe name is required</div>
             </div>
             <div class="form-group">
               <label for="description">Description</label>
@@ -2500,29 +2548,8 @@
               <input type="text" id="sourceTitle" placeholder="Mom's Recipe Box" />
             </div>
             <div class="form-group">
-              <!-- Friendly publisher name from og:site_name (e.g. "NYT
-                   Cooking" vs the raw "cooking.nytimes.com"). Stored at
-                   _source.siteName; populated on extract where the page
-                   declares it. Used in attribution + the dishes tile. -->
-              <label for="siteName">Site name</label>
-              <input type="text" id="siteName" placeholder="NYT Cooking" />
-            </div>
-            <div class="form-group">
               <label for="author">Author</label>
               <input type="text" id="author" placeholder="Julia Child" />
-            </div>
-            <div class="form-group">
-              <label for="originalUrl">URL</label>
-              <!-- name= is intentionally absent from MANY recipe-form
-                   inputs so form.reset() doesn't touch them — that
-                   pattern bit us once (the originalUrl-overwrite bug
-                   2026-05-29: form.reset() left the prior URL in the
-                   field, and the next save's URL-dedup adopted the
-                   prior recipe_id and clobbered the row). Explicit
-                   clears in clearBtn + always-write in
-                   populateFormFromRecipe + loadForm are now the
-                   single source of truth for this field's value. -->
-              <input type="text" id="originalUrl" placeholder="https://..." />
             </div>
             <!-- BCC Permalink: read-only, server-computed canonical URL
                  for this record on bestcooksclub.com. Populated by
