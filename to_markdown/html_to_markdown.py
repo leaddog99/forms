@@ -1089,6 +1089,29 @@ def extract_og_meta(soup: BeautifulSoup, base_url: str) -> dict:
     from urllib.parse import urljoin
 
     image_raw = _find_meta(soup, "og:image", "twitter:image")
+    if not image_raw:
+        # Some themes publish NO og:image/twitter:image at all (lidiasitaly:
+        # 39 of 41 harvested rows imageless, 2026-08-24). The hero is still in
+        # the page, just not where a meta scan looks: an inline
+        # background-image on a recipe-classed container, and/or the share
+        # buttons' data-image attribute. Fire ONLY when the meta tags are
+        # absent; skip svg/theme chrome (logos).
+        def _plausible(u):
+            u = (u or "").strip()
+            return u if u and ".svg" not in u.lower() \
+                and "/themes/" not in u.lower() else ""
+        for el in soup.select('[class*="recipe"][style*="background-image"]'):
+            m = re.search(r"background-image\s*:\s*url\(\s*['\"]?([^'\")]+)",
+                          el.get("style") or "")
+            if m and _plausible(m.group(1)):
+                image_raw = m.group(1).strip()
+                break
+        if not image_raw:
+            for el in soup.find_all(attrs={"data-image": True}):
+                got = _plausible(el.get("data-image"))
+                if got:
+                    image_raw = got
+                    break
     image_abs = ""
     if image_raw:
         try:
