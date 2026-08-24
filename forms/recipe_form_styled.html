@@ -637,6 +637,15 @@
       margin-bottom: 16px;
     }
     .source-line .form-group { margin-bottom: 0; }
+    .time-line {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 2px;
+    }
+    .time-line .form-group { margin-bottom: 0; }
+    .time-line label { font-size: 0.72em; }
+    .time-line input { padding: 7px 9px; font-size: 0.9em; }
     .header-row {
       display: grid;
       grid-template-columns: 1fr 1.05fr;
@@ -2277,6 +2286,28 @@
               <label for="description">Description</label>
               <textarea id="description" class="auto-grow" placeholder="A brief description..."></textarea>
             </div>
+            <!-- Time & servings, COMPACT (2026-08-24): these are four short
+                 numbers, not a page section — they fill the dead space under
+                 the description instead of half a screen further down. Same
+                 ids; every save/load path unchanged. -->
+            <div class="time-line">
+              <div class="form-group">
+                <label for="prepTime">Prep</label>
+                <input type="text" id="prepTime" placeholder="15 min" />
+              </div>
+              <div class="form-group">
+                <label for="cookTime">Cook</label>
+                <input type="text" id="cookTime" placeholder="30 min" />
+              </div>
+              <div class="form-group">
+                <label for="totalTime">Total</label>
+                <input type="text" id="totalTime" placeholder="45 min" />
+              </div>
+              <div class="form-group">
+                <label for="recipeYield">Serves</label>
+                <input type="text" id="recipeYield" placeholder="4" />
+              </div>
+            </div>
           </div>
           <div class="header-right">
             <!-- Unified hero image control (forms/image-well.js): one well that
@@ -2379,29 +2410,6 @@
             <div class="error-msg">At least one step is required</div>
           </div>
         </div>
-
-        <!-- Times & Yield -->
-        <section class="form-section">
-          <h3>Time & Servings</h3>
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="prepTime">Prep Time</label>
-              <input type="text" id="prepTime" placeholder="15 min" />
-            </div>
-            <div class="form-group">
-              <label for="cookTime">Cook Time</label>
-              <input type="text" id="cookTime" placeholder="30 min" />
-            </div>
-            <div class="form-group">
-              <label for="totalTime">Total Time</label>
-              <input type="text" id="totalTime" placeholder="45 min" />
-            </div>
-            <div class="form-group">
-              <label for="recipeYield">Serves</label>
-              <input type="text" id="recipeYield" placeholder="4 servings" />
-            </div>
-          </div>
-        </section>
 
         <!-- Category & Cuisine -->
         <section class="form-section">
