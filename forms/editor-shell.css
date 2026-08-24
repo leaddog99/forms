@@ -24,7 +24,7 @@
   --ed-hairline:#e9e4dc; --ed-hairline-soft:#eee9e2;
   --ed-ok:#6f7a3f; --ed-warn:#b4541f; --ed-warn-bg:#fdf4ea; --ed-warn-border:#f0dcc2;
   --ed-formula-bg:#faf7f2; --ed-formula-border:#eadfd2;
-  --ed-header-h:58px; --ed-sidebar-w:308px; --ed-shell-w:1200px; --ed-gap:18px;
+  --ed-header-h:58px; --ed-sidebar-w:308px; --ed-shell-w:var(--shell-w, 1200px); --ed-gap:18px;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
