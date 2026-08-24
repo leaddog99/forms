@@ -107,7 +107,9 @@ PyYAML==6.0.2
 RapidFuzz==3.12.1
 rdflib==7.1.4
 # Editable install with no version control (recipe-core==0.1.0)
--e c:\users\john\pycharmprojects\recipe-core
+-e c:/users/john/pycharmprojects/recipe-core
+# (forward slashes on purpose: modern pip eats backslashes in requirements
+#  files as escapes — found by the 2026-08-24 BAILEY restore drill)
 recipe_scrapers==15.7.1
 requests==2.32.3
 rich==14.0.0
