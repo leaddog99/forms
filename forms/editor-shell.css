@@ -133,6 +133,12 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-controls[hidden]{ display:none; }
 .ed-controls input,.ed-controls select{ width:100%; font:inherit; font-size:.9em; font-weight:300; padding:8px 11px; border-radius:8px; border:1px solid var(--ed-hairline); background:var(--card); color:var(--ink); }
 .ed-controls input:focus,.ed-controls select:focus{ outline:none; border-color:var(--ink); }
+/* Always-visible list search in the sidebar head (2026-08-24): the box the
+   curator reaches for first, no longer hidden behind the magnifier. Sits
+   flex-grown left of the icon buttons; the page h2 moved into the header. */
+.ed-sidebar-head input[type=search]{ flex:1 1 auto; min-width:0; font:inherit; font-size:.9em; font-weight:300; padding:7px 10px; border-radius:8px; border:1px solid var(--ed-hairline); background:var(--card); color:var(--ink); }
+.ed-sidebar-head input[type=search]:focus{ outline:none; border-color:var(--ink); }
+.ed-sidebar-head{ gap:8px; }
 .ed-ghost-btn{ font:inherit; font-size:.86em; font-weight:400; text-align:left; padding:8px 11px; border-radius:8px; border:1px solid var(--ed-hairline); background:transparent; color:var(--ink); cursor:pointer; }
 .ed-ghost-btn:hover{ border-color:var(--ink); background:var(--accent-soft); }
 .ed-ghost-btn:disabled{ opacity:.55; cursor:default; }

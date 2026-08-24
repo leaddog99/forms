@@ -8,7 +8,7 @@
        here). Clone of the a/c/d/v template (the heaviest table); superseded the
        old forms/dishes.html (removed 2026-07-23). Wired to the real /dishes API.
        See memory/project_admin_editor_nav.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260806a">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260824a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
   <style>
@@ -24,7 +24,7 @@
   <header class="app-header">
     <div class="header-inner">
       <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
-      <div class="ed-brand">Best Cooks Club</div>
+      <div class="ed-brand">Best Cooks Club · Dishes</div>
     </div>
   </header>
   <div class="ed-scrim" id="edScrim"></div>
@@ -32,9 +32,10 @@
   <div class="ed-app">
     <aside class="ed-sidebar">
       <div class="ed-sidebar-head">
-        <h2>Dishes <span class="ed-count" id="count"></span></h2>
+        <input type="search" id="search" placeholder="Search dishes…" autofocus>
+        <span class="ed-count" id="count"></span>
         <div class="ed-head-actions">
-          <button class="ed-icon-btn" id="searchToggle" title="Search &amp; sort" aria-label="Search and sort">
+          <button class="ed-icon-btn" id="searchToggle" title="Sort &amp; tools" aria-label="Sort and tools">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
           <button class="ed-icon-btn" id="addToggle" title="New dish" aria-label="New dish">
@@ -46,7 +47,6 @@
       <div class="ed-attn" id="attn"><div class="ed-attn-title" id="attnTitle"></div><div class="ed-attn-copy" id="attnCopy"></div></div>
 
       <div class="ed-controls" id="controls" hidden>
-        <input type="search" id="search" placeholder="Search dishes…">
         <select id="sort" aria-label="Sort dishes">
           <option value="attention">Sort: needs attention</option>
           <option value="name">Sort: name (A–Z)</option>

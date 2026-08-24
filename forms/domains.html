@@ -11,7 +11,7 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260806a">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260824a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
 </head>
@@ -19,7 +19,7 @@
   <header class="app-header">
     <div class="header-inner">
       <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
-      <div class="ed-brand">Best Cooks Club</div>
+      <div class="ed-brand">Best Cooks Club · Domains</div>
       <!-- LibraryShell.initNav appends: .nav-spacer, .identity-badge, .nav-toggle(⋮) -->
     </div>
   </header>
@@ -28,9 +28,10 @@
   <div class="ed-app">
     <aside class="ed-sidebar">
       <div class="ed-sidebar-head">
-        <h2>Domains <span class="ed-count" id="count"></span></h2>
+        <input type="search" id="search" placeholder="Search domains…" autofocus>
+        <span class="ed-count" id="count"></span>
         <div class="ed-head-actions">
-          <button class="ed-icon-btn" id="searchToggle" title="Search &amp; sort" aria-label="Search and sort">
+          <button class="ed-icon-btn" id="searchToggle" title="Sort &amp; tools" aria-label="Sort and tools">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
           <button class="ed-icon-btn" id="addToggle" title="New domain" aria-label="New domain">
@@ -40,7 +41,6 @@
       </div>
 
       <div class="ed-controls" id="controls" hidden>
-        <input type="search" id="search" placeholder="Search domains…">
         <select id="sort" aria-label="Sort domains">
           <option value="domain">Sort: domain (A–Z)</option>
           <option value="name">Sort: display name</option>
