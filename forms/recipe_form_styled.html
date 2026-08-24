@@ -646,6 +646,7 @@
     .time-line .form-group { margin-bottom: 0; }
     .time-line label { font-size: 0.72em; }
     .time-line input { padding: 7px 9px; font-size: 0.9em; }
+    .cat-line { grid-template-columns: repeat(2, 1fr); }
     .header-row {
       display: grid;
       grid-template-columns: 1fr 1.05fr;
@@ -2308,6 +2309,27 @@
                 <input type="text" id="recipeYield" placeholder="4" />
               </div>
             </div>
+            <!-- Category & cuisine, same compact treatment (2026-08-24):
+                 the standalone Category section is gone; these fill the
+                 rest of the left column. Same ids, same save paths. -->
+            <div class="time-line cat-line">
+              <div class="form-group">
+                <label for="recipeCategory">Category</label>
+                <input type="text" id="recipeCategory" placeholder="Dinner, Main Course" />
+              </div>
+              <div class="form-group">
+                <label for="recipeCuisine">Cuisine</label>
+                <input type="text" id="recipeCuisine" placeholder="Italian, Mexican" />
+              </div>
+              <div class="form-group">
+                <label for="cookingMethod">Cooking Method</label>
+                <input type="text" id="cookingMethod" placeholder="Baking, Grilling" />
+              </div>
+              <div class="form-group">
+                <label for="suitableForDiet">Dietary</label>
+                <input type="text" id="suitableForDiet" placeholder="Vegetarian, Gluten-Free" />
+              </div>
+            </div>
           </div>
           <div class="header-right">
             <!-- Unified hero image control (forms/image-well.js): one well that
@@ -2410,29 +2432,6 @@
             <div class="error-msg">At least one step is required</div>
           </div>
         </div>
-
-        <!-- Category & Cuisine -->
-        <section class="form-section">
-          <h3>Category</h3>
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="recipeCategory">Category</label>
-              <input type="text" id="recipeCategory" placeholder="Dinner, Main Course" />
-            </div>
-            <div class="form-group">
-              <label for="recipeCuisine">Cuisine</label>
-              <input type="text" id="recipeCuisine" placeholder="Italian, Mexican" />
-            </div>
-            <div class="form-group">
-              <label for="cookingMethod">Cooking Method</label>
-              <input type="text" id="cookingMethod" placeholder="Baking, Grilling" />
-            </div>
-            <div class="form-group">
-              <label for="suitableForDiet">Dietary</label>
-              <input type="text" id="suitableForDiet" placeholder="Vegetarian, Gluten-Free" />
-            </div>
-          </div>
-        </section>
 
         <!-- Origin & Story (LLM-inferred provenance + classification).
              Other provenance fields (firstDocumented, traditionalContext,
