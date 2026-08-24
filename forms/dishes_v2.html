@@ -805,6 +805,20 @@
         pre.style.display = ''; pre.textContent = buf; pre.scrollTop = pre.scrollHeight;
       };
       const add = (line) => { buf += (buf ? '\n' : '') + line; paint(); };
+      // Cancel follows the stream, exactly like the domains form: enabled for
+      // the life of the run, POSTs the cooperative cancel (the job aborts
+      // after the current candidate), disabled again on done. Wired HERE, not
+      // at render time, so the already-running attach path gets it too.
+      const setCancel = (on) => {
+        const b = $('#cancelRefreshBtn'); if (!b) return;
+        b.disabled = !on; b.innerHTML = '&#9995; Cancel';
+        b.onclick = on ? async () => {
+          b.disabled = true; b.textContent = 'Cancelling…';
+          add('✋ Cancel requested — stops after the current candidate…');
+          try { await fetch(`/jobs/${jobId}/cancel`, { method: 'POST' }); } catch (_){}
+        } : null;
+      };
+      setCancel(true);
       add(`▶ Running job #${jobId} for “${dishName}” (out-of-process)…`);
       const es = new EventSource('/jobs/' + jobId + '/stream');
       es.addEventListener('log', (e) => { try { add(JSON.parse(e.data).line); } catch (_) {} });
@@ -812,6 +826,7 @@
       es.addEventListener('done', async (e) => {
         let st = 'done'; try { st = JSON.parse(e.data).status; } catch (_) {}
         add(`■ ${st}.`);
+        setCancel(false);
         es.close();
         try {
           const r = await fetch(`/dishes/${encodeURIComponent(dishName)}`);
