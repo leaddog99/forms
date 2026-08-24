@@ -30,4 +30,24 @@ REM include filter. rclone remote 'gdrive' = drive.file scope, authorized
 REM 2026-08-24; config in %%APPDATA%%\rclone\rclone.conf.
 "C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\recipes-db" "gdrive:BCC-Backups/recipes-db" --include "recipes_*.sql.gz" --max-age 14d --delete-excluded --stats-one-line >> backup.log 2>&1
 echo cloud sync exit code: %ERRORLEVEL% >> backup.log
+REM Project-directory MIRROR (2026-08-24 DR audit): everything the other
+REM tiers miss — generated\ (2.1GB of images incl. IRREPLACEABLE user
+REM hero uploads), input\ exports, bats, working tree + .git. Rolling
+REM mirror (/MIR), not timestamped. Live SQLite files are EXCLUDED: their
+REM consistent copies come from backup_db.py above (a robocopy of an open
+REM WAL db can be torn); page_cache.db is a regenerable fetch cache and
+REM __pycache__ is noise. robocopy exit codes 0-7 = success.
+robocopy "C:\Users\john\PycharmProjects\forms" "\\Adam\tbotb\Backups\forms-mirror" /MIR /R:1 /W:2 /NFL /NDL /NP ^
+  /XF recipes.db recipes.db-wal recipes.db-shm page_cache.db media.db training.db recipes.sqbpro identifier.sqlite ^
+  /XD __pycache__ .venv >> backup.log 2>&1
+echo project mirror exit code: %ERRORLEVEL% (0-7 = ok) >> backup.log
+REM Mirror + media + freshest training copy go OFFSITE too (2026-08-24,
+REM closes DR gap G2 — the fire scenario previously lost all three).
+REM env.backup stays OFF the cloud by policy (plaintext keys; the offsite
+REM key copy is the password manager). Training uses a 2-day age window
+REM so the cloud holds the newest copy or two, not the whole dated trail.
+"C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\forms-mirror" "gdrive:BCC-Backups/forms-mirror" --stats-one-line >> backup.log 2>&1
+echo cloud mirror exit code: %ERRORLEVEL% >> backup.log
+"C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\recipes-db" "gdrive:BCC-Backups/db-latest" --include "media_latest.db" --include "training_*.db" --max-age 2d --delete-excluded --stats-one-line >> backup.log 2>&1
+echo cloud media/training exit code: %ERRORLEVEL% >> backup.log
 endlocal

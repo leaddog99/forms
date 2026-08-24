@@ -52,6 +52,7 @@ SQL = HERE / "recipes.sql.gz"
 # copy is its ONLY backup. It holds the curator's human_label CORRECTIONS: the gold
 # signal that teaches where the heuristic is wrong. Worth off-machine copies.
 TRAINING = HERE / "training.db"
+MEDIA = HERE / "media.db"
 ENV = HERE / ".env"
 DEFAULT_ADAM = Path(r"Z:\Backups\recipes-db")
 
@@ -241,6 +242,20 @@ def run_backup(dest: Path = DEFAULT_ADAM, no_adam: bool = False) -> dict:
     #
     # NOT timestamped: one current copy, overwritten. A trail of dated files
     # would leave revoked keys lying around indefinitely.
+    # media.db (page screenshots + TTS audio, ~350MB) — found unprotected in
+    # the 2026-08-24 disaster-recovery audit. ROLLING single copy, not
+    # timestamped: blobs are mostly static and append-only, so one current
+    # copy is the recovery need, and a dated trail would add ~350MB/night to
+    # a folder that already has no retention pruning. Screenshots are only
+    # PARTLY regenerable (anti-bot sites and user-browser captures are not).
+    if MEDIA.exists():
+        try:
+            media_dst = dest / "media_latest.db"
+            shutil.copy2(MEDIA, media_dst)
+            out["media_dst"] = str(media_dst)
+            out["media_integrity"] = "ok" if integrity_ok(media_dst) else "FAILED"
+        except Exception as e:  # noqa: BLE001
+            out["media_error"] = f"{type(e).__name__}: {e}"
     if ENV.exists():
         try:
             env_dst = dest / "env.backup"
