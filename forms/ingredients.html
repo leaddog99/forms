@@ -13,11 +13,14 @@
        merely behave alike (arborio vs carnaroli) stay their OWN canonical — the
        dish identity already clusters them; don't merge. -->
   <style>
+    /* Shell-width contract: this page runs wide; the header follows. */
+    :root{ --shell-max: 1180px; }
+
     :root{ --warn:#b23b3b; --ok:#2f7a3a; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:var(--bg); color:var(--ink);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
-    .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 80px; }
+    .wrap{ max-width:var(--shell-max, 960px); margin:0 auto; padding:22px 18px 80px; }
     h1{ font-size:1.5rem; margin:0 0 2px; } .sub{ color:var(--muted); margin:0 0 16px; font-size:.92rem; }
     .toolbar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
     .toolbar input[type=search],.toolbar input[type=text]{ padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; font:inherit; }
@@ -45,7 +48,7 @@
     .test{ display:flex; gap:8px; align-items:center; margin-left:auto; font-size:.85rem; }
     .test .arrow{ color:var(--muted); } .test code{ background:#f3eee7; padding:2px 6px; border-radius:5px; }
   </style>
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260824a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
 </head>
 <body>

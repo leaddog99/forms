@@ -10,6 +10,9 @@
        drain popup. Reads GET /jobs, /jobs/{id}, /jobs/{id}/stream; POSTs
        /jobs/{id}/cancel + /jobs/{id}/spawn. -->
   <style>
+    /* Shell-width contract: this page runs wide; the header follows. */
+    :root{ --shell-max: 1200px; }
+
     :root{ --warn:#b23b3b; --ok:#2f7a3a; --info:#2a6db2; }
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:var(--bg); color:var(--ink);
@@ -17,7 +20,7 @@
       -webkit-font-smoothing:antialiased; }
     /* 1200 to match the editor shell every other admin page uses (shellWidth: 1200) —
        this page was 980 and read as a different, narrower app. */
-    .wrap{ max-width:1200px; margin:0 auto; padding:28px 18px 90px; }
+    .wrap{ max-width:var(--shell-max, 960px); margin:0 auto; padding:28px 18px 90px; }
     h1{ font-size:1.6rem; margin:0 0 4px; }
     .sub{ color:var(--muted); margin:0 0 18px; font-size:.95rem; }
     .toolbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 16px;
@@ -77,7 +80,7 @@
       white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
     .logbody .esc{ color:#7fb3e6; }
   </style>
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260824a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
 </head>
 <body>

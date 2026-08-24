@@ -15,10 +15,13 @@
        is that gap. Read-only by design — it reports, it never creates.
        Backed by GET /dish-coverage. -->
   <style>
+    /* Shell-width contract: this page runs wide; the header follows. */
+    :root{ --shell-max: 1180px; }
+
     *{ box-sizing:border-box; }
     html,body{ margin:0; background:var(--bg); color:var(--ink);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
-    .wrap{ max-width:1180px; margin:0 auto; padding:22px 18px 80px; }
+    .wrap{ max-width:var(--shell-max, 960px); margin:0 auto; padding:22px 18px 80px; }
     h1.pt{ font-size:1.5rem; margin:0 0 2px; }
     .sub{ color:var(--muted); margin:0 0 16px; font-size:.92rem; max-width:70ch; line-height:1.5; }
     .sub code{ background:var(--card); padding:1px 5px; border-radius:4px; font-size:.86em; }
@@ -68,7 +71,7 @@
       display:flex; flex-direction:column; gap:7px; }
     button:focus-visible,input:focus-visible,select:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   </style>
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260731a">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260824a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
 </head>
 <body>

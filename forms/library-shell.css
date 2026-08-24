@@ -49,8 +49,14 @@ body {
   z-index: 100;
   display: flex; align-items: center;
 }
+/* SHELL-WIDTH CONTRACT (2026-08-24). One variable, --shell-max, sizes the
+   header rail AND the page's main wrapper — a page may widen itself by
+   setting `:root{ --shell-max: 1180px }`, and the header follows, so body
+   content can never run outside the header (the Job Monitor did exactly
+   that: a 1200px body under a 960px header). Pages must size their own
+   wrapper with var(--shell-max, 960px), never a bare pixel width. */
 .app-header .header-inner {
-  max-width: 960px; width: 100%;
+  max-width: var(--shell-max, 960px); width: 100%;
   margin: 0 auto;
   padding: 0 24px;
   display: flex; align-items: center; gap: 14px;
@@ -307,7 +313,7 @@ body.sidebar-open {
 
 /* ---------- Main container ---------- */
 .container {
-  max-width: 960px;
+  max-width: var(--shell-max, 960px);
   margin: 0 auto;
   padding: 28px;
 }
@@ -401,7 +407,7 @@ body.sidebar-open {
   pointer-events: none;
 }
 .action-footer .button-row {
-  max-width: 960px; margin: 0 auto;
+  max-width: var(--shell-max, 960px); margin: 0 auto;
   display: flex; gap: 10px; align-items: center;
   background: var(--card); border: 1px solid var(--line);
   border-radius: 12px; box-shadow: 0 10px 30px rgba(60, 40, 20, 0.14);

@@ -8,11 +8,14 @@
        captured from SEMrush Top-Pages exports). Capture-now / normalize-later: this is
        a read+search+prune surface, not a hand-add editor. See input/pipeline/dish_keywords.py
        + memory/project_url_word_filter.md (sibling capture pattern). -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260824a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260807a">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
   <style>
-    .dk-wrap { max-width: 1180px; margin: 0 auto; padding: 16px 18px 60px; }
+    /* Shell-width contract: this page runs wide; the header follows. */
+    :root{ --shell-max: 1180px; }
+
+    .dk-wrap { max-width:var(--shell-max, 960px); margin: 0 auto; padding: 16px 18px 60px; }
     .dk-wrap h1 { font-size: 1.3rem; margin: 6px 0 2px; }
     .dk-sub { color: var(--ink-soft, #6b6258); font-size: .86rem; margin: 0 0 14px; }
     .dk-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 0 0 12px;

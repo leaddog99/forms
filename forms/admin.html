@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Admin</title>
   <style>
+    /* Shell-width contract: this page runs wide; the header follows. */
+    :root{ --shell-max: 1080px; }
+
     /* Shares the recipe-app palette (Apple-ish, hairline borders, one warm
        caramel accent) so this generic admin feels native, but stays fully
        self-contained — it renders ANY model from /admin/{model}/schema. */
@@ -27,7 +30,7 @@
       padding:5px 11px; border-radius:6px; font-size:.85em; }
     header .models a:hover{ border-color:var(--ink); background:var(--accent-soft); }
     header .models a.active{ color:#fff; background:var(--accent); border-color:var(--accent); }
-    main{ max-width:1080px; margin:0 auto; padding:26px 28px 80px; }
+    main{ max-width:var(--shell-max, 960px); margin:0 auto; padding:26px 28px 80px; }
     h2{ font-weight:500; font-size:.95em; letter-spacing:.02em; text-transform:uppercase;
       color:var(--muted); margin:30px 0 12px; }
     /* card / form */
@@ -94,7 +97,7 @@
        (user + admin) like every other page. This header isn't the
        .app-header/.header-inner the shell mounts into, so initNav falls back
        to fixed top-right burgers — which is exactly what we want here. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260618c">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260824a">
   <script src="/forms/library-shell.js?v=20260809c"></script>
   <script>
     if (window.LibraryShell && LibraryShell.initNav) {
