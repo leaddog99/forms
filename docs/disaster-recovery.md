@@ -174,6 +174,30 @@ password manager (keys — if maintained, see G3).
 - **G4 — rclone's shared Google client_id retires "during 2026".** The nightly
   sync will start failing with a clear NOTICE when it happens; fix = personal
   OAuth client_id (5 min in Google Cloud Console) + `rclone config update`.
-- **G5 — restore drills.** Playbook A/B have been exercised (dump replay runs
-  nightly); playbook C/D never end-to-end. The honest version of this document
-  is one practiced bare-metal restore away.
+- **G5 — CLOSED 2026-08-24: playbook C was executed for real**, restoring the
+  full system onto BAILEY (bare Windows 11 + git only) from backups alone,
+  driven over SSH. **~35 minutes wall including three discovered defects; a
+  clean re-run is ~20.** Timings: mirror stream 5:00 (2.3GB), four DBs 0:47,
+  deps ~4:00, server up and answering inside a minute. End state: search
+  serving all 6,742 rows, auth live, Site filter working, and `backup_db.py
+  --verify` on the RESTORED db: RESTORE OK, 6,742 embedding BLOBs intact
+  (embedding staleness matched the source's own drift — no restore loss).
+
+  **What the drill caught — the entire reason drills exist:**
+  1. `recipe-core` — a sibling EDITABLE dependency outside forms/, not a git
+     repo, backed up NOWHERE. pip on the target could not resolve it and the
+     app would never have booted. Now nightly-mirrored
+     (`Backups/recipe-core-mirror`) and in this inventory.
+  2. `requirements-frozen.txt`'s `-e c:\users\...` line: modern pip eats the
+     backslashes as escapes. Fixed to forward slashes in the file itself.
+  3. A server launched via a task created from an SSH session dies when that
+     session closes. `/RU SYSTEM` detaches it — and is why production uses
+     NSSM, which the cutover must recreate (§5).
+  4. BAILEY has no SMB credentials for ADAM — restore streamed via a relay
+     host. A cutover must grant the new host ADAM access or its own nightly
+     backups fail silently.
+
+  BAILEY now runs a complete, verified, parallel instance (task `BCC-Drill`,
+  SYSTEM, port 8009) — the staging half of the migration off the RMA-pending
+  host. Cutover remains a separate deliberate step: write-freeze, final delta
+  restore, NSSM + scheduled tasks + rclone + tunnel move, DNS/tunnel flip.
