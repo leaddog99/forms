@@ -197,7 +197,10 @@ password manager (keys — if maintained, see G3).
      host. A cutover must grant the new host ADAM access or its own nightly
      backups fail silently.
 
-  BAILEY now runs a complete, verified, parallel instance (task `BCC-Drill`,
-  SYSTEM, port 8009) — the staging half of the migration off the RMA-pending
+  BAILEY stays fresh during the soak via `bcc_sync_bailey.ps1` — one-way
+  incremental rclone-over-SFTP (code+assets live; `-WithDbs` stops the
+  server, lays in the newest ADAM backup set, restarts; `-FreshBackup`
+  snapshots first). BAILEY runs a complete, verified, parallel instance
+  (task `BCC-Drill`, SYSTEM, port 8009) — the staging half of the migration off the RMA-pending
   host. Cutover remains a separate deliberate step: write-freeze, final delta
   restore, NSSM + scheduled tasks + rclone + tunnel move, DNS/tunnel flip.
