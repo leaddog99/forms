@@ -14,16 +14,19 @@
 
 # Databases — the binary recipes.db is NOT tracked (git can't delta a 29MB+
 # binary, so every commit stored a fresh full copy). The GZIPPED logical dump
-# recipes.sql.gz IS tracked and serves as the git-side backup + restore source
-# (plain recipes.sql grew past GitHub's 100 MB file limit, so backup_db.py now
-# writes .gz — ~5x smaller; restore: gunzip -c recipes.sql.gz | sqlite3 new.db).
+# recipes.sql.gz is NO LONGER tracked (2026-08-24): 29 committed versions had
+# grown .git to 1.6GB and the file itself was 73MB marching toward GitHub's
+# 100MB hard limit. Backups live on ADAM (Z:\Backupsecipes-db, timestamped
+# .db + .sql.gz pairs, verified by backup_db.py --verify); offsite redundancy
+# is a cloud/second-drive sync of that folder, not source control.
 # The live .db is backed up to ADAM/GitHub via bcc_backup.bat. media.db holds
 # regenerable binary (page screenshots) and is never tracked.
 recipes.db
 recipes.db-wal
 recipes.db-shm
-# The uncompressed dump is never tracked (too big); only recipes.sql.gz is.
+# Neither dump form is tracked.
 recipes.sql
+recipes.sql.gz
 media.db
 media.db-wal
 media.db-shm
