@@ -537,6 +537,29 @@ DEFAULT_GL = "us"
 DEFAULT_HL = "en"
 _CODE_RE = re.compile(r"^[a-z]{2}$")
 
+# gl for languages whose obvious country code differs (hl=el -> gl=gr, etc.).
+# Everything else maps language -> same-code country, which is right for the
+# fr/it/es/de/pt class this exists for.
+_GL_FOR_LANG = {"el": "gr", "en": "us", "ja": "jp", "zh": "cn", "ko": "kr",
+                "da": "dk", "sv": "se", "cs": "cz", "uk": "ua"}
+
+
+def apply_locale_defaults(rows: list[dict], source_language) -> list[dict]:
+    """Stamp gl/hl from the dish's source_language onto rows still carrying
+    the us/en DEFAULTS. Two traps this closes (moules, 2026-08-25): the
+    editor posts bare strings, so every row silently gets gl=us/hl=en — a
+    French dish was querying the AMERICAN Google — and any later textarea
+    edit RESETS hand-fixed locales back to the defaults. Explicitly
+    non-default rows are respected; en/blank languages are a no-op."""
+    lang = (str(source_language or "").strip().lower())
+    if not _CODE_RE.match(lang) or lang == "en":
+        return rows
+    for r in rows:
+        if r.get("gl") == DEFAULT_GL and r.get("hl") == DEFAULT_HL:
+            r["hl"] = lang
+            r["gl"] = _GL_FOR_LANG.get(lang, lang)
+    return rows
+
 
 def normalize_query_rows(raw) -> list[dict]:
     """Coerce whatever is stored/posted into canonical query rows.
@@ -978,8 +1001,25 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
     if "query_rows" in patch or "queries" in patch:
         raw = patch.get("query_rows", patch.get("queries"))
         rows = validate_query_rows(raw, max_n=_max_serp)
+        # Locale from the dish's language (the patch's value when it is being
+        # set in the same request, else the stored one) — see
+        # apply_locale_defaults for the two traps this closes.
+        _eff_lang = patch.get("source_language", existing.get("source_language"))
+        rows = apply_locale_defaults(rows, _eff_lang)
         sets.append("queries = ?")
         params.append(json.dumps(rows, ensure_ascii=False))
+    elif "source_language" in patch:
+        # Setting the language WITHOUT touching queries re-derives any rows
+        # still on the us/en defaults — the natural moment the curator tells
+        # us the dish is foreign is the moment the queries should follow.
+        # row_to_dict emits both shapes; query_rows is the full-fidelity one
+        # (n/gl/hl preserved) — the plain-strings `queries` would reset them.
+        _rows0 = normalize_query_rows(existing.get("query_rows")
+                                      or existing.get("queries") or [])
+        _rows1 = apply_locale_defaults([dict(r) for r in _rows0], patch.get("source_language"))
+        if _rows1 != _rows0:
+            sets.append("queries = ?")
+            params.append(json.dumps(_rows1, ensure_ascii=False))
     if "top_n_serpapi" in patch:
         v = int(patch["top_n_serpapi"])
         if v <= 0:
