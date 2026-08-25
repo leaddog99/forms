@@ -1785,7 +1785,22 @@ def build_batch(
                 _e["_salvaged"] = "unblocker"
                 if _c:
                     _c["rescued"] = True
-                final.append(_e)
+                # Insert BY MERIT, not at the tail (first run 2026-08-25: an
+                # OU-8.03 rescue queued at rank 37 behind an OU-2.26 winner and
+                # missed the save cap — the opposite of "this page earned its
+                # slot"). Blend percentiles can't be recomputed post-hoc, but OU
+                # is the bar Phase A qualified them against, so position by OU;
+                # the displaced weakest winner slides past the cap and becomes
+                # the natural reserve.
+                _ou_e = _e.get("ou")
+                _pos = len(final)
+                if isinstance(_ou_e, (int, float)):
+                    for _i, _w in enumerate(final):
+                        _wou = _w.get("ou")
+                        if isinstance(_wou, (int, float)) and float(_ou_e) > float(_wou):
+                            _pos = _i
+                            break
+                final.insert(_pos, _e)
             if _kept_r:
                 print(f"[Phase B] RESCUED {len(_kept_r)} page(s) into the batch "
                       f"(now {len(final)}): "
