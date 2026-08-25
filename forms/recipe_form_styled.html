@@ -1140,7 +1140,7 @@
     }
     .score-value {
       font-size: 1.2em;
-      font-weight: 700;
+      font-weight: 400;
       color: var(--ink);
       font-variant-numeric: tabular-nums;
     }
@@ -2116,103 +2116,7 @@
           <div id="cookPanelBody" style="padding:4px 16px 16px;font-size:.92rem;line-height:1.5"></div>
         </details>
 
-        <!-- Quality-signal scoring strip. Populated at extract time so the
-             user can decide whether to save the recipe (and whether to
-             pay for the Enrich step) before clicking Save. Hidden when
-             no scores are present. -->
-        <div class="scoring-strip hidden" id="scoringStrip">
-          <!-- PA is shown exactly as measured — the paywall correction no longer
-               touches it. For a GATED publisher the adjustment lands on the DA
-               BAR (and therefore on Opportunity), because DA is measured across
-               the whole domain while the recipes sit behind the wall. Showing
-               only the raw numbers made the strip disagree with the decision the
-               system actually made (ATK: displayed OU -5.0, selected well above). -->
-          <div class="score-chip">
-            <span class="score-label">Page Authority</span>
-            <span class="score-value empty" id="score_pa">—</span>
-          </div>
-          <div class="score-chip">
-            <span class="score-label">Domain Authority</span>
-            <span class="score-value empty" id="score_da">—</span>
-            <span class="exc-chip-basis" id="score_da_adj"></span>
-          </div>
-          <div class="score-chip">
-            <span class="score-label">Opportunity</span>
-            <span class="score-value empty" id="score_ou">—</span>
-            <span class="exc-chip-basis" id="score_ou_adj"></span>
-          </div>
-          <div class="score-chip">
-            <span class="score-label">Recipe-text</span>
-            <span class="score-value empty" id="score_text">—</span>
-          </div>
-          <!-- SEMrush per-page monthly organic traffic + share-of-site (the meaningful
-               tiebreaker when PA saturates across a publisher's pages). Em-dash when
-               unknown (SERP-discovered or no SEMrush data). -->
-          <div class="score-chip" id="score_traffic_chip">
-            <span class="score-label">Traffic / mo</span>
-            <span class="score-value empty" id="score_traffic">—</span>
-          </div>
-          <!-- Share of the publisher's own tracked traffic (SEMrush
-               trafficPct) — the Hotlist metric, promoted from a sub-label to
-               its own chip (curator, 2026-08-24). -->
-          <div class="score-chip">
-            <span class="score-label">Share of site</span>
-            <span class="score-value empty" id="score_traffic_pct">—</span>
-          </div>
-          <!-- Exceptionalism is the headline grade for batch-saved master
-               recipes. Letter badge + numeric T-score side by side, with
-               the cohort basis (n, σ, model) underneath. Empty / em-dash
-               for personal recipes, n<25 dishes, and pre-grading saves. -->
-          <div class="score-chip" id="score_exc_chip">
-            <span class="score-label">Exceptionalism</span>
-            <span class="exc-chip-value" id="score_exc_value">
-              <span class="score-value empty">—</span>
-            </span>
-            <span class="exc-chip-basis" id="score_exc_basis"></span>
-          </div>
-          <!-- Matched dish: the vector NN match stored on _match at save time
-               (which canonical dish this recipe is). Shows the confident dish +
-               distance, or the closest candidates when nothing cleared the bar. -->
-          <div class="score-chip" id="score_match_chip">
-            <span class="score-label">Matched dish</span>
-            <span class="score-value empty" id="score_match_value">—</span>
-            <span class="exc-chip-basis" id="score_match_basis"></span>
-          </div>
-          <!-- What the USER would see. Every other chip in this strip is the
-               private machinery; this one is the public face of it, put here so
-               the curator can judge the translation against the numbers that
-               produced it. Stars and badge come from GET /public-score — the
-               mapping is never reimplemented in JS (input/pipeline/public_scoring). -->
-          <div class="score-chip hidden" id="score_public_chip">
-            <span class="score-label">Public rating</span>
-            <span class="pub-stars-wrap">
-              <span class="stars sm" id="score_stars" style="--fill:0%"></span>
-              <span class="pub-badge hidden" id="score_badge"></span>
-            </span>
-            <span class="exc-chip-basis" id="score_public_basis"></span>
-          </div>
-        </div>
-
-        <!-- WHY there is no score. A grab of a same-day article comes back with
-             every authority chip on an em-dash, and the reason (Moz has not
-             crawled it yet) was written to _scoring.scoringNote but displayed
-             nowhere — so "it didn't do any scoring" could only be answered by
-             reading the database. The note is the answer; put it where the
-             em-dashes are. Hidden whenever the row scored normally. -->
-        <div class="score-commentary hidden" id="scoringNoteBox">
-          <span class="score-label">No score — why</span>
-          <p id="scoringNoteText"></p>
-        </div>
-
-        <!-- Score commentary — the editorial reading of the numbers above
-             (OU x power quadrant + residual). Read-only here; the editable
-             field stays in the Editorial section, and this mirrors it so the
-             interpretation sits next to what it interprets. Hidden when the
-             recipe has no commentary. -->
-        <div class="score-commentary hidden" id="scoreCommentaryBox">
-          <span class="score-label">Commentary</span>
-          <p id="scoreCommentaryText"></p>
-        </div>
+        <!-- Scoring strip moved down beside Metadata (curator, 2026-08-25). -->
 
         <!-- Collections this recipe belongs to: dish winners (scoring ledger) +
              publisher / other collections (the membership junction). Multi-membership
@@ -2582,6 +2486,104 @@
           </div>
           <input type="hidden" id="affiliateUrl" />
         </section>
+
+        <!-- Quality-signal scoring strip — moved from the top of the form to
+             sit with Metadata (curator, 2026-08-25): it is reference data, not
+             the first thing to read. Populated at extract/load; hidden when no
+             scores are present. -->
+        <div class="scoring-strip hidden" id="scoringStrip">
+          <!-- PA is shown exactly as measured — the paywall correction no longer
+               touches it. For a GATED publisher the adjustment lands on the DA
+               BAR (and therefore on Opportunity), because DA is measured across
+               the whole domain while the recipes sit behind the wall. Showing
+               only the raw numbers made the strip disagree with the decision the
+               system actually made (ATK: displayed OU -5.0, selected well above). -->
+          <div class="score-chip">
+            <span class="score-label">Page Authority</span>
+            <span class="score-value empty" id="score_pa">—</span>
+          </div>
+          <div class="score-chip">
+            <span class="score-label">Domain Authority</span>
+            <span class="score-value empty" id="score_da">—</span>
+            <span class="exc-chip-basis" id="score_da_adj"></span>
+          </div>
+          <div class="score-chip">
+            <span class="score-label">Opportunity</span>
+            <span class="score-value empty" id="score_ou">—</span>
+            <span class="exc-chip-basis" id="score_ou_adj"></span>
+          </div>
+          <div class="score-chip">
+            <span class="score-label">Recipe-text</span>
+            <span class="score-value empty" id="score_text">—</span>
+          </div>
+          <!-- SEMrush per-page monthly organic traffic + share-of-site (the meaningful
+               tiebreaker when PA saturates across a publisher's pages). Em-dash when
+               unknown (SERP-discovered or no SEMrush data). -->
+          <div class="score-chip" id="score_traffic_chip">
+            <span class="score-label">Traffic / mo</span>
+            <span class="score-value empty" id="score_traffic">—</span>
+          </div>
+          <!-- Share of the publisher's own tracked traffic (SEMrush
+               trafficPct) — the Hotlist metric, promoted from a sub-label to
+               its own chip (curator, 2026-08-24). -->
+          <div class="score-chip">
+            <span class="score-label">Share of site</span>
+            <span class="score-value empty" id="score_traffic_pct">—</span>
+          </div>
+          <!-- Exceptionalism is the headline grade for batch-saved master
+               recipes. Letter badge + numeric T-score side by side, with
+               the cohort basis (n, σ, model) underneath. Empty / em-dash
+               for personal recipes, n<25 dishes, and pre-grading saves. -->
+          <div class="score-chip" id="score_exc_chip">
+            <span class="score-label">Exceptionalism</span>
+            <span class="exc-chip-value" id="score_exc_value">
+              <span class="score-value empty">—</span>
+            </span>
+            <span class="exc-chip-basis" id="score_exc_basis"></span>
+          </div>
+          <!-- Matched dish: the vector NN match stored on _match at save time
+               (which canonical dish this recipe is). Shows the confident dish +
+               distance, or the closest candidates when nothing cleared the bar. -->
+          <div class="score-chip" id="score_match_chip">
+            <span class="score-label">Matched dish</span>
+            <span class="score-value empty" id="score_match_value">—</span>
+            <span class="exc-chip-basis" id="score_match_basis"></span>
+          </div>
+          <!-- What the USER would see. Every other chip in this strip is the
+               private machinery; this one is the public face of it, put here so
+               the curator can judge the translation against the numbers that
+               produced it. Stars and badge come from GET /public-score — the
+               mapping is never reimplemented in JS (input/pipeline/public_scoring). -->
+          <div class="score-chip hidden" id="score_public_chip">
+            <span class="score-label">Public rating</span>
+            <span class="pub-stars-wrap">
+              <span class="stars sm" id="score_stars" style="--fill:0%"></span>
+              <span class="pub-badge hidden" id="score_badge"></span>
+            </span>
+            <span class="exc-chip-basis" id="score_public_basis"></span>
+          </div>
+        </div>
+
+        <!-- WHY there is no score. A grab of a same-day article comes back with
+             every authority chip on an em-dash, and the reason (Moz has not
+             crawled it yet) was written to _scoring.scoringNote but displayed
+             nowhere — so "it didn't do any scoring" could only be answered by
+             reading the database. The note is the answer; put it where the
+             em-dashes are. Hidden whenever the row scored normally. -->
+        <div class="score-commentary hidden" id="scoringNoteBox">
+          <span class="score-label">No score — why</span>
+          <p id="scoringNoteText"></p>
+        </div>
+
+        <!-- Score commentary — the editorial reading of the numbers above
+             (OU x power quadrant + residual). Read-only here; the editable
+             field stays in the Editorial section, and this mirrors it so the
+             interpretation sits next to what it interprets. Hidden when the
+             recipe has no commentary. -->
+        <div class="score-commentary hidden" id="scoreCommentaryBox">
+          <span class="score-label">Commentary</span>
+          <p id="scoreCommentaryText"></p>
+        </div>
 
         <!-- Metadata (URL-keyed, lazily loaded). TODO: access-control later. -->
         <section class="form-section">
