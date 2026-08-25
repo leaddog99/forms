@@ -7634,7 +7634,12 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # so the dish UI flags which would have qualified (ou vs bottom_ou) for a
     # Playwright/bookmarklet recovery. They carry Moz DA/PA + a fit-derived OU
     # but no recipe candidate (we couldn't crawl the page).
+    # Phase B rescues are NOT rejects: they were unblocker-fetched into the
+    # batch and (usually) saved — recording them here made the run report a
+    # page it had just saved at rank 2 as 'fetch-failed' (moules, 2026-08-25).
     for c in batch_result.get("fetch_fail_candidates", []):
+        if c.get("rescued"):
+            continue
         rejects.append({
             "url": c.get("url"),
             "reason": "fetch-failed (likely anti-bot — recover via Playwright/bookmarklet)",
@@ -7642,10 +7647,12 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             "da": c.get("da"), "pa": c.get("pa"), "ou": c.get("ou"),
             "rank": None, "exc_score": None, "exc_grade": None,
         })
-    _n_ff_qual = sum(1 for c in batch_result.get("fetch_fail_candidates", []) if c.get("would_qualify"))
-    if batch_result.get("fetch_fail_candidates"):
-        print(f"[REFRESH-DISH] {len(batch_result['fetch_fail_candidates'])} fetch-fail(s) "
-              f"recorded as rejects; {_n_ff_qual} would have qualified")
+    _ffc = batch_result.get("fetch_fail_candidates", [])
+    _n_ff_qual = sum(1 for c in _ffc if c.get("would_qualify") and not c.get("rescued"))
+    _n_rescued = sum(1 for c in _ffc if c.get("rescued"))
+    if _ffc:
+        print(f"[REFRESH-DISH] {len(_ffc) - _n_rescued} fetch-fail(s) recorded as rejects; "
+              f"{_n_ff_qual} would have qualified; {_n_rescued} rescued by Phase B")
 
     # Re-flag the ACTUAL saved winners in the cohort data points — backfill may
     # have swapped a failed winner for a reserve, so the pre-save flagging
