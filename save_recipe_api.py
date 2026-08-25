@@ -9526,8 +9526,10 @@ SORT_SQL = {
     # The leading CASE sinks micro-site artifacts (a 2-visit page can be 100%
     # of a tiny domain) below anything with real volume; NULL pct (SERP-sourced
     # rows have no traffic data) sinks last.
-    "hotlist":      f"(CASE WHEN traffic >= 1000 THEN 0 ELSE 1 END), "
-                    f"traffic_pct DESC NULLS LAST, traffic DESC NULLS LAST, {_TOTAL}",
+    # The qualifying WHERE (traffic >= 1000, pct measured) is added in
+    # _recipes_search_impl when this sort is chosen — hotlist SELECTS, so the
+    # order itself is simple.
+    "hotlist":      f"traffic_pct DESC, traffic DESC, {_TOTAL}",
 }
 DEFAULT_SORT = "updated_desc"
 
@@ -9723,6 +9725,14 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
         order_by = SORT_SQL[DEFAULT_SORT]
     # Relevance reads temp.q_match, which is named per request; bind the table.
     order_by = order_by.replace("{T}", table)
+    # THE HOTLIST IS A SELECTION, not just an ordering (curator, 2026-08-24:
+    # "we don't need to sort thousands of records"): picking it restricts the
+    # result to rows that QUALIFY — real volume and a measured share — so the
+    # list ends where the flagships end instead of trailing into the whole
+    # corpus. Applied to matched-count, rows AND facet counts, so "N of total"
+    # and the dropdowns all describe the same set.
+    extra_where = (" AND traffic >= 1000 AND traffic_pct IS NOT NULL"
+                   if sort == "hotlist" else "")
     limit = max(1, min(int(limit or 200), 1000))
     offset = max(0, int(offset or 0))
 
@@ -9731,6 +9741,7 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
             if q:
                 _materialise_text_match(conn, user_id, q)
             where, params = _search_where(user_id, filters, q)
+            where += extra_where
             matched = conn.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE {where}", params
             ).fetchone()[0]
@@ -9763,6 +9774,7 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
             if facets:
                 for key, col in FACET_COLUMNS.items():
                     fw, fp = _search_where(user_id, filters, q, skip=key)
+                    fw += extra_where
                     facet_counts[key] = [
                         {"value": v, "count": n}
                         for v, n in conn.execute(
@@ -9779,6 +9791,7 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                 # which read as "numbers that don't correlate" (curator,
                 # 2026-08-24). ~7k plain-column rows; milliseconds.
                 fw, fp = _search_where(user_id, filters, q, skip="domain")
+                fw += extra_where
                 host_expr = ("substr(substr(url_normalized, instr(url_normalized,'://')+3), 1, "
                              "instr(substr(url_normalized, instr(url_normalized,'://')+3) || '/', '/') - 1)")
                 facet_counts["domain"] = [
