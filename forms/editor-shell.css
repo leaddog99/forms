@@ -315,5 +315,19 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
   body.ed-drawer-open .ed-scrim{ display:block; position:fixed; inset:var(--ed-header-h) 0 0 0; background:rgba(30,22,14,.28); z-index:65; }
   .ed-page{ padding:26px 20px 36px; }
   .ed-form-grid{ grid-template-columns:1fr; }
-  .identity-badge{ display:none; }
+  /* TWO-LINE mobile header (2026-08-25, matches library-shell): brand +
+     burgers on row one, the identity full-width below — was display:none,
+     which left mobile with no idea who it was acting as. --ed-header-h
+     grows so the drawer/scrim offsets follow. */
+  :root{ --ed-header-h:84px; }
+  .app-header{ height:auto; min-height:var(--ed-header-h); }
+  .header-inner{ flex-wrap:wrap; padding:6px 0 4px; row-gap:2px; }
+  /* Brand shrinks (ellipsis) so both burgers hold row one; the identity
+     row below never truncates. flex-basis 0, not auto: flex WRAPS on the
+     hypothetical (content) size before it shrinks, so a long brand at
+     basis:auto pushed a burger onto row two no matter the ellipsis. */
+  .ed-brand{ flex:1 1 0%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1em; }
+  .header-inner .nav-spacer{ flex:0 0 0; }
+  .identity-badge{ order:10; flex-basis:100%; max-width:none; justify-content:flex-end; font-size:.8em; padding:0 2px; }
+  .identity-badge .identity-name{ max-width:none; }
 }

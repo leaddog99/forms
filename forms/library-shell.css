@@ -447,14 +447,22 @@ body.sidebar-open {
 
 /* ---------- Narrow screens ---------- */
 @media (max-width: 760px) {
-  :root { --header-h: 60px; }
-  .app-header { height: 52px; }
-  .app-header .header-inner { padding: 0 12px; gap: 10px; }
-  .app-header h1 { font-size: 1em; }
-  .identity-badge { padding: 2px 4px; font-size: 0.8em; max-width: 26vw; }
-  /* Always show the arrow on mobile (no hover state) — gives the
-     curator a visual anchor that this is the account chip. */
-  .identity-badge .identity-arrow { opacity: 0.5; }
+  /* TWO-LINE mobile header (curator, 2026-08-25): brand + burgers on the
+     first row, the identity on its own full-width second row — full name,
+     NO truncation. --header-h grows to make room; everything that offsets
+     against it (body padding, sidebar top, menus) follows automatically. */
+  :root { --header-h: 84px; }
+  .app-header { height: auto; min-height: var(--header-h); }
+  .app-header .header-inner { padding: 6px 12px 4px; gap: 10px; row-gap: 2px; flex-wrap: wrap; }
+  .app-header h1 { font-size: 1em; flex: 1 1 0%; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header-inner .nav-spacer { flex: 0 0 0; }
+  .identity-badge {
+    order: 10; flex-basis: 100%;
+    max-width: none; justify-content: flex-end;
+    padding: 0 2px; font-size: 0.8em;
+  }
+  .identity-badge .identity-name { max-width: none; }
   .container { padding: 14px; }
   .sidebar { width: 86vw; max-width: 320px; left: -100%; }
   .sidebar.open { left: 0; }
