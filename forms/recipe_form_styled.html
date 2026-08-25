@@ -82,29 +82,7 @@
     /* Persona chip — who this page is acting as. Pushed to the right so it
        reads as status, not navigation. Colours come from the shared tokens;
        no page-local palette (see the page-shell contract). */
-    .app-header .persona-chip {
-      margin-left: auto;
-      font-size: 0.78em;
-      line-height: 1;
-      padding: 5px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--rule, #d9d2c6);
-      color: var(--muted, #6b6257);
-      background: var(--paper, #fdfbf7);
-      white-space: nowrap;
-      cursor: default;
-    }
-    /* Staff currently ELEVATED — the one state where a mis-click is expensive,
-       so it is the one state that gets colour. */
-    .app-header .persona-chip.is-staff {
-      border-color: #b8602a;
-      color: #8a4519;
-      background: #fdf1e6;
-      font-weight: 600;
-    }
-    @media (max-width: 700px) {
-      .app-header .persona-chip { font-size: 0.72em; padding: 4px 8px; }
-    }
+    /* persona-chip removed 2026-08-25 — see identity badge */
 
     /* Fixed action footer at the bottom of the viewport. Holds the
        Save / Clear / Delete buttons and the feedback message slot —
@@ -1913,7 +1891,7 @@
        BEFORE the form's own <style> would be ideal, but the form's
        inline block runs first; library-shell.css uses lower-specificity
        selectors so the form's rules cleanly win where they override. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260825a">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260825b">
   <!-- Shared components — here for .stars, the public star rating shown in the
        scoring strip so the curator sees what a user would see. -->
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
@@ -1921,7 +1899,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260824a">
-  <script src="/forms/library-shell.js?v=20260825a"></script>
+  <script src="/forms/library-shell.js?v=20260825b"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -1997,13 +1975,10 @@
     <div class="header-inner">
       <button class="sidebar-toggle" id="sidebarToggle">☰</button>
       <h1>Recipe Editor</h1>
-      <!-- WHICH PERSONA IS THIS PAGE ACTING AS? The page has always known
-           user_id, role, actual_role, staff_locked and subscription_tier, and
-           displayed none of them — so "am I admin right now?" was unanswerable
-           without devtools, and an entitlement-gated control that quietly went
-           missing looked the same as one you were never entitled to. Populated
-           by renderPersona() from /auth/me. -->
-      <span id="personaChip" class="persona-chip" hidden></span>
+      <!-- The persona pill lived here (2026-08-25: "get rid of the ugly
+           pill") — who-you-are now lives ONLY in the shared identity badge +
+           the burger menu's identity section; the elevated-staff state colors
+           the badge name (library-shell). -->
     </div>
   </header>
 
@@ -4049,41 +4024,7 @@
     // "staff locked" — it is not an error, it is the sudo model working, and it
     // explains why admin controls are absent without the reader having to
     // wonder whether something broke.
-    function renderPersona(auth) {
-      const el = document.getElementById('personaChip');
-      if (!el) return;
-      const u = auth && auth.user;
-      if (!u) {
-        el.textContent = 'Not signed in';
-        el.className = 'persona-chip';
-        el.title = 'This page could not identify you. Saves will fail or go to the wrong collection.';
-        el.hidden = false;
-        return;
-      }
-      const tier = (u.subscription_tier || '').trim();
-      const role = (auth.role || 'member').trim();
-      const actual = (auth.actual_role || role).trim();
-      const bits = ['User ' + u.user_id];
-      if (tier) bits.push(tier);
-      else bits.push('no tier');            // absent is not Free — say which it is
-      if (auth.is_staff) {
-        bits.push(role + ' · staff');
-      } else if (auth.staff_locked) {
-        bits.push(role + ' (staff locked)');
-      } else {
-        bits.push(role);
-      }
-      el.textContent = bits.join(' · ');
-      el.className = 'persona-chip' + (auth.is_staff ? ' is-staff' : '');
-      el.title = (u.name || u.email || ('user ' + u.user_id)) +
-                 '\nTier: ' + (tier || '(none set)') +
-                 '\nActing role: ' + role +
-                 (actual !== role ? '  (account role: ' + actual + ')' : '') +
-                 (auth.staff_locked
-                    ? '\nStaff permissions are LOCKED — enter the curator password to unlock.'
-                    : '');
-      el.hidden = false;
-    }
+    // renderPersona removed 2026-08-25 — the shared identity badge is the surface.
 
     // Ask the server directly rather than through LibraryShell.
     //
@@ -4116,7 +4057,6 @@
       fetch('/auth/me', opts)
         .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
         .then(auth => {
-          renderPersona(auth);
           // THE SERVER IS THE AUTHORITY ON IDENTITY. applySelfCollection() ran
           // synchronously at boot off localStorage, which is a good guess but
           // can be stale — `app:self_user_id` outlives its session token. If

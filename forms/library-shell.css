@@ -141,6 +141,7 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
 }
 .identity-badge .identity-name:hover { color: var(--accent); }
 .identity-badge .identity-name.muted { color: var(--muted); font-weight: normal; }
+.identity-badge .identity-name--staff { color: #8a4519; font-weight: 600; }
 .identity-badge .identity-email {
   color: var(--muted); font-weight: 300; font-size: 0.85em; text-decoration: none;
 }

@@ -808,10 +808,15 @@
         // a disaster", especially on mobile). Just the name, ellipsized,
         // linking to the switcher. Email, unlock/lock and sign out live in
         // the ⋮ menu's identity section — the right side IS the area.
+        // Elevated staff is the ONE state that gets colour (a mis-click is
+        // expensive there) — the signal the recipe form's late persona chip
+        // carried before it was removed (2026-08-25).
+        const staffCls = data.is_staff ? ' identity-name--staff' : '';
         badge.innerHTML =
-          '<a class="identity-name" href="/forms/users.html" ' +
-          'title="user_id ' + uid + ' · role ' + escapeHtml(role) + ' · click to switch">' +
-          display + '</a>';
+          '<a class="identity-name' + staffCls + '" href="/forms/users.html" ' +
+          'title="user_id ' + uid + ' · role ' + escapeHtml(role) +
+          (data.is_staff ? ' · STAFF ELEVATED' : (data.staff_locked ? ' · staff locked' : '')) +
+          ' · click to switch">' + display + '</a>';
       })
       .catch(() => {
         badge.innerHTML = '<span class="identity-name muted">unknown</span>';
