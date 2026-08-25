@@ -9725,14 +9725,22 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
         order_by = SORT_SQL[DEFAULT_SORT]
     # Relevance reads temp.q_match, which is named per request; bind the table.
     order_by = order_by.replace("{T}", table)
-    # THE HOTLIST IS A SELECTION, not just an ordering (curator, 2026-08-24:
-    # "we don't need to sort thousands of records"): picking it restricts the
-    # result to rows that QUALIFY — real volume and a measured share — so the
-    # list ends where the flagships end instead of trailing into the whole
-    # corpus. Applied to matched-count, rows AND facet counts, so "N of total"
-    # and the dropdowns all describe the same set.
-    extra_where = (" AND traffic >= 1000 AND traffic_pct IS NOT NULL"
-                   if sort == "hotlist" else "")
+    # THE HOTLIST IS A SELECTION, not just an ordering — and it is ONE page
+    # per publisher (curator, 2026-08-24, second correction: 1,683 qualifying
+    # rows "sorted by pct" read as noise — the hotlist means THE hot page of
+    # each site). The window picks each domain's top share among rows with
+    # real volume (>=1000/mo) and a measured share; ~95 rows, one flagship
+    # per measured publisher. Applied to matched-count, rows AND facet counts
+    # so "N of total" and the dropdowns all describe the same set. user_id is
+    # a framework-validated int, safe to inline.
+    extra_where = ""
+    if sort == "hotlist":
+        extra_where = (
+            f" AND id IN (SELECT id FROM ("
+            f"SELECT id, ROW_NUMBER() OVER (PARTITION BY source_host "
+            f"ORDER BY traffic_pct DESC, traffic DESC) rn "
+            f"FROM {table} WHERE user_id = {int(user_id)} "
+            f"AND traffic >= 1000 AND traffic_pct IS NOT NULL) WHERE rn = 1)")
     limit = max(1, min(int(limit or 200), 1000))
     offset = max(0, int(offset or 0))
 
