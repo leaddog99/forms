@@ -5,6 +5,41 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 
+_ISO_DUR_RE = None  # compiled lazily below
+
+
+def humanize_iso_duration(value):
+    """'PT30M' -> '30 min'; 'PT1H30M' -> '1 hr 30 min'; 'P1DT2H' -> '1 day 2 hr'.
+    Anything that isn't an ISO-8601 duration (already-human text, empty,
+    non-string) passes through unchanged — this normalizes display shape,
+    it never destroys information."""
+    global _ISO_DUR_RE
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    if not s or not s.upper().startswith("P"):
+        return value
+    import re as _re
+    if _ISO_DUR_RE is None:
+        _ISO_DUR_RE = _re.compile(
+            r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
+            _re.IGNORECASE)
+    m = _ISO_DUR_RE.match(s)
+    if not m or not any(m.groups()):
+        return value
+    d, h, mi, sec = m.groups()
+    parts = []
+    if d and int(d):
+        parts.append(f"{int(d)} day" + ("s" if int(d) != 1 else ""))
+    if h and int(h):
+        parts.append(f"{int(h)} hr")
+    if mi and int(mi):
+        parts.append(f"{int(mi)} min")
+    if sec and float(sec):
+        parts.append(f"{int(float(sec))} sec")
+    return " ".join(parts) if parts else value
+
+
 def _decode_entities_deep(obj: Any) -> Any:
     """Recursively walk a recipe-shaped dict/list and decode HTML entities
     on every string value. `html.unescape` handles named (&amp;, &nbsp;,
@@ -131,6 +166,14 @@ def sanitize_recipe_data(data: dict) -> dict:
     set_if_nullish(sanitized, "prepTime", "")
     set_if_nullish(sanitized, "cookTime", "")
     set_if_nullish(sanitized, "totalTime", "")
+    # ISO-8601 durations (PT30M, PT1H30M — what JSON-LD publishes) become the
+    # human form ("30 min", "1 hr 30 min") AT THE CHOKE POINT, so every
+    # surface — form fields, cards, cook view — shows one recognizable shape
+    # and never the raw code (curator, 2026-08-25: "the form shows PT30M").
+    # Nothing downstream parses these for math; free text passes through
+    # untouched. Existing rows were backfilled the same day.
+    for _tk in ("prepTime", "cookTime", "totalTime"):
+        sanitized[_tk] = humanize_iso_duration(sanitized.get(_tk))
     set_if_nullish(sanitized, "recipeCategory", "")
     set_if_nullish(sanitized, "recipeCuisine", "")
     # Schema.org allows category/cuisine as string OR list. Our model is string;
