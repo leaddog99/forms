@@ -459,7 +459,7 @@ body.sidebar-open {
   .header-inner .nav-spacer { flex: 0 0 0; }
   .identity-badge {
     order: 10; flex-basis: 100%;
-    max-width: none; justify-content: flex-end;
+    max-width: none; justify-content: flex-start;
     padding: 0 2px; font-size: 0.8em;
   }
   .identity-badge .identity-name { max-width: none; }

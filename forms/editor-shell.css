@@ -328,6 +328,6 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
      basis:auto pushed a burger onto row two no matter the ellipsis. */
   .ed-brand{ flex:1 1 0%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1em; }
   .header-inner .nav-spacer{ flex:0 0 0; }
-  .identity-badge{ order:10; flex-basis:100%; max-width:none; justify-content:flex-end; font-size:.8em; padding:0 2px; }
+  .identity-badge{ order:10; flex-basis:100%; max-width:none; justify-content:flex-start; font-size:.8em; padding:0 2px; }
   .identity-badge .identity-name{ max-width:none; }
 }
