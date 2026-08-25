@@ -2487,6 +2487,21 @@
           <input type="hidden" id="affiliateUrl" />
         </section>
 
+
+
+        <!-- Metadata (URL-keyed, lazily loaded). TODO: access-control later. -->
+        <section class="form-section">
+          <h3>
+            Metadata
+            <button type="button" id="metadataToggleBtn" class="secondary"
+                    style="float:right;padding:4px 12px;font-size:0.75em;margin-top:-4px">
+              Show metadata
+            </button>
+          </h3>
+          <!-- Scoring — first block of Metadata (curator, 2026-08-25).
+               Populated at extract/load; the strip hides itself when no
+               scores are present, the label stays as the section landmark. -->
+          <div class="ed-block-label" style="font-size:.72em;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:2px 0 6px">Scoring</div>
         <!-- Quality-signal scoring strip — moved from the top of the form to
              sit with Metadata (curator, 2026-08-25): it is reference data, not
              the first thing to read. Populated at extract/load; hidden when no
@@ -2585,15 +2600,6 @@
           <p id="scoreCommentaryText"></p>
         </div>
 
-        <!-- Metadata (URL-keyed, lazily loaded). TODO: access-control later. -->
-        <section class="form-section">
-          <h3>
-            Metadata
-            <button type="button" id="metadataToggleBtn" class="secondary"
-                    style="float:right;padding:4px 12px;font-size:0.75em;margin-top:-4px">
-              Show metadata
-            </button>
-          </h3>
           <div id="metadataPanel" style="display:none">
             <div class="form-grid">
               <div class="form-group">
