@@ -603,6 +603,11 @@
        plain field buried in the left column. The source identity (site name
        + url) sits DIRECTLY under it, then description | image balance the
        row below. */
+    textarea.wrap-field {
+      min-height: 0; max-height: none;
+      line-height: 1.35; resize: none;
+      font: inherit; font-size: 1em;
+    }
     .title-feature textarea {
       font-size: 1.15em;
       font-weight: 400;
@@ -2245,7 +2250,10 @@
                  _source.siteName; populated on extract where the page
                  declares it. Used in attribution + the dishes tile. -->
             <label for="siteName">Site name</label>
-            <input type="text" id="siteName" placeholder="NYT Cooking" />
+            <!-- Wraps like the title (2026-08-25) — same textarea treatment,
+                 same no-newlines rule via the shared guard below. -->
+            <textarea id="siteName" class="auto-grow wrap-field" rows="1"
+                      placeholder="NYT Cooking"></textarea>
           </div>
           <div class="form-group">
             <label for="originalUrl">Source URL</label>
@@ -7079,14 +7087,14 @@
     // The name is a textarea only so long titles WRAP — a name has no
     // newlines. Enter is swallowed (it used to submit; now it would insert
     // a break) and pasted newlines collapse to spaces.
-    (function () {
-      const n = document.getElementById('name');
+    ['name', 'siteName'].forEach(function (fid) {
+      const n = document.getElementById(fid);
       if (!n) return;
       n.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
       n.addEventListener('input', () => {
         if (/[\r\n]/.test(n.value)) n.value = n.value.replace(/\s*[\r\n]+\s*/g, ' ');
       });
-    })();
+    });
 
     function autoGrow(el) {
       el.style.height = 'auto';
