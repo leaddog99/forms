@@ -5842,7 +5842,146 @@ landmine again (harmless — nothing in flight — but the guard item stays open
 * recipes.sql.gz at 71MB — GitHub warns every push; LFS-or-split decision pending.
 * Greek Pizza still holds the "Greek Yogurt Pizza Dough" impostor at rank #2.
 
-## START HERE — state of play as of 2026-08-22 (end of day)
+## Session log — 2026-08-24/25 — the repo goes on a diet, the backups earn an offsite, BAILEY passes the drill, and the harvest learns French
+
+Roughly thirty commits, `738b8d7`..`07d8db6`. The DR arc dominated the 24th; the
+25th was harvest intelligence and the recipe form.
+
+### The two time bombs, both defused
+
+* **`recipes.sql.gz` left git.** 29 committed dump versions had made `.git` 1.6GB
+  with the file itself at 73MB marching toward GitHub's 100MB hard reject. Step A
+  untracked it; step B `git filter-repo` purged `recipes.sql.gz` + `recipes.sql` +
+  `recipes.db` from all 917 commits and force-pushed both branches: **1.6GB →
+  31MB**. Backups are ADAM's timestamped, restore-verified copies — git is code
+  again. (Old clones must re-clone; commit hashes changed across history.)
+* **The import-resets-jobs landmine's main path**: `get_setting()` with no
+  db_path lazy-imported the whole app (2s of startup) to read the hardcoded
+  string `"recipes.db"`. Now defaults to the literal. The jobs-wipe half was
+  already defanged by the PID-liveness check (jobs 784/822).
+
+### Backups: verify nightly, then go offsite (Google Drive, 5TiB)
+
+* The 3 AM task now runs `--verify` — both historical unrestorable-dump incidents
+  went unnoticed for days because only hand-run backups replayed. Look for
+  RESTORE OK in backup.log every morning.
+* **rclone → Drive** (`drive.file` scope, authorized 2026-08-24):
+  `BCC-Backups/recipes-db` (14 days of verified dumps), `forms-mirror/` (full
+  project incl. `generated/` hero uploads + `.git`), `db-latest/`
+  (media_latest + freshest training). `env.backup` stays off the cloud by
+  policy — the offsite key copy is the password manager.
+* **DR audit found two assets protected NOWHERE**: `media.db` (357MB
+  screenshots/TTS) and `generated/` (2.1GB incl. irreplaceable user hero
+  uploads). Both now in the nightly (media via rolling consistent snapshot;
+  generated via robocopy /MIR project mirror to ADAM + Drive).
+* **`docs/disaster-recovery.md`** — the whole scheme: inventory, tiers, four
+  playbooks, rebuild list, gaps (G1 ADAM retention still open; G4 rclone's
+  shared client_id retires during 2026).
+
+### G5 closed: the restore drill was real, onto BAILEY — and it caught three defects
+
+Playbook C executed over SSH onto BAILEY (bare Win11 + git): mirror stream 5:00,
+DBs 0:47, deps ~4:00, server answering, **RESTORE OK on the restored db itself**
+(6,742 BLOBs). ~35 min wall including the finds; ~20 clean. The finds — the whole
+point of drills:
+1. **`recipe-core`** — a sibling EDITABLE pip dependency outside forms/, not a
+   git repo, backed up NOWHERE; the app would never have booted on a real
+   recovery. Now nightly-mirrored.
+2. `requirements-frozen.txt`'s `-e c:\users\...` backslash path — modern pip
+   eats the backslashes as escapes. Forward slashes now.
+3. A task launched from an SSH session dies with the session → `/RU SYSTEM`
+   (task `BCC-Drill` runs the staging server; NSSM is the cutover answer).
+4. (And: BAILEY has no SMB creds for ADAM — a cutover prerequisite, in the doc.)
+
+**BAILEY soaks as a verified parallel instance; cutover deliberately separate.**
+`bcc_sync_bailey.ps1` = one-way incremental refresh (rclone-over-SFTP; `-WithDbs`
+stops/reloads/restarts; `-FreshBackup` snapshots first). Curator confirmed the
+instance works. The 2026-08-25 (this) session wired the sync into the nightly.
+
+### Harvest intelligence, three pieces
+
+* **Phase B — bounded unblocker salvage** (`salvage_unblocker_max`, default 3):
+  a fetch-fail whose authority clears the cut bar gets ONE paid attempt through
+  the same `_is_recipe_filter` (cache-aware; R1 honored). First production run
+  (Brussels sprouts): 2 of 3 walls fell; second fix same day — **rescues insert
+  by MERIT** (an OU-8.03 rescue had queued at rank 37 behind an OU-2.26 winner).
+  Moules run: rescue saved at rank 2. Rejects no longer misreport a saved rescue
+  as fetch-failed.
+* **Foreign dishes: locale follows source_language.** Moules en Cassolette was
+  querying the AMERICAN Google (`gl=us/hl=en` silently defaulted on French
+  queries) → thin SERP, 9 xlate-bad rejects. `apply_locale_defaults` now stamps
+  gl/hl from the dish's language at every queries write AND when the language is
+  set (el→gr class mapped; explicit rows respected; also closes the
+  textarea-resets-locales trap). fr/fr re-run: keeps 15→22, saved 10/10, zero
+  fetch-fail rejects.
+* **French publisher end-to-end**: cookingjulia.fr onboarded with exactly two
+  fields (Language=fr + an FR-database SEMrush export — the filename regex takes
+  any db code). Every candidate kept via json-ld [fr]; winners saved with
+  English canonical + original French title preserved. PA saturation observed
+  (16/18/20 bands); traffic-primary ranking was shipped then REVERTED same hour
+  — **authority stays primary, traffic the tiebreaker** (curator call; on
+  saturated sites they converge anyway).
+
+### The Hotlist, and trafficPct grows up
+
+`_scoring.trafficPct` (SEMrush share-of-site, verbatim) got a generated column,
+a **Share of site** chip in the scoring strip, and a sidebar sort that became a
+SELECTION twice over (curator corrections): first `WHERE traffic >= 1000 AND
+pct IS NOT NULL`, then **ONE page per publisher** via a window function — 95
+rows, each measured publisher's flagship. Facets and counts cascade under it.
+
+### The recipe form, reshaped (and the pill hunted down)
+
+* Header: title featured then calmed (1.15em/400, wraps via auto-grow textarea —
+  as does site name; shared `wrap-field` + one newline guard), source identity
+  under the title, description|image balanced, times compact (30m / 1h 30m —
+  corpus backfilled 6,600 rows at the sanitize choke point), category 2×2.
+  Scoring strip now labeled **Scoring**, first block inside Metadata.
+* **The mobile pill saga**: the ugly stacked identity was the recipe form's OWN
+  `personaChip`, not the shared badge (two browsers showing it ruled out cache).
+  Removed; the shared badge is ONE quiet name (staff-elevated = the one colored
+  state); email/unlock/lock/signout live in the ⋮ menu's identity section.
+  **Two-line mobile header verified at real 390px** via an iframe sim
+  (`/generated/_iphone_sim.html`, kept): brand+burgers row one (brand at
+  flex-basis 0 — flex wraps on CONTENT size before shrinking, the actual bug),
+  identity row two, left-aligned, never truncated.
+* Site picker: live cascaded counts (facets.domain from the same query the
+  filter runs — the stored domain counter never matched), ✕ clear, and a custom
+  suggestion panel replacing `<datalist>` (iPadOS renders datalist options in
+  the keyboard QuickType bar).
+* Dish page got the domains-form Cancel button; the coverage page got its
+  missing `LibraryShell.initNav` call.
+* **Shell-width contract**: ONE header rail (`--shell-w: 1200px` in tokens.css,
+  both shells read it); page content sizes from `--shell-max` (≤ rail). Fixed
+  the Job Monitor's 1200px-body-under-960px-header AND headers varying page to
+  page.
+
+### Open / next
+
+1. **Tab interface for the recipe form** — curator noodling on Main / Story /
+   Data / Cook. Two non-negotiables written down: tabs are visibility over ONE
+   DOM (no field moves), and actions announce their tab (Enrich → Story,
+   Rework → Cook).
+2. **RESTART owed** on MARLEY: hotlist one-per-publisher selection, rescue-reject
+   fix, sanitize-times for interactive saves, dishes.py locale-defaulting for
+   editor saves.
+3. **Cutover to BAILEY in a few days**: write-freeze → final `-WithDbs` sync →
+   NSSM + scheduled tasks + rclone + ADAM creds on BAILEY → tunnel move. All
+   prerequisites documented in docs/disaster-recovery.md §5.
+4. Standing: defect pass toward teeth (~30-flag audit), §14 cohort experiment,
+   G1 ADAM retention policy, Greek Yogurt Pizza Dough unfiling, ingredient
+   quantities.
+
+## START HERE — state of play as of 2026-08-25
+
+Read the 2026-08-24/25 log above, then the 2026-08-22 START HERE below (its
+scoring-session framing and standing items remain valid). The system now runs:
+**MARLEY (production, RMA pending) + BAILEY (verified warm standby, task
+BCC-Drill) + ADAM (backup tiers) + Google Drive (offsite)**. Nightly 3 AM:
+dump → verify-restore → ADAM copies → Drive sync → project mirrors → BAILEY
+sync. Git is 31MB of code only. The recipe corpus ≈ 6,860 master rows.
+
+## Prior START HERE — state of play as of 2026-08-22 (end of day)
 
 **NEXT SESSION IS A SCORING ENHANCEMENT — the shape, stated by the curator 2026-08-22:**
 *use what we have now to select the top 20/30/40, then apply a much more intelligent,

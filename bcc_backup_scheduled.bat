@@ -48,6 +48,13 @@ REM the target machine could not resolve it. Not a git repo; this mirror
 REM line is its ONLY backup.
 robocopy "C:\Users\john\PycharmProjects\recipe-core" "\\Adam\tbotb\Backups\recipe-core-mirror" /MIR /R:1 /W:2 /NFL /NDL /NP /XD __pycache__ *.egg-info >> backup.log 2>&1
 echo recipe-core mirror exit code: %ERRORLEVEL% (0-7 = ok) >> backup.log
+REM BAILEY warm-standby refresh (2026-08-25): the -WithDbs sync rides the
+REM nightly, ORDERED AFTER the backup so it ships the copies made minutes
+REM ago. Stops BAILEY's staging server, lays in the fresh set, restarts
+REM the BCC-Drill task, health-checks. Best-effort: BAILEY being off must
+REM not fail the backup run (the sync script exits nonzero on its own).
+powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\john\PycharmProjects\forms\bcc_sync_bailey.ps1" -WithDbs >> backup.log 2>&1
+echo bailey sync exit code: %ERRORLEVEL% >> backup.log
 REM Mirror + media + freshest training copy go OFFSITE too (2026-08-24,
 REM closes DR gap G2 — the fire scenario previously lost all three).
 REM env.backup stays OFF the cloud by policy (plaintext keys; the offsite
