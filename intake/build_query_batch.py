@@ -1746,6 +1746,54 @@ def build_batch(
               f"(of {len(fetch_fails)}); {n_qual} would have made the top {top_n_final} "
               f"(cut bar OU={bar}) — recoverable via Playwright/bookmarklet")
 
+        # Phase B (2026-08-25) — BOUNDED unblocker salvage. A fetch-fail whose
+        # authority already clears the cut bar is a page that EARNED a batch
+        # slot and lost it to a wall — the one case where paid escalation on a
+        # stranger domain is justified. Bounded (salvage_unblocker_max,
+        # default 3/run, 0 disables) so a hostile SERP can't run up a bill.
+        # Goes through _is_recipe_filter with unblocker=True — the SAME
+        # decision tree and the SAME cache-aware fetch (R1: never
+        # fetch_via_unblocker directly), so a rescued page is cached for the
+        # winner-extract that follows.
+        try:
+            from input.pipeline.system_config import get_setting as _gs2
+            _salvage_max = int(_gs2("salvage_unblocker_max", 3))
+        except Exception:
+            _salvage_max = 3
+        _qual = sorted((c for c in fetch_fail_candidates if c["would_qualify"]),
+                       key=lambda c: -(c["ou"] if isinstance(c["ou"], (int, float)) else -999))
+        if _qual and _salvage_max > 0:
+            _take_urls = [c["url"] for c in _qual[:_salvage_max]]
+            _by_url = {e["url"]: e for e in fetch_fails}
+            _rescue = [dict(_by_url[u]) for u in _take_urls if u in _by_url]
+            for _e in _rescue:
+                _e.pop("_dropped_reason", None)
+                _e.pop("_stage", None)
+            print(f"[Phase B] unblocker salvage: trying {len(_rescue)} of {n_qual} "
+                  f"qualifying fetch-fail(s) (bound {_salvage_max})")
+            _kept_r, _dropped_r = _is_recipe_filter(
+                _rescue, capture_source="dish_batch_salvage",
+                capture_provenance={"dish": dish}, unblocker=True,
+                should_cancel=should_cancel, subject_words=_subject_words)
+            _cand_by_url = {c["url"]: c for c in fetch_fail_candidates}
+            for _e in _kept_r:
+                _c = _cand_by_url.get(_e["url"]) or {}
+                _e["da"], _e["pa"] = _c.get("da"), _c.get("pa")
+                _e["ou"] = _c.get("ou")
+                if isinstance(_e.get("da"), (int, float)) and isinstance(_e.get("pa"), (int, float)):
+                    _e["power"] = float(_e["da"]) + float(_e["pa"])
+                _e["_salvaged"] = "unblocker"
+                if _c:
+                    _c["rescued"] = True
+                final.append(_e)
+            if _kept_r:
+                print(f"[Phase B] RESCUED {len(_kept_r)} page(s) into the batch "
+                      f"(now {len(final)}): "
+                      + ", ".join((_e["url"].split("/")[-1] or _e["url"])[:40] for _e in _kept_r))
+            if _dropped_r:
+                print(f"[Phase B] {len(_dropped_r)} salvage attempt(s) still failed "
+                      f"(wall held or not a recipe)")
+
     elapsed = time.perf_counter() - t0
     print(f"\n[BATCH] Done in {elapsed:.1f}s")
 
