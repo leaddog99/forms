@@ -3832,6 +3832,8 @@
       ouScore:       { get: r => (r.data && r.data._scoring && r.data._scoring.ouScore),               type: 'num' },
       pageAuthority: { get: r => (r.data && r.data._scoring && r.data._scoring.pageAuthority),         type: 'num' },
       recipeScore:   { get: r => (r.data && r.data._scoring && r.data._scoring.recipeScore),           type: 'num' },
+      trafficPct:    { get: r => (r.data && r.data._scoring && r.data._scoring.trafficPct),            type: 'num' },
+      traffic:       { get: r => (r.data && r.data._scoring && r.data._scoring.traffic),               type: 'num' },
       updated_at:    { get: r => r.updated_at,                                                          type: 'date' },
       created_at:    { get: r => r.created_at,                                                          type: 'date' },
       rank:          { get: r => (r.data && r.data._batch && r.data._batch.rank),                      type: 'num' },
@@ -3875,6 +3877,11 @@
       quality:       { label: "Quality blend",            order: [["ouScore", "desc"], ["recipeScore", "desc"], ["updated_at", "desc"]] },
       // Batch-oriented: within a chapter group, by rank ascending.
       batch_rank:    { label: "Batch rank",               order: [["rank", "asc"], ["name", "asc"]] },
+      // The Hotlist: publisher flagships by share of their own site's tracked
+      // traffic (SEMrush trafficPct, on publisher-harvest rows). The server
+      // adds a volume floor so micro-site artifacts sink; the client
+      // comparator is the best local approximation.
+      hotlist:       { label: "🔥 Hotlist (publisher flagship)", order: [["trafficPct", "desc"], ["traffic", "desc"]] },
     };
 
     function makeComparator(orderSpec) {

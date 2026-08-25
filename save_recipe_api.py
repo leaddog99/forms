@@ -1142,6 +1142,9 @@ def init_db():
                     # 30 recipes share PA=30, and allrecipes has 18 distinct PA
                     # values across 153 rows. Ties were being broken on `m.id`.
                     ("traffic", "REAL", "json_extract(data,'$._scoring.traffic')"),
+                    # The page's share of ITS OWN publisher's tracked traffic —
+                    # the "flagship" metric behind the Hotlist sort (2026-08-24).
+                    ("traffic_pct", "REAL", "json_extract(data,'$._scoring.trafficPct')"),
                     # The is-recipe confidence, on ~100% of rows.
                     ("recipe_score", "REAL", "json_extract(data,'$._scoring.recipeScore')"),
                     # The STORED percentiles, exposed for AUDIT rather than for
@@ -9518,6 +9521,13 @@ SORT_SQL = {
     "quality":      f"ou_score DESC NULLS LAST, recipe_score DESC NULLS LAST, "
                     f"updated_at DESC, {_AUTHORITY_TAIL}",
     "batch_rank":   f"{_RANK_SQL} ASC NULLS LAST, {_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
+    # THE HOTLIST (curator, 2026-08-24): publisher flagships — the pages that
+    # ARE a site, ordered by their share of the publisher's tracked traffic.
+    # The leading CASE sinks micro-site artifacts (a 2-visit page can be 100%
+    # of a tiny domain) below anything with real volume; NULL pct (SERP-sourced
+    # rows have no traffic data) sinks last.
+    "hotlist":      f"(CASE WHEN traffic >= 1000 THEN 0 ELSE 1 END), "
+                    f"traffic_pct DESC NULLS LAST, traffic DESC NULLS LAST, {_TOTAL}",
 }
 DEFAULT_SORT = "updated_desc"
 
