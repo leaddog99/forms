@@ -1216,11 +1216,17 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # no global fit has been computed yet. See input/pipeline/domain_scoring.py.
     from input.pipeline import domain_scoring
     domain_scoring.score_members(scored)   # stamps adjusted_pa / rank_score / ou / power
-    # Order by the authority score DESC, then TRAFFIC DESC as the tiebreaker. Foreign sites
-    # often have near-identical PA across all pages (PA saturates) → near-identical rank_score
-    # → traffic is what actually distinguishes their hero recipes. None traffic sorts last.
-    scored.sort(key=lambda m: ((m.get("rank_score") is None), -(m.get("rank_score") or 0.0),
-                               -(m.get("traffic") or 0.0)))
+    # TRAFFIC-PRIMARY within a publisher (curator, 2026-08-25, on the
+    # cookingjulia run where PA saturated at 16/18/20): a publisher harvest is
+    # demand-driven by construction — the export IS the demand ranking — and
+    # PA saturation makes authority nearly flat inside one site anyway, so
+    # authority is the TIEBREAKER here, not the axis. Dish cohorts are
+    # untouched (cross-domain, where OU does real work). Rows with no traffic
+    # (SERP-sourced publisher runs) sort after measured ones, by authority —
+    # absent is not zero. NOTE §13/selection_lens: the per-domain lens field
+    # remains the designed future; this sets the publisher default to 'hot'.
+    scored.sort(key=lambda m: ((m.get("traffic") is None), -(m.get("traffic") or 0.0),
+                               -(m.get("rank_score") or 0.0)))
     keep = max(1, int(keep or 10))
     for i, m in enumerate(scored, 1):
         m["rank"] = i
