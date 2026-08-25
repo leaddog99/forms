@@ -603,10 +603,13 @@
        plain field buried in the left column. The source identity (site name
        + url) sits DIRECTLY under it, then description | image balance the
        row below. */
-    .title-feature input {
-      font-size: 1.5em;
-      font-weight: 650;
-      padding: 10px 14px;
+    .title-feature textarea {
+      font-size: 1.15em;
+      font-weight: 400;
+      padding: 9px 14px;
+      min-height: 0; max-height: none;
+      line-height: 1.35;
+      resize: none;
     }
     .source-line {
       display: grid;
@@ -2228,7 +2231,11 @@
              and a larger image balancing each other on wide screens. -->
         <div class="form-group title-feature" id="nameGroup">
           <label for="name">Recipe Name<span class="required-star">*</span></label>
-          <input type="text" id="name" placeholder="e.g., Grandmother's Apple Pie" />
+          <!-- TEXTAREA, not input (2026-08-25): a long title WRAPS instead of
+               truncating. .value round-trips identically; Enter is swallowed
+               (a name has no newlines) and auto-grow sizes it. -->
+          <textarea id="name" class="auto-grow" rows="1"
+                    placeholder="e.g., Grandmother's Apple Pie"></textarea>
           <div class="error-msg">Recipe name is required</div>
         </div>
         <div class="source-line">
@@ -7069,6 +7076,18 @@
     // the textarea dominating the viewport. When content shrinks back
     // below the cap, overflow returns to hidden so the natural-grown look
     // is preserved.
+    // The name is a textarea only so long titles WRAP — a name has no
+    // newlines. Enter is swallowed (it used to submit; now it would insert
+    // a break) and pasted newlines collapse to spaces.
+    (function () {
+      const n = document.getElementById('name');
+      if (!n) return;
+      n.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+      n.addEventListener('input', () => {
+        if (/[\r\n]/.test(n.value)) n.value = n.value.replace(/\s*[\r\n]+\s*/g, ' ');
+      });
+    })();
+
     function autoGrow(el) {
       el.style.height = 'auto';
       const cs = getComputedStyle(el);
