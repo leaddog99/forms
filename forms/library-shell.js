@@ -440,60 +440,6 @@
     }).catch(function (e) { onError('Could not reach the server: ' + e.message); return false; });
   }
 
-  function identityActions(data) {
-    const A = 'style="font-size:12px;text-decoration:none;cursor:pointer"';
-    const bits = [];
-    const uid = data && data.user ? data.user.user_id : null;
-    // Master IS the token — there is no identity underneath it to fall back to,
-    // so locking admin as uid 0 would just leave you signed out. Don't offer
-    // both and pretend they differ.
-    if (uid === 0) {
-      bits.push('<a class="identity-signout muted" ' + A + ' title="End the curator session">sign out</a>');
-      return '<div class="identity-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:2px">'
-             + bits.join('') + '</div>';
-    }
-    if (data && data.staff_locked) {
-      bits.push('<a class="identity-unlock muted" ' + A + ' title="Enter the curator password to enable ' +
-                escapeHtml(data.actual_role || 'staff') + ' permissions">unlock admin</a>');
-    } else if (data && data.is_staff) {
-      bits.push('<a class="identity-lock muted" ' + A + ' title="Drop staff permissions, stay signed in">lock admin</a>');
-    }
-    bits.push('<a class="identity-signout muted" ' + A + ' title="Clear this browser\'s identity">sign out</a>');
-    return '<div class="identity-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:2px">'
-           + bits.join('<span class="muted" style="font-size:12px">·</span>') + '</div>';
-  }
-
-  function wireIdentityActions(badge) {
-    const lock = badge.querySelector('.identity-lock');
-    if (lock) lock.addEventListener('click', function () {
-      clearMasterToken();
-      window.location.reload();
-    });
-    const out = badge.querySelector('.identity-signout');
-    if (out) out.addEventListener('click', signOut);
-    const unlock = badge.querySelector('.identity-unlock');
-    if (unlock) unlock.addEventListener('click', function () {
-      if (badge.querySelector('.identity-pw')) return;   // already open
-      const row = document.createElement('div');
-      row.className = 'identity-pw';
-      row.style.cssText = 'margin-top:4px;text-align:right';
-      row.innerHTML =
-        '<input type="password" placeholder="curator password" autocomplete="current-password" ' +
-        'style="font-size:12px;padding:2px 5px;width:150px">' +
-        '<div class="identity-pw-msg muted" style="font-size:11px;margin-top:2px"></div>';
-      badge.appendChild(row);
-      const input = row.querySelector('input');
-      const msg = row.querySelector('.identity-pw-msg');
-      input.focus();
-      input.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') { row.remove(); return; }
-        if (e.key !== 'Enter' || !input.value) return;
-        msg.textContent = 'checking…';
-        unlockAdmin(input.value, function (err) { msg.textContent = err; input.value = ''; input.focus(); });
-      });
-    });
-  }
-
   // === Password field ========================================================
   // Two entries that must match, plus an eyeball to reveal what you typed.
   // Shared so every password prompt behaves identically — a typo in a masked
@@ -850,34 +796,25 @@
           try { stale = localStorage.getItem('app:self_user_id'); } catch (e) { /* private mode */ }
           badge.innerHTML = (stale !== null && stale !== '')
             ? '<a class="identity-name" href="/forms/users.html" style="color:#a3382b" ' +
-              'title="Your token expired or was cleared — sign in again">' +
-              'session expired <span class="identity-arrow">↗</span></a>'
-            : '<a class="identity-name muted" href="/forms/users.html" title="Pick a user">' +
-              'not signed in <span class="identity-arrow">↗</span></a>';
+              'title="Your token expired or was cleared — sign in again">session expired</a>'
+            : '<a class="identity-name muted" href="/forms/users.html" title="Pick a user">not signed in</a>';
           return;
         }
         const nm = (u.name || u.email || '').trim();
         const uid = u.user_id;
         const role = (data.role || 'member');
-        const email = (u.email || '').trim();
         const display = escapeHtml(nm || ('user ' + uid));
-        // Two lines: name (links to the user switcher) over a live mailto
-        // email link. The arrow is the switch-user affordance.
-        const nameLink =
+        // ONE quiet line (curator, 2026-08-25: the stacked pill was "visually
+        // a disaster", especially on mobile). Just the name, ellipsized,
+        // linking to the switcher. Email, unlock/lock and sign out live in
+        // the ⋮ menu's identity section — the right side IS the area.
+        badge.innerHTML =
           '<a class="identity-name" href="/forms/users.html" ' +
           'title="user_id ' + uid + ' · role ' + escapeHtml(role) + ' · click to switch">' +
-          display + ' <span class="identity-arrow">↗</span></a>';
-        const emailLink = email
-          ? '<a class="identity-email" href="mailto:' + escapeHtml(email) + '">' +
-            escapeHtml(email) + '</a>'
-          : '';
-        badge.innerHTML = nameLink + emailLink + identityActions(data);
-        wireIdentityActions(badge);
+          display + '</a>';
       })
       .catch(() => {
-        badge.innerHTML =
-          '<span class="identity-name muted">unknown</span>' +
-          '<span class="identity-arrow">↗</span>';
+        badge.innerHTML = '<span class="identity-name muted">unknown</span>';
       });
   }
 
@@ -1265,15 +1202,65 @@
     if (burger.menu.querySelector('.nav-signout')) return;      // idempotent
     const sep = document.createElement('div');
     sep.style.cssText = 'border-top:1px solid var(--border,#e6dccf);margin:6px 4px';
+    burger.menu.appendChild(sep);
+    const u = auth.user || {};
+    const uid = u.user_id;
+    // WHO row: name + email in one place (was the header pill's job — the
+    // pill is now a single quiet name and everything else lives here).
+    const whoRow = document.createElement('a');
+    whoRow.className = 'nav-item';
+    whoRow.href = '/forms/users.html';
+    whoRow.title = 'user_id ' + uid + ' · role ' + escapeHtml(auth.role || 'member') + ' · switch user';
+    whoRow.innerHTML = escapeHtml((u.name || ('user ' + uid)))
+      + (u.email ? '<span style="font-size:.72em;color:var(--muted,#6b5b4f);' +
+         'margin-left:8px">' + escapeHtml(u.email) + '</span>' : '');
+    burger.menu.appendChild(whoRow);
+    // Unlock / lock admin — moved from the header pill. Master (uid 0) IS the
+    // token: no lock offered, same rule as before.
+    if (uid !== 0 && auth.staff_locked) {
+      const un = document.createElement('button');
+      un.type = 'button';
+      un.className = 'nav-item nav-unlock';
+      un.textContent = 'Unlock admin';
+      un.title = 'Enter the curator password to enable ' + escapeHtml(auth.actual_role || 'staff') + ' permissions';
+      un.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (burger.menu.querySelector('.identity-pw')) return;
+        const row = document.createElement('div');
+        row.className = 'identity-pw';
+        row.style.cssText = 'padding:4px 12px 8px';
+        row.innerHTML =
+          '<input type="password" placeholder="curator password" autocomplete="current-password" ' +
+          'style="font-size:12px;padding:3px 6px;width:100%;box-sizing:border-box">' +
+          '<div class="identity-pw-msg" style="font-size:11px;margin-top:2px;color:var(--muted,#6b5b4f)"></div>';
+        un.after(row);
+        const input = row.querySelector('input');
+        const msg = row.querySelector('.identity-pw-msg');
+        input.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        input.focus();
+        input.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Escape') { row.remove(); return; }
+          if (ev.key !== 'Enter' || !input.value) return;
+          msg.textContent = 'checking…';
+          unlockAdmin(input.value, function (err) { msg.textContent = err; input.value = ''; input.focus(); });
+        });
+      });
+      burger.menu.appendChild(un);
+    } else if (uid !== 0 && auth.is_staff) {
+      const lk = document.createElement('button');
+      lk.type = 'button';
+      lk.className = 'nav-item nav-lock';
+      lk.textContent = 'Lock admin';
+      lk.title = 'Drop staff permissions, stay signed in';
+      lk.addEventListener('click', function () { clearMasterToken(); window.location.reload(); });
+      burger.menu.appendChild(lk);
+    }
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'nav-item nav-signout';
-    const who = (auth.user && (auth.user.email || auth.user.name)) || '';
-    btn.innerHTML = 'Sign out' + (who
-      ? '<span style="font-size:.72em;color:var(--muted,#6b5b4f);font-style:italic;' +
-        'margin-left:8px">' + escapeHtml(who) + '</span>' : '');
+    btn.textContent = 'Sign out';
+    btn.title = uid === 0 ? 'End the curator session' : "Clear this browser's identity";
     btn.addEventListener('click', signOut);
-    burger.menu.appendChild(sep);
     burger.menu.appendChild(btn);
   }
 

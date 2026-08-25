@@ -28,15 +28,17 @@ def humanize_iso_duration(value):
     if not m or not any(m.groups()):
         return value
     d, h, mi, sec = m.groups()
+    # COMPACT abbreviations (curator, 2026-08-25 v2: "1 hr 30 min" overflowed
+    # the form's tight time row) — 30m / 1h 30m / 1d 2h.
     parts = []
     if d and int(d):
-        parts.append(f"{int(d)} day" + ("s" if int(d) != 1 else ""))
+        parts.append(f"{int(d)}d")
     if h and int(h):
-        parts.append(f"{int(h)} hr")
+        parts.append(f"{int(h)}h")
     if mi and int(mi):
-        parts.append(f"{int(mi)} min")
+        parts.append(f"{int(mi)}m")
     if sec and float(sec):
-        parts.append(f"{int(float(sec))} sec")
+        parts.append(f"{int(float(sec))}s")
     return " ".join(parts) if parts else value
 
 
