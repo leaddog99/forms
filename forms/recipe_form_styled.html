@@ -2164,7 +2164,13 @@
           <div class="score-chip" id="score_traffic_chip">
             <span class="score-label">Traffic / mo</span>
             <span class="score-value empty" id="score_traffic">—</span>
-            <span class="exc-chip-basis" id="score_traffic_basis"></span>
+          </div>
+          <!-- Share of the publisher's own tracked traffic (SEMrush
+               trafficPct) — the Hotlist metric, promoted from a sub-label to
+               its own chip (curator, 2026-08-24). -->
+          <div class="score-chip">
+            <span class="score-label">Share of site</span>
+            <span class="score-value empty" id="score_traffic_pct">—</span>
           </div>
           <!-- Exceptionalism is the headline grade for batch-saved master
                recipes. Letter badge + numeric T-score side by side, with
@@ -3505,17 +3511,25 @@
 
       // SEMrush per-page traffic — comma-formatted, with share-of-site in the basis line.
       const tEl = document.getElementById('score_traffic');
-      const tBasis = document.getElementById('score_traffic_basis');
       if (tEl) {
         const tv = sc.traffic;
         if (tv === null || tv === undefined || tv === '' || Number(tv) === 0) {
           tEl.textContent = '—'; tEl.classList.add('empty');
-          if (tBasis) tBasis.textContent = '';
         } else {
           tEl.textContent = Math.round(Number(tv)).toLocaleString();
           tEl.classList.remove('empty');
-          if (tBasis) tBasis.textContent = (sc.trafficPct != null && sc.trafficPct !== '')
-            ? Number(sc.trafficPct).toFixed(1) + '% of site' : '';
+        }
+      }
+      // Share of site — its own chip now (was a sub-label on Traffic).
+      const tpEl = document.getElementById('score_traffic_pct');
+      if (tpEl) {
+        const tp = sc.trafficPct;
+        if (tp === null || tp === undefined || tp === '') {
+          tpEl.textContent = '—'; tpEl.classList.add('empty');
+        } else {
+          const n = Number(tp);
+          tpEl.textContent = (n < 1 ? n.toFixed(2) : n.toFixed(1)) + '%';
+          tpEl.classList.remove('empty');
         }
       }
 
