@@ -253,9 +253,10 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
   transition: left 0.28s ease;
 }
 .sidebar.open {
-  /* Align with the form/main column's left edge on wide viewports;
-     pin to the viewport edge below 960px. */
-  left: max(0px, calc((100vw - 960px) / 2));
+  /* Align with the form/main column's left edge on wide viewports —
+     the column is var(--shell-max) wide (a page may raise it to the
+     rail width); pin to the viewport edge on narrower screens. */
+  left: max(0px, calc((100vw - var(--shell-max, 960px)) / 2));
 }
 .sidebar h2 {
   font-family: 'Playfair Display', serif;
