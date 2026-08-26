@@ -166,7 +166,21 @@ def score_data_points_for_dish(
     curve, so its scoring columns stay NULL — those recipes grade via the
     chapter fallback instead. Returns the number of rows scored."""
     if not (ou_fit and ou_fit.get("used") and ou_fit.get("model") == "quadratic"):
-        return 0
+        # CHAPTER FALLBACK (2026-08-26): a below-min-n dish has no curve of its
+        # own, and until now its scoring columns stayed NULL — so every
+        # small-cohort dish's Top Recipes list rendered SCORE/OU%/PWR% as
+        # dashes (found on Cheese Sauce, n=20; Detroit and old Lasagna runs
+        # were the same). GRADING already falls back to the chapter fit; the
+        # SQL scorer now does the identical thing: same curve the grades used,
+        # percentiles still over the dish's own cohort. No chapter fit either
+        # -> NULL as before.
+        ch = conn.execute(
+            "SELECT chapter FROM dishes WHERE name = ?", (dish_name,)
+        ).fetchone()
+        cf = get_chapter_fit(conn, ch[0]) if ch and ch[0] else None
+        if not (cf and cf.get("used") and cf.get("model") == "quadratic"):
+            return 0
+        ou_fit = cf
     a0, a1, a2 = (float(x) for x in ou_fit["coefficients"])
     pw = float(power_weight)
 
