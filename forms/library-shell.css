@@ -73,7 +73,7 @@ body {
   cursor: pointer; font-size: 1.1em;
   /* Warm soft shadow, same family as the .main card (curator 2026-08-26:
      the flat dark 8px one read as "no shadow" next to the body's). */
-  box-shadow: 0 4px 14px rgba(60,40,20,.25);
+  box-shadow: 0 3px 6px rgba(60,40,20,.35), 0 8px 20px rgba(60,40,20,.22);
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   line-height: 1; padding: 0;
@@ -160,7 +160,7 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
   background: var(--accent); color: #fff; border: none;
   width: 36px; height: 36px; border-radius: 8px;
   cursor: pointer; font-size: 1.3em; line-height: 1;
-  box-shadow: 0 4px 14px rgba(60,40,20,.25);  /* match .sidebar-toggle */
+  box-shadow: 0 3px 6px rgba(60,40,20,.35), 0 8px 20px rgba(60,40,20,.22);  /* match .sidebar-toggle */
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
