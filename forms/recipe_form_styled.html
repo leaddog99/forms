@@ -34,7 +34,7 @@
        full 1200 rail read as stretched for a single-column form (curator,
        2026-08-26). Every width below (container, footer row, sidebar dock,
        nav menu) derives from --shell-max, never a bare pixel value. */
-    :root { --shell-max: 1040px; }
+    :root { --shell-max: var(--shell-w, 1040px); }  /* full rail width */
     /* Palette/serif tokens now live in tokens.css (linked LAST in <head> so it
        is the single source of truth). The page-local :root that used to sit here
        was already overridden by tokens.css and has been retired. */
@@ -79,14 +79,6 @@
       padding: 0 24px;   /* match library-shell.css, which wins the cascade */
       height: 100%;
     }
-    /* DELIBERATE shell-contract exception (curator, 2026-08-26): the header
-       CONTENT aligns to this page's 1040px column instead of the shared
-       1200px rail, so title/toggle/badge sit flush with the form edges.
-       body-prefixed for specificity over the shared rule (which loads after
-       this <style>); max-width ONLY, so the mobile padding rules below are
-       untouched. Cost: the header content shifts when navigating to a
-       wide page (admin, job monitor) — accepted for this form. */
-    body .app-header .header-inner { max-width: var(--shell-max, 960px); }
     .app-header h1 {
       font-family: 'Playfair Display', Georgia, serif;
       font-size: 1.15em;
@@ -1921,7 +1913,7 @@
   <!-- Shared design tokens (the dish/forms style guidelines) — loaded LAST so it is the
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260824a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
   <script src="/forms/library-shell.js?v=20260825b"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>

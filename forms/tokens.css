@@ -17,7 +17,7 @@
      --shell-w for the header rail, so navigating between forms never
      changes the header. Pages size their CONTENT with --shell-max
      (<= --shell-w); the rail itself is not per-page. */
-  --shell-w:     1200px;
+  --shell-w:     1040px;   /* was 1200; narrowed 2026-08-26 (curator: all forms 1040) */
   --bg:          #f8f4ed;   /* page background — warm cream */
   --card:        #fffaf2;   /* card / panel background */
   --ink:         #2a211b;   /* primary text */

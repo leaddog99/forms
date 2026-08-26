@@ -9,11 +9,11 @@
        a read+search+prune surface, not a hand-add editor. See input/pipeline/dish_keywords.py
        + memory/project_url_word_filter.md (sibling capture pattern). -->
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260826a">
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260824a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
   <style>
     /* Shell-width contract: this page runs wide; the header follows. */
-    :root{ --shell-max: 1180px; }
+    :root{ --shell-max: var(--shell-w, 1040px); }  /* full rail width */
 
     .dk-wrap { max-width:var(--shell-max, 960px); margin: 0 auto; padding: 16px 18px 60px; }
     .dk-wrap h1 { font-size: 1.3rem; margin: 6px 0 2px; }

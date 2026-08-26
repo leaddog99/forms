@@ -6,7 +6,7 @@
   <title>Admin</title>
   <style>
     /* Shell-width contract: this page runs wide; the header follows. */
-    :root{ --shell-max: 1080px; }
+    :root{ --shell-max: var(--shell-w, 1040px); }  /* full rail width */
 
     /* Shares the recipe-app palette (Apple-ish, hairline borders, one warm
        caramel accent) so this generic admin feels native, but stays fully

@@ -10,7 +10,7 @@
        Master/detail — built for hundreds of entries. See cook_kb.py. -->
   <style>
     /* Shell-width contract: this page runs wide; the header follows. */
-    :root{ --shell-max: 1180px; }
+    :root{ --shell-max: var(--shell-w, 1040px); }  /* full rail width */
 
     :root{ --warn:#b23b3b; --ok:#2f7a3a; }
     *{ box-sizing:border-box; }
@@ -45,7 +45,7 @@
     .empty{ padding:30px; color:var(--muted); text-align:center; }
   </style>
   <link rel="stylesheet" href="/forms/library-shell.css?v=20260826a">
-  <link rel="stylesheet" href="/forms/tokens.css?v=20260824a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
 </head>
 <body>
   <!-- Shared app header: library-shell.js fills the <h1> with the brand and
