@@ -227,7 +227,7 @@ _DEEP_PROFILE_TOOL = {
     "input_schema": {
         "type": "object",
         "additionalProperties": False,
-        "required": ["profile", "story", "cuisineFocus", "country", "language", "recognized"],
+        "required": ["profile", "story", "knownFor", "cuisineFocus", "country", "language", "recognized"],
         "properties": {
             "profile": {
                 "type": "string",
@@ -246,6 +246,20 @@ _DEEP_PROFILE_TOOL = {
             },
             "story": {"type": "string",
                       "description": "A 1-2 sentence distillation of `profile` (the short bio)."},
+            "knownFor": {
+                "type": "array", "items": {"type": "string"},
+                "minItems": 3, "maxItems": 6,
+                "description": (
+                    "3-6 short phrases, DEMAND-RANKED (highest real-world search demand "
+                    "first), each naming ONE thing this site is genuinely BEST KNOWN FOR. "
+                    "Phrase each the way a cook would say it ('Slow-cooker comfort food', "
+                    "'No-knead sourdough baking', 'Greek village cooking') — not keyword "
+                    "soup. GROUND every phrase in the ranking keywords (their search "
+                    "volumes are the world literally asking this site for those things) "
+                    "plus the homepage. No generic filler ('great recipes', 'easy meals') "
+                    "unless the demand data truly says so."
+                ),
+            },
             "cuisineFocus": {"type": "string",
                              "description": "Niche/specialty cuisine or focus, or '' for general sites. "
                                             "Infer from the ranking keywords + homepage."},
@@ -346,4 +360,9 @@ def deep_enrich_domain(domain: str, *, display_name: str = "") -> Optional[dict]
         "referring_domains": metrics.get("referring_domains"),
         "domain_authority": metrics.get("domain_authority"),
         "ranking_keywords": keywords,
+        # Demand-ranked "best known for" phrases — the keyword pills DISTILLED
+        # into the site's identity. Feeds the domain form display and (planned)
+        # a known-for embedding shared with recipe space for recipe commentary.
+        "known_for": [s.strip() for s in (ti.get("knownFor") or [])
+                      if isinstance(s, str) and s.strip()],
     }

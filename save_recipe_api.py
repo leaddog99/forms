@@ -5726,7 +5726,36 @@ def create_domain_endpoint(request: Request, payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="domain (host) is required")
     try:
         with _db() as conn:
-            return domains_lib.create_domain(conn, host, payload)
+            row = domains_lib.create_domain(conn, host, payload)
+        # FIRST-SAVE AUTO-RESEARCH (curator, 2026-08-26): a brand-new row has
+        # nothing hand-curated to protect, so run the deep enrich (Moz facts +
+        # grounded profile + known_for) and STAMP it — no review round-trip.
+        # Subsequent runs stay button-triggered from the form. Best-effort:
+        # a Moz/LLM failure must never fail the create itself (~15s happy path).
+        try:
+            from extract.domain_enrich import deep_enrich_domain
+            import llm
+            llm.enter(recipe_id=f"domain:{host.strip().lower()}", user_id=0)
+            result = deep_enrich_domain(host, display_name=(payload.get("display_name") or ""))
+            if result:
+                sets = {}
+                for f in ("profile", "story", "language", "country", "cuisine_focus",
+                          "ethnicity", "logo_url", "brand_authority", "referring_domains",
+                          "domain_authority"):
+                    v = result.get(f)
+                    if v not in (None, "", []):
+                        sets[f] = v
+                for f in ("ranking_keywords", "known_for"):
+                    v = result.get(f)
+                    if v:
+                        sets[f] = json.dumps(v)
+                if sets:
+                    sets["enriched_at"] = datetime.now(timezone.utc).isoformat()
+                    with _db() as conn:
+                        row = domains_lib.update_domain(conn, host, sets) or row
+        except Exception as _e:
+            print(f"[CREATE-DOMAIN] auto deep-enrich failed (create stands): {_e}")
+        return row
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except Exception as e:
@@ -6934,35 +6963,6 @@ def cancel_job_endpoint(job_id: int):
     if not ok:
         raise HTTPException(status_code=409, detail="Job is not queued/running — nothing to cancel.")
     return {"job_id": job_id, "cancel_requested": True}
-
-
-@app.post("/domains/{domain}/enrich")
-def enrich_domain_endpoint(request: Request, domain: str):
-    """Quick Haiku profile of a domain — story, language, country, cuisine
-    focus, logo. Returns the SUGGESTED fields (does not save); the editor
-    populates them so the curator can review + Save. Token-journaled."""
-    # GATED 2026-07-29. Doubly warranted: curator surface AND it spends LLM
-    # tokens on our account, so an open version is a billable endpoint.
-    _require_perm(request, "edit_master")
-    from input.pipeline import domains_lib
-    from extract.domain_enrich import enrich_domain
-    try:
-        with _db() as conn:
-            row = domains_lib.get_domain(conn, domain)
-        display_name = (row or {}).get("display_name") or ""
-        usage_log: list = []
-        import llm  # gateway: attribute migrated-module usage to this domain
-        llm.enter(recipe_id=f"domain:{domain.strip().lower()}", user_id=0)
-        result = enrich_domain(domain, display_name=display_name, usage_log=usage_log)
-        _journal_usage(usage_log, recipe_id=f"domain:{domain.strip().lower()}", user_id=0)
-        if result is None:
-            raise HTTPException(status_code=502, detail="Enrichment failed — the model returned nothing.")
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"[ERROR] enrich_domain({domain!r}) failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Enrich error: {e}") from e
 
 
 @app.post("/domains/{domain}/deep-enrich")

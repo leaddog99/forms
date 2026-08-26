@@ -426,6 +426,8 @@
             ${field('f_brand_authority', 'Brand Authority (0-100)', d.brand_authority, { ph: '—' })}
             ${field('f_referring_domains', 'Referring domains', d.referring_domains, { ph: '—' })}
           </div>
+          <div id="knownFor" style="margin-top:10px"></div>
+          <input type="hidden" id="f_known_for" value="${escapeHtml(typeof d.known_for === 'string' ? d.known_for : JSON.stringify(d.known_for || ''))}">
           <div id="rankingKw" class="ed-kw-wrap" style="margin-top:8px"></div>
           <input type="hidden" id="f_ranking_keywords" value="${escapeHtml(typeof d.ranking_keywords === 'string' ? d.ranking_keywords : JSON.stringify(d.ranking_keywords || ''))}">
         </section>
@@ -652,7 +654,6 @@
           <!-- Starts in the CLEAN state (a freshly rendered record has nothing to
                save), so there is no accent flash before paintSaveState's first tick. -->
           <button type="button" class="ed-btn ed-save-clean" id="saveBtn" title="No changes to save">Saved</button>
-          <button type="button" class="ed-btn" id="enrichBtn" title="Profile this site with a quick LLM query (story, language, country, cuisine, logo)">✨ Enrich</button>
           <button type="button" class="ed-btn" id="deepEnrichBtn" title="Deep research: Moz facts (Brand Authority, referring domains, ranking keywords) + a grounded LLM profile">🔬 Deep enrich</button>
           <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
           <span class="ed-save-hint" id="hint"></span>
@@ -664,12 +665,12 @@
       });
       $('#saveBtn').addEventListener('click', () => doSave(d.domain));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
-      $('#enrichBtn').addEventListener('click', () => doEnrich(d.domain));
       $('#deepEnrichBtn').addEventListener('click', () => doDeepEnrich(d.domain));
       // Toggling score-only directly (not via a mode card) must restate what the
       // run button will do — the checkbox and the button are the same decision.
       $('#f_score_only')?.addEventListener('change', syncRunButton);
       syncRunButton();
+      renderKnownFor($('#f_known_for')?.value);
       renderKeywords($('#f_ranking_keywords')?.value);
       // The SEMrush deep-link is a plain stored field now — no live regeneration,
       // no coupling state. It is seeded once at create and owned by the curator.
@@ -1336,34 +1337,20 @@
     // Quick LLM profile of the site → fills story / language / country /
     // cuisine_focus / logo_url in the form for review. Does NOT save — marks
     // the form dirty so the curator eyeballs the result and clicks Save.
-    async function doEnrich(domain){
-      const btn = $('#enrichBtn'); const hint = $('#hint');
-      btn.disabled = true; const label = btn.textContent; btn.textContent = 'Enriching…';
-      if (hint){ hint.style.color = ''; hint.textContent = 'Profiling the site…'; }
-      try {
-        const r = await fetch(`/domains/${encodeURIComponent(domain)}/enrich`, { method: 'POST' });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        // Fill each field when the model returned something; leave existing
-        // values for fields the model left blank.
-        const set = (id, v) => { if (v){ const el = $('#' + id); if (el) el.value = v; } };
-        set('f_story', data.story);
-        set('f_language', normLang(data.language));
-        set('f_country', data.country);
-        set('f_cuisine_focus', data.cuisine_focus);
-        set('f_logo_url', data.logo_url);
-        $('#saveBtn').disabled = false;   // ready to commit
-        if (hint){
-          hint.style.color = data.recognized ? '' : 'var(--ed-warn)';
-          hint.textContent = data.recognized
-            ? 'Profiled — review and Save.'
-            : 'Low confidence (guessed from the name) — review carefully before Save.';
-        }
-      } catch (e) {
-        if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = `Enrich failed: ${e.message || e}`; }
-      } finally {
-        btn.disabled = false; btn.textContent = label;
-      }
+    // "Best known for" — the deep enrich distills the keyword pills into the
+    // site's identity, demand-ranked. This is the headline; the raw keyword
+    // chips below it are the evidence. (Planned: this list gets its own
+    // embedding in recipe space so recipe commentary can cite it.)
+    function renderKnownFor(json){
+      const wrap = $('#knownFor'); if (!wrap) return;
+      let items = [];
+      try { items = typeof json === 'string' ? JSON.parse(json || '[]') : (json || []); } catch { items = []; }
+      if (!Array.isArray(items) || !items.length){ wrap.innerHTML = ''; return; }
+      const chip = 'display:inline-block;margin:0 6px 6px 0;padding:4px 12px;border-radius:999px;'
+        + 'background:var(--accent-soft,#f3e3d3);color:var(--accent-dark,#7a3a1a);'
+        + 'font-size:.86rem;font-weight:600';
+      wrap.innerHTML = '<div style="font-size:.8rem;font-weight:600;margin-bottom:6px">Best known for <span style="font-weight:400;color:var(--muted,#8a7f72)">(demand-ranked)</span></div>'
+        + items.slice(0, 6).map(s => `<span style="${chip}">${escapeHtml(s)}</span>`).join('');
     }
 
     // Render the ranking-keywords JSON (what the site ranks for) as read-only chips.
@@ -1376,7 +1363,7 @@
       const chip = 'display:inline-flex;align-items:baseline;gap:5px;margin:0 5px 5px 0;padding:2px 8px;'
         + 'border:1px solid var(--line,#d8d2c8);border-radius:999px;background:var(--bg-alt,#f7f5f1);font-size:.76rem';
       const meta = 'color:var(--muted,#8a7f72);font-variant-numeric:tabular-nums';
-      wrap.innerHTML = '<div style="font-size:.76rem;color:var(--muted,#8a7f72);margin-bottom:5px">Ranks on Google for (rank · monthly volume):</div>'
+      wrap.innerHTML = '<div style="font-size:.76rem;color:var(--muted,#8a7f72);margin-bottom:5px">Demand evidence — top Google rankings (rank · monthly searches):</div>'
         + kws.slice(0, 20).map(k =>
             `<span style="${chip}" title="rank #${k.rank ?? '?'} · ${fmt(k.volume)}/mo">${escapeHtml(k.keyword || '')}`
             + `<span style="${meta}">#${k.rank ?? '?'} · ${fmt(k.volume)}</span></span>`).join('');
@@ -1403,6 +1390,9 @@
         set('f_brand_authority', data.brand_authority);
         set('f_referring_domains', data.referring_domains);
         set('f_domain_authority', data.domain_authority);
+        const kfJson = JSON.stringify(data.known_for || []);
+        const kfEl = $('#f_known_for'); if (kfEl) kfEl.value = kfJson;
+        renderKnownFor(kfJson);
         const kwJson = JSON.stringify(data.ranking_keywords || []);
         const kwEl = $('#f_ranking_keywords'); if (kwEl) kwEl.value = kwJson;
         renderKeywords(kwJson);
@@ -1475,6 +1465,7 @@
         brand_authority: numOrNull($('#f_brand_authority')?.value),
         referring_domains: numOrNull($('#f_referring_domains')?.value),
         ranking_keywords: ($('#f_ranking_keywords')?.value || '').trim(),
+        known_for: ($('#f_known_for')?.value || '').trim(),
         fetch_strategy: $('#f_fetch_strategy').value,
         render_required: $('#f_render_required').checked ? 1 : 0,
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
@@ -1546,7 +1537,8 @@
         cuisine_focus: $('#newCuisine').value.trim(),
         ethnicity: $('#newEthnicity').value.trim(),
       };
-      btn.disabled = true; btn.textContent = 'Creating…';
+      btn.disabled = true; btn.textContent = 'Creating + researching…';
+      if (hint){ hint.style.color = ''; hint.textContent = 'Creating the domain, then auto-researching it (Moz + profile, ~15s)…'; }
       try {
         const r = await fetch('/domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const data = await r.json().catch(() => ({}));
@@ -1554,7 +1546,7 @@
         await loadDomains();
         selected = data.domain || domain;
         renderList(); renderDetail();
-        flash('Domain created');
+        flash('Domain created + researched');
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Create domain';
         hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);

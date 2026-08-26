@@ -306,6 +306,11 @@ _ENRICH_COLUMNS = {
     "brand_authority": "INTEGER",
     "referring_domains": "INTEGER",
     "ranking_keywords": "TEXT NOT NULL DEFAULT ''",   # JSON list
+    # Demand-ranked "best known for" phrases (JSON list of strings) — the deep
+    # enrich distills the ranking-keyword pills into what the site is genuinely
+    # best known for. Planned: its own embedding in recipe space (see memory
+    # project_domain_known_for) so recipe commentary can cite the site's identity.
+    "known_for": "TEXT NOT NULL DEFAULT ''",
     "enriched_at": "TEXT",                            # when deep-enrich last ran (ISO)
 }
 
