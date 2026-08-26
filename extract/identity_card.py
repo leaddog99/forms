@@ -367,6 +367,17 @@ def _call_identity_tool(user_prompt: str, *,
     )
     if not isinstance(tool_input, dict):
         return None
+    # XML-LEAK GUARD (2026-08-26): one card arrived with ethnicity =
+    # "French</ethnicity>" plus the next parameter tag and its text
+    # — the model's tool-call serialization bled a closing tag plus the NEXT
+    # field into a string value. Any '<' in a card string is that leak (no
+    # legitimate dish fact contains markup): keep the text before it, and log
+    # so a recurrence is visible rather than silently laundered.
+    for _k, _v in list(tool_input.items()):
+        if isinstance(_v, str) and "<" in _v:
+            _clean = _v.split("<", 1)[0].strip()
+            print(f"[IDENTITY] XML-leak stripped from {_k!r}: {_v[:60]!r} -> {_clean!r}")
+            tool_input[_k] = _clean
     return tool_input
 
 
