@@ -46,6 +46,19 @@ def _serp_retry_cfg() -> tuple[int, float]:
     return max(1, attempts), max(0.0, backoff)
 
 
+# Pages that exhausted their retries this process — each one is ~10 lost
+# candidates. Harvest runs pop this at the end and ALERT (input.pipeline.alerts)
+# instead of letting the loss hide in a mid-log line (curator, 2026-08-26).
+_page_losses: list[dict] = []
+
+
+def pop_page_losses() -> list[dict]:
+    """Return-and-clear the losses recorded since the last pop."""
+    global _page_losses
+    out, _page_losses = _page_losses, []
+    return out
+
+
 def _serp_get_json(endpoint, params, timeout, *, label: str, page) -> dict | None:
     """GET + parse JSON for one SERP page, with retries on TRANSIENT network errors
     (Timeout / ConnectionError). Returns the parsed dict, or None if the page exhausted
@@ -66,6 +79,9 @@ def _serp_get_json(endpoint, params, timeout, *, label: str, page) -> dict | Non
             else:
                 print(f"  [{label}] page {page} failed after {attempts} attempts: "
                       f"{type(e).__name__}: {e}")
+                _page_losses.append({"label": label, "page": page,
+                                     "query": str(params.get("q") or params.get("search_term") or "?"),
+                                     "error": f"{type(e).__name__}: {e}"})
         except Exception as e:   # non-transient (bad JSON, etc.) — don't spin, stop paging
             print(f"  [{label}] page {page} failed: {type(e).__name__}: {e}")
             return None

@@ -6316,6 +6316,19 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
                       f"— {_nm} reconsiderable by the editor")
             except Exception as e:
                 print(f"[PUBLISHER-REFRESH] candidate ledger failed (non-fatal): {e}")
+            # SERP page losses (retries exhausted) — alert LOUDLY + email
+            # (input.pipeline.alerts), instead of a mid-log line nobody sees.
+            try:
+                from input.pipeline.serp_search import pop_page_losses as _ppl
+                _losses = _ppl()
+                if _losses:
+                    from input.pipeline.alerts import alert_curator as _ac
+                    _ac(f"SERP pages lost during '{host}' publisher refresh",
+                        f"{len(_losses)} search page(s) exhausted their retries.\n" +
+                        "\n".join(f"- {l['query']!r} page {l['page']}: {l['error']}"
+                                  for l in _losses))
+            except Exception as _e:
+                print(f"[PUBLISHER-REFRESH] loss-alert failed (non-fatal): {_e}")
             # A LEARNED recipe_path is only trustworthy if the run it was learned
             # from actually found recipes. When recipe_pass is 0, the auto-detect
             # inferred the path from a sample in which NOTHING was a recipe — it is
@@ -7417,6 +7430,22 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 
     entries = batch_result["entries"]
     print(f"[REFRESH-DISH] front-end yielded {len(entries)} candidates")
+    # SERP page losses (retries exhausted) = ~10 candidates each, silently
+    # shrinking the pool. Alert LOUDLY + email the curator (alerts.py).
+    try:
+        from input.pipeline.serp_search import pop_page_losses
+        _losses = pop_page_losses()
+        if _losses:
+            from input.pipeline.alerts import alert_curator
+            alert_curator(
+                f"SERP pages lost during '{canonical_name}' dish refresh",
+                f"{len(_losses)} search page(s) exhausted their retries — roughly "
+                f"{10*len(_losses)} candidate(s) never reached the run.\n\n" +
+                "\n".join(f"- {l['query']!r} page {l['page']}: {l['error']}" for l in _losses) +
+                "\n\nThe run continued on the partial pool; re-run the refresh "
+                "when the SERP provider recovers for full coverage.")
+    except Exception as _e:
+        print(f"[REFRESH-DISH] loss-alert failed (non-fatal): {_e}")
     # ZERO CANDIDATES = ABORT, not delete-and-replace-with-nothing. Found
     # 2026-08-26: Scale SERP had an outage (ReadTimeout x3 per page, their own
     # 'unable to fulfil, please retry' error), both queries returned 0 URLs,
