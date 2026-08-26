@@ -759,6 +759,7 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
     except Exception:
         _trust_hosts = set()
 
+    _src_tally: dict = {}   # fetch-source summary, printed before return
     for i, e in enumerate(entries, start=1):
         # Cooperative cancel: a long publisher harvest can be aborted between
         # candidates (each is a fetch + score, the slow unit). Raises up to the job
@@ -855,10 +856,12 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
             # host and box-drawing characters raise UnicodeEncodeError mid-harvest.
             print(f"  [{i:>2}/{len(entries)}] {'':<9} FETCH-FAIL  {url}")
             print(f"                        why: {result.failure}")
+            _src_tally["fetch-fail"] = _src_tally.get("fetch-fail", 0) + 1
             continue
         text, has_recipe_jsonld, lang_code, src = (
             result.text, result.has_recipe_jsonld, result.lang, result.source)
         e["_fetch_source"] = src
+        _src_tally[src] = _src_tally.get(src, 0) + 1
         # Decision-line prefix carrying the fetch source (direct | unblocker | wayback),
         # so every post-fetch KEEP/DROP line shows where the content came from — aligned
         # in the same column as the [N/total] index.
@@ -1021,6 +1024,16 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         _e.pop("_cap_text", None)
     for _e in dropped:
         _e.pop("_cap_text", None)
+    if _src_tally:
+        # One-line fetch tiering summary: where the content actually came from.
+        # "unblocker" here = the paid tier rescued a page direct fetch lost;
+        # "wayback" = both live tiers failed and the archive carried it.
+        _parts = " ".join(f"{k}={_src_tally[k]}" for k in
+                          ("direct", "unblocker", "wayback", "page-cache", "fetch-fail")
+                          if k in _src_tally)
+        _extra = " ".join(f"{k}={v}" for k, v in sorted(_src_tally.items())
+                          if k not in ("direct", "unblocker", "wayback", "page-cache", "fetch-fail"))
+        print(f"  [fetch-summary] {_parts}{(' ' + _extra) if _extra else ''}")
     return kept, dropped
 
 
@@ -1644,9 +1657,24 @@ def build_batch(
             _subject_words |= _name_tokens(_src)
     except Exception:
         _subject_words = set()
+    # DISH-BATCH FALLBACK TIERS (curator, 2026-08-26): dish candidates come from
+    # stranger domains with no per-domain fetch_strategy opt-in, so blocked pages
+    # used to fall straight to Wayback (stale snapshots) or die. Pass unblocker=True
+    # so the canonical chain runs direct -> unblocker (tier 1) -> wayback (tier 2).
+    # The chain only spends unblocker credit on pages the FREE direct fetch already
+    # lost. Config-gated: dish_unblocker_fallback (default on), 0/false disables.
+    try:
+        from input.pipeline.system_config import get_setting as _gs_ub
+        _dish_unblocker = bool(_gs_ub("dish_unblocker_fallback", True))
+    except Exception:
+        _dish_unblocker = True
+    _dish_unblocker = _dish_unblocker and unblocker_available()
+    print(f"[FETCH] dish-batch fallback tiers: direct -> "
+          f"{'unblocker -> wayback (dish_unblocker_fallback=on)' if _dish_unblocker else 'wayback (unblocker ' + ('disabled by config' if unblocker_available() else 'unavailable — no key') + ')'}")
     entries, dropped_not_recipe = _is_recipe_filter(
         entries, capture_source="dish_batch", capture_provenance={"dish": dish},
         url_prefilter=_dish_url_prefilter, should_cancel=should_cancel,
+        unblocker=_dish_unblocker,
         subject_words=_subject_words)
     # Auto-learn the JS-rendered hint from a dish batch too (symmetry with the
     # publisher harvest): any kept result that needed a render escalation flags its
@@ -1762,7 +1790,13 @@ def build_batch(
             _salvage_max = 3
         _qual = sorted((c for c in fetch_fail_candidates if c["would_qualify"]),
                        key=lambda c: -(c["ou"] if isinstance(c["ou"], (int, float)) else -999))
-        if _qual and _salvage_max > 0:
+        if _qual and _salvage_max > 0 and _dish_unblocker:
+            # Inline tier-1 unblocker already tried (and failed) these exact
+            # fetches this run — a Phase B retry would spend the same credits
+            # on the same walls. Skip with a truthful line.
+            print(f"[Phase B] skipped: inline unblocker fallback already tried "
+                  f"{n_qual} qualifying fetch-fail(s) this run")
+        elif _qual and _salvage_max > 0:
             _take_urls = [c["url"] for c in _qual[:_salvage_max]]
             _by_url = {e["url"]: e for e in fetch_fails}
             _rescue = [dict(_by_url[u]) for u in _take_urls if u in _by_url]
