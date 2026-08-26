@@ -1,10 +1,11 @@
 # Batch pipeline configuration.
 #
-# Most tunables here load from `bcc_config.json` at the project root (a
-# git-tracked file separate from `.env` for secrets). Edit that JSON +
-# restart uvicorn to retune the batch funnel without touching code.
-# Defaults are baked into each `.get()` below so a missing file or a
-# missing key is non-fatal — the app starts with sane behavior.
+# Tunables load from the DB-resident `system_config` table (migrated from
+# the retired bcc_config.json, 2026-08-26 — the table is the single source
+# of truth; see memory/project_system_config). Edit in the System form +
+# RESTART to apply: these are import-time constants, same apply-semantics
+# the JSON file always had. Defaults are baked into each `.get()` below so
+# a missing table or key is non-fatal — the app starts with sane behavior.
 #
 # Cross-cutting constants that affect the LIVE form (save gate
 # thresholds, BCC permalink domain, placeholder user id) intentionally
@@ -21,27 +22,33 @@
 import json as _json
 from pathlib import Path as _Path
 
-_CONFIG_PATH = _Path(__file__).resolve().parent.parent.parent / "bcc_config.json"
+_DB_PATH = _Path(__file__).resolve().parent.parent.parent / "recipes.db"
+_LEGACY_JSON = _Path(__file__).resolve().parent.parent.parent / "bcc_config.json"
 
 
 def _load_bcc_config() -> dict:
-    """Return parsed bcc_config.json, or {} on missing-file (defaults
-    apply). Malformed JSON raises — fail loudly so the developer fixes
-    it instead of silently running with built-in defaults that mask the
-    intended config."""
-    if not _CONFIG_PATH.exists():
-        print(f"[CONFIG] {_CONFIG_PATH} not found — using built-in defaults")
-        return {}
+    """Return the tunables from the system_config TABLE (key -> parsed value).
+
+    The name survives from the retired bcc_config.json era (image_store
+    still imports it); the body reads the DB directly — sqlite3, not
+    system_config.get_setting, to avoid an import cycle (system_config
+    imports seeds FROM this module). Any failure returns {} so the app
+    boots on the built-in defaults below."""
+    if _LEGACY_JSON.exists():
+        print(f"[CONFIG] NOTE: {_LEGACY_JSON.name} is RETIRED and ignored — "
+              f"settings live in the system_config table (System form).")
     try:
-        with _CONFIG_PATH.open(encoding="utf-8") as f:
-            data = _json.load(f)
-        # Strip _comment_* keys so they don't trip an "unknown key" warning
-        # if we ever add validation; they exist purely for the JSON file's
-        # human readers.
-        return {k: v for k, v in data.items() if not k.startswith("_")}
-    except _json.JSONDecodeError as e:
-        print(f"[CONFIG] FATAL: {_CONFIG_PATH} is malformed JSON: {e}")
-        raise
+        with __import__("sqlite3").connect(str(_DB_PATH)) as conn:
+            out = {}
+            for key, value_json in conn.execute("SELECT key, value FROM system_config"):
+                try:
+                    out[key] = _json.loads(value_json) if value_json is not None else None
+                except Exception:
+                    out[key] = value_json
+            return out
+    except Exception as e:
+        print(f"[CONFIG] system_config read failed ({e}) — using built-in defaults")
+        return {}
 
 
 _cfg = _load_bcc_config()
