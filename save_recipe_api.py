@@ -5786,6 +5786,27 @@ def list_domains_endpoint():
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+def _pub_unblocker(payload: dict, row: dict) -> bool:
+    """Resolve a publisher run's unblocker flag. Explicit payload value wins
+    (the form's visible checkbox); otherwise fetch_strategy='unblocker' opts in,
+    and for ordinary strategies the config default (publisher_unblocker_fallback,
+    ON) makes the paid tier a FALLBACK — the chain still fetches direct first,
+    so credit is only spent on pages the free fetch lost. 'skip' and
+    'bookmarklet_only' never fetch server-side, so never escalate."""
+    if "unblocker" in (payload or {}):
+        return bool(payload["unblocker"])
+    strat = (row.get("fetch_strategy") or "").strip()
+    if strat == "unblocker":
+        return True
+    if strat in ("skip", "bookmarklet_only"):
+        return False
+    try:
+        from input.pipeline.system_config import get_setting
+        return bool(get_setting("publisher_unblocker_fallback", True))
+    except Exception:
+        return True
+
+
 @app.post("/domains")
 def create_domain_endpoint(request: Request, payload: dict = Body(...)):
     """Create a curator-defined domain row (host is the key)."""
@@ -5937,7 +5958,7 @@ def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
                 "source": source, "records": records, "log_label": label or host,
                 "backlinks_dir": (row.get("backlinks_dir") or "").strip() or None,
                 "exclude_words": row.get("exclude_words") or "",
-                "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
+                "unblocker": _pub_unblocker({}, row)},
         entity_ref=entity_ref)
     import subprocess
     proj = os.path.dirname(os.path.abspath(__file__))
@@ -6851,7 +6872,14 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
                     "source": source, "records": records, "log_label": host,
                     "backlinks_dir": backlinks_dir,
                     "exclude_words": exclude_words, "score_only": score_only,
-                    "unblocker": ((row.get("fetch_strategy") or "") == "unblocker")},
+                    # EXPLICIT beats implicit (curator 2026-08-26: two giallo runs
+                    # launched with the flag silently False because the form's
+                    # pre-run PATCH re-stamped a stale fetch_strategy). The form
+                    # now sends `unblocker` from a visible checkbox; absent that,
+                    # fall back: strategy opt-in, else config default-ON tier-1
+                    # fallback (direct first — paid credit only on failures),
+                    # except strategies that must never fetch.
+                    "unblocker": _pub_unblocker(payload, row)},
             entity_ref=entity_ref)
     import subprocess
     proj = os.path.dirname(os.path.abspath(__file__))

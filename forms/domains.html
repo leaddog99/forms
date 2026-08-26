@@ -585,6 +585,12 @@
           </div>
           </div>
 
+          <label class="opt" style="margin:8px 0 0">
+            <input type="checkbox" id="f_unblocker_fallback" ${(d.fetch_strategy === 'skip' || d.fetch_strategy === 'bookmarklet_only') ? '' : 'checked'}>
+            <span class="opt-t">🛡 Unblocker fallback <span style="font-weight:400;color:var(--muted)">(tier 1)</span></span>
+          </label>
+          <p class="opt-h">Fetch order: <b>direct → unblocker → Wayback</b>. The paid tier only fires on pages the free direct fetch already lost, so an unblocked site costs nothing extra. Untick for a strictly free run (blocked pages fall to Wayback or die).</p>
+
           <!-- ⑤ RUN. Last, and nothing after it — options used to sit BELOW the
                button, so the eye passed the action before the settings. -->
           <div class="ed-actions" style="margin:14px 0 6px">
@@ -1212,7 +1218,8 @@
         } catch {}
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/refresh-top`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, exclude_words, check_recipe, score_only }) });
+          body: JSON.stringify({ keep, pages, records, source, recipe_path, query, backlinks_dir, exclude_words, check_recipe, score_only,
+                                 unblocker: !!$('#f_unblocker_fallback')?.checked }) });
         const data = await r.json().catch(() => ({}));
         if (r.status === 409 && data.stream_url){ if (hint) hint.textContent = 'Already running — reattaching…'; streamRefresh(data.stream_url, domain, data.job_id); return; }
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
