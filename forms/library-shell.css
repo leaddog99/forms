@@ -326,7 +326,10 @@ body.sidebar-open {
 .container {
   max-width: var(--shell-max, 960px);
   margin: 0 auto;
-  padding: 28px;
+  /* Horizontal padding MUST equal .header-inner's (24px) so content edges
+     align with the header's toggle/burger — 28px left a 4px offset the
+     curator spotted (2026-08-26). Vertical stays 28. */
+  padding: 28px 24px;
 }
 
 /* ---------- Detail panel ---------- */
