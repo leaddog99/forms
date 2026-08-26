@@ -11861,6 +11861,19 @@ def extract_recipe_from_url(
         if _drow:
             _fetch_unblocker = (_drow.get("fetch_strategy") or "") == "unblocker"
             _fetch_render = bool(_drow.get("render_required"))
+        # TIER-1 FALLBACK DEFAULT (curator 2026-08-26): same posture as dish +
+        # publisher harvests — the chain fetches DIRECT first and only spends
+        # unblocker credit on pages the free fetch lost, so defaulting ON costs
+        # nothing on healthy domains. Without this, the extract phase read a
+        # stale 'plain' row (a pre-checkbox form tab kept re-PATCHing it) and
+        # 38 of 40 giallozafferano.com winners fell to Wayback while the
+        # filter phase fetched the SAME pages live via the unblocker.
+        if not _fetch_unblocker and (_drow or {}).get("fetch_strategy") not in ("skip", "bookmarklet_only"):
+            try:
+                from input.pipeline.system_config import get_setting as _gs_ex
+                _fetch_unblocker = bool(_gs_ex("extract_unblocker_fallback", True))
+            except Exception:
+                _fetch_unblocker = True
     except Exception as e:
         print(f"[WARN] domain fetch-policy lookup failed (using plain): {e}")
     # Caller override (render-retry-on-thin): force a full-browser render — and the
