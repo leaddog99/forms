@@ -88,8 +88,23 @@ def normalize_url(url: str) -> str:
     return urlunparse((scheme, netloc, path, "", query, ""))
 
 
+# Two-part public suffixes (co.uk-style). Without these, the naive last-two-labels
+# parse returned the bare SUFFIX for e.g. deliciousmagazine.co.uk -> "co.uk", and
+# deep-enrich then asked Moz for the DA of co.uk itself (=52), which the form saved
+# as the publisher's DA (bug found 2026-08-26). Not a full PSL - a curated set
+# covering the ccTLD patterns recipe publishers actually use; extend as new ones
+# appear. Infrastructure constant, not domain data.
+_TWO_PART_SUFFIXES = frozenset(
+    f"{sld}.{tld}"
+    for tld in ("uk", "au", "nz", "jp", "br", "in", "mx", "za", "il", "kr",
+                "sg", "hk", "tw", "my", "ph", "th", "id", "tr", "ar", "co")
+    for sld in ("co", "com", "org", "net", "ac", "gov", "edu")
+) | frozenset({"ne.jp", "or.jp"})
+
+
 def root_domain(url: str) -> str:
-    """Return the registrable domain (last two host parts). Empty if no host."""
+    """Return the registrable domain (public-suffix aware for common two-part
+    ccTLD suffixes: bbc.co.uk -> bbc.co.uk, not co.uk). Empty if no host."""
     if not url:
         return ""
     try:
@@ -101,4 +116,8 @@ def root_domain(url: str) -> str:
     if ":" in netloc:
         netloc = netloc.split(":", 1)[0]
     parts = netloc.split(".")
-    return ".".join(parts[-2:]) if len(parts) >= 2 else netloc
+    if len(parts) < 2:
+        return netloc
+    if len(parts) >= 3 and ".".join(parts[-2:]) in _TWO_PART_SUFFIXES:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
