@@ -168,7 +168,10 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
 .nav-toggle:hover { background: var(--accent-dark); }
 /* Admin burger — a distinct SOFT-CLAY chip (the base .nav-toggle here is solid
    clay, so the admin one inverts to a light chip); no dark-brown fill. */
-.nav-toggle--admin { background: var(--accent-soft); color: var(--accent-dark); box-shadow: none; }
+.nav-toggle--admin { background: var(--accent-soft); color: var(--accent-dark);
+  /* Same two-layer shadow as the base burger — box-shadow:none here left the
+     admin chip reading flat next to its shadowed sibling (curator 2026-08-26). */
+  box-shadow: 0 3px 6px rgba(60,40,20,.28), 0 8px 20px rgba(60,40,20,.16); }
 .nav-toggle--admin:hover { background: var(--accent); color: #fff; }
 .nav-menu {
   position: absolute;
