@@ -7417,6 +7417,19 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
 
     entries = batch_result["entries"]
     print(f"[REFRESH-DISH] front-end yielded {len(entries)} candidates")
+    # ZERO CANDIDATES = ABORT, not delete-and-replace-with-nothing. Found
+    # 2026-08-26: Scale SERP had an outage (ReadTimeout x3 per page, their own
+    # 'unable to fulfil, please retry' error), both queries returned 0 URLs,
+    # and the run sailed on to the unconditional delete below — which on an
+    # EXISTING dish would have wiped every kind=top winner and reported
+    # success. Cheese Sauce survived only by being new. A refresh that found
+    # nothing must not destroy what a working refresh found before it.
+    if not entries:
+        raise RuntimeError(
+            f"dish refresh for {canonical_name!r} found ZERO candidates — "
+            f"likely a SERP-provider outage (check the [scaleserp] lines "
+            f"above). Prior winners left untouched; retry when the provider "
+            f"recovers.")
 
     # Persist the (URL, DA, PA) cohort the dish fit saw — used by the
     # chapter-level aggregate fit to grade niche dishes whose own
