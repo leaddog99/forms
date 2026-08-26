@@ -9732,10 +9732,16 @@ def _search_where(user_id: int, filters: dict, q: str, *, skip: str = ""):
         host = host.removeprefix("https://").removeprefix("http://")
         host = host.removeprefix("www.").strip("/ ")
         if host:
+            # Exact host AND its subdomains: giallozafferano.it must find
+            # recipes living on ricette.giallozafferano.it (curator 2026-08-26 —
+            # the picker showed the domain but selecting it returned nothing,
+            # and the zero count hid it from the suggest list entirely).
             clauses.append(
                 "(url_normalized LIKE 'http://' || ? || '/%' "
-                "OR url_normalized LIKE 'https://' || ? || '/%')")
-            params.extend([host, host])
+                "OR url_normalized LIKE 'https://' || ? || '/%' "
+                "OR url_normalized LIKE 'http://%.' || ? || '/%' "
+                "OR url_normalized LIKE 'https://%.' || ? || '/%')")
+            params.extend([host, host, host, host])
     if q:
         # The text match is NOT inlined here — it is pre-resolved into a temp
         # table by _materialise_text_match and joined in, because this predicate

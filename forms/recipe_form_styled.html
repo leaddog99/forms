@@ -4461,8 +4461,20 @@
       }
       _domainCounts = {};
       list.forEach(({ value, count }) => {
-        if (value) _domainCounts[value] = count;
+        if (value) _domainCounts[value] = (_domainCounts[value] || 0) + count;
       });
+      // Roll subdomain counts up to the registered domain: recipes on
+      // ricette.giallozafferano.it must count for the giallozafferano.it
+      // option, or its zero hides it from the list (curator 2026-08-26).
+      if (_domainIndex) {
+        for (const d of _domainIndex) {
+          let extra = 0;
+          for (const [v, c] of Object.entries(_domainCounts)) {
+            if (v !== d.host && v.endsWith('.' + d.host)) extra += c;
+          }
+          if (extra) _domainCounts[d.host] = (_domainCounts[d.host] || 0) + extra;
+        }
+      }
       _renderDomainOptions();
       const btn = document.getElementById('filterDomainClear');
       const inp = document.getElementById('filter_domain');
