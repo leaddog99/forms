@@ -85,10 +85,14 @@
 
   <div class="wrap">
     <h1 class="pt">Dish coverage</h1>
-    <p class="sub">Dishes the corpus holds that the catalog has no record of. Every recipe's
-      identity card names what it actually is (<code>_identity.likelyDish</code>) &mdash; free text,
-      written at extraction. Matching can only ever return a dish that already exists. The gap
-      between the two is this list, and a dish has to exist here before any recipe can join it.</p>
+    <p class="sub"><b>Where this list comes from:</b> every extracted recipe's identity card names
+      what it actually is (<code>_identity.likelyDish</code> &mdash; free text, written at extraction,
+      with no knowledge of the catalog). A name lands here when it matches <b>nothing the catalog
+      already covers</b> &mdash; and "covers" means the dish's <b>name, display name, aliases, and its
+      exact search phrases</b> (accent-folded, word-order-blind, with search dressing like
+      <i>best/easy/recipe</i> ignored). If we are already searching for a phrase, the dish is covered
+      regardless of its title. A <i>searched by</i> note means an existing dish's search phrase
+      loosely contains this name's words &mdash; read before creating.</p>
 
     <section class="tiles" id="tiles"></section>
 
@@ -188,6 +192,7 @@
         <tr>
           <td><span class="dish">${esc(r.dish)}</span>
             ${r.alias_of ? `<span class="absorbed">${REL[r.relation] || 'overlaps'} ${esc(r.alias_of)}</span>` : ''}
+            ${r.queried_by ? `<span class="absorbed" title="An existing dish's search phrase already contains these words">searched by ${esc(r.queried_by.dish)} &mdash; “${esc(r.queried_by.phrase)}”</span>` : ''}
             ${r.top_keyword ? `<span class="kw">${esc(r.top_keyword)}</span>` : ''}</td>
           <td class="r">${r.recipes}</td>
           <td class="r traffic ${r.traffic ? '' : 'zero'}">${fmt(r.traffic)}</td>

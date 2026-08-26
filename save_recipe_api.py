@@ -3662,6 +3662,63 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
             return "".join(ch for ch in d if not _ud.combining(ch)).strip().lower()
 
         have_l = {_fold(n) for n in have}
+
+        # THE COVERED SURFACE IS MORE THAN dish.name (curator, 2026-08-26:
+        # "if a phrase appears in there that loosely matches an outstanding
+        # dish... it's covered since we're searching for it"). A dish's
+        # display_name, its aliases, and — decisively — its SEARCH PHRASES
+        # (dishes.queries, the exact SERP text its cohort is collected with)
+        # all define what the catalog already covers. A likelyDish equal to
+        # any of them (folded, or by decoration-stripped token set) is not a
+        # gap. Search decorations (recipe/best/easy/...) are stripped from
+        # query phrases before comparison — they describe the SEARCH, not
+        # the dish.
+        _SEARCH_DECOR = {"best", "easy", "authentic", "homemade", "traditional",
+                         "classic", "perfect", "simple", "quick", "ultimate",
+                         "how", "make", "making"}
+
+        def _query_phrases(qjson):
+            out = []
+            try:
+                items = json.loads(qjson or "[]")
+            except Exception:
+                return out
+            for it in (items if isinstance(items, list) else []):
+                q = (it.get("q") if isinstance(it, dict) else it) or ""
+                for part in str(q).split("|"):
+                    part = part.replace("“", " ").replace("”", " ")
+                    part = part.replace('“', ' ').replace('”', ' ').replace('"', ' ')
+                    words = [w for w in part.split()
+                             if not w.startswith("-") and ":" not in w]
+                    if words:
+                        out.append(" ".join(words))
+            return out
+
+        covered_toksets: dict = {}   # frozenset(tokens) -> (dish, phrase)
+        query_toksets: list = []     # (frozenset, dish, phrase) — for the loose badge
+        for _nm, _dn, _al, _qs in conn.execute(
+                "SELECT name, display_name, aliases, queries FROM dishes"):
+            surfaces = [(_nm, _nm)]
+            if _dn:
+                surfaces.append((_dn, _nm))
+            try:
+                for a in json.loads(_al or "[]"):
+                    if a:
+                        surfaces.append((str(a), _nm))
+            except Exception:
+                pass
+            for ph in _query_phrases(_qs):
+                surfaces.append((ph, _nm))
+            for text, owner in surfaces:
+                have_l.add(_fold(text))
+                ts = frozenset(w for w in _toks(text) if w not in _SEARCH_DECOR)
+                if ts:
+                    covered_toksets.setdefault(ts, (owner, text))
+            for ph in _query_phrases(_qs):
+                ts = frozenset(w for w in _toks(ph) if w not in _SEARCH_DECOR)
+                if ts:
+                    query_toksets.append((ts, _nm, ph))
+
         counts: dict = {}
         chapters: dict = {}
         # Indexed by idx_mr_likelydish.
@@ -3673,6 +3730,9 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
             k = (ld or "").strip()
             if not k or _fold(k) in have_l:
                 continue
+            _kt = frozenset(w for w in _toks(k) if w not in _SEARCH_DECOR)
+            if _kt and _kt in covered_toksets:
+                continue   # same dish by token set — covered, title spelling aside
             counts[k] = counts.get(k, 0) + 1
             if ch:
                 chapters.setdefault(k, {})
@@ -3725,7 +3785,19 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
                 if j > score:
                     score, best = j, d
             ch_map = chapters.get(name) or {}
+            # LOOSE query overlap: this name's tokens all appear inside some
+            # dish's search phrase (subset, not equality). Not auto-covered —
+            # the Boston Cream Pie ⊂ "boston cream pie" trap cuts the other
+            # way (Cream Pie ⊂ it too) — but the curator should SEE that a
+            # search is already pulling these words before creating a dish.
+            _nt2 = frozenset(w for w in t if w not in _SEARCH_DECOR)
+            queried_by = None
+            for _qts, _qdish, _qph in query_toksets:
+                if _nt2 and _nt2 < _qts:
+                    queried_by = {"dish": _qdish, "phrase": _qph}
+                    break
             out.append({
+                "queried_by": queried_by,
                 "dish": name,
                 "recipes": n,
                 "traffic": int(traffic or 0),
