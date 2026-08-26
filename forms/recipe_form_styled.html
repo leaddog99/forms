@@ -79,6 +79,14 @@
       padding: 0 24px;   /* match library-shell.css, which wins the cascade */
       height: 100%;
     }
+    /* DELIBERATE shell-contract exception (curator, 2026-08-26): the header
+       CONTENT aligns to this page's 1040px column instead of the shared
+       1200px rail, so title/toggle/badge sit flush with the form edges.
+       body-prefixed for specificity over the shared rule (which loads after
+       this <style>); max-width ONLY, so the mobile padding rules below are
+       untouched. Cost: the header content shifts when navigating to a
+       wide page (admin, job monitor) — accepted for this form. */
+    body .app-header .header-inner { max-width: var(--shell-max, 960px); }
     .app-header h1 {
       font-family: 'Playfair Display', Georgia, serif;
       font-size: 1.15em;
