@@ -378,8 +378,10 @@
         <div class="ed-actions">
           <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
           <button type="button" class="ed-btn" id="refreshBtn">Refresh</button>
-          <button type="button" class="ed-btn danger" id="cancelRefreshBtn" disabled
-                  title="Stop a running refresh (active only while one is running — aborts after the current candidate)">✋ Cancel</button>
+          <!-- Hidden when idle (no-surprise rule: hide, don't show disabled) —
+               setCancel(true) reveals it for the life of a run, incl. attach. -->
+          <button type="button" class="ed-btn danger" id="cancelRefreshBtn" hidden
+                  title="Stop the running refresh — aborts after the current candidate">✋ Cancel</button>
           <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
@@ -813,7 +815,7 @@
       // at render time, so the already-running attach path gets it too.
       const setCancel = (on) => {
         const b = $('#cancelRefreshBtn'); if (!b) return;
-        b.disabled = !on; b.innerHTML = '&#9995; Cancel';
+        b.hidden = !on; b.disabled = !on; b.innerHTML = '&#9995; Cancel';
         b.onclick = on ? async () => {
           b.disabled = true; b.textContent = 'Cancelling…';
           add('✋ Cancel requested — stops after the current candidate…');
