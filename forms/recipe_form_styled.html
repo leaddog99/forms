@@ -29,11 +29,12 @@
   <link rel="stylesheet" href="/forms/forms.css">
   <style>
     /* Page-shell contract: the header rail is var(--shell-w) on EVERY page
-       (library-shell.css, loaded later, wins the cascade). This page's
-       content column matches the rail exactly — before this, the rail was
-       1200px over 960px content and the edges visibly disagreed. Every
-       width below derives from --shell-max, never a bare pixel value. */
-    :root { --shell-max: var(--shell-w, 1200px); }
+       (library-shell.css, loaded later, wins the cascade). This page raises
+       its content column to 1040px — wider than the 960 default, but the
+       full 1200 rail read as stretched for a single-column form (curator,
+       2026-08-26). Every width below (container, footer row, sidebar dock,
+       nav menu) derives from --shell-max, never a bare pixel value. */
+    :root { --shell-max: 1040px; }
     /* Palette/serif tokens now live in tokens.css (linked LAST in <head> so it
        is the single source of truth). The page-local :root that used to sit here
        was already overridden by tokens.css and has been retired. */
