@@ -300,6 +300,17 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes <span class="ed-count" id="topcount"></span></h3>
           <p class="ed-notes-help" style="margin:0 0 12px">The curated winners kept from the last refresh, by OU.</p>
+          <!-- Run controls live WITH the data they produce (same placement +
+               language as the domains form's publisher refresh). Cancel is
+               hidden when idle (no-surprise rule) — setCancel(true) reveals it
+               for the life of a run, including the attach-to-running path. -->
+          <div class="ed-actions" style="margin:0 0 10px">
+            <button type="button" class="ed-btn" id="refreshBtn" title="Run the dish query, verify recipes, score + keep the top N">🔄 Refresh top recipes</button>
+            <button type="button" class="ed-btn danger" id="cancelRefreshBtn" hidden
+                    title="Stop the running refresh — aborts after the current candidate">✋ Cancel</button>
+            <span class="ed-save-hint" id="dishTopHint"></span>
+          </div>
+          <pre id="dishLog" style="display:none;max-height:340px;overflow:auto;margin:0 0 10px;padding:12px 14px;background:#1c1813;color:#e9e1d4;border-radius:10px;font-size:.76rem;line-height:1.45;white-space:pre-wrap;word-break:break-word"></pre>
           <ol class="ed-t10" id="toplist"><li class="ed-empty-fit">Loading…</li></ol>
         </section>
 
@@ -340,9 +351,7 @@
             <div class="k">Next run</div><div class="v">${nextRunValue}</div>
             <div class="k">Log</div><div class="v">${d.last_run_log_url ? `<a class="d-loglink" href="${escapeHtml(d.last_run_log_url)}" target="_blank" rel="noopener">view log</a>` : '—'}</div>
           </div>
-          <!-- Inline live run-log: Refresh streams the out-of-process job's log
-               here (not just the nav popup), and the detail re-renders on done. -->
-          <pre id="dishLog" style="display:none;max-height:340px;overflow:auto;margin:14px 0 0;padding:12px 14px;background:#1c1813;color:#e9e1d4;border-radius:10px;font-size:.76rem;line-height:1.45;white-space:pre-wrap;word-break:break-word"></pre>
+
         </section>
 
         <section class="ed-block">
@@ -377,11 +386,6 @@
 
         <div class="ed-actions">
           <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
-          <button type="button" class="ed-btn" id="refreshBtn">Refresh</button>
-          <!-- Hidden when idle (no-surprise rule: hide, don't show disabled) —
-               setCancel(true) reveals it for the life of a run, incl. attach. -->
-          <button type="button" class="ed-btn danger" id="cancelRefreshBtn" hidden
-                  title="Stop the running refresh — aborts after the current candidate">✋ Cancel</button>
           <button type="button" class="ed-btn danger" id="deleteBtn">Delete</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
@@ -751,7 +755,7 @@
           j => j.status === 'running' || j.status === 'queued');
         if (!live) return;
         const btn = $('#refreshBtn');
-        if (btn){ btn.disabled = true; btn.textContent = 'Refreshing…'; }
+        if (btn){ btn.disabled = true; btn.textContent = '🔄 Refreshing…'; }
         flash(`“${dishName}” is refreshing now (job #${live.id}) — live log below.`);
         streamDishLog(live.id, dishName);
       } catch (_){ /* visibility is a nicety; never break the detail render */ }
@@ -793,7 +797,7 @@
       } catch (e) {
         flash(String(e.message || e), true);
       } finally {
-        btn.disabled = false; btn.textContent = 'Refresh';
+        btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
       }
     }
 
