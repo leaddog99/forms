@@ -92,7 +92,7 @@ def has_key(provider: str | None = None) -> bool:
 
 def serp_search(query: str, pages: int = 7, *, want: int | None = None,
                 gl: str | None = None, hl: str | None = None,
-                provider: str | None = None, timeout: int = 30) -> list[dict]:
+                provider: str | None = None, timeout: int = 60) -> list[dict]:
     """Verbatim Google search. `pages` = how many 10-result pages to fetch; `want`
     early-stops once that many results are collected (truncates). `provider` forces
     a specific vendor (for the A/B); otherwise the configured one. Returns
@@ -105,7 +105,7 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
 
 def serp_image_search(query: str, *, want: int = 5, gl: str | None = None,
                       hl: str | None = None, provider: str | None = None,
-                      timeout: int = 30) -> list[dict]:
+                      timeout: int = 60) -> list[dict]:
     """Google Images via the active SERP vendor — FETCH-FREE, the vendor absorbs
     the target site's anti-bot. For thumbnailing recipes on sites we can't fetch
     (thekitchn etc.): the og:image direct fetch is blocked, but Google already has
