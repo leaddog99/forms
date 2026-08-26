@@ -28,6 +28,12 @@
        and typography by linking this file. -->
   <link rel="stylesheet" href="/forms/forms.css">
   <style>
+    /* Page-shell contract: the header rail is var(--shell-w) on EVERY page
+       (library-shell.css, loaded later, wins the cascade). This page's
+       content column matches the rail exactly — before this, the rail was
+       1200px over 960px content and the edges visibly disagreed. Every
+       width below derives from --shell-max, never a bare pixel value. */
+    :root { --shell-max: var(--shell-w, 1200px); }
     /* Palette/serif tokens now live in tokens.css (linked LAST in <head> so it
        is the single source of truth). The page-local :root that used to sit here
        was already overridden by tokens.css and has been retired. */
@@ -51,7 +57,7 @@
     }
 
     /* Fixed branding header. Background spans the full viewport width;
-       inner content is constrained to 960px and centered so it aligns
+       inner content is constrained to the shared rail width and centered so it aligns
        with the form column below. Sidebar toggle lives at the left edge
        of the inner content area, NOT the viewport corner. */
     .app-header {
@@ -64,12 +70,12 @@
       box-shadow: 0 2px 8px rgba(60,40,20,.04);
     }
     .app-header .header-inner {
-      max-width: 960px;
+      max-width: var(--shell-w, 1200px);
       margin: 0 auto;
       display: flex;
       align-items: center;
       gap: 14px;
-      padding: 0 28px;
+      padding: 0 24px;   /* match library-shell.css, which wins the cascade */
       height: 100%;
     }
     .app-header h1 {
@@ -93,11 +99,11 @@
       background: var(--card);
       border-top: 1px solid var(--line);
       z-index: 60;
-      padding: 14px 28px;
+      padding: 14px 24px;
       box-shadow: 0 -4px 16px rgba(60,40,20,.06);
     }
     .action-footer .button-row {
-      max-width: 960px;
+      max-width: var(--shell-max, 960px);
       margin: 0 auto;
     }
 
@@ -105,9 +111,9 @@
     .container {
       display: grid;
       grid-template-columns: 1fr;
-      max-width: 960px;
+      max-width: var(--shell-max, 960px);
       margin: 0 auto;
-      padding: 28px;
+      padding: 28px 24px;   /* horizontal = header-inner's, so field edges align */
     }
 
     /* Sidebar Toggle — sits inside the app header (NOT fixed-to-viewport)
@@ -130,7 +136,7 @@
     .sidebar-toggle:hover { background: #7a3a1a; }
 
     /* Sidebar - Recipe List. Slides in from off-viewport-left to align
-       with the form's content column left edge (max-width: 960px centered),
+       with the form's content column left edge (--shell-max, centered),
        so it visually attaches to the content rather than peeking at the
        viewport corner. Sits below the app header. */
     .sidebar {
@@ -177,13 +183,13 @@
 
     .sidebar.open {
       /* Align the sidebar's left edge with the FORM's left edge — i.e.
-         the left edge of the centered 960px page column. On wide
+         the left edge of the centered --shell-max page column. On wide
          monitors the sidebar appears flush with the form, not against
-         the browser-window edge. On viewports narrower than 960px the
+         the browser-window edge. On viewports narrower than the column the
          calc() clamps to 0 so the sidebar pins to the viewport edge
          (no awkward margin). Mobile branch in the narrow-screen media
          query below uses 100vw + left: 0 for full-width drawer. */
-      left: max(0px, calc((100vw - 960px) / 2));
+      left: max(0px, calc((100vw - var(--shell-max, 960px)) / 2));
     }
 
     .sidebar h2 {
@@ -1791,7 +1797,7 @@
     .nav-menu {
       position: absolute;
       top: calc(var(--header-h, 56px) + 6px);
-      right: max(16px, calc((100vw - 960px) / 2 + 16px));
+      right: max(16px, calc((100vw - var(--shell-max, 960px)) / 2 + 16px));
       background: var(--card);
       border: 1px solid var(--line); border-radius: 10px;
       padding: 6px; min-width: 200px;
