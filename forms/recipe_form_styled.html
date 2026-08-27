@@ -3282,6 +3282,19 @@
       if (!ck) {
         body.innerHTML = '';
         if (status) status.textContent = '';
+        // A SAVED recipe without _cook shows the panel WITH the reason and the
+        // path forward instead of silently omitting the whole surface — the
+        // missing cook button read as a bug ("there's no cookview button!",
+        // curator 2026-08-26). Unsaved/extracted-only recipes keep it hidden.
+        if (recipe && recipe.id) {
+          if (status) status.textContent = 'not built yet';
+          body.innerHTML = '<p style="margin:8px 0;color:var(--muted,#6b5b4f)">'
+            + 'No cook view yet — press <b>Rework for cooking</b> below to build it '
+            + '(≈1–2 min: anchored steps, timing bundles, checks). The 🍳 Open '
+            + 'cook view button appears here when it passes.</p>';
+          panel.classList.remove('hidden');
+          return;
+        }
         panel.classList.add('hidden'); panel.open = false; return;
       }
       panel.classList.remove('hidden');
