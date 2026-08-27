@@ -29,6 +29,7 @@ import contextlib
 import contextvars
 import os
 import sqlite3
+from input.pipeline.db import connect as db_connect
 import threading
 from typing import Any, Iterator, Optional
 
@@ -117,7 +118,7 @@ def _flush(ctx: _Ctx) -> None:
     entries, ctx.buffer = ctx.buffer, []
     uid = ctx.user_id if ctx.user_id is not None else PLACEHOLDER_USER_ID
     try:
-        with sqlite3.connect(_DB_PATH) as conn:
+        with db_connect(_DB_PATH) as conn:
             write_usage_entries(conn, user_id=uid, recipe_id=ctx.recipe_id, entries=entries)
     except Exception as e:  # noqa: BLE001 — journaling must never break the caller
         print(f"[llm] journal flush failed: {e}")
@@ -135,7 +136,7 @@ def _journal(operation: str, model: str, response: Any) -> None:
         ctx.buffer.append(entry)
         return
     try:
-        with sqlite3.connect(_DB_PATH) as conn:
+        with db_connect(_DB_PATH) as conn:
             write_usage_entries(conn, user_id=PLACEHOLDER_USER_ID, recipe_id=None, entries=[entry])
     except Exception as e:  # noqa: BLE001
         print(f"[llm] immediate journal failed: {e}")

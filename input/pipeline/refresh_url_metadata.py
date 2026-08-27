@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from input.pipeline.db import connect as db_connect
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -121,7 +122,7 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_connect(DB_PATH) as conn:
         ensure_metabase_url_table(conn)
         if args.refresh_stale:
             refresh_stale(conn, args.days)

@@ -6,6 +6,7 @@ import base64
 import logging
 import os
 import sqlite3
+from input.pipeline.db import connect as db_connect
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -771,7 +772,7 @@ def _corpus_da_values(db_path: str = "recipes.db") -> list:
     key = str(db_path)
     if key not in _CORPUS_DA_CACHE:
         try:
-            with sqlite3.connect(key, timeout=5) as conn:
+            with db_connect(key, timeout=5) as conn:
                 rows = conn.execute(
                     "SELECT domain_authority FROM master_recipes "
                     "WHERE domain_authority IS NOT NULL"
@@ -820,7 +821,7 @@ def _paywall_adjustments(db_path: str = "recipes.db") -> dict:
         try:
             import sqlite3
             from input.pipeline import domains_lib
-            with sqlite3.connect(key, timeout=5) as conn:
+            with db_connect(key, timeout=5) as conn:
                 _PAYWALL_ADJ_CACHE[key] = domains_lib.get_paywall_da_adjustments(conn)
         except Exception:
             _PAYWALL_ADJ_CACHE[key] = {}

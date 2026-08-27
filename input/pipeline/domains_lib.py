@@ -32,6 +32,7 @@ import json
 import os
 import re
 import sqlite3
+from input.pipeline.db import connect as db_connect
 from input.pipeline.db import connect as _connect  # WAL busy_timeout — input/pipeline/db.py
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -1479,7 +1480,7 @@ def refresh_poor_publisher_flags(conn: Optional[sqlite3.Connection] = None,
     # Aggregate cascade verdicts per URL HOST from training.db (every source).
     try:
         from intake.training_capture import TRAINING_DB_PATH
-        tconn = sqlite3.connect(TRAINING_DB_PATH, timeout=5.0)
+        tconn = db_connect(TRAINING_DB_PATH, timeout=5.0)
         try:
             rows = tconn.execute(
                 "SELECT url, shadow_verdict FROM is_recipe_samples "

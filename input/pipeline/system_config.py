@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from input.pipeline.db import connect as db_connect
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -794,7 +795,7 @@ def _load_cache(db_path: str) -> dict[str, Any]:
         return _cache
     out: dict[str, Any] = {}
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             for key, value_json in conn.execute("SELECT key, value FROM system_config"):
                 try:
                     out[key] = json.loads(value_json) if value_json is not None else None

@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from input.pipeline.db import connect as db_connect
 import sys
 from typing import Any
 
@@ -184,7 +185,7 @@ def _asin_from_corpus(conn, title: str, manufacturer: str) -> tuple:
 def enrich(data: dict, *, use_network: bool = True) -> dict:
     """Attach identity + owner evidence to every ranked row. Returns a report."""
     report = {"verified": [], "rejected": [], "filled": [], "scored": [], "notes": []}
-    conn = sqlite3.connect(DB)
+    conn = db_connect(DB)
     try:
         from intake.products import amazon_rainforest as az, amazon_widget as aw
         from realrank_index import realrank_index, polarization

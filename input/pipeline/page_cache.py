@@ -30,6 +30,7 @@ import gzip
 import json
 import os
 import sqlite3
+from input.pipeline.db import connect as db_connect
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -79,7 +80,7 @@ def _ttl_days() -> float:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(_DB_PATH, timeout=30)
+    conn = db_connect(_DB_PATH, timeout=30)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
@@ -249,7 +250,7 @@ def purge(retain_days: Optional[float] = None, vacuum_at_pct: int = 20) -> dict:
         out["free_pct"] = round(pct, 1)
         if pct >= vacuum_at_pct:
             # VACUUM needs its own connection with no open transaction.
-            vc = sqlite3.connect(_DB_PATH, isolation_level=None, timeout=120)
+            vc = db_connect(_DB_PATH, isolation_level=None, timeout=120)
             vc.execute("PRAGMA busy_timeout=120000")
             vc.execute("VACUUM")
             vc.close()

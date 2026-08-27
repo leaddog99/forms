@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from input.pipeline.db import connect as db_connect
 import threading
 from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
@@ -161,7 +162,7 @@ def _invalidate() -> None:
 
 
 def _open() -> sqlite3.Connection:
-    return sqlite3.connect(DB_PATH, timeout=10)
+    return db_connect(DB_PATH, timeout=10)
 
 
 def _load_cache(conn: sqlite3.Connection | None = None) -> dict:

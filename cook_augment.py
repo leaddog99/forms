@@ -348,9 +348,10 @@ def augment_cook(cook: CookMetadata, log: Callable = print,
     kb_id ∈ injected published set (provenance/anti-invention) AND step_index in range."""
     # Project the published KB (lazy imports avoid an import cycle with save_recipe_api).
     import sqlite3
+    from input.pipeline.db import connect as db_connect
     from save_recipe_api import DB_PATH
     from input.pipeline import cook_kb
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_connect(DB_PATH) as conn:
         cook_kb.ensure_cook_kb_table(conn)
         kb = cook_kb.project_published(conn)
         media_by_id = cook_kb.published_media_by_id(conn)  # code-pulled, model never sees it

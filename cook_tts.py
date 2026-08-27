@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+from input.pipeline.db import connect as db_connect
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
@@ -96,7 +97,7 @@ def ensure_tts_audio_table(conn: sqlite3.Connection) -> None:
 def get_cached_tts(db_path: str, key: str) -> Optional[bytes]:
     """Stored MP3 for this key, or None on miss / error (never raises)."""
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             ensure_tts_audio_table(conn)
             row = conn.execute(
                 "SELECT mp3 FROM tts_audio WHERE tts_id = ?", (key,)).fetchone()
@@ -111,7 +112,7 @@ def store_tts(db_path: str, key: str, text: str, mp3: bytes) -> None:
     if not mp3:
         return
     try:
-        with sqlite3.connect(db_path) as conn:
+        with db_connect(db_path) as conn:
             ensure_tts_audio_table(conn)
             conn.execute(
                 """INSERT INTO tts_audio (tts_id, text, voice, model, mp3, created_at)

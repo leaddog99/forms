@@ -38,7 +38,7 @@ def _load_bcc_config() -> dict:
         print(f"[CONFIG] NOTE: {_LEGACY_JSON.name} is RETIRED and ignored — "
               f"settings live in the system_config table (System form).")
     try:
-        with __import__("sqlite3").connect(str(_DB_PATH)) as conn:
+        with __import__("input.pipeline.db", fromlist=["connect"]).connect(str(_DB_PATH)) as conn:
             out = {}
             for key, value_json in conn.execute("SELECT key, value FROM system_config"):
                 try:

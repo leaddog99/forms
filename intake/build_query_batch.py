@@ -1389,7 +1389,8 @@ def dish_source_language(dish: Optional[str]) -> str:
         return ""
     try:
         import sqlite3
-        with sqlite3.connect("file:recipes.db?mode=ro", uri=True, timeout=5) as conn:
+        from input.pipeline.db import connect as db_connect
+        with db_connect("file:recipes.db?mode=ro", uri=True, timeout=5) as conn:
             row = conn.execute(
                 "SELECT source_language FROM dishes WHERE name = ?", (dish,)
             ).fetchone()

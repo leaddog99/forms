@@ -38,6 +38,7 @@ from typing import Optional
 from pydantic import ValidationError
 import hashlib
 import sqlite3
+from input.pipeline.db import connect as db_connect
 import unicodedata
 import uuid
 import asyncio
@@ -216,7 +217,7 @@ def _db() -> sqlite3.Connection:
     their own timeout=). 30s busy_timeout so concurrent writers — the out-of-process
     harvest/cook jobs and the server — WAIT for the WAL lock instead of failing with
     'database is locked'. Mirrors input/pipeline/db.connect for the library side."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn = db_connect(DB_PATH)   # shared factory: 30s busy_timeout lives there
     # Registered HERE so every query in the app can order text the same way;
     # a per-endpoint registration is how two call sites end up sorting
     # differently. deterministic=True lets SQLite use it in an index later.
@@ -6403,7 +6404,7 @@ async def _handle_publisher_refresh_job(job: dict) -> dict:
         # Cross-process poll: the server sets cancel_requested; we (the out-of-process
         # job) see it via WAL between candidates and abort gracefully.
         try:
-            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            with db_connect(DB_PATH, timeout=5) as conn:
                 return jobs_lib.is_cancel_requested(conn, job_id)
         except Exception:
             return False
@@ -6692,7 +6693,7 @@ async def _handle_process_selected_job(job: dict) -> dict:
 
     def _should_cancel():
         try:
-            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            with db_connect(DB_PATH, timeout=5) as conn:
                 return jobs_lib.is_cancel_requested(conn, job_id)
         except Exception:
             return False
@@ -7488,7 +7489,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         # Cross-process poll: the server sets cancel_requested; this out-of-process
         # job sees it via WAL between candidates (in _is_recipe_filter) and aborts.
         try:
-            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            with db_connect(DB_PATH, timeout=5) as conn:
                 return jobs_lib.is_cancel_requested(conn, job_id)
         except Exception:
             return False
@@ -8024,7 +8025,7 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
                   # Always present, so a run that latched nothing still says 0
                   # rather than omitting the key and reading as "not implemented".
                   "latched": 0}
-        media = sqlite3.connect(MEDIA_DB_PATH, timeout=30)
+        media = db_connect(MEDIA_DB_PATH, timeout=30)
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(days=max_age_days) if max_age_days > 0 else None
         with _db() as conn:
@@ -8202,7 +8203,7 @@ async def _handle_realrank_research_job(job: dict) -> dict:
 
     def _should_cancel():
         try:
-            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            with db_connect(DB_PATH, timeout=5) as conn:
                 return jobs_lib.is_cancel_requested(conn, job_id)
         except Exception:
             return False
@@ -8269,7 +8270,7 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
 
     def _should_cancel():
         try:
-            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            with db_connect(DB_PATH, timeout=5) as conn:
                 return jobs_lib.is_cancel_requested(conn, job_id)
         except Exception:
             return False
@@ -8361,7 +8362,7 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
 
     def _should_cancel():
         try:
-            with sqlite3.connect(DB_PATH, timeout=5) as conn:
+            with db_connect(DB_PATH, timeout=5) as conn:
                 return jobs_lib.is_cancel_requested(conn, job_id)
         except Exception:
             return False

@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from input.pipeline.db import connect as db_connect
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -74,7 +75,7 @@ _COLUMNS = (
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(TRAINING_DB_PATH, timeout=5.0)
+    conn = db_connect(TRAINING_DB_PATH, timeout=5.0)
     conn.executescript(_SCHEMA)  # idempotent self-install
     # Additive migrations (each ALTER is a no-op if the column already exists).
     for ddl in (

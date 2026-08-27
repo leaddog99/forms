@@ -125,9 +125,10 @@ def _homepage_snippet(host: str, max_chars: int = 1500) -> str:
         from to_markdown.html_to_markdown import fetch_with_full_fallback
         from input.pipeline import domains_lib
         import sqlite3
+        from input.pipeline.db import connect as db_connect
         unblock = render = False
         try:
-            with sqlite3.connect("recipes.db", timeout=10) as c:
+            with db_connect("recipes.db", timeout=10) as c:
                 row = domains_lib.get_domain(c, host) or {}
             unblock = (row.get("fetch_strategy") or "") == "unblocker"
             render = bool(row.get("render_required"))
