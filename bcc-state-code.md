@@ -6413,3 +6413,109 @@ channel. **JSON-LD: `ItemList` + `Review`, NEVER `Recipe`** on a master.
   should have stopped an analysis; instead it was printed in a table and reasoned from.
 - **Do not import `collections_lib` (or anything pulling in `save_recipe_api`) while a job
   runs** — the app's startup resets in-flight jobs. It killed job 784 mid-run.
+
+## Session log — 2026-08-26 — the co.uk lie, unblocker becomes the default everywhere, publishers arrive researched, and the coverage list learns to read its own queries
+
+Roughly twenty-five commits, `b20956e`..`dc81e87`. One root-cause hunt in the
+morning grew into a systemic fetch-tier rework; the evening was publisher
+onboarding at scale and a string of curator-spotted UI truths.
+
+### The DA=52 mystery → root_domain was lying about ccTLDs
+
+* deliciousmagazine.co.uk showed DA 52 in the form while the harvest measured 66.
+  Every store was eliminated until the deep-enrich path confessed:
+  `root_domain()` took the last two labels, so the host became **`co.uk`** and
+  Moz was asked for the DA of the suffix itself — which is exactly 52.
+  bbc.co.uk had been quietly poisoned the same way (stored 52, real 95).
+* Fix `b20956e`: public-suffix-aware `root_domain()` (curated two-part-suffix
+  set). Both rows re-stamped with real Moz values. 18 modules consume the
+  function; all inherit the fix.
+* Follow-on sweep: displayed DA vs calc DA across all 245 covered domains — only
+  6 mismatches, all ±2-3 Moz drift. No other 52-class corruption.
+
+### Unblocker: from per-domain opt-in to tier-1 fallback EVERYWHERE
+
+The pesto run leaned on Wayback; 12tomatoes died at candidate #2; two giallo
+runs launched cold because a stale form tab kept re-PATCHing `plain` over the
+fresh opt-in (the pre-run PATCH inside doRefreshTop, not Save, was the writer).
+Closed at every level, direct-first so credits only spend on failures:
+
+* **Dish batches** (`6c57f05`): `_is_recipe_filter` gets `unblocker=True` via
+  `dish_unblocker_fallback` (default on). Phase B salvage skips (with a log
+  line) when the inline tier already tried this run's fetch-fails. Every filter
+  pass now prints `[fetch-summary] direct=N unblocker=N wayback=N`.
+* **Publisher enqueue** (`48cd81f`): visible "🛡 Unblocker fallback" checkbox in
+  the run section, sent explicitly — what you see at click time is what runs.
+  Server resolver: explicit payload > strategy opt-in > config default ON.
+* **Extract phase** (`905d799`): the per-URL policy resolver defaults to the
+  same fallback (`extract_unblocker_fallback`, on) — it had sent 38/40
+  giallozafferano.com winners to Wayback while the filter fetched the same
+  pages live.
+* Proof: 12tomatoes rerun 139/139 fetched, 130 keeps, 35/35 extracted live.
+
+### Publishers arrive researched: enrich rework + known_for
+
+* ✨ cheap Enrich REMOVED (button+endpoint+JS) — deep enrich is the single path
+  (`61be9d4`). Deep enrich now runs AUTOMATICALLY on domain create (server-side,
+  best-effort, ~15s); button for re-runs.
+* NEW `domains.known_for`: the ranking-keyword pills distilled into 3-6
+  demand-ranked "best known for" phrases ("Slow-cooker and Crock-Pot recipe
+  authority"), displayed as the headline over the chips (retitled "Demand
+  evidence"). Planned: its own embedding in recipe space → recipe commentary
+  can cite the publisher's identity (memory project_domain_known_for).
+* Onboarded with full research: **food52** (DA 86 stamped), **marmiton.org**
+  (fr), **giallozafferano.it/.com** (it, challenge-platform → unblocker), plus
+  the 13 cohort-evidenced publishers (bettycrocker, greatbritishchefs, nigella,
+  iambaker, howsweeteats, ...). myrecipes.com flagged harvestable=0 (passthru).
+  Giallo runs: .it 39 stored/10 winners, .com 151 stored/40 winners; marmiton
+  30/5 via the French pipeline.
+* Quick-and-dirty DA refresh across all 375 domain rows via batched Moz V2
+  (135 updated). DA≥60-no-extract flag list + not-in-table suggestions
+  produced the 13 above.
+
+### Paywall calibration coverage pass
+
+* Recalibrated all flagged publishers from the corpus (milkstreet 47.3, ATK
+  56.2, deliciousmagazine 33.1 new). NYT + bonappetit measured no_penalty —
+  the guards working. 17 STRUCTURAL mixed-media flags added (brands,
+  broadcasters, aggregators: mccormick, barilla, tastemade, today.com, ...);
+  southernliving calibrated instantly at 20.1 (n=28). Rule recorded: a flag
+  needs an identifiable external cause, never mere underperformance — dish
+  runs match adjustments in REAL TIME (ATK selected #1 on Pesto proves it).
+
+### Curator-spotted fixes, each with a lesson
+
+* **KA images**: 11 of 50 legacy recipes carry DEAD image URLs in KA's own
+  JSON-LD and og:image (404 at origin). SERP-image fallback repaired them;
+  corpus-wide sweep fixed 303 of 321 missing previews (94%), three-tier:
+  own-URL re-coopt (224) → og re-fetch → SERP images (33).
+* **Dish coverage** (`929a03f`): "covered" was dish.name only. Now name +
+  display_name + aliases + SEARCH PHRASES (folded, order-blind, dressing
+  stripped) — "if we're searching for it, it's covered." 68 false gaps closed;
+  subset-only overlap gets a "searched by" badge (Boston-Cream-Pie trap).
+* **Site filter**: suggest panel anchored to the dialog, not the input
+  (`78c4d7c`); domain filter was exact-host so giallozafferano.it found
+  nothing on ricette.* (`4d34c18` — WHERE + count roll-up now subdomain-aware).
+* **Identity card XML leak** (`49e947e`): ethnicity='French</ethnicity><param
+  ...' surfaced as a markup facet option. Source guard strips '<'-onward;
+  the Garlic Aioli row repaired (technique text recovered into its field).
+* **Cook view** (`dc81e87`): a saved recipe without _cook now SAYS "not built
+  yet — press Rework" instead of omitting the surface. Open: auto-rework on
+  first interactive save (LLM cost per save — curator to decide).
+* **Shell width**: all forms now 1040 via the one `--shell-w` token; container
+  padding matched to header inset (the 4px lie); two-layer button shadows;
+  the admin chip finally shadowed.
+* **bcc_restart.bat**: stray "Rres" keystrokes broke the port-verify step —
+  restart itself was never broken.
+
+### Tomorrow
+
+* **Explore migrating to Postgres.** Inventory the SQLite-specific surface
+  first: sqlite-vec (4 vector tables), FTS5 (2), generated facet columns,
+  WAL/busy_timeout patterns, json_extract everywhere, AFTER DELETE vec
+  triggers, PRAGMA optimize, the backup/verify chain (dump format changes),
+  BAILEY sync, and `_load_bcc_config`'s direct sqlite read. pgvector +
+  tsvector are the natural landing spots; the jobs table's polling pattern
+  gets LISTEN/NOTIFY options. Decide staged (dual-write?) vs big-bang restore.
+* BAILEY cutover still pending; known_for embedding link; domains/dishes
+  advanced search design.
