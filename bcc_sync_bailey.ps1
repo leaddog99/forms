@@ -66,15 +66,32 @@ if ($WithDbs) {
     ,@($newestTr.FullName,       "$dst/training.db"),
     ,@("$adam\media_latest.db",  "$dst/media.db"),
     ,@("$adam\env.backup",       "$dst/.env"))
+  # SIZE-VERIFIED copies: on 2026-08-26 rclone delivered recipes.db 13MB SHORT
+  # of the source (503,853,056 vs 517,066,752) and still exited 0 — BAILEY then
+  # failed startup with 'database disk image is malformed'. Trust nothing:
+  # after each copy, compare the remote byte count to the local file.
+  function Copy-Verified([string]$src, [string]$dstPath) {
+    & $rc copyto $src $dstPath --stats-one-line
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $want = (Get-Item $src).Length
+    $j = & $rc lsjson $dstPath 2>$null | ConvertFrom-Json
+    $got = if ($j) { ($j | Select-Object -First 1).Size } else { -1 }
+    if ($got -ne $want) {
+      Write-Host "  SIZE MISMATCH $dstPath : remote $got vs source $want"
+      return $false
+    }
+    return $true
+  }
   foreach ($c in $copies) {
-    & $rc copyto $c[0] $c[1] --stats-one-line
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "  retrying $($c[1]) after 10s (exit $LASTEXITCODE)..."
+    if (-not (Copy-Verified $c[0] $c[1])) {
+      Write-Host "  retrying $($c[1]) after 10s..."
       Start-Sleep 10
-      & $rc copyto $c[0] $c[1] --stats-one-line
-      if ($LASTEXITCODE -ne 0) { $failed += $c[1] }
+      if (-not (Copy-Verified $c[0] $c[1])) { $failed += $c[1] }
     }
   }
+  # A REPLACED db must never pair with the previous run's WAL/SHM — that pairing
+  # reads as 'database disk image is malformed' at startup.
+  ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Remove-Item C:\Users\john\PycharmProjects\forms\*.db-wal, C:\Users\john\PycharmProjects\forms\*.db-shm -Force -ErrorAction SilentlyContinue; 'sidecars cleared'"""
   Write-Host "== restarting BAILEY server =="
   ssh -o BatchMode=yes john@BAILEY "schtasks /Run /TN BCC-Drill"
   Start-Sleep 15
