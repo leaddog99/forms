@@ -45,16 +45,46 @@ if ($WithDbs) {
   }
   Write-Host "== stopping BAILEY server =="
   ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped'"""
+  # WAIT for python to actually exit and release recipes.db — on 2026-08-26 the
+  # copy started immediately, hit 'rename failed: permission denied' x3, and the
+  # run still reported success. Poll up to 30s for zero python processes.
+  $deadline = (Get-Date).AddSeconds(30)
+  while ((Get-Date) -lt $deadline) {
+    $left = ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""(Get-Process python -ErrorAction SilentlyContinue | Measure-Object).Count"""
+    if ("$left".Trim() -eq "0") { break }
+    Start-Sleep 3
+  }
+  Start-Sleep 2   # let the OS release file handles after process exit
   $newestDb = Get-ChildItem "$adam\recipes_*.db"  | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   $newestTr = Get-ChildItem "$adam\training_*.db" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
   Write-Host "== DBs: $($newestDb.Name) / $($newestTr.Name) / media_latest / env =="
-  & $rc copyto $newestDb.FullName        "$dst/recipes.db"  --stats-one-line
-  & $rc copyto $newestTr.FullName        "$dst/training.db" --stats-one-line
-  & $rc copyto "$adam\media_latest.db"   "$dst/media.db"    --stats-one-line
-  & $rc copyto "$adam\env.backup"        "$dst/.env"        --stats-one-line
+  # Each copy checked; one retry after 10s; failures collected and FAILED LOUDLY
+  # at the end (exit 1) — the 08-26 run buried three rclone errors under exit 0.
+  $failed = @()
+  $copies = @(
+    ,@($newestDb.FullName,       "$dst/recipes.db"),
+    ,@($newestTr.FullName,       "$dst/training.db"),
+    ,@("$adam\media_latest.db",  "$dst/media.db"),
+    ,@("$adam\env.backup",       "$dst/.env"))
+  foreach ($c in $copies) {
+    & $rc copyto $c[0] $c[1] --stats-one-line
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "  retrying $($c[1]) after 10s (exit $LASTEXITCODE)..."
+      Start-Sleep 10
+      & $rc copyto $c[0] $c[1] --stats-one-line
+      if ($LASTEXITCODE -ne 0) { $failed += $c[1] }
+    }
+  }
   Write-Host "== restarting BAILEY server =="
   ssh -o BatchMode=yes john@BAILEY "schtasks /Run /TN BCC-Drill"
   Start-Sleep 15
   ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""try{(Invoke-WebRequest -Uri http://127.0.0.1:8009/auth/me -UseBasicParsing -TimeoutSec 5).StatusCode}catch{'NOT ANSWERING'}"""
+  if ($failed.Count -gt 0) {
+    Write-Host ("!" * 70)
+    Write-Host "!! BAILEY DB SYNC FAILED for: $($failed -join ', ')"
+    Write-Host "!! BAILEY is serving STALE data. Re-run: .\bcc_sync_bailey.ps1 -WithDbs"
+    Write-Host ("!" * 70)
+    exit 1
+  }
 }
 Write-Host "== sync done =="

@@ -351,7 +351,12 @@ def main() -> int:
     elif args.no_adam:
         print("--no-adam: skipped ADAM copy.")
     if args.verify:
-        return verify_dump(SQL, DB)
+        # Compare against the snapshot COPIED THIS RUN, not the moving live DB:
+        # on 2026-08-26 the nightly verify "failed" with jobs 1022 vs 1024 —
+        # two rows written during the 2-minute dump→verify window. A race,
+        # not a bad dump; the snapshot from the same instant can't drift.
+        ref = Path(r["db_dst"]) if r.get("db_dst") else DB
+        return verify_dump(SQL, ref)
     return 0
 
 
