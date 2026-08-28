@@ -10719,10 +10719,60 @@ def _save_recipe_core(payload: dict) -> dict:
                     (normalized_source_url, user_id),
                 ).fetchone()
                 if existing and existing[0] != recipe_id:
-                    print(f"[SAVE] Adopting existing recipe_id {existing[0]} for {normalized_source_url!r} "
-                          f"(was {recipe_id}) in {table}")
-                    recipe_id = existing[0]
-                    adopted = True
+                    # ONE PAGE CAN HOLD SEVERAL RECIPES. Found 2026-08-28: four
+                    # dressings entered from one loirekitchen technique page
+                    # silently collapsed into a single row — each save adopted
+                    # the URL's existing row and overwrote it; three recipes
+                    # were lost. Adoption is still the right default for the
+                    # batch/harvest paths (a re-fetch of an unchanged URL must
+                    # update, not duplicate), so the escape hatches are opt-in:
+                    #   _adopt_check  — sent by the interactive form; a would-be
+                    #                   adoption 422s with the existing row's
+                    #                   name so the curator chooses.
+                    #   _save_as_new  — curator chose "keep both": this row
+                    #                   keeps its own recipe_id and stores
+                    #                   url_normalized='' (the unique index is
+                    #                   partial on != '', so any number of ''
+                    #                   rows coexist); the page link survives on
+                    #                   _source.originalUrl for display and
+                    #                   attribution. URL-keyed dedup stays with
+                    #                   the row that owns the column.
+                    # A re-save of a kept-both row (its recipe_id already
+                    # exists) takes the same blank-column path automatically —
+                    # otherwise the upsert would rewrite url_normalized and hit
+                    # the unique index.
+                    own_row = conn.execute(
+                        f"SELECT 1 FROM {table} WHERE recipe_id = ? AND user_id = ? LIMIT 1",
+                        (recipe_id, user_id),
+                    ).fetchone()
+                    if own_row or payload.get("_save_as_new"):
+                        print(f"[SAVE] URL owned by {existing[0]}; keeping {recipe_id} as its own row "
+                              f"(url column blanked; page link stays in _source)")
+                        normalized_source_url = ""
+                    elif payload.get("_adopt_check"):
+                        _ename = ""
+                        try:
+                            _erow = conn.execute(
+                                f"SELECT json_extract(data,'$.name') FROM {table} WHERE recipe_id = ? LIMIT 1",
+                                (existing[0],),
+                            ).fetchone()
+                            _ename = (_erow and _erow[0]) or ""
+                        except Exception:
+                            pass
+                        raise HTTPException(status_code=422, detail={
+                            "adopt_conflict": True,
+                            "existing_recipe_id": existing[0],
+                            "existing_name": _ename,
+                            "message": ("A different saved recipe already exists for this URL"
+                                        + (f": “{_ename}”" if _ename else "") + "."),
+                        })
+                    else:
+                        print(f"[SAVE] Adopting existing recipe_id {existing[0]} for {normalized_source_url!r} "
+                              f"(was {recipe_id}) in {table}")
+                        recipe_id = existing[0]
+                        adopted = True
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[WARN] dup lookup failed (continuing as insert): {e}")
 
