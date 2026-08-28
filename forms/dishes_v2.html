@@ -18,6 +18,23 @@
     .ed-field .warn-hint{ color:var(--ed-warn); font-size:.78em; margin-top:5px; }
     .d-loglink{ color:var(--accent); text-decoration:none; }
     .d-loglink:hover{ text-decoration:underline; }
+    /* Page-specific colors (tokens.css contract: --warn/--ok-class tokens stay in
+       the page). ONE definition each — these were scattered inline per row. */
+    .ec-band{ border-left:3px solid #8250df; background:rgba(130,80,223,.05); display:block; padding:9px 11px; }
+    .ec-tag{ color:#8250df; font-weight:600; font-size:.82em; letter-spacing:.02em; }
+    .ec-cite{ margin-top:5px; padding-left:9px; border-left:2px solid rgba(130,80,223,.35); color:var(--muted,#555); font-style:italic; font-size:.88em; }
+    .ec-nocite{ margin-top:5px; color:var(--muted,#999); font-size:.82em; }
+    .row-flag-warn{ background:#fdf0ee; }   /* editor demoted / disagreement */
+    .row-flag-good{ background:#eef6ee; }   /* editor nominated */
+    .row-flag-near{ background:#fbf3e9; }   /* near-miss / would've qualified */
+    /* Search-line query box: grows with its content (autosized), never scrolls it
+       out of sight. One visual line when short; wraps when long. */
+    .qr-q{ resize:none; overflow:hidden; line-height:1.45; }
+    /* Sortable stat header over the winners/cohort lists */
+    .t10-sorthead{ display:flex; align-items:baseline; padding:2px 11px 6px; font-size:.62rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+    .t10-sorthead-legend{ font-size:.72rem; letter-spacing:0; text-transform:none; }
+    .t10-sorthead [data-sortkey]{ cursor:pointer; text-align:right; }
+    .t10-sorthead [data-sortkey]:hover{ color:var(--accent-dark); text-decoration:underline; }
   </style>
 </head>
 <body>
@@ -67,7 +84,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260825b"></script>
+  <script src="/forms/library-shell.js?v=20260827a"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -76,7 +93,7 @@
       backButton: '#edBack', scrim: '#edScrim',
       listLabel: 'Dishes', listMode: 'docked', shellWidth: 1200,
     });
-    const { escapeHtml, fmtDate, flash } = LibraryShell;
+    const { escapeHtml, fmtDate, flash, hostOf } = LibraryShell;
 
     let dishes = {};            // keyed by name
     let selected = null;        // dish name | '__new__'
@@ -95,6 +112,114 @@
       ['sv', 'Swedish'], ['th', 'Thai'], ['vi', 'Vietnamese'], ['hi', 'Hindi'],
     ];
 
+    /* ------------------------- search-line row editor -------------------------
+       A dish's queries are ROWS {q, n, gl, hl}: each line is its own Google
+       search with its own result count and locale; null = follow the dish
+       (n → "SERP candidates", locale → "Sources in"), resolved at run time.
+       Structured fields, not free-form syntax — the server validates again. */
+    // Mirror of dishes._GL_FOR_LANG: country for languages whose code differs.
+    const GL_FOR_LANG = {el:'gr', en:'us', ja:'jp', zh:'cn', ko:'kr', da:'dk', sv:'se', cs:'cz', uk:'ua'};
+    const glForLang = (hl) => GL_FOR_LANG[hl] || hl;
+    const QIN = 'padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit;box-sizing:border-box';
+
+    function qRowHtml(r = {}){
+      const langOpts = [['', '— dish default —'], ...SOURCE_LANGS.slice(1)]
+        .map(([c, l]) => `<option value="${c}" ${(r.hl || '') === c ? 'selected' : ''}>${l}</option>`).join('');
+      return `<div class="qrow" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
+        <textarea rows="1" class="qr-q" placeholder='verbatim query — "…" exact, -word / -site:… exclude' style="flex:1;min-width:0;${QIN}">${escapeHtml(r.q || '')}</textarea>
+        <input type="number" class="qr-n" min="1" placeholder="dflt" title="Candidates fetched for THIS line (blank = the dish's SERP candidates default)" value="${r.n ?? ''}" style="width:70px;${QIN}">
+        <select class="qr-hl" title="Search language for this line (dish default = follow 'Sources in')" style="width:150px;${QIN}">${langOpts}</select>
+        <input type="text" class="qr-gl" maxlength="2" placeholder="auto" title="Google country index, 2-letter (auto-derived from the language; override for e.g. English-language results ranking in Greece: language English + country gr)" value="${escapeHtml(r.gl || '')}" style="width:56px;text-transform:lowercase;${QIN}">
+        <button type="button" class="qr-del ed-btn" title="Remove line" style="padding:6px 10px">✕</button>
+      </div>`;
+    }
+
+    function queryRowsBlockHtml(boxId){
+      return `
+        <div class="qrows-examples" style="font-size:.78rem;color:var(--muted,#6b5b4f);margin:2px 0 10px;line-height:1.7">
+          <b>Examples</b> —
+          <code>"carrot cake" recipe</code> + results <i>blank</i> + language <i>dish default</i> → default count, follows “Sources in”<br>
+          <code>γιουβαρλάκια αυγολέμονο</code> + results <b>120</b> + language <b>Greek</b> → 120 candidates from Greek Google, in Greek<br>
+          <code>moules frites</code> + language <b>English</b> + country <b>fr</b> → English-language pages that rank on google.fr
+        </div>
+        <div id="${boxId}">
+          <div style="display:flex;gap:8px;margin-bottom:4px;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#6b5b4f)">
+            <span style="flex:1">Query (verbatim)</span><span style="width:70px">Results</span><span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:38px"></span>
+          </div>
+          <div class="qrows-list"></div>
+          <button type="button" class="ed-btn qrows-add" style="padding:6px 12px">+ Add line</button>
+        </div>`;
+    }
+
+    function initQueryRows(boxId, rows){
+      const box = document.getElementById(boxId);
+      const list = box.querySelector('.qrows-list');
+      list.innerHTML = (rows && rows.length ? rows : [{}]).map(qRowHtml).join('');
+      // Query boxes grow to fit their content — a long multi-operator query
+      // wraps into view instead of scrolling out of sight.
+      const autosize = (el) => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
+      list.querySelectorAll('.qr-q').forEach(autosize);
+      const dirty = () => box.dispatchEvent(new Event('input', {bubbles: true}));
+      box.querySelector('.qrows-add').addEventListener('click', () => {
+        list.insertAdjacentHTML('beforeend', qRowHtml({}));
+        const q = list.lastElementChild.querySelector('.qr-q');
+        autosize(q); q.focus();
+        dirty();
+      });
+      box.addEventListener('click', (e) => {
+        const del = e.target.closest('.qr-del'); if (!del) return;
+        const row = del.closest('.qrow');
+        if (list.children.length > 1) row.remove();
+        else {
+          // Last line: ✕ means "start over" — clear EVERY field, not just the
+          // text (leftover n/locale on an empty line would block the save).
+          row.querySelector('.qr-q').value = ''; autosize(row.querySelector('.qr-q'));
+          row.querySelector('.qr-n').value = '';
+          row.querySelector('.qr-hl').value = '';
+          row.querySelector('.qr-gl').value = '';
+        }
+        dirty();
+      });
+      box.addEventListener('input', (e) => {
+        const q = e.target.closest('.qr-q'); if (q) autosize(q);
+      });
+      // A query is ONE search — Enter doesn't make newlines, it adds a line row.
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.closest('.qr-q')){
+          e.preventDefault();
+          box.querySelector('.qrows-add').click();
+        }
+      });
+      // Picking a language auto-fills its country; still editable afterwards.
+      box.addEventListener('change', (e) => {
+        const sel = e.target.closest('.qr-hl'); if (!sel) return;
+        sel.closest('.qrow').querySelector('.qr-gl').value = sel.value ? glForLang(sel.value) : '';
+      });
+    }
+
+    function collectQueryRows(boxId){
+      const out = [];
+      for (const el of document.getElementById(boxId).querySelectorAll('.qrow')){
+        const q = el.querySelector('.qr-q').value.trim();
+        const nRaw = el.querySelector('.qr-n').value.trim();
+        const hl = el.querySelector('.qr-hl').value || null;
+        const glRaw = el.querySelector('.qr-gl').value.trim().toLowerCase();
+        if (!q){
+          // A line with settings but no query would silently vanish on save —
+          // say so instead of quietly dropping the curator's work.
+          if (nRaw !== '' || hl || glRaw)
+            return {error: 'A search line has settings but no query text — type the query, or remove the line with ✕'};
+          continue;
+        }
+        const n = nRaw === '' ? null : parseInt(nRaw, 10);
+        if (nRaw !== '' && !(n > 0)) return {error: `Results for “${q}” must be a positive number`};
+        if (glRaw && !/^[a-z]{2}$/.test(glRaw)) return {error: `Country for “${q}” must be a two-letter code`};
+        out.push({q, n, gl: glRaw || (hl ? glForLang(hl) : null), hl});
+      }
+      if (!out.length) return {error: 'At least one search query is required'};
+      return {rows: out};
+    }
+
     /* ----------------------------- derivations ----------------------------- */
     const fitOf = (d) => d.last_ou_fit || {};
     const isFit = (d) => !!fitOf(d).used;
@@ -108,6 +233,9 @@
     }
     function num(v, dgt = 4){ if (v == null) return '—'; const n = Number(v); return isFinite(n) ? n.toFixed(dgt) : '—'; }
     function cap(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+    // Inline form-validation message next to Save/Create. ONE place sets the
+    // warn color (was copy-pasted at every validation site).
+    function warnHint(msg){ const h = $('#hint'); if (h){ h.style.color = 'var(--ed-warn)'; h.textContent = msg; } }
     function listMeta(d){
       if (neverRun(d)) return `${escapeHtml(d.chapter || '—')} · never run`;
       return `${escapeHtml(d.chapter || '—')} · ${d.last_run_count ?? 0} kept · ${fmtDate(d.last_refreshed)}`;
@@ -156,22 +284,30 @@
       renderDetail(d);
     }
 
+    // One spec per fit model — formula line, coefficient labels, and the DA-80
+    // spot check all read from here (fmtCoeffs/coeffVars had the same
+    // model-switch written twice; adding a model meant editing both).
+    const FIT_MODELS = {
+      linear:    { line: c => `predicted PA  =  ${num(c[0],4)}·DA  +  ${num(c[1],2)}`,
+                   vars: c => `slope·DA ${num(c[0],4)} · intercept ${num(c[1],2)}`,
+                   pa80: c => c[0]*80 + c[1] },
+      quadratic: { line: c => `predicted PA  =  ${num(c[0],4)}·DA²  +  ${num(c[1],4)}·DA  +  ${num(c[2],2)}`,
+                   vars: c => `DA² ${num(c[0],4)} · DA ${num(c[1],4)} · intercept ${num(c[2],2)}`,
+                   pa80: c => c[0]*6400 + c[1]*80 + c[2] },
+      power:     { line: c => `predicted PA  =  ${num(c[0],4)}·DA ^ ${num(c[1],4)}`,
+                   vars: c => `scale ${num(c[0],4)} · exponent ${num(c[1],4)}`,
+                   pa80: c => c[0]*Math.pow(80, c[1]) },
+    };
     function fmtCoeffs(f){
       if (!f || !f.coefficients) return '';
-      const c = f.coefficients.map(x => Number(x));
-      let line, pa80;
-      if (f.model === 'linear'){ line = `predicted PA  =  ${num(c[0],4)}·DA  +  ${num(c[1],2)}`; pa80 = c[0]*80 + c[1]; }
-      else if (f.model === 'quadratic'){ line = `predicted PA  =  ${num(c[0],4)}·DA²  +  ${num(c[1],4)}·DA  +  ${num(c[2],2)}`; pa80 = c[0]*6400 + c[1]*80 + c[2]; }
-      else if (f.model === 'power'){ line = `predicted PA  =  ${num(c[0],4)}·DA ^ ${num(c[1],4)}`; pa80 = c[0]*Math.pow(80, c[1]); }
-      else return c.map(x => num(x,4)).join(', ');
-      return `${line}<span class="ex">at DA 80  →  PA ≈ ${isFinite(pa80) ? pa80.toFixed(1) : '—'}</span>`;
+      const c = f.coefficients.map(Number), m = FIT_MODELS[f.model];
+      if (!m) return c.map(x => num(x,4)).join(', ');
+      const pa80 = m.pa80(c);
+      return `${m.line(c)}<span class="ex">at DA 80  →  PA ≈ ${isFinite(pa80) ? pa80.toFixed(1) : '—'}</span>`;
     }
     function coeffVars(f){
-      const c = (f.coefficients || []).map(x => Number(x));
-      if (f.model === 'linear')    return `slope·DA ${num(c[0],4)} · intercept ${num(c[1],2)}`;
-      if (f.model === 'quadratic') return `DA² ${num(c[0],4)} · DA ${num(c[1],4)} · intercept ${num(c[2],2)}`;
-      if (f.model === 'power')     return `scale ${num(c[0],4)} · exponent ${num(c[1],4)}`;
-      return c.map(x => num(x,4)).join(', ');
+      const c = (f.coefficients || []).map(Number), m = FIT_MODELS[f.model];
+      return m ? m.vars(c) : c.map(x => num(x,4)).join(', ');
     }
 
     function fitBlock(d){
@@ -224,7 +360,6 @@
         : (d.is_due ? 'due now' : fmtDay(d.next_run_at));
       const ttlLabel = d.refresh_ttl_days == null ? 'manual' : (d.refresh_ttl_days + 'd');
       const statusCls = isError(d) ? 'warn' : (neverRun(d) ? '' : 'good');
-      const queriesText = (d.queries || []).join('\n');
 
       $('#page').innerHTML = `
         <div class="ed-kicker">
@@ -252,7 +387,7 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Search config</h3>
           <div class="ed-field full" style="margin-bottom:16px">
-            <label for="f_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim — one per line; <code>"…"</code>, <code>|</code> OR, <code>-site:</code> pass through to Google as typed)</span><button type="button" id="qInfoBtn" title="Google search syntax" style="margin-left:7px;border:1px solid var(--ed-line,#e2d6c3);background:#fff;color:var(--ed-accent,#9c5b34);width:19px;height:19px;border-radius:50%;font-size:.72rem;line-height:1;cursor:pointer;font-style:italic;font-weight:800;vertical-align:middle;font-family:Georgia,serif">i</button></label>
+            <label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge — query text passes to Google verbatim)</span><button type="button" id="qInfoBtn" title="Google search syntax" style="margin-left:7px;border:1px solid var(--ed-line,#e2d6c3);background:#fff;color:var(--ed-accent,#9c5b34);width:19px;height:19px;border-radius:50%;font-size:.72rem;line-height:1;cursor:pointer;font-style:italic;font-weight:800;vertical-align:middle;font-family:Georgia,serif">i</button></label>
             <div id="qInfoPop" hidden style="margin:4px 0 10px;padding:12px 14px;border:1px solid var(--ed-line,#e2d6c3);border-radius:10px;background:#fffaf1;font-size:.86rem;line-height:1.5">
               <strong>Google search syntax</strong>
               <ul style="margin:6px 0 8px;padding-left:18px">
@@ -260,14 +395,16 @@
                 <li><code>-word</code> — exclude pages with that word <span style="color:var(--ed-warn,#b23b3b)">(drops <em>every</em> page containing it — careful)</span></li>
                 <li><code>-site:domain.com</code> — exclude a site · <code>site:gr</code> — only that country's sites</li>
                 <li><strong>Alternate phrasings → put each on its OWN line.</strong> Each runs as a separate search; results are merged. More reliable than <code>OR</code>.</li>
+                <li><strong>Results</strong> — candidates fetched for that line only (blank = the dish's “SERP candidates”). Give a native-language line a bigger pull than an English one, or vice versa.</li>
+                <li><strong>Language / Country</strong> — WHICH Google answers, and in what language (blank = follow “Sources in”). They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece. Not the same as <code>site:gr</code>, which only restricts domain TLDs — most Greek publishers aren't on .gr.</li>
               </ul>
               <span style="color:var(--muted,#6b5b4f)">Only <code>"…"</code> and <code>-</code> are officially documented by Google. <code>OR</code> / <code>|</code> / parentheses pass through but are undocumented — precedence isn't guaranteed, so prefer separate lines. Blocklist exclusions are auto-appended each run (System → Search).</span><br>
               <a href="https://support.google.com/websearch/answer/2466433" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;color:var(--ed-accent,#9c5b34)">Full Google search operators reference ↗</a>
             </div>
-            <textarea id="f_queries" class="ed-notes" style="min-height:90px" placeholder='"banana bread" | "banana nut bread"'>${escapeHtml(queriesText)}</textarea>
+            ${queryRowsBlockHtml('qrows_edit')}
           </div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="f_serp">SERP candidates (top_n_serpapi)</label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
+            <div class="ed-field"><label for="f_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(search lines with “Results” blank use this — top_n_serpapi)</span></label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
             <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" max="${_limits.final}" value="${d.top_n_final ?? ''}"></div>
             <div class="ed-field"><label for="f_ttl">Refresh TTL (days)</label><input id="f_ttl" type="number" min="1" value="${d.refresh_ttl_days == null ? '' : d.refresh_ttl_days}" placeholder="blank = manual only"></div>
             <div class="ed-field"><label for="f_srclang">Sources in <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(harvest language)</span></label>
@@ -376,7 +513,7 @@
           <details class="ed-accordion">
             <summary>Metadata</summary>
             <div class="ed-kv" style="margin-top:12px">
-              <div class="k">Identity card</div><div class="v">${d.identity_card ? 'captured' : 'none'}</div>
+              <div class="k">Identity card</div><div class="v">${(d.identity_card_present ?? !!d.identity_card) ? 'captured' : 'none'}</div>
               <div class="k">Embedding</div><div class="v">${d.embedding_model ? escapeHtml(d.embedding_model) + ' · ' + fmtDate(d.embedding_updated_at) : 'none'}</div>
               <div class="k">Created</div><div class="v">${fmtDate(d.created_at)}</div>
               <div class="k">Updated</div><div class="v">${fmtDate(d.updated_at)}</div>
@@ -396,6 +533,7 @@
       });
       const qInfo = $('#qInfoBtn');
       if (qInfo) qInfo.addEventListener('click', () => { const p = $('#qInfoPop'); if (p) p.hidden = !p.hidden; });
+      initQueryRows('qrows_edit', d.query_rows);
       $('#saveBtn').addEventListener('click', () => doSave(d));
       $('#refreshBtn').addEventListener('click', () => doRefresh(d));
       $('#deleteBtn').addEventListener('click', () => doDelete(d));
@@ -423,7 +561,7 @@
       const wrap = $('#candlist'); if(!wrap) return;
       try {
         const r = await fetch(`/candidates?collection_type=dish&collection_key=${encodeURIComponent(name)}`);
-        if(!r.ok){ wrap.innerHTML = `<li class="ed-empty-fit">Failed (${r.status})</li>`; return; }
+        if(!r.ok){ wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load the candidate ledger (HTTP ${r.status}).</li>`; return; }
         const d = await r.json();
         const rec = d.reconsider || [];
         const cnt = $('#candCount'); if(cnt) cnt.textContent = rec.length || '';
@@ -454,7 +592,7 @@
               <ol class="ed-t10">` + kept.map(k => {
               const m = k.mediation, moved = (m.ordinal_rank && m.ordinal_rank !== k.final_rank);
               const bad = m.verdict === 'demote';
-              return `<li class="ed-t10-row" style="${bad?'background:#fdf0ee;':''}">
+              return `<li class="ed-t10-row${bad ? ' row-flag-warn' : ''}">
                 <span class="ed-t10-main">
                   <span class="ed-t10-name"><a href="${escapeHtml(k.url)}" target="_blank" rel="noopener">${escapeHtml(k.title || k.url)}</a>
                     <span class="ed-t10-grade" title="editor's verdict">${escapeHtml(m.verdict)}</span>
@@ -469,10 +607,10 @@
         }
         if(!rec.length){ wrap.innerHTML = '<li class="ed-empty-fit">Nothing to reconsider: every drop was a matter of fact.</li>'; return; }
         wrap.innerHTML = rec.map(x => {
-          let host = x.url; try { host = new URL(x.url).hostname.replace(/^www\./,''); } catch(_){}
+          const host = hostOf(x.url);
           const near = x.stage === 'rank_cut';
           const nom = x.mediation && x.mediation.verdict === 'nominate';
-          return `<li class="ed-t10-row" style="${nom?'background:#eef6ee;':(near?'background:#fbf3e9;':'')}">
+          return `<li class="ed-t10-row${nom ? ' row-flag-good' : (near ? ' row-flag-near' : '')}">
             <span class="ed-t10-main">
               <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(x.title || host)}</a>
                 <span class="ed-t10-grade" title="stage it was dropped at">${escapeHtml(x.stage)}</span>
@@ -500,7 +638,7 @@
       const wrap = $('#rejectlist'); if(!wrap) return;
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(name)}/rejects`);
-        if(!r.ok){ wrap.innerHTML = `<li class="ed-empty-fit">Failed (${r.status})</li>`; return; }
+        if(!r.ok){ wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load rejects (HTTP ${r.status}).</li>`; return; }
         const data = await r.json();
         const bar = data.bottom_ou;
         const rejects = data.rejects || [];
@@ -512,8 +650,8 @@
         wrap.innerHTML = rejects.map(x => {
           const q = qual(x);
           const antibot = /anti-bot|fetch-fail/i.test(x.reason || '');
-          let host = x.url; try { host = new URL(x.url).hostname.replace(/^www\./,''); } catch(_){}
-          return `<li class="ed-t10-row" style="${q?'background:#fbf3e9;':''}">
+          const host = hostOf(x.url);
+          return `<li class="ed-t10-row${q ? ' row-flag-near' : ''}">
             <span class="ed-t10-main">
               <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(host)}</a>${q?' <span class="ed-t10-grade" title="OU beats the cut bar">would’ve qualified</span>':''}${antibot?' <span class="ed-t10-grade" title="likely anti-bot block">anti-bot?</span>':''}</span>
               <span class="ed-t10-sub">${escapeHtml(x.reason || '')}</span>
@@ -538,6 +676,35 @@
     const STATUS_LBL = { too_thin:'too thin', extract_failed:'couldn’t extract',
       save_failed:'save failed', fetch_failed:'fetch blocked', rejected:'rejected',
       reserve:'below the cut' };
+    // Sortable stat columns over a scoreRow list. Column widths mirror
+    // .ed-t10-stat.score/.pct so the headers sit over their numbers; the
+    // legend slot SAYS what "score" is instead of leaving it a bare number.
+    const SORT_COLS = [['rank_score', 'score', 48], ['ou_pct', 'ou%', 32], ['pwr_pct', 'pwr%', 32]];
+    function statHeaderHtml(sort, legend){
+      const th = SORT_COLS.map(([k, lbl, w]) =>
+        `<span data-sortkey="${k}" title="sort by ${lbl}" style="width:${w}px">${lbl}${sort.key === k ? (sort.dir < 0 ? ' ▾' : ' ▴') : ''}</span>`).join('');
+      return `<li class="t10-sorthead"><span class="t10-sorthead-legend">${legend || ''}</span><span style="margin-left:auto;display:flex;gap:14px">${th}</span></li>`;
+    }
+    // One list = one sort state; header clicks re-sort locally (no refetch).
+    // `render` paints header + rows; delegation survives the innerHTML swaps.
+    function sortableStatList(wrap, rows, legend, prefixHtml){
+      const sort = {key: 'rank_score', dir: -1};
+      const render = () => {
+        const v = (x) => (typeof x[sort.key] === 'number' ? x[sort.key] : -Infinity);
+        const sorted = rows.slice().sort((a, b) => sort.dir < 0 ? v(b) - v(a) : v(a) - v(b));
+        wrap.innerHTML = (prefixHtml || '') + statHeaderHtml(sort, legend)
+          + sorted.map((x, i) => scoreRow(x, i)).join('');
+      };
+      wrap.addEventListener('click', (e) => {
+        const h = e.target.closest('[data-sortkey]'); if (!h) return;
+        e.preventDefault();
+        const k = h.getAttribute('data-sortkey');
+        if (sort.key === k) sort.dir = -sort.dir; else { sort.key = k; sort.dir = -1; }
+        render();
+      });
+      render();
+    }
+
     function scoreRow(r, i){
       const thumb = r.thumb ? `<span class="ed-t10-thumb"><img src="${escapeHtml(r.thumb)}" alt="" loading="lazy"></span>` : `<span class="ed-t10-thumb"></span>`;
       const star  = r.selected ? ' <span class="ed-t10-grade" title="selected winner">★</span>' : '';
@@ -564,9 +731,16 @@
         const r = await fetch(`/dishes/${encodeURIComponent(name)}/top-recipes`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const payload = await r.json();
-        // Order by the final blend score (rank_score); fall back to _master.rank.
-        const recs = (payload.recipes || []).slice().sort((a, b) =>
-          (b.rank_score ?? -Infinity) - (a.rank_score ?? -Infinity) || (a.rank ?? Infinity) - (b.rank ?? Infinity));
+        // Normalize once into scoreRow's shape; sorting is the list helper's job.
+        const recs = (payload.recipes || []).map(rec => ({
+          rank_score: rec.rank_score, ou_pct: rec.ou_percentile, pwr_pct: rec.power_percentile,
+          name: rec.name,
+          domain: rec.site_name || hostOf(rec.source_url),
+          thumb: (rec.preview_image || rec.fallback_image || '').trim(),
+          grade: rec.grade, selected: false,   // whole list is winners — no ★ needed
+          href: rec.recipe_id ? `/r/${encodeURIComponent(rec.recipe_id)}` : (rec.source_url || '#'),
+          title: 'Open recipe',
+        }));
         const cnt = $('#topcount'); if (cnt) cnt.textContent = recs.length ? `(${recs.length})` : '';
         const awards = payload.editors_choice || [];
         if (!recs.length && !awards.length){ wrap.innerHTML = '<li class="ed-empty-fit">No winners yet — refresh the dish.</li>'; return; }
@@ -576,7 +750,7 @@
         // descriptive only. An award nobody can see is not an award, which is
         // what the previous "surfaces in the winners if it ranks" amounted to.
         const awardHtml = awards.map(a => {
-          const host = a.site_name || (a.source_url || '').replace(/^https?:\/\//, '').split('/')[0];
+          const host = a.site_name || hostOf(a.source_url);
           const nums = [a.pa != null ? `PA ${Math.round(a.pa)}` : null,
                         a.da != null ? `DA ${Math.round(a.da)}` : null,
                         a.ou != null ? `OU ${Number(a.ou).toFixed(1)}` : null]
@@ -585,27 +759,23 @@
           // overriding the statistical pass, so it should read as the reason the
           // award exists — not as metadata trailing the domain name.
           const cite = a.note
-            ? `<div style="margin-top:5px;padding-left:9px;border-left:2px solid rgba(130,80,223,.35);color:var(--muted,#555);font-style:italic;font-size:.88em">${escapeHtml(a.note)}</div>`
-            : `<div style="margin-top:5px;color:var(--muted,#999);font-size:.82em">No citation given — <i>why does this deserve inclusion?</i></div>`;
-          return `<li class="ed-t10-row" style="border-left:3px solid #8250df;background:rgba(130,80,223,.05);display:block;padding:9px 11px">
+            ? `<div class="ec-cite">${escapeHtml(a.note)}</div>`
+            : `<div class="ec-nocite">No citation given — <i>why does this deserve inclusion?</i></div>`;
+          return `<li class="ed-t10-row ec-band">
             <span class="ed-t10-name">
-              <span style="color:#8250df;font-weight:600;font-size:.82em;letter-spacing:.02em">★ EDITOR'S CHOICE</span>
+              <span class="ec-tag">★ EDITOR'S CHOICE</span>
               &nbsp;<a href="${a.recipe_id ? `/r/${encodeURIComponent(a.recipe_id)}` : escapeHtml(a.source_url || '#')}" target="_blank" rel="noopener">${escapeHtml(a.name)}</a>
             </span>
             <div class="ed-t10-sub">${escapeHtml(host)}${nums ? ` — ${escapeHtml(nums)} <i>(not ranked)</i>` : ''}</div>
             ${cite}
           </li>`;
         }).join('');
-        // Winners list — same-origin /r/<id> link (resolves on any host).
-        wrap.innerHTML = awardHtml + recs.map((rec, i) => scoreRow({
-          rank_score: rec.rank_score, ou_pct: rec.ou_percentile, pwr_pct: rec.power_percentile,
-          name: rec.name,
-          domain: rec.site_name || (rec.source_url || '').replace(/^https?:\/\//, '').split('/')[0],
-          thumb: (rec.preview_image || rec.fallback_image || '').trim(),
-          grade: rec.grade, selected: false,   // whole list is winners — no ★ needed
-          href: rec.recipe_id ? `/r/${encodeURIComponent(rec.recipe_id)}` : (rec.source_url || '#'),
-          title: 'Open recipe',
-        }, i)).join('');
+        // Winners list — same-origin /r/<id> links; sortable stat headers with
+        // the score DEFINED in place: the OU/power percentile blend, weighted
+        // by the server's actual power_blend_weight (rides in the payload).
+        const w = Math.round(payload.power_blend_weight ?? 30);
+        const legend = `score = ${100 - w}% OU pct + ${w}% power pct <span style="cursor:help" title="Each candidate's OU (how far the page outperforms its own domain's baseline) and raw power (DA + PA) are ranked into percentiles WITHIN this dish's scored cohort, then blended: score = ${100 - w}%·OU-percentile + ${w}%·power-percentile, shown ×100. Click a column header to re-sort.">ⓘ</span>`;
+        sortableStatList(wrap, recs, legend, awardHtml);
       } catch (e) {
         wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load winners (${escapeHtml(String(e.message || e))}).</li>`;
       }
@@ -626,7 +796,7 @@
         const cnt = $('#ecCount'); if (cnt) cnt.textContent = pins.length || '';
         if (!pins.length){ wrap.innerHTML = '<li class="ed-empty-fit">No pins yet — paste a URL above.</li>'; return; }
         wrap.innerHTML = pins.map(p => {
-          let host = p.url; try { host = new URL(p.url).hostname.replace(/^www\./, ''); } catch (_){}
+          const host = hostOf(p.url);
           return `<li class="ed-t10-row">
             <span class="ed-t10-main">
               <span class="ed-t10-name"><a href="${escapeHtml(p.url)}" target="_blank" rel="noopener">${escapeHtml(host)}</a></span>
@@ -647,27 +817,27 @@
         const r = await fetch(`/dishes/${encodeURIComponent(name)}/editors-choice`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, note }) });
         const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(d.detail || `Couldn’t record the award (HTTP ${r.status})`);
         // The award is recorded even if the fetch failed; say so rather than
         // letting it look like nothing happened until someone hunts for it.
         if (d && d.ingested === false) {
-          alert('Award recorded, but the recipe could not be fetched — it will not '
-              + 'appear until the page loads. Check the URL, or re-award to retry.');
+          flash('Award recorded, but the recipe could not be fetched — it won’t '
+              + 'appear until the page loads. Check the URL, or re-award to retry.', true);
         }
         inp.value = '';
         if (noteEl) noteEl.value = '';
         const acc = $('#ecAcc'); if (acc) acc.open = true;
         await loadEditorsChoice(name);
-      } catch (e){ alert('Could not pin: ' + (e.message || e)); }
+      } catch (e){ flash(`Couldn’t pin: ${e.message || e}`, true); }
       finally { btn.disabled = false; }
     }
 
     async function removePin(name, urlNorm){
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(name)}/editors-choice?url_normalized=${encodeURIComponent(urlNorm)}`, { method: 'DELETE' });
-        if (!r.ok){ const d = await r.json().catch(() => ({})); throw new Error(d.detail || `HTTP ${r.status}`); }
+        if (!r.ok){ const d = await r.json().catch(() => ({})); throw new Error(d.detail || `Couldn’t remove the award (HTTP ${r.status})`); }
         await loadEditorsChoice(name);
-      } catch (e){ alert('Could not unpin: ' + (e.message || e)); }
+      } catch (e){ flash(`Couldn’t unpin: ${e.message || e}`, true); }
     }
 
     async function loadCohort(name){
@@ -683,16 +853,16 @@
         // Direct ledger read: full cohort by rank_score. Winners (joined to a
         // saved master_recipe) show name+thumbnail+grade; non-extracted
         // candidates show domain + scores only.
-        wrap.innerHTML = rows.map((c, i) => {
-          const domain = (c.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-          return scoreRow({
+        sortableStatList(wrap, rows.map(c => {
+          const domain = hostOf(c.url);
+          return {
             rank_score: c.rank_score, ou_pct: c.ou_percentile, pwr_pct: c.power_percentile,
             name: c.name || domain, domain,
             thumb: (c.preview_image || '').trim(),
             grade: c.grade, selected: !!c.selected, status: c.cohort_status,
             href: c.url || '#', title: 'Open source page',
-          }, i);
-        }).join('');
+          };
+        }), '');
       } catch (e) {
         wrap.innerHTML = `<li class="ed-empty-fit">Couldn’t load cohort (${escapeHtml(String(e.message || e))}).</li>`;
       }
@@ -700,14 +870,14 @@
 
     async function doSave(d){
       const hint = $('#hint'); const btn = $('#saveBtn');
-      const queries = $('#f_queries').value.split('\n').map(s => s.trim()).filter(Boolean);
-      if (!queries.length){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'At least one search query is required'; return; }
+      const qr = collectQueryRows('qrows_edit');
+      if (qr.error) return warnHint(qr.error);
       const serp = parseInt($('#f_serp').value, 10);
       const final = parseInt($('#f_final').value, 10);
-      if (!(serp > 0) || !(final > 0)){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Candidate/winner counts must be positive'; return; }
+      if (!(serp > 0) || !(final > 0)) return warnHint('Candidate/winner counts must be positive whole numbers');
       const ttlRaw = $('#f_ttl').value.trim();
       const body = {
-        queries, top_n_serpapi: serp, top_n_final: final,
+        query_rows: qr.rows, top_n_serpapi: serp, top_n_final: final,
         refresh_ttl_days: ttlRaw === '' ? null : parseInt(ttlRaw, 10),
         notes: $('#f_notes').value.trim(),
         auto_enrich: $('#f_enrich').checked,
@@ -720,7 +890,7 @@
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(d.name)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(data.detail || `Save failed (HTTP ${r.status})`);
         dishes[d.name] = data;
         renderList();
         // Re-render the detail too, so the derived pills (TTL, next-run, status)
@@ -733,7 +903,7 @@
         setTimeout(() => { const b = $('#saveBtn'); if (b){ b.textContent = 'Save'; b.classList.remove('done'); } }, 1900);  // stays disabled until next edit
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Save';
-        hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
+        warnHint(String(e.message || e));
       }
     }
 
@@ -754,9 +924,10 @@
         const live = (Array.isArray(jobs) ? jobs : []).find(
           j => j.status === 'running' || j.status === 'queued');
         if (!live) return;
-        const btn = $('#refreshBtn');
-        if (btn){ btn.disabled = true; btn.textContent = '🔄 Refreshing…'; }
-        flash(`“${dishName}” is refreshing now (job #${live.id}) — live log below.`);
+        // streamDishLog owns the button/cancel state; re-attaching to a job we
+        // already tail (e.g. after a save re-rendered the page) just resyncs.
+        if (!(_stream && _stream.jobId === live.id))
+          flash(`“${dishName}” is refreshing now (job #${live.id}) — live log below.`);
         streamDishLog(live.id, dishName);
       } catch (_){ /* visibility is a nicety; never break the detail render */ }
     }
@@ -764,6 +935,10 @@
     async function doRefresh(d){
       const btn = $('#refreshBtn');
       btn.disabled = true; btn.textContent = 'Queuing…';
+      // Re-arm the button ONLY on paths where no stream took over — a live
+      // stream keeps it disabled so a second click (and a duplicate tail)
+      // can't happen; streamDishLog restores it when the run ends.
+      const rearm = () => { const b = $('#refreshBtn'); if (b){ b.disabled = false; b.textContent = '🔄 Refresh top recipes'; } };
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/refresh`, { method: 'POST' });
         const data = await r.json().catch(() => ({}));
@@ -779,7 +954,7 @@
         }
         // The 409 body has no `detail` key, so the old fallthrough rendered a
         // bare "HTTP 409" and threw the job id away.
-        if (!r.ok && r.status !== 202) throw new Error(data.detail || data.error || `HTTP ${r.status}`);
+        if (!r.ok && r.status !== 202) throw new Error(data.detail || data.error || `Couldn’t queue the refresh (HTTP ${r.status})`);
         // Phase 4: run the job OUT-OF-PROCESS — the server spawns
         // `python -m jobs exec --job-id N`, so the UI stays responsive, jobs for
         // different dishes run in parallel without interfering, and a server
@@ -790,14 +965,14 @@
           // Fall back to the in-server drain if the spawn endpoint is unavailable.
           flash(`Spawn failed (${se.detail || sp.status}); running in-server…`, true);
           if (LibraryShell.runQueuedJobs) LibraryShell.runQueuedJobs();
+          rearm();   // no stream on this path, so nothing else re-arms the button
         } else {
           flash(`Refreshing “${d.name}” out-of-process (job #${data.job_id})…`);
           streamDishLog(data.job_id, d.name);   // live log INLINE in the dish page
         }
       } catch (e) {
         flash(String(e.message || e), true);
-      } finally {
-        btn.disabled = false; btn.textContent = '🔄 Refresh top recipes';
+        rearm();
       }
     }
 
@@ -806,13 +981,25 @@
     // subprocess writes — fully cross-process). On done, re-fetch the dish and
     // re-render the detail so Last run / pills / the view-log link update; the
     // accumulated log is re-painted into the freshly-rendered panel.
+    // ONE live tail at a time (this is a single-detail-pane page). Re-calling
+    // with the same job resyncs the freshly-rendered panel (repaint + button +
+    // cancel) instead of opening a duplicate EventSource — the save-during-run
+    // and second-click paths both land here. A different job closes the old
+    // tail first.
+    let _stream = null;   // { jobId, es, resync }
     function streamDishLog(jobId, dishName){
+      if (_stream && _stream.jobId === jobId){ _stream.resync(); return; }
+      if (_stream){ _stream.es.close(); _stream = null; }
       let buf = '';
       const paint = () => {
         const pre = $('#dishLog'); if (!pre) return;
         pre.style.display = ''; pre.textContent = buf; pre.scrollTop = pre.scrollHeight;
       };
       const add = (line) => { buf += (buf ? '\n' : '') + line; paint(); };
+      const setRefreshBusy = (on) => {
+        const b = $('#refreshBtn'); if (!b) return;
+        b.disabled = on; b.textContent = on ? '🔄 Refreshing…' : '🔄 Refresh top recipes';
+      };
       // Cancel follows the stream, exactly like the domains form: enabled for
       // the life of the run, POSTs the cooperative cancel (the job aborts
       // after the current candidate), disabled again on done. Wired HERE, not
@@ -827,15 +1014,23 @@
         } : null;
       };
       setCancel(true);
+      setRefreshBusy(true);
       add(`▶ Running job #${jobId} for “${dishName}” (out-of-process)…`);
       const es = new EventSource('/jobs/' + jobId + '/stream');
-      es.addEventListener('log', (e) => { try { add(JSON.parse(e.data).line); } catch (_) {} });
-      es.addEventListener('status', (e) => { try { add('· ' + JSON.parse(e.data).status); } catch (_) {} });
+      _stream = { jobId, es, resync: () => { paint(); setCancel(true); setRefreshBusy(true); } };
+      // EventSource retries forever by default — fine for a blip mid-run, but a
+      // stream that only errors (server bounced, job gone) must eventually stop
+      // reconnecting in the background. Any successful event resets the count.
+      let errs = 0;
+      es.addEventListener('log', (e) => { errs = 0; try { add(JSON.parse(e.data).line); } catch (_) {} });
+      es.addEventListener('status', (e) => { errs = 0; try { add('· ' + JSON.parse(e.data).status); } catch (_) {} });
       es.addEventListener('done', async (e) => {
         let st = 'done'; try { st = JSON.parse(e.data).status; } catch (_) {}
         add(`■ ${st}.`);
         setCancel(false);
+        setRefreshBusy(false);
         es.close();
+        if (_stream && _stream.es === es) _stream = null;
         try {
           const r = await fetch(`/dishes/${encodeURIComponent(dishName)}`);
           if (r.ok) {
@@ -847,7 +1042,14 @@
         } catch (_) {}
         flash(`“${dishName}” refresh ${st}.`);
       });
-      es.addEventListener('error', () => { /* transient — EventSource auto-reconnects */ });
+      es.addEventListener('error', () => {
+        if (++errs < 5) return;   // transient — let EventSource auto-reconnect
+        es.close();
+        if (_stream && _stream.es === es) _stream = null;
+        setCancel(false);
+        setRefreshBusy(false);
+        add('⚠ Live stream lost — the run continues on the server; see “view log” under Last run for the rest.');
+      });
     }
 
     async function doDelete(d){
@@ -855,7 +1057,7 @@
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(d.name)}`, { method: 'DELETE' });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(data.detail || `Delete failed (HTTP ${r.status})`);
         delete dishes[d.name];
         const first = sortedDishes()[0]; selected = first ? first.name : null;
         renderList(); renderMain();
@@ -869,9 +1071,9 @@
         <h1 class="ed-title" style="margin:0 0 18px">Add a dish</h1>
         <section class="ed-block" style="border-top:none;padding-top:0">
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off"></div>
-          <div class="ed-field full" style="margin-bottom:16px"><label for="n_queries">Google search query <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(verbatim, one per line)</span></label><textarea id="n_queries" class="ed-notes" style="min-height:90px" placeholder='&quot;spaghetti and meat sauce&quot; | &quot;spaghetti with meat sauce&quot;'></textarea></div>
+          <div class="ed-field full" style="margin-bottom:16px"><label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge)</span></label>${queryRowsBlockHtml('qrows_new')}</div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="n_serp">SERP candidates</label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="25"></div>
+            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="25"></div>
             <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="10"></div>
             <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only"></div>
           </div>
@@ -881,6 +1083,7 @@
           <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
+      initQueryRows('qrows_new', []);
       $('#n_name').focus();
       $('#cancelBtn').addEventListener('click', () => { const first = sortedDishes()[0]; selected = first ? first.name : null; renderList(); renderMain(); });
       $('#createBtn').addEventListener('click', doCreate);
@@ -889,33 +1092,48 @@
     async function doCreate(){
       const hint = $('#hint'); const btn = $('#createBtn');
       const name = $('#n_name').value.trim();
-      const queries = $('#n_queries').value.split('\n').map(s => s.trim()).filter(Boolean);
-      if (!name){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Dish name is required'; $('#n_name').focus(); return; }
-      if (!queries.length){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'At least one search query is required'; return; }
+      if (!name){ warnHint('Dish name is required'); $('#n_name').focus(); return; }
+      const qr = collectQueryRows('qrows_new');
+      if (qr.error) return warnHint(qr.error);
+      // Same validation as the edit form — no silent 25/10 substitution for a
+      // typo'd count (entering "0" or garbage used to quietly become 25).
+      const serp = parseInt($('#n_serp').value, 10);
+      const final = parseInt($('#n_final').value, 10);
+      if (!(serp > 0) || !(final > 0)) return warnHint('Candidate/winner counts must be positive whole numbers');
       const body = {
-        name, queries,
-        top_n_serpapi: parseInt($('#n_serp').value, 10) || 25,
-        top_n_final: parseInt($('#n_final').value, 10) || 10,
+        name, query_rows: qr.rows,
+        top_n_serpapi: serp,
+        top_n_final: final,
         refresh_ttl_days: $('#n_ttl').value.trim() === '' ? null : parseInt($('#n_ttl').value, 10),
       };
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Creating…';
       try {
         const r = await fetch('/dishes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(data.detail || `Create failed (HTTP ${r.status})`);
         await loadDishes(data.name || name);
         flash('Dish created — refresh it to populate winners');
       } catch (e) {
         btn.disabled = false; btn.textContent = 'Create';
-        hint.style.color = 'var(--ed-warn)'; hint.textContent = String(e.message || e);
+        warnHint(String(e.message || e));
       }
     }
 
     /* ----------------------------- data + wiring ----------------------------- */
     async function loadDishes(selectName){
-      const r = await fetch('/dishes');
-      if (!r.ok){ $('#list').innerHTML = `<li class="ed-empty">Failed to load (${r.status})</li>`; return; }
-      const list = await r.json();
+      // A network-level failure used to be an unhandled rejection: the sidebar
+      // sat on "Loading…" forever with no message and no way back.
+      let list;
+      try {
+        const r = await fetch('/dishes');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        list = await r.json();
+      } catch (e){
+        $('#list').innerHTML = `<li class="ed-empty">Couldn’t load dishes (${escapeHtml(String(e.message || e))}) — is the server up? <a href="#" id="retryLoad">Retry</a></li>`;
+        const a = $('#retryLoad');
+        if (a) a.addEventListener('click', (ev) => { ev.preventDefault(); $('#list').innerHTML = '<li class="ed-empty">Loading…</li>'; loadDishes(selectName); });
+        return;
+      }
       dishes = {};
       for (const d of list) dishes[d.name] = d;
       if (selectName && dishes[selectName]) selected = selectName;
@@ -930,8 +1148,16 @@
       $('#searchToggle').classList.toggle('active', !c.hidden);
       if (!c.hidden) $('#search').focus();
     });
-    // Dirty-tracker: Save stays disabled until something in the detail changes.
-    const _markDirty = () => { const b = $('#saveBtn'); if (b) b.disabled = false; };
+    // Dirty-tracker: Save stays disabled until a DISH-EDIT field changes.
+    // Scoped to the editable fields (f_* inputs + the search-line rows) — the
+    // Editor's Choice inputs live on the same page but post through their own
+    // button, and typing there must not light up Save with a false "unsaved
+    // dish edits" signal.
+    const _markDirty = (e) => {
+      const t = e.target;
+      if (!t || !(/^f_/.test(t.id || '') || (t.closest && t.closest('#qrows_edit')))) return;
+      const b = $('#saveBtn'); if (b) b.disabled = false;
+    };
     $('#page').addEventListener('input', _markDirty);
     $('#page').addEventListener('change', _markDirty);
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
@@ -944,7 +1170,12 @@
       const m = {}; for (const s of rows) m[s.key] = s.value;
       if (m.dish_max_serpapi != null) _limits.serpapi = m.dish_max_serpapi;
       if (m.dish_max_final != null) _limits.final = m.dish_max_final;
-      renderMain();  // re-render so the inputs pick up the max
+      // Update the max attributes IN PLACE — a full re-render here wiped
+      // whatever the curator had already started typing. Future renders read
+      // the updated _limits on their own.
+      for (const [sel, key] of [['#f_serp', 'serpapi'], ['#n_serp', 'serpapi'], ['#f_final', 'final'], ['#n_final', 'final']]){
+        const el = $(sel); if (el) el.max = _limits[key];
+      }
     }).catch(() => {});
 
     loadDishes();

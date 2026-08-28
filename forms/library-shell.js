@@ -63,6 +63,7 @@
      LibraryShell.isNarrow()         // window.matchMedia('(max-width:760px)')
      LibraryShell.closeOnNarrow()    // close sidebar only if narrow viewport
      LibraryShell.escapeHtml(s)
+     LibraryShell.hostOf(url)        // display hostname: no scheme/www./path
      LibraryShell.fmtDate(iso)       // relative ("3 hr ago") fallback to absolute
      LibraryShell.NAV_ITEMS          // editable nav-items array (see below)
    ============================================================ */
@@ -278,6 +279,18 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
       '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
     }[c]));
+  }
+
+  // Display hostname of a URL: no scheme, no www., no path. THE one hostname
+  // derivation — pages had grown two hand-rolled variants (one kept www., so
+  // the same site displayed differently between panels on one page). Falls
+  // back to string-stripping for non-URL input (a bare domain, a fragment).
+  function hostOf(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); }
+    catch (_) {
+      return String(url == null ? '' : url)
+        .replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+    }
   }
 
   // === Exceptionalism grade badge ===
@@ -1777,6 +1790,7 @@
     refreshIdentity,
     initEditorNav,
     initIdentityBadge,
+    hostOf,
     openSidebar,
     closeSidebar,
     toggleSidebar,

@@ -515,7 +515,9 @@ def list_rejects_for_dish(conn: sqlite3.Connection, dish_name: str) -> list[dict
 #     {"q": "γιουβαρλάκια αυγολέμονο", "n": 120, "gl": "gr", "hl": "el"}
 #
 # `n` = None means "use the dish's top_n_serpapi", which keeps that column
-# meaningful as the default rather than orphaning it.
+# meaningful as the default rather than orphaning it. gl/hl = None follows the
+# SAME contract: "use the dish's source_language", resolved at refresh time by
+# resolve_query_locales — so defaults are stored as None, never baked in.
 #
 # gl and hl are SEPARATE fields, not one "country". They are separate Google
 # parameters and they genuinely diverge: gl=gr/hl=el gets Greek-language
@@ -544,20 +546,30 @@ _GL_FOR_LANG = {"el": "gr", "en": "us", "ja": "jp", "zh": "cn", "ko": "kr",
                 "da": "dk", "sv": "se", "cs": "cz", "uk": "ua"}
 
 
-def apply_locale_defaults(rows: list[dict], source_language) -> list[dict]:
-    """Stamp gl/hl from the dish's source_language onto rows still carrying
-    the us/en DEFAULTS. Two traps this closes (moules, 2026-08-25): the
-    editor posts bare strings, so every row silently gets gl=us/hl=en — a
-    French dish was querying the AMERICAN Google — and any later textarea
-    edit RESETS hand-fixed locales back to the defaults. Explicitly
-    non-default rows are respected; en/blank languages are a no-op."""
+def resolve_query_locales(rows: list[dict], source_language) -> list[dict]:
+    """Fill each row's None gl/hl with CONCRETE values at RUN time.
+
+    Successor to apply_locale_defaults (the moules fix, 2026-08-25), which
+    stamped source_language onto rows AT SAVE — that baked the language in
+    and, because a stamped `us/en` was indistinguishable from an explicit
+    one, an explicit English line on a Greek dish was inexpressible. Now
+    None means "follow the dish" (exactly like `n` = None follows
+    top_n_serpapi) and is STORED as None; this resolver runs at refresh:
+
+      hl = row's own hl, else the dish's source_language, else en
+      gl = row's own gl, else the country implied by the resolved hl
+
+    So changing a dish's Sources-in retargets every default row on its
+    next run — nothing to re-stamp — while an explicit locale, including
+    an explicit us/en, is never overridden. Returns the same row dicts
+    (mutated) for chaining."""
     lang = (str(source_language or "").strip().lower())
-    if not _CODE_RE.match(lang) or lang == "en":
-        return rows
+    if not _CODE_RE.match(lang):
+        lang = DEFAULT_HL
     for r in rows:
-        if r.get("gl") == DEFAULT_GL and r.get("hl") == DEFAULT_HL:
-            r["hl"] = lang
-            r["gl"] = _GL_FOR_LANG.get(lang, lang)
+        hl = r.get("hl") or lang
+        r["hl"] = hl
+        r["gl"] = r.get("gl") or _GL_FOR_LANG.get(hl, hl)
     return rows
 
 
@@ -577,12 +589,12 @@ def normalize_query_rows(raw) -> list[dict]:
     out: list[dict] = []
     for item in raw or []:
         if isinstance(item, str):
-            q, n, gl, hl = item, None, DEFAULT_GL, DEFAULT_HL
+            q, n, gl, hl = item, None, None, None
         elif isinstance(item, dict):
             q = item.get("q", item.get("query", item.get("text", "")))
             n = item.get("n", item.get("top_n"))
-            gl = item.get("gl", item.get("country")) or DEFAULT_GL
-            hl = item.get("hl", item.get("language")) or DEFAULT_HL
+            gl = item.get("gl", item.get("country"))
+            hl = item.get("hl", item.get("language"))
         else:
             continue
         q = str(q or "").strip()
@@ -592,8 +604,10 @@ def normalize_query_rows(raw) -> list[dict]:
             n = int(n) if n not in (None, "") else None
         except (TypeError, ValueError):
             n = None
-        gl = str(gl or DEFAULT_GL).strip().lower() or DEFAULT_GL
-        hl = str(hl or DEFAULT_HL).strip().lower() or DEFAULT_HL
+        # None/blank = "follow the dish" (source_language → locale), resolved
+        # at run time by resolve_query_locales — the same contract as n=None.
+        gl = (str(gl).strip().lower() or None) if gl not in (None, "") else None
+        hl = (str(hl).strip().lower() or None) if hl not in (None, "") else None
         out.append({"q": q, "n": n, "gl": gl, "hl": hl})
     return out
 
@@ -626,7 +640,7 @@ def validate_query_rows(raw, *, max_n: Optional[int] = None) -> list[dict]:
                     f"select size {r['n']} for {r['q']!r} exceeds the max of "
                     f"{max_n} (raise it in System → Limits)")
         for field in ("gl", "hl"):
-            if not _CODE_RE.match(r[field]):
+            if r[field] is not None and not _CODE_RE.match(r[field]):
                 raise ValueError(
                     f"{field} for {r['q']!r} must be a two-letter code "
                     f"(got {r[field]!r}) — store the CODE, not a display name")
@@ -1001,25 +1015,13 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
     if "query_rows" in patch or "queries" in patch:
         raw = patch.get("query_rows", patch.get("queries"))
         rows = validate_query_rows(raw, max_n=_max_serp)
-        # Locale from the dish's language (the patch's value when it is being
-        # set in the same request, else the stored one) — see
-        # apply_locale_defaults for the two traps this closes.
-        _eff_lang = patch.get("source_language", existing.get("source_language"))
-        rows = apply_locale_defaults(rows, _eff_lang)
+        # Stored AS POSTED — None gl/hl means "follow the dish" and is kept
+        # None (resolve_query_locales fills it at refresh time). No save-time
+        # stamping any more: a later Sources-in change retargets default rows
+        # automatically on their next run, and an explicit locale — including
+        # an explicit us/en on a foreign dish — survives every edit.
         sets.append("queries = ?")
         params.append(json.dumps(rows, ensure_ascii=False))
-    elif "source_language" in patch:
-        # Setting the language WITHOUT touching queries re-derives any rows
-        # still on the us/en defaults — the natural moment the curator tells
-        # us the dish is foreign is the moment the queries should follow.
-        # row_to_dict emits both shapes; query_rows is the full-fidelity one
-        # (n/gl/hl preserved) — the plain-strings `queries` would reset them.
-        _rows0 = normalize_query_rows(existing.get("query_rows")
-                                      or existing.get("queries") or [])
-        _rows1 = apply_locale_defaults([dict(r) for r in _rows0], patch.get("source_language"))
-        if _rows1 != _rows0:
-            sets.append("queries = ?")
-            params.append(json.dumps(_rows1, ensure_ascii=False))
     if "top_n_serpapi" in patch:
         v = int(patch["top_n_serpapi"])
         if v <= 0:

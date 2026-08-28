@@ -3829,6 +3829,12 @@ def list_dishes_endpoint():
             imgs = dishes_lib.representative_images(conn)
             for d in dishes:
                 d["preview_image"] = imgs.get(d.get("name")) or None
+                # LIST projection: the sidebar cache needs neither the embedding
+                # text nor the identity-card BODY (222 dishes × multi-KB JSON on
+                # every page load). The form only displays PRESENCE; the
+                # single-dish GET keeps the full shape.
+                d["identity_card_present"] = d.pop("identity_card", None) is not None
+                d.pop("embedding_text", None)
             return dishes
     except Exception as e:
         print(f"[ERROR] list_dishes failed: {e}")
@@ -4748,6 +4754,7 @@ def list_dish_top_recipes(name: str):
     Falls back to the legacy `kind='top'` label query for any dish whose latest run
     predates the `selected` column. Cheap — a single JOIN, ~10-25 rows.
     """
+    from input.pipeline.config import POWER_BLEND_WEIGHT
     try:
         with _db() as conn:
             existing = dishes_lib.get_dish(conn, name)
@@ -4872,6 +4879,10 @@ def list_dish_top_recipes(name: str):
                 "count": len(out),
                 "recipes": out,
                 "editors_choice": awards,
+                # The blend weight rank_score was computed with, so the UI can
+                # SAY what the score is ("70% OU pct + 30% power pct") instead
+                # of presenting an unexplained number.
+                "power_blend_weight": POWER_BLEND_WEIGHT,
             }
     except HTTPException:
         raise
@@ -7464,8 +7475,23 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         print(f"[REFRESH-DISH] CLAMPED to limits: serpapi {dish['top_n_serpapi']}->{top_serp}, "
               f"final {dish['top_n_final']}->{top_final}")
 
+    # Canonical query ROWS ({q, n, gl, hl}) — each line runs at its own select
+    # size and Google locale. None gl/hl = "follow the dish": resolved HERE,
+    # at run time, from source_language — so a French dish's default rows
+    # query the French Google, and retarget automatically if Sources-in
+    # changes. Per-row n gets the same hard-cap clamp as the dish default.
+    query_rows = dishes_lib.resolve_query_locales(
+        [dict(r) for r in (dish.get("query_rows") or [])],
+        dish.get("source_language"))
+    for r in query_rows:
+        if r.get("n") and r["n"] > _max_serp:
+            print(f"[REFRESH-DISH] CLAMPED row n {r['n']}->{_max_serp} for {r['q']!r}")
+            r["n"] = _max_serp
+
     print(f"=== Dish refresh: {canonical_name!r} ===")
-    print(f"queries: {dish['queries']}")
+    print("queries:")
+    for r in query_rows:
+        print(f"  {r['q']!r}  n={r['n'] or f'{top_serp} (default)'}  gl={r['gl']} hl={r['hl']}")
     print(f"top_n_serpapi: {top_serp} per query, top_n_final: {top_final}")
     print(f"[REFRESH-DISH] {canonical_name!r} starting")
 
@@ -7497,7 +7523,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     try:
         batch_result = await asyncio.to_thread(
             build_batch,
-            queries=dish["queries"],
+            queries=query_rows,
             dish=canonical_name,
             top_n_serpapi=top_serp,
             top_n_final=top_final,

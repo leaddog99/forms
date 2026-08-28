@@ -107,7 +107,8 @@ _SERPAPI_PAGE_SIZE = 10        # Google's organic results per page (protocol con
 _SERPAPI_MAX_PAGES = _CFG_SERPAPI_MAX_PAGES  # safety cap from bcc_config.json
 
 
-def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
+def _serpapi_lookup(query: str, target_n: int,
+                    gl: str = "us", hl: str = "en") -> list[dict]:
     """SerpAPI Google engine, paginated until we hit target_n or run out
     of organic results. Returns [{url, title, google_rank, domain}].
 
@@ -130,9 +131,11 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
         tight query just runs out of pages early — the caller surfaces
         the shortfall; there is NO silent fallback to a looser query
         (that would re-admit exactly the junk a tight query excludes).
-      - **Locale + dedup params**: `gl=us hl=en` pins to a stable SERP
-        and `filter=0` disables Google's automatic similar-page
-        collapsing for more candidate variety.
+      - **Locale + dedup params**: `gl`/`hl` pin WHICH Google index
+        answers and in what language (per query row — see
+        dishes.normalize_query_rows; defaults us/en), and `filter=0`
+        disables Google's automatic similar-page collapsing for more
+        candidate variety.
     """
     from input.pipeline.serp_search import has_key, active_provider as _ap
     if not has_key():
@@ -178,7 +181,7 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     # Query CONSTRUCTION (verbatim + curly-quote norm + exclusions, above) stays
     # here; only the HTTP fetch + pagination delegate. gl/hl/filter=0 preserved.
     from input.pipeline.serp_search import serp_search, active_provider
-    results = serp_search(full_query, pages=_SERPAPI_MAX_PAGES, want=target_n, gl="us", hl="en")
+    results = serp_search(full_query, pages=_SERPAPI_MAX_PAGES, want=target_n, gl=gl, hl=hl)
     out: list[dict] = []
     for r in results:
         url = r.get("link")
@@ -194,12 +197,18 @@ def _serpapi_lookup(query: str, target_n: int) -> list[dict]:
     return out[:target_n]
 
 
-def _multi_query_lookup(queries: list[str], top_n_per_query: int) -> list[dict]:
-    """Run each query through _serpapi_lookup, union the results, dedup
+def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[dict]:
+    """Run each query ROW through _serpapi_lookup, union the results, dedup
     by normalized URL. Each surviving entry carries `_queries` (the list
     of query strings that surfaced it — usually 1, but a URL appearing in
     multiple queries' results is a stronger dish signal) and
     `google_rank` (the BEST position across queries that surfaced it).
+
+    A row is `{"q", "n", "gl", "hl"}` (dishes.normalize_query_rows):
+    `n` is that row's own select size (None → `top_n_per_query`, the
+    dish default), and gl/hl choose the Google index + language — so one
+    dish can mix, say, a 120-result Greek-locale query with a 40-result
+    US one. Dedup keys stay on the query TEXT for `_queries`.
 
     Designed for the multi-query dish case (e.g. "spaghetti with meat
     sauce" + "spaghetti and meat sauce" → one dish, broader funnel).
@@ -211,9 +220,15 @@ def _multi_query_lookup(queries: list[str], top_n_per_query: int) -> list[dict]:
     # tracking params) that point at the same canonical resource
     # dedupe correctly.
     by_norm: dict[str, dict] = {}
-    for q_index, query in enumerate(queries):
-        print(f"  [QUERY {q_index+1}/{len(queries)}] {query!r}")
-        per_query_results = _serpapi_lookup(query, top_n_per_query)
+    for q_index, row in enumerate(query_rows):
+        query = row["q"]
+        want = row.get("n") or top_n_per_query
+        gl = row.get("gl") or "us"
+        hl = row.get("hl") or "en"
+        locale_note = "" if (gl, hl) == ("us", "en") else f" [gl={gl} hl={hl}]"
+        size_note = "" if not row.get("n") else f" [n={want}]"
+        print(f"  [QUERY {q_index+1}/{len(query_rows)}] {query!r}{size_note}{locale_note}")
+        per_query_results = _serpapi_lookup(query, want, gl=gl, hl=hl)
         added, merged = 0, 0
         for entry in per_query_results:
             key = normalize_url(entry["url"]) or entry["url"]
@@ -246,7 +261,7 @@ def _multi_query_lookup(queries: list[str], top_n_per_query: int) -> list[dict]:
         print(f"     -> {added} new, {merged} merged with prior queries")
 
     out = list(by_norm.values())
-    print(f"  [DEDUP] {len(out)} unique URLs across {len(queries)} queries")
+    print(f"  [DEDUP] {len(out)} unique URLs across {len(query_rows)} queries")
     return out
 
 
@@ -1399,7 +1414,8 @@ def dish_source_language(dish: Optional[str]) -> str:
         return ""
 
 
-def _batch_is_foreign_locale(queries: list[str], dish: Optional[str]) -> tuple[bool, str]:
+def _batch_is_foreign_locale(queries: list[str], dish: Optional[str],
+                             query_rows: Optional[list[dict]] = None) -> tuple[bool, str]:
     """(is_foreign, why) for this batch, stated fact first, guess second.
 
     Order matters. A dish that DECLARES `source_language` has been given an
@@ -1408,13 +1424,19 @@ def _batch_is_foreign_locale(queries: list[str], dish: Optional[str]) -> tuple[b
     if some query happens to carry a `site:.gr` operator, because the operator
     might be scoping one sub-query of an English dish.
     """
+    base = (normalize_lang(instance_base_language()) or "en")[:2]
     lang = dish_source_language(dish)
     if lang:
         # Compare against THIS instance's base language, not a hardcoded 'en' —
         # a Greek-hosted instance harvesting Greek dishes is domestic, and its
         # English dishes are the foreign ones ([[project_portable_package]]).
-        base = (normalize_lang(instance_base_language()) or "en")[:2]
         return (lang != base, f"dish locale={lang}")
+    # A per-row locale is also curator-STATED, not guessed: any query row
+    # carrying an explicit non-base hl makes this a foreign batch (its
+    # low-authority native publishers hit the same mis-calibrated OU floor).
+    row_langs = {r.get("hl") for r in (query_rows or []) if r.get("hl")}
+    if row_langs - {base}:
+        return (True, f"query-row locale={'/'.join(sorted(row_langs - {base}))}")
     return (_query_targets_foreign_country(queries), "inferred from query")
 
 
@@ -1537,7 +1559,7 @@ def _apply_paywall_remap(entries: list[dict]) -> int:
 
 
 def build_batch(
-    queries: list[str] | str,
+    queries: list | str,
     *,
     dish: Optional[str] = None,
     top_n_serpapi: int = DEFAULT_TOP_SERPAPI,
@@ -1545,22 +1567,26 @@ def build_batch(
     extra_urls: Optional[list[str]] = None,
     should_cancel=None,
 ) -> dict:
-    """Run the full front-end pipeline. Accepts a single query string OR
-    a list of queries (the multi-query dish case — e.g. "spaghetti with
-    meat sauce" AND "spaghetti and meat sauce" both feed one Spaghetti
-    and Meat Sauce dish). Each query is run separately against SerpAPI;
-    results are union-deduped before the rest of the pipeline runs.
+    """Run the full front-end pipeline. Accepts a single query string, a
+    list of strings, OR a list of canonical query ROWS
+    (`{"q","n","gl","hl"}` — dishes.normalize_query_rows; anything else
+    is coerced to a row with the defaults). Each query runs separately
+    against the SERP provider — at its OWN select size (`n`, falling
+    back to `top_n_serpapi`) and its OWN Google locale (`gl`/`hl`) —
+    then results are union-deduped before the rest of the pipeline runs.
 
     `dish` is the canonical name for the dish-library row. Required for
     multi-query (since neither phrasing alone is the right name);
     optional for single-query (defaults to the query string itself).
     Carried through to per-entry stamps for downstream consumption.
     """
-    # Normalize single-string input to a list so the rest of the code
-    # has one shape to reason about.
-    if isinstance(queries, str):
-        queries = [queries]
-    queries = [q.strip() for q in queries if q and q.strip()]
+    # Normalize to canonical query rows (one shape for the SERP stage);
+    # `queries` stays the plain-string projection for every downstream
+    # consumer that only cares about the TEXT (foreign-locale inference,
+    # batch stamps, the default dish name).
+    from input.pipeline.dishes import normalize_query_rows
+    query_rows = normalize_query_rows(queries)
+    queries = [r["q"] for r in query_rows]
     if not queries:
         raise ValueError("at least one non-empty query is required")
     if len(queries) > 1 and not dish:
@@ -1574,7 +1600,7 @@ def build_batch(
     t0 = time.perf_counter()
     print(f"\n[1/7] SerpAPI lookup (verbatim queries): dish={dish!r} "
           f"queries={queries} target_n_per_query={top_n_serpapi}")
-    entries = _multi_query_lookup(queries, top_n_serpapi)
+    entries = _multi_query_lookup(query_rows, top_n_serpapi)
     serpapi_union = len(entries)
     print(f"      -> {serpapi_union} unique URLs across {len(queries)} "
           f"verbatim queries (paginated)")
@@ -1726,7 +1752,7 @@ def build_batch(
     # fallback for dishes that have not been given a locale yet (and for the
     # ad-hoc/no-dish path, which has no row to read), so nothing that worked
     # before stops working.
-    foreign_locale, locale_src = _batch_is_foreign_locale(queries, dish)
+    foreign_locale, locale_src = _batch_is_foreign_locale(queries, dish, query_rows)
     relax_note = (f"  — RELAXED (foreign-locale batch, {locale_src})"
                   if foreign_locale else "")
     print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE}){relax_note}")
