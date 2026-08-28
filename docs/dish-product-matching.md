@@ -95,9 +95,17 @@ gear** (curator, 2026-08-28: "it should be the product associated with
 CHOCOLATE"). Every cream pie shares the pie dish and whisk; the person
 making a CHOCOLATE cream pie is in the market for the chocolate. So:
 
-- Product classes span BOTH halves of the catalog — equipment AND
-  gourmet-goods/ingredient classes (Baking Chocolate, Dutch Cocoa) — as the
-  commerce design always intended.
+- Product classes span THREE families (curator, 2026-08-28: "gourmet,
+  travel — not just equip"), each seeded from a different recipe signal
+  the corpus already carries:
+    equipment          ← the equipment list (weak signal; mostly inherited)
+    gourmet/ingredient ← recipeIngredient (strong signal; the differentiator)
+    travel/experience  ← provenance (originRegion/ethnicity/identity card —
+                         Coq au Vin → Burgundy food tours, French cooking
+                         classes; enriched onto every master row already)
+  Travel renders as the block's CLOSER (inspiration, not need) or as its own
+  dish-page placement, and is high-commission — precisely where relevance
+  gating must hold, or the tour payout buys its way above the chocolate.
 - A specific dish's set = the broad dish's gear (inherited, rubber-stamp) +
   its own ingredient classes (the reason it exists as a distinct set).
 - Render order follows purchase intent: the DIFFERENTIATING classes lead
