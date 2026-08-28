@@ -990,6 +990,32 @@ def init_db():
                     print(f"[MIGRATE] added master_recipes.{_gc} generated column")
                 except sqlite3.OperationalError:
                     pass  # already present
+            # EVERY recipe resolves a dish (docs/dish-product-matching.md,
+            # step 1, 2026-08-28): curated membership, else the confident
+            # match, else the NEAREST dish with no gate (already stored as
+            # _match.candidates[0] by every sweep). dish_effective_source
+            # says which rung answered ('curated'|'matched'|'nearest') so
+            # gear surfaces can badge a loose inherit. Generated → the
+            # nightly dish_rematch sweep updates these for free.
+            for _gc, _expr in (
+                ("dish_effective",
+                 "COALESCE(json_extract(data,'$._master.dish'),"
+                 "json_extract(data,'$._match.dish'),"
+                 "json_extract(data,'$._match.candidates[0].dish'))"),
+                ("dish_effective_source",
+                 "CASE WHEN json_extract(data,'$._master.dish') IS NOT NULL THEN 'curated' "
+                 "WHEN json_extract(data,'$._match.dish') IS NOT NULL THEN 'matched' "
+                 "WHEN json_extract(data,'$._match.candidates[0].dish') IS NOT NULL THEN 'nearest' "
+                 "END"),
+            ):
+                try:
+                    conn.execute(f"ALTER TABLE master_recipes ADD COLUMN {_gc} TEXT "
+                                 f"GENERATED ALWAYS AS ({_expr}) VIRTUAL")
+                    print(f"[MIGRATE] added master_recipes.{_gc} generated column")
+                except sqlite3.OperationalError:
+                    pass  # already present
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_effective "
+                         "ON master_recipes(dish_effective)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_key ON master_recipes(dish_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_publisher_key ON master_recipes(publisher_key)")
             # PLAIN url_normalized indexes (2026-08-28). The tables' only
