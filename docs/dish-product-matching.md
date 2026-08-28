@@ -77,6 +77,39 @@ dish-editor block. ~224 dishes ≈ one review session. Open design choices
 becomes an editorial "what you need for X" surface, add-only vs suppress
 customization in v1.
 
+## Step 3.5 (design) — the render chain, and what a specific dish's set holds
+
+When a recipe renders, the product block resolves:
+
+1. ANCHOR: the recipe's most specific dish — the membership dish whose
+   embedding is closest to the recipe's (no taxonomy needed; a chocolate
+   cream pie is always nearer Chocolate Cream Pie than Cream Pie).
+2. That dish has an approved class set → render it, each class showing its
+   curated picks through /go/ (click-time codes).
+3. No approved set yet → the NEAREST dish that has one (Cream Pie), then
+   chapter→category as the floor. Never an empty block.
+4. Recipe-level stated equipment ADDS classes (step 4, later).
+
+**What differentiates a specific dish is its INGREDIENT classes, not its
+gear** (curator, 2026-08-28: "it should be the product associated with
+CHOCOLATE"). Every cream pie shares the pie dish and whisk; the person
+making a CHOCOLATE cream pie is in the market for the chocolate. So:
+
+- Product classes span BOTH halves of the catalog — equipment AND
+  gourmet-goods/ingredient classes (Baking Chocolate, Dutch Cocoa) — as the
+  commerce design always intended.
+- A specific dish's set = the broad dish's gear (inherited, rubber-stamp) +
+  its own ingredient classes (the reason it exists as a distinct set).
+- Render order follows purchase intent: the DIFFERENTIATING classes lead
+  the block; inherited gear follows.
+- Seeding mines BOTH cohort lists. Ingredients are the STRONG signal —
+  recipeIngredient is complete on every recipe (vs equipment's 5%-sized
+  mess), so "bittersweet chocolate / cocoa" falls out of the Chocolate
+  Cream Pie cohort by plain frequency.
+- Authoring: a specific dish's proposal is seeded from its nearest broad
+  dish's approved set + its own cohort mining — most of the ~224 reviews
+  become inherit-tweak-approve, not built-from-scratch.
+
 ## Step 4 (design) — per-recipe customization
 
 Recipe's own equipment text embedding-matched to classes: ADD what the recipe
