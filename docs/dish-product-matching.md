@@ -107,6 +107,9 @@ stamped as *implied*, never invented.
 - **Dish catalog growth** — ~45-60 new dishes/month move the KNN answers;
   the existing write-only-on-change sweep already handles re-scoring, and
   `dish_effective` follows automatically (generated).
-- **User recipes** — out of scope for step 1 (rematch sweeps master only);
-  personal recipes inherit via the same ladder when the sweep grows a
-  recipes-table pass. Noted, not built.
+- **User recipes** — SAME ladder, same columns, same sweep (curator call,
+  built same day): `rematch_unclaimed(table=...)` covers both tables and the
+  nightly job runs both; user rows differ only in having no vec-index row to
+  keep in step (they are matched AGAINST dishes_vec, never KNN targets).
+  At build: 451/452 user rows resolve (217 matched · 234 nearest); the one
+  holdout has no embedding.

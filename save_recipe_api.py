@@ -1016,6 +1016,29 @@ def init_db():
                     pass  # already present
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_effective "
                          "ON master_recipes(dish_effective)")
+            # SAME ladder on the personal table (curator call 2026-08-28: "not
+            # just for the master — required for the user as well"). The
+            # _master.dish arm never fires there (user rows carry none), kept
+            # identical so both tables read through one code path.
+            for _tbl, _idx in (("recipes", "idx_recipes_dish_effective"),):
+                for _gc, _expr in (
+                    ("dish_effective",
+                     "COALESCE(json_extract(data,'$._master.dish'),"
+                     "json_extract(data,'$._match.dish'),"
+                     "json_extract(data,'$._match.candidates[0].dish'))"),
+                    ("dish_effective_source",
+                     "CASE WHEN json_extract(data,'$._master.dish') IS NOT NULL THEN 'curated' "
+                     "WHEN json_extract(data,'$._match.dish') IS NOT NULL THEN 'matched' "
+                     "WHEN json_extract(data,'$._match.candidates[0].dish') IS NOT NULL THEN 'nearest' "
+                     "END"),
+                ):
+                    try:
+                        conn.execute(f"ALTER TABLE {_tbl} ADD COLUMN {_gc} TEXT "
+                                     f"GENERATED ALWAYS AS ({_expr}) VIRTUAL")
+                        print(f"[MIGRATE] added {_tbl}.{_gc} generated column")
+                    except sqlite3.OperationalError:
+                        pass  # already present
+                conn.execute(f"CREATE INDEX IF NOT EXISTS {_idx} ON {_tbl}(dish_effective)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_key ON master_recipes(dish_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_publisher_key ON master_recipes(publisher_key)")
             # PLAIN url_normalized indexes (2026-08-28). The tables' only
@@ -7886,16 +7909,24 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
     """
     def _run():
         from input.pipeline import dish_match
+        out = {}
+        # Both tables: personal collections resolve a dish through the same
+        # ladder (docs/dish-product-matching.md) — the sweep heals them
+        # against catalog moves the same way it heals master.
         with _db() as conn:
-            return dish_match.rematch_unclaimed(conn, db_path=DB_PATH)
-    summary = await asyncio.to_thread(_run)
-    moves = summary.pop("moves", [])
-    print(f"[REMATCH] {summary}")
-    for rid, old, new_dish in moves[:50]:
-        print(f"[REMATCH]   {rid}: {old!r} -> {new_dish!r}")
-    if len(moves) > 50:
-        print(f"[REMATCH]   ... {len(moves) - 50} more")
-    return summary
+            for table in ("master_recipes", "recipes"):
+                out[table] = dish_match.rematch_unclaimed(
+                    conn, db_path=DB_PATH, table=table)
+        return out
+    summaries = await asyncio.to_thread(_run)
+    for table, summary in summaries.items():
+        moves = summary.pop("moves", [])
+        print(f"[REMATCH] {table}: {summary}")
+        for rid, old, new_dish in moves[:50]:
+            print(f"[REMATCH]   {table} {rid}: {old!r} -> {new_dish!r}")
+        if len(moves) > 50:
+            print(f"[REMATCH]   ... {len(moves) - 50} more")
+    return summaries
 
 
 jobs_lib.register_handler("dish_rematch", _handle_dish_rematch_job)

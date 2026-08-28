@@ -147,10 +147,17 @@ def same_verdict(old: Optional[dict], new: Optional[dict]) -> bool:
 
 
 def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None,
+                      table: str = "master_recipes",
                       limit: int = 0, dry_run: bool = False,
                       only_unmatched: bool = False,
                       log=print) -> dict:
-    """Re-score every master row that carries no curated `_master.dish`.
+    """Re-score every row (of `table`) that carries no curated `_master.dish`.
+
+    `table` — master_recipes (default) or recipes: the PERSONAL collections
+    resolve a dish through the same ladder (docs/dish-product-matching.md), so
+    the sweep covers both; user rows differ only in having no vec-index row to
+    keep in step (recipes_master_vec is master-only by design — user rows are
+    matched AGAINST dishes_vec, never KNN targets themselves).
 
     `only_unmatched=True` restricts to rows that have never been matched (the
     first-pass backfill). The default re-scores rows that already have a match,
@@ -158,10 +165,11 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
 
     Returns a summary dict; writes only rows whose verdict changed.
     """
+    assert table in ("master_recipes", "recipes")
     max_dist = max_distance(db_path)
     vector_store.enable_vec(conn)
 
-    sql = ("SELECT id, data, embedding FROM master_recipes "
+    sql = (f"SELECT id, data, embedding FROM {table} "
            " WHERE embedding IS NOT NULL "
            "   AND json_extract(data, '$._master.dish') IS NULL")
     if only_unmatched:
@@ -197,14 +205,16 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
                 continue
 
             d["_match"] = new
-            conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
+            conn.execute(f"UPDATE {table} SET data = ? WHERE id = ?",
                          (json.dumps(d), rid))
             # Unconditional, dish=None when not confident: a row DEMOTED from a
             # confident match would otherwise keep the stale dish in the index
             # while `data` said otherwise, and the KNN filter reads the index.
-            ch = ((d.get("classification") or {}).get("chapter") or None)
-            vector_store.upsert_recipe_vector(
-                conn, rid, bytes_to_vec(blob), chapter=ch, dish=new["dish"])
+            # Master only — user rows have no vec-index row (see docstring).
+            if table == "master_recipes":
+                ch = ((d.get("classification") or {}).get("chapter") or None)
+                vector_store.upsert_recipe_vector(
+                    conn, rid, bytes_to_vec(blob), chapter=ch, dish=new["dish"])
             if changed % 200 == 0:
                 conn.commit()
         except Exception as e:
