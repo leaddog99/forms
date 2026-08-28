@@ -2200,7 +2200,7 @@
                  2026-05-29: form.reset() left the prior URL in the
                  field, and the next save's URL-dedup adopted the
                  prior recipe_id and clobbered the row). Explicit
-                 clears in clearBtn + always-write in
+                 clears in startNewRecord() + always-write in
                  populateFormFromRecipe + loadForm are now the
                  single source of truth for this field's value.
                  Open/copy/clear icons attach at init (attachUrlControls). -->
@@ -2814,7 +2814,9 @@
            'sidebar:user_id'). Click does a fast in-DB row copy via
            POST /recipes/<id>/claim and redirects to the claimed copy. -->
       <button type="button" id="claimBtn" class="primary" style="display:none">Claim</button>
-      <button type="button" id="clearBtn" class="secondary">Clear</button>
+      <!-- "Clear" removed 2026-08-28 — its behavior was "start a NEW record"
+           (it never cleared the saved row), so it lives on the sidebar ＋ with
+           the honest name. See startNewRecord(). -->
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
     </div>
@@ -3092,7 +3094,6 @@
 
       const saveBtn = document.getElementById('saveBtn');
       const enrichBtn = document.getElementById('enrichBtn');
-      const clearBtn = document.getElementById('clearBtn');
       const deleteBtn = document.getElementById('deleteBtn');
       // Honor in-flight Save (data-busy) the same way Enrich does —
       // don't re-enable a button mid-request.
@@ -3104,7 +3105,6 @@
         saveBtn.disabled = !hasContent;
         paintRecipeSaveState();
       }
-      if (clearBtn) clearBtn.disabled = !hasContent;
       if (deleteBtn) deleteBtn.disabled = !isSavedToDb;
       // Enrich: need at least a name (enrich_recipe needs SOMETHING to
       // reason from). Disabled in-flight via a separate `data-busy` flag
@@ -3846,7 +3846,7 @@
       }
     });
     // Form-wide input listener — covers typing in any field. Programmatic
-    // .value assignments (populateFormFromRecipe / loadForm / clearBtn)
+    // .value assignments (populateFormFromRecipe / loadForm / startNewRecord)
     // don't fire 'input' so those code paths call updateButtonStates
     // explicitly at the end.
     document.addEventListener('DOMContentLoaded', function () {
@@ -6106,12 +6106,10 @@
       const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
       const res = await fetch(`${API}/recipes/${encodeURIComponent(id)}?user_id=${encodeURIComponent(uid)}`, { method: "DELETE" });
       if (res.ok) {
-        // Full clear via the canonical Clear path so the screen actually
-        // empties — form.reset() alone leaves the dynamic lists, hero image,
-        // scoring strip, badges, and /r/<id> URL bar from the deleted row on
-        // screen. clearBtn does the complete teardown (and wipes feedback),
-        // so show the success message AFTER it runs.
-        document.getElementById("clearBtn").click();
+        // Full teardown via the canonical new-record routine so the screen
+        // actually empties — it wipes feedback too, so show the success
+        // message AFTER it runs.
+        startNewRecord();
         loadRecipes();
         showFeedback("Recipe deleted.", "success");
       } else {
@@ -6425,7 +6423,15 @@
       }
     };
 
-    document.getElementById("clearBtn").onclick = () => {
+    // START A NEW RECORD. This was the footer "Clear" button until
+    // 2026-08-28, when the curator pointed out the label lied: it never
+    // cleared data FROM the existing record — it dropped the record identity
+    // and initialized a fresh form, which is "New". It now lives on the
+    // sidebar ＋ (like every other editor's add button) and is also the
+    // post-delete teardown, because it is the one routine that empties
+    // EVERYTHING — form.reset() alone leaves the dynamic lists, hero image,
+    // scoring strip, badges, and the /r/<id> URL bar behind.
+    function startNewRecord() {
       document.getElementById("recipeForm").reset();
       document.getElementById("recipe_id").value = "";
       document.getElementById("recipe_seq_id").value = "";
@@ -6491,7 +6497,7 @@
       // An empty form has nothing at risk — rebaseline so the tab can be closed
       // without a browser prompt about work that was just deliberately discarded.
       markFormClean();
-    };
+    }
 
     loadRecipes();
     updateButtonStates();
@@ -7099,12 +7105,12 @@
     }
     sidebarToggle.onclick = () => { sidebar.classList.toggle('open'); syncBodyLock(); };
 
-    // Sidebar ＋ (New recipe) — reuses the footer Clear routine (ONE canonical
-    // clear path; forking it here would drift from the name-less-input clears
+    // Sidebar ＋ (New recipe) — the ONE canonical new-record path (see
+    // startNewRecord; forking it would drift from the name-less-input clears
     // that routine exists to do), then closes the sidebar and lands the user
     // at the TOP of the blank form — the stage/paste area — not mid-page.
     document.getElementById('sidebarNewBtn').onclick = () => {
-      document.getElementById('clearBtn').click();
+      startNewRecord();
       sidebar.classList.remove('open');
       syncBodyLock();
       window.scrollTo({ top: 0, behavior: 'smooth' });
