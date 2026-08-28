@@ -85,6 +85,32 @@ replaces. Requires step 2. The technique-implied attributes (non-stick for
 crêpes) belong to the cook-rework layer, which actually reasons about method —
 stamped as *implied*, never invented.
 
+## Multi-dish membership (settled 2026-08-28, verified live)
+
+A recipe CAN belong to several dishes — this was already built (2026-06-14,
+docs/collections.md): `dish_run_data_points` IS the membership junction, the
+top lists are ledger-derived (`selected=1` per dish, each at its own rank),
+and 79 URLs are selected winners under 2+ dishes today. Verified live: the
+first Chocolate Cream Pie refresh selected a recipe that REMAINS selected in
+Cream Pie's top list — top-20 of the parent AND top-20 of the child, exactly
+the intended shape. The alternative (refresh passes by any candidate whose
+nearest dish is another dish) was considered and REJECTED: it turns parent
+dishes into leftovers buckets, makes membership unstable under catalog growth
+(creating a sibling dish would rewrite existing lists' meaning), and couples
+paid harvest decisions to fuzzy distances.
+
+Two residuals:
+- `_master.dish` (single-valued) = "the last batch that claimed the row",
+  used for delete-and-replace cleanup only — display never trusts it. For a
+  multi-membership row, `dish_effective` rung 1 therefore reports whichever
+  batch stamped last. Fine in practice (the more specific dish usually runs
+  later and is also the nearest), but a gear surface that cares can resolve
+  the row's ledger memberships and prefer the most specific. Refinement, not
+  a bug.
+- Cohort GRADING may still want the most-specific cohort (pooling variants
+  mis-grades the minority — the Trapanese/Genovese problem). Membership and
+  grading-cohort are separate choices.
+
 ## Lifecycle / downstream impacts
 
 - **Recipe delete** — `_match` lives inside the row's JSON and dies with it;
