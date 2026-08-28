@@ -5972,7 +5972,44 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
    G1 ADAM retention policy, Greek Yogurt Pizza Dough unfiling, ingredient
    quantities.
 
-## START HERE — state of play as of 2026-08-25
+## START HERE — state of play as of 2026-08-27 (end of day)
+
+Read the 2026-08-27 session log (bottom of file), then the prior START HEREs
+below — the 2026-08-22 scoring-session framing and standing items remain valid.
+
+**Where things stand:**
+
+* **Postgres is PARKED by curator call** — docs/postgres-migration-inventory.md
+  is the decision record (recipes.db only, big-bang + BAILEY rehearsal, NOT
+  dual-write). Don't reopen until more system functionality lands. Step 0
+  (one connection factory, `e78ae66`) is in.
+* **Dish search lines are DONE end-to-end** ({q, n, gl, hl} rows; null =
+  follow the dish, resolved at refresh; structured row editor with examples;
+  harvest honors per-row count + Google locale). 224 dishes migrated.
+* **Dish form audited + fixed** (12 findings; sortable score headers with the
+  blend legend; `LibraryShell.hostOf` is now THE hostname derivation — 4 other
+  forms still carry local copies, migrate as touched).
+* **Unblocker spend leaks CLOSED and rerun-verified** (Quiche 26 paid → 3,
+  all genuine blocks). The free direct probe always runs first; domain flags
+  only choose HOW to escalate. Gressingham data reset. If unblocker use looks
+  high again, check `[fetch-summary]` lines FIRST — the log now tells the
+  whole story per run.
+
+**Menu for next session (curator picks):**
+
+* BAILEY cutover drill (still pending from 08-25).
+* known_for → recipe-space embedding link ([[project_domain_known_for]]).
+* Domains/dishes advanced search design ([[project_recipe_table_backed_lists]]).
+* The three-stage grading layer (2026-08-22 framing below — still the
+  standing big-ticket item; cook_validators' 13 soundness checks are the seed).
+* Cookbooks end-user surface ([[project_cookbooks]]) if the curator wants a
+  visible-product day instead.
+
+The system runs: **MARLEY (production, RMA pending) + BAILEY (verified warm
+standby) + ADAM (backup tiers) + Google Drive (offsite)**. Nightly 3 AM chain
+unchanged. Corpus ≈ 6,900 master rows.
+
+## Prior START HERE — state of play as of 2026-08-25
 
 Read the 2026-08-24/25 log above, then the 2026-08-22 START HERE below (its
 scoring-session framing and standing items remain valid). The system now runs:
