@@ -102,6 +102,18 @@ making a CHOCOLATE cream pie is in the market for the chocolate. So:
   its own ingredient classes (the reason it exists as a distinct set).
 - Render order follows purchase intent: the DIFFERENTIATING classes lead
   the block; inherited gear follows.
+- **Class ordering = relevance tier × expected money, curator override wins**
+  (curator, 2026-08-28: "a combination of relevance and MONEY"). Relevance
+  GATES (tier 1 differentiators → tier 2 essential gear → tier 3 optional;
+  within a tier, cohort frequency + class↔dish embedding similarity);
+  money SORTS within the gate — cold start: median pick price × category
+  commission rate (data the product rows already carry); learned: measured
+  EPC per class from the planned /go/ clickstream
+  (docs/affiliate-programs-and-clicks.md), per dish×class where volume
+  allows. Relevance gating is deliberate: pure EPC ordering converges on
+  "the $400 machine on every page" and burns the trust the commerce design
+  names as the moat. The junction row carries an explicit sort position for
+  the curator; hand-set beats computed.
 - Seeding mines BOTH cohort lists. Ingredients are the STRONG signal —
   recipeIngredient is complete on every recipe (vs equipment's 5%-sized
   mess), so "bittersweet chocolate / cocoa" falls out of the Chocolate
