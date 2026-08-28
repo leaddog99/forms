@@ -677,13 +677,16 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     # only when it is plainly the real page: not block-flagged AND carrying
     # structure (ld+json or <article>) — a big-but-empty nav shell has neither.
     if render and unblocker and unblocker_available():
+        probe_why = None
         try:
             resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
             low = (resp.text or "").lower()
             if not blocked_reason(resp) and ("ld+json" in low or "<article" in low):
                 return resp, {"source": "direct", "ua_used": ua_used}
-        except Exception:
-            pass
+            probe_why = blocked_reason(resp) or "no ld+json / <article> — looks like a JS shell"
+        except Exception as e:
+            probe_why = f"{type(e).__name__}: {str(e)[:120]}"
+        print(f"[unblocker] render-escalating (direct probe lost: {probe_why})")
         ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=True)
         if ub is not None:
             return ub
@@ -719,6 +722,11 @@ def _fetch_with_full_fallback_uncached(url: str, *,
 
     # PAID unblocker tier — only reached when the plain fetch was blocked or failed.
     if unblocker and unblocker_available():
+        # SAY WHY before spending, so the run log distinguishes a genuine block
+        # (403s, challenge pages — money well spent) from a detector false
+        # positive at a glance. Curator asked "real or waste?" twice in one day;
+        # the answer belongs in the log, not in a forensic session.
+        print(f"[unblocker] escalating (direct lost: {str(err)[:140]})")
         ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
         if ub is not None:
             return ub
