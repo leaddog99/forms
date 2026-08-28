@@ -163,7 +163,12 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-item-flag.ok{ background:var(--accent); }
 .ed-item-flag.warn{ background:var(--ed-warn); }
 .ed-item-flag.none{ border:1.5px solid var(--muted); }
-.ed-item-meta{ margin-top:4px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.73em; color:var(--muted); font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* pending = "nothing has happened for this record yet" (e.g. a domain with no
+   extracts from any harvest). Yellow: not an error, a to-do. */
+.ed-item-flag.pending{ background:#d9a514; }
+/* Multiline by request (curator, 2026-08-28): the meta line wraps to content
+   size instead of truncating — the data IS the point of the list. */
+.ed-item-meta{ margin-top:4px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.73em; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.5; overflow-wrap:anywhere; }
 .ed-empty{ color:var(--muted); font-style:italic; padding:8px 4px; font-size:.9em; }
 
 /* ---------- Content / detail ---------- */

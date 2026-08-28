@@ -986,9 +986,34 @@ def list_domains(conn: sqlite3.Connection) -> list[dict]:
     )
     for i, d in enumerate(ranked, 1):
         d["bcc_rank"] = i
+    # LIVE extract counts, batched: one GROUP BY per recipe table on the
+    # generated source_host column (indexed). The STORED count columns are
+    # refresh-on-access (stamped when a domain's recipes panel is opened) and
+    # measured 2026-08-28 to disagree with reality at the zero boundary for
+    # 69 of 392 domains — a domain never opened in the form showed 0 with
+    # real rows behind it. The list response reports the live truth; the
+    # stored columns stay for server paths that read the DB directly.
+    live_m = dict(conn.execute(
+        "SELECT source_host, COUNT(*) FROM master_recipes "
+        "WHERE source_host IS NOT NULL AND source_host != '' GROUP BY source_host"))
+    live_u = dict(conn.execute(
+        "SELECT source_host, COUNT(*) FROM recipes "
+        "WHERE source_host IS NOT NULL AND source_host != '' GROUP BY source_host"))
     for d in rows:
         d.setdefault("bcc_rank", None)
         _derive_schedule(d)
+        m = live_m.get(d["domain"], 0)
+        u = live_u.get(d["domain"], 0)
+        d["master_recipe_count"] = m
+        d["user_recipe_count"] = u
+        # No extract has EVER run for this domain: no kept rows from either
+        # flow (dish/Google harvests land in the tables above) and no
+        # completed SEMrush backlinks-file ingest (that flow stamps
+        # last_harvested_at even when it keeps zero rows — a run that kept
+        # nothing still ran).
+        d["never_extracted"] = (
+            m == 0 and u == 0
+            and not (d.get("last_harvested_at") or "").strip())
     return rows
 
 

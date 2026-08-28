@@ -11,7 +11,7 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260825f">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
 </head>
@@ -47,6 +47,7 @@
           <option value="da">Sort: domain authority</option>
           <option value="rank">Sort: BCC rank (SEMrush traffic)</option>
           <option value="harvest">Sort: SEMrush due first</option>
+          <option value="extracts">Sort: no extracts yet first</option>
           <option value="poor">Sort: poor publisher first</option>
           <option value="created">Sort: newest added</option>
           <option value="modified">Sort: recently modified</option>
@@ -123,6 +124,7 @@
       const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
       if (m || u) bits.push(`${m}m · ${u}u`);
       if (d.harvest_due) bits.push(d.harvest_status === 'new' ? '⏰ SEMrush: new' : '⏰ SEMrush: due');
+      if (d.never_extracted) bits.push('no extracts yet');
       if (isPoor(d)) bits.push('⚠ poor' + (d.poor_quality_rate != null ? ` ${Math.round(d.poor_quality_rate * 100)}%` : ''));
       return bits.join(' · ') || '—';
     }
@@ -149,6 +151,10 @@
           if (an !== bn) return an - bn;
           return (a.next_harvest_at || '').localeCompare(b.next_harvest_at || '') || a.domain.localeCompare(b.domain);
         },
+        // Domains no harvest has ever touched (no kept rows from any flow, no
+        // SEMrush ingest recorded — server-derived live, see list_domains)
+        // float first; everyone else A–Z. The same rows carry the yellow dot.
+        extracts: (a, b) => ((a.never_extracted ? 0 : 1) - (b.never_extracted ? 0 : 1)) || a.domain.localeCompare(b.domain),
         poor:    (a, b) => (isPoor(b) - isPoor(a)) || ((b.poor_quality_rate || 0) - (a.poor_quality_rate || 0)) || a.domain.localeCompare(b.domain),
         // Newest first. created_at/updated_at are ISO strings (SELECT * from the
         // domains table), so a reverse string compare = most-recent first; A–Z tiebreak.
@@ -226,7 +232,7 @@
         const li = document.createElement('li');
         li.className = 'ed-item' + (d.domain === selected ? ' selected' : '');
         li.innerHTML =
-          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or Google) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
           `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
         // GUARDED record switch. renderDetail() rebuilds the form from scratch, so
         // clicking another domain silently destroys unsaved work — and beforeunload
