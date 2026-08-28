@@ -441,6 +441,15 @@
             ${field('f_ethnicity', 'Ethnicity', d.ethnicity, { ph: 'Greek' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
             ${field('f_render_required', d.render_learned_at ? ('JS-rendered — render with full browser · auto-learned ' + escapeHtml(fmtDate(d.render_learned_at))) : 'JS-rendered — render with full browser (unblocker render=True)', Number(d.render_required) === 1, { checkbox: true })}
+            <div class="ed-field full" style="font-size:.8em;color:var(--muted);line-height:1.5;margin-top:-4px">
+              When in doubt, leave <b>plain</b> + unchecked: the free direct fetch is
+              <b>always probed first</b> whatever is set here, and the paid unblocker
+              covers failures automatically. <b>unblocker</b> / <b>JS-rendered</b> only
+              choose <i>how to escalate</i> when the free probe fails (challenge page, or
+              a shell with no recipe structure) — on a site that fetches clean they cost
+              nothing. Set them when a run has <i>measurably</i> failed direct, so the
+              escalation is right first time.
+            </div>
             ${isPoor(d) ? `<label class="ed-field"><span class="ed-label">Cascade quality</span><div style="font-size:.82em;color:var(--accent-dark);line-height:1.4">⚠ Poor publisher — ${Math.round((d.poor_quality_rate || 0) * 100)}% <code>poor_quality</code> across ${d.poor_quality_samples || 0} classified pages. The per-page is-recipe LLM cascade is skipped for this domain (it falls back to the heuristic).</div></label>` : ''}
             ${field('f_domain_authority', 'Domain authority (DA)', d.domain_authority, { type: 'number' })}
             ${field('f_extract_notes', 'Extraction notes', d.extract_notes, { textarea: true, full: true, minh: 70, ph: 'JSON-LD reliable · needs www for Moz · paywalled — use screenshot…' })}

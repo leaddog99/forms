@@ -595,13 +595,17 @@ def blocked_reason(resp: requests.Response, *, strict: bool = False) -> Optional
         by = f", served by {ambient[0]!r}" if ambient else ""
         return (f"blocked — thin body, no JSON-LD and no <article>{by} "
                 f"({len(body)} bytes < {limit}; too small to be the page)")
-    if not strict and any(m in low for m in _AMBIENT_BLOCK_MARKERS):
-        # SPEND path only: an ambient vendor marker on a full page is weak evidence,
-        # but escalating costs one credit and this preserves the long-standing
-        # behaviour. Never reached on the verdict path, where it would be a false
-        # accusation against a page we actually received.
+    if not strict and looks_unstructured and any(m in low for m in _AMBIENT_BLOCK_MARKERS):
+        # SPEND path only, and only when the body ALSO lacks structure. An ambient
+        # vendor marker on a structured page is Cloudflare's passive probe riding a
+        # page we fully received (the jamieoliver case above) — 2026-08-28 it was
+        # still escalating those: foodnouveau (611KB, full recipe JSON-LD) and
+        # blog.thermoworks (357KB, same) each burned a paid unblocker credit on
+        # 'challenge-platform' alone. A page with ld+json or <article> is the page;
+        # never pay to re-fetch it. Never reached on the verdict path, where it
+        # would be a false accusation against a page we actually received.
         hit = next(m for m in _AMBIENT_BLOCK_MARKERS if m in low)
-        return f"possible anti-bot vendor {hit!r} present ({len(body)} bytes)"
+        return f"possible anti-bot vendor {hit!r} present ({len(body)} bytes, unstructured)"
     return None
 
 
@@ -663,12 +667,23 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     render=True — none seen yet; revisit per-domain if so.)
     """
     err: Optional[Exception] = None
-    # RENDER-FIRST for known JS-rendered domains (render_required): the static HTML is
-    # only a nav shell — the article body is injected client-side — so the plain probe
-    # would return useless chrome (and _looks_blocked can't catch a big, structurally-
-    # normal-but-empty page). Go STRAIGHT to a real-browser render via the unblocker.
-    # Falls through to plain/Wayback backstops if the render attempt no-ops/fails.
+    # Render-ELIGIBLE domains (render_required / unblocker strategy): the direct
+    # fetch is still probed FIRST — it is free. 2026-08-28: the old render-FIRST
+    # skip ("the static fetch is known-doomed") trusted the flag blindly and paid
+    # 74 render credits on gressinghamduck.co.uk, whose static HTML carries the
+    # complete recipe JSON-LD — a mis-set flag turned into pure spend. A true
+    # JS-shell site fails the free probe in ~a second and pays exactly what it
+    # paid before; a wrongly-flagged site now costs zero. The probe is accepted
+    # only when it is plainly the real page: not block-flagged AND carrying
+    # structure (ld+json or <article>) — a big-but-empty nav shell has neither.
     if render and unblocker and unblocker_available():
+        try:
+            resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
+            low = (resp.text or "").lower()
+            if not blocked_reason(resp) and ("ld+json" in low or "<article" in low):
+                return resp, {"source": "direct", "ua_used": ua_used}
+        except Exception:
+            pass
         ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=True)
         if ub is not None:
             return ub
