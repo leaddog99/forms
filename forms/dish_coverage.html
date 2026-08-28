@@ -12,7 +12,9 @@
        it belongs — that is what the threshold is for). `_identity.likelyDish`
        is the opposite: free LLM text written at extraction with no knowledge of
        the catalog. The gap between the two is the coverage gap, and this page
-       is that gap. Read-only by design — it reports, it never creates.
+       is that gap. Read-only by design — it reports, it never creates. The
+       per-row ➕ only deep-links to the dish editor (?create=<name>) with a
+       prefilled New Dish form; creation happens there, on the Create button.
        Backed by GET /dish-coverage. -->
   <style>
     /* Shell-width contract: this page runs wide; the header follows. */
@@ -66,6 +68,10 @@
     .tag.split{ background:#f5e6e7; color:#8c2f39; }
     .tag.variant{ background:#f2ecdd; color:#7a5a12; }
     .tag.alias{ background:#e9e9ee; color:#4a4a63; }
+    .mk{ display:inline-block; margin-left:8px; font-size:.74rem; font-weight:600; padding:3px 9px;
+      border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink);
+      text-decoration:none; white-space:nowrap; vertical-align:middle; }
+    .mk:hover{ border-color:var(--accent); color:var(--accent-dark); }
     .empty{ padding:34px; color:var(--muted); text-align:center; }
     .notes{ margin-top:18px; font-size:.82rem; color:var(--muted); line-height:1.55; max-width:78ch;
       display:flex; flex-direction:column; gap:7px; }
@@ -139,7 +145,10 @@
         case &mdash; you want one winner per identity, since pooling the cohorts mis-grades the
         minority. <b>Alias</b> &mdash; the same dish under another spelling
         (<em>Coquilles Saint-Jacques</em> / <em>Coquilles Saint Jacques</em>): a synonym, not a
-        dish. This page reports; it never creates.</span>
+        dish. This page reports; it never creates &mdash; the per-row <b>➕ dish</b> opens the dish
+        editor with a prefilled New Dish form (this name, two search lines &mdash; the name and
+        &ldquo;<i>name</i> Recipe&rdquo; &mdash; 40 results per line, 15 kept winners, 180-day
+        refresh), which you can adjust before pressing Create.</span>
       <span>Seasonal dishes read low: a traffic snapshot taken out of season undercounts them.</span>
     </div>
   </div>
@@ -197,7 +206,9 @@
           <td class="r">${r.recipes}</td>
           <td class="r traffic ${r.traffic ? '' : 'zero'}">${fmt(r.traffic)}</td>
           <td class="chap">${esc(r.chapter || '—')}</td>
-          <td><span class="tag ${r.relation || 'new'}">${r.relation || 'new dish'}</span></td>
+          <td><span class="tag ${r.relation || 'new'}">${r.relation || 'new dish'}</span>
+            <a class="mk" href="/forms/dishes_v2.html?create=${encodeURIComponent(r.dish)}" target="_blank" rel="noopener"
+               title="Open the dish editor prefilled: this name, two search lines (name + &quot;name Recipe&quot;), 40 results/line, 15 kept, 180-day TTL — review, then Create">➕ dish</a></td>
         </tr>`).join('')
         : '<tr><td colspan="5" class="empty">No dishes match those filters.</td></tr>';
     }

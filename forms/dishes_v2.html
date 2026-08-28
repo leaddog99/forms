@@ -100,6 +100,7 @@
     let term = '';
     let sortKey = 'attention';
     let _limits = { serpapi: 200, final: 200 };   // dish caps from System → Limits
+    let _createPrefill = null;  // set from ?create=<name>, consumed by renderCreate
     // Harvest languages. Mirrors _LANG_NAMES in intake/translate.py — that list is
     // the source of truth (it decides what the translator can actually handle), so
     // add a language THERE first and reflect it here. '' = not stated.
@@ -1066,16 +1067,18 @@
     }
 
     function renderCreate(){
+      // One-shot prefill from a ?create=<name> deep link (dish-coverage rows).
+      const p = _createPrefill; _createPrefill = null;
       $('#page').innerHTML = `
         <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · New Dish</button></div>
         <h1 class="ed-title" style="margin:0 0 18px">Add a dish</h1>
         <section class="ed-block" style="border-top:none;padding-top:0">
-          <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off"></div>
+          <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off" value="${escapeHtml(p?.name || '')}"></div>
           <div class="ed-field full" style="margin-bottom:16px"><label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge)</span></label>${queryRowsBlockHtml('qrows_new')}</div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="25"></div>
-            <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="10"></div>
-            <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only"></div>
+            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? 25}"></div>
+            <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="${p?.final ?? 10}"></div>
+            <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only" value="${p?.ttl ?? ''}"></div>
           </div>
         </section>
         <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
@@ -1083,7 +1086,7 @@
           <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
-      initQueryRows('qrows_new', []);
+      initQueryRows('qrows_new', p ? p.rows : []);
       $('#n_name').focus();
       $('#cancelBtn').addEventListener('click', () => { const first = sortedDishes()[0]; selected = first ? first.name : null; renderList(); renderMain(); });
       $('#createBtn').addEventListener('click', doCreate);
@@ -1177,6 +1180,22 @@
         const el = $(sel); if (el) el.max = _limits[key];
       }
     }).catch(() => {});
+
+    // ?create=<name> deep link (dish-coverage's ➕): land on the New Dish form
+    // prefilled — name, two search lines (the name, and "<name> Recipe"),
+    // 40 candidates per line, 15 kept winners, 180-day TTL. Everything stays
+    // editable before Create; nothing is saved until the button is pressed.
+    {
+      const nm = (new URLSearchParams(location.search).get('create') || '').trim();
+      if (nm){
+        _createPrefill = {
+          name: nm,
+          rows: [{ q: nm }, { q: nm + ' Recipe' }],
+          serp: 40, final: 15, ttl: 180,
+        };
+        selected = '__new__';
+      }
+    }
 
     loadDishes();
   </script>
