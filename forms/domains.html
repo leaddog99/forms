@@ -11,7 +11,7 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828a">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828b">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
 </head>
@@ -864,6 +864,7 @@
     async function loadDomainTop(domain){
       const el = $('#domainTopList'); if (!el) return;
       const gen = topGen;   // snapshot; if the list is invalidated mid-fetch, don't paint
+      el.innerHTML = '<li class="ed-empty-fit ed-loading">Loading top recipes…</li>';
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/top`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -884,6 +885,7 @@
     async function loadDomainCandidates(domain){
       const el = $('#domainCandList'); if (!el) return;
       const gen = topGen;
+      el.innerHTML = '<li class="ed-empty-fit ed-loading">Loading considered candidates…</li>';
       try {
         const r = await fetch(`/candidates?collection_type=publisher&collection_key=${encodeURIComponent(domain)}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -917,6 +919,7 @@
     async function loadDomainCohort(domain){
       const el = $('#domainCohortList'); if (!el) return;
       const gen = topGen;
+      el.innerHTML = '<li class="ed-empty-fit ed-loading">Loading scored cohort…</li>';
       try {
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/top?all=1`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);

@@ -170,6 +170,12 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
    size instead of truncating — the data IS the point of the list. */
 .ed-item-meta{ margin-top:4px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.73em; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.5; overflow-wrap:anywhere; }
 .ed-empty{ color:var(--muted); font-style:italic; padding:8px 4px; font-size:.9em; }
+/* In-flight placeholder for async panels: a small spinner ahead of the text so
+   "this is coming" is visibly different from "this is empty". */
+.ed-loading::before{ content:''; display:inline-block; width:11px; height:11px; margin-right:7px;
+  border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%;
+  vertical-align:-1px; animation:ed-spin .8s linear infinite; }
+@keyframes ed-spin{ to{ transform:rotate(360deg); } }
 
 /* ---------- Content / detail ---------- */
 .ed-content{ min-width:0; }

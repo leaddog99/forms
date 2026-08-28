@@ -992,6 +992,17 @@ def init_db():
                     pass  # already present
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_dish_key ON master_recipes(dish_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_master_publisher_key ON master_recipes(publisher_key)")
+            # PLAIN url_normalized indexes (2026-08-28). The tables' only
+            # url_normalized indexes were the PARTIAL unique ones (WHERE
+            # url_normalized != ''), which SQLite may use ONLY when a query
+            # restates that predicate — and ~10 call sites don't, so every one
+            # of them was a full table scan. The publisher-ledger LEFT JOIN in
+            # get_collection_top measured 34.3s → 0.00s from this index alone
+            # (the visible symptom: the domains form's harvest panels popping
+            # in ~6-24s after the page). A plain index serves them all with no
+            # query edits.
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_master_recipes_url ON master_recipes(url_normalized)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_recipes_url ON recipes(url_normalized)")
             # Scoring fast paths (2026-07-30). The blend INPUTS were reachable only
             # by parsing `data` in Python, so a plain corpus question — "top 200 by
             # blended score, grouped by domain" — meant loading every row and
