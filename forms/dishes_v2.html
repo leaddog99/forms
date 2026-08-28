@@ -198,6 +198,28 @@
       });
     }
 
+    // "120 recs" almost bit twice (curator, 2026-08-28): "Default results per
+    // line" reads as a RUN total, but three lines at 120 fetch 360. Say the
+    // arithmetic where the number is typed. Sums per-line overrides where set.
+    function paintFetchTotal(boxId, serpId, hintId){
+      const hint = document.getElementById(hintId);
+      const box = document.getElementById(boxId);
+      if (!hint || !box) return;
+      const dflt = parseInt(document.getElementById(serpId)?.value, 10) || 0;
+      const ns = [...box.querySelectorAll('.qr-n')].map(i => parseInt(i.value, 10) || dflt);
+      const total = ns.reduce((a, b) => a + b, 0);
+      const hasOverride = [...box.querySelectorAll('.qr-n')].some(i => i.value.trim());
+      hint.textContent = ns.length
+        ? `${ns.length} line${ns.length === 1 ? '' : 's'}${hasOverride ? ' (with per-line overrides)' : ` × ${dflt}`} ≈ ${total} candidates fetched per run`
+        : '';
+    }
+    // One delegated repaint: fires on any typing in the serp default or the
+    // line rows (add/remove dispatch input too), for whichever form is open.
+    document.addEventListener('input', () => {
+      paintFetchTotal('qrows_edit', 'f_serp', 'fetchTotal_edit');
+      paintFetchTotal('qrows_new', 'n_serp', 'fetchTotal_new');
+    });
+
     function collectQueryRows(boxId){
       const out = [];
       for (const el of document.getElementById(boxId).querySelectorAll('.qrow')){
@@ -405,7 +427,7 @@
             ${queryRowsBlockHtml('qrows_edit')}
           </div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="f_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(search lines with “Results” blank use this — top_n_serpapi)</span></label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"></div>
+            <div class="ed-field"><label for="f_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(search lines with “Results” blank use this — top_n_serpapi)</span></label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"><div class="fetch-total" id="fetchTotal_edit" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
             <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" max="${_limits.final}" value="${d.top_n_final ?? ''}"></div>
             <div class="ed-field"><label for="f_ttl">Refresh TTL (days)</label><input id="f_ttl" type="number" min="1" value="${d.refresh_ttl_days == null ? '' : d.refresh_ttl_days}" placeholder="blank = manual only"></div>
             <div class="ed-field"><label for="f_srclang">Sources in <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(harvest language)</span></label>
@@ -535,6 +557,7 @@
       const qInfo = $('#qInfoBtn');
       if (qInfo) qInfo.addEventListener('click', () => { const p = $('#qInfoPop'); if (p) p.hidden = !p.hidden; });
       initQueryRows('qrows_edit', d.query_rows);
+      paintFetchTotal('qrows_edit', 'f_serp', 'fetchTotal_edit');
       $('#saveBtn').addEventListener('click', () => doSave(d));
       $('#refreshBtn').addEventListener('click', () => doRefresh(d));
       $('#deleteBtn').addEventListener('click', () => doDelete(d));
@@ -1077,7 +1100,7 @@
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off" value="${escapeHtml(p?.name || '')}"></div>
           <div class="ed-field full" style="margin-bottom:16px"><label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge)</span></label>${queryRowsBlockHtml('qrows_new')}</div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? 25}"></div>
+            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? 25}"><div class="fetch-total" id="fetchTotal_new" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
             <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="${p?.final ?? 10}"></div>
             <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only" value="${p?.ttl ?? ''}"></div>
           </div>
@@ -1088,6 +1111,7 @@
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
       initQueryRows('qrows_new', p?.rows || []);
+      paintFetchTotal('qrows_new', 'n_serp', 'fetchTotal_new');
       $('#n_name').focus();
       $('#cancelBtn').addEventListener('click', () => { const first = sortedDishes()[0]; selected = first ? first.name : null; renderList(); renderMain(); });
       $('#createBtn').addEventListener('click', doCreate);
