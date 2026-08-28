@@ -581,6 +581,17 @@ SINGLE_STEP_MIN_CHARS = 150
 # down further because the junk cases were short on BOTH axes anyway (7 and 132
 # characters with 1 ingredient, killed by the ingredient floor regardless).
 SINGLE_STEP_MIN_CJK_CHARS = 40
+# A short-method recipe with a RICH ingredient list is a no-cook/mix-only dish
+# (coleslaw, spice blend, dressing, salad), not a failed extraction — none of
+# the failure modes this gate guards (paywall stub, 404, sidebar-carousel
+# wrong-node) can produce 5+ real ingredients. Measured 2026-08-28 by replaying
+# the rule over every historical `skip-thin: fewer than 3 instructions` reject
+# still in llm_extract_cache: 10 flipped to accepted, all genuine (Cajun
+# seasoning x4, Greek salad/horiatiki, coleslaw, ginger dressing, overnight
+# oats — the class the 150-char prose floor was structurally biased against),
+# 0 junk admitted. The trigger case: spendwithpennies' 9-ingredient coleslaw,
+# the #1-ranked candidate of its run, rejected for 145 chars of method.
+RICH_INGREDIENT_MIN_INGS = 5
 
 
 def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
@@ -606,6 +617,14 @@ def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tup
         if str(text or "").strip():
             real_steps += 1
     if real_steps < min_steps:
+        # TWO REAL STEPS + A RICH INGREDIENT LIST = a legitimately short
+        # recipe (see RICH_INGREDIENT_MIN_INGS above). Checked before the
+        # prose floor so a terse "whisk; toss" method doesn't lose to a
+        # character count. Deliberately requires >=2 steps: a one-step row
+        # still has to earn its way through the prose floor below.
+        if real_steps >= 2 and real_ings >= RICH_INGREDIENT_MIN_INGS:
+            return True, (f"ok ({real_steps} steps but {real_ings} ingredients "
+                          "— no-cook/mix-only recipe)")
         # A SINGLE SUBSTANTIAL PARAGRAPH IS A METHOD, NOT A FAILED EXTRACTION.
         # Counting steps assumes the publisher numbered them. Plenty don't:
         # m.xiachufang.com/recipe/107744561 ships its whole method as ONE string
