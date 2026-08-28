@@ -5972,13 +5972,20 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
    G1 ADAM retention policy, Greek Yogurt Pizza Dough unfiling, ingredient
    quantities.
 
-## START HERE — state of play as of 2026-08-27 (end of day)
+## START HERE — state of play as of 2026-08-28
 
-Read the 2026-08-27 session log (bottom of file), then the prior START HEREs
+Read the 2026-08-28 session log (bottom of file), then the prior START HEREs
 below — the 2026-08-22 scoring-session framing and standing items remain valid.
 
 **Where things stand:**
 
+* **Coverage → creation is one click** — dish-coverage rows carry a ➕ that
+  opens the dish editor prefilled (name + "<name> Recipe" lines, 40/15/180d);
+  curator is actively working the coverage backlog with it.
+* **Save gate no longer rejects no-cook dishes** — ≥2 steps + ≥5 ingredients
+  passes regardless of prose length (`2593055`, measured first: 10 historical
+  flips, all genuine, 0 junk). Coleslaw rerun proved it: rank-1 recipe
+  recovered, bottom_ou 4.66→5.50.
 * **Postgres is PARKED by curator call** — docs/postgres-migration-inventory.md
   is the decision record (recipes.db only, big-bang + BAILEY rehearsal, NOT
   dual-write). Don't reopen until more system functionality lands. Step 0
@@ -6642,3 +6649,56 @@ Closed at every level, direct-first so credits only spend on failures:
 * BAILEY cutover; known_for embedding link; domains/dishes advanced search;
   postgres decision parked (inventory doc is the decision record); 4 forms
   still carrying local hostname copies → LibraryShell.hostOf as touched.
+
+## Session log — 2026-08-28 — coverage grows a create button, and the save gate learns that coleslaw has two steps
+
+Three commits: `54b9fbb` (coverage ➕ deep-link), `2593055` (save-gate fix), plus this log.
+Service restarted by curator 10:15; everything below is live and rerun-verified.
+
+* **Dish coverage → prefilled dish creation (54b9fbb).** Every coverage row gets a
+  **➕ dish** button → `dishes_v2.html?create=<name>`: the New Dish form lands prefilled
+  with the name, TWO search lines (`<name>` and `<name> Recipe`), default results/line
+  **40**, kept winners **15**, TTL **180d** — all editable before Create. Prefill is
+  one-shot (Cancel → + gives a blank form); coverage page stays read-only (the button
+  only deep-links; creation happens on the editor's Create). Verified in Chrome both
+  ends. Curator drove it immediately: Coleslaw, Bruschetta, Buffalo Chicken Dip, Hummus
+  runs same morning.
+* **"Demand" column question answered by code-read:** coverage traffic = SUM of
+  `dish_keywords.traffic` over rows whose keyword CONTAINS the name (substring), i.e.
+  SEMrush est. monthly organic traffic to tracked pages, ~117 exported publishers only.
+  Directional ordering, not search volume: substring over-catch, coverage bias,
+  seasonality all documented at `save_recipe_api.py` `_kw_demand`.
+* **The coleslaw "weird rejects" → a real save-gate class bias, measured then fixed.**
+  Run 1087's Rejects held spendwithpennies' coleslaw — the run's **rank=1 candidate**
+  (OU 12.39) — rejected `skip-thin: fewer than 3 instructions (2)`. Root cause: save gate
+  needs ≥3 steps; the <3 fallback needs ≥150 chars of method prose. The publisher's OWN
+  JSON-LD ships 2 steps / 9 ingredients / ~145 chars — **rejected by 5 characters**. Same
+  run saved a DIFFERENT 2-step coleslaw whose steps were merely wordier: keep-vs-reject
+  was verbosity. History (dish_rejects): 173/716 rejects are skip-thin; biggest bucket
+  "fewer than 3 instructions (2)" ×86; top dishes = Cajun Seasoning ×17, Greek Salad,
+  Green Salad, Hoisin, dressings — the gate was structurally biased against
+  no-cook/mix-only dishes.
+* **Measurement before the fix** (replayed the proposed rule against the EXACT cached
+  extractions in `llm_extract_cache`, no re-fetch): 126 distinct skip-thin instruction
+  rejects, 88 still cached, **10 flip** under `(≥2 real steps AND ≥5 real ingredients)`
+  — all 10 genuine (Cajun seasoning ×4, horiatiki, coleslaw, ginger dressing, overnight
+  oats), **0 junk admitted**. The guarded failure modes (paywall stub / 404 / wrong-node
+  carousel) cannot show 5+ real ingredients; the ingredient floor still runs first.
+* **Fix (2593055):** `RICH_INGREDIENT_MIN_INGS = 5`; in `_is_cacheable`'s thin-steps
+  branch, ≥2 steps + ≥5 ingredients accepts BEFORE the prose floor. One-step rows still
+  face the 150-char (CJK 40) floor unchanged. Verified by module import + 4 gate probes
+  (coleslaw passes with the new reason string; 1-ing stub, 4-ing/2-step, long-paragraph
+  all unchanged).
+* **Rerun proof, post-restart:** Coleslaw (job 1089) saved 15/15, spendwithpennies KEPT
+  (OU 19.07, PA 57/DA 66), **bottom_ou 4.66 → 5.50** (weakest keeper displaced), sole
+  reject = saltsearsavor anti-bot fetch-fail (legit, Phase-A flagged). Bruschetta (1092)
+  10/10, zero rejects. Spend clean: coleslaw direct=66/unblocker=3, bruschetta 28/2.
+
+### Open
+
+* saltsearsavor.com coleslaw (OU 19.4, "would've qualified") — bookmarklet recovery if
+  the curator wants it.
+* The 9 other historical skip-thin flips self-correct as their dishes' TTLs come due —
+  or a targeted re-refresh of Cajun Seasoning / Greek Salad / Horiatiki whenever wanted.
+* Standing menu unchanged: BAILEY cutover drill, known_for embedding link,
+  domains/dishes advanced search, three-stage grading layer, cookbooks surface.
