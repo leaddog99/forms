@@ -133,11 +133,13 @@
       const t = term.trim().toLowerCase();
       const list = sorted(rows.filter(r => !t ||
         (r.name+' '+(r.display_name||'')+' '+(r.ws_path||'')).toLowerCase().includes(t)));
+      // Shared list-row component (ed-item) — same fix as curated_collections
+      // 2026-08-28: classless li's + undefined .ed-sub rendered as bare text.
       $('#list').innerHTML = list.length ? list.map(r => `
-        <li class="${r.name===selected?'active':''}" data-name="${escapeHtml(r.name)}">
-          <div>${escapeHtml(r.display_name || r.name)}</div>
-          <div class="ed-sub">${escapeHtml(r.ws_path || '— uncategorized —')}</div>
-          <div class="ed-sub">${r.candidate_count||0} candidates${r.selected_count?` · ${r.selected_count}★`:''}${
+        <li class="ed-item ${r.name===selected?'selected':''}" data-name="${escapeHtml(r.name)}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(r.display_name || r.name)}</span></div>
+          <div class="ed-item-meta">${escapeHtml(r.ws_path || '— uncategorized —')} · ${
+            r.candidate_count||0} candidates${r.selected_count?` · ${r.selected_count}★`:''}${
             r.last_run_at?` · ${ago(r.last_run_at)}`:' · never run'}</div>
         </li>`).join('') : '<li class="ed-empty">No collections</li>';
       $('#list').querySelectorAll('li[data-name]').forEach(li =>

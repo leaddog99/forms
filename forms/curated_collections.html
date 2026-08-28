@@ -143,15 +143,31 @@
       const t = term.trim().toLowerCase();
       const list = sorted(rows.filter(r => !t ||
         (r.name+' '+(r.display_name||'')+' '+(r.product_class||'')+' '+(r.ws_path||'')).toLowerCase().includes(t)));
-      $('#list').innerHTML = list.length ? list.map(r => `
-        <li class="${r.name===selected?'active':''}" data-name="${escapeHtml(r.name)}">
-          <div>${escapeHtml(r.display_name || r.name)}</div>
-          <div class="ed-sub">${escapeHtml(r.product_class || '')}${
-            (r.categories||[]).length ? ` · ${(r.categories||[]).length} categories` : ' · whole class'}</div>
-          <div class="ed-sub">${r.last_error ? '⚠ last run failed'
-            : `${r.pick_count||0} picks${r.product_count?` · ${r.product_count} products`:''}${
-                r.last_run_at?` · ${ago(r.last_run_at)}`:' · never run'}`}</div>
-        </li>`).join('') : '<li class="ed-empty">No classes yet</li>';
+      $('#list').innerHTML = list.length ? list.map(r => {
+        // Say only what the title doesn't already say. product_class usually
+        // EQUALS the display name, and product_count usually equals pick_count
+        // — repeating either was the "Fine Mesh Strainer · Fine Mesh Strainer
+        // · whole class · 3 picks · 3 products" noise (curator, 2026-08-28).
+        const title = r.display_name || r.name;
+        const cls = (r.product_class || '').trim();
+        const showCls = cls && cls.toLowerCase() !== title.trim().toLowerCase();
+        const bits = [];
+        if (showCls) bits.push(escapeHtml(cls));
+        if ((r.categories || []).length) bits.push(`${r.categories.length} categories`);
+        if (r.last_error) bits.push('⚠ last run failed');
+        else {
+          bits.push(`${r.pick_count || 0} picks`);
+          if (r.product_count && r.product_count !== r.pick_count) bits.push(`${r.product_count} products`);
+          bits.push(r.last_run_at ? ago(r.last_run_at) : 'never run');
+        }
+        // Shared list-row component (ed-item) — these rows were classless li's
+        // with an undefined .ed-sub, so they rendered as bare unstyled text.
+        return `
+        <li class="ed-item ${r.name===selected?'selected':''}" data-name="${escapeHtml(r.name)}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(title)}</span></div>
+          <div class="ed-item-meta">${bits.join(' · ')}</div>
+        </li>`;
+      }).join('') : '<li class="ed-empty">No classes yet</li>';
       $('#list').querySelectorAll('li[data-name]').forEach(li =>
         li.addEventListener('click', async () => {
           selected = li.dataset.name; mode='view'; detail=null;
