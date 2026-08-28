@@ -6926,6 +6926,24 @@ def domain_top_endpoint(domain: str, all: int = 0):
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+@app.get("/dishes/{name}/signals")
+def dish_signals_endpoint(name: str):
+    """The dish's stamped cohort_signals JSON (dish_signals job), or {} when
+    never measured. Served separately from /dishes — 25 terms x example lines
+    per dish would bloat the list response for a panel most visits never open."""
+    try:
+        with _db() as conn:
+            row = conn.execute(
+                "SELECT cohort_signals FROM dishes WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Dish not found")
+        return json.loads(row[0]) if row[0] else {}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
 @app.get("/semrush-ranks")
 def semrush_ranks_status_endpoint():
     """Per-region summary of the imported SEMrush Rank reference data (rows, file

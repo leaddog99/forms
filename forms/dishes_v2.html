@@ -533,6 +533,19 @@
         </section>
 
         <section class="ed-block">
+          <details class="ed-accordion" id="sigAcc">
+            <summary>Cohort signals <span class="ed-pill" id="sigPill" style="margin-left:6px"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">What this dish's recipes <b>use, measured</b> —
+              each term with the share of the cohort containing it and its <b>lift</b>: how many times more
+              often it appears here than across the whole corpus. Near 1&ndash;3&times; = commodity (sugar,
+              a whisk — same as everything); 10&times;+ = part of this dish's identity, and a product-class
+              candidate. Stamped by the <code>dish_signals</code> job; the evidence layer for the coming
+              dish&rarr;product-class proposals.</p>
+            <div id="sigBody"><p class="ed-empty-fit">Loading&hellip;</p></div>
+          </details>
+        </section>
+
+        <section class="ed-block">
           <details class="ed-accordion">
             <summary>Metadata</summary>
             <div class="ed-kv" style="margin-top:12px">
@@ -567,6 +580,13 @@
       loadRejects(d.name);
       loadCandidates(d.name);
       loadEditorsChoice(d.name);
+      // Lazy: signals fetch only when the accordion first opens — the JSON is
+      // 25 terms x example lines and most visits never look.
+      $('#sigAcc')?.addEventListener('toggle', function _once(){
+        if (!this.open) return;
+        this.removeEventListener('toggle', _once);
+        loadSignals(d.name);
+      });
       attachRunningRefresh(d.name);   // a job already running must be VISIBLE on open
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
@@ -658,6 +678,46 @@
     // Rejects from the last run — URLs that ranked but were dropped (extract/
     // save, or an anti-bot fetch-fail authority-scored in Phase A). "would've
     // qualified" = OU beats the cut bar (bottom_ou) → worth a manual recovery.
+    async function loadSignals(name){
+      const body = $('#sigBody'), pill = $('#sigPill');
+      if (!body) return;
+      let sig;
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/signals`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        sig = await r.json();
+      } catch (e) {
+        body.innerHTML = `<p class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</p>`;
+        return;
+      }
+      if (!sig || !sig.cohort_n){
+        body.innerHTML = '<p class="ed-empty-fit">Not measured yet — run the <code>dish_signals</code> job for this dish.</p>';
+        return;
+      }
+      if (pill) pill.textContent = `${sig.cohort_n} recipes · ${fmtDate(sig.computed_at)}`;
+      const liftCls = (l) => l >= 10 ? 'font-weight:700' : (l < 3 ? 'color:var(--muted)' : '');
+      const table = (rows, withEx) => `
+        <table style="width:100%;border-collapse:collapse;font-size:.85em">
+          <thead><tr style="text-align:left;color:var(--muted);font-size:.85em">
+            <th style="padding:3px 8px 3px 0">term</th><th style="padding:3px 8px;text-align:right">of cohort</th>
+            <th style="padding:3px 8px;text-align:right">lift</th>${withEx ? '<th style="padding:3px 0 3px 8px">example line</th>' : ''}
+          </tr></thead><tbody>
+          ${rows.map(r => `<tr style="border-top:1px solid var(--line,#eee)">
+            <td style="padding:3px 8px 3px 0;${liftCls(r.lift)}">${escapeHtml(r.term)}</td>
+            <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums">${r.pct}%</td>
+            <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums;${liftCls(r.lift)}">${r.lift}×</td>
+            ${withEx ? `<td style="padding:3px 0 3px 8px;color:var(--muted)" title="${escapeHtml((r.examples || []).join('\n'))}">${escapeHtml((r.examples || [''])[0])}</td>` : ''}
+          </tr>`).join('')}
+          </tbody></table>`;
+      const prov = sig.provenance || {};
+      const provBits = [...Object.entries(prov.ethnicities || {}), ...Object.entries(prov.regions || {})]
+        .map(([k, v]) => `${escapeHtml(k)} (${v})`).join(' · ');
+      body.innerHTML = `
+        <h4 style="margin:0 0 6px;font-size:.85em">Ingredients</h4>${table(sig.ingredients || [], true)}
+        <h4 style="margin:14px 0 6px;font-size:.85em">Equipment</h4>${table(sig.equipment || [], false)}
+        ${provBits ? `<h4 style="margin:14px 0 6px;font-size:.85em">Provenance</h4><p style="margin:0;font-size:.85em;color:var(--muted)">${provBits}</p>` : ''}`;
+    }
+
     async function loadRejects(name){
       const wrap = $('#rejectlist'); if(!wrap) return;
       try {
