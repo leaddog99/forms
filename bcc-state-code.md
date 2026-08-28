@@ -5974,18 +5974,30 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
 
 ## START HERE — state of play as of 2026-08-28
 
-Read the 2026-08-28 session log (bottom of file), then the prior START HEREs
-below — the 2026-08-22 scoring-session framing and standing items remain valid.
+Read BOTH 2026-08-28 session logs (bottom of file), then the prior START
+HEREs below — the 2026-08-22 scoring-session framing and standing items
+remain valid.
 
 **Where things stand:**
 
 * **Coverage → creation is one click** — dish-coverage rows carry a ➕ that
-  opens the dish editor prefilled (name + "<name> Recipe" lines, 40/15/180d);
+  opens the dish editor prefilled (the 40/15/180 + "<name> Recipe" profile
+  lives in dish_coverage's createHref; the editor reads generic params);
   curator is actively working the coverage backlog with it.
-* **Save gate no longer rejects no-cook dishes** — ≥2 steps + ≥5 ingredients
-  passes regardless of prose length (`2593055`, measured first: 10 historical
-  flips, all genuine, 0 junk). Coleslaw rerun proved it: rank-1 recipe
-  recovered, bottom_ou 4.66→5.50.
+* **ONE save gate** (`input/pipeline/save_gate.py`) shared by the API and the
+  batch pre-filter. No-cook/mix-only recipes pass: ≥1 step + ≥5 ingredients
+  beats the prose floor (measured twice — 10 historical flips + 10/11 Cajun
+  one-step blends, 0 junk). Reruns proved it: Coleslaw 15/15, Greek Salad
+  20/20, Cajun Seasoning 10/10 clean.
+* **Saves can't silently eat a URL-mate anymore** — `_url_conflict`
+  ask/adopt/new; the form asks, batch adopts. Born from real data loss
+  (three of four dressings from one multi-recipe page overwritten).
+* **The partial-index trap is closed** — plain url_normalized indexes on both
+  recipe tables (save dedup was a scan per save; /domains/{d}/top was 24.4s →
+  0.22s). If a url_normalized query is ever slow again, check the plan FIRST.
+* **Domains list surfaces the untouched backlog** — never_extracted derived
+  LIVE (stored counters lie at zero for 69/392 rows): 60 domains, yellow dot
+  + "no extracts yet first" sort. RESTART OWED for this endpoint change.
 * **Postgres is PARKED by curator call** — docs/postgres-migration-inventory.md
   is the decision record (recipes.db only, big-bang + BAILEY rehearsal, NOT
   dual-write). Don't reopen until more system functionality lands. Step 0
@@ -6702,3 +6714,74 @@ Service restarted by curator 10:15; everything below is live and rerun-verified.
   or a targeted re-refresh of Cajun Seasoning / Greek Salad / Horiatiki whenever wanted.
 * Standing menu unchanged: BAILEY cutover drill, known_for embedding link,
   domains/dishes advanced search, three-stage grading layer, cookbooks surface.
+
+## Session log — 2026-08-28 (afternoon) — a URL that ate three dressings, one save gate instead of two, and a 24-second join
+
+Commits `d04a97b`..`189a789`. Server restarted through `93397d4`; ONE RESTART
+OWED (see end).
+
+* **Recipe form gets its sidebar ＋; footer Clear retired (d04a97b, 93397d4).**
+  Curator's call, and correct: Clear never cleared the saved row — it dropped
+  identity and initialized a fresh form, which is "New". The routine is now
+  `startNewRecord()` (sidebar ＋ + the post-delete teardown call it); the
+  misleading footer button is gone.
+* **DATA LOSS found and root-caused: one URL, four recipes, one survivor.**
+  Curator entered four dressing recipes from ONE loirekitchen technique page;
+  every save carried the same source URL, so the server's dedup-by-
+  (url_normalized, user_id) ADOPTED the existing row each time and overwrote
+  it — uvicorn_stdout.log shows each fresh UUID being discarded. Three
+  dressings unrecoverable (extract cache had nothing); only the last save
+  survives. Fix: `_url_conflict: "adopt" | "ask" | "new"` on the save payload
+  ("adopt" default keeps batch/harvest semantics; the form sends "ask" → a
+  would-be adoption 422s with the existing row's name → curator picks
+  OVERWRITE or SAVE AS NEW). Keep-both rows store url_normalized='' (the
+  established claimed-row sentinel; partial unique index ignores ''), page
+  link survives on _source.originalUrl; a kept-both row re-saves through the
+  same path automatically because the check reads the INVARIANT (stored
+  url=='') not row existence.
+* **Save gate consolidated to ONE function (f92c7ec, /simplify pass with 4
+  review agents).** `input/pipeline/save_gate.py` now owns `is_cacheable`;
+  save_recipe_api imports it and intake/process_batch's "mirror" (which had
+  silently missed EVERY escape hatch — its lockstep claim was false) now
+  delegates. Rich-ingredient rule widened to **>=1 step + >=5 ingredients**
+  after the first post-fix Cajun run rejected 11 one-step spice blends —
+  JSON-LD probes showed 10/11 are real 7-9-ingredient recipes. Client: 422
+  envelope unwrapped once, postSave takes one extra-keys param, coverage ➕
+  profile (40/15/180 + "<name> Recipe" line) moved into dish_coverage's
+  createHref query params — dishes_v2 reads generic create/q/serp/final/ttl.
+* **Rerun proofs:** Coleslaw 15/15 (spendwithpennies kept, OU 19.07,
+  bottom_ou 4.66→5.50) · Bruschetta 10/10 · Greek Salad 20/20 (horiatiki
+  kept) · Cajun Seasoning 9/10 + 11 skip-thins BEFORE the widening → **10/10,
+  zero drops** after.
+* **The partial-index trap, found twice, fixed at depth (f92c7ec, 189a789).**
+  The tables' only url_normalized indexes were the PARTIAL unique ones
+  (WHERE != ''), which SQLite uses only when the query restates that
+  predicate. ~10 call sites didn't: the save dedup lookup was a full scan per
+  save, and the publisher-ledger LEFT JOIN (get_collection_top) re-scanned
+  master_recipes per ledger row — `/domains/{d}/top` measured **24.4s**
+  (cooking.nytimes.com), the curator-visible "harvest panel pops in late with
+  no warning". Plain url_normalized indexes on both tables fix every call
+  site with zero query edits: **0.22s on the live server** (plan-time, no
+  restart). Also in init_db. Async panels now paint a shared `.ed-loading`
+  spinner at fetch start (editor-shell.css).
+* **Domains list: never-extracted surfacing (b22bfd9).** The stored
+  refresh-on-access recipe counters disagree with reality at the zero
+  boundary for 69/392 domains, so `list_domains` now batch-counts LIVE per
+  domain (GROUP BY generated source_host, both tables) and derives
+  `never_extracted` = zero kept rows from any flow AND no SEMrush ingest
+  stamped (a run that kept nothing still ran). 60 domains flag. Form:
+  "no extracts yet first" sort + yellow `.ed-item-flag.pending` dot + meta
+  bit. Shared `.ed-item-meta` now WRAPS instead of truncating (curator
+  request — applies to every editor list).
+
+### Open
+
+* **RESTART OWED** for: `never_extracted`/live counts in /domains (b22bfd9)
+  and the init_db index DDL (inert — the indexes already exist in the DB).
+  Everything else is live.
+* Re-enter the three lost dressings from the loirekitchen page (answer
+  "save as new" on each) — the form now makes that safe.
+* saltsearsavor coleslaw (OU 19.4) still recoverable via bookmarklet.
+* Historical one-step skip-thin victims (therecipecritic, culinaryhill,
+  barefeetinthekitchen, delish, chilipeppermadness cajun pages…) return on
+  their dishes' next refresh; Cajun Seasoning itself is already clean.
