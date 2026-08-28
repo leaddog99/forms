@@ -5974,9 +5974,13 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
 
 ## START HERE — state of play as of 2026-08-28
 
-Read BOTH 2026-08-28 session logs (bottom of file), then the prior START
+Read all THREE 2026-08-28 session logs (bottom of file), then the prior START
 HEREs below — the 2026-08-22 scoring-session framing and standing items
-remain valid.
+remain valid. The evening log's dish-anchored product matching
+(docs/dish-product-matching.md) is the new standing build: step 1 shipped
+(every recipe resolves a dish — 8,376/8,376 via dish_effective on both
+tables), steps 2-3 (class registry, curated dish→classes junction) are the
+designed next moves.
 
 **Where things stand:**
 
@@ -6785,3 +6789,68 @@ OWED (see end).
 * Historical one-step skip-thin victims (therecipecritic, culinaryhill,
   barefeetinthekitchen, delish, chilipeppermadness cajun pages…) return on
   their dishes' next refresh; Cajun Seasoning itself is already clean.
+
+## Session log — 2026-08-28 (evening) — the product flow demystified, and every recipe learns its dish
+
+Commits `9c8b73d`..`6b4b9af` + this log. All restarts done — NOTHING owed;
+everything below is live.
+
+* **Domains sorts + dots refined (9c8b73d).** Grouped sorts (SEMrush due,
+  no-extracts) order DA-desc inside groups — most popular site first, curator's
+  call. `never_extracted` requires allowed=1: blocked reference domains
+  (youtube, facebook — 9 rows) will never be extracted BY DESIGN and lost
+  their to-do dots. Live count: 50 flagged (GBC + acouplecooks harvested off
+  the list same day).
+* **Product curation pages joined the shared component (2c6fa17).** Both
+  collection sidebars were classless li's with an UNDEFINED .ed-sub — bare
+  unstyled text. Now ed-item rows like every other editor, and curated rows
+  deduplicate ("Fine Mesh Strainer · Fine Mesh Strainer · whole class · 3
+  picks · 3 products" → "3 picks · 31d ago").
+* **Product flow re-education (no code).** The curator's Vitamix mystery
+  traced: curated-run class string IS the research prompt ("Recycling" class
+  picked a trash can + compostable cutlery as "Food Recyclers"); the
+  bookmarklet importer INVENTS class names ("Food Recyclers (5 l)" — third
+  spelling of one concept); reruns research reviews, never the catalog, so an
+  imported product is only adopted if the authorities' evidence picks it
+  (then linked by ASIN/brand+title). Class/category ARE editable: Products →
+  Edit. `product_classes`/`product_categories` tables EXIST (1 row each) —
+  products.product_class free text never joins them; that's the fragmentation
+  root and step 2's target.
+* **THE BIG ONE — dish-anchored product matching, design + step 1 SHIPPED
+  (1dd481a, aa03cb7, 6863692; docs/dish-product-matching.md;
+  [[project_dish_product_matching]]).** Equipment is too coarse to match
+  products (52.9k items, 4,180 names, 5% sized; Tool = name+size only, no
+  material/coating) — so matching anchors on the DISH. Resolution ladder:
+  _master.dish (curated) → _match.dish (confident) → _match.candidates[0]
+  (NEAREST, no gate — already stored by every sweep). Exposed as
+  `dish_effective` + `dish_effective_source` GENERATED columns on BOTH
+  recipe tables, indexed. **8,376/8,376 recipes resolve a dish** (master:
+  3,258 curated · 935 matched · 3,731 nearest; user: 218/234). The 0.6
+  membership threshold untouched. rematch sweeps BOTH tables now (nightly
+  handler + CLI); user rows skip the vec upsert (matched AGAINST dishes_vec,
+  never KNN targets). The one embedding-less row (Granola, user 5 — save's
+  best-effort embed had failed) backfilled + matched at 0.307. Form's
+  scoring-strip dish chip now says the nearest dish muted ("nearest (loose) ·
+  distance 0.85 · then …") instead of "no confident match". Next steps in
+  the doc: canonical class registry + embed-snap imports, dish→classes
+  junction seeded from cohort equipment (curator signs the money join —
+  fuzzy proposes, curator disposes).
+* **Ladder proven live twice.** Pumpkin Pie already existed (08-21) — sweep
+  correctly moved nothing. Chocolate Cream Pie CREATED (2×60=120 fetch, keep
+  20, 180d) → rematch minutes later moved 3 rows OUT of Cream Pie into it
+  (the generic-bucket migration, exactly as designed) + 40 nearest inherits.
+  No refresh run yet — zero curated winners until the curator fires one.
+* **Fetch-total hint (6b4b9af).** "Default results per line" × 3 lines = 360
+  nearly bit twice; a live hint under the field now does the arithmetic
+  ("3 lines × 40 ≈ 120 candidates fetched per run", per-line overrides
+  summed). Pumpkin Pie reconfigured 40/line×3=120, keep 20.
+
+### Open
+
+* Chocolate Cream Pie refresh (120 fetch/keep 20) when the curator wants its
+  own top-20.
+* Dish→product next steps: class registry (step 2), junction + proposals
+  (step 3) — open curator calls listed in docs/dish-product-matching.md.
+* saltsearsavor coleslaw bookmarklet recovery; remaining lost dressings.
+* Optional: nightly re-embed pass for embedding-less rows (self-heal the
+  Granola failure mode; check_embeddings is the current backstop).
