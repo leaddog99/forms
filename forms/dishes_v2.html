@@ -1067,7 +1067,8 @@
     }
 
     function renderCreate(){
-      // One-shot prefill from a ?create=<name> deep link (dish-coverage rows).
+      // One-shot prefill from a ?create= deep link (see the parse at the
+      // bottom of this script); Cancel → ＋ gives a blank form again.
       const p = _createPrefill; _createPrefill = null;
       $('#page').innerHTML = `
         <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" disabled style="cursor:default">Admin · New Dish</button></div>
@@ -1086,7 +1087,7 @@
           <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
           <span class="ed-save-hint" id="hint"></span>
         </div>`;
-      initQueryRows('qrows_new', p ? p.rows : []);
+      initQueryRows('qrows_new', p?.rows || []);
       $('#n_name').focus();
       $('#cancelBtn').addEventListener('click', () => { const first = sortedDishes()[0]; selected = first ? first.name : null; renderList(); renderMain(); });
       $('#createBtn').addEventListener('click', doCreate);
@@ -1181,20 +1182,21 @@
       }
     }).catch(() => {});
 
-    // ?create=<name> deep link (dish-coverage's ➕): land on the New Dish form
-    // prefilled — name, two search lines (the name, and "<name> Recipe"),
-    // 40 candidates per line, 15 kept winners, 180-day TTL. Everything stays
-    // editable before Create; nothing is saved until the button is pressed.
-    {
-      const nm = (new URLSearchParams(location.search).get('create') || '').trim();
-      if (nm){
-        _createPrefill = {
-          name: nm,
-          rows: [{ q: nm }, { q: nm + ' Recipe' }],
-          serp: 40, final: 15, ttl: 180,
-        };
-        selected = '__new__';
-      }
+    // ?create=<name> deep link: land on the New Dish form prefilled. The
+    // caller owns the profile — the name is the first search line, each
+    // repeated &q= adds another, and &serp=/&final=/&ttl= override the form's
+    // own defaults (dish-coverage's ➕ sends its 40/15/180 this way). Nothing
+    // is saved until Create is pressed.
+    const _params = new URLSearchParams(location.search);
+    const _createName = (_params.get('create') || '').trim();
+    if (_createName){
+      const num = (k) => { const v = parseInt(_params.get(k), 10); return Number.isFinite(v) && v > 0 ? v : null; };
+      _createPrefill = {
+        name: _createName,
+        rows: [_createName, ..._params.getAll('q')].filter(Boolean).map(q => ({ q })),
+        serp: num('serp'), final: num('final'), ttl: num('ttl'),
+      };
+      selected = '__new__';
     }
 
     loadDishes();

@@ -554,15 +554,20 @@ def _auto_enrich_applies(user_id: int) -> bool:
         return False
 
 
-# How much method text an UNENUMERATED single instruction must carry to count as a
-# real method. Set at the lowest real example measured in the corpus (Thomas
-# Keller's roast chicken, 157 chars) with a little room below it; the junk cases
-# sat at 7 and 132 chars. See the note in _is_cacheable.
+# The save-quality gate lives in input/pipeline/save_gate.py so the batch
+# pre-filter (intake/process_batch.py) and this file share ONE function —
+# they used to be hand-kept mirrors, and the mirror went stale the day the
+# first escape hatch landed in only one of them (2026-08-28).
+from input.pipeline.save_gate import is_cacheable as _is_cacheable  # noqa: E402
+
 # What a NON-STAFF user is told when a row could not be scored. Deliberately
 # says nothing about which vendor we buy authority data from, why they haven't
 # crawled it, or what an operator would do about it — a member capturing a
 # recipe is a customer of the product, not an operator of the pipeline. Staff
 # still get the full diagnostic; see the redaction at the /recipes boundary.
+GENERIC_UNSCORED_NOTE = (
+    "Score not yet available for this page — it usually appears within a few days.")
+
 # How many consecutive failed captures retire a row from the nightly sweep, and
 # how long before it is tried again. Two rather than one: a single failure is a
 # transient (a slow page, a restart mid-render) and retiring on it would quietly
@@ -570,107 +575,6 @@ def _auto_enrich_applies(user_id: int) -> bool:
 # moving — a TLS chain, a paywall, a timeout — not things that change weekly.
 SCREENSHOT_FAIL_LATCH = 2
 SCREENSHOT_RETRY_DAYS = 90
-
-GENERIC_UNSCORED_NOTE = (
-    "Score not yet available for this page — it usually appears within a few days.")
-
-SINGLE_STEP_MIN_CHARS = 150
-# The same floor for a method written in a dense script (CJK). Set from the
-# measured ratio on the case that exposed it — 77 Chinese characters carrying
-# what took 315 in English, ~4x — so 150/4 ≈ 40, kept at 40 rather than rounded
-# down further because the junk cases were short on BOTH axes anyway (7 and 132
-# characters with 1 ingredient, killed by the ingredient floor regardless).
-SINGLE_STEP_MIN_CJK_CHARS = 40
-# A short-method recipe with a RICH ingredient list is a no-cook/mix-only dish
-# (coleslaw, spice blend, dressing, salad), not a failed extraction — none of
-# the failure modes this gate guards (paywall stub, 404, sidebar-carousel
-# wrong-node) can produce 5+ real ingredients. Measured 2026-08-28 by replaying
-# the rule over every historical `skip-thin: fewer than 3 instructions` reject
-# still in llm_extract_cache: 10 flipped to accepted, all genuine (Cajun
-# seasoning x4, Greek salad/horiatiki, coleslaw, ginger dressing, overnight
-# oats — the class the 150-char prose floor was structurally biased against),
-# 0 junk admitted. The trigger case: spendwithpennies' 9-ingredient coleslaw,
-# the #1-ranked candidate of its run, rejected for 145 chars of method.
-RICH_INGREDIENT_MIN_INGS = 5
-
-
-def _is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
-    """Refuse to cache rows that look like a bad extraction (paywall,
-    404, picked-the-wrong-recipe sidebar carousel). Returns
-    (cacheable, reason). Defaults to the cache layer's relaxed
-    thresholds (≥2 ingredients, ≥2 instructions). The /recipes save
-    gate calls this with stricter thresholds (≥3/≥3) because junk in
-    the recipes/master_recipes tables corrupts aggregated stats — see
-    [[batch-single-program]] for the same reasoning on the batch side.
-    """
-    name = (recipe.get("name") or "").strip() if recipe else ""
-    if not name:
-        return False, "no name"
-    ings = recipe.get("recipeIngredient") or []
-    real_ings = sum(1 for i in ings if str(i).strip())
-    if real_ings < min_ings:
-        return False, f"fewer than {min_ings} ingredients ({real_ings})"
-    steps = recipe.get("recipeInstructions") or []
-    real_steps = 0
-    for s in steps:
-        text = s.get("text") if isinstance(s, dict) else s
-        if str(text or "").strip():
-            real_steps += 1
-    if real_steps < min_steps:
-        # TWO REAL STEPS + A RICH INGREDIENT LIST = a legitimately short
-        # recipe (see RICH_INGREDIENT_MIN_INGS above). Checked before the
-        # prose floor so a terse "whisk; toss" method doesn't lose to a
-        # character count. Deliberately requires >=2 steps: a one-step row
-        # still has to earn its way through the prose floor below.
-        if real_steps >= 2 and real_ings >= RICH_INGREDIENT_MIN_INGS:
-            return True, (f"ok ({real_steps} steps but {real_ings} ingredients "
-                          "— no-cook/mix-only recipe)")
-        # A SINGLE SUBSTANTIAL PARAGRAPH IS A METHOD, NOT A FAILED EXTRACTION.
-        # Counting steps assumes the publisher numbered them. Plenty don't:
-        # m.xiachufang.com/recipe/107744561 ships its whole method as ONE string
-        # in its own JSON-LD ("marinate 10 min ... wrap in foil ... 205C for 20
-        # ... open foil, 5 more"), four real actions in one paragraph. We
-        # reproduced it faithfully and then refused to save it.
-        #
-        # Measured over the corpus 2026-08-14 — exactly 6 of 5,593 rows have a
-        # single instruction, and length separates them cleanly:
-        #     7 chars / 1 ing   Pork Rice                     <- junk
-        #   132 chars / 1 ing   'Parmesan Chicken | Recipes'  <- junk (title suffix
-        #                                                        = wrong node)
-        #   157 chars / 5 ing   Thomas Keller's Roast Chicken <- real
-        #   239 chars / 7 ing   Spaghetti and Meatballs       <- real
-        #   276 chars / 7 ing   Raita                         <- real
-        #   315 chars / 6 ing   Air Fryer Garlic Pork Ribs    <- real
-        # (median TOTAL instruction text on multi-step rows: 1,053 chars.)
-        #
-        # So: accept one step only when it carries real METHOD text. The
-        # ingredient floor above has already run, which is what kills both junk
-        # rows independently — this is deliberately belt-and-braces, because the
-        # failure mode we are guarding is a paywall stub or a sidebar carousel,
-        # and those are short.
-        prose = 0
-        cjk = 0
-        for s in steps:
-            text = str((s.get("text") if isinstance(s, dict) else s) or "").strip()
-            prose += len(text)
-            cjk += sum(1 for ch in text if 0x2e80 <= ord(ch) <= 0x9fff
-                       or 0x3040 <= ord(ch) <= 0x30ff or 0xac00 <= ord(ch) <= 0xd7af)
-        # A DENSE SCRIPT SAYS THE SAME THING IN FAR FEWER CHARACTERS, so a
-        # character floor calibrated on English rejects an equivalent CJK method.
-        # Measured on m.xiachufang.com/recipe/107744561: the identical method is
-        # 77 characters in Chinese and 315 in English — a 4x difference in length
-        # for the same four cooking actions. A recipe that survives translation is
-        # judged on its English text and never reaches this branch; one saved
-        # untranslated (curator choice, or a translation we declined) would be
-        # refused for being written in Chinese, which is not a quality signal.
-        floor = SINGLE_STEP_MIN_CHARS
-        if prose and (cjk / prose) >= 0.30:
-            floor = SINGLE_STEP_MIN_CJK_CHARS
-        if real_steps >= 1 and prose >= floor:
-            return True, (f"ok (single {prose}-char method paragraph; publisher "
-                          f"did not enumerate steps)")
-        return False, f"fewer than {min_steps} instructions ({real_steps})"
-    return True, "ok"
 
 
 # Save-gate thresholds — SAVE_GATE_MIN_INGREDIENTS /
@@ -10710,71 +10614,75 @@ def _save_recipe_core(payload: dict) -> dict:
     # the existing record gets updated rather than creating a parallel
     # duplicate. The (url_normalized, user_id) unique index in each table
     # enforces this server-side too.
+    # ONE PAGE CAN HOLD SEVERAL RECIPES. Found 2026-08-28: four dressings
+    # entered from one loirekitchen technique page silently collapsed into a
+    # single row — each save adopted the URL's existing row and overwrote it;
+    # three recipes were lost. `_url_conflict` says what to do when this
+    # save's URL is already owned by a DIFFERENT record:
+    #   "adopt" (default) — update the existing row. Right for batch/harvest:
+    #           a re-fetch of an unchanged URL must update, not duplicate.
+    #   "ask"   — 422 with the existing row's name; the interactive form
+    #           sends this and re-sends the curator's choice.
+    #   "new"   — keep both: this row keeps its own recipe_id and stores
+    #           url_normalized='' (the unique index is partial on != '', the
+    #           repo's established "row deliberately owns no URL" sentinel —
+    #           claimed rows already use it); the page link survives on
+    #           _source.originalUrl. URL-keyed dedup stays with the row that
+    #           owns the column.
+    # A row that ALREADY gave up URL ownership (its stored url_normalized is
+    # '') re-saves through the "new" path automatically — otherwise the upsert
+    # would rewrite the column and hit the unique index.
     adopted = False
+    conflict = None
+    url_conflict_mode = str(payload.get("_url_conflict") or "adopt").strip().lower()
     try:
         with _db() as conn:
             if normalized_source_url:
-                existing = conn.execute(
-                    f"SELECT recipe_id FROM {table} WHERE url_normalized = ? AND user_id = ? LIMIT 1",
-                    (normalized_source_url, user_id),
-                ).fetchone()
-                if existing and existing[0] != recipe_id:
-                    # ONE PAGE CAN HOLD SEVERAL RECIPES. Found 2026-08-28: four
-                    # dressings entered from one loirekitchen technique page
-                    # silently collapsed into a single row — each save adopted
-                    # the URL's existing row and overwrote it; three recipes
-                    # were lost. Adoption is still the right default for the
-                    # batch/harvest paths (a re-fetch of an unchanged URL must
-                    # update, not duplicate), so the escape hatches are opt-in:
-                    #   _adopt_check  — sent by the interactive form; a would-be
-                    #                   adoption 422s with the existing row's
-                    #                   name so the curator chooses.
-                    #   _save_as_new  — curator chose "keep both": this row
-                    #                   keeps its own recipe_id and stores
-                    #                   url_normalized='' (the unique index is
-                    #                   partial on != '', so any number of ''
-                    #                   rows coexist); the page link survives on
-                    #                   _source.originalUrl for display and
-                    #                   attribution. URL-keyed dedup stays with
-                    #                   the row that owns the column.
-                    # A re-save of a kept-both row (its recipe_id already
-                    # exists) takes the same blank-column path automatically —
-                    # otherwise the upsert would rewrite url_normalized and hit
-                    # the unique index.
-                    own_row = conn.execute(
-                        f"SELECT 1 FROM {table} WHERE recipe_id = ? AND user_id = ? LIMIT 1",
-                        (recipe_id, user_id),
-                    ).fetchone()
-                    if own_row or payload.get("_save_as_new"):
-                        print(f"[SAVE] URL owned by {existing[0]}; keeping {recipe_id} as its own row "
+                # One round trip answers both questions: who owns this URL,
+                # and does this recipe_id already have a row (and with what
+                # stored URL). UNION ALL keeps both arms index-driven. The
+                # redundant-looking url_normalized != '' is what lets SQLite
+                # use the PARTIAL unique index (its WHERE must be implied by
+                # the query) — without it this lookup is a full table scan,
+                # which is what every save had been paying (found 2026-08-28
+                # via EXPLAIN while merging the two probes).
+                rows = conn.execute(
+                    f"SELECT 'url' AS why, recipe_id, url_normalized FROM {table} "
+                    f"  WHERE url_normalized = ? AND url_normalized != '' AND user_id = ? "
+                    f"UNION ALL "
+                    f"SELECT 'own' AS why, recipe_id, url_normalized FROM {table} "
+                    f"  WHERE recipe_id = ? AND user_id = ?",
+                    (normalized_source_url, user_id, recipe_id, user_id),
+                ).fetchall()
+                url_owner = next((r[1] for r in rows if r[0] == 'url'), None)
+                own_stored_url = next((r[2] for r in rows if r[0] == 'own'), None)
+                if url_owner and url_owner != recipe_id:
+                    if (own_stored_url == "") or url_conflict_mode == "new":
+                        print(f"[SAVE] URL owned by {url_owner}; keeping {recipe_id} as its own row "
                               f"(url column blanked; page link stays in _source)")
                         normalized_source_url = ""
-                    elif payload.get("_adopt_check"):
-                        _ename = ""
-                        try:
-                            _erow = conn.execute(
-                                f"SELECT json_extract(data,'$.name') FROM {table} WHERE recipe_id = ? LIMIT 1",
-                                (existing[0],),
-                            ).fetchone()
-                            _ename = (_erow and _erow[0]) or ""
-                        except Exception:
-                            pass
-                        raise HTTPException(status_code=422, detail={
+                    elif url_conflict_mode == "ask":
+                        _erow = conn.execute(
+                            f"SELECT json_extract(data,'$.name') FROM {table} WHERE recipe_id = ? LIMIT 1",
+                            (url_owner,),
+                        ).fetchone()
+                        _ename = (_erow[0] if _erow else "") or ""
+                        conflict = {
                             "adopt_conflict": True,
-                            "existing_recipe_id": existing[0],
+                            "existing_recipe_id": url_owner,
                             "existing_name": _ename,
                             "message": ("A different saved recipe already exists for this URL"
                                         + (f": “{_ename}”" if _ename else "") + "."),
-                        })
+                        }
                     else:
-                        print(f"[SAVE] Adopting existing recipe_id {existing[0]} for {normalized_source_url!r} "
+                        print(f"[SAVE] Adopting existing recipe_id {url_owner} for {normalized_source_url!r} "
                               f"(was {recipe_id}) in {table}")
-                        recipe_id = existing[0]
+                        recipe_id = url_owner
                         adopted = True
-    except HTTPException:
-        raise
     except Exception as e:
         print(f"[WARN] dup lookup failed (continuing as insert): {e}")
+    if conflict:
+        raise HTTPException(status_code=422, detail=conflict)
 
     print(f"[SAVE] Saving recipe with ID: {recipe_id} (adopted={adopted}) user_id={user_id} table={table}")
 

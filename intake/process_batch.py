@@ -311,24 +311,14 @@ from input.pipeline.url_scoring import apply_moz_scores  # noqa: E402
 
 
 def _batch_save_worthy(recipe: dict) -> tuple[bool, str]:
-    """Mirror of save_recipe_api._is_cacheable with the bcc_config.json
-    save-gate thresholds. Returns (ok, reason)."""
-    name = (recipe.get("name") or "").strip() if recipe else ""
-    if not name:
-        return False, "no name"
-    ings = recipe.get("recipeIngredient") or []
-    real_ings = sum(1 for i in ings if str(i).strip())
-    if real_ings < BATCH_MIN_INGREDIENTS:
-        return False, f"fewer than {BATCH_MIN_INGREDIENTS} ingredients ({real_ings})"
-    steps = recipe.get("recipeInstructions") or []
-    real_steps = 0
-    for s in steps:
-        text = s.get("text") if isinstance(s, dict) else s
-        if str(text or "").strip():
-            real_steps += 1
-    if real_steps < BATCH_MIN_INSTRUCTIONS:
-        return False, f"fewer than {BATCH_MIN_INSTRUCTIONS} instructions ({real_steps})"
-    return True, "ok"
+    """The real save gate (input/pipeline/save_gate.py) at the bcc_config.json
+    thresholds. Used to be a hand-kept mirror of it, which silently missed
+    every escape hatch (single-paragraph methods, rich-ingredient no-cook
+    recipes) — the pre-filter rejected before POST what the server would
+    have accepted. Returns (ok, reason)."""
+    from input.pipeline.save_gate import is_cacheable
+    return is_cacheable(recipe, min_ings=BATCH_MIN_INGREDIENTS,
+                        min_steps=BATCH_MIN_INSTRUCTIONS)
 
 
 def save_one(result: dict) -> bool:

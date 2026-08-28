@@ -2024,7 +2024,7 @@
        the in-memory cache (no re-fetch). -->
   <aside class="sidebar" id="sidebar">
     <h2>Recipes <span class="count" id="sidebarCount"></span>
-      <button type="button" id="sidebarNewBtn" class="new-btn" title="New recipe — clear the form for a fresh entry" aria-label="New recipe">
+      <button type="button" id="sidebarNewBtn" class="new-btn" title="Start a new recipe" aria-label="New recipe">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -2814,9 +2814,6 @@
            'sidebar:user_id'). Click does a fast in-DB row copy via
            POST /recipes/<id>/claim and redirects to the claimed copy. -->
       <button type="button" id="claimBtn" class="primary" style="display:none">Claim</button>
-      <!-- "Clear" removed 2026-08-28 — its behavior was "start a NEW record"
-           (it never cleared the saved row), so it lives on the sidebar ＋ with
-           the honest name. See startNewRecord(). -->
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
     </div>
@@ -5786,12 +5783,12 @@
 
       const payload = {
         recipe_id: document.getElementById("recipe_id").value || undefined,
-        // Interactive-form marker: a save whose URL would ADOPT a different
-        // existing record 422s with that row's name instead of silently
-        // overwriting it (2026-08-28: four dressings from one multi-recipe
-        // page collapsed into one row). Batch/harvest paths don't send this
-        // and keep silent adoption.
-        _adopt_check: true,
+        // URL-conflict policy: "ask" = a save whose URL belongs to a
+        // DIFFERENT record 422s with that row's name and the curator chooses
+        // overwrite/keep-both (2026-08-28: four dressings from one
+        // multi-recipe page silently collapsed into one row). Batch/harvest
+        // paths send nothing and keep the "adopt" (update-in-place) default.
+        _url_conflict: 'ask',
         // Owner discriminator. Server dispatches the write to the master
         // table when 0, else the personal table. parseInt + fallback covers
         // empty/invalid user input.
@@ -5919,57 +5916,51 @@
         }
       }
 
-      // Wrapped so we can retry once with force_save=true if the server
-      // rejects the recipe as too thin (thin_recipe gate). User confirms
-      // via a dialog before the override fires — explicit intent only.
-      async function postSave(forceSave, extra) {
-        const sendPayload = { ...payload,
-                              ...(forceSave ? { force_save: true } : {}),
-                              ...(extra || {}) };
+      // Wrapped so the structured-422 branches below can retry with extra
+      // payload keys ({force_save:true} after the thin-recipe dialog,
+      // {_url_conflict:'adopt'|'new'} after the URL-conflict dialog). Each
+      // retry threads its own `extra` forward so choices compose.
+      async function postSave(extra) {
+        const sendPayload = { ...payload, ...(extra || {}) };
         const res = await fetch(`${API}/recipes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(sendPayload)
         });
         const result = await res.json().catch(() => ({}));
+        // Both server 422 gates answer in the same envelope: a structured
+        // detail object with a discriminator key. Unwrap it once.
+        const det = (!res.ok && res.status === 422 && result
+                     && typeof result.detail === 'object' && result.detail) || null;
 
-        // Thin-recipe gate. Server returns 422 with a structured detail
-        // {thin_recipe: true, reason, min_ingredients, min_instructions,
-        // message}. Show a confirm dialog; on OK, retry with force_save.
-        if (!res.ok && res.status === 422 && result && result.detail
-            && typeof result.detail === 'object' && result.detail.thin_recipe) {
-          if (forceSave) {
+        // Thin-recipe gate: on OK, retry with force_save.
+        if (det && det.thin_recipe) {
+          if (sendPayload.force_save) {
             // Should never happen — server-side bug if force_save was
             // sent and still got the thin gate.
-            showFeedback(`Error: ${result.detail.message || 'thin recipe'}`, 'error');
+            showFeedback(`Error: ${det.message || 'thin recipe'}`, 'error');
             return;
           }
-          const det = result.detail;
           const proceed = confirm(
             `${det.message || 'This recipe looks thin.'}\n\n` +
             `OK = save anyway. Cancel = stay on form and add more.`
           );
-          if (proceed) {
-            await postSave(true);
-          }
+          if (proceed) await postSave({ ...extra, force_save: true });
           return;
         }
 
-        // URL-adoption conflict: this form's recipe is DIFFERENT from the
-        // record already saved for the same source URL. Silently adopting
-        // overwrote three of four dressings entered from one multi-recipe
-        // page (2026-08-28). Two-step choice: overwrite, or keep both.
-        if (!res.ok && res.status === 422 && result && result.detail
-            && typeof result.detail === 'object' && result.detail.adopt_conflict) {
-          const det = result.detail;
+        // URL-conflict gate: this form's recipe is DIFFERENT from the record
+        // already saved for the same source URL (silently adopting overwrote
+        // three of four dressings entered from one multi-recipe page,
+        // 2026-08-28). Two-step choice: overwrite, or keep both.
+        if (det && det.adopt_conflict) {
           const overwrite = confirm(
             `${det.message || 'A recipe already exists for this URL.'}\n\n` +
             `OK = OVERWRITE that record with this form.\n` +
             `Cancel = keep it (you'll be offered "save as new" next).`
           );
           if (overwrite) {
-            // Resend without the check marker — the server adopts as before.
-            await postSave(forceSave, { _adopt_check: false });
+            await postSave({ ...extra, _url_conflict: 'adopt' });
           } else {
             const asNew = confirm(
               `Save this as a NEW record instead?\n\n` +
@@ -5977,7 +5968,7 @@
               `The URL stays visible on both; URL-dedup stays with the original.\n` +
               `Cancel = don't save.`
             );
-            if (asNew) await postSave(forceSave, { _save_as_new: true });
+            if (asNew) await postSave({ ...extra, _url_conflict: 'new' });
           }
           return;
         }
@@ -6056,7 +6047,7 @@
           }
           loadRecipes();   // refresh the list so the row appears/moves
           // Success feedback after the click handler clears it.
-          const overrideMsg = forceSave ? ' (override)' : '';
+          const overrideMsg = sendPayload.force_save ? ' (override)' : '';
           // Say WHY there is no score. Scoring runs at save, and this handler
           // clears the form immediately after — so the scoring strip the user
           // was looking at predates the scoring entirely, and an unscored row
@@ -6079,7 +6070,7 @@
       }
 
       try {
-        await postSave(false);
+        await postSave();
         // Written — the form is now what the DB holds. Rebaseline so Save goes
         // quiet and beforeunload stops guarding work that is no longer at risk.
         // Inside the try: a FAILED save must stay dirty. Settle-based, because a
@@ -7105,10 +7096,8 @@
     }
     sidebarToggle.onclick = () => { sidebar.classList.toggle('open'); syncBodyLock(); };
 
-    // Sidebar ＋ (New recipe) — the ONE canonical new-record path (see
-    // startNewRecord; forking it would drift from the name-less-input clears
-    // that routine exists to do), then closes the sidebar and lands the user
-    // at the TOP of the blank form — the stage/paste area — not mid-page.
+    // Sidebar ＋ — canonical new-record path; land at the top of the blank
+    // form (the stage/paste area), never mid-page.
     document.getElementById('sidebarNewBtn').onclick = () => {
       startNewRecord();
       sidebar.classList.remove('open');

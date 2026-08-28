@@ -13,8 +13,8 @@
        is the opposite: free LLM text written at extraction with no knowledge of
        the catalog. The gap between the two is the coverage gap, and this page
        is that gap. Read-only by design — it reports, it never creates. The
-       per-row ➕ only deep-links to the dish editor (?create=<name>) with a
-       prefilled New Dish form; creation happens there, on the Create button.
+       per-row ➕ only deep-links to the dish editor's prefilled New Dish form
+       (createHref builds the query); creation happens there, on Create.
        Backed by GET /dish-coverage. -->
   <style>
     /* Shell-width contract: this page runs wide; the header follows. */
@@ -68,8 +68,9 @@
     .tag.split{ background:#f5e6e7; color:#8c2f39; }
     .tag.variant{ background:#f2ecdd; color:#7a5a12; }
     .tag.alias{ background:#e9e9ee; color:#4a4a63; }
+    /* Row-action pill: rides the page's .chip vocabulary; only the size and
+       link-ness differ. */
     .mk{ display:inline-block; margin-left:8px; font-size:.74rem; font-weight:600; padding:3px 9px;
-      border:1px solid var(--border); border-radius:6px; background:var(--card); color:var(--ink);
       text-decoration:none; white-space:nowrap; vertical-align:middle; }
     .mk:hover{ border-color:var(--accent); color:var(--accent-dark); }
     .empty{ padding:34px; color:var(--muted); text-align:center; }
@@ -161,6 +162,14 @@
     LibraryShell.initNav({ currentPage: 'dish-coverage' });
 
     const $ = s => document.querySelector(s);
+    // The coverage→create profile. THIS page owns these numbers (the editor's
+    // ?create= deep link just reads whatever params arrive; bare ?create= gets
+    // the editor's own defaults) — keep the legend paragraph below in step.
+    const CREATE_PROFILE = { serp: 40, final: 15, ttl: 180 };
+    const createHref = (dish) =>
+      '/forms/dishes_v2.html?create=' + encodeURIComponent(dish)
+      + '&q=' + encodeURIComponent(dish + ' Recipe')
+      + `&serp=${CREATE_PROFILE.serp}&final=${CREATE_PROFILE.final}&ttl=${CREATE_PROFILE.ttl}`;
     let DATA = [], filter = 'all', chapter = '', q = '', sortKey = 'traffic', sortDir = -1;
     const fmt = n => n ? n.toLocaleString('en-US') : '—';
     // What each relation MEANS, said where the reader is looking at it.
@@ -207,8 +216,8 @@
           <td class="r traffic ${r.traffic ? '' : 'zero'}">${fmt(r.traffic)}</td>
           <td class="chap">${esc(r.chapter || '—')}</td>
           <td><span class="tag ${r.relation || 'new'}">${r.relation || 'new dish'}</span>
-            <a class="mk" href="/forms/dishes_v2.html?create=${encodeURIComponent(r.dish)}" target="_blank" rel="noopener"
-               title="Open the dish editor prefilled: this name, two search lines (name + &quot;name Recipe&quot;), 40 results/line, 15 kept, 180-day TTL — review, then Create">➕ dish</a></td>
+            <a class="chip mk" href="${createHref(r.dish)}" target="_blank" rel="noopener"
+               title="Open the dish editor prefilled for this dish — review, then Create">➕ dish</a></td>
         </tr>`).join('')
         : '<tr><td colspan="5" class="empty">No dishes match those filters.</td></tr>';
     }
