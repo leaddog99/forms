@@ -6519,3 +6519,89 @@ Closed at every level, direct-first so credits only spend on failures:
   gets LISTEN/NOTIFY options. Decide staged (dual-write?) vs big-bang restore.
 * BAILEY cutover still pending; known_for embedding link; domains/dishes
   advanced search design.
+
+## Session log — 2026-08-27 — search lines grow up, the form gets audited, and the unblocker stops billing us for pages we already had
+
+### Postgres: inventoried, then parked
+
+* Full SQLite-surface inventory written to **docs/postgres-migration-inventory.md**
+  (four DB files not one; what DISSOLVES — WAL/busy_timeout, vec0 sidecars +
+  triggers, the 5KB source_host CASE monster, FTS triggers, the disabled job
+  runner — vs what's a REWRITE — ~30 modules of placeholders, 106 json_extract
+  sites, the whole backup/DR chain). Recommendation on file: recipes.db only,
+  big-bang ETL with BAILEY rehearsal, NOT dual-write. Curator call: **HOLD**
+  until more system functionality lands. Nothing is on fire; it's an
+  investment, not a rescue.
+
+### Dish search lines: the stored-but-dead feature gets finished
+
+* The 2026-08 query-ROWS design ({q, n, gl, hl}) was ~40% built: storage +
+  validators existed, but the UI was a bare-strings textarea and the harvest
+  ignored every per-row value (gl=us/hl=en hardcoded, one uniform top_n).
+  Deferred-is-not-fixed, textbook case.
+* **Null = follow the dish**, now for locale too (same contract n already had):
+  gl/hl stored as null, resolved at REFRESH time from source_language by
+  `resolve_query_locales`. Save-time stamping (apply_locale_defaults) is dead —
+  it made an explicit us/en line on a Greek dish inexpressible, and the moules
+  fr/fr stamp was found already WIPED in prod by a later textarea save.
+  Migration: all 224 dishes → null-locale canonical rows (zero explicit
+  locales existed to preserve).
+* Harvest honors rows end-to-end: `_multi_query_lookup` runs each line at its
+  own `n` (blank → dish default, renamed "Default results per line" on the
+  form) and its own gl/hl; per-row n clamps to System→Limits; an explicit
+  non-base row hl marks the batch foreign for the OU-floor relax. Dan Dan
+  Noodles now queries CHINESE Google; moules queries French — both had been
+  silently querying US.
+* UI: structured row editor (query | results | language | country selects,
+  country auto-derived, GL_FOR_LANG mirrored in JS — keep in sync) with
+  worked EXAMPLES on the form, per curator: teach the syntax where it's used.
+  Query box autosizes (wraps, never scrolls hidden); Enter = new line row.
+
+### The dish form audit (curator asked for a full one)
+
+* 12 findings, all fixed: refresh button re-arming mid-run (duplicate
+  EventSource), dirty-tracker lighting Save from Editor's-Choice typing,
+  boot hang on dead server (now retry link), /system-config re-render
+  stomping typing (in-place max update), stream lifecycle (ONE tail,
+  resync-not-duplicate, give-up after 5 errors), silent half-filled-row drop,
+  create/edit validation parity, alert()→flash, human error messages,
+  hostname derivation → **LibraryShell.hostOf** (was 6 copies in 2 variants;
+  4 other forms still carry copies — migrate as touched), EC purple + row
+  tints → single-source classes, /dishes list slimmed (no embedding_text,
+  identity_card → boolean; 222 × multi-KB saved per load).
+* Winners + cohort lists: **sortable stat headers** (score/ou%/pwr%) and the
+  score finally DEFINED in place — "score = 70% OU pct + 30% power pct",
+  weight live from the payload (power_blend_weight), tooltip explains the
+  in-cohort percentile blend.
+
+### Unblocker: two leaks were billing us for pages that fetch fine
+
+* Curator flagged heavy unblocker use. Verified with live fetches, not
+  code-reads: **gressinghamduck.co.uk 74/74 paid RENDER fetches** on a site
+  whose static HTML carries complete recipe JSON-LD (200 in 0.7s); Quiche
+  dish run paid 26× including jamieoliver — the exact false-positive the
+  code itself documents.
+* Leak 1 — flag-trusting render-first: render_required=1 (or the dish
+  batch's _allow_render from fetch_strategy='unblocker') SKIPPED the free
+  direct fetch entirely. Gressingham got both flags from the domains form's
+  **"blocked" mode preset** — one click, and the curator had no way to know
+  ("unclear when to check it"). Fix: the free direct probe now runs FIRST
+  unconditionally; accepted iff unblocked AND structured (ld+json/<article>).
+  True JS-shells pay the same as before +~1s; wrong flags now cost $0.
+* Leak 2 — ambient-marker spend false positive: Cloudflare's PASSIVE
+  'challenge-platform' script on full healthy pages triggered paid
+  escalation. Fix: ambient markers spend only when the body ALSO lacks
+  structure.
+* Data: gressingham reset to plain/render=0. Form: strategy fields now say
+  the truth — flags choose HOW to escalate, never whether to try direct.
+* **Verified by rerun**: Quiche old `direct=85 unblocker=26` → new
+  `direct=105 unblocker=3` (kitchenaid/southernfellow/hiteonricecouple —
+  genuine blocks). ~88% of the paid filter spend was waste, now gone.
+  Ops note: spawned jobs import fresh code (fixed immediately); only the
+  server's live-extract path needed the restart.
+
+### Open
+
+* BAILEY cutover; known_for embedding link; domains/dishes advanced search;
+  postgres decision parked (inventory doc is the decision record); 4 forms
+  still carrying local hostname copies → LibraryShell.hostOf as touched.
