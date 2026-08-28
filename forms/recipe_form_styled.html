@@ -3631,7 +3631,10 @@
           matchValEl.textContent = match.dish;
           matchValEl.classList.remove('empty');
         } else if (match && match.candidates && match.candidates.length) {
-          matchValEl.textContent = 'no confident match';
+          // The resolution ladder's third rung (docs/dish-product-matching.md):
+          // the NEAREST dish is a first-class answer now, not a failure —
+          // say it, muted, and let the basis carry the "loose" caveat.
+          matchValEl.textContent = match.candidates[0].dish;
           matchValEl.classList.add('empty');
         } else {
           matchValEl.textContent = '—';
@@ -3645,9 +3648,11 @@
         } else if (match && match.dish) {
           b = 'distance ' + (typeof match.distance === 'number' ? match.distance.toFixed(2) : '—');
         } else if (match && match.candidates && match.candidates.length) {
-          b = 'closest: ' + match.candidates.slice(0, 3)
-            .map(c => c.dish + ' (' + (typeof c.distance === 'number' ? c.distance.toFixed(2) : '?') + ')')
-            .join(', ');
+          const c0 = match.candidates[0];
+          b = 'nearest (loose) · distance '
+            + (typeof c0.distance === 'number' ? c0.distance.toFixed(2) : '?')
+            + (match.candidates.length > 1
+               ? ' · then ' + match.candidates.slice(1, 3).map(c => c.dish).join(', ') : '');
         }
         matchBasisEl.textContent = b;
       }
