@@ -92,6 +92,12 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # the exact string that was embedded — diff against current
     # composition to detect staleness when queries change.
     # See input/pipeline/embeddings.py for details.
+    # Migration (2026-08-28): measured cohort evidence for the dish->product
+    # pipeline (docs/dish-product-matching.md). JSON stamped by the
+    # dish_signals job: term df + lift vs the corpus + example lines, per
+    # signal family (ingredients / equipment / provenance).
+    if "cohort_signals" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN cohort_signals TEXT")
     if "embedding" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN embedding BLOB")
     if "embedding_text" not in cols:

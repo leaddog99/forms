@@ -7932,6 +7932,41 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
 jobs_lib.register_handler("dish_rematch", _handle_dish_rematch_job)
 
 
+async def _handle_dish_signals_job(job: dict) -> dict:
+    """Stamp dishes.cohort_signals for one dish (params.dish_name) or, with
+    no dish given, every dish that has at least one cohort row. The evidence
+    layer of the dish->product pipeline (docs/dish-product-matching.md):
+    term df + lift vs corpus + example lines, no LLM, nothing billable.
+    ~One corpus scan per dish; the sweep mode is minutes, not hours."""
+    from input.pipeline import dish_signals
+    params = job.get("params") or {}
+    dish = (params.get("dish_name") or "").strip()
+
+    def _run():
+        out = {}
+        with _db() as conn:
+            names = ([dish] if dish else
+                     [r[0] for r in conn.execute(
+                         "SELECT DISTINCT dish_effective FROM master_recipes "
+                         "WHERE dish_effective IS NOT NULL "
+                         "INTERSECT SELECT name FROM dishes")])
+            for n, name in enumerate(names, 1):
+                sig = dish_signals.stamp_signals(conn, name)
+                top = [r["term"] for r in (sig.get("ingredients") or [])[:3]]
+                print(f"[SIGNALS] {n}/{len(names)} {name}: cohort={sig.get('cohort_n')} "
+                      f"top={top}")
+                out[name] = {"cohort_n": sig.get("cohort_n"),
+                             "ingredients": len(sig.get("ingredients") or []),
+                             "equipment": len(sig.get("equipment") or [])}
+        return out
+    summary = await asyncio.to_thread(_run)
+    return {"stamped": len(summary), "dishes": summary if len(summary) <= 20 else
+            {"(first 20)": dict(list(summary.items())[:20])}}
+
+
+jobs_lib.register_handler("dish_signals", _handle_dish_signals_job)
+
+
 async def _handle_page_cache_purge_job(job: dict) -> dict:
     """Nightly: delete cached raw pages past their retention and reclaim the disk.
 
