@@ -1010,9 +1010,12 @@ def list_domains(conn: sqlite3.Connection) -> list[dict]:
         # flow (dish/Google harvests land in the tables above) and no
         # completed SEMrush backlinks-file ingest (that flow stamps
         # last_harvested_at even when it keeps zero rows — a run that kept
-        # nothing still ran).
+        # nothing still ran). Blocked domains (allowed=0 — youtube, facebook…)
+        # are excluded: they will never be extracted BY DESIGN, and the flag
+        # is a to-do marker, not a fact sheet (9 of the 61 were blocked).
         d["never_extracted"] = (
-            m == 0 and u == 0
+            bool(d.get("allowed"))
+            and m == 0 and u == 0
             and not (d.get("last_harvested_at") or "").strip())
     return rows
 
