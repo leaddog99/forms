@@ -4369,6 +4369,21 @@ async def collection_medal_endpoint(name: str, request: Request):
     return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
 
 
+@app.post("/product-collections/{name}/materialize")
+def collection_materialize_endpoint(name: str):
+    """Medaled candidates -> catalog product rows (find-or-create, idempotent).
+    In-process — three-ish rows and one embed each, not a job."""
+    from intake.products import collections_store as cst
+    try:
+        with _db() as conn:
+            return cst.materialize_medals(conn, name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        print(f"[MATERIALIZE] {name!r} failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Materialize failed: {e}") from e
+
+
 # ---- Curated collections ACDV editor (forms/curated_collections.html) --------------
 # The SECOND selection technique, beside the Amazon-search one above. A curated collection is
 # a product CLASS ("Loaf pans"); the run reads what the named authorities published about it,

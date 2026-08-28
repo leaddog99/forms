@@ -273,3 +273,82 @@ def set_medal(conn: sqlite3.Connection, name: str, asin: str, medal: str) -> boo
         (medal or None, name, asin))
     conn.commit()
     return cur.rowcount > 0
+
+
+def materialize_medals(conn: sqlite3.Connection, name: str) -> dict:
+    """Medaled candidates -> catalog product rows. The missing half of the
+    Amazon-search path (built 2026-08-28): the run screens and the curator
+    medals, but until this, nothing ever became a `products` row — even Best
+    Dutch Ovens' golds sat with product_id NULL while the catalog's Dutch
+    Ovens came from the curated-reviews sibling.
+
+    Mirrors curate/to_products.materialize semantics: find-or-create by ASIN
+    then brand+title (no duplicates), placement recorded via set_curation
+    (approval-gated like every placement), candidate stamped with the
+    product_id. The medal is a CURATOR decision, so mapping it onto bcc_pick
+    (gold->Best Overall, silver->Best Value) honors the "bcc_pick is a human
+    field" rule — but only fills a BLANK pick, never overwrites one.
+    Idempotent: re-running updates offers/curation on the same rows.
+    """
+    from intake.products import catalog_store
+    ensure_tables(conn)
+    coll = get_collection(conn, name)
+    if coll is None:
+        raise ValueError(f"collection {name!r} not found")
+    klass = (coll.get("display_name") or coll["name"]).strip()
+    cands = _dicts(conn,
+        "SELECT * FROM product_collection_candidates WHERE collection = ? "
+        "AND medal IS NOT NULL AND medal != ''", (name,))
+    MEDAL_PICK = {"gold": "Best Overall", "silver": "Best Value"}
+    out = []
+    for cand in cands:
+        title = (cand.get("title") or "").strip()
+        if not title:
+            out.append({"asin": cand.get("asin"), "skipped": "no title"})
+            continue
+        asin = (cand.get("asin") or "").strip().upper()
+        brand = (cand.get("brand") or "").strip()
+        price = None
+        try:
+            price = float(str(cand.get("price") or "").replace("$", "").replace(",", "")) or None
+        except ValueError:
+            pass
+        existing = (catalog_store.find_by_asin(conn, asin)
+                    or catalog_store.find_by_name(conn, brand, title))
+        product = {
+            "product_class": klass,
+            "brand": brand,
+            "name": title,
+            "image_url": cand.get("image") or "",
+            "retailer_offers": [{
+                "retailer": "Amazon", "asin": asin,
+                "source_url": cand.get("link") or "", "price": price,
+            }],
+        }
+        res = catalog_store.save_product(conn, product, merge_into=existing)
+        pid, action = res["product_id"], res["action"]
+        medal = cand["medal"]
+        pick = MEDAL_PICK.get(medal, "")
+        if pick:
+            row = catalog_store.get_product(conn, pid)
+            if row and not (row.get("bcc_pick") or "").strip():
+                catalog_store.update_product(conn, pid, {"bcc_pick": pick})
+        catalog_store.set_curation(conn, pid, {
+            "collection": name,
+            "placements": [{
+                "collection": name, "label": medal.capitalize(),
+                "basis": "amazon-owner-screen",
+                "wilson_score": cand.get("wilson_score"),
+                "realrank_score": cand.get("realrank_score"),
+                "rating": cand.get("rating"),
+                "ratings_total": cand.get("ratings_total"),
+            }],
+        })
+        conn.execute(
+            "UPDATE product_collection_candidates SET product_id = ? "
+            "WHERE collection = ? AND asin = ?", (pid, name, cand["asin"]))
+        conn.commit()
+        out.append({"asin": asin, "medal": medal, "product_id": pid, "action": action})
+    return {"collection": name, "materialized": out,
+            "created": sum(1 for r in out if r.get("action") == "created"),
+            "merged": sum(1 for r in out if r.get("action") == "merged")}

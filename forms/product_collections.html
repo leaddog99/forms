@@ -213,6 +213,9 @@
               <option value="rating">Order: highest stars</option>
             </select>
             <span class="muted" style="font-size:.8rem">Dimmed rows were returned but not screened.</span>
+            <button type="button" class="ed-btn" id="materializeBtn" style="margin-left:auto"
+              title="Create/update a catalog product record for every medaled candidate (find-or-create by ASIN, then brand+title — no duplicates; re-running updates)">⬇ Medalists → catalog</button>
+            <span class="muted" id="matHint" style="font-size:.8rem"></span>
           </div>
           ${cands.length ? cands.map(candRow).join('') : '<p class="muted">— no run yet —</p>'}
         </section>`;
@@ -221,6 +224,24 @@
       $('#back').addEventListener('click', () => { selected=null; detail=null; renderList(); renderDetail(); });
       $('#editBtn').addEventListener('click', () => { mode='edit'; renderDetail(); });
       $('#refreshBtn').addEventListener('click', doRefresh);
+      $('#materializeBtn')?.addEventListener('click', async () => {
+        const btn = $('#materializeBtn'), hint = $('#matHint');
+        btn.disabled = true; hint.textContent = 'materializing…';
+        try {
+          const r = await fetch(`/product-collections/${encodeURIComponent(selected)}/materialize`, { method: 'POST' });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+          const n = (d.materialized || []).length;
+          const msg = n
+            ? `✓ ${n} medalist${n === 1 ? '' : 's'}: ${d.created} created, ${d.merged} merged — see Products`
+            : 'no medals yet — medal candidates first';
+          detail = null; await renderDetail();     // re-render wipes the hint element…
+          const h = $('#matHint'); if (h) h.textContent = msg;   // …so restate on the fresh one
+        } catch (e) {
+          hint.textContent = `failed: ${e.message || e}`;
+          btn.disabled = false;
+        }
+      });
       $('#candOrder').addEventListener('change', async e => {
         candOrder = e.target.value; detail = null; await renderDetail();
       });
@@ -247,7 +268,8 @@
           ${x.image?`<img src="${escapeHtml(x.image)}" alt="" onerror="this.style.visibility='hidden'">`:'<div style="width:44px"></div>'}
           <div class="cd-main">
             <div class="cd-t">${escapeHtml(x.title||x.asin)}
-              ${x.medal?`<span class="medal ${escapeHtml(x.medal)}">${escapeHtml(x.medal)}</span>`:''}</div>
+              ${x.medal?`<span class="medal ${escapeHtml(x.medal)}">${escapeHtml(x.medal)}</span>`:''}
+              ${x.product_id?`<span class="pill-w" title="Materialized into the product catalog (${escapeHtml(x.product_id)})" style="background:#e2efeb;color:#0f6e5c">in catalog</span>`:''}</div>
             <div class="cd-meta">
               <span class="star">★</span>${x.rating ?? '—'} · ${(x.ratings_total||0).toLocaleString()} ratings
               ${x.price?` · ${escapeHtml(x.price)}`:''} · #${x.position ?? '?'} on Amazon
