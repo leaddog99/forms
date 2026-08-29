@@ -189,15 +189,11 @@ junction row / proposal is labeled with one:
   citation; defaults tier 3, promoted only by the curator.
 - **passthrough** — the recipe's data is handed to a marketplace resolver;
   there are NO picks to curate, only the PROGRAM (which marketplace, query
-  params, affiliate terms — the /go/ rail). Instacart — NOT the whole
-  ingredient list (curator correction 2026-08-29: "odds are I don't need
-  everything"): the reader BUILDS THE CART IN OUR SURFACE — the recipe's
-  ingredients rendered as a checklist, pantry staples default-unchecked —
-  and pushes the SELECTED subset to Instacart when ready to shop. Renders
-  as a UTILITY, never crowds the ranked block. Side benefit: the
-  check/uncheck pattern is layer-5 data (what readers buy vs already own).
-  Also: geo-resolved experiences (local cooking classes by the reader's
-  metro); alcohol via Total-Wine-style local pickup.
+  params, affiliate terms — the /go/ rail). Geo-resolved experiences
+  (local cooking classes by the reader's metro); alcohol via
+  Total-Wine-style local pickup. (The Instacart cart-builder was OUT-SCOPED
+  to its own subsystem 2026-08-29 — recipe-grain, interactive, a program
+  not a curation: docs/shopping-cart-subsystem.md.)
 
 FOUR derivation routes feed the proposals (the fourth added 2026-08-29,
 curator: "not just wine in the dish, but what wine goes best WITH it"):
