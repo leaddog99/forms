@@ -132,6 +132,37 @@ making a CHOCOLATE cream pie is in the market for the chocolate. So:
   dish's approved set + its own cohort mining — most of the ~224 reviews
   become inherit-tweak-approve, not built-from-scratch.
 
+## The display metric: expected value with exploration (curator, 2026-08-29)
+
+What gets suggested is ultimately ranked by MONEY EXPECTED, not relevance
+rules: **EV(candidate | dish page) = P(click | shown, THIS dish) x
+P(purchase | click) x E[payout]** — and displayed in DESCENDING EV order
+with randomness built in.
+
+Relevance is not a separate gate in the end state: it lives INSIDE the
+contextual P(click|shown, dish). The earlier "relevance gates, money sorts"
+rule is the COLD-START PRIOR for that probability (tier/lift/pattern/family
+seed the estimate) and is replaced by measurement as it arrives.
+
+- P(click|shown,dish): ours — needs an IMPRESSIONS log (what was shown,
+  which position, which dish page) + the /go/ click rail. The impressions
+  log must exist from day one of display or early data has no denominator.
+- P(purchase|click): marketplace-side but observable (Amazon/Instacart
+  program reports); per-family constants until actuals accumulate.
+- E[payout]: commission x typical price per pick; actuals over time.
+
+The randomness = a BANDIT, preferably Thompson sampling: each candidate
+holds a posterior over its EV; render ranks by a fresh SAMPLE. New
+candidates (wide posteriors) get exposure to be learned; proven losers
+vanish; exploration decays as data accumulates. Epsilon-greedy is the
+acceptable v1 fallback.
+
+STILL OPEN (curator: "what we display is still up for grabs"): whether the
+tier-1 differentiator stays PINNED first regardless of EV (brand statement);
+whether utilities (Instacart) and the pairing sit outside the ranked contest
+(recommended: yes); per-family exposure floors/caps so high-commission
+families can't monopolize during their wide-uncertainty phase.
+
 ## Matching patterns and derivation routes (curator session, 2026-08-29)
 
 "Signals -> classes" is not one matching problem. Three PATTERNS, and every
