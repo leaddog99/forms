@@ -5974,18 +5974,20 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
 
 ## START HERE — state of play as of 2026-08-28
 
-Read all FOUR 2026-08-28 session logs (bottom of file), then the prior START
-HEREs below — the 2026-08-22 scoring-session framing and standing items
-remain valid. **Dish-anchored product matching (docs/dish-product-matching.md)
-is the standing build**, and the whole loop was proven live in one day:
-every recipe resolves a dish (8,376/8,376, dish_effective both tables) →
-cohort signals measured with lift (dishes.cohort_signals + dish editor
-accordion; Chocolate Cream Pie stamped) → a signal became a sellable
-("egg yolks 44%/14x" → Egg Separators collection → Amazon screen → medals →
-3 catalog products, and the path's missing materialize step got built).
-NEXT: pilot step 2 — the product_classes registry (family + embeddings +
-embed-snap imports), then the dish→classes junction + proposal chips.
-One restart owed (the /materialize endpoint).
+Read the 2026-08-29 log + the four 2026-08-28 logs (bottom of file), then
+the prior START HEREs below — the 2026-08-22 scoring-session framing and
+standing items remain valid. **Dish-anchored product matching
+(docs/dish-product-matching.md) is the standing build and the PILOT IS
+COMPLETE end-to-end:** every recipe resolves a dish (dish_effective, source
+'assigned'|'matched'|'nearest') → cohort signals corpus-wide (247/247,
+sortable tables in the dish editor) → class registry canonical + snap
+(38 seeded, calibrated) → pattern-aware Sonnet proposals (junction rows,
+evidence-cited) → approve chips in the dish editor (instant-save, gated,
+first 5 classes approved on Chocolate Cream Pie). The all-dishes proposal
+sweep may still be finishing — check jobs. NEXT: curator approval passes +
+provisional-class cleanup, then the RENDER side (block + impressions log +
+/go/ + EV bandit — the metric and layer-5 funnel are designed in the doc).
+Cart-builder parked as its own subsystem (docs/shopping-cart-subsystem.md).
 
 **Where things stand:**
 
