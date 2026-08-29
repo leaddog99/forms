@@ -104,6 +104,9 @@ Rules:
 - Every evidence term MUST appear in the signals above (except served_with).
 - Precise beats vague: the form data in example lines matters ("Baking
   Chocolate" not "Chocolate" when the lines show bars/chopped).
+- STRICT JSON: never put a double-quote character INSIDE a string value.
+  Write inch as "in" (9x13 in, never 9x13"), and quote nothing in
+  rationales.
 Return ONLY the JSON array."""
 
 
@@ -128,10 +131,7 @@ def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
     msg = llm.create(operation="dish_class_propose", model=MODEL, max_tokens=MAX_TOKENS,
                      messages=[{"role": "user", "content": _prompt(dish, sig, registry)}])
     raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-    m = re.search(r"\[.*\]", raw, re.S)
-    if not m:
-        raise ValueError(f"no JSON array in reply: {raw[:200]}")
-    proposals = json.loads(m.group(0))
+    proposals = _parse_proposals(raw, dish_name)
 
     now = _now()
     out = []
@@ -235,3 +235,43 @@ def set_tier(conn: sqlite3.Connection, dish_name: str, class_name: str, tier: in
         (tier, dish_name, class_name))
     conn.commit()
     return cur.rowcount > 0
+
+
+def _parse_proposals(raw: str, dish_name: str) -> list:
+    """Parse the reply's JSON array, surviving the model's favorite crime.
+
+    First sweep attempt 2026-08-29 failed 11 of 25 dishes, every one
+    `Expecting ',' delimiter` — unescaped double quotes INSIDE string values,
+    overwhelmingly inch marks (`9x13" baking pans`) and quoted phrases in
+    rationales. Three layers, cheapest first:
+      1. plain json.loads;
+      2. mechanical repair — digit+quote becomes `<digit> in`, typographic
+         quotes stripped, then a general pass escaping any interior quote
+         that isn't followed by a JSON structural character;
+      3. one model self-repair call carrying the parse error (costs a
+         second cheap call, only on the rare double failure).
+    """
+    m = re.search(r"\[.*\]", raw, re.S)
+    if not m:
+        raise ValueError(f"no JSON array in reply for {dish_name!r}: {raw[:200]}")
+    txt = m.group(0)
+    try:
+        return json.loads(txt)
+    except json.JSONDecodeError:
+        pass
+    fixed = re.sub(r'(\d)\s*"', r"\1 in", txt)           # 9x13" -> 9x13 in
+    fixed = fixed.replace("“", "'").replace("”", "'")
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError as e:
+        import llm
+        msg = llm.create(operation="dish_class_propose_repair", model="claude-haiku-4-5",
+                         max_tokens=MAX_TOKENS, messages=[{"role": "user", "content":
+            f"This JSON array is invalid ({e}). Return the SAME content as a "
+            f"VALID JSON array — escape or remove any double quotes inside "
+            f"string values. Return ONLY the array.\n\n{txt}"}])
+        raw2 = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+        m2 = re.search(r"\[.*\]", raw2, re.S)
+        if not m2:
+            raise ValueError(f"repair produced no array for {dish_name!r}") from e
+        return json.loads(m2.group(0))
