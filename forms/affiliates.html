@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Affiliate Programs</title>
+  <!-- ACDV editor over affiliate_programs + affiliate_program_hosts
+       (docs/affiliate-programs-and-clicks.md). One row per merchant
+       relationship; ONLY status='active' mints a code, so this page is where
+       "60% of offers earn nothing" gets worked down — a program is monetized
+       by adding a row here, never by editing code.
+
+       Cloned from curated_collections.html per
+       memory/feedback_editor_template_not_runtime; typography and controls
+       deliberately identical. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828b">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260813b">
+  <style>
+    .pc-form .ed-field { margin-bottom: 10px; }
+    .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .pc-form input, .pc-form textarea, .pc-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pc-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .muted { color: var(--ed-ink-soft); }
+    .pill-w { display: inline-block; font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+      text-transform: uppercase; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--ed-ink-soft); margin-left: 5px; }
+    .pill-w.ok { color: #1f8a54; border-color: #cfe9da; background: #eaf6ef; }
+    .pill-w.warn { color: #96700c; border-color: #eedfb4; background: #fbf1d4; }
+    .pill-w.bad { color: #b4552f; border-color: #f0d8cb; background: #fbefe8; }
+    .kv { display: grid; grid-template-columns: 170px 1fr; gap: 5px 14px; font-size: .88rem; }
+    .kv .k { color: var(--ed-ink-soft); }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Affiliates <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="addToggle" title="Add a program" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260825b"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'affiliates' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Affiliates', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, fmtDate, flash, urlField } = LibraryShell;
+
+    const STATUSES = ['prospect','applied','approved','active','paused','rejected','closed'];
+    const NETWORKS = ['', 'amazon','impact','cj','rakuten','shareasale','awin','direct'];
+    const STRATEGIES = ['template','amazon_tag','none'];
+    const statusPill = (s) => `<span class="pill-w ${s==='active'?'ok':(s==='paused'||s==='rejected'||s==='closed')?'bad':'warn'}">${escapeHtml(s||'prospect')}</span>`;
+
+    let rows = [], selected = null, mode = 'view';
+
+    function renderList(){
+      $('#count').textContent = `(${rows.length})`;
+      $('#list').innerHTML = rows.length ? rows.map(p => `
+        <li class="ed-item ${p.name===selected&&mode!=='add'?'selected':''}" data-name="${escapeHtml(p.name)}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(p.display_name || p.name)}</span>
+            ${p.status==='active' ? '<span class="ed-item-flag ok" title="Active — mints codes"></span>' : ''}</div>
+          <div class="ed-item-meta">${escapeHtml(p.merchant||'—')} · ${escapeHtml(p.network||'no network')} · ${escapeHtml(p.status||'prospect')} · ${p.host_count||0} host${(p.host_count||0)===1?'':'s'}${p.default_rate!=null?` · ${(p.default_rate*100).toFixed(1)}%`:''}</div>
+        </li>`).join('') : '<li class="ed-empty">No programs — press +.</li>';
+      $('#list').querySelectorAll('li[data-name]').forEach(li =>
+        li.addEventListener('click', () => { selected = li.dataset.name; mode='view'; renderList(); renderDetail(); nav.afterSelect(); }));
+    }
+
+    async function renderDetail(){
+      const page = $('#page');
+      if (mode === 'add') return renderForm(null);
+      if (!selected){ page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Affiliate Programs</span></div>
+        <h1 class="ed-title">Affiliate programs</h1>
+        <p class="ed-submeta" style="max-width:64ch">One row per merchant relationship. <b>Only an
+        <i>active</i> program mints an affiliate code</b> — everything else redirects clean (a link is
+        always usable before its network is set up, and never carries a half-built tag). The /go/
+        redirect resolves a click's host to its program here; unmonetized hosts still record, and
+        that demand is the which-program-to-join-next signal. Pick one from the list or press +.</p>`;
+        return;
+      }
+      let p;
+      try {
+        const r = await fetch(`/affiliate-programs/${encodeURIComponent(selected)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        p = await r.json();
+      } catch (e){ page.innerHTML = `<p class="ed-empty">Couldn’t load (${escapeHtml(String(e.message||e))}).</p>`; return; }
+      if (mode === 'edit') return renderForm(p);
+      const hosts = (p.hosts||[]).map(h => `${escapeHtml(h.host)}${h.kind==='network_redirector'?' <span class="pill-w">redirector</span>':''}`).join('<br>') || '—';
+      page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Affiliate Program</span></div>
+        <h1 class="ed-title" style="margin-bottom:2px">${escapeHtml(p.display_name || p.name)} ${statusPill(p.status)}</h1>
+        <p class="ed-submeta">${escapeHtml(p.merchant||'')} · ${escapeHtml(p.network||'no network')} · key <code>${escapeHtml(p.name)}</code></p>
+        <div class="ed-actions" style="position:static;background:none;padding:6px 0 14px">
+          <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          <button type="button" class="ed-btn danger" id="delBtn">Delete</button>
+        </div>
+        <section class="ed-block"><h3 class="ed-block-label">Membership</h3>
+          <div class="kv">
+            <div class="k">Publisher id</div><div>${escapeHtml(p.publisher_id||'—')}</div>
+            <div class="k">Tracking id</div><div>${escapeHtml(p.tracking_id||'—')}</div>
+            <div class="k">Campaign id</div><div>${escapeHtml(p.campaign_id||'—')}</div>
+            <div class="k">Account ref</div><div>${escapeHtml(p.account_ref||'—')}</div>
+            <div class="k">Dashboard</div><div>${p.dashboard_url?`<a href="${escapeHtml(p.dashboard_url)}" target="_blank" rel="noopener">${escapeHtml(p.dashboard_url)}</a>`:'—'}</div>
+            <div class="k">Contact</div><div>${escapeHtml(p.contact||'—')}</div>
+          </div></section>
+        <section class="ed-block"><h3 class="ed-block-label">Link building</h3>
+          <div class="kv">
+            <div class="k">Strategy</div><div>${escapeHtml(p.link_strategy||'template')}</div>
+            <div class="k">Template</div><div><code style="font-size:.82em;word-break:break-all">${escapeHtml(p.link_template||'—')}</code></div>
+            <div class="k">Subtag param</div><div>${escapeHtml(p.subtag_param||'—')}</div>
+            <div class="k">Deep links</div><div>${p.supports_deeplink?'yes':'no — homepage-only'}</div>
+          </div></section>
+        <section class="ed-block"><h3 class="ed-block-label">Economics</h3>
+          <div class="kv">
+            <div class="k">Default rate</div><div>${p.default_rate!=null?(p.default_rate*100).toFixed(1)+'%':'—'}</div>
+            <div class="k">Commission note</div><div>${escapeHtml(p.commission_note||'—')}</div>
+            <div class="k">Cookie window</div><div>${p.cookie_days!=null?p.cookie_days+' days':'—'}</div>
+            <div class="k">Priority</div><div>${p.priority??'—'}</div>
+          </div></section>
+        <section class="ed-block"><h3 class="ed-block-label">Hosts <span class="ed-count">(${(p.hosts||[]).length})</span></h3>
+          <p class="ed-notes-help" style="margin:0 0 8px">An outbound URL's host resolves to its program here — host or any subdomain.</p>
+          <div style="font-size:.88rem">${hosts}</div></section>
+        ${p.notes?`<section class="ed-block"><h3 class="ed-block-label">Notes</h3><p style="font-size:.9rem;white-space:pre-wrap">${escapeHtml(p.notes)}</p></section>`:''}`;
+      $('#editBtn').addEventListener('click', () => { mode='edit'; renderDetail(); });
+      $('#delBtn').addEventListener('click', async () => {
+        if (!confirm(`Delete program ${p.name}? Its hosts stop resolving; existing clicks keep their rows.`)) return;
+        const r = await fetch(`/affiliate-programs/${encodeURIComponent(p.name)}`, { method:'DELETE' });
+        if (r.ok){ flash('Program deleted'); selected=null; await load(); }
+        else flash('Delete failed: ' + (await r.json().catch(()=>({}))).detail);
+      });
+    }
+
+    function renderForm(p){
+      const isEdit = !!p;
+      const v = (k, d='') => escapeHtml((p && p[k] != null ? p[k] : d) + '');
+      const sel = (opts, cur) => opts.map(o => `<option value="${o}" ${((cur??'')+'')===o?'selected':''}>${o||'—'}</option>`).join('');
+      const hostLines = isEdit ? (p.hosts||[]).map(h => h.host + (h.kind==='network_redirector' ? ' redirector' : '')).join('\n') : '';
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · ${isEdit?'Edit':'New'} Program</span></div>
+        <h1 class="ed-title" style="margin-bottom:14px">${isEdit?escapeHtml(p.display_name||p.name):'Add a program'}</h1>
+        <div class="pc-form">
+          ${isEdit?'':`<div class="ed-field"><label>Name (immutable join key — lowercase, e.g. <code>walmart</code>)</label><input id="f_name" placeholder="walmart"></div>`}
+          <div class="pc-row2">
+            <div class="ed-field"><label>Display name</label><input id="f_display" value="${v('display_name')}" placeholder="Walmart Creator/Affiliate"></div>
+            <div class="ed-field"><label>Merchant (as a shopper knows it)</label><input id="f_merchant" value="${v('merchant')}" placeholder="Walmart"></div>
+          </div>
+          <div class="pc-row3">
+            <div class="ed-field"><label>Network</label><select id="f_network">${sel(NETWORKS, p&&p.network)}</select></div>
+            <div class="ed-field"><label>Status <span class="muted" style="font-weight:400">(only <b>active</b> mints)</span></label><select id="f_status">${sel(STATUSES, (p&&p.status)||'prospect')}</select></div>
+            <div class="ed-field"><label>Priority (low wins ties)</label><input id="f_priority" type="number" value="${v('priority','100')}"></div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Publisher id</label><input id="f_publisher" value="${v('publisher_id')}"></div>
+            <div class="ed-field"><label>Tracking id (Amazon: tag)</label><input id="f_tracking" value="${v('tracking_id')}"></div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Campaign id</label><input id="f_campaign" value="${v('campaign_id')}"></div>
+            <div class="ed-field"><label>Account ref</label><input id="f_account" value="${v('account_ref')}"></div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Dashboard URL</label><input id="f_dashboard" value="${v('dashboard_url')}" placeholder="https://…"></div>
+            <div class="ed-field"><label>Contact</label><input id="f_contact" value="${v('contact')}"></div>
+          </div>
+          <div class="pc-row3">
+            <div class="ed-field"><label>Link strategy</label><select id="f_strategy">${sel(STRATEGIES, (p&&p.link_strategy)||'template')}</select></div>
+            <div class="ed-field"><label>Subtag param</label><input id="f_subtag" value="${v('subtag_param')}" placeholder="subId1"></div>
+            <div class="ed-field"><label>Deep links</label><select id="f_deeplink">${sel(['1','0'], (p?(p.supports_deeplink?'1':'0'):'1'))}</select></div>
+          </div>
+          <div class="ed-field"><label>Link template <span class="muted" style="font-weight:400">(placeholders: {dest} {dest_enc} {publisher_id} {campaign_id} {subtag} {click_id})</span></label>
+            <input id="f_template" value="${v('link_template')}" placeholder="https://goto.example.com/c/{publisher_id}/{campaign_id}?u={dest_enc}&subId1={subtag}"></div>
+          <div class="pc-row3">
+            <div class="ed-field"><label>Default rate (0.04 = 4%)</label><input id="f_rate" type="number" step="0.001" value="${v('default_rate')}"></div>
+            <div class="ed-field"><label>Commission note</label><input id="f_commnote" value="${v('commission_note')}" placeholder="4% most, 1% grocery"></div>
+            <div class="ed-field"><label>Cookie days</label><input id="f_cookie" type="number" value="${v('cookie_days')}"></div>
+          </div>
+          <div class="ed-field"><label>Hosts (one per line; append <code>redirector</code> for a network wrapper)</label>
+            <textarea id="f_hosts" rows="3" placeholder="walmart.com\ngoto.walmart.com redirector">${escapeHtml(hostLines)}</textarea></div>
+          <div class="ed-field"><label>Notes</label><textarea id="f_notes" rows="3">${v('notes')}</textarea></div>
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="saveBtn">${isEdit?'Save':'Create'}</button>
+            <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
+            <span class="ed-save-hint" id="hint"></span>
+          </div>
+        </div>`;
+      $('#cancelBtn').addEventListener('click', () => { mode='view'; if(!isEdit) selected=null; renderList(); renderDetail(); });
+      $('#saveBtn').addEventListener('click', async () => {
+        const hosts = $('#f_hosts').value.split('\n').map(s => s.trim()).filter(Boolean).map(line => {
+          const [host, kind] = line.split(/\s+/);
+          return { host: host.toLowerCase(), kind: kind === 'redirector' ? 'network_redirector' : 'merchant' };
+        });
+        const body = {
+          display_name: $('#f_display').value.trim(), merchant: $('#f_merchant').value.trim(),
+          network: $('#f_network').value, status: $('#f_status').value,
+          priority: parseInt($('#f_priority').value, 10) || 100,
+          publisher_id: $('#f_publisher').value.trim(), tracking_id: $('#f_tracking').value.trim(),
+          campaign_id: $('#f_campaign').value.trim(), account_ref: $('#f_account').value.trim(),
+          dashboard_url: $('#f_dashboard').value.trim(), contact: $('#f_contact').value.trim(),
+          link_strategy: $('#f_strategy').value, subtag_param: $('#f_subtag').value.trim(),
+          supports_deeplink: $('#f_deeplink').value === '1' ? 1 : 0,
+          link_template: $('#f_template').value.trim(),
+          default_rate: $('#f_rate').value ? parseFloat($('#f_rate').value) : null,
+          commission_note: $('#f_commnote').value.trim(),
+          cookie_days: $('#f_cookie').value ? parseInt($('#f_cookie').value, 10) : null,
+          notes: $('#f_notes').value, hosts,
+        };
+        let r;
+        if (isEdit) r = await fetch(`/affiliate-programs/${encodeURIComponent(p.name)}`, {
+          method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        else {
+          body.name = ($('#f_name').value || '').trim().toLowerCase();
+          if (!body.name){ $('#hint').textContent = 'Name is required'; return; }
+          r = await fetch('/affiliate-programs', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        }
+        const d = await r.json().catch(() => ({}));
+        if (r.ok){ flash('✓ Saved'); selected = d.name || (p && p.name); mode='view'; await load(); }
+        else $('#hint').textContent = 'Save failed: ' + (d.detail || `HTTP ${r.status}`);
+      });
+    }
+
+    async function load(){
+      try {
+        const r = await fetch('/affiliate-programs');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        rows = (await r.json()).programs || [];
+      } catch (e){
+        $('#list').innerHTML = `<li class="ed-empty">Couldn’t load (${escapeHtml(String(e.message||e))}).</li>`;
+        return;
+      }
+      renderList(); renderDetail();
+    }
+
+    $('#addToggle').addEventListener('click', () => { mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
+    load();
+  </script>
+</body>
+</html>

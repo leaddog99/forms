@@ -943,6 +943,7 @@
     { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', perm: 'admin_ui', group: 'admin' },
     { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', perm: 'edit_master', group: 'admin' },
     { page: 'products',  label: 'Products', href: '/forms/products.html', perm: 'edit_master', group: 'admin' },
+    { page: 'affiliates', label: 'Affiliates', href: '/forms/affiliates.html', perm: 'edit_master', group: 'admin' },
     { page: 'review-install', label: 'Review Grabber', href: '/forms/review_install.html', perm: 'edit_master', group: 'admin' },
     { page: 'reviews',   label: 'Reviews', href: '/forms/reviews.html', perm: 'edit_master', group: 'admin' },
     { page: 'system',    label: 'System', href: '/forms/system.html', perm: 'configure_system', group: 'admin' },
