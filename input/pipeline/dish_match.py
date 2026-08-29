@@ -200,7 +200,16 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
                 continue                      # <- the whole point: no write
 
             changed += 1
-            moves.append((rid, (prev or {}).get("dish"), new["dish"]))
+            # BOTH matched-dish fields, before -> after (curator request
+            # 2026-08-29): the confident verdict (_match.dish, rung 2 of the
+            # resolution ladder) AND the nearest candidate (candidates[0],
+            # rung 3 — what dish_effective falls back to). Either can move
+            # independently: a catalog change can flip the nearest without
+            # crossing the confidence bar, and that change is invisible in a
+            # verdict-only log while still re-aiming gear inheritance.
+            _p_near = (((prev or {}).get("candidates") or [{}])[0]).get("dish")
+            _n_near = ((new.get("candidates") or [{}])[0]).get("dish")
+            moves.append((rid, (prev or {}).get("dish"), new["dish"], _p_near, _n_near))
             if dry_run:
                 continue
 

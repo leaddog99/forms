@@ -7955,8 +7955,17 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
     for table, summary in summaries.items():
         moves = summary.pop("moves", [])
         print(f"[REMATCH] {table}: {summary}")
-        for rid, old, new_dish in moves[:50]:
-            print(f"[REMATCH]   {table} {rid}: {old!r} -> {new_dish!r}")
+        # Each changed row logs BOTH matched-dish fields with their prior
+        # values, but only the fields that actually moved — a verdict flip,
+        # a nearest-candidate flip, or both; neither means only the distance
+        # shifted (still a verdict change worth the write).
+        for rid, old, new_dish, old_near, new_near in moves[:50]:
+            bits = []
+            if old != new_dish:
+                bits.append(f"match {old!r} -> {new_dish!r}")
+            if old_near != new_near:
+                bits.append(f"nearest {old_near!r} -> {new_near!r}")
+            print(f"[REMATCH]   {table} {rid}: {' · '.join(bits) or 'distance moved'}")
         if len(moves) > 50:
             print(f"[REMATCH]   ... {len(moves) - 50} more")
     return summaries

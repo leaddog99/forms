@@ -69,7 +69,8 @@ def main() -> int:
     print(f"[REMATCH] failed            {summary['failed']}")
 
     if summary["moves"]:
-        tally = collections.Counter((old, new) for _rid, old, new in summary["moves"])
+        # moves rows are (rid, old_dish, new_dish, old_nearest, new_nearest)
+        tally = collections.Counter((m[1], m[2]) for m in summary["moves"])
         print()
         print("[REMATCH] moves (was -> now):")
         for (old, new), k in sorted(tally.items(), key=lambda kv: -kv[1])[:40]:
