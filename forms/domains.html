@@ -1339,7 +1339,7 @@
           es.close();
           // Stream dropped — the job likely finished. Recover its result before
           // falling back to the generic message.
-          if (!(await resolveFromJob())) done('Stream dropped — reload to see the result.', true);
+          if (!(await resolveFromJob())) done('Log stream disconnected (server restart?) — the job runs in its own process; reload this domain to see the result.', true);
         };
       });
     }
@@ -1686,7 +1686,7 @@
           finish(`Done — ${(res.rows || 0).toLocaleString()} ${(res.region || '').toUpperCase()} ranks · ${res.matched || 0}/${res.total || 0} domains matched.`);
           loadRankStatus();
         });
-        es.onerror = () => { es.close(); finish('Stream dropped — reload to see the result.'); loadRankStatus(); };
+        es.onerror = () => { es.close(); finish('Log stream disconnected (server restart?) — the job continues; reload to see the result.'); loadRankStatus(); };
       } catch (e) { finish(`Refresh failed: ${e.message || e}`); }
     }
 
@@ -1714,7 +1714,7 @@
             : `Done — refit on ${(f.n || 0).toLocaleString()} pages, rescored ${(res.members_rescored || 0).toLocaleString()} recipes across ${res.collections || 0} publishers.`);
           if (typeof loadDomains === 'function') loadDomains();   // refresh list/top scores
         });
-        es.onerror = () => { es.close(); finish('Stream dropped — reload to see the result.'); };
+        es.onerror = () => { es.close(); finish('Log stream disconnected (server restart?) — the job continues; reload to see the result.'); };
       } catch (e) { finish(`Rescore failed: ${e.message || e}`); }
     }
 

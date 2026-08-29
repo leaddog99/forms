@@ -1285,7 +1285,7 @@
         if (_stream && _stream.es === es) _stream = null;
         setCancel(false);
         setRefreshBusy(false);
-        add('⚠ Live stream lost — the run continues on the server; see “view log” under Last run for the rest.');
+        add('⚠ Log stream disconnected (server restart?) — the job runs in its OWN process and is likely still going or already finished. Reopen this dish to re-attach, or see “view log” under Last run.');
       });
     }
 
