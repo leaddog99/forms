@@ -8035,6 +8035,28 @@ async def _handle_dish_signals_job(job: dict) -> dict:
 jobs_lib.register_handler("dish_signals", _handle_dish_signals_job)
 
 
+async def _handle_dish_class_propose_job(job: dict) -> dict:
+    """Step 3 of docs/dish-product-matching.md: turn one dish's stamped
+    cohort_signals into labeled, registry-snapped, evidence-cited PROPOSED
+    junction rows (dish_product_classes). One Sonnet call per dish; nothing
+    proposed ever renders — approval is the curator's."""
+    from intake.products import dish_class_proposals as dcp
+    params = job.get("params") or {}
+    dish = (params.get("dish_name") or "").strip()
+    if not dish:
+        raise ValueError("dish_class_propose requires params.dish_name")
+
+    def _run():
+        with _db() as conn:
+            return dcp.propose_for_dish(conn, dish)
+    summary = await asyncio.to_thread(_run)
+    print(f"[PROPOSE] {summary}")
+    return summary
+
+
+jobs_lib.register_handler("dish_class_propose", _handle_dish_class_propose_job)
+
+
 async def _handle_page_cache_purge_job(job: dict) -> dict:
     """Nightly: delete cached raw pages past their retention and reclaim the disk.
 
