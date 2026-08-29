@@ -157,6 +157,16 @@ candidates (wide posteriors) get exposure to be learned; proven losers
 vanish; exploration decays as data accumulates. Epsilon-greedy is the
 acceptable v1 fallback.
 
+**Layer 5 — measurement (curator, 2026-08-29: "what worked, what got
+clicked").** A four-stage funnel, each stage logged: SHOWN (impressions log)
+-> CLICKED (/go/ rail, docs/affiliate-programs-and-clicks.md) -> PURCHASED
+(program reports) -> PAID (actual commission). The stage ratios ARE the EV
+formula's P terms — layer 4 drinks from layer 5. But it feeds more than the
+bandit: clicks-without-purchases = a PICKS problem (re-run the collection,
+curator signal); an approved class that never earns clicks anywhere = a
+dead chip (evidence to un-approve); and the queued reviews->purchase
+research (what in a writeup stimulates a buy) finally gets its dataset.
+
 STILL OPEN (curator: "what we display is still up for grabs"): whether the
 tier-1 differentiator stays PINNED first regardless of EV (brand statement);
 whether utilities (Instacart) and the pairing sit outside the ranked contest
