@@ -552,7 +552,8 @@
               dish's recipes. <b>✨ Propose</b> interprets the measured cohort signals (one model call);
               every proposal cites its evidence. <b>Only what you approve can ever render</b> — approved
               and rejected decisions survive re-proposal. Tier: 1 = the dish's differentiators (lead the
-              block), 2 = core gear, 3 = optional/implied.</p>
+              block), 2 = core gear, 3 = optional/implied. <b>Decisions save instantly</b> on click —
+              the form's Save button is for search config only and stays quiet here.</p>
             <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
               <button type="button" class="ed-btn" id="dpcProposeBtn" title="Run the proposal job for this dish (~one Sonnet call)">✨ Propose</button>
               <span class="ed-save-hint" id="dpcHint"></span>
@@ -818,17 +819,31 @@
         grp('Proposed', rows.filter(r => r.status === 'proposed'))
         + grp('Approved', rows.filter(r => r.status === 'approved'))
         + grp('Rejected', rows.filter(r => r.status === 'rejected'));
+      // Chip decisions SAVE INSTANTLY (their own transactions, like medals) —
+      // the form's Save button is for search config only and correctly never
+      // lights up here. Found 2026-08-29: without saying so, an approve read
+      // as "didn't take". So: flash on success, loud hint on failure.
+      const _update = async (payload, okMsg) => {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/class-proposals/update`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)});
+        if (r.ok) { flash(okMsg); }
+        else {
+          const d = await r.json().catch(() => ({}));
+          flash(`✗ not saved: ${d.detail || 'HTTP ' + r.status}` +
+                (r.status === 401 || r.status === 403 ? ' — unlock admin from the header' : ''));
+        }
+        return r.ok;
+      };
       body.querySelectorAll('.dpc-act').forEach(b => b.addEventListener('click', async () => {
         b.disabled = true;
-        await fetch(`/dishes/${encodeURIComponent(name)}/class-proposals/update`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ class_name: b.dataset.cls, status: b.dataset.status })});
+        await _update({ class_name: b.dataset.cls, status: b.dataset.status },
+                      `✓ ${b.dataset.cls} ${b.dataset.status} — saved`);
         loadClassProposals(name);
       }));
       body.querySelectorAll('.dpc-tier').forEach(s => s.addEventListener('change', () =>
-        fetch(`/dishes/${encodeURIComponent(name)}/class-proposals/update`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ class_name: s.dataset.cls, tier: parseInt(s.value, 10) })})));
+        _update({ class_name: s.dataset.cls, tier: parseInt(s.value, 10) },
+                `✓ ${s.dataset.cls} → T${s.value} — saved`)));
     }
 
     async function runProposals(name){
