@@ -132,6 +132,46 @@ making a CHOCOLATE cream pie is in the market for the chocolate. So:
   dish's approved set + its own cohort mining — most of the ~224 reviews
   become inherit-tweak-approve, not built-from-scratch.
 
+## Matching patterns and derivation routes (curator session, 2026-08-29)
+
+"Signals -> classes" is not one matching problem. Three PATTERNS, and every
+junction row / proposal is labeled with one:
+
+- **identity** — the signal IS the product category (chocolate -> Baking
+  Chocolate; pie plate -> Pie Dishes). Near-mechanical; gourmet + stated
+  equipment. Defaults tier 1/2.
+- **implication** — the signal implies a product one reasoning step away
+  (egg yolks x6 -> Egg Separators; "crushed into crumbs" -> Food Processors;
+  ethnicity -> cuisine COOKBOOKS incl. the cohort's own winning authors —
+  "the people whose recipes won this dish wrote these"; ethnicity -> local
+  cooking classes). The LLM's real job; noisiest; mandatory evidence
+  citation; defaults tier 3, promoted only by the curator.
+- **passthrough** — the recipe's data is handed to a marketplace resolver;
+  there are NO picks to curate, only the PROGRAM (which marketplace, query
+  params, affiliate terms — the /go/ rail). Instacart ("shop this recipe":
+  the whole ingredient list -> cart at click time; renders as a UTILITY, not
+  a ranked recommendation, never crowds the block); geo-resolved experiences
+  (local cooking classes by the reader's metro); alcohol via
+  Total-Wine-style local pickup.
+
+FOUR derivation routes feed the proposals (the fourth added 2026-08-29,
+curator: "not just wine in the dish, but what wine goes best WITH it"):
+
+1. what the recipe CONTAINS (ingredient signals) -> gourmet, alcohol-in-dish
+2. what the cook DOES (method/equipment signals) -> gear, implied tools
+3. where the dish is FROM (provenance) -> travel, cookbooks, local classes
+4. how the dish is SERVED (pairing — dish-identity world knowledge, reads
+   NOTHING from the recipe text) -> the bottle you pour with it, applicable
+   to every dish including the 95% with no alcohol in them. High margin;
+   reads as service, not selling.
+
+Families extend: equipment | gourmet | travel | **books** | **alcohol**.
+Alcohol compliance is a rail property: age-gating on the block; local-pickup
+(geo check for a Total Wine in range) sidesteps state shipping law; no
+store in range -> render the pairing EDITORIALLY with no buy link (the
+trust-building degrade). Some ad programs restrict alcohol adjacency —
+check terms before the family goes live.
+
 ## Step 4 (design) — per-recipe customization
 
 Recipe's own equipment text embedding-matched to classes: ADD what the recipe
