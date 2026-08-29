@@ -6921,3 +6921,66 @@ in-process).
   embed-snap imports), then junction + proposals (steps 3-4), approve chips
   in the dish editor (step 5). All specced in docs/dish-product-matching.md.
 * dish_signals sweep for all dishes when wanted (free, minutes).
+
+## Session log — 2026-08-29 — the commerce pilot completes: signals → registry → proposals → approve chips
+
+Commits `53bbf3d`..`d0459f4` + this log. All restarts done; the all-dishes
+PROPOSAL SWEEP is IN FLIGHT as this is written (~247 Sonnet calls, per-dish
+try/except; occasional JSONDecodeError failures expected and logged — retry
+candidates for a second pass).
+
+* **Cobb Salad match forensics.** All 15 kept recipes resolve Cobb Salad
+  (14 assigned + 1 that lost its _master.dish to the known interactive
+  re-save re-grade — resolution survives via the matched rung). "Greek
+  Salad" appears ONLY as a runner-up candidate, never a verdict.
+* **Terminology + display made honest (44da08b).** The single interpretive
+  "Matched dish" chip became THREE RAW chips — Dish (_master.dish) · Match
+  (_match.dish + distance) · Nearest (candidates[0] + distance), no
+  nomenclature. And 'curated' → **'assigned'** in dish_effective_source
+  (the run assigned it; no human judged) — generated columns rebuilt live.
+* **Log honesty (53bbf3d, bbec7a3):** rematch logs BOTH match fields
+  before→after (nearest-only flips were invisible while re-aiming gear
+  inheritance); dish_signals logs FIRST STAMP / delta / unchanged.
+* **Signals swept corpus-wide:** 247/247 dishes carry cohort_signals
+  (blue cheese 155x on Cobb, tahini 121x on Hummus). Dish-editor tables:
+  fixed 1-decimal columns + sortable headers (4cf2ef3).
+* **Commerce design finished in discussion** (all in
+  docs/dish-product-matching.md): THREE matching patterns
+  (identity/implication/passthrough) × FOUR derivation routes (contains/
+  does/from/SERVED-WITH — the pairing route: wine for every dish, geo-gated
+  Total-Wine pickup, editorial degrade); families extend to books +
+  alcohol; display metric = **EV = P(click|shown,dish) × P(purchase|click)
+  × payout**, Thompson-sampled descending (relevance = the cold-start
+  prior INSIDE contextual P); layer 5 = measurement funnel
+  (shown→clicked→purchased→paid) feeding EV, curation triage, class
+  pruning. Instacart cart-builder OUT-SCOPED to its own subsystem
+  (docs/shopping-cart-subsystem.md): recipe-grain checklist, staples
+  default-unchecked (corpus DF = the staples detector), push the SELECTED
+  subset.
+* **Pilot steps 2-4 BUILT:**
+  - Step 2 (4cf4059): product_classes = canonical registry — 38 in-use
+    names seeded + embedded, family column, `snap()` calibrated (true
+    matches ≤0.50, new classes ≥0.75, bar 0.60).
+  - Step 3 (c9df8f4): dish_product_classes junction + pattern-aware Sonnet
+    proposal job. CCP pilot: 11 proposals — Baking Chocolate/Oreo T1 as
+    hand-predicted, Tawny Port via served_with, and **Egg Separators
+    arrived as an implication and SNAPPED to the registry class the Amazon
+    run created the day before — the loop closed by itself.**
+  - Step 4 (0433e4f, 2bec086): "Product classes" approve-chips accordion —
+    evidence cards (cited signals w/ measured pct/lift), tier selector,
+    approve/reject/revoke/restore surviving re-proposal, edit_master-gated.
+    Chip decisions save INSTANTLY and now SAY so (the quiet Save button
+    read as "didn't take"; the curator's 5 CCP approvals had all landed).
+* **First real approvals:** Chocolate Cream Pie — Baking Chocolate (T1),
+  Cocoa Powder, Egg Separators, Stand Mixers, Tawny Port approved.
+* **Noted for later ([[project_dish_story_ethnicity]]):** dish records get
+  full story+ethnicity like recipes; recipes inherit unless
+  overridden/appended.
+
+### Open
+
+* Proposal sweep finishing in background — then: retry failures, curator
+  approval passes dish by dish, provisional-class cleanup in the registry.
+* Render side when wanted: the block, impressions log (day-one mandatory),
+  /go/ rail, bandit. Cart subsystem parked in its own doc.
+* Dish story/ethnicity build; the W-S egg separator bookmarklet import.
