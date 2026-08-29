@@ -43,7 +43,9 @@ Exposed as **generated columns** on `master_recipes` (persist-derived rule:
 SQL-queryable, no compute-on-read):
 
 - `dish_effective` — `COALESCE` of the three paths above.
-- `dish_effective_source` — `'curated' | 'matched' | 'nearest'` — which rung
+  ('assigned', not 'curated' — the dish RUN assigned it; no human judged it.
+  Renamed 2026-08-29 at the curator's correction.)
+- `dish_effective_source` — `'assigned' | 'matched' | 'nearest'` — which rung
   answered, so surfaces can badge a loose inherit ("gear suggested from Beef
   Stew, loose match"). Distance itself stays in `_match` JSON.
 

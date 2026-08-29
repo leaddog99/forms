@@ -994,7 +994,7 @@ def init_db():
             # step 1, 2026-08-28): curated membership, else the confident
             # match, else the NEAREST dish with no gate (already stored as
             # _match.candidates[0] by every sweep). dish_effective_source
-            # says which rung answered ('curated'|'matched'|'nearest') so
+            # says which rung answered ('assigned'|'matched'|'nearest') so
             # gear surfaces can badge a loose inherit. Generated → the
             # nightly dish_rematch sweep updates these for free.
             for _gc, _expr in (
@@ -1003,7 +1003,7 @@ def init_db():
                  "json_extract(data,'$._match.dish'),"
                  "json_extract(data,'$._match.candidates[0].dish'))"),
                 ("dish_effective_source",
-                 "CASE WHEN json_extract(data,'$._master.dish') IS NOT NULL THEN 'curated' "
+                 "CASE WHEN json_extract(data,'$._master.dish') IS NOT NULL THEN 'assigned' "
                  "WHEN json_extract(data,'$._match.dish') IS NOT NULL THEN 'matched' "
                  "WHEN json_extract(data,'$._match.candidates[0].dish') IS NOT NULL THEN 'nearest' "
                  "END"),
@@ -1027,7 +1027,7 @@ def init_db():
                      "json_extract(data,'$._match.dish'),"
                      "json_extract(data,'$._match.candidates[0].dish'))"),
                     ("dish_effective_source",
-                     "CASE WHEN json_extract(data,'$._master.dish') IS NOT NULL THEN 'curated' "
+                     "CASE WHEN json_extract(data,'$._master.dish') IS NOT NULL THEN 'assigned' "
                      "WHEN json_extract(data,'$._match.dish') IS NOT NULL THEN 'matched' "
                      "WHEN json_extract(data,'$._match.candidates[0].dish') IS NOT NULL THEN 'nearest' "
                      "END"),

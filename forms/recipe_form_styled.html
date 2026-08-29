@@ -2589,13 +2589,27 @@
             </span>
             <span class="exc-chip-basis" id="score_exc_basis"></span>
           </div>
-          <!-- Matched dish: the vector NN match stored on _match at save time
-               (which canonical dish this recipe is). Shows the confident dish +
-               distance, or the closest candidates when nothing cleared the bar. -->
+          <!-- The dish fields, RAW — no interpretive prose (curator call
+               2026-08-29: "no nomenclature assigned"). Three independent facts:
+               Dish = the record's own dish (_master.dish, set by a dish run;
+               no distance — it's membership, not measurement). Match = the
+               confident inference (_match.dish, shown with its distance).
+               Nearest = the closest catalog dish regardless of confidence
+               (_match.candidates[0], with its distance). Product matching uses
+               the first of the three that has a value. -->
+          <div class="score-chip" id="score_dish_chip">
+            <span class="score-label">Dish</span>
+            <span class="score-value empty" id="score_dish_value">—</span>
+          </div>
           <div class="score-chip" id="score_match_chip">
-            <span class="score-label">Matched dish</span>
+            <span class="score-label">Match</span>
             <span class="score-value empty" id="score_match_value">—</span>
             <span class="exc-chip-basis" id="score_match_basis"></span>
+          </div>
+          <div class="score-chip" id="score_nearest_chip">
+            <span class="score-label">Nearest</span>
+            <span class="score-value empty" id="score_nearest_value">—</span>
+            <span class="exc-chip-basis" id="score_nearest_basis"></span>
           </div>
           <!-- What the USER would see. Every other chip in this strip is the
                private machinery; this one is the public face of it, put here so
@@ -3613,49 +3627,26 @@
       // Confident match shows the dish + distance; otherwise the closest
       // candidates so the curator can see what it was near. textContent
       // (not innerHTML) — dish names are data, keep them un-evaluated.
-      // A master/dish-refresh recipe (user_id=0) already KNOWS its dish — it was
-      // curated as a top recipe FOR that dish, stored on _master.dish (ground
-      // truth). _match is the vector-NN *inferred* match, only computed for USER
-      // recipes that don't carry a known dish. So prefer _master.dish; fall back
-      // to the inferred match.
+      // The dish fields, RAW — three independent chips, no interpretation
+      // (curator call 2026-08-29). Dish = _master.dish (set by a dish run,
+      // membership so no distance). Match = _match.dish + its distance.
+      // Nearest = _match.candidates[0] + its distance. Absent = '—'.
       const masterDish = (recipe && recipe._master && recipe._master.dish) || null;
       const match = (recipe && recipe._match) || null;
-      const matchValEl = document.getElementById('score_match_value');
-      const matchBasisEl = document.getElementById('score_match_basis');
-      const hasMatch = !!(masterDish || (match && (match.dish || (match.candidates && match.candidates.length))));
-      if (matchValEl) {
-        if (masterDish) {
-          matchValEl.textContent = masterDish;
-          matchValEl.classList.remove('empty');
-        } else if (match && match.dish) {
-          matchValEl.textContent = match.dish;
-          matchValEl.classList.remove('empty');
-        } else if (match && match.candidates && match.candidates.length) {
-          // The resolution ladder's third rung (docs/dish-product-matching.md):
-          // the NEAREST dish is a first-class answer now, not a failure —
-          // say it, muted, and let the basis carry the "loose" caveat.
-          matchValEl.textContent = match.candidates[0].dish;
-          matchValEl.classList.add('empty');
-        } else {
-          matchValEl.textContent = '—';
-          matchValEl.classList.add('empty');
-        }
-      }
-      if (matchBasisEl) {
-        let b = '';
-        if (masterDish) {
-          b = 'curated for this dish';   // known, not inferred
-        } else if (match && match.dish) {
-          b = 'distance ' + (typeof match.distance === 'number' ? match.distance.toFixed(2) : '—');
-        } else if (match && match.candidates && match.candidates.length) {
-          const c0 = match.candidates[0];
-          b = 'nearest (loose) · distance '
-            + (typeof c0.distance === 'number' ? c0.distance.toFixed(2) : '?')
-            + (match.candidates.length > 1
-               ? ' · then ' + match.candidates.slice(1, 3).map(c => c.dish).join(', ') : '');
-        }
-        matchBasisEl.textContent = b;
-      }
+      const nearest = (match && match.candidates && match.candidates[0]) || null;
+      const hasMatch = !!(masterDish || (match && (match.dish || nearest)));
+      const _dist = (v) => (typeof v === 'number' ? 'distance ' + v.toFixed(2) : '');
+      const _setChip = (valId, basisId, value, basis) => {
+        const v = document.getElementById(valId);
+        if (v) { v.textContent = value || '—'; v.classList.toggle('empty', !value); }
+        const b = basisId && document.getElementById(basisId);
+        if (b) b.textContent = value ? (basis || '') : '';
+      };
+      _setChip('score_dish_value', null, masterDish, '');
+      _setChip('score_match_value', 'score_match_basis',
+               match && match.dish, match ? _dist(match.distance) : '');
+      _setChip('score_nearest_value', 'score_nearest_basis',
+               nearest && nearest.dish, nearest ? _dist(nearest.distance) : '');
 
       const strip = document.getElementById('scoringStrip');
       const hasAny = (
@@ -3830,6 +3821,13 @@
 
     function clearScoringStrip() {
       ['score_pa','score_da','score_ou','score_text'].forEach(id => setScoreChip(id, null));
+      ['score_dish_value','score_match_value','score_nearest_value'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = '—'; el.classList.add('empty'); }
+      });
+      ['score_match_basis','score_nearest_basis'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.textContent = '';
+      });
       const excValEl = document.getElementById('score_exc_value');
       if (excValEl) excValEl.innerHTML = '<span class="score-value empty">—</span>';
       const excBasisEl = document.getElementById('score_exc_basis');
