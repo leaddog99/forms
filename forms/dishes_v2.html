@@ -696,26 +696,52 @@
       }
       if (pill) pill.textContent = `${sig.cohort_n} recipes · ${fmtDate(sig.computed_at)}`;
       const liftCls = (l) => l >= 10 ? 'font-weight:700' : (l < 3 ? 'color:var(--muted)' : '');
-      const table = (rows, withEx) => `
+      // Fixed 1-decimal everywhere — "5x" next to "13.4x" breaks the column;
+      // every number carries exactly one decimal so the digits align.
+      const n1 = (v) => (typeof v === 'number' ? v.toFixed(1) : '—');
+      // Sortable columns. Default = term A–Z; clicking a numeric column sorts
+      // DESC first (that's the reading you want from a measurement column),
+      // clicking again flips. Each table keeps its own state.
+      const renderTable = (holderId, rows, withEx, state) => {
+        const arrow = (k) => state.key === k ? (state.dir === 1 ? ' ▲' : ' ▼') : '';
+        const th = (k, label, right) =>
+          `<th style="padding:3px 8px${right ? ';text-align:right' : ';text-align:left'}">
+             <button type="button" data-sort="${k}" style="all:unset;cursor:pointer;color:var(--muted);font-size:1em">${label}${arrow(k)}</button></th>`;
+        const sorted = [...rows].sort((a, b) => {
+          const A = a[state.key], B = b[state.key];
+          if (typeof A === 'string') return A.localeCompare(B) * state.dir;
+          return ((A ?? -1) - (B ?? -1)) * state.dir;
+        });
+        const holder = document.getElementById(holderId);
+        holder.innerHTML = `
         <table style="width:100%;border-collapse:collapse;font-size:.85em">
-          <thead><tr style="text-align:left;color:var(--muted);font-size:.85em">
-            <th style="padding:3px 8px 3px 0">term</th><th style="padding:3px 8px;text-align:right">of cohort</th>
-            <th style="padding:3px 8px;text-align:right">lift</th>${withEx ? '<th style="padding:3px 0 3px 8px">example line</th>' : ''}
+          <thead><tr style="color:var(--muted);font-size:.85em">
+            ${th('term', 'term', false)}${th('pct', 'of cohort', true)}${th('lift', 'lift', true)}
+            ${withEx ? '<th style="padding:3px 0 3px 8px;text-align:left">example line</th>' : ''}
           </tr></thead><tbody>
-          ${rows.map(r => `<tr style="border-top:1px solid var(--line,#eee)">
+          ${sorted.map(r => `<tr style="border-top:1px solid var(--line,#eee)">
             <td style="padding:3px 8px 3px 0;${liftCls(r.lift)}">${escapeHtml(r.term)}</td>
-            <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums">${r.pct}%</td>
-            <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums;${liftCls(r.lift)}">${r.lift}×</td>
+            <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums">${n1(r.pct)}%</td>
+            <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums;${liftCls(r.lift)}">${n1(r.lift)}×</td>
             ${withEx ? `<td style="padding:3px 0 3px 8px;color:var(--muted)" title="${escapeHtml((r.examples || []).join('\n'))}">${escapeHtml((r.examples || [''])[0])}</td>` : ''}
           </tr>`).join('')}
           </tbody></table>`;
+        holder.querySelectorAll('[data-sort]').forEach(b => b.addEventListener('click', () => {
+          const k = b.dataset.sort;
+          if (state.key === k) state.dir *= -1;
+          else { state.key = k; state.dir = (k === 'term') ? 1 : -1; }  // numeric → desc first
+          renderTable(holderId, rows, withEx, state);
+        }));
+      };
       const prov = sig.provenance || {};
       const provBits = [...Object.entries(prov.ethnicities || {}), ...Object.entries(prov.regions || {})]
         .map(([k, v]) => `${escapeHtml(k)} (${v})`).join(' · ');
       body.innerHTML = `
-        <h4 style="margin:0 0 6px;font-size:.85em">Ingredients</h4>${table(sig.ingredients || [], true)}
-        <h4 style="margin:14px 0 6px;font-size:.85em">Equipment</h4>${table(sig.equipment || [], false)}
+        <h4 style="margin:0 0 6px;font-size:.85em">Ingredients</h4><div id="sigTblIng"></div>
+        <h4 style="margin:14px 0 6px;font-size:.85em">Equipment</h4><div id="sigTblEq"></div>
         ${provBits ? `<h4 style="margin:14px 0 6px;font-size:.85em">Provenance</h4><p style="margin:0;font-size:.85em;color:var(--muted)">${provBits}</p>` : ''}`;
+      renderTable('sigTblIng', sig.ingredients || [], true, { key: 'term', dir: 1 });
+      renderTable('sigTblEq', sig.equipment || [], false, { key: 'term', dir: 1 });
     }
 
     async function loadRejects(name){
