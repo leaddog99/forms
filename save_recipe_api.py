@@ -8104,12 +8104,27 @@ async def _handle_dish_class_propose_job(job: dict) -> dict:
     from intake.products import dish_class_proposals as dcp
     params = job.get("params") or {}
     dish = (params.get("dish_name") or "").strip()
-    if not dish:
-        raise ValueError("dish_class_propose requires params.dish_name")
 
     def _run():
+        out = {"proposed": 0, "new_classes": 0, "failed": 0, "dishes": 0}
         with _db() as conn:
-            return dcp.propose_for_dish(conn, dish)
+            names = ([dish] if dish else
+                     [r[0] for r in conn.execute(
+                         "SELECT name FROM dishes WHERE cohort_signals IS NOT NULL "
+                         "ORDER BY name")])
+            for n, name in enumerate(names, 1):
+                try:
+                    s = dcp.propose_for_dish(conn, name)
+                    out["dishes"] += 1
+                    out["proposed"] += s["proposed"]
+                    out["new_classes"] += s["new_classes"]
+                    tops = [p["class"] for p in s["proposals"] if p.get("tier") == 1][:3]
+                    print(f"[PROPOSE] {n}/{len(names)} {name}: {s['proposed']} proposals "
+                          f"({s['new_classes']} new classes) T1={tops}")
+                except Exception as e:
+                    out["failed"] += 1
+                    print(f"[PROPOSE] {n}/{len(names)} {name} FAILED: {type(e).__name__}: {e}")
+        return out
     summary = await asyncio.to_thread(_run)
     print(f"[PROPOSE] {summary}")
     return summary
