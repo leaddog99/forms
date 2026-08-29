@@ -90,6 +90,17 @@ def ensure_chapters_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_drdp_dish ON dish_run_data_points(dish_name)"
     )
+    # Migration (2026-08-29): persist the SERP evidence that was previously
+    # HELD at harvest and thrown away — google_rank (best position across the
+    # dish's query lines) and which query surfaced it. Prompted by
+    # thecountrycook.net: Google's #1 for corned beef hash finishing #10 by
+    # OU — a fine ranking to DEFEND, but indefensible to leave unanalyzable.
+    # Storage only; ranking reads none of it until measurement argues.
+    drdp_cols = {r[1] for r in conn.execute("PRAGMA table_info(dish_run_data_points)")}
+    if "serp_position" not in drdp_cols:
+        conn.execute("ALTER TABLE dish_run_data_points ADD COLUMN serp_position INTEGER")
+    if "serp_query" not in drdp_cols:
+        conn.execute("ALTER TABLE dish_run_data_points ADD COLUMN serp_query TEXT")
     conn.commit()
 
 
@@ -109,19 +120,23 @@ def replace_data_points_for_dish(
     `model_version` is the dish_refresh job id that produced this cohort —
     stamped on every row so a point traces back to the job (and thus the
     fit + counts) that scored it. The scoring columns (ou/power/percentiles/
-    rank_score/selected) are filled by score_data_points_for_dish next."""
+    rank_score/selected) are filled by score_data_points_for_dish next.
+
+    Points may be (url, da, pa) — legacy — or (url, da, pa, serp_position,
+    serp_query); short tuples store NULL SERP columns."""
     now_iso = datetime.now(timezone.utc).isoformat()
     conn.execute("DELETE FROM dish_run_data_points WHERE dish_name = ?", (dish_name,))
+    padded = [tuple(p) + (None,) * (5 - len(p)) for p in points]
     conn.executemany(
-        "INSERT INTO dish_run_data_points (dish_name, url, da, pa, created_at, model_version) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO dish_run_data_points (dish_name, url, da, pa, created_at, "
+        "model_version, serp_position, serp_query) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         # Store the NORMALIZED url — the canonical key the rest of the system
         # uses (extract cache PK, master_recipes.url_normalized). Lets the
         # cohort view join master_recipes cleanly for winner thumbnails, and
         # collapses slash/www/tracking variants. (Cohort was already deduped
         # by normalize_url at _multi_query_lookup, so no PK collisions here.)
-        [(dish_name, normalize_url(u) or u, da, pa, now_iso, model_version)
-         for u, da, pa in points],
+        [(dish_name, normalize_url(u) or u, da, pa, now_iso, model_version, sp, sq)
+         for u, da, pa, sp, sq in padded],
     )
     conn.commit()
     return len(points)

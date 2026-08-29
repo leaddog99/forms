@@ -1730,7 +1730,12 @@ def build_batch(
     # subset that survives extraction + save-gate. The handler will
     # persist these to dish_run_data_points for chapter rollups.
     fit_data_points = [
-        (e.get("url"), e.get("da"), e.get("pa"))
+        # + the SERP evidence (best google position across the dish's query
+        # lines, and which line surfaced it) — held here anyway, now
+        # PERSISTED so demand-vs-authority questions are analyzable
+        # (2026-08-29: Google's #1 finishing #10 by OU had no data trail).
+        (e.get("url"), e.get("da"), e.get("pa"),
+         e.get("google_rank"), (e.get("_queries") or [""])[0])
         for e in entries
         if isinstance(e.get("da"), (int, float)) and isinstance(e.get("pa"), (int, float))
     ]
