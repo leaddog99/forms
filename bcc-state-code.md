@@ -5974,13 +5974,18 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
 
 ## START HERE — state of play as of 2026-08-28
 
-Read all THREE 2026-08-28 session logs (bottom of file), then the prior START
+Read all FOUR 2026-08-28 session logs (bottom of file), then the prior START
 HEREs below — the 2026-08-22 scoring-session framing and standing items
-remain valid. The evening log's dish-anchored product matching
-(docs/dish-product-matching.md) is the new standing build: step 1 shipped
-(every recipe resolves a dish — 8,376/8,376 via dish_effective on both
-tables), steps 2-3 (class registry, curated dish→classes junction) are the
-designed next moves.
+remain valid. **Dish-anchored product matching (docs/dish-product-matching.md)
+is the standing build**, and the whole loop was proven live in one day:
+every recipe resolves a dish (8,376/8,376, dish_effective both tables) →
+cohort signals measured with lift (dishes.cohort_signals + dish editor
+accordion; Chocolate Cream Pie stamped) → a signal became a sellable
+("egg yolks 44%/14x" → Egg Separators collection → Amazon screen → medals →
+3 catalog products, and the path's missing materialize step got built).
+NEXT: pilot step 2 — the product_classes registry (family + embeddings +
+embed-snap imports), then the dish→classes junction + proposal chips.
+One restart owed (the /materialize endpoint).
 
 **Where things stand:**
 
@@ -6854,3 +6859,65 @@ everything below is live.
 * saltsearsavor coleslaw bookmarklet recovery; remaining lost dressings.
 * Optional: nightly re-embed pass for embedding-less rows (self-heal the
   Granola failure mode; check_embeddings is the current backstop).
+
+## Session log — 2026-08-28 (late) — the design closes the loop: yolks to egg separators, signals to money
+
+Commits `0e5c609`..`4a170d2` + this log. ONE restart owed (the /materialize
+endpoint — everything else live; today's materialization already ran
+in-process).
+
+* **Multi-dish membership: ALREADY BUILT, proved live (0e5c609).** The
+  curator remembered right and the agent reasoned wrong: the 2026-06-14
+  ledger fix made `dish_run_data_points` the membership junction — top lists
+  derive from per-dish selected+rank, 79 URLs are winners under 2+ dishes.
+  First Chocolate Cream Pie refresh (20/20) selected a recipe that REMAINS
+  selected in Cream Pie: top-20 of parent AND child. Pass-by-nearest-dish
+  alternative rejected on record (leftover-bucket parents, lists that rewrite
+  when a sibling is born, paid runs gated on fuzzy distances). Residuals
+  noted: _master.dish = last-claiming-batch label only; grading may want the
+  most-specific cohort.
+* **Design rounds into docs/dish-product-matching.md (3911e06, c24902a,
+  bb2f8c6):** render chain (most-specific membership dish → nearest dish
+  with an approved set → chapter/category floor); a specific dish
+  differentiates by INGREDIENT classes ("the product associated with
+  CHOCOLATE") and those lead the block; class ordering = relevance GATES,
+  money SORTS (price×commission cold-start → measured EPC from the planned
+  /go/ clickstream), curator override wins; THREE product families —
+  equipment / gourmet / TRAVEL — each seeded from its own corpus signal
+  (equipment list / recipeIngredient / provenance).
+* **Pilot step 1 SHIPPED: dishes.cohort_signals (a02bb39, 4e225db).**
+  input/pipeline/dish_signals.py — per-dish term document-frequency + LIFT
+  vs corpus, per family, example lines carrying form detail; ranked
+  df×ln(lift) (pure lift headlined df=3 fragments at 756x over chocolate's
+  65%@13x). `dish_signals` job (one dish or sweep; free). Dish editor grew a
+  lazy "Cohort signals" accordion (GET /dishes/{name}/signals; lift≥10x
+  bold, <3x muted). Chocolate Cream Pie stamped: chocolate 65%/13x, oreo
+  67x, ghirardelli 54x, vanilla-extract 78%-of-vanilla-lines, 9-inch pie
+  dish. Qualifier mining on raw lines recovers FORM (bar vs chips vs cocoa;
+  extract vs pod) — the precision commerce needs.
+* **The egg-separator proof: signal → sellable, end to end.** "Egg yolks
+  44%/14x" isn't a product — it implies a TOOL. Ran the Amazon path live:
+  created "Egg Separators" collection (auto-taxonomy hit Breakfast & Egg
+  Tools), refresh screened 48→10 (1 credit), curator medaled gold=The
+  Original Egg Tool ($14.95, rr 90.1 — the premium one leads, as predicted),
+  silver=CAMKYDE, bronze=Chef Craft. OXO screened OUT at 4.4★/5,122 —
+  Wilson working.
+* **The Amazon path's missing half BUILT (4a170d2).** No medaled candidate
+  had EVER materialized into products (Dutch Ovens' golds included).
+  `materialize_medals`: find-or-create by ASIN then brand+title,
+  medal→bcc_pick only when blank, placement via set_curation, product_id
+  stamped back; POST /materialize + "⬇ Medalists → catalog" button +
+  "in catalog" chip. Run live: 3 egg separators CREATED; Dutch Ovens' 2
+  golds MERGED into their existing curated-path rows by ASIN — the two
+  selection techniques now converge on one catalog record.
+
+### Open
+
+* RESTART for POST /product-collections/{name}/materialize (UI button 404s
+  until then; data already materialized).
+* Products editor: approve the 3 egg-separator placements; optional W-S
+  premium separator via bookmarklet into the class.
+* Pilot step 2 next: product_classes registry (family column + embeddings +
+  embed-snap imports), then junction + proposals (steps 3-4), approve chips
+  in the dish editor (step 5). All specced in docs/dish-product-matching.md.
+* dish_signals sweep for all dishes when wanted (free, minutes).
