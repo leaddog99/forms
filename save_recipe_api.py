@@ -7020,6 +7020,98 @@ def dish_class_proposal_run_endpoint(request: Request, name: str):
     return {"job_id": job_id, "status": "queued"}
 
 
+# ---- /go/ clickstream + impressions (docs/affiliate-programs-and-clicks.md) ----
+
+@app.get("/go/{click_id}")
+def go_redirect_endpoint(click_id: str, request: Request):
+    """Outbound money link: verify, classify, record, mint, 302.
+    NEVER auth-gated, NEVER bot-challenged (design §5.1) — this sits between
+    a reader deciding to buy and the merchant. A forged/unsigned link 404s
+    (the HMAC check), which is what keeps an open /go/ from being an open
+    redirector."""
+    from intake.products import clickstream
+    sid = request.cookies.get("bcc_sid") or ""
+    with _db() as conn:
+        final = clickstream.record_click(
+            conn, click_id, dict(request.query_params),
+            method=request.method, headers=dict(request.headers),
+            client_ip=(request.client.host if request.client else ""),
+            session_id=sid)
+    if not final:
+        raise HTTPException(status_code=404, detail="unknown link")
+    return RedirectResponse(final, status_code=302)
+
+
+@app.post("/commerce/impressions")
+async def commerce_impressions_endpoint(request: Request):
+    """The EV denominator: what a product block actually showed, per item +
+    position. Open (public pages post here); size-capped in the module."""
+    from intake.products import clickstream
+    body = await request.json()
+    sid = request.cookies.get("bcc_sid") or (body.get("session_id") or "")
+    with _db() as conn:
+        n = clickstream.log_impressions(
+            conn, surface=(body.get("surface") or "")[:32],
+            page_url=(body.get("page_url") or "")[:500],
+            session_id=sid, items=body.get("items") or [])
+    return {"logged": n}
+
+
+# ---- Affiliate programs ACDV (forms/affiliates.html) ----
+
+@app.get("/affiliate-programs")
+def affiliate_programs_list_endpoint():
+    from intake.products import affiliate_programs as ap
+    with _db() as conn:
+        return {"programs": ap.list_programs(conn)}
+
+
+@app.get("/affiliate-programs/{name}")
+def affiliate_program_get_endpoint(name: str):
+    from intake.products import affiliate_programs as ap
+    with _db() as conn:
+        p = ap.get_program(conn, name)
+    if p is None:
+        raise HTTPException(status_code=404, detail="Program not found")
+    return p
+
+
+@app.post("/affiliate-programs")
+def affiliate_program_create_endpoint(request: Request, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    try:
+        with _db() as conn:
+            return ap.create_program(conn, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.put("/affiliate-programs/{name}")
+def affiliate_program_update_endpoint(request: Request, name: str, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    try:
+        with _db() as conn:
+            p = ap.update_program(conn, name, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if p is None:
+        raise HTTPException(status_code=404, detail="Program not found")
+    return p
+
+
+@app.delete("/affiliate-programs/{name}")
+def affiliate_program_delete_endpoint(request: Request, name: str):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    with _db() as conn:
+        ok = ap.delete_program(conn, name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Program not found")
+    return {"deleted": name}
+
+
 @app.get("/semrush-ranks")
 def semrush_ranks_status_endpoint():
     """Per-region summary of the imported SEMrush Rank reference data (rows, file
