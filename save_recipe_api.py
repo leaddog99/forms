@@ -6959,6 +6959,67 @@ def dish_signals_endpoint(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+@app.get("/dishes/{name}/class-proposals")
+def dish_class_proposals_endpoint(name: str):
+    """The dish's product-class junction rows (proposed/approved/rejected),
+    evidence decoded — the approve-chips surface reads this."""
+    from intake.products import dish_class_proposals as dcp
+    try:
+        with _db() as conn:
+            if dishes_lib.get_dish(conn, name) is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            return {"dish": name, "rows": dcp.list_for_dish(conn, name)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
+@app.post("/dishes/{name}/class-proposals/update")
+def dish_class_proposal_update_endpoint(request: Request, name: str, payload: dict = Body(...)):
+    """Curator action on ONE junction row: status (approve/reject/restore)
+    and/or tier. The gate on the money join — approval is what lets a class
+    ever render beside this dish's recipes."""
+    _require_perm(request, "edit_master")
+    from intake.products import dish_class_proposals as dcp
+    cls = (payload.get("class_name") or "").strip()
+    if not cls:
+        raise HTTPException(status_code=400, detail="class_name is required")
+    try:
+        with _db() as conn:
+            ok = True
+            if payload.get("status"):
+                who = getattr(request.state, "username", "") or "staff"
+                ok = dcp.set_status(conn, name, cls, payload["status"], who=who)
+            if ok and payload.get("tier"):
+                ok = dcp.set_tier(conn, name, cls, int(payload["tier"]))
+        if not ok:
+            raise HTTPException(status_code=404, detail="Junction row not found")
+        return {"dish": name, "class_name": cls, "status": payload.get("status"),
+                "tier": payload.get("tier")}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.post("/dishes/{name}/class-proposals/run")
+def dish_class_proposal_run_endpoint(request: Request, name: str):
+    """(Re-)run the proposal job for this dish — out-of-process, entity-locked,
+    tailable. One Sonnet call; approved/rejected rows survive the re-run."""
+    _require_perm(request, "edit_master")
+    with _db() as conn:
+        if dishes_lib.get_dish(conn, name) is None:
+            raise HTTPException(status_code=404, detail="Dish not found")
+        entity_ref = f"dish-classes:{name}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return {"job_id": existing["id"], "status": existing["status"],
+                    "already_running": True}
+        job_id = jobs_lib.enqueue_job(conn, type="dish_class_propose",
+                                      params={"dish_name": name}, entity_ref=entity_ref)
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "status": "queued"}
+
+
 @app.get("/semrush-ranks")
 def semrush_ranks_status_endpoint():
     """Per-region summary of the imported SEMrush Rank reference data (rows, file

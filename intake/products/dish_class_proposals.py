@@ -190,3 +190,48 @@ def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def list_for_dish(conn: sqlite3.Connection, dish_name: str) -> list:
+    """Every junction row for the dish, evidence decoded, proposed first."""
+    ensure_junction(conn)
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM dish_product_classes WHERE dish_name = ? "
+        "ORDER BY CASE status WHEN 'proposed' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, "
+        "tier, class_name", (dish_name,))]
+    for r in rows:
+        try:
+            r["evidence"] = json.loads(r["evidence"] or "[]")
+        except Exception:
+            r["evidence"] = []
+    return rows
+
+
+def set_status(conn: sqlite3.Connection, dish_name: str, class_name: str,
+               status: str, who: str = "staff") -> bool:
+    """The curator's gate on the money join. approved stamps who/when;
+    anything else clears the stamp (a revoked approval must not keep
+    claiming one)."""
+    if status not in ("proposed", "approved", "rejected"):
+        raise ValueError("status must be proposed, approved or rejected")
+    ensure_junction(conn)
+    approved_by = who if status == "approved" else ""
+    approved_at = _now() if status == "approved" else ""
+    cur = conn.execute(
+        "UPDATE dish_product_classes SET status = ?, approved_by = ?, approved_at = ? "
+        "WHERE dish_name = ? AND class_name = ?",
+        (status, approved_by, approved_at, dish_name, class_name))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def set_tier(conn: sqlite3.Connection, dish_name: str, class_name: str, tier: int) -> bool:
+    if tier not in (1, 2, 3):
+        raise ValueError("tier must be 1, 2 or 3")
+    ensure_junction(conn)
+    cur = conn.execute(
+        "UPDATE dish_product_classes SET tier = ? WHERE dish_name = ? AND class_name = ?",
+        (tier, dish_name, class_name))
+    conn.commit()
+    return cur.rowcount > 0

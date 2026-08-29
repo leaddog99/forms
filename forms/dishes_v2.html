@@ -546,6 +546,22 @@
         </section>
 
         <section class="ed-block">
+          <details class="ed-accordion" id="dpcAcc">
+            <summary>Product classes <span class="ed-pill" id="dpcPill" style="margin-left:6px"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">The classes worth advertising beside this
+              dish's recipes. <b>✨ Propose</b> interprets the measured cohort signals (one model call);
+              every proposal cites its evidence. <b>Only what you approve can ever render</b> — approved
+              and rejected decisions survive re-proposal. Tier: 1 = the dish's differentiators (lead the
+              block), 2 = core gear, 3 = optional/implied.</p>
+            <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
+              <button type="button" class="ed-btn" id="dpcProposeBtn" title="Run the proposal job for this dish (~one Sonnet call)">✨ Propose</button>
+              <span class="ed-save-hint" id="dpcHint"></span>
+            </div>
+            <div id="dpcBody"><p class="ed-empty-fit">Loading&hellip;</p></div>
+          </details>
+        </section>
+
+        <section class="ed-block">
           <details class="ed-accordion">
             <summary>Metadata</summary>
             <div class="ed-kv" style="margin-top:12px">
@@ -587,6 +603,12 @@
         this.removeEventListener('toggle', _once);
         loadSignals(d.name);
       });
+      $('#dpcAcc')?.addEventListener('toggle', function _once(){
+        if (!this.open) return;
+        this.removeEventListener('toggle', _once);
+        loadClassProposals(d.name);
+      });
+      $('#dpcProposeBtn')?.addEventListener('click', () => runProposals(d.name));
       attachRunningRefresh(d.name);   // a job already running must be VISIBLE on open
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
@@ -742,6 +764,96 @@
         ${provBits ? `<h4 style="margin:14px 0 6px;font-size:.85em">Provenance</h4><p style="margin:0;font-size:.85em;color:var(--muted)">${provBits}</p>` : ''}`;
       renderTable('sigTblIng', sig.ingredients || [], true, { key: 'term', dir: 1 });
       renderTable('sigTblEq', sig.equipment || [], false, { key: 'term', dir: 1 });
+    }
+
+    /* ---------------- product-class approve chips (step 4) ---------------- */
+    async function loadClassProposals(name){
+      const body = $('#dpcBody'), pill = $('#dpcPill');
+      if (!body) return;
+      let d;
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/class-proposals`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        d = await r.json();
+      } catch (e) {
+        body.innerHTML = `<p class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</p>`;
+        return;
+      }
+      const rows = d.rows || [];
+      if (pill) pill.textContent = rows.length
+        ? `${rows.filter(r => r.status === 'approved').length}✓ / ${rows.filter(r => r.status === 'proposed').length} proposed`
+        : '';
+      if (!rows.length){
+        body.innerHTML = '<p class="ed-empty-fit">No proposals yet — press ✨ Propose.</p>';
+        return;
+      }
+      const ev = (r) => (r.evidence || []).map(e =>
+        e.pct != null ? `${escapeHtml(e.term)} ${Number(e.pct).toFixed(1)}%/${Number(e.lift).toFixed(1)}×`
+                      : escapeHtml(e.term)).join(', ');
+      const row = (r) => {
+        const dim = r.status === 'rejected';
+        const border = r.status === 'approved' ? '3px solid var(--accent)' :
+                       r.status === 'rejected' ? '3px solid var(--line,#ddd)' : '3px solid #d9a514';
+        const acts = r.status === 'proposed'
+          ? `<button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="approved" style="padding:2px 10px">✓ Approve</button>
+             <button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="rejected" style="padding:2px 10px">✕ Reject</button>`
+          : `<button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="proposed" style="padding:2px 10px" title="Back to proposed">↩ ${r.status === 'approved' ? 'Revoke' : 'Restore'}</button>`;
+        const tierSel = `<select class="dpc-tier" data-cls="${escapeHtml(r.class_name)}" style="padding:2px 4px;font:inherit;font-size:.82em" ${dim ? 'disabled' : ''}>
+          ${[1,2,3].map(t => `<option value="${t}" ${r.tier === t ? 'selected' : ''}>T${t}</option>`).join('')}</select>`;
+        return `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-left:${border};margin-bottom:8px;background:var(--card,#fff);border-radius:0 8px 8px 0;${dim ? 'opacity:.55' : ''}">
+          <div style="flex:1;min-width:0">
+            <div><b>${escapeHtml(r.class_name)}</b>
+              <span class="ed-pill" style="margin-left:6px">${escapeHtml(r.family)}</span>
+              <span style="font-size:.76em;color:var(--muted)">${escapeHtml(r.pattern)} · ${escapeHtml(r.route)}</span>
+              ${r.new_class ? '<span class="ed-pill" title="This class was created by the proposal — not yet a settled registry entry" style="margin-left:4px">new class</span>' : ''}</div>
+            <div style="font-size:.82em;color:var(--muted);margin-top:2px">${escapeHtml(r.rationale || '')}</div>
+            ${(r.evidence || []).length ? `<div style="font-size:.78em;color:var(--muted);margin-top:2px">evidence: ${ev(r)}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex:0 0 auto">${tierSel}${acts}</div>
+        </div>`;
+      };
+      const grp = (label, list) => list.length
+        ? `<h4 style="margin:12px 0 6px;font-size:.85em">${label} (${list.length})</h4>${list.map(row).join('')}` : '';
+      body.innerHTML =
+        grp('Proposed', rows.filter(r => r.status === 'proposed'))
+        + grp('Approved', rows.filter(r => r.status === 'approved'))
+        + grp('Rejected', rows.filter(r => r.status === 'rejected'));
+      body.querySelectorAll('.dpc-act').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        await fetch(`/dishes/${encodeURIComponent(name)}/class-proposals/update`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ class_name: b.dataset.cls, status: b.dataset.status })});
+        loadClassProposals(name);
+      }));
+      body.querySelectorAll('.dpc-tier').forEach(s => s.addEventListener('change', () =>
+        fetch(`/dishes/${encodeURIComponent(name)}/class-proposals/update`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ class_name: s.dataset.cls, tier: parseInt(s.value, 10) })})));
+    }
+
+    async function runProposals(name){
+      const btn = $('#dpcProposeBtn'), hint = $('#dpcHint');
+      btn.disabled = true; hint.textContent = 'proposing…';
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/class-proposals/run`, { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        // Poll the job to completion (~15s: one model call), then reload.
+        for (let i = 0; i < 45; i++){
+          await new Promise(x => setTimeout(x, 2000));
+          const j = await fetch(`/jobs/${d.job_id}`).then(x => x.json()).catch(() => null);
+          if (j && j.status && j.status !== 'running' && j.status !== 'queued'){
+            hint.textContent = j.status === 'success' ? '✓ proposals updated' : `job ${j.status}`;
+            await loadClassProposals(name);
+            btn.disabled = false;
+            return;
+          }
+        }
+        hint.textContent = 'still running — reopen the panel in a moment';
+      } catch (e) {
+        hint.textContent = `failed: ${e.message || e}`;
+      }
+      btn.disabled = false;
     }
 
     async function loadRejects(name){
