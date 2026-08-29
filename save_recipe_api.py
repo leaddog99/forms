@@ -8105,13 +8105,15 @@ async def _handle_dish_class_propose_job(job: dict) -> dict:
     params = job.get("params") or {}
     dish = (params.get("dish_name") or "").strip()
 
+    prefix = (params.get("prefix") or "").strip()
+
     def _run():
         out = {"proposed": 0, "new_classes": 0, "failed": 0, "dishes": 0}
         with _db() as conn:
             names = ([dish] if dish else
                      [r[0] for r in conn.execute(
                          "SELECT name FROM dishes WHERE cohort_signals IS NOT NULL "
-                         "ORDER BY name")])
+                         "AND name LIKE ? ORDER BY name", (prefix + "%",))])
             for n, name in enumerate(names, 1):
                 try:
                     s = dcp.propose_for_dish(conn, name)
