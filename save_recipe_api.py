@@ -7993,11 +7993,37 @@ async def _handle_dish_signals_job(job: dict) -> dict:
                          "WHERE dish_effective IS NOT NULL "
                          "INTERSECT SELECT name FROM dishes")])
             for n, name in enumerate(names, 1):
+                # BEFORE -> AFTER, like the rematch log (curator request
+                # 2026-08-29): read the prior stamp first, then say what
+                # actually moved — cohort size and the top-5 ingredient
+                # terms — or say "unchanged" quietly. A re-run that shifts
+                # a dish's identity terms is a real event (its class
+                # proposals will change); a quiet re-stamp is not.
+                _prev_row = conn.execute(
+                    "SELECT cohort_signals FROM dishes WHERE name = ?",
+                    (name,)).fetchone()
+                prev = {}
+                try:
+                    prev = json.loads(_prev_row[0]) if _prev_row and _prev_row[0] else {}
+                except Exception:
+                    pass
                 sig = dish_signals.stamp_signals(conn, name)
-                top = [r["term"] for r in (sig.get("ingredients") or [])[:3]]
-                print(f"[SIGNALS] {n}/{len(names)} {name}: cohort={sig.get('cohort_n')} "
-                      f"top={top}")
-                out[name] = {"cohort_n": sig.get("cohort_n"),
+                old_top = [r["term"] for r in (prev.get("ingredients") or [])[:5]]
+                new_top = [r["term"] for r in (sig.get("ingredients") or [])[:5]]
+                oc, nc = prev.get("cohort_n"), sig.get("cohort_n")
+                if not prev:
+                    print(f"[SIGNALS] {n}/{len(names)} {name}: FIRST STAMP — "
+                          f"cohort={nc} top={new_top}")
+                elif oc != nc or old_top != new_top:
+                    bits = []
+                    if oc != nc:
+                        bits.append(f"cohort {oc} -> {nc}")
+                    if old_top != new_top:
+                        bits.append(f"top {old_top} -> {new_top}")
+                    print(f"[SIGNALS] {n}/{len(names)} {name}: {'; '.join(bits)}")
+                else:
+                    print(f"[SIGNALS] {n}/{len(names)} {name}: unchanged (cohort={nc})")
+                out[name] = {"cohort_n": nc,
                              "ingredients": len(sig.get("ingredients") or []),
                              "equipment": len(sig.get("equipment") or [])}
         return out
