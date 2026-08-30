@@ -213,6 +213,23 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
 }
 .nav-menu .nav-section:first-child { border-top: none; margin-top: 0; }
 
+/* ⓘ info dots — the field-explanation convention (2026-08-30): a small
+   round "i" beside a field pops a centered explanation card instead of
+   paragraphs of inline prose. Delegated listener lives in library-shell.js;
+   pages only add the markup (class info-dot + data-info / data-info-title). */
+.info-dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--card); color: var(--accent);
+  font: italic 800 0.68rem Georgia, serif; line-height: 1;
+  cursor: pointer; vertical-align: middle; margin-left: 5px; padding: 0;
+}
+.info-dot:hover { border-color: var(--accent); }
+.info-pop-card { max-width: 460px; text-align: left; }
+.info-pop-card h2 { font-size: 1.05rem; }
+.info-pop-body { font-size: 0.9rem; line-height: 1.55; color: var(--ink); }
+.info-pop-body code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+
 /* Coming-soon overlay (no-op nav items: Cookbooks, Equipment, Gourmet
    for now). Takes over the screen with a dim background + centered
    card. Dismiss via button or backdrop click. */

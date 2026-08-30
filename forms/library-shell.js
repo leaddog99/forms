@@ -1022,6 +1022,49 @@
   }
 
   // ============================================================
+  //  Info popups — the ⓘ convention (2026-08-30)
+  // ============================================================
+  //
+  // Field explanations live behind a small ⓘ dot, not in paragraphs of
+  // inline prose (curator's call: "we should be doing that everywhere
+  // from now on"). Markup anywhere in any page:
+  //
+  //   <button type="button" class="info-dot"
+  //           data-info-title="Reserved winner seats"
+  //           data-info="Explanation text. Plain text or simple HTML.">i</button>
+  //
+  // One DELEGATED listener (below) serves every dot ever added — including
+  // ones rendered later into innerHTML — so pages add the markup and are
+  // done. Programmatic use: LibraryShell.showInfo(title, html).
+  function showInfo(title, html) {
+    const overlay = document.createElement('div');
+    overlay.className = 'coming-soon-overlay';  // reuse dimmer + centering
+    overlay.innerHTML =
+      '<div class="coming-soon-card info-pop-card">' +
+        '<h2>' + escapeHtml(title || 'About this field') + '</h2>' +
+        '<div class="info-pop-body">' + (html || '') + '</div>' +
+        '<button type="button">Got it</button>' +
+      '</div>';
+    const dismiss = () => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+    overlay.querySelector('button').addEventListener('click', dismiss);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
+  document.addEventListener('click', (e) => {
+    const dot = e.target.closest && e.target.closest('.info-dot');
+    if (!dot) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showInfo(dot.getAttribute('data-info-title') || dot.getAttribute('title') || '',
+             dot.getAttribute('data-info') || '');
+  });
+
+  // ============================================================
   //  Queued-jobs drain (nav action)
   // ============================================================
   //
@@ -1822,6 +1865,7 @@
     runQueuedJobs,
     streamJob,
     queuedJobCount,
+    showInfo,
     NAV_ITEMS,
     BRAND,
   };

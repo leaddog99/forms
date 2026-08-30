@@ -84,7 +84,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260830a"></script>
+  <script src="/forms/library-shell.js?v=20260830b"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -131,6 +131,7 @@
         <input type="number" class="qr-n" min="1" placeholder="dflt" title="Candidates fetched for THIS line (blank = the dish's SERP candidates default)" value="${r.n ?? ''}" style="width:70px;${QIN}">
         <select class="qr-hl" title="Search language for this line (dish default = follow 'Sources in')" style="width:150px;${QIN}">${langOpts}</select>
         <input type="text" class="qr-gl" maxlength="2" placeholder="auto" title="Google country index, 2-letter (auto-derived from the language; override for e.g. English-language results ranking in Greece: language English + country gr)" value="${escapeHtml(r.gl || '')}" style="width:56px;text-transform:lowercase;${QIN}">
+        <input type="number" class="qr-keep" min="1" placeholder="—" title="Reserved winner seats for this line (ⓘ in the header explains)" value="${r.keep ?? ''}" style="width:56px;${QIN}">
         <button type="button" class="qr-del ed-btn" title="Remove line" style="padding:6px 10px">✕</button>
       </div>`;
     }
@@ -145,7 +146,7 @@
         </div>
         <div id="${boxId}">
           <div style="display:flex;gap:8px;margin-bottom:4px;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#6b5b4f)">
-            <span style="flex:1">Query (verbatim)</span><span style="width:70px">Results</span><span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:38px"></span>
+            <span style="flex:1">Query (verbatim)</span><span style="width:70px">Results</span><span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:56px">Reserve<button type="button" class="info-dot" data-info-title="Reserved winner seats" data-info="Winners are normally seated purely by the authority ranking — and that ranking is biased toward the anglophone link graph. Measured on Soupe au Pistou: the French line&#39;s marmiton.org (DA&nbsp;83) lost every seat to US pages on page-authority alone.<br><br><b>Reserve</b> holds this many of the dish&#39;s winner seats for THIS line&#39;s own candidates, ranked among themselves by the same scoring. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — the reserve is a floor, not a cap). If the line can&#39;t fill its reserve, the unused seats return to the open pool.<br><br>Blank = no reservation; everything behaves as before.">i</button></span><span style="width:38px"></span>
           </div>
           <div class="qrows-list"></div>
           <button type="button" class="ed-btn qrows-add" style="padding:6px 12px">+ Add line</button>
@@ -237,7 +238,10 @@
         const n = nRaw === '' ? null : parseInt(nRaw, 10);
         if (nRaw !== '' && !(n > 0)) return {error: `Results for “${q}” must be a positive number`};
         if (glRaw && !/^[a-z]{2}$/.test(glRaw)) return {error: `Country for “${q}” must be a two-letter code`};
-        out.push({q, n, gl: glRaw || (hl ? glForLang(hl) : null), hl});
+        const keepRaw = (el.querySelector('.qr-keep')?.value ?? '').trim();
+        const keep = keepRaw === '' ? null : parseInt(keepRaw, 10);
+        if (keepRaw !== '' && !(keep > 0)) return {error: `Reserve for “${q}” must be a positive number (or blank)`};
+        out.push({q, n, gl: glRaw || (hl ? glForLang(hl) : null), hl, keep});
       }
       if (!out.length) return {error: 'At least one search query is required'};
       return {rows: out};
@@ -1202,6 +1206,9 @@
       const serp = parseInt($('#f_serp').value, 10);
       const final = parseInt($('#f_final').value, 10);
       if (!(serp > 0) || !(final > 0)) return warnHint('Candidate/winner counts must be positive whole numbers');
+      const reservedTotal = qr.rows.reduce((s, r) => s + (r.keep || 0), 0);
+      if (reservedTotal > final)
+        return warnHint(`Reserved seats total ${reservedTotal} but only ${final} winners are kept — lower a Reserve or raise Winners`);
       const ttlRaw = $('#f_ttl').value.trim();
       const body = {
         query_rows: qr.rows, top_n_serpapi: serp, top_n_final: final,

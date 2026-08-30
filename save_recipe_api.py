@@ -7954,7 +7954,44 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     saved_urls: list[str] = []
     backfilled = 0
     last_saved_ou: Optional[float] = None
-    for entry in pool:
+    # PER-LINE SLOT RESERVATION (the language-tax fix, 2026-08-30). A search
+    # line with `keep` reserves that many winner seats for ITS candidates,
+    # ranked among themselves by the same blend order — measured on Soupe au
+    # Pistou: the fr/fr line's marmiton (DA 83) lost every seat to anglophone
+    # pages purely on PA (link-graph geography, not merit). Mechanics:
+    #   open seats = target − Σ reserved; a candidate seats from its line's
+    #   quota first, else an open seat; one with NEITHER is deferred, and a
+    #   TOP-UP pass re-offers deferred candidates (blend order, no quotas) if
+    #   an exhausted line leaves seats empty. Seats are consumed on SAVE
+    #   SUCCESS only, so extract/save failures backfill exactly as before.
+    #   No line reserves → everything above is a no-op (open = target).
+    _quotas = {r["q"]: int(r.get("keep") or 0)
+               for r in query_rows if int(r.get("keep") or 0) > 0}
+    _open = [max(0, target - sum(_quotas.values()))]
+    if _quotas:
+        print(f"[REFRESH-DISH] reserved seats: "
+              + ", ".join(f"{q!r}={k}" for q, k in _quotas.items())
+              + f" | open={_open[0]} of {target}")
+
+    def _seating(seq):
+        """Yield (entry, seat_line) lazily — the seat decision reads the
+        CURRENT quota state at yield time, so save failures upstream never
+        strand a seat. Deferred candidates re-offered quota-free at the end."""
+        deferred = []
+        for e in seq:
+            if not _quotas:
+                yield e, None
+                continue
+            _lines = e.get("_queries") or []
+            _line = next((q for q in _lines if _quotas.get(q, 0) > 0), None)
+            if _line is None and _open[0] <= 0:
+                deferred.append(e)
+                continue
+            yield e, _line
+        for e in deferred:                    # top-up: quotas done or unfillable
+            yield e, None
+
+    for entry, _seat_line in _seating(pool):
         if saved_count >= target:
             break
         url = entry["url"]
@@ -8062,6 +8099,13 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             await asyncio.to_thread(_save_recipe_core, payload)
             saved_count += 1
             saved_urls.append(url)
+            # Consume the seat only now — a failed save above never did.
+            if _seat_line is not None and _quotas.get(_seat_line, 0) > 0:
+                _quotas[_seat_line] -= 1
+                print(f"[REFRESH-DISH] RESERVED SEAT ({_seat_line!r}, "
+                      f"{_quotas[_seat_line]} left) <- {url}")
+            elif _quotas:
+                _open[0] = max(0, _open[0] - 1)
             if isinstance(entry.get("ou"), (int, float)):
                 last_saved_ou = float(entry["ou"])   # lowest saved = the real cut bar
             if (entry.get("rank") or 0) > target:

@@ -614,7 +614,19 @@ def normalize_query_rows(raw) -> list[dict]:
         # at run time by resolve_query_locales — the same contract as n=None.
         gl = (str(gl).strip().lower() or None) if gl not in (None, "") else None
         hl = (str(hl).strip().lower() or None) if hl not in (None, "") else None
-        out.append({"q": q, "n": n, "gl": gl, "hl": hl})
+        # `keep` = RESERVED WINNER SLOTS for this line (the language-tax fix,
+        # 2026-08-30): this many of top_n_final seats go to this line's own
+        # candidates, ranked among themselves — because a French page loses
+        # the global PA race to the anglophone link graph, not on merit.
+        # None/0 = unreserved (every prior row behaves exactly as before).
+        keep = item.get("keep", item.get("reserve")) if isinstance(item, dict) else None
+        try:
+            keep = int(keep) if keep not in (None, "") else None
+        except (TypeError, ValueError):
+            keep = None
+        if keep is not None and keep <= 0:
+            keep = None
+        out.append({"q": q, "n": n, "gl": gl, "hl": hl, "keep": keep})
     return out
 
 
@@ -650,6 +662,10 @@ def validate_query_rows(raw, *, max_n: Optional[int] = None) -> list[dict]:
                 raise ValueError(
                     f"{field} for {r['q']!r} must be a two-letter code "
                     f"(got {r[field]!r}) — store the CODE, not a display name")
+        if r.get("keep") is not None and r["keep"] > 50:
+            raise ValueError(
+                f"reserved slots for {r['q']!r} ({r['keep']}) look like a typo "
+                f"— reservations are a handful of winner seats, not a pool size")
     return rows
 
 
