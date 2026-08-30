@@ -5171,9 +5171,11 @@ def list_dish_rejects(name: str):
 def dish_delete_preflight_endpoint(name: str):
     """What deleting this dish would actually do to its recipes — so the
     confirm dialog can say the truth instead of one fixed warning. Three
-    fates: stamped dish-only rows are DELETED; stamped rows a publisher also
-    claims are KEPT (dish fields cleared); matcher-resolved rows are never
-    touched — they re-match to the nearest surviving dish on the next sweep."""
+    fates, none of them deletion (2026-08-30): stamped dish-only rows are
+    RELEASED (whole _master block stripped, row kept, re-homed by the next
+    rematch); stamped rows a publisher also claims are KEPT (dish fields
+    cleared); matcher-resolved rows are never touched — they re-match to the
+    nearest surviving dish on the next sweep."""
     try:
         with _db() as conn:
             if dishes_lib.get_dish(conn, name) is None:
@@ -5195,7 +5197,7 @@ def dish_delete_preflight_endpoint(name: str):
                 "SELECT COUNT(*) FROM master_recipes WHERE dish_effective = ? "
                 "AND json_extract(data,'$._master.dish') IS NULL",
                 (name,)).fetchone()[0]
-        return {"dish": name, "will_delete": will_delete,
+        return {"dish": name, "will_release": will_delete,
                 "kept_publisher": kept, "will_rematch": will_rematch}
     except HTTPException:
         raise
@@ -5206,20 +5208,25 @@ def dish_delete_preflight_endpoint(name: str):
 @app.delete("/dishes/{name}")
 def delete_dish_endpoint(name: str, request: Request):
     _require_perm(request, "manage_dishes")
-    """Delete a dish AND its top-kind master_recipes rows. editors_choice
-    and legacy rows for this dish are untouched (kind filter)."""
+    """Delete a dish; its top-kind master rows are RELEASED, not deleted
+    (2026-08-30): dish-only rows lose their _master block and re-home to the
+    nearest surviving dish on the next rematch, publisher-claimed rows just
+    lose the dish stamp. editors_choice/legacy rows untouched. The dish
+    REFRESH keeps delete-and-replace — this change is only for deleting the
+    dish itself (the harvested recipes are paid-for corpus assets)."""
     try:
         with _db() as conn:
             existing = dishes_lib.get_dish(conn, name)
             if existing is None:
                 raise HTTPException(status_code=404, detail="Dish not found")
             _enable_vec_for_delete(conn)  # trg_dish_vec_cleanup deletes from dishes_vec (vec0)
-            cascaded = dishes_lib.delete_master_rows_for_dish(conn, name, kind="top")
+            kept, orphaned = dishes_lib.orphan_master_rows_for_dish(conn, name, kind="top")
             dishes_lib.delete_dish(conn, name)
             return {
                 "deleted": True,
                 "name": name,
-                "cascaded_master_rows": cascaded,
+                "orphaned_master_rows": orphaned,
+                "kept_publisher_rows": kept,
             }
     except HTTPException:
         raise

@@ -1297,6 +1297,61 @@ def delete_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
     return deleted
 
 
+def orphan_master_rows_for_dish(conn: sqlite3.Connection, dish_name: str,
+                                kind: str = "top") -> tuple:
+    """Release a deleted dish's master rows instead of deleting them
+    (2026-08-30, curator call). These recipes passed the is-recipe gate, Moz
+    scoring and a paid extract — corpus assets, and the resolution ladder
+    already treats a loose nearest as evidence. Deleting them on a dish
+    delete burned content the rematch would happily re-home (the duplicate-
+    dish merges were exactly this: the surviving twin WANTS the rows).
+
+    - publisher also claims the row -> clear just the dish fields (unchanged
+      from the retire behavior);
+    - dish-only row -> strip the whole `_master` block, KEEP the row. Its
+      dish_effective falls to the match/nearest rungs immediately (or NULL
+      until the next rematch stamps `_match`), and the sweep adopts it into
+      the nearest surviving dish.
+    The vec-index dish label is refreshed from `_match` so the KNN filter
+    never reads the dead dish name. NOTE: the dish REFRESH keeps its
+    delete-and-replace (delete_master_rows_for_dish) — last month's losers
+    must not linger; this is for DELETING THE DISH ITSELF.
+    Returns (kept_publisher, orphaned)."""
+    from input.pipeline import vector_store
+    from input.pipeline.embeddings import bytes_to_vec
+    rows = conn.execute(
+        "SELECT id, data, embedding FROM master_recipes WHERE "
+        "json_extract(data, '$._master.dish') = ? AND "
+        "json_extract(data, '$._master.kind') = ?", (dish_name, kind)).fetchall()
+    kept = orphaned = 0
+    for rid, data, blob in rows:
+        try:
+            d = json.loads(data)
+        except Exception:
+            continue
+        m = d.get("_master") or {}
+        if m.get("publisher"):
+            for f in ("dish", "exceptionalism"):
+                m.pop(f, None)
+            d["_master"] = m
+            kept += 1
+        else:
+            d.pop("_master", None)
+            orphaned += 1
+        conn.execute("UPDATE master_recipes SET data = ? WHERE id = ?",
+                     (json.dumps(d, indent=2), rid))
+        if blob is not None:
+            try:
+                ch = ((d.get("classification") or {}).get("chapter") or None)
+                match_dish = ((d.get("_match") or {}).get("dish") or None)
+                vector_store.upsert_recipe_vector(
+                    conn, rid, bytes_to_vec(blob), chapter=ch, dish=match_dish)
+            except Exception:
+                pass                     # index heals on the next rematch write
+    conn.commit()
+    return kept, orphaned
+
+
 def record_run_result(conn: sqlite3.Connection, name: str, *,
                       status: str, count: Optional[int] = None,
                       log_filename: Optional[str] = None,
