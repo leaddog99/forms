@@ -3549,11 +3549,13 @@ def delete_user(user_id: int):
 
 
 @app.get("/dishes/gap-report")
-def dish_gap_report_endpoint(min_group: int = 3, limit: int = 100):
+def dish_gap_report_endpoint(request: Request, min_group: int = 3, limit: int = 100):
     """The weakest-link holes (input/pipeline/dish_gaps.py) for the coverage
     page's 'Catalog holes' section: unconfident rows clustered by likelyDish
     with no catalog dish behind them, each row ready for the same ➕ create
-    flow the coverage table uses. Computed live — one corpus scan, seconds."""
+    flow the coverage table uses. Computed live — one corpus scan, seconds.
+    Same gate as /dish-coverage: corpus internals are staff-only."""
+    _require_perm(request, "admin_ui")
     from input.pipeline import dish_gaps, dish_match
     try:
         with _db() as conn:
