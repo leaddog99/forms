@@ -133,37 +133,12 @@
     </div>
 
     <div class="notes">
-      <span><b>Recipes</b> counts master rows whose identity card names this dish.
-        <b>Tracked traffic</b> is <em>not</em> search volume. <code>dish_keywords</code> holds one
-        row per harvested URL &mdash; that URL&rsquo;s top-ranking keyword and its estimated
-        traffic &mdash; across only the ~117 publishers we have run exports for. So this column
-        reads &ldquo;traffic flowing to pages about this, among the publishers we track&rdquo;.
-        A dish that is big on sites we have never harvested reads low or zero, and the name match
-        is a substring (<em>Chili</em> catches <em>sweet chili sauce</em>). Treat it as directional
-        ordering, never as a number.</span>
-      <span>Where an existing dish overlaps, the <b>relation</b> says which of three different
-        problems it is, because they want different actions. <b>Split</b> &mdash; genuinely
-        different dishes sharing a word (<em>Pasta alla Gricia</em> against <em>alla Norma</em>):
-        create the dish. <b>Variant</b> &mdash; the same identity, narrower (<em>Peach Cobbler</em>
-        against <em>Cobbler</em>): a judgement call, not an automatic split, because
-        <code>docs/collections.md</code> &sect;11 is explicit that variants are <em>not</em> the M2M
-        case &mdash; you want one winner per identity, since pooling the cohorts mis-grades the
-        minority. <b>Alias</b> &mdash; the same dish under another spelling
-        (<em>Coquilles Saint-Jacques</em> / <em>Coquilles Saint Jacques</em>): a synonym, not a
-        dish. This page reports; it never creates &mdash; the per-row <b>➕ dish</b> opens the dish
-        editor with a prefilled New Dish form (this name, two search lines &mdash; the name and
-        &ldquo;<i>name</i> Recipe&rdquo; &mdash; 40 results per line, 15 kept winners, 180-day
-        refresh), which you can adjust before pressing Create.</span>
-      <span>Seasonal dishes read low: a traffic snapshot taken out of season undercounts them.</span>
+      <span><b>Recipes</b> = master rows whose identity card names the dish; <b>Tracked traffic</b> is directional ordering, not search volume.<button type="button" class="info-dot" data-info-title="Reading the columns" data-info="<code>dish_keywords</code> holds one row per harvested URL — that URL&#39;s top-ranking keyword and its estimated traffic — across only the publishers we have run exports for. So the traffic column reads &#39;traffic flowing to pages about this, among the publishers we track&#39;. A dish that is big on sites we have never harvested reads low or zero, and the name match is a substring (<i>Chili</i> catches <i>sweet chili sauce</i>). Seasonal dishes read low out of season. Treat it as directional ordering, never as a number.">i</button></span>
+      <span>The <b>relation</b> tag says which of three problems an overlap is — they want different actions.<button type="button" class="info-dot" data-info-title="Split / Variant / Alias" data-info="<b>Split</b> — genuinely different dishes sharing a word (<i>Pasta alla Gricia</i> against <i>alla Norma</i>): create the dish. <b>Variant</b> — the same identity, narrower (<i>Peach Cobbler</i> against <i>Cobbler</i>): a judgement call, because <code>docs/collections.md</code> §11 is explicit that variants are NOT the M2M case — you want one winner per identity, since pooling the cohorts mis-grades the minority. <b>Alias</b> — the same dish under another spelling: a synonym, not a dish — add it on the existing dish&#39;s Aliases field. This page reports; it never creates — the per-row <b>➕ dish</b> opens the dish editor with a prefilled New Dish form (this name, two search lines, 40 results per line, 15 kept winners, 180-day refresh) which you adjust before pressing Create.">i</button></span>
     </div>
 
     <h2 style="margin:34px 0 6px;font-size:1.05rem">Catalog holes — weakest links</h2>
-    <p class="notes" style="margin:0 0 10px;display:block"><span>The corpus-side view of the same
-      question (the <code>dish_gap_report</code> job): recipes whose nearest catalog dish sits
-      beyond the match confidence bar, clustered by what their identity cards say they are.
-      A cluster here is a dish the corpus already holds recipes for but the catalog can't claim
-      — the same ➕ creates it. Clusters whose name is already a dish or alias are excluded
-      (those snap in at the next rematch, no new dish needed).</span></p>
+    <p class="notes" style="margin:0 0 10px;display:block"><span>Recipes the catalog can’t claim, clustered by what their identity cards say they are — the same ➕ creates the missing dish.<button type="button" class="info-dot" data-info-title="Catalog holes — weakest links" data-info="The corpus-side view of the coverage question (the <code>dish_gap_report</code> job): recipes whose nearest catalog dish sits beyond the match confidence bar, clustered by likelyDish. A cluster is a dish the corpus already holds recipes for but the catalog can&#39;t claim. Clusters whose name is already a dish or alias are excluded — those snap in at the next rematch, no new dish needed. Watch for the alias pattern: a cluster leaning on a near-identical dish name (&#39;Roasted Potatoes&#39; on Roast Potatoes) wants an ALIAS on the existing dish, not a new one.">i</button></span></p>
     <div class="tablewrap">
       <table>
         <thead><tr style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--muted)">

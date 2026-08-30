@@ -518,7 +518,7 @@
               <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Path = the segment the publisher's recipes live under (<code>recipes</code> keeps only <code>/recipes/…</code>) — a KEEP filter applied before any fetch, and a run that a path drops to ZERO now fails loudly. Leave <b>blank</b> where there's no clean prefix.</p>
               <div class="ed-block-label" style="margin:12px 0 2px;font-size:.82em">SEMrush deep-link <span style="font-weight:400;color:var(--muted,#8a7f72)">(yours to edit — nothing regenerates it)</span></div>
               ${urlField('f_semrush_report_url', 'Deep-link — ↗ opens the report to Export', d.semrush_report_url || '', { full: true })}
-              <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Seeded once when the domain was created. For anything the plain link can't reach — a subdomain, a path, a multi-condition filter — build the query in SEMrush, copy the URL from the address bar, and paste it here.</p>
+              <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Seeded once at create, then yours.<button type="button" class="info-dot" data-info-title="SEMrush report URL" data-info="For anything the plain link can&#39;t reach — a subdomain, a path, a multi-condition filter — build the query in SEMrush, copy the URL from the address bar, and paste it here. Nothing regenerates a saved URL, and a stale form saving a BLANK can&#39;t erase it either (blank against a stored link is ignored; blank against a blank re-seeds the default).">i</button></p>
               ${d.last_harvested_at ? `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Last harvested ${escapeHtml(fmtDate(d.last_harvested_at))}${d.next_harvest_at ? ` · next due ${escapeHtml(d.next_harvest_at)}` : ''}.</p>` : `<p class="ed-notes-help" style="margin:6px 0 0;font-size:.82em">Never harvested — due now.</p>`}
             </div>
             <div class="src-group" data-src="serp">
@@ -636,7 +636,7 @@
                on the cohort's checked also-rans, not the already-ingested winners. -->
           <details class="ed-accordion" id="domainCohortAcc" style="margin-top:16px">
             <summary>Scored cohort <span class="ed-count" id="domainCohortCount"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 10px">Every candidate the last harvest scored — the full cohort by <code>rank_score</code> (OU/power blend), straight from the ledger. ★ = kept winner; the rest are ranked-but-not-kept also-rans (dimmed). Check worthy also-rans → <b>⚙ Process selected</b> to ingest just those via the unblocker.</p>
+            <p class="ed-notes-help" style="margin:10px 0 10px">Every candidate the last harvest scored, by blend rank — ★ = kept winner.<button type="button" class="info-dot" data-info-title="Scored cohort" data-info="The full cohort by <code>rank_score</code> (OU/power blend), straight from the ledger. Unstarred rows are ranked-but-not-kept also-rans (dimmed). Check worthy also-rans &rarr; <b>⚙ Process selected</b> to ingest just those via the unblocker. (Gated publishers that never yield content to the unblocker — Milk Street — use the bookmarklet/queue instead.)">i</button></p>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
               <button type="button" class="ed-btn" id="processSelBtn" style="font-size:.8em;display:none" title="Extract the CHECKED rows into master via the unblocker (1 render each)">⚙ Process selected</button>
               <button type="button" class="ed-btn" id="queueCapBtn" style="font-size:.8em;display:none" title="FREE manual queue: opens each CHECKED page so you click your bookmarklet — no unblocker cost. (ROUGH prototype — UI redesign tomorrow.)">📋 Queue (manual)</button>
@@ -653,7 +653,7 @@
                candidate ledger those drops existed only in the run's log file. -->
           <details class="ed-accordion" id="domainCandAcc" style="margin-top:16px">
             <summary>Dropped before scoring <span class="ed-count" id="domainCandCount"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 10px">Candidates discarded <b>before</b> Moz, so they never appear in the cohort above. Only the <b>arguable</b> ones are listed — a detection miss or a missing Moz score. Drops that are matters of fact (off-path, an archive page, a roundup title) are counted only: they are your rules and the page's own structure, not judgement calls.</p>
+            <p class="ed-notes-help" style="margin:10px 0 10px">Candidates discarded <b>before</b> Moz — only the arguable ones are listed.<button type="button" class="info-dot" data-info-title="Pre-scoring drops" data-info="These never appear in the scored cohort above. Listed = a judgement we could argue with (a detection miss, a missing Moz score). Drops that are matters of fact — off-path, an archive page, a roundup title — are counted only: they are your rules and the page&#39;s own structure, not judgement calls.">i</button></p>
             <div id="domainCandSummary" class="ed-kv" style="margin-bottom:10px"></div>
             <ol class="ed-t10" id="domainCandList"><li class="ed-empty-fit">Open or refresh to load.</li></ol>
           </details>

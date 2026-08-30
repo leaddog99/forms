@@ -135,15 +135,9 @@
 
     function queryRowsBlockHtml(boxId){
       return `
-        <div class="qrows-examples" style="font-size:.78rem;color:var(--muted,#6b5b4f);margin:2px 0 10px;line-height:1.7">
-          <b>Examples</b> —
-          <code>"carrot cake" recipe</code> + results <i>blank</i> + language <i>dish default</i> → default count, follows “Sources in”<br>
-          <code>γιουβαρλάκια αυγολέμονο</code> + results <b>120</b> + language <b>Greek</b> → 120 candidates from Greek Google, in Greek<br>
-          <code>moules frites</code> + language <b>English</b> + country <b>fr</b> → English-language pages that rank on google.fr
-        </div>
         <div id="${boxId}">
           <div style="display:flex;gap:8px;margin-bottom:4px;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#6b5b4f)">
-            <span style="flex:1">Query (verbatim)</span><span style="width:70px">Results</span><span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:56px">Reserve<button type="button" class="info-dot" data-info-title="Reserved winner seats" data-info="Winners are normally seated purely by the authority ranking — and that ranking is biased toward the anglophone link graph. Measured on Soupe au Pistou: the French line&#39;s marmiton.org (DA&nbsp;83) lost every seat to US pages on page-authority alone.<br><br><b>Reserve</b> holds this many of the dish&#39;s winner seats for THIS line&#39;s own candidates, ranked among themselves by the same scoring. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — the reserve is a floor, not a cap). If the line can&#39;t fill its reserve, the unused seats return to the open pool.<br><br>Blank = no reservation; everything behaves as before.">i</button></span><span style="width:38px"></span>
+            <span style="flex:1">Query (verbatim)<button type="button" class="info-dot" data-info-title="Search lines — syntax, locales, examples" data-info="<b>Syntax</b> — <code>&quot;exact phrase&quot;</code> exact match (straight quotes; curly are auto-fixed) &middot; <code>-word</code> exclude pages with that word (drops EVERY page containing it) &middot; <code>-site:domain.com</code> exclude a site &middot; <code>site:gr</code> only that country&#39;s TLD.<br><b>Alternate phrasings go on their own lines</b> — each runs as a separate search and results merge; more reliable than <code>OR</code> (undocumented precedence). Blocklist exclusions are auto-appended each run (System &rarr; Search).<br><br><b>Results</b> — candidates fetched for that line only (blank = the dish&#39;s SERP-candidates default).<br><b>Language / Country</b> — WHICH Google answers, in what language (blank = follow Sources-in). They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece — not the same as <code>site:gr</code>, since most Greek publishers aren&#39;t on .gr.<br><br><b>Examples</b><br><code>&quot;carrot cake&quot; recipe</code> + results blank + language dish-default &rarr; default count, follows Sources-in<br><code>γιουβαρλάκια αυγολέμονο</code> + results 120 + language Greek &rarr; 120 candidates from Greek Google, in Greek<br><code>moules frites</code> + language English + country fr &rarr; English-language pages that rank on google.fr">i</button></span><span style="width:70px">Results</span><span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:56px">Reserve<button type="button" class="info-dot" data-info-title="Reserved winner seats" data-info="Winners are normally seated purely by the authority ranking — and that ranking is biased toward the anglophone link graph. Measured on Soupe au Pistou: the French line&#39;s marmiton.org (DA&nbsp;83) lost every seat to US pages on page-authority alone.<br><br><b>Reserve</b> holds this many of the dish&#39;s winner seats for THIS line&#39;s own candidates, ranked among themselves by the same scoring. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — the reserve is a floor, not a cap). If the line can&#39;t fill its reserve, the unused seats return to the open pool.<br><br>Blank = no reservation; everything behaves as before.">i</button></span><span style="width:38px"></span>
           </div>
           <div class="qrows-list"></div>
           <button type="button" class="ed-btn qrows-add" style="padding:6px 12px">+ Add line</button>
@@ -427,20 +421,7 @@
         <section class="ed-block">
           <h3 class="ed-block-label">Search config</h3>
           <div class="ed-field full" style="margin-bottom:16px">
-            <label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge — query text passes to Google verbatim)</span><button type="button" id="qInfoBtn" title="Google search syntax" style="margin-left:7px;border:1px solid var(--ed-line,#e2d6c3);background:#fff;color:var(--ed-accent,#9c5b34);width:19px;height:19px;border-radius:50%;font-size:.72rem;line-height:1;cursor:pointer;font-style:italic;font-weight:800;vertical-align:middle;font-family:Georgia,serif">i</button></label>
-            <div id="qInfoPop" hidden style="margin:4px 0 10px;padding:12px 14px;border:1px solid var(--ed-line,#e2d6c3);border-radius:10px;background:#fffaf1;font-size:.86rem;line-height:1.5">
-              <strong>Google search syntax</strong>
-              <ul style="margin:6px 0 8px;padding-left:18px">
-                <li><code>"exact phrase"</code> — exact match (straight quotes only; smart/curly are auto-fixed)</li>
-                <li><code>-word</code> — exclude pages with that word <span style="color:var(--ed-warn,#b23b3b)">(drops <em>every</em> page containing it — careful)</span></li>
-                <li><code>-site:domain.com</code> — exclude a site · <code>site:gr</code> — only that country's sites</li>
-                <li><strong>Alternate phrasings → put each on its OWN line.</strong> Each runs as a separate search; results are merged. More reliable than <code>OR</code>.</li>
-                <li><strong>Results</strong> — candidates fetched for that line only (blank = the dish's “SERP candidates”). Give a native-language line a bigger pull than an English one, or vice versa.</li>
-                <li><strong>Language / Country</strong> — WHICH Google answers, and in what language (blank = follow “Sources in”). They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece. Not the same as <code>site:gr</code>, which only restricts domain TLDs — most Greek publishers aren't on .gr.</li>
-              </ul>
-              <span style="color:var(--muted,#6b5b4f)">Only <code>"…"</code> and <code>-</code> are officially documented by Google. <code>OR</code> / <code>|</code> / parentheses pass through but are undocumented — precedence isn't guaranteed, so prefer separate lines. Blocklist exclusions are auto-appended each run (System → Search).</span><br>
-              <a href="https://support.google.com/websearch/answer/2466433" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;color:var(--ed-accent,#9c5b34)">Full Google search operators reference ↗</a>
-            </div>
+            <label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge — query text passes to Google verbatim)</span></label>
             ${queryRowsBlockHtml('qrows_edit')}
           </div>
           <div class="ed-form-grid">
@@ -469,7 +450,7 @@
 
         <section class="ed-block">
           <h3 class="ed-block-label">Top recipes <span class="ed-count" id="topcount"></span></h3>
-          <p class="ed-notes-help" style="margin:0 0 12px">The curated winners kept from the last refresh, by OU.</p>
+          <p class="ed-notes-help" style="margin:0 0 12px">The curated winners kept from the last refresh, ranked by the OU/power blend.</p>
           <!-- Run controls live WITH the data they produce (same placement +
                language as the domains form's publisher refresh). Cancel is
                hidden when idle (no-surprise rule) — setCancel(true) reveals it
@@ -487,7 +468,7 @@
         <section class="ed-block">
           <details class="ed-accordion" id="ecAcc">
             <summary>Editor's Choice <span class="ed-pill" id="ecCount" style="margin-left:6px"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 12px">Give a recipe this dish's <b>Editor's Choice</b>. It is ingested immediately and shown as an award above the ranked list — it does <b>not</b> compete: no minimum-score gate, never ranked against the algorithmic winners, and it survives every Refresh. Its PA/DA/OU are still shown, marked <i>not ranked</i>, so the award is measured but not judged. An award is a membership, so the same recipe can be awarded for several dishes.</p>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Hand this dish an award — outside the ranking, survives every Refresh.<button type="button" class="info-dot" data-info-title="Editor&#39;s Choice" data-info="The recipe is ingested immediately and shown as an award above the ranked list — it does <b>not</b> compete: no minimum-score gate, never ranked against the algorithmic winners, and it survives every Refresh. Its PA/DA/OU are still shown, marked <i>not ranked</i>, so the award is measured but not judged. An award is a membership, so the same recipe can be awarded for several dishes.">i</button></p>
             <div style="display:flex;gap:8px;margin:0 0 8px">
               <input type="url" id="ecUrl" placeholder="https://… recipe URL" style="flex:1;min-width:0;padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit">
               <button type="button" class="ed-btn" id="ecAddBtn">Award</button>
@@ -535,7 +516,7 @@
         <section class="ed-block">
           <details class="ed-accordion" id="candAcc">
             <summary>Considered <span class="ed-pill" id="candCount" style="margin-left:6px"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 12px">Every URL the last run looked at, not just the winners. <b>Reconsiderable</b> = dropped by a judgement we could argue with (the OU floor, a detection miss, a missing Moz score). Drops that are matters of <b>fact</b> — your blocklist, an archive page, a roundup — are counted but not listed, because nothing should overturn them.</p>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Every URL the last run looked at, not just the winners.<button type="button" class="info-dot" data-info-title="Candidate ledger" data-info="<b>Reconsiderable</b> = dropped by a judgement we could argue with (the OU floor, a detection miss, a missing Moz score). Drops that are matters of <b>fact</b> — your blocklist, an archive page, a roundup — are counted but not listed, because nothing should overturn them.">i</button></p>
             <div id="candSummary" class="ed-kv" style="margin-bottom:12px"></div>
             <div id="candEditor" style="margin-bottom:14px"></div>
             <ol class="ed-t10" id="candlist"><li class="ed-empty-fit">Loading…</li></ol>
@@ -545,12 +526,7 @@
         <section class="ed-block">
           <details class="ed-accordion" open id="scoresAcc">
             <summary>Cohort scores <span class="ed-pill" id="scoresPill" style="margin-left:6px"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 12px">The authority profile of this dish's
-              cohort — where its recipes live. <b>DA/PA are cross-dish comparable</b> (absolute Moz
-              scales): a high-DA dish is covered by the big sites, a low-DA dish lives on long-tail
-              blogs. <b>OU is not</b> — each cohort was selected from its own traffic pool, so read
-              cross-dish OU deltas as an echo of the DA/PA mix, not a quality ranking. Stamped with
-              the cohort signals (📊 Measure below re-stamps both).</p>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Where this dish's recipes live — the cohort's authority profile.<button type="button" class="info-dot" data-info-title="Cohort scores" data-info="<b>DA/PA are cross-dish comparable</b> (absolute Moz scales): a high-DA dish is covered by the big sites, a low-DA dish lives on long-tail blogs. <b>OU is not</b> — each cohort was selected from its own traffic pool, so read cross-dish OU deltas as an echo of the DA/PA mix, not a quality ranking. Stamped with the cohort signals (📊 Measure re-stamps both).">i</button></p>
             <div id="scoresBody"><p class="ed-empty-fit">Loading&hellip;</p></div>
           </details>
         </section>
@@ -558,12 +534,7 @@
         <section class="ed-block">
           <details class="ed-accordion" id="sigAcc">
             <summary>Cohort signals <span class="ed-pill" id="sigPill" style="margin-left:6px"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 12px">What this dish's recipes <b>use, measured</b> —
-              each term with the share of the cohort containing it and its <b>lift</b>: how many times more
-              often it appears here than across the whole corpus. Near 1&ndash;3&times; = commodity (sugar,
-              a whisk — same as everything); 10&times;+ = part of this dish's identity, and a product-class
-              candidate. Stamped by the <code>dish_signals</code> job; the evidence layer for the coming
-              dish&rarr;product-class proposals.</p>
+            <p class="ed-notes-help" style="margin:10px 0 12px">What this dish's recipes <b>use, measured</b> — term share and lift against the corpus.<button type="button" class="info-dot" data-info-title="Cohort signals" data-info="Each term shows the share of the cohort containing it and its <b>lift</b>: how many times more often it appears here than across the whole corpus. Near 1&ndash;3&times; = commodity (sugar, a whisk — same as everything); 10&times;+ = part of this dish&#39;s identity, and a product-class candidate. Stamped by the <code>dish_signals</code> job; the evidence layer for the dish&rarr;product-class proposals.">i</button></p>
             <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
               <button type="button" class="ed-btn" id="sigMeasureBtn" title="(Re-)measure this dish's cohort signals — one corpus scan, nothing billable">📊 Measure</button>
               <span class="ed-save-hint" id="sigHint"></span>
@@ -575,12 +546,7 @@
         <section class="ed-block">
           <details class="ed-accordion" id="dpcAcc">
             <summary>Product classes <span class="ed-pill" id="dpcPill" style="margin-left:6px"></span></summary>
-            <p class="ed-notes-help" style="margin:10px 0 12px">The classes worth advertising beside this
-              dish's recipes. <b>✨ Propose</b> interprets the measured cohort signals (one model call);
-              every proposal cites its evidence. <b>Only what you approve can ever render</b> — approved
-              and rejected decisions survive re-proposal. Tier: 1 = the dish's differentiators (lead the
-              block), 2 = core gear, 3 = optional/implied. <b>Decisions save instantly</b> on click —
-              the form's Save button is for search config only and stays quiet here.</p>
+            <p class="ed-notes-help" style="margin:10px 0 12px">The classes worth advertising beside this dish's recipes — <b>only what you approve can ever render</b>, and decisions save instantly.<button type="button" class="info-dot" data-info-title="Product classes" data-info="<b>✨ Propose</b> interprets the measured cohort signals (one model call); every proposal cites its evidence. Approved and rejected decisions survive re-proposal. Tier: 1 = the dish&#39;s differentiators (lead the block), 2 = core gear, 3 = optional/implied. <b>Decisions save instantly</b> on click — the form&#39;s Save button is for search config only and stays quiet here.">i</button></p>
             <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
               <button type="button" class="ed-btn" id="dpcProposeBtn" title="Run the proposal job for this dish (~one Sonnet call)">✨ Propose</button>
               <span class="ed-save-hint" id="dpcHint"></span>
@@ -611,8 +577,6 @@
         const p = $('#purposePop'), a = $('#purposeArrow');
         p.hidden = !p.hidden; a.textContent = p.hidden ? '▾' : '▴';
       });
-      const qInfo = $('#qInfoBtn');
-      if (qInfo) qInfo.addEventListener('click', () => { const p = $('#qInfoPop'); if (p) p.hidden = !p.hidden; });
       initQueryRows('qrows_edit', d.query_rows);
       paintFetchTotal('qrows_edit', 'f_serp', 'fetchTotal_edit');
       $('#saveBtn').addEventListener('click', () => doSave(d));
