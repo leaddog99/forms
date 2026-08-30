@@ -5167,6 +5167,42 @@ def list_dish_rejects(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+@app.get("/dishes/{name}/delete-preflight")
+def dish_delete_preflight_endpoint(name: str):
+    """What deleting this dish would actually do to its recipes — so the
+    confirm dialog can say the truth instead of one fixed warning. Three
+    fates: stamped dish-only rows are DELETED; stamped rows a publisher also
+    claims are KEPT (dish fields cleared); matcher-resolved rows are never
+    touched — they re-match to the nearest surviving dish on the next sweep."""
+    try:
+        with _db() as conn:
+            if dishes_lib.get_dish(conn, name) is None:
+                raise HTTPException(status_code=404, detail="Dish not found")
+            will_delete = kept = 0
+            for (dj,) in conn.execute(
+                    "SELECT data FROM master_recipes WHERE "
+                    "json_extract(data,'$._master.dish') = ? AND "
+                    "json_extract(data,'$._master.kind') = 'top'", (name,)):
+                try:
+                    m = (json.loads(dj).get("_master") or {})
+                except Exception:
+                    continue
+                if m.get("publisher"):
+                    kept += 1
+                else:
+                    will_delete += 1
+            will_rematch = conn.execute(
+                "SELECT COUNT(*) FROM master_recipes WHERE dish_effective = ? "
+                "AND json_extract(data,'$._master.dish') IS NULL",
+                (name,)).fetchone()[0]
+        return {"dish": name, "will_delete": will_delete,
+                "kept_publisher": kept, "will_rematch": will_rematch}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
 @app.delete("/dishes/{name}")
 def delete_dish_endpoint(name: str, request: Request):
     _require_perm(request, "manage_dishes")

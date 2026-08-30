@@ -1375,7 +1375,24 @@
     }
 
     async function doDelete(d){
-      if (!confirm(`Delete dish “${d.name}”?\n\nThis also removes its curated top recipes from master.`)) return;
+      // Honest preflight: say what THIS delete actually does — recipes really
+      // deleted vs kept (publisher also claims them) vs merely re-matched to
+      // the nearest surviving dish on the next sweep. Falls back to the
+      // generic warning if the preflight can't be fetched.
+      let msg = `Delete dish “${d.name}”?\n\nThis also removes its curated top recipes from master.`;
+      try {
+        const p = await fetch(`/dishes/${encodeURIComponent(d.name)}/delete-preflight`).then(r => r.ok ? r.json() : null);
+        if (p) {
+          const bits = [];
+          bits.push(p.will_delete
+            ? `• ${p.will_delete} recipe${p.will_delete === 1 ? '' : 's'} will be DELETED from master (this dish's harvest, claimed by nothing else)`
+            : `• No recipes will be deleted from master`);
+          if (p.kept_publisher) bits.push(`• ${p.kept_publisher} kept (also on a publisher's list — only the dish stamp is cleared)`);
+          if (p.will_rematch) bits.push(`• ${p.will_rematch} untouched — they re-match to the nearest remaining dish on the next sweep`);
+          msg = `Delete dish “${d.name}”?\n\n${bits.join('\n')}`;
+        }
+      } catch (e) { /* keep generic message */ }
+      if (!confirm(msg)) return;
       try {
         const r = await fetch(`/dishes/${encodeURIComponent(d.name)}`, { method: 'DELETE' });
         const data = await r.json().catch(() => ({}));
