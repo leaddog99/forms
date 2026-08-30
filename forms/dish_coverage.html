@@ -44,7 +44,11 @@
     .chip[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
     .count{ margin-left:auto; font-size:.82rem; color:var(--muted); font-variant-numeric:tabular-nums; }
 
-    .tablewrap{ background:var(--card); border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
+    /* Capped height + internal scroll so the Catalog-holes section below is
+       reachable without paging through hundreds of coverage rows; the sticky
+       thead keeps working inside the scrolling wrapper. */
+    .tablewrap{ background:var(--card); border:1px solid var(--border); border-radius:12px;
+      overflow-x:auto; max-height:62vh; overflow-y:auto; }
     table{ border-collapse:collapse; width:100%; min-width:760px; }
     thead th{ position:sticky; top:0; background:var(--card); z-index:2; text-align:left; padding:0;
       border-bottom:1px solid var(--border); white-space:nowrap; }
