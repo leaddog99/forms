@@ -3548,6 +3548,25 @@ def delete_user(user_id: int):
 # step) — it imports build_query_batch in-process to do the actual work.
 
 
+@app.get("/dishes/gap-report")
+def dish_gap_report_endpoint(min_group: int = 3, limit: int = 100):
+    """The weakest-link holes (input/pipeline/dish_gaps.py) for the coverage
+    page's 'Catalog holes' section: unconfident rows clustered by likelyDish
+    with no catalog dish behind them, each row ready for the same ➕ create
+    flow the coverage table uses. Computed live — one corpus scan, seconds."""
+    from input.pipeline import dish_gaps, dish_match
+    try:
+        with _db() as conn:
+            rep = dish_gaps.build_report(
+                conn, limit=limit, min_group=min_group,
+                max_dist=dish_match.max_distance(DB_PATH))
+        return {"holes": rep["holes"], "weak_total": rep["weak_total"],
+                "unmatched": rep["unmatched"], "max_dist": rep["max_dist"]}
+    except Exception as e:
+        print(f"[ERROR] gap-report failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Report error: {e}") from e
+
+
 @app.get("/dish-coverage")
 def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
     """Dishes the CORPUS holds that the CATALOG has no record of.

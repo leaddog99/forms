@@ -152,6 +152,26 @@
         refresh), which you can adjust before pressing Create.</span>
       <span>Seasonal dishes read low: a traffic snapshot taken out of season undercounts them.</span>
     </div>
+
+    <h2 style="margin:34px 0 6px;font-size:1.05rem">Catalog holes — weakest links</h2>
+    <p class="notes" style="margin:0 0 10px;display:block"><span>The corpus-side view of the same
+      question (the <code>dish_gap_report</code> job): recipes whose nearest catalog dish sits
+      beyond the match confidence bar, clustered by what their identity cards say they are.
+      A cluster here is a dish the corpus already holds recipes for but the catalog can't claim
+      — the same ➕ creates it. Clusters whose name is already a dish or alias are excluded
+      (those snap in at the next rematch, no new dish needed).</span></p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th style="min-width:280px">Missing dish</th>
+          <th class="r">Waiting recipes</th>
+          <th class="r">Avg distance</th>
+          <th>Currently leaning on</th>
+          <th>Action</th>
+        </tr></thead>
+        <tbody id="gapbody"><tr><td colspan="5" class="empty">Loading weak links…</td></tr></tbody>
+      </table>
+    </div>
   </div>
 
   <script src="/forms/library-shell.js?v=20260825b"></script>
@@ -279,6 +299,37 @@
       });
     });
     load();
+
+    // Catalog holes — the weakest-link clusters (corpus-side). Same ➕ create
+    // flow, same profile, one extra fetch; failure leaves a message, never
+    // breaks the demand table above.
+    (async function loadGaps(){
+      const body = $('#gapbody'); if (!body) return;
+      try {
+        const r = await fetch('/dishes/gap-report');
+        if (!r.ok) throw new Error(r.status === 401 || r.status === 403
+          ? 'Curator tools are locked — unlock admin from the header, then reload.'
+          : 'Could not load weak links (' + r.status + ').');
+        const d = await r.json();
+        const holes = d.holes || [];
+        if (!holes.length){
+          body.innerHTML = '<tr><td colspan="5" class="empty">No weak-link clusters — every hole already names a catalog dish.</td></tr>';
+          return;
+        }
+        body.innerHTML = holes.map(h => `
+          <tr>
+            <td><span class="dish">${esc(h.likely_dish)}</span>
+              ${(h.examples && h.examples.length) ? `<span class="kw" title="${esc(h.examples.join('\n'))}">${esc(h.examples[0])}</span>` : ''}</td>
+            <td class="r">${h.count}</td>
+            <td class="r">${h.avg_distance}</td>
+            <td class="chap">${esc((h.nearest_dishes || []).join(', ') || '—')}</td>
+            <td><a class="chip mk" href="${createHref(h.likely_dish)}" target="_blank" rel="noopener"
+                 title="Open the dish editor prefilled for this dish — review, then Create">➕ dish</a></td>
+          </tr>`).join('');
+      } catch (e) {
+        body.innerHTML = '<tr><td colspan="5" class="empty">' + esc(String(e.message || e)) + '</td></tr>';
+      }
+    })();
   </script>
 </body>
 </html>
