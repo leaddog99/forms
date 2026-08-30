@@ -764,7 +764,20 @@
       const prov = sig.provenance || {};
       const provBits = [...Object.entries(prov.ethnicities || {}), ...Object.entries(prov.regions || {})]
         .map(([k, v]) => `${escapeHtml(k)} (${v})`).join(' · ');
+      // Authority profile — cohort mean/median of the Moz scales. DA/PA are
+      // cross-dish comparable (a DA-71 dish lives on the big sites); OU is
+      // shown last: each cohort was selected from a different traffic pool,
+      // so treat cross-dish OU deltas as an echo of the DA/PA mix.
+      const auth = sig.authority || {};
+      const aStat = (label, s, title) => s
+        ? `<span title="${title} — mean ${s.mean} · median ${s.median} · n=${s.n}"><b>${label}</b> ${s.mean}<span style="color:var(--muted)">/${s.median}</span></span>` : '';
+      const authBits = [
+        aStat('DA', auth.da, 'domain authority'),
+        aStat('PA', auth.pa, 'page authority'),
+        aStat('OU', auth.ou, 'effective OU (selection-dependent — read with care)'),
+      ].filter(Boolean).join(' &nbsp;·&nbsp; ');
       body.innerHTML = `
+        ${authBits ? `<p style="margin:0 0 10px;font-size:.85em;color:var(--muted)">Cohort authority (mean/<span style="opacity:.7">median</span>): ${authBits}</p>` : ''}
         <h4 style="margin:0 0 6px;font-size:.85em">Ingredients</h4><div id="sigTblIng"></div>
         <h4 style="margin:14px 0 6px;font-size:.85em">Equipment</h4><div id="sigTblEq"></div>
         ${provBits ? `<h4 style="margin:14px 0 6px;font-size:.85em">Provenance</h4><p style="margin:0;font-size:.85em;color:var(--muted)">${provBits}</p>` : ''}`;

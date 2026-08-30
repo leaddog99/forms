@@ -121,6 +121,30 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
     ing_cand = {t for t, n in ing_df.items() if n >= min_df}
     eq_cand = {t for t, n in eq_df.items() if n >= min_df}
 
+    # Authority profile of the cohort — free (generated columns, one fetch).
+    # DA/PA are the headline: absolute Moz scales, comparable across dishes
+    # ("Chili lives on DA-71 sites; Lok Lak on DA-53 blogs"). OU is stored too
+    # (effective_ou_score = paywall-adjusted) but read it with the two-stage
+    # caveat: each cohort was SELECTED from a different traffic pool, so
+    # cross-dish OU deltas mostly re-express the DA/PA mix. NULLs are skipped
+    # per metric (absent-is-not-zero), n counted per metric.
+    def _stats(vals: list) -> dict | None:
+        vals = sorted(v for v in vals if v is not None)
+        if not vals:
+            return None
+        mid = len(vals) // 2
+        med = vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2
+        return {"n": len(vals), "mean": round(sum(vals) / len(vals), 1),
+                "median": round(med, 1)}
+    _auth_rows = conn.execute(
+        "SELECT domain_authority, page_authority, effective_ou_score "
+        "FROM master_recipes WHERE dish_effective = ?", (dish_name,)).fetchall()
+    authority = {
+        "da": _stats([r[0] for r in _auth_rows]),
+        "pa": _stats([r[1] for r in _auth_rows]),
+        "ou": _stats([r[2] for r in _auth_rows]),
+    }
+
     # Corpus baseline: ONE scan, doc frequency for exactly the candidate terms.
     gn = 0
     g_ing: Counter = Counter()
@@ -167,6 +191,7 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
         "cohort_n": cn,
         "corpus_n": gn,
         "min_df": min_df,
+        "authority": authority,
         "ingredients": _rank(ing_df, g_ing, ing_cand, max_ingredients, True),
         "equipment": _rank(eq_df, g_eq, eq_cand, max_equipment, False),
         "provenance": {
