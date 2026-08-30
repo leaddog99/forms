@@ -1924,7 +1924,7 @@
        BEFORE the form's own <style> would be ideal, but the form's
        inline block runs first; library-shell.css uses lower-specificity
        selectors so the form's rules cleanly win where they override. -->
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260830b">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260830c">
   <!-- Shared components — here for .stars, the public star rating shown in the
        scoring strip so the curator sees what a user would see. -->
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
@@ -1932,7 +1932,7 @@
        single source of truth for the palette + serif, aligning this form with the dish
        and editor forms. The local :root above is now a fallback. See tokens.css. -->
   <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
-  <script src="/forms/library-shell.js?v=20260830b"></script>
+  <script src="/forms/library-shell.js?v=20260830c"></script>
   <script src="/forms/image-well.js?v=20260629a"></script>
 </head>
 <body>
@@ -4174,6 +4174,25 @@
           if (attempt < 2) setTimeout(() => resolveEnrichEntitlement(attempt + 1), 1500);
         });
     })();
+
+    // The shell's session watchdog announces identity transitions (sign-in,
+    // lapse, user switch elsewhere). Re-resolve the enrich entitlement so the
+    // button follows the REAL session, not the one from page boot — signing
+    // in on a phone mid-session now reveals Enrich without a reload.
+    document.addEventListener('bcc:identity-changed', () => {
+      const en = document.getElementById('enrichBtn');
+      if (en) delete en.dataset.busy;
+      _enrichEntitled = false;               // fail closed until re-resolved
+      window.fetch('/auth/me')
+        .then(r => r.ok ? r.json() : null)
+        .then(auth => {
+          if (!auth) return;
+          _enrichEntitled = (auth.enrich_available !== undefined)
+            ? !!auth.enrich_available : !!auth.user;
+          syncStoreControls();
+        })
+        .catch(() => {});
+    });
 
     // Called at every #user_id change point (load, restore, toggle, harvest).
     // The legacy TBOTB button is gone; this now mirrors #user_id into the new

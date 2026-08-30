@@ -177,6 +177,53 @@
     (document.body || document.documentElement).appendChild(bar);
   }
 
+  // ── Session watchdog (2026-08-30) ─────────────────────────────────────────
+  // Identity was fetched ONCE at boot and believed forever — an iPhone Safari
+  // resumed from background showed the persisted picker ("user 5") all evening
+  // while the server said anonymous, and the mismatch surfaced only as missing
+  // buttons. Re-validate /auth/me on focus, on returning to the tab, every
+  // 5 minutes, and once shortly after boot; throttled to one check per 30s.
+  //   signed-in -> anonymous  : the red lapsed banner + re-render badge/nav
+  //   boot-stale (localStorage names a user, server says anonymous): same
+  //   user changed elsewhere  : quiet badge/nav re-render
+  // A failed fetch is a network blip, never a verdict. Pages that cache
+  // identity-derived state can listen for 'bcc:identity-changed'.
+  let _lastKnownUid;              // undefined = no reading yet
+  let _lastSessionCheck = 0;
+  function _checkSession() {
+    const now = Date.now();
+    if (now - _lastSessionCheck < 30000) return;
+    _lastSessionCheck = now;
+    window.fetch('/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        const uid = d.user ? d.user.user_id : null;
+        const had = _lastKnownUid;
+        _lastKnownUid = uid;
+        const changed = (had !== undefined && uid !== had);
+        if (had === undefined) {
+          let stale = null;
+          try { stale = localStorage.getItem('app:self_user_id'); } catch (e) { /* private mode */ }
+          if (uid === null && stale !== null && stale !== '') {
+            _sessionLapsed();
+            refreshIdentity();
+            document.dispatchEvent(new CustomEvent('bcc:identity-changed', { detail: { uid } }));
+          }
+          return;
+        }
+        if (!changed) return;
+        if (uid === null) _sessionLapsed();     // was signed in, now not
+        refreshIdentity();
+        document.dispatchEvent(new CustomEvent('bcc:identity-changed', { detail: { uid } }));
+      })
+      .catch(() => { /* blip */ });
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) _checkSession(); });
+  window.addEventListener('focus', () => _checkSession());
+  setInterval(() => { if (!document.hidden) _checkSession(); }, 5 * 60 * 1000);
+  setTimeout(_checkSession, 4000);
+
   function openSidebar() {
     if (!state.sidebar) return;
     state.sidebar.classList.add('open');
