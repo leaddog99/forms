@@ -232,9 +232,9 @@ _PAYWALL_COLUMNS = {
 # Harvest scheduling — the SEMrush human-workflow loop (docs/semrush-harvest-
 # scheduling.md). A "harvest" of a domain is the semi-automated SEMrush export:
 # the system tells the curator WHICH domains are due, hands them a one-click deep-
-# link into SEMrush, they press Run + Save the export, the watched inbox routes the
-# file back here by its `{domain}` filename prefix, the existing backlinks_file
-# pipeline ingests it, and on success we stamp `last_harvested_at` → the derived
+# link into SEMrush, they press Run + Save the export to Downloads / the export
+# folder, the domain's Refresh reads it directly by its `{domain}` filename prefix
+# (backlinks_file pipeline), and on success we stamp `last_harvested_at` → the derived
 # `next_harvest_at` rolls forward → the row drops off the "Due today" worklist.
 # All on the domain row — NO separate task table (per the curator: "just a
 # different view of the data incl. the scheduling stuff in the domain record").

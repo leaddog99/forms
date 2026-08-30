@@ -294,9 +294,10 @@ SYSTEM_DEFAULTS: list[dict] = [
         "value": "",
         "type": "string",
         "category": "Harvest",
-        "label": "SEMrush export inbox folder",
-        "description": "Folder the 'Scan inbox' button reads for saved SEMrush exports "
-                       "(`*-backlinks*pages*.xlsx`). Blank = the OS Downloads folder.",
+        "label": "SEMrush export folder",
+        "description": "Folder the harvest searches for saved SEMrush exports "
+                       "(alongside input/semrush and any per-domain override). "
+                       "Blank = the OS Downloads folder.",
     },
     {
         "key": "url_prefilter_dish_batch",

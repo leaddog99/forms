@@ -6010,46 +6010,14 @@ async def domain_upload_export_endpoint(domain: str, file: UploadFile = File(...
     return {"saved": True, "filename": fname, "folder": folder, "path": dest}
 
 
-def _spawn_publisher_refresh(conn, host: str, *, source: str = "backlinks_file",
-                             records=None, label: str = "") -> Optional[int]:
-    """Enqueue + spawn an out-of-process publisher_refresh job for `host` (the same
-    job the manual refresh button uses), deduped on the in-flight entity. Returns the
-    job id, or None if one is already in flight. Shared by the manual refresh and the
-    SEMrush inbox scan so both routes harvest identically."""
-    from input.pipeline import domains_lib
-    row = domains_lib.get_domain(conn, host) or {}
-    entity_ref = f"publisher:{host}"
-    if jobs_lib.find_in_flight_for_entity(conn, entity_ref):
-        return None
-    keep = int(row.get("keep_top_n") or 10)
-    job_id = jobs_lib.enqueue_job(
-        conn, type="publisher_refresh",
-        params={"host": host, "keep": keep,
-                "pages": int(row.get("search_pages") or 10),
-                "query": (row.get("serp_query") or "").strip() or None,
-                "recipe_path": (row.get("recipe_path") or "").strip() or None,
-                "check_recipe": not bool(int(row.get("paywall", 0) or 0)),
-                "source": source, "records": records, "log_label": label or host,
-                "backlinks_dir": (row.get("backlinks_dir") or "").strip() or None,
-                "exclude_words": row.get("exclude_words") or "",
-                "unblocker": _pub_unblocker({}, row)},
-        entity_ref=entity_ref)
-    import subprocess
-    proj = os.path.dirname(os.path.abspath(__file__))
-    env = dict(os.environ); env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUNBUFFERED"] = "1"
-    subprocess.Popen(
-        [sys.executable, "-m", "jobs", "exec", "--job-id", str(job_id)],
-        cwd=proj, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        creationflags=_detached_flags())
-    return job_id
-
-
 @app.get("/domains/harvest-worklist")
 def harvest_worklist_endpoint():
     """The SEMrush human-workflow "Due today" worklist: every SEMrush-managed,
     allowed domain that is NEW or DUE/overdue, each with its deep-link + schedule
     fields. A view over the domains rows — the curator clicks each link, runs the
-    SEMrush export, saves it to the watched inbox, then POSTs /semrush-inbox/scan.
+    SEMrush export, saves it where the harvest looks (Downloads / the configured
+    export folder), then runs the domain's Refresh, which reads it directly.
+    (The old inbox auto-scan was removed 2026-08-30 — never used.)
     See docs/semrush-harvest-scheduling.md."""
     try:
         from input.pipeline import domains_lib, collections_lib
@@ -6070,59 +6038,6 @@ def harvest_worklist_endpoint():
     except Exception as e:
         print(f"[ERROR] harvest_worklist failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
-
-
-@app.post("/semrush-inbox/scan")
-def semrush_inbox_scan_endpoint(payload: dict = Body(default={})):
-    """Scan the watched inbox for SEMrush exports the curator just saved, route each
-    to its domain by the `{domain}` filename prefix, move it into input/, and spawn
-    the existing backlinks_file harvest (which stamps last_harvested_at on success →
-    the domain rolls off the worklist). The semi-automated half of the loop: the
-    human does the SEMrush clicks, this does ingest + bookkeeping."""
-    from input.pipeline import domains_lib, collections_lib, system_config as _cfg
-    import os
-    inbox = (payload.get("inbox_dir") or _cfg.get_setting("semrush_inbox_dir", "")
-             or os.path.join(os.path.expanduser("~"), "Downloads"))
-    # Scan ONLY the watched inbox — intake MOVES each matched file out to input/, so
-    # re-scanning input/ too would re-find and re-process the same export every time.
-    dirs = [inbox]
-    try:
-        with _db() as conn:
-            hosts = [d["domain"] for d in domains_lib.list_domains(conn)]
-            results = []
-            # scan_export_inbox returns newest-first, so the FIRST file per domain is
-            # the latest — process that one, skip older duplicates (e.g. a re-download
-            # "…pages (1).xlsx" supersedes "…pages.xlsx") so we don't double-ingest.
-            handled = set()
-            for f in collections_lib.scan_export_inbox(dirs):
-                prefix = (f["prefix"] or "").lower()
-                # Longest matching host wins (prefix == host, or host followed by a
-                # subpath separator) so allrecipes.com_recipe maps to allrecipes.com.
-                match = max((h for h in hosts
-                             if prefix == h or prefix.startswith(h + "_")
-                             or prefix.startswith(h + "-")),
-                            key=len, default=None)
-                if not match:
-                    results.append({"file": os.path.basename(f["path"]),
-                                    "matched": None, "skipped": "no domain match"})
-                    continue
-                if match in handled:
-                    results.append({"file": os.path.basename(f["path"]), "matched": match,
-                                    "skipped": "superseded by a newer file"})
-                    continue
-                handled.add(match)
-                dest = collections_lib.intake_export_file(f["path"])
-                job_id = _spawn_publisher_refresh(conn, match, source="backlinks_file",
-                                                  label=match)
-                results.append({"file": os.path.basename(dest), "matched": match,
-                                "job_id": job_id,
-                                "skipped": None if job_id else "already in flight"})
-        spawned = [r for r in results if r.get("job_id")]
-        return {"inbox": inbox, "found": len(results), "spawned": len(spawned),
-                "results": results}
-    except Exception as e:
-        print(f"[ERROR] semrush_inbox_scan failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Scan error: {e}") from e
 
 
 @app.get("/dish-keywords")

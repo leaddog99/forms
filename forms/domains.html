@@ -61,7 +61,8 @@
 
       <!-- SEMrush harvest loop — always visible (NOT hidden behind the search panel).
            The whole semi-automated flow lives here: find what's due → open + export
-           in SEMrush → scan the inbox to ingest. The 3-step "how it works" is the
+           in SEMrush → the domain's Refresh reads the saved export directly. The
+           "how it works" list is the
            in-product documentation so the loop is self-explanatory. -->
       <div class="harvest-strip" id="harvestStrip" style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--card)">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
@@ -71,12 +72,8 @@
         <ol id="hvHow" hidden style="margin:8px 0 2px;padding-left:18px;font-size:.8em;line-height:1.5;color:var(--ed-ink-soft)">
           <li>Click <b>“N due”</b> above to sort the list — due / never-harvested publishers float up, each tagged ⏰.</li>
           <li>Open a due one → its <b>SEMrush Top-Pages export</b> source → <b>↗ Open</b> the report → press <b>Export</b> in SEMrush → save the <code>.xlsx</code> to Downloads.</li>
-          <li>Come back here, click <b>⤵ Scan inbox</b> — it routes each saved export to its domain, ingests it, and reschedules (drops off “due”).</li>
+          <li>Come back here → <b>🔄 Refresh top recipes</b> on that domain — it reads the newest matching export directly from Downloads / the configured folder.</li>
         </ol>
-        <div style="margin-top:8px">
-          <button type="button" class="ed-btn" id="scanInboxBtn" title="Scan Downloads for the SEMrush exports you just saved, and ingest each into its domain">⤵ Scan inbox</button>
-        </div>
-        <pre id="scanLog" hidden style="max-height:160px;overflow:auto;background:#1d1f23;color:#cdd3da;font-size:11px;line-height:1.4;padding:8px 10px;margin:8px 0 0;border-radius:8px;white-space:pre-wrap"></pre>
       </div>
 
       <div class="ed-legend">
@@ -504,7 +501,7 @@
             <div class="src-group" data-src="backlinks_file">
               <label class="src-head"><input type="radio" name="harvestSource" value="backlinks_file" ${d.harvest_source !== 'serp' ? 'checked' : ''}>
                 SEMrush Top-Pages export <span class="src-sub">Organic Research → Pages (by TRAFFIC) — our default. Old backlinks-pages exports still auto-detected. URL-form filenames (<code>https___www.domain…-organic.PagesV3…</code>) are matched too.</span></label>
-              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below (SEMrush <b>Organic Research → Pages</b>) → press <b>Export</b> → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below. <b>⤵ Scan inbox</b> on the list batch-runs every export it finds.)</p>
+              <p class="ed-notes-help" style="margin:4px 0 8px;font-size:.82em">Loop: <b>↗ Open</b> the deep-link below (SEMrush <b>Organic Research → Pages</b>) → press <b>Export</b> → save the <code>.xlsx</code> to your export folder → then <b>🔄 Refresh top recipes</b> reads it <b>directly</b> from there. (Default folder = System config <code>semrush_inbox_dir</code>, or your Downloads. Override per-domain below.)</p>
               <div class="src-file" id="backlinksFileStatus">checking for file…</div>
               <div style="margin:8px 0 2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <input type="file" id="exportUploadInput" accept=".xlsx" style="display:none">
@@ -1718,33 +1715,6 @@
       } catch (e) { finish(`Rescore failed: ${e.message || e}`); }
     }
 
-    /* ------------------- SEMrush harvest inbox scan ------------------- */
-    // Scan the inbox for exports the curator just saved → route + ingest each.
-    async function scanInbox(){
-      const btn = $('#scanInboxBtn'), log = $('#scanLog');
-      btn.disabled = true; const label = btn.textContent; btn.textContent = '⏳ Scanning…';
-      log.hidden = false; log.textContent = 'Scanning the inbox…';
-      try {
-        const r = await fetch('/semrush-inbox/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        const lines = [`Inbox: ${data.inbox}`, `Found ${data.found} export(s), spawned ${data.spawned} harvest(s).`, ''];
-        for (const res of (data.results || [])){
-          lines.push(res.matched
-            ? `  ${res.file} → ${res.matched}${res.job_id ? ` (job #${res.job_id})` : ` — ${res.skipped || 'skipped'}`}`
-            : `  ${res.file} — ${res.skipped || 'no match'}`);
-        }
-        if (!data.found) lines.push('  (nothing to ingest — save a SEMrush export to the inbox first)');
-        log.textContent = lines.join('\n');
-        // Harvests run out-of-process; give them a moment then refresh the worklist + list.
-        if (data.spawned) setTimeout(() => { loadDomains(); }, 4000);
-      } catch (e) {
-        log.textContent = `Scan failed: ${e.message || e}`;
-      } finally {
-        btn.disabled = false; btn.textContent = label;
-      }
-    }
-
     /* ----------------------------- wiring ----------------------------- */
     $('#searchToggle').addEventListener('click', () => {
       const c = $('#controls');
@@ -1768,7 +1738,6 @@
     // domain open (renderDetail) and after every refresh/process (renderResult).
     $('#refreshRanksBtn').addEventListener('click', refreshRanks);
     $('#rescoreBtn').addEventListener('click', rescoreDomains);
-    $('#scanInboxBtn').addEventListener('click', scanInbox);
     // Harvest strip: toggle the 3-step explainer; the due chip sorts by "SEMrush due".
     $('#hvToggle').addEventListener('click', () => {
       const h = $('#hvHow'), a = $('#hvArrow');
