@@ -28,10 +28,12 @@ thousands of JSON blobs for nothing, inflate the WAL, and make every night's
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import unicodedata
+from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Iterable, Optional
 
 from input.pipeline import vector_store
 from input.pipeline.embeddings import bytes_to_vec
@@ -94,9 +96,72 @@ def name_index(conn: sqlite3.Connection) -> dict:
     return idx
 
 
+# ── Qualifier families — "Base - Qualifier" siblings ────────────────────────
+# The catalog convention "Chicken Breast - Bone-In" / "Chicken Breast -
+# Boneless" names near-identical dishes split on one explicit attribute.
+# Embeddings CANNOT separate them: 95% of the ingredient text is shared, so
+# the sibling margins are noise (measured 2026-08-30: Stuffed Chicken Breast
+# sat 0.8794 vs 0.8796 between the two breast siblings). The attribute is a
+# TOKEN, and the token is right there in the recipe's own words — so, like the
+# name-exact override above, explicit text evidence beats the vector.
+
+def _fold_text(t: str) -> str:
+    """Lowercase, every non-alphanumeric run -> single space, padded — so
+    'Bone-In' and 'bone in' compare equal and matches are token-bounded."""
+    return " " + re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip() + " "
+
+
+def qualifier_families(catalog_names: Iterable[str]) -> dict:
+    """{dish_name: (base, folded_qualifier)} for every catalog dish that is a
+    member of a qualifier family: names following 'Base - Qualifier' where at
+    least TWO dishes share the base. A lone 'Pasta & Noodles - Agnolotti' is
+    not a family — there is no sibling to disambiguate against."""
+    by_base: dict = defaultdict(dict)
+    for n in set(catalog_names):
+        if " - " in n:
+            base, qual = n.rsplit(" - ", 1)
+            by_base[base.strip().lower()][n] = _fold_text(qual)
+    return {n: (b, q) for b, sibs in by_base.items() if len(sibs) > 1
+            for n, q in sibs.items()}
+
+
+def evidence_text(recipe_dict: dict) -> str:
+    """The recipe's own words a qualifier can be evidenced from: title +
+    ingredient lines. The title is EXCLUDED from the embedding on purpose
+    (marketing spread), but for a literal token check it is the single best
+    source — 'Baked Bone In Chicken Breast' says the attribute outright."""
+    d = recipe_dict or {}
+    return " ".join([str(d.get("name") or "")]
+                    + [str(x) for x in (d.get("recipeIngredient") or [])])
+
+
+def _evidenced_sibling(dish_name: str, text: str, fam: dict) -> Optional[str]:
+    """Which member of `dish_name`'s family does `text` explicitly evidence?
+    Returns that single member, or None when dish_name is not in a family, no
+    qualifier appears, or MORE than one does ('boneless or bone-in' — the
+    text is hedging, not claiming)."""
+    if dish_name not in fam or not text:
+        return None
+    base = fam[dish_name][0]
+    ftext = _fold_text(text)
+    hits = [n for n, (b, q) in fam.items() if b == base and q in ftext]
+    return hits[0] if len(hits) == 1 else None
+
+
+def qualifier_contradiction(dish_name: str, text: str,
+                            catalog_names: Iterable[str]) -> Optional[str]:
+    """If `dish_name` belongs to a qualifier family and the recipe's text
+    explicitly evidences exactly ONE — different — sibling, return that
+    sibling; else None. The dish-refresh guard: a run harvesting Boneless
+    must not stamp a recipe whose own words say bone-in."""
+    sib = _evidenced_sibling(dish_name, text, qualifier_families(catalog_names))
+    return sib if (sib and sib != dish_name) else None
+
+
 def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
                 likely_dish: str = "",
-                names: Optional[dict] = None) -> Optional[dict]:
+                names: Optional[dict] = None,
+                text: str = "") -> Optional[dict]:
     """The `_match` block for a recipe vector, or None if the dish index is
     empty. Reuses the vector the caller already has — no embed, no API call.
 
@@ -112,14 +177,35 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
     cands = vector_store.find_similar_dishes(conn, rec_vec, k=3)
     if not cands:
         return None
+    names_idx = names if names is not None else name_index(conn)
     best = cands[0]
     confident = best["distance"] <= max_dist
     dish = best["name"] if confident else None
     method = None
-    hit = (names if names is not None else name_index(conn)).get(
-        _fold_name(likely_dish)) if likely_dish else None
+    hit = names_idx.get(_fold_name(likely_dish)) if likely_dish else None
     if hit and hit != dish:
         dish, confident, method = hit, True, "name-exact"
+    # QUALIFIER EVIDENCE REORDERS SIBLINGS (2026-08-30). When the nearest dish
+    # is a member of a qualifier family and the recipe's own text evidences
+    # exactly one sibling, that sibling takes the head of the candidate list —
+    # the sibling margins are embedding noise, the token is a literal claim.
+    # Confidence is still the distance bar (unlike name-exact, the qualifier
+    # names an ATTRIBUTE, not the dish — a bone-in pork chop also says
+    # 'bone in'); an unconfident row still fixes its NEAREST rung. Never
+    # applied over a name-exact hit, and never pulls in a dish that wasn't
+    # already a candidate.
+    if text and method is None:
+        fam = qualifier_families(set(names_idx.values()))
+        sib = _evidenced_sibling(best["name"], text, fam)
+        if sib and sib != best["name"]:
+            tc = next((c for c in cands if c["name"] == sib), None)
+            if tc is not None:
+                cands.remove(tc)
+                cands.insert(0, tc)
+                best = tc
+                confident = best["distance"] <= max_dist
+                dish = best["name"] if confident else None
+                method = "qualifier"
     out = {
         "dish": dish,
         "distance": round(best["distance"], 4),
@@ -190,7 +276,8 @@ def rematch_unclaimed(conn: sqlite3.Connection, *, db_path: Optional[str] = None
             prev = d.get("_match") or None
             likely = ((d.get("_identity") or {}).get("likelyDish") or "")
             new = build_match(conn, bytes_to_vec(blob), max_dist=max_dist,
-                              likely_dish=likely, names=names)
+                              likely_dish=likely, names=names,
+                              text=evidence_text(d))
             scanned += 1
             if new is None:
                 continue

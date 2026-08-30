@@ -7924,6 +7924,27 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             _record_reject(entry, f"skip-thin: {reason}")
             continue
 
+        # QUALIFIER GUARD: a run harvesting a family-split dish (Chicken
+        # Breast - Boneless) must not stamp a recipe whose OWN words claim the
+        # sibling attribute ('split chicken breasts (bone-in, skin on)').
+        # Google returns them for the sibling's query; the blind stamp was how
+        # 21 contradictions got into the breast/thigh cohorts (2026-08-30).
+        # Dropped like any other reject — the slot backfills from the pool.
+        try:
+            from input.pipeline import dish_match as _dm
+            with _db() as _qc:
+                _cat = [r[0] for r in _qc.execute("SELECT name FROM dishes")]
+            _sib = _dm.qualifier_contradiction(
+                canonical_name, _dm.evidence_text(recipe_dict), _cat)
+        except Exception as _qe:
+            _sib = None
+            print(f"[REFRESH-DISH] qualifier guard skipped: {type(_qe).__name__}: {_qe}")
+        if _sib:
+            print(f"[REFRESH-DISH] QUALIFIER-DROP text says {_sib!r}, "
+                  f"run is {canonical_name!r}  {url}")
+            _record_reject(entry, f"qualifier-contradiction: recipe text says {_sib}")
+            continue
+
         payload = dict(recipe_dict)
         payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
         payload["user_id"] = 0
@@ -10737,7 +10758,8 @@ def _stamp_dish_match(conn, recipe_dict: dict, rec_vec, *, label: str) -> bool:
     from input.pipeline import dish_match as _dm
     m = _dm.build_match(
         conn, rec_vec, max_dist=_dm.max_distance(),
-        likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""))
+        likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""),
+        text=_dm.evidence_text(recipe_dict))
     if not m:
         return False
     recipe_dict["_match"] = m
