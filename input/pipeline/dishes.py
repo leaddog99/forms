@@ -671,7 +671,7 @@ def row_to_dict(row: tuple) -> dict:
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
      identity_card_json, competitiveness_pct, field_clout, display_name,
-     source_language) = row
+     source_language, aliases_json) = row
     try:
         queries_raw = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -686,6 +686,12 @@ def row_to_dict(row: tuple) -> dict:
         identity_card = json.loads(identity_card_json) if identity_card_json else None
     except Exception:
         identity_card = None
+    try:
+        aliases = json.loads(aliases_json) if aliases_json else []
+        if not isinstance(aliases, list):
+            aliases = []
+    except Exception:
+        aliases = []
     return {
         "name": name,
         "queries": queries,          # legacy projection: plain strings
@@ -726,6 +732,9 @@ def row_to_dict(row: tuple) -> dict:
         # '' rather than None: the editor's <select> matches on string equality,
         # and "not stated" is a real, selectable option rather than a missing one.
         "source_language": (source_language or "").strip().lower(),
+        # Other names this dish answers to — feeds the matcher's name-exact
+        # override (an alias claims recipes as strongly as the name itself).
+        "aliases": aliases,
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -736,7 +745,7 @@ _SELECT_ALL_COLS = (
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
-    "competitiveness_pct, field_clout, display_name, source_language"
+    "competitiveness_pct, field_clout, display_name, source_language, aliases"
 )
 
 
@@ -986,7 +995,7 @@ _PATCHABLE = {
     # {q, n, gl, hl}. Both accepted, both write the same column.
     "queries", "query_rows", "top_n_serpapi", "top_n_final",
     "refresh_ttl_days", "notes", "auto_enrich",
-    "description", "display_name", "source_language",
+    "description", "display_name", "source_language", "aliases",
 }
 
 # ISO 639-1 codes the translator can actually handle — _LANG_NAMES in
@@ -1105,6 +1114,35 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
                 params.append(stripped)
             else:
                 sets.append("display_name = NULL")
+
+    if "aliases" in patch:
+        # Other names this dish answers to. Feeds name_index -> the matcher's
+        # name-exact override, so an alias claims recipes exactly as strongly
+        # as the dish's own name — that's the point (a likelyDish of
+        # 'Spaghetti alla Nerano' routes to 'alla Nerano'). Accepts a list of
+        # strings or one newline/comma-separated string; blank/None clears.
+        raw = patch["aliases"]
+        if raw is None:
+            items = []
+        elif isinstance(raw, str):
+            items = [p.strip() for chunk in raw.splitlines()
+                     for p in chunk.split(",")]
+        elif isinstance(raw, list):
+            items = [str(p).strip() for p in raw]
+        else:
+            raise ValueError("aliases must be a list, a string, or null")
+        seen: set = set()
+        cleaned = []
+        for a in items:
+            if not a or a.lower() == name.lower() or a.lower() in seen:
+                continue
+            seen.add(a.lower())
+            cleaned.append(a)
+        if cleaned:
+            sets.append("aliases = ?")
+            params.append(json.dumps(cleaned, ensure_ascii=False))
+        else:
+            sets.append("aliases = NULL")
 
     if "source_language" in patch:
         sl = patch["source_language"]

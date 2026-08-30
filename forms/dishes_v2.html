@@ -407,6 +407,11 @@
           <input id="f_display" type="text" value="${escapeHtml(d.display_name_set ? d.display_name : '')}" placeholder="${escapeHtml(d.name)}">
         </div>
 
+        <div class="ed-field full" style="margin:8px 0 18px">
+          <label for="f_aliases">Aliases <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(other names this dish answers to, comma-separated — a recipe whose identity card names an alias exactly is claimed as strongly as by the dish name itself; use for spellings, translations, and merged-dish names)</span></label>
+          <input id="f_aliases" type="text" value="${escapeHtml((d.aliases || []).join(', '))}" placeholder="e.g. Spaghetti alla Nerano, Pasta alla Nerano">
+        </div>
+
         <section class="ed-block">
           <h3 class="ed-block-label">Search config</h3>
           <div class="ed-field full" style="margin-bottom:16px">
@@ -1204,6 +1209,7 @@
         notes: $('#f_notes').value.trim(),
         auto_enrich: $('#f_enrich').checked,
         display_name: ($('#f_display') ? $('#f_display').value.trim() : '') || null,
+        aliases: ($('#f_aliases') ? $('#f_aliases').value.trim() : '') || null,
         // '' (not null) is meaningful: it clears a stated locale and hands the
         // dish back to the query-text guess.
         source_language: ($('#f_srclang') ? $('#f_srclang').value : ''),
