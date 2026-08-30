@@ -170,10 +170,9 @@
           <th style="min-width:280px;padding:11px 14px">Missing dish</th>
           <th class="r" style="padding:11px 14px;text-align:right">Waiting recipes</th>
           <th class="r" style="padding:11px 14px;text-align:right">Avg distance</th>
-          <th style="padding:11px 14px">Currently leaning on</th>
           <th style="padding:11px 14px">Action</th>
         </tr></thead>
-        <tbody id="gapbody"><tr><td colspan="5" class="empty">Loading weak links…</td></tr></tbody>
+        <tbody id="gapbody"><tr><td colspan="4" class="empty">Loading weak links…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -317,21 +316,25 @@
         const d = await r.json();
         const holes = d.holes || [];
         if (!holes.length){
-          body.innerHTML = '<tr><td colspan="5" class="empty">No weak-link clusters — every hole already names a catalog dish.</td></tr>';
+          body.innerHTML = '<tr><td colspan="4" class="empty">No weak-link clusters — every hole already names a catalog dish.</td></tr>';
           return;
         }
+        // Coverage-row layout: sub-lines under the name (example title as .kw,
+        // the leaning-on note as .absorbed — coverage's overlap-note style),
+        // so no wide nowrap column can shove the Action chip off-edge.
         body.innerHTML = holes.map(h => `
           <tr>
             <td><span class="dish">${esc(h.likely_dish)}</span>
+              ${(h.nearest_dishes && h.nearest_dishes.length) ? `<span class="absorbed">leaning on ${esc(h.nearest_dishes.join(', '))}</span>` : ''}
               ${(h.examples && h.examples.length) ? `<span class="kw" title="${esc(h.examples.join('\n'))}">${esc(h.examples[0])}</span>` : ''}</td>
             <td class="r">${h.count}</td>
             <td class="r">${h.avg_distance}</td>
-            <td class="chap">${esc((h.nearest_dishes || []).join(', ') || '—')}</td>
-            <td><a class="chip mk" href="${createHref(h.likely_dish)}" target="_blank" rel="noopener"
+            <td><span class="tag new">new dish</span>
+              <a class="chip mk" href="${createHref(h.likely_dish)}" target="_blank" rel="noopener"
                  title="Open the dish editor prefilled for this dish — review, then Create">➕ dish</a></td>
           </tr>`).join('');
       } catch (e) {
-        body.innerHTML = '<tr><td colspan="5" class="empty">' + esc(String(e.message || e)) + '</td></tr>';
+        body.innerHTML = '<tr><td colspan="4" class="empty">' + esc(String(e.message || e)) + '</td></tr>';
       }
     })();
   </script>
