@@ -8272,6 +8272,33 @@ async def _handle_dish_signals_job(job: dict) -> dict:
 jobs_lib.register_handler("dish_signals", _handle_dish_signals_job)
 
 
+async def _handle_dish_gap_report_job(job: dict) -> dict:
+    """Weakest-link report (input/pipeline/dish_gaps.py): the top-N master
+    rows with the feeblest dish connection, and — the actionable half —
+    likelyDish clusters with no catalog dish behind them: the holes to fill.
+    Read-only, nothing billable. Params: limit (100), min_group (3),
+    max_dist (defaults to the match confidence bar)."""
+    from input.pipeline import dish_gaps, dish_match
+    p = job.get("params") or {}
+    limit = int(p.get("limit") or 100)
+    min_group = int(p.get("min_group") or 3)
+    max_dist = float(p.get("max_dist") or dish_match.max_distance(DB_PATH))
+
+    def _run():
+        with _db() as conn:
+            return dish_gaps.build_report(conn, limit=limit,
+                                          min_group=min_group, max_dist=max_dist)
+    rep = await asyncio.to_thread(_run)
+    dish_gaps.print_report(rep)
+    return {"weak_total": rep["weak_total"], "holes": len(rep["holes"]),
+            "unmatched": rep["unmatched"],
+            "top_holes": [{k: h[k] for k in ("likely_dish", "count", "avg_distance")}
+                          for h in rep["holes"][:15]]}
+
+
+jobs_lib.register_handler("dish_gap_report", _handle_dish_gap_report_job)
+
+
 async def _handle_dish_class_propose_job(job: dict) -> dict:
     """Step 3 of docs/dish-product-matching.md: turn one dish's stamped
     cohort_signals into labeled, registry-snapped, evidence-cited PROPOSED
