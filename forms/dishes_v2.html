@@ -533,6 +533,19 @@
         </section>
 
         <section class="ed-block">
+          <details class="ed-accordion" open id="scoresAcc">
+            <summary>Cohort scores <span class="ed-pill" id="scoresPill" style="margin-left:6px"></span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">The authority profile of this dish's
+              cohort — where its recipes live. <b>DA/PA are cross-dish comparable</b> (absolute Moz
+              scales): a high-DA dish is covered by the big sites, a low-DA dish lives on long-tail
+              blogs. <b>OU is not</b> — each cohort was selected from its own traffic pool, so read
+              cross-dish OU deltas as an echo of the DA/PA mix, not a quality ranking. Stamped with
+              the cohort signals (📊 Measure below re-stamps both).</p>
+            <div id="scoresBody"><p class="ed-empty-fit">Loading&hellip;</p></div>
+          </details>
+        </section>
+
+        <section class="ed-block">
           <details class="ed-accordion" id="sigAcc">
             <summary>Cohort signals <span class="ed-pill" id="sigPill" style="margin-left:6px"></span></summary>
             <p class="ed-notes-help" style="margin:10px 0 12px">What this dish's recipes <b>use, measured</b> —
@@ -601,6 +614,7 @@
       loadRejects(d.name);
       loadCandidates(d.name);
       loadEditorsChoice(d.name);
+      loadScores(d.name);
       // Lazy: signals fetch only when the accordion first opens — the JSON is
       // 25 terms x example lines and most visits never look.
       $('#sigAcc')?.addEventListener('toggle', function _once(){
@@ -764,20 +778,7 @@
       const prov = sig.provenance || {};
       const provBits = [...Object.entries(prov.ethnicities || {}), ...Object.entries(prov.regions || {})]
         .map(([k, v]) => `${escapeHtml(k)} (${v})`).join(' · ');
-      // Authority profile — cohort mean/median of the Moz scales. DA/PA are
-      // cross-dish comparable (a DA-71 dish lives on the big sites); OU is
-      // shown last: each cohort was selected from a different traffic pool,
-      // so treat cross-dish OU deltas as an echo of the DA/PA mix.
-      const auth = sig.authority || {};
-      const aStat = (label, s, title) => s
-        ? `<span title="${title} — mean ${s.mean} · median ${s.median} · n=${s.n}"><b>${label}</b> ${s.mean}<span style="color:var(--muted)">/${s.median}</span></span>` : '';
-      const authBits = [
-        aStat('DA', auth.da, 'domain authority'),
-        aStat('PA', auth.pa, 'page authority'),
-        aStat('OU', auth.ou, 'effective OU (selection-dependent — read with care)'),
-      ].filter(Boolean).join(' &nbsp;·&nbsp; ');
       body.innerHTML = `
-        ${authBits ? `<p style="margin:0 0 10px;font-size:.85em;color:var(--muted)">Cohort authority (mean/<span style="opacity:.7">median</span>): ${authBits}</p>` : ''}
         <h4 style="margin:0 0 6px;font-size:.85em">Ingredients</h4><div id="sigTblIng"></div>
         <h4 style="margin:14px 0 6px;font-size:.85em">Equipment</h4><div id="sigTblEq"></div>
         ${provBits ? `<h4 style="margin:14px 0 6px;font-size:.85em">Provenance</h4><p style="margin:0;font-size:.85em;color:var(--muted)">${provBits}</p>` : ''}`;
@@ -889,6 +890,46 @@
       btn.disabled = false;
     }
 
+    async function loadScores(name){
+      const body = $('#scoresBody'), pill = $('#scoresPill');
+      if (!body) return;
+      let sig;
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/signals`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        sig = await r.json();
+      } catch (e) {
+        body.innerHTML = `<p class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</p>`;
+        return;
+      }
+      const a = sig.authority || {};
+      if (!sig.cohort_n || (!a.da && !a.pa && !a.ou)){
+        body.innerHTML = '<p class="ed-empty-fit">Not measured yet — <b>📊 Measure</b> in Cohort signals stamps the scores too.</p>';
+        return;
+      }
+      if (pill) pill.textContent = `${sig.cohort_n} recipes · ${fmtDate(sig.computed_at)}`;
+      const n1 = (v) => (typeof v === 'number' ? v.toFixed(1) : '—');
+      const row = (label, s, note) => s ? `
+        <tr style="border-top:1px solid var(--line,#eee)">
+          <td style="padding:4px 8px 4px 0"><b>${label}</b> <span style="color:var(--muted);font-size:.85em">${note}</span></td>
+          <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums">${n1(s.mean)}</td>
+          <td style="padding:4px 8px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)">${n1(s.median)}</td>
+          <td style="padding:4px 0 4px 8px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)">${s.n}</td>
+        </tr>` : '';
+      body.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:.9em;max-width:520px">
+          <thead><tr style="color:var(--muted);font-size:.8em">
+            <th style="text-align:left;padding:3px 8px 3px 0">metric</th>
+            <th style="text-align:right;padding:3px 8px">mean</th>
+            <th style="text-align:right;padding:3px 8px">median</th>
+            <th style="text-align:right;padding:3px 0 3px 8px">n</th>
+          </tr></thead><tbody>
+          ${row('DA', a.da, 'domain authority — who covers this dish')}
+          ${row('PA', a.pa, 'page authority — how strong the pages are')}
+          ${row('OU', a.ou, 'effective OU — selection-dependent, read with care')}
+          </tbody></table>`;
+    }
+
     async function runSignals(name){
       const btn = $('#sigMeasureBtn'), hint = $('#sigHint');
       btn.disabled = true; hint.textContent = 'measuring…';
@@ -903,6 +944,7 @@
           if (j && j.status && j.status !== 'running' && j.status !== 'queued'){
             hint.textContent = j.status === 'success' ? '✓ signals updated' : `job ${j.status}`;
             await loadSignals(name);
+            loadScores(name);
             btn.disabled = false;
             return;
           }
