@@ -52,9 +52,6 @@
         <input type="search" id="search" placeholder="Search dishes…" autofocus>
         <span class="ed-count" id="count"></span>
         <div class="ed-head-actions">
-          <button class="ed-icon-btn" id="searchToggle" title="Sort &amp; tools" aria-label="Sort and tools">
-            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          </button>
           <button class="ed-icon-btn" id="addToggle" title="New dish" aria-label="New dish">
             <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           </button>
@@ -63,7 +60,7 @@
 
       <div class="ed-attn" id="attn"><div class="ed-attn-title" id="attnTitle"></div><div class="ed-attn-copy" id="attnCopy"></div></div>
 
-      <div class="ed-controls" id="controls" hidden>
+      <div class="ed-controls" id="controls">
         <select id="sort" aria-label="Sort dishes">
           <option value="attention">Sort: needs attention</option>
           <option value="name">Sort: name (A–Z)</option>
@@ -1509,11 +1506,6 @@
       renderMain();
     }
 
-    $('#searchToggle').addEventListener('click', () => {
-      const c = $('#controls'); c.hidden = !c.hidden;
-      $('#searchToggle').classList.toggle('active', !c.hidden);
-      if (!c.hidden) $('#search').focus();
-    });
     // Dirty-tracker: Save stays disabled until a DISH-EDIT field changes.
     // Scoped to the editable fields (f_* inputs + the search-line rows) — the
     // Editor's Choice inputs live on the same page but post through their own
