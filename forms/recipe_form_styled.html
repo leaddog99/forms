@@ -4190,6 +4190,17 @@
       const sel = document.getElementById('user_select');
       const chk = document.getElementById('master_toggle');
       if (!uidEl || !sel || !chk) return;
+      // Enrich visibility is decided BEFORE the harvest-lock early return —
+      // the lock owns the user/master CONTROLS, not this button. Found on an
+      // iPhone (2026-08-30): boot hid Enrich (persisted user 5 + anonymous
+      // Safari session), then the grab flow forced master AND locked, and the
+      // early return below froze the button in its hidden state — a master
+      // form with no Enrich, while the desktop (signed in) never saw it.
+      {
+        const _uid = parseInt(uidEl.value, 10);
+        const _enBtn = document.getElementById('enrichBtn');
+        if (_enBtn) _enBtn.style.display = ((_uid === 0) || _enrichEntitled) ? '' : 'none';
+      }
       if (chk.dataset.locked === '1') return;   // harvest lock owns the controls
       const uid = parseInt(uidEl.value, 10);
       const isMaster = (uid === 0);
@@ -4200,8 +4211,7 @@
       //               interactive save; the button is the explicit route for
       //               batch rows and for refreshing an existing story.
       //   personal -> visible on a tier that includes enrichment.
-      const enBtn = document.getElementById('enrichBtn');
-      if (enBtn) enBtn.style.display = (isMaster || _enrichEntitled) ? '' : 'none';
+      // (Enrich visibility already applied above, pre-lock.)
       if (!isMaster && !Number.isNaN(uid)) {
         if (![...sel.options].some(o => Number(o.value) === uid)) {
           const opt = document.createElement('option');
