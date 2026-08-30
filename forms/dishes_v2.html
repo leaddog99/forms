@@ -447,18 +447,11 @@
             <div class="ed-field"><label for="f_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(search lines with “Results” blank use this — top_n_serpapi)</span></label><input id="f_serp" type="number" min="1" max="${_limits.serpapi}" value="${d.top_n_serpapi ?? ''}"><div class="fetch-total" id="fetchTotal_edit" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
             <div class="ed-field"><label for="f_final">Kept winners (top_n_final)</label><input id="f_final" type="number" min="1" max="${_limits.final}" value="${d.top_n_final ?? ''}"></div>
             <div class="ed-field"><label for="f_ttl">Refresh TTL (days)</label><input id="f_ttl" type="number" min="1" value="${d.refresh_ttl_days == null ? '' : d.refresh_ttl_days}" placeholder="blank = manual only"></div>
-            <div class="ed-field"><label for="f_srclang">Sources in <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(harvest language)</span></label>
+            <div class="ed-field"><label for="f_srclang">Sources in <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(harvest language)</span><button type="button" class="info-dot" data-info-title="Sources in — harvest language" data-info="Set this when the WHOLE dish is sourced from foreign-language publishers: it becomes the default locale for every search line whose language is blank, and the minimum-OU floor relaxes for the entire run (the OU baseline is calibrated on English sites and scores foreign publishers negative almost by construction).<br><br><b>Mixed dishes don&#39;t need it.</b> A dish searched in English PLUS a foreign line (say a French line on a Provençal dish) should leave this on the base language and set the language ON the line — the foreign line&#39;s candidates get the relaxed OU floor and the English lines keep the strict one (which is what protects against negative-OU English roundup pages). Pair it with the line&#39;s <b>Reserve</b> to guarantee those candidates seats.<br><br>Blank with no line locales = guess from the search text, which fails on a Latin-script query like <code>tonkotsu ramen</code> — that&#39;s the one case this field must be set.">i</button></label>
               <select id="f_srclang">
                 ${SOURCE_LANGS.map(([code, label]) =>
                   `<option value="${code}" ${(d.source_language || '') === code ? 'selected' : ''}>${label}</option>`).join('')}
               </select>
-              <div style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px">
-                Set this when the dish is sourced from foreign-language publishers. The OU
-                baseline is calibrated on English sites and scores them negative almost by
-                construction, so the minimum-OU floor is lifted for a foreign dish.
-                Blank = guess from the search text, which fails on a Latin-script query
-                like <code>tonkotsu ramen</code>.
-              </div>
             </div>
             <div class="ed-field"><label>Auto-enrich on save</label>
               <div class="d-check"><input id="f_enrich" type="checkbox" ${d.auto_enrich ? 'checked' : ''}><label for="f_enrich">run enrich_recipe on each kept row (~$0.05/row)</label></div>

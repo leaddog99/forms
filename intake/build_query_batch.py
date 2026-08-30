@@ -1441,7 +1441,8 @@ def _batch_is_foreign_locale(queries: list[str], dish: Optional[str],
 
 
 def _min_ou_filter(entries: list[dict], *,
-                   drop_below_threshold: bool = True) -> tuple[list[dict], list[dict]]:
+                   drop_below_threshold: bool = True,
+                   relaxed_queries: frozenset = frozenset()) -> tuple[list[dict], list[dict]]:
     """Drop entries whose Moz OU score is below MIN_OU_SCORE (default 0.0).
 
     Negative OU is Moz literally saying the page under-performs its
@@ -1466,7 +1467,15 @@ def _min_ou_filter(entries: list[dict], *,
         # treat as "can't decide quality" and drop (always — ranking needs
         # an OU). The negative-threshold cut is what the relax flag governs.
         unscoreable = ou is None
-        below = (not unscoreable) and drop_below_threshold and ou < MIN_OU_SCORE
+        # PER-CANDIDATE relax on a MIXED batch (2026-08-30): a candidate
+        # discovered by a foreign-locale line (its `_queries` intersect
+        # relaxed_queries) gets the relaxed floor while base-language
+        # candidates keep the strict one — one French line must not switch
+        # off the negative-OU roundup protection for English candidates.
+        line_relaxed = bool(relaxed_queries
+                            and set(e.get("_queries") or []) & relaxed_queries)
+        below = (not unscoreable) and drop_below_threshold \
+            and not line_relaxed and ou < MIN_OU_SCORE
         if unscoreable or below:
             e["_dropped_reason"] = f"ou<{MIN_OU_SCORE} (ou={ou})"
             dropped.append(e)
@@ -1758,10 +1767,28 @@ def build_batch(
     # ad-hoc/no-dish path, which has no row to read), so nothing that worked
     # before stops working.
     foreign_locale, locale_src = _batch_is_foreign_locale(queries, dish, query_rows)
-    relax_note = (f"  — RELAXED (foreign-locale batch, {locale_src})"
-                  if foreign_locale else "")
-    print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE}){relax_note}")
-    entries, dropped_low_ou = _min_ou_filter(entries, drop_below_threshold=not foreign_locale)
+    # MIXED batches relax PER LINE, not run-wide (2026-08-30): when the foreign
+    # verdict came from row locales (dish itself is base-language), only the
+    # foreign lines' candidates get the relaxed floor — the English lines keep
+    # the strict negative-OU protection. A dish-declared or query-inferred
+    # foreign verdict still relaxes the whole run (single-locale batches).
+    _base_lang = (normalize_lang(instance_base_language()) or "en")[:2]
+    _foreign_line_qs = frozenset(
+        r["q"] for r in (query_rows or [])
+        if (r.get("hl") or "")[:2] not in ("", _base_lang))
+    _mixed = (foreign_locale and locale_src.startswith("query-row locale")
+              and any((r.get("hl") or "")[:2] in ("", _base_lang)
+                      for r in (query_rows or [])))
+    if _mixed:
+        print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE})  — PER-LINE relax "
+              f"(mixed batch: {len(_foreign_line_qs)} foreign line(s))")
+        entries, dropped_low_ou = _min_ou_filter(
+            entries, drop_below_threshold=True, relaxed_queries=_foreign_line_qs)
+    else:
+        relax_note = (f"  — RELAXED (foreign-locale batch, {locale_src})"
+                      if foreign_locale else "")
+        print(f"\n[6/7] min-OU filter (>= {MIN_OU_SCORE}){relax_note}")
+        entries, dropped_low_ou = _min_ou_filter(entries, drop_below_threshold=not foreign_locale)
     print(f"      -> kept {len(entries)}, dropped {len(dropped_low_ou)}")
 
     print(f"\n[7/7] rank by OU/power blend "
