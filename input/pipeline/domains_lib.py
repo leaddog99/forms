@@ -1083,6 +1083,26 @@ def update_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     if not sets:
         return get_domain(conn, host)
 
+    # Same failure class as the paywall guard below: a stale form (loaded
+    # before a backfill, or before another writer set the field) saves a BLANK
+    # over a real URL — measured 2026-08-30, splendidtable.org lost its seeded
+    # link minutes after the backfill wrote it, just by an open form saving.
+    # Blank + stored value -> the form is saying nothing; keep what's there
+    # (protects hand-tuned URLs too). Blank + stored blank -> self-heal to the
+    # generated default (the coupled mode's meaning of "no URL").
+    if "semrush_report_url" in sets and not (sets["semrush_report_url"] or "").strip():
+        _cur_url = (conn.execute(
+            "SELECT semrush_report_url FROM domains WHERE domain = ?",
+            (host,)).fetchone() or [""])[0] or ""
+        if _cur_url.strip():
+            sets.pop("semrush_report_url", None)
+            print(f"[DOMAIN] {host}: ignored blank semrush_report_url — keeping the stored link")
+        else:
+            seeded = seed_semrush_pages_url(host)
+            if seeded:
+                sets["semrush_report_url"] = seeded
+                print(f"[DOMAIN] {host}: blank semrush_report_url re-seeded to the default")
+
     # A curator touching the discount takes OWNERSHIP of it. Stamp the row
     # 'manual' so the calibration job skips it; clearing the field hands it back
     # to the job. Done here rather than in the form so the guarantee holds for
