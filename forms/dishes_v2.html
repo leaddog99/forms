@@ -851,7 +851,16 @@
           await new Promise(x => setTimeout(x, 2000));
           const j = await fetch(`/jobs/${d.job_id}`).then(x => x.json()).catch(() => null);
           if (j && j.status && j.status !== 'running' && j.status !== 'queued'){
-            hint.textContent = j.status === 'success' ? '✓ proposals updated' : `job ${j.status}`;
+            // The job is 'success' even when its one dish FAILED (per-dish
+            // try/except) — read the result so a bad model reply says so
+            // instead of leaving a silent empty panel (alla colatura, #1213).
+            let res = {};
+            try { res = typeof j.result === 'string' ? JSON.parse(j.result) : (j.result || {}); } catch (e) {}
+            if (j.status === 'success' && res.failed && !res.proposed) {
+              hint.textContent = '✗ the model reply was unusable — run ✨ Propose again';
+            } else {
+              hint.textContent = j.status === 'success' ? '✓ proposals updated' : `job ${j.status}`;
+            }
             await loadClassProposals(name);
             btn.disabled = false;
             return;
