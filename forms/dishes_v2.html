@@ -197,6 +197,17 @@
         const sel = e.target.closest('.qr-hl'); if (!sel) return;
         sel.closest('.qrow').querySelector('.qr-gl').value = sel.value ? glForLang(sel.value) : '';
       });
+      // Belt-and-braces dirty signal (2026-08-30): the Reserve spinner edit
+      // reached the value without tripping the #page input/change tracker for
+      // the curator. Any key or mouse release on a line input IS an edit —
+      // dispatch the same bubbling 'input' the add/del buttons use, but only
+      // when a value actually differs from what the row rendered with, so
+      // mere clicking around never lights Save falsely.
+      const _vals = () => JSON.stringify([...box.querySelectorAll('input,textarea,select')].map(i => i.value));
+      let _base = _vals();
+      box.addEventListener('keyup', () => { if (_vals() !== _base) { _base = _vals(); dirty(); } });
+      box.addEventListener('mouseup', () => setTimeout(() => {
+        if (_vals() !== _base) { _base = _vals(); dirty(); } }, 0));
     }
 
     // "120 recs" almost bit twice (curator, 2026-08-28): "Default results per
