@@ -541,6 +541,10 @@
               a whisk — same as everything); 10&times;+ = part of this dish's identity, and a product-class
               candidate. Stamped by the <code>dish_signals</code> job; the evidence layer for the coming
               dish&rarr;product-class proposals.</p>
+            <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
+              <button type="button" class="ed-btn" id="sigMeasureBtn" title="(Re-)measure this dish's cohort signals — one corpus scan, nothing billable">📊 Measure</button>
+              <span class="ed-save-hint" id="sigHint"></span>
+            </div>
             <div id="sigBody"><p class="ed-empty-fit">Loading&hellip;</p></div>
           </details>
         </section>
@@ -610,6 +614,7 @@
         loadClassProposals(d.name);
       });
       $('#dpcProposeBtn')?.addEventListener('click', () => runProposals(d.name));
+      $('#sigMeasureBtn')?.addEventListener('click', () => runSignals(d.name));
       attachRunningRefresh(d.name);   // a job already running must be VISIBLE on open
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
@@ -714,7 +719,7 @@
         return;
       }
       if (!sig || !sig.cohort_n){
-        body.innerHTML = '<p class="ed-empty-fit">Not measured yet — run the <code>dish_signals</code> job for this dish.</p>';
+        body.innerHTML = '<p class="ed-empty-fit">Not measured yet — click <b>📊 Measure</b> above.</p>';
         return;
       }
       if (pill) pill.textContent = `${sig.cohort_n} recipes · ${fmtDate(sig.computed_at)}`;
@@ -860,6 +865,31 @@
           if (j && j.status && j.status !== 'running' && j.status !== 'queued'){
             hint.textContent = j.status === 'success' ? '✓ proposals updated' : `job ${j.status}`;
             await loadClassProposals(name);
+            btn.disabled = false;
+            return;
+          }
+        }
+        hint.textContent = 'still running — reopen the panel in a moment';
+      } catch (e) {
+        hint.textContent = `failed: ${e.message || e}`;
+      }
+      btn.disabled = false;
+    }
+
+    async function runSignals(name){
+      const btn = $('#sigMeasureBtn'), hint = $('#sigHint');
+      btn.disabled = true; hint.textContent = 'measuring…';
+      try {
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/signals/run`, { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        // Poll to completion — a single-dish measure is one corpus scan (~seconds).
+        for (let i = 0; i < 30; i++){
+          await new Promise(x => setTimeout(x, 1500));
+          const j = await fetch(`/jobs/${d.job_id}`).then(x => x.json()).catch(() => null);
+          if (j && j.status && j.status !== 'running' && j.status !== 'queued'){
+            hint.textContent = j.status === 'success' ? '✓ signals updated' : `job ${j.status}`;
+            await loadSignals(name);
             btn.disabled = false;
             return;
           }

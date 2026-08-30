@@ -6959,6 +6959,26 @@ def dish_signals_endpoint(name: str):
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
 
 
+@app.post("/dishes/{name}/signals/run")
+def dish_signals_run_endpoint(request: Request, name: str):
+    """(Re-)measure this dish's cohort signals — out-of-process, entity-locked.
+    No LLM, nothing billable: one corpus scan (seconds). The dish-editor analog
+    of the corpus-wide dish_signals sweep."""
+    _require_perm(request, "edit_master")
+    with _db() as conn:
+        if dishes_lib.get_dish(conn, name) is None:
+            raise HTTPException(status_code=404, detail="Dish not found")
+        entity_ref = f"dish-signals:{name}"
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return {"job_id": existing["id"], "status": existing["status"],
+                    "already_running": True}
+        job_id = jobs_lib.enqueue_job(conn, type="dish_signals",
+                                      params={"dish_name": name}, entity_ref=entity_ref)
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "status": "queued"}
+
+
 @app.get("/dishes/{name}/class-proposals")
 def dish_class_proposals_endpoint(name: str):
     """The dish's product-class junction rows (proposed/approved/rejected),
