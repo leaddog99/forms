@@ -5972,7 +5972,26 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
    G1 ADAM retention policy, Greek Yogurt Pizza Dough unfiling, ingredient
    quantities.
 
-## START HERE — state of play as of 2026-08-28
+## START HERE — state of play as of 2026-08-30
+
+Read the 2026-08-30 log (bottom of file) first. The commerce pilot remains
+complete end-to-end (see 08-29); this session hardened the DISH LAYER under
+it: **matching now honors lexical qualifier evidence** (bone-in/boneless
+families — derived from catalog names, guard in the refresh, all four chicken
+cohorts clean), **dish delete RELEASES recipes to re-match instead of deleting
+them** (refresh keeps delete-and-replace), **aliases are editable in the dish
+editor** (and claim recipes as strongly as names), signals carry a **cohort
+authority profile** (DA/PA lead, OU with the selection caveat, Cohort scores
+block + 📊 Measure button), and **Coverage & Holes** (admin menu → Corpus) maps
+catalog gaps from BOTH sides with one ➕ create flow — the weakest-link half is
+the new dish_gap_report job. Five duplicate dish twins found by embedding
+distance; curator merging (alla Nerano keeps the name, spaghetti spellings are
+aliases). BIG NAMED GAP: dish↔recipe M2M was never migrated onto
+collection_members (publishers only) — needs a migration map, identity
+(dish_effective) versus membership kept separate. Admin menu now grouped
+Corpus/Commerce/Jobs/System. Restart owed: gap-report admin gate.
+
+## Prior START HERE — state of play as of 2026-08-28
 
 Read the 2026-08-29 log + the four 2026-08-28 logs (bottom of file), then
 the prior START HEREs below — the 2026-08-22 scoring-session framing and
@@ -6986,3 +7005,82 @@ candidates for a second pass).
 * Render side when wanted: the block, impressions log (day-one mandatory),
   /go/ rail, bandit. Cart subsystem parked in its own doc.
 * Dish story/ethnicity build; the W-S egg separator bookmarklet import.
+
+## Session log — 2026-08-30 — the dish layer grows judgment: qualifier evidence, mercy on delete, and a map of its own holes
+
+Commits `65a315b`..`70706d5` + this log. (The unlogged 2026-08-29-evening
+commits — `/go/` rail + impressions log, affiliates ACDV editor, proposal-
+parser quote repair — belong to the prior session's render-side start.)
+
+* **SEMrush round, curator-driven from the iPad.** Five exports (thecountrycook,
+  barefeetinthekitchen, tastemade/recipes, jamesbeard/recipes, tastingtable)
+  downloaded AND harvested remotely via the tunnel before the session started;
+  archives committed (`65a315b`). tastingtable note: 125/198 candidates had NO
+  Moz data (not API errors) — ledgered as reconsiderable. ~200 new master rows.
+* **Signals get a per-dish button + an authority profile.** 📊 Measure in the
+  dish editor (`0d6f07e`, POST /dishes/{name}/signals/run, entity-locked). The
+  stamp now carries `authority` — DA/PA/OU mean/median/n from the generated
+  columns, one free fetch (`4fee12c`) — surfaced as a Cohort scores block
+  (`85400db`). The reading that sold it: Chili avg DA 71.4 (big-site dish) vs
+  Lok Lak 53.2 (long-tail blogs); ~40-point spread corpus-wide. OU displayed
+  LAST with the two-stage caveat: cohorts are selected from different pools,
+  so cross-dish OU deltas mostly echo the DA/PA mix (Lahanodolmades DA 35 has
+  HIGHER avg OU than Italian Braised Chicken DA 76 — exceptionalism, not size).
+* **Bone-in/boneless FIXED, the general way (`31f34dd`).** Curator caught
+  'Baked Bone In Chicken Breast' stamped Boneless. Measured: 21 contradictions
+  across the breast/thigh sibling pairs; embeddings CANNOT split them (0.8794
+  vs 0.8796 — the attribute is a token, not a vector). Machinery: qualifier
+  families derived from catalog NAMES ('Base - Qualifier', ≥2 sharing a base);
+  build_match(text=title+ingredients) reorders siblings when exactly ONE is
+  evidenced (hedged text does nothing, name-exact still wins); the dish
+  refresh grew a QUALIFIER GUARD that drops (ledgers) contradicting
+  candidates instead of blind-stamping. All four chicken cohorts re-refreshed:
+  0 contradictions, guard fired 8 live drops.
+* **Five duplicate dish twins found by dish↔dish embedding distance**
+  (alla Nerano 0.010, Minestrone 0.026, Pastitsio 0.030, Matzo 0.071,
+  Strawberries 0.184) — each splitting one cohort in half. Curator merging
+  manually. Nerano call: keep `alla Nerano` (curator's alla/alle convention +
+  demand: 'pasta alla nerano' 26,250 traffic vs ~2,400 for the spaghetti
+  phrase) — the spaghetti spellings became aliases.
+* **Dish delete stops destroying corpus (`26dd4fa`, `ad62f97`).** The fixed
+  warning lied in both directions; now a preflight names the three fates. And
+  the policy flipped, curator's call: stamped dish-only rows are RELEASED
+  (whole _master block stripped, row kept, next rematch re-homes to nearest
+  surviving dish) — never deleted. Verified by rollback simulation (Matzo: 16
+  released, 0 deleted). The dish REFRESH keeps delete-and-replace. Threshold
+  AUTO-delete rejected (distances move with the catalog) → hygiene report
+  parked instead.
+* **Discovery, the 'good lord' moment: dish↔recipe M2M was never migrated.**
+  `collection_members` exists and even says `-- 'publisher' (later 'dish',…)`
+  — publishers moved onto it (22k rows), dishes still ride the single
+  `_master.dish` stamp. The vegan-AND-Greek junction remains design. Now a
+  named big-ticket item; needs a migration map (identity vs membership must
+  stay separate or cohort signals pollute).
+* **dish_gap_report — the catalog maps its own holes (`6f0435d`, `5db6aa0`).**
+  Un-anchored rows beyond the confidence bar, clustered by identity-card
+  likelyDish, EXCLUDING clusters that already name a dish/alias. First run:
+  3,830 weak links; Sourdough Bread 24 (curator created + refreshed it within
+  the hour), Mashed Potatoes 16, Melomakarona 13, Roast Turkey 12, deep Greek
+  tail (Tsoureki, Loukoumades, Souvlaki…). Rendered as a 'Catalog holes'
+  section on the coverage page with the SAME ➕ create chip; browser-verified
+  live — which caught the endpoint answering signed-out → same admin_ui gate
+  as /dish-coverage (`70706d5`, restart owed). Watch for the alias-pattern
+  rows ('Roasted Potatoes' leaning on Roast Potatoes = missing ALIAS, not dish).
+* **Aliases become editable (`1a77cb9`).** They were read-side-complete (an
+  alias claims recipes as strongly as the name, via name_index) with NO write
+  path. Now: editor field + PATCH + read-back; applied live to alla Nerano.
+* **Admin menu grouped (`023fb20`):** Corpus / Commerce / Jobs / System
+  headers; slash prefixes dropped where the header carries them;
+  Dishes/Coverage → 'Coverage & Holes'; System → 'Settings'; shell asset
+  versions bumped on all 25 pages.
+
+### Open
+
+* Curator's remaining twin merges (Pastitsio, Matzo, Strawberries pairs) —
+  released rows re-home on the next rematch; run one after.
+* Holes backlog: create dishes from Coverage & Holes (Mashed Potatoes next);
+  alias-pattern rows get aliases, not dishes.
+* THE M2M migration map (dish membership onto collection_members; identity
+  stays dish_effective) — design doc before any code.
+* Hygiene report: orphans with no dish within ~0.75 → curator review surface.
+* Restart owed: gap-report admin_ui gate. Render side continues per 08-29.
