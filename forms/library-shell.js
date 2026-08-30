@@ -921,35 +921,42 @@
     { page: 'gourmet',   label: 'Gourmet',   comingSoon: true, group: 'user' },
     { page: 'install',   label: 'Bookmarklet', href: '/forms/install.html', group: 'user' },
     // --- admin group (corpus + system back-office — TBOTB side) ---
-    // Kept in alphabetical order by label. `action` items run JS instead of
-    // navigating (see initNav wiring).
-    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', perm: 'manage_dishes', group: 'admin' },
-    // Two selection techniques, both live. Slash-grouped like the Jobs trio: /Search starts
-    // from a saved Amazon search URL and screens the cohort on owner ratings; /Curated starts
-    // from a class name and the expert reviews. Both end in product records.
-    { page: 'collections', label: 'Collections/Search', href: '/forms/product_collections.html', perm: 'edit_master', group: 'admin' },
-    { page: 'curated-collections', label: 'Collections/Curated', href: '/forms/curated_collections.html', perm: 'edit_master', group: 'admin' },
-    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', perm: 'manage_dishes', group: 'admin' },
-    // What the corpus holds that the catalog has no record of. Slash-grouped under
-    // Dishes because it is the same subject read from the other side: Dishes lists
-    // what exists, Dishes/Coverage lists what does not yet.
-    { page: 'dish-coverage', label: 'Dishes/Coverage', href: '/forms/dish_coverage.html', perm: 'admin_ui', group: 'admin' },
-    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', perm: 'edit_master', group: 'admin' },
-    { page: 'jobs-monitor', label: 'Jobs/Monitor', href: '/forms/jobs_monitor.html', perm: 'admin_ui', group: 'admin' },
-    { page: 'run-jobs',  label: 'Jobs/Queued', action: 'runQueuedJobs', perm: 'admin_ui', group: 'admin' },
-    { page: 'jobs',      label: 'Jobs/Scheduled', href: '/forms/jobs_admin.html', perm: 'admin_ui', group: 'admin' },
-    { page: 'training',  label: 'Labeling', href: '/forms/training.html', perm: 'admin_ui', group: 'admin' },
-    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', perm: 'admin_ui', group: 'admin' },
-    { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', perm: 'admin_ui', group: 'admin' },
-    { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', perm: 'edit_master', group: 'admin' },
-    { page: 'products',  label: 'Products', href: '/forms/products.html', perm: 'edit_master', group: 'admin' },
-    { page: 'affiliates', label: 'Affiliates', href: '/forms/affiliates.html', perm: 'edit_master', group: 'admin' },
-    { page: 'review-install', label: 'Review Grabber', href: '/forms/review_install.html', perm: 'edit_master', group: 'admin' },
-    { page: 'reviews',   label: 'Reviews', href: '/forms/reviews.html', perm: 'edit_master', group: 'admin' },
-    { page: 'system',    label: 'System', href: '/forms/system.html', perm: 'configure_system', group: 'admin' },
-    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', perm: 'admin_ui', group: 'admin' },
-    { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', perm: 'edit_master', group: 'admin' },
-    { page: 'users',     label: 'Users',     href: '/forms/users.html', perm: 'manage_users', group: 'admin' },
+    // Ordered by `section`, alphabetical within one; the menu renders a small
+    // header whenever `section` changes, so keep each section's rows together.
+    // Labels drop the old slash prefixes where the section header now carries
+    // that context (Jobs/Monitor -> Monitor under "Jobs"). `action` items run
+    // JS instead of navigating (see initNav wiring); `page` ids are the
+    // initNav({currentPage}) contract and never change with a relabel.
+    // — Corpus: what we hold and how it's organized —
+    { page: 'chapters',  label: 'Chapters',  href: '/forms/chapters.html', perm: 'manage_dishes', group: 'admin', section: 'Corpus' },
+    { page: 'dishes',    label: 'Dishes',    href: '/forms/dishes_v2.html', perm: 'manage_dishes', group: 'admin', section: 'Corpus' },
+    // What the corpus holds that the catalog has no record of, from BOTH sides:
+    // demand-side keywords + the corpus-side weakest-link holes (dish_gap_report).
+    { page: 'dish-coverage', label: 'Coverage & Holes', href: '/forms/dish_coverage.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },
+    { page: 'domains',   label: 'Domains',   href: '/forms/domains.html', perm: 'edit_master', group: 'admin', section: 'Corpus' },
+    { page: 'training',  label: 'Labeling', href: '/forms/training.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },
+    { page: 'ingredient-synonyms', label: 'Names', href: '/forms/ingredients.html', perm: 'admin_ui', group: 'admin', section: 'Corpus' },
+    { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', perm: 'edit_master', group: 'admin', section: 'Corpus' },
+    // — Commerce: products, reviews, money links —
+    { page: 'affiliates', label: 'Affiliates', href: '/forms/affiliates.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    // Two selection techniques, both live: /Search starts from a saved Amazon
+    // search URL and screens the cohort on owner ratings; /Curated starts from
+    // a class name and the expert reviews. Both end in product records.
+    { page: 'curated-collections', label: 'Collections/Curated', href: '/forms/curated_collections.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    { page: 'collections', label: 'Collections/Search', href: '/forms/product_collections.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    { page: 'product-install', label: 'Product Grabber', href: '/forms/product_install.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    { page: 'products',  label: 'Products', href: '/forms/products.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    { page: 'review-install', label: 'Review Grabber', href: '/forms/review_install.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    { page: 'reviews',   label: 'Reviews', href: '/forms/reviews.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    { page: 'ws-taxonomy', label: 'Taxonomy', href: '/forms/ws_taxonomy.html', perm: 'admin_ui', group: 'admin', section: 'Commerce' },
+    // — Jobs: the runner, three views —
+    { page: 'jobs-monitor', label: 'Monitor', href: '/forms/jobs_monitor.html', perm: 'admin_ui', group: 'admin', section: 'Jobs' },
+    { page: 'run-jobs',  label: 'Queued', action: 'runQueuedJobs', perm: 'admin_ui', group: 'admin', section: 'Jobs' },
+    { page: 'jobs',      label: 'Scheduled', href: '/forms/jobs_admin.html', perm: 'admin_ui', group: 'admin', section: 'Jobs' },
+    // — System: configuration and people —
+    { page: 'messages',  label: 'Messages', href: '/forms/admin.html?model=status_messages', perm: 'admin_ui', group: 'admin', section: 'System' },
+    { page: 'system',    label: 'Settings', href: '/forms/system.html', perm: 'configure_system', group: 'admin', section: 'System' },
+    { page: 'users',     label: 'Users',     href: '/forms/users.html', perm: 'manage_users', group: 'admin', section: 'System' },
   ];
 
   // Cached one-shot role probe. Resolves to the role string ('admin',
@@ -1294,6 +1301,7 @@
 
     const menu = document.createElement('div');
     menu.className = 'nav-menu';
+    let _lastSection = null;
     menu.innerHTML = items.map(item => {
       const isActive = item.page === currentPage;
       const cls = 'nav-item' + (isActive ? ' active' : '');
@@ -1303,7 +1311,14 @@
         ? `type="button" data-page="${escapeHtml(item.page)}"`
         : `href="${escapeHtml(item.href)}" data-page="${escapeHtml(item.page)}"`;
       const badge = item.comingSoon ? '<span class="badge-soon">soon</span>' : '';
-      return `<${tag} class="${cls}" ${attrs}>${escapeHtml(item.label)}${badge}</${tag}>`;
+      // Non-clickable section header whenever `section` changes (admin menu;
+      // user items carry none, so their menu renders headerless as before).
+      let head = '';
+      if ((item.section || null) !== _lastSection) {
+        _lastSection = item.section || null;
+        if (item.section) head = `<div class="nav-section">${escapeHtml(item.section)}</div>`;
+      }
+      return head + `<${tag} class="${cls}" ${attrs}>${escapeHtml(item.label)}${badge}</${tag}>`;
     }).join('');
     document.body.appendChild(menu);
 

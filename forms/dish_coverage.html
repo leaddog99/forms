@@ -78,7 +78,7 @@
       display:flex; flex-direction:column; gap:7px; }
     button:focus-visible,input:focus-visible,select:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   </style>
-  <link rel="stylesheet" href="/forms/library-shell.css?v=20260826f">
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260830a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
 </head>
 <body>
@@ -160,21 +160,21 @@
       A cluster here is a dish the corpus already holds recipes for but the catalog can't claim
       — the same ➕ creates it. Clusters whose name is already a dish or alias are excluded
       (those snap in at the next rematch, no new dish needed).</span></p>
-    <div class="tblwrap">
+    <div class="tablewrap">
       <table>
-        <thead><tr>
-          <th style="min-width:280px">Missing dish</th>
-          <th class="r">Waiting recipes</th>
-          <th class="r">Avg distance</th>
-          <th>Currently leaning on</th>
-          <th>Action</th>
+        <thead><tr style="font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--muted)">
+          <th style="min-width:280px;padding:11px 14px">Missing dish</th>
+          <th class="r" style="padding:11px 14px;text-align:right">Waiting recipes</th>
+          <th class="r" style="padding:11px 14px;text-align:right">Avg distance</th>
+          <th style="padding:11px 14px">Currently leaning on</th>
+          <th style="padding:11px 14px">Action</th>
         </tr></thead>
         <tbody id="gapbody"><tr><td colspan="5" class="empty">Loading weak links…</td></tr></tbody>
       </table>
     </div>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260825b"></script>
+  <script src="/forms/library-shell.js?v=20260830a"></script>
   <script>
     // Mounts the brand, identity badge and both burgers into .app-header —
     // the markup above is inert without this call (shipped without it,

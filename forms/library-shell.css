@@ -203,6 +203,15 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
   font-size: 0.72em; color: var(--muted);
   font-style: italic; margin-left: 8px;
 }
+/* Non-clickable group header inside the admin burger (Corpus / Commerce /
+   Jobs / System). First one sits flush; the rest get a hairline above. */
+.nav-menu .nav-section {
+  padding: 8px 12px 3px;
+  font-size: 0.72em; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted);
+  border-top: 1px solid var(--line); margin-top: 4px;
+}
+.nav-menu .nav-section:first-child { border-top: none; margin-top: 0; }
 
 /* Coming-soon overlay (no-op nav items: Cookbooks, Equipment, Gourmet
    for now). Takes over the screen with a dim background + centered
