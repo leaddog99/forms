@@ -176,7 +176,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     job_type = args.type
 
     # Dish convenience path: identity-only, entity-locked, canonical-resolved.
-    if args.dish is not None:
+    # ONLY for dish_refresh — this branch used to hijack EVERY type ("run
+    # dish_class_propose --dish X" silently launched a paid dish_refresh;
+    # two unintended Apple Cake refreshes, 2026-08-30). Other dish_* types
+    # fall through to the generic path with --dish as sugar for
+    # params.dish_name.
+    if args.dish is not None and job_type == "dish_refresh":
         job_id, reason = _enqueue_dish_refresh(args.dish)
         if job_id is None:
             print(reason)
@@ -184,6 +189,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"Enqueued job #{job_id} ({job_type}) for dish {args.dish!r}.")
         print("-" * 60)
         return _run_job_id(job_id)
+    if args.dish is not None:
+        args.param = list(args.param or []) + [f"dish_name={args.dish}"]
 
     # Generic path: arbitrary --param k=v + optional --entity-ref.
     params: dict = {}
