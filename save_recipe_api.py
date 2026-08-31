@@ -7703,9 +7703,13 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         # re-raise so the runner marks the job cancelled.
         print(f"[REFRESH-DISH] {canonical_name!r} cancelled by user")
         with _db() as conn:
+            # preserve_*: the cancel happened before any save/delete, so the
+            # prior run's winners, count, fit AND schedule all still stand —
+            # only the status + log tell the cancel's story.
             dishes_lib.record_run_result(
-                conn, canonical_name, status="cancelled", count=0,
-                log_filename=log_filename, rejects=[], ou_fit=None, bottom_ou=None)
+                conn, canonical_name, status="cancelled",
+                log_filename=log_filename, rejects=[],
+                preserve_outcome=True, preserve_schedule=True)
         raise
     except Exception as e:
         print(f"[REFRESH-DISH] build_batch failed: {e}")
@@ -7715,11 +7719,14 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             # rejects because it failed before any URL was processed."
             # Otherwise stale rejects from a previous successful run
             # would persist + mislead the form.
+            # preserve_outcome: the failure happened before any save/delete, so
+            # the prior run's winners/count/fit still stand. Schedule is NOT
+            # preserved — an errored run stamps last_refreshed as before.
             dishes_lib.record_run_result(
                 conn, canonical_name,
-                status=f"error:build_batch:{type(e).__name__}", count=0,
+                status=f"error:build_batch:{type(e).__name__}",
                 log_filename=log_filename,
-                rejects=[], ou_fit=None, bottom_ou=None,
+                rejects=[], preserve_outcome=True,
             )
         raise  # runner records error status + stores the message
 

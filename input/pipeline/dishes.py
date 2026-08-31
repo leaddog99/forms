@@ -1411,7 +1411,9 @@ def record_run_result(conn: sqlite3.Connection, name: str, *,
                       log_filename: Optional[str] = None,
                       ou_fit: Optional[dict] = None,
                       rejects: Optional[list] = None,
-                      bottom_ou: Optional[float] = None) -> None:
+                      bottom_ou: Optional[float] = None,
+                      preserve_outcome: bool = False,
+                      preserve_schedule: bool = False) -> None:
     """Stamp a refresh run's outcome on the dish row. Called by both the
     /dishes/<name>/refresh endpoint and the agent. `status` is
     'success' or 'error:<short-reason>'. `log_filename` is the basename
@@ -1429,14 +1431,25 @@ def record_run_result(conn: sqlite3.Connection, name: str, *,
     now = datetime.now(timezone.utc).isoformat()
     # Build the SET clause dynamically so we always include the new
     # per-run fields (even when None — clears them from the last run).
+    # A run that never reached the save loop (cancel, pre-save failure) left
+    # the prior winners standing — `preserve_outcome` keeps the prior
+    # count/fit/bottom-OU on the row so the list doesn't read '0 kept' over 15
+    # real winners (Apple Cake, 2026-08-30). `preserve_schedule` keeps
+    # last_refreshed so a cancelled run doesn't push next_run_at a full TTL
+    # out for doing nothing. Status/log always stamp — the cancel IS the last
+    # run's story.
     fields = [
-        ("last_refreshed", now),
         ("last_run_status", status),
-        ("last_run_count", count),
-        ("last_ou_fit", _json.dumps(ou_fit) if ou_fit is not None else None),
-        ("last_run_bottom_ou", bottom_ou),
         ("updated_at", now),
     ]
+    if not preserve_schedule:
+        fields.insert(0, ("last_refreshed", now))
+    if not preserve_outcome:
+        fields += [
+            ("last_run_count", count),
+            ("last_ou_fit", _json.dumps(ou_fit) if ou_fit is not None else None),
+            ("last_run_bottom_ou", bottom_ou),
+        ]
     if log_filename is not None:
         fields.insert(-1, ("last_run_log_filename", log_filename))
     set_clause = ", ".join(f"{k} = ?" for k, _ in fields)
