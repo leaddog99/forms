@@ -1086,11 +1086,41 @@
   // One DELEGATED listener (below) serves every dot ever added — including
   // ones rendered later into innerHTML — so pages add the markup and are
   // done. Programmatic use: LibraryShell.showInfo(title, html).
+  // Component CSS injected from JS so BOTH page families (library-shell.css
+  // pages and editor-shell.css pages) render the ⓘ identically — the dot was
+  // unstyled on editor pages when its rules lived in library-shell.css only.
+  (function injectInfoStyles() {
+    if (document.getElementById('bcc-info-styles')) return;
+    var glyph = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z'/></svg>\") center / contain no-repeat";
+    var st = document.createElement('style');
+    st.id = 'bcc-info-styles';
+    st.textContent =
+      '.info-dot{display:inline-block;width:16px;height:16px;border:none;padding:0;' +
+      'margin-left:6px;vertical-align:middle;position:relative;top:-1px;cursor:pointer;font-size:0;line-height:0;' +
+      'color:transparent;background-color:var(--muted,var(--ed-ink-soft,#8a8378));' +
+      '-webkit-mask:' + glyph + ';mask:' + glyph + ';}' +
+      '.info-dot:hover{background-color:var(--accent,var(--ed-accent,#9c5b34));}' +
+      '.info-dot:focus-visible{outline:2px solid var(--accent,#9c5b34);outline-offset:2px;}' +
+      '.info-pop-overlay{position:fixed;inset:0;z-index:1300;background:rgba(30,24,18,.45);' +
+      'display:grid;place-items:center;padding:20px;}' +
+      '.info-pop-card{background:var(--card,#fffdf9);color:var(--ink,#2c2620);' +
+      'border:1px solid var(--line,#e2d6c3);border-radius:14px;max-width:460px;width:100%;' +
+      'padding:20px 22px;box-shadow:0 12px 40px rgba(40,30,20,.25);text-align:left;}' +
+      '.info-pop-card h2{margin:0 0 8px;font-size:1.05rem;}' +
+      '.info-pop-body{font-size:.9rem;line-height:1.55;}' +
+      '.info-pop-body code{background:var(--accent-soft,#f4ece6);padding:1px 5px;border-radius:4px;}' +
+      '.info-pop-card > button{margin-top:14px;font:inherit;font-size:.88rem;padding:7px 16px;' +
+      'border-radius:8px;border:1px solid var(--line,#e2d6c3);background:var(--card,#fff);' +
+      'cursor:pointer;}' +
+      '.info-pop-card > button:hover{border-color:var(--accent,#9c5b34);}';
+    document.head.appendChild(st);
+  })();
+
   function showInfo(title, html) {
     const overlay = document.createElement('div');
-    overlay.className = 'coming-soon-overlay';  // reuse dimmer + centering
+    overlay.className = 'info-pop-overlay';
     overlay.innerHTML =
-      '<div class="coming-soon-card info-pop-card">' +
+      '<div class="info-pop-card">' +
         '<h2>' + escapeHtml(title || 'About this field') + '</h2>' +
         '<div class="info-pop-body">' + (html || '') + '</div>' +
         '<button type="button">Got it</button>' +

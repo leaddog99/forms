@@ -62,7 +62,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260830d"></script>
+  <script src="/forms/library-shell.js?v=20260831b"></script>
   <script>
     const $ = (s) => document.querySelector(s);
     LibraryShell.initNav({ currentPage: 'classes' });
@@ -203,7 +203,7 @@
               : '<span class="muted">none</span>'}</div>
             <div class="k">Signals<button type="button" class="info-dot" data-info-title="Class signals" data-info="The phrases a dish&#39;s measured cohort signals can look like when they mean THIS class — &#39;peeled apples&#39; or &#39;granny smith apples&#39; for an Apple Peeler, &#39;egg yolks&#39; for Egg Separators. The class NAME alone embeds poorly against ingredient phrasing; these are the matchable surface, matched term-to-term. Encode an implication here once and it&#39;s recognized mechanically ever after. Edit them under Edit.">i</button></div>
             <div>${(c.signals || []).length
-              ? c.signals.map(s => `<code style="margin-right:6px">${escapeHtml(s)}</code>`).join(' ')
+              ? c.signals.map(s => `<code>${escapeHtml(s)}</code>`).join(', ')
               : '<span class="muted">none — the class matches by name only</span>'}</div>
             <div class="k">Dishes</div>
             <div>${(u.dishes || []).length
@@ -247,7 +247,7 @@
               <input id="f_category" type="text" value="${escapeHtml(c.category || '')}"></div>
           </div>
           <div class="ed-field"><label for="f_signals">Signals <span class="muted" style="font-weight:400;text-transform:none">(one per line or comma-separated — the phrases that mean this class in a dish's measured signals)</span></label>
-            <textarea id="f_signals" rows="4" placeholder="peeled apples&#10;granny smith apples&#10;cored apples">${escapeHtml((c.signals || []).join(String.fromCharCode(10)))}</textarea></div>
+            <textarea id="f_signals" rows="9" style="resize:vertical" placeholder="peeled apples&#10;granny smith apples&#10;cored apples">${escapeHtml((c.signals || []).join(String.fromCharCode(10)))}</textarea></div>
           <div class="pc-form-actions">
             <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
             <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
