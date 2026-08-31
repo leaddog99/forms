@@ -34,6 +34,9 @@ from input.pipeline.config import (
     _DEFAULT_DISALLOWED_URL_PATH_FRAGMENTS as _URL_PATH_FRAGMENTS_SEED,
     BCC_LINK_DOMAIN as _PUBLIC_HOST_SEED,
 )
+# Same one-way pattern: dish_class_proposals imports nothing from this module
+# at module level (its get_setting import is lazy, inside _prompt) — no cycle.
+from intake.products.dish_class_proposals import PROMPT_SEED as _CLASS_PROPOSE_PROMPT_SEED
 
 
 def _as_origin(host: str) -> str:
@@ -569,6 +572,23 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "NON-ENGLISH pages do NOT use this list; each language has its own "
                        "recipe_phrases/<lang>.json, regenerated from this one by "
                        "scripts/translate_recipe_phrases.py — re-run that after editing here.",
+    },
+    {
+        "key": "dish_class_propose_prompt",
+        "value": _CLASS_PROPOSE_PROMPT_SEED,
+        "type": "text",
+        "category": "Commerce",
+        "label": "Dish→class proposal prompt (✨ Propose)",
+        "description": "The FULL prompt template the dish→product-class proposer sends "
+                       "(one Sonnet call per dish). Placeholders are substituted at run "
+                       "time and must be kept verbatim: [[DISH]], [[CHAPTER]], "
+                       "[[DESCRIPTION]], [[COHORT_N]], [[INGREDIENT_SIGNALS]], "
+                       "[[EQUIPMENT_SIGNALS]], [[ETHNICITIES]], [[REGIONS]], "
+                       "[[METHOD_TEXT]], [[CLASS_REGISTRY]]. Everything else — the rules, "
+                       "the sellability policy, tiers, the JSON contract — is editable "
+                       "text. The parser expects a JSON array with the documented keys, "
+                       "so keep the output-format section intact in spirit. Edits apply "
+                       "on the next Propose run, no restart.",
     },
     {
         "key": "structure_ingredient_markers",

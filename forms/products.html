@@ -646,12 +646,17 @@
     }
 
     /* ---------------- add / edit form ---------------- */
+    let offersEdit = [];      // the form's working copy of retailer_offers
     function renderForm(existing){
       const isEdit = !!existing;
       const imp = !existing && !!importData;                    // arrived via the bookmarklet
       const p = existing || (imp ? importData.product : {}) || {};
       const s = p.specs || {};
-      const o = (p.retailer_offers && p.retailer_offers[0]) || {};
+      // ALL offers, editable (delete audit 2026-08-31): the old form exposed a
+      // single "Primary offer" and copied offers 2..n through invisibly —
+      // rows written by materialize/import could be neither seen nor removed.
+      offersEdit = (p.retailer_offers || []).map(x => ({...x}));
+      if (!offersEdit.length) offersEdit.push({});
       const dl = (id, opts) => `<datalist id="${id}">${uniq(opts).map(x=>`<option value="${escapeHtml(x)}">`).join('')}</datalist>`;
       const pickOpts = PICKS.map(x => `<option value="${escapeHtml(x)}" ${(p.bcc_pick||'')===x?'selected':''}>${x||'— none —'}</option>`).join('');
       $('#page').innerHTML = `
@@ -694,15 +699,11 @@
             </div>
           </fieldset>
 
-          <fieldset class="pc-fieldset"><legend>Primary offer</legend>
-            <div class="pc-row3">
-              <div class="ed-field"><label>Retailer</label><input id="o_ret" value="${escapeHtml(o.retailer||'')}" placeholder="Williams Sonoma"></div>
-              <div class="ed-field"><label>Price ($)</label><input id="o_price" type="number" step="0.01" value="${o.price!=null?o.price:''}"></div>
-              <div class="ed-field"></div>
-            </div>
-            <div class="pc-row2">
-              ${urlField('o_src', 'Source URL (where it was found)', o.source_url||'', { ph: 'https://…' })}
-              ${urlField('o_url', 'Buy URL (our affiliate link)', o.affiliate_url||'', { ph: 'https://…' })}
+          <fieldset class="pc-fieldset"><legend>Offers</legend>
+            <div id="offersWrap"></div>
+            <div style="margin-top:2px;display:flex;align-items:center;gap:8px">
+              <button type="button" class="ed-btn" id="addOffer" style="padding:2px 10px">＋ offer</button>
+              <span class="muted" style="font-size:.78rem">every retailer this sells at — first row is the primary; removes apply on Save</span>
             </div>
           </fieldset>
 
@@ -715,32 +716,62 @@
         </div>`;
       $('#cancelForm').addEventListener('click', () => { importData = null; mergeInto = null; mode='view'; renderDetail(); });
       $('#saveForm').addEventListener('click', () => saveForm(isEdit ? existing : null));
+      paintOffers();
+      $('#addOffer').addEventListener('click', () => { syncOffers(); offersEdit.push({}); paintOffers(); });
       if (imp) wireImportExtras();
       $('#f_name').focus();
     }
 
-    function buildOffer(existingOffers){
-      const ret = $('#o_ret').value.trim();
-      const src = $('#o_src')?.value.trim() || '';
-      const aff = $('#o_url').value.trim();
-      const priceRaw = $('#o_price').value.trim();
-      const price = priceRaw === '' ? null : Number(priceRaw);
-      const offers = Array.isArray(existingOffers) ? existingOffers.map(x => ({...x})) : [];
-      if (!ret && !src && !aff && price == null) return offers;   // nothing to write
-      const first = { ...(offers[0]||{}) };
-      first.retailer = ret; first.price = price;
-      if (src) first.source_url = src;
-      if (aff) first.affiliate_url = aff;
-      offers[0] = first;
-      return offers;
+    function paintOffers(){
+      const wrap = $('#offersWrap'); if (!wrap) return;
+      wrap.innerHTML = offersEdit.map((o, i) => `
+        <div class="pc-oe" data-i="${i}" style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px">
+          <div class="pc-row3">
+            <div class="ed-field"><label>Retailer${i===0?' (primary)':''}</label><input class="oe-ret" value="${escapeHtml(o.retailer||'')}" placeholder="Williams Sonoma"></div>
+            <div class="ed-field"><label>Price ($)</label><input class="oe-price" type="number" step="0.01" value="${o.price!=null?o.price:''}"></div>
+            <div class="ed-field" style="flex-direction:row;align-items:flex-end;justify-content:flex-end;gap:8px">
+              ${o.asin?`<span class="muted" style="font-size:.75rem;margin-right:auto;align-self:flex-end">ASIN ${escapeHtml(o.asin)}</span>`:''}
+              <button type="button" class="ed-btn oe-rm" title="Remove this offer — applies on Save" style="padding:1px 8px;font-size:.72rem;color:#b23b3b">remove</button>
+            </div>
+          </div>
+          <div class="pc-row2">
+            ${urlField('oe_src_'+i, 'Source URL (where it was found)', o.source_url||'', { ph: 'https://…' })}
+            ${urlField('oe_url_'+i, 'Buy URL (our affiliate link)', o.affiliate_url||'', { ph: 'https://…' })}
+          </div>
+        </div>`).join('');
+      wrap.querySelectorAll('.oe-rm').forEach(b => b.addEventListener('click', () => {
+        syncOffers();
+        offersEdit.splice(Number(b.closest('.pc-oe').dataset.i), 1);
+        if (!offersEdit.length) offersEdit.push({});
+        paintOffers();
+      }));
+    }
+
+    // Read the DOM back into offersEdit (called before any structural change and
+    // at save) — unknown fields a materialize/import wrote (asin, …) ride along
+    // untouched via the initial spread.
+    function syncOffers(){
+      const wrap = $('#offersWrap'); if (!wrap) return;
+      wrap.querySelectorAll('.pc-oe').forEach(div => {
+        const i = Number(div.dataset.i);
+        const o = offersEdit[i] || (offersEdit[i] = {});
+        o.retailer = div.querySelector('.oe-ret').value.trim();
+        const pr = div.querySelector('.oe-price').value.trim();
+        o.price = pr === '' ? null : Number(pr);
+        o.source_url = $('#oe_src_'+i)?.value.trim() || '';
+        o.affiliate_url = $('#oe_url_'+i)?.value.trim() || '';
+      });
+    }
+
+    function buildOffers(){
+      syncOffers();
+      return offersEdit.map(o => ({...o})).filter(o =>
+        (o.retailer||'') || (o.source_url||'') || (o.affiliate_url||'') || o.price != null || o.asin);
     }
 
     async function saveForm(existing){
       const isEdit = !!existing;
       const imp = !existing && !!importData;
-      // Offers to build FROM: the edit target's, else the extracted product's (import) — so
-      // extra vendors/fields the extractor found survive the single-offer editor.
-      const baseOffers = existing ? existing.retailer_offers : (imp ? importData.product.retailer_offers : []);
       const fields = {
         brand: $('#f_brand').value.trim(), name: $('#f_name').value.trim(),
         category: $('#f_cat').value.trim(), product_class: $('#f_class').value.trim(),
@@ -752,7 +783,7 @@
           model_number: $('#s_model').value.trim(), dishwasher_safe: $('#s_dish').value.trim(),
           mpn: $('#s_mpn')?.value.trim() || '', gtin: $('#s_gtin')?.value.trim() || '',
         },
-        retailer_offers: buildOffer(baseOffers),
+        retailer_offers: buildOffers(),
       };
       // On import, start from the extracted product so its verdicts/sources (not in the form)
       // survive, then override with the curator's edits.

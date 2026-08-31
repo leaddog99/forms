@@ -154,3 +154,4 @@ cache/
 # Scratch/handoff files — session notes, continuation texts, throwaway scripts.
 # Nothing in here is source; treat it as writable by anyone at any time.
 temp/
+scripts/.class_match_embed_cache.json

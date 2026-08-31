@@ -90,8 +90,17 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             selected        INTEGER DEFAULT 0,  -- survived to the shortlist
             medal           TEXT,               -- gold | silver | bronze (curator-confirmed)
             product_id      TEXT,               -- set once it materializes a catalog row
+            excluded        INTEGER DEFAULT 0,  -- curator: junk, and STAYS out (see below)
             PRIMARY KEY (collection, asin)
         )""")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(product_collection_candidates)")}
+    if "excluded" not in cols:
+        # Curator-removed candidate. A bare row delete would only last until the
+        # next refresh re-returned the ASIN (the cohort is delete-and-replace),
+        # so removal is a persistent per-ASIN EXCLUSION: the row stays, flagged,
+        # is skipped by replace/screening/selection, and can be restored.
+        conn.execute("ALTER TABLE product_collection_candidates "
+                     "ADD COLUMN excluded INTEGER DEFAULT 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pcc_collection "
                  "ON product_collection_candidates(collection, wilson_score DESC)")
     conn.commit()
@@ -128,8 +137,8 @@ def list_collections(conn: sqlite3.Connection) -> list:
     ensure_tables(conn)
     return _dicts(conn,
         "SELECT c.*, "
-        " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name) "
-        "   AS candidate_count, "
+        " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name "
+        "   AND x.excluded = 0) AS candidate_count, "
         " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name "
         "   AND x.selected = 1) AS selected_count "
         "FROM product_collections c ORDER BY c.name")
@@ -207,11 +216,17 @@ def replace_candidates(conn: sqlite3.Connection, name: str, items: list) -> int:
         "SELECT asin, medal, product_id FROM product_collection_candidates "
         "WHERE collection = ? AND (medal IS NOT NULL OR product_id IS NOT NULL)",
         (name,)).fetchall()}
-    conn.execute("DELETE FROM product_collection_candidates WHERE collection = ?", (name,))
+    # Excluded rows SURVIVE the wipe and block re-entry: the search will keep
+    # returning the same junk ASIN forever; the exclusion has to outlive the run.
+    excluded = {r[0] for r in conn.execute(
+        "SELECT asin FROM product_collection_candidates "
+        "WHERE collection = ? AND excluded = 1", (name,)).fetchall()}
+    conn.execute("DELETE FROM product_collection_candidates "
+                 "WHERE collection = ? AND excluded = 0", (name,))
     now = _now()
     for it in items:
         asin = (it.get("asin") or "").strip()
-        if not asin:
+        if not asin or asin in excluded:
             continue
         medal, pid = keep.get(asin, (None, None))
         conn.execute(
@@ -222,10 +237,13 @@ def replace_candidates(conn: sqlite3.Connection, name: str, items: list) -> int:
              it.get("price", ""), it.get("image", ""), it.get("link", ""),
              it.get("rating"), it.get("ratings_total"),
              wilson_from_mean(it.get("rating"), it.get("ratings_total")), medal, pid))
+    kept_n = conn.execute(
+        "SELECT COUNT(*) FROM product_collection_candidates "
+        "WHERE collection = ? AND excluded = 0", (name,)).fetchone()[0]
     conn.execute("UPDATE product_collections SET last_run_at = ?, last_count = ?, "
-                 "updated_at = ? WHERE name = ?", (now, len(items), now, name))
+                 "updated_at = ? WHERE name = ?", (now, kept_n, now, name))
     conn.commit()
-    return len(items)
+    return kept_n
 
 
 def set_screen_result(conn: sqlite3.Connection, name: str, asin: str, *,
@@ -250,7 +268,7 @@ def list_candidates(conn: sqlite3.Connection, name: str, *, order: str = "wilson
            "rating": "rating DESC"}.get(order, "wilson_score DESC")
     rows = _dicts(conn,
         f"SELECT * FROM product_collection_candidates WHERE collection = ? "
-        f"ORDER BY selected DESC, {col}", (name,))
+        f"ORDER BY excluded ASC, selected DESC, {col}", (name,))
     out = []
     for d in rows:
         if d.get("histogram"):
@@ -262,6 +280,26 @@ def list_candidates(conn: sqlite3.Connection, name: str, *, order: str = "wilson
     return out
 
 
+def set_excluded(conn: sqlite3.Connection, name: str, asin: str, excluded: bool) -> bool:
+    """Curator removal of one candidate — a persistent exclusion, not a row
+    delete (the cohort is delete-and-replace; the search would just return
+    the ASIN again). Excluding also clears the medal and shortlist flag: an
+    excluded row is a junk verdict, and materialize/selection must never see
+    it. Restore re-seats the row with its scores; the next refresh
+    re-evaluates it like any candidate."""
+    ensure_tables(conn)
+    if excluded:
+        cur = conn.execute(
+            "UPDATE product_collection_candidates SET excluded = 1, medal = NULL, "
+            "selected = 0 WHERE collection = ? AND asin = ?", (name, asin))
+    else:
+        cur = conn.execute(
+            "UPDATE product_collection_candidates SET excluded = 0 "
+            "WHERE collection = ? AND asin = ?", (name, asin))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def set_medal(conn: sqlite3.Connection, name: str, asin: str, medal: str) -> bool:
     """Curator-confirmed gold/silver/bronze. Survives a refresh (see replace_candidates)."""
     ensure_tables(conn)
@@ -269,7 +307,8 @@ def set_medal(conn: sqlite3.Connection, name: str, asin: str, medal: str) -> boo
     if medal not in ("gold", "silver", "bronze", ""):
         raise ValueError("medal must be gold, silver, bronze or empty")
     cur = conn.execute(
-        "UPDATE product_collection_candidates SET medal = ? WHERE collection = ? AND asin = ?",
+        "UPDATE product_collection_candidates SET medal = ? "
+        "WHERE collection = ? AND asin = ? AND excluded = 0",
         (medal or None, name, asin))
     conn.commit()
     return cur.rowcount > 0

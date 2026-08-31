@@ -4390,6 +4390,31 @@ async def collection_medal_endpoint(name: str, request: Request):
     return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
 
 
+@app.delete("/product-collections/{name}/candidates/{asin}")
+def collection_candidate_exclude_endpoint(name: str, asin: str):
+    """Curator removes one candidate from the cohort. A persistent per-ASIN
+    exclusion, not a row delete — the cohort is delete-and-replace per
+    refresh, so a bare delete would resurrect the junk on the next run.
+    Clears any medal/shortlist flag; restorable."""
+    from intake.products import collections_store as cst
+    with _db() as conn:
+        ok = cst.set_excluded(conn, name, asin.strip(), True)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+    return {"collection": name, "asin": asin, "excluded": True}
+
+
+@app.post("/product-collections/{name}/candidates/{asin}/restore")
+def collection_candidate_restore_endpoint(name: str, asin: str):
+    """Undo an exclusion — the row rejoins the cohort with its stored scores."""
+    from intake.products import collections_store as cst
+    with _db() as conn:
+        ok = cst.set_excluded(conn, name, asin.strip(), False)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+    return {"collection": name, "asin": asin, "excluded": False}
+
+
 @app.post("/product-collections/{name}/materialize")
 def collection_materialize_endpoint(name: str):
     """Medaled candidates -> catalog product rows (find-or-create, idempotent).
@@ -4483,6 +4508,31 @@ def curated_delete_endpoint(name: str):
     if not ok:
         raise HTTPException(status_code=404, detail="Curated collection not found.")
     return {"deleted": name}
+
+
+@app.delete("/curated-collections/{name}/picks/{slot}")
+def curated_pick_exclude_endpoint(name: str, slot: str):
+    """Curator rejects ONE pick. A persistent per-product ban (by ASIN, then
+    brand+title) — not a row delete, because the authorities keep recommending
+    it and the next run would just place it again. The row stays, flagged,
+    with its reasoning kept for the record; restorable."""
+    from intake.products import curated_collections as ccs
+    with _db() as conn:
+        ok = ccs.set_pick_excluded(conn, name, slot, True)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Pick not found.")
+    return {"collection": name, "slot": slot, "excluded": True}
+
+
+@app.post("/curated-collections/{name}/picks/{slot}/restore")
+def curated_pick_restore_endpoint(name: str, slot: str):
+    """Lift the ban. Does not re-rank — the next run decides placements."""
+    from intake.products import curated_collections as ccs
+    with _db() as conn:
+        ok = ccs.set_pick_excluded(conn, name, slot, False)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Pick not found.")
+    return {"collection": name, "slot": slot, "excluded": False}
 
 
 @app.post("/curated-collections/{name}/run")
@@ -6900,6 +6950,25 @@ def clear_domain_top_endpoint(domain: str):
         raise HTTPException(status_code=500, detail=f"Clear error: {e}") from e
 
 
+@app.delete("/domains/{domain}/top/member")
+def remove_domain_top_member_endpoint(domain: str, url: str):
+    """Drop ONE row from the publisher's stored ledger (junction only; the
+    recipe row, if ingested, is untouched). Spot-fix, not a ban — the next
+    harvest re-ranks the pool. `url` is the member's url_normalized, passed
+    as a query param (URLs don't belong in path segments)."""
+    from input.pipeline import domains_lib, collections_lib
+    try:
+        host = domains_lib._canon_host(domain)
+        with _db() as conn:
+            ok = collections_lib.remove_member(conn, "publisher", host, url)
+    except Exception as e:
+        print(f"[ERROR] remove_domain_top_member({domain!r}) failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Remove error: {e}") from e
+    if not ok:
+        raise HTTPException(status_code=404, detail="Ledger row not found.")
+    return {"domain": host, "removed": url}
+
+
 @app.get("/domains/{domain}/top")
 def domain_top_endpoint(domain: str, all: int = 0):
     """Stored publisher ledger (collection_members) for the domains page. Default =
@@ -6998,6 +7067,25 @@ def dish_class_proposal_update_endpoint(request: Request, name: str, payload: di
                 "tier": payload.get("tier")}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.delete("/dishes/{name}/class-proposals")
+def dish_class_proposal_delete_endpoint(request: Request, name: str, class_name: str):
+    """Forget ONE rejected proposal (hard delete; rejected rows only — the
+    audit found they accumulate forever with no removal path). Deleting the
+    rejection lifts its standing ban: the next ✨ Propose may re-seat the
+    class as a fresh proposal. `class_name` rides as a query param."""
+    _require_perm(request, "edit_master")
+    from intake.products import dish_class_proposals as dcp
+    cls = (class_name or "").strip()
+    if not cls:
+        raise HTTPException(status_code=400, detail="class_name is required")
+    with _db() as conn:
+        ok = dcp.delete_rejected(conn, name, cls)
+    if not ok:
+        raise HTTPException(status_code=404,
+                            detail="No REJECTED row by that class (revoke or reject first).")
+    return {"dish": name, "class_name": cls, "deleted": True}
 
 
 @app.post("/dishes/{name}/class-proposals/run")
@@ -8965,7 +9053,8 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
         print(f"[COLLECTION] {len(items)} candidates kept "
               f"(credits {res.get('credits')}) — screening top {coll.get('keep_top_n')}")
 
-        top = [c for c in cohort if c.get("wilson_score")][:int(coll.get("keep_top_n") or 10)]
+        top = [c for c in cohort if c.get("wilson_score") and not c.get("excluded")
+               ][:int(coll.get("keep_top_n") or 10)]
         screened, failed = 0, 0
         for c in top:
             if _should_cancel():
@@ -9055,7 +9144,7 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
             ccs.replace_picks(conn, name, picks)
             ccs.set_run_result(conn, name, record=record, report=report,
                                brief_text=brief_text, job_id=job_id, pick_count=len(picks))
-            stored = ccs.list_picks(conn, name)
+            stored = [p for p in ccs.list_picks(conn, name) if not p.get("excluded")]
 
         if _should_cancel():
             raise KeyboardInterrupt("cancelled before materializing products")

@@ -108,8 +108,13 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             product_id      TEXT,               -- the catalog row it materialized
             product_action  TEXT,               -- created | merged | skipped
             run_at          TEXT,
+            excluded        INTEGER DEFAULT 0,  -- curator: rejected pick, stays out (see set_pick_excluded)
             PRIMARY KEY (collection, slot)
         )""")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(curated_collection_picks)")}
+    if "excluded" not in cols:
+        conn.execute("ALTER TABLE curated_collection_picks "
+                     "ADD COLUMN excluded INTEGER DEFAULT 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ccp_collection "
                  "ON curated_collection_picks(collection, section, place)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ccp_asin "
@@ -292,13 +297,36 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
     prior_asin = {(r["asin"] or "").upper(): r["product_id"] for r in prior if r["asin"]}
     prior_name = {_name_key(r["manufacturer"], r["product_title"]): r["product_id"]
                   for r in prior}
-    conn.execute("DELETE FROM curated_collection_picks WHERE collection = ?", (name,))
+    # Curator-excluded picks SURVIVE the wipe and BAN their product from
+    # re-entry (by ASIN, then brand+title): the authorities keep recommending
+    # it, so a rejection has to outlive the run that placed it.
+    excl = _dicts(conn,
+        "SELECT slot, asin, manufacturer, product_title FROM curated_collection_picks "
+        "WHERE collection = ? AND excluded = 1", (name,))
+    ban_asin = {(r["asin"] or "").upper() for r in excl if r["asin"]}
+    ban_name = {_name_key(r["manufacturer"], r["product_title"]) for r in excl}
+    excl_slots = {r["slot"] for r in excl}
+    conn.execute("DELETE FROM curated_collection_picks "
+                 "WHERE collection = ? AND excluded = 0", (name,))
     now = _now()
+    banned = 0
     for p in picks:
         slot = (p.get("_slot") or "").strip()
         if not slot:
             continue
         asin = (p.get("amazon_asin") or "").strip().upper()
+        if (asin and asin in ban_asin) \
+                or _name_key(p.get("manufacturer"), p.get("product_title")) in ban_name:
+            banned += 1
+            continue
+        if slot in excl_slots:      # a surviving excluded row holds this slot — re-key it
+            new_slot = f"x:{slot}"
+            while new_slot in excl_slots:
+                new_slot += "'"
+            conn.execute("UPDATE curated_collection_picks SET slot = ? "
+                         "WHERE collection = ? AND slot = ?", (new_slot, name, slot))
+            excl_slots.discard(slot)
+            excl_slots.add(new_slot)
         pid = (prior_asin.get(asin) if asin else None) \
             or prior_name.get(_name_key(p.get("manufacturer"), p.get("product_title"))) \
             or prior_slot.get(slot)
@@ -320,10 +348,13 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
              p.get("owner_rating"), p.get("owner_count"),
              json.dumps(p.get("owner_histogram") or []), p.get("realrank_score"),
              p.get("rating_shape", ""), pid, now))
+    if banned:
+        print(f"[CURATE] {banned} pick(s) skipped — match a curator-excluded product")
+    kept = len(picks) - banned
     conn.execute("UPDATE curated_collections SET last_pick_count = ?, updated_at = ? "
-                 "WHERE name = ?", (len(picks), now, name))
+                 "WHERE name = ?", (kept, now, name))
     conn.commit()
-    return len(picks)
+    return kept
 
 
 def _name_key(manufacturer, title) -> str:
@@ -345,7 +376,8 @@ def list_picks(conn: sqlite3.Connection, name: str) -> list:
     ensure_tables(conn)
     rows = _dicts(conn,
         "SELECT * FROM curated_collection_picks WHERE collection = ? "
-        "ORDER BY CASE WHEN COALESCE(section,'') = '' THEN 0 ELSE 1 END, section, place",
+        "ORDER BY excluded ASC, "
+        "CASE WHEN COALESCE(section,'') = '' THEN 0 ELSE 1 END, section, place",
         (name,))
     for d in rows:
         for f in _JSON_PICK_FIELDS:
@@ -357,6 +389,22 @@ def list_picks(conn: sqlite3.Connection, name: str) -> list:
             else:
                 d[f] = []
     return rows
+
+
+def set_pick_excluded(conn: sqlite3.Connection, name: str, slot: str,
+                      excluded: bool) -> bool:
+    """Curator rejection of ONE pick — a persistent per-product ban, not a row
+    delete. The row stays flagged (its research/reasoning kept for the record);
+    replace_picks skips any future pick matching its ASIN or brand+title, and
+    the run's materialize step never sees it. Restore lifts the ban — it does
+    NOT re-rank the list; the next run decides placements. Excluding does not
+    touch a catalog row the pick already materialized."""
+    ensure_tables(conn)
+    cur = conn.execute(
+        "UPDATE curated_collection_picks SET excluded = ? "
+        "WHERE collection = ? AND slot = ?", (1 if excluded else 0, name, slot))
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def set_pick_product(conn: sqlite3.Connection, name: str, slot: str, product_id: str,

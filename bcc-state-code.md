@@ -7270,3 +7270,101 @@ the end-to-end test case all night, curator-driven.
 * Mechanical matcher pre-pass (spec agreed; signals surface now exists).
 * Apple Peeler test: run the collection → re-propose Apple Cake → approve.
 * Rerun Pistou with fr-line Reserve; per-publisher cap; M2M map; twins.
+
+## Session log — 2026-08-31 — signals learn subsumption, deletes get a doctrine, and the class registry is repossessed
+
+Commits: this one. NOTHING owed — both restarts happened in-session; jobs run
+out-of-process, so every pipeline change was live on landing. The v3 signals
+SWEEP was in flight (237/283, clean) as this was written.
+
+* **Signals mining v2/v3 (`dish_signals.py`, method df-lift-v3).** Curator
+  caught 'smith' ranking on Apple Cake ("smith is useless"). Two textbook
+  treatments: nested-term SUBSUMPTION (approximately-closed patterns, cf.
+  C-value — a term whose df is explained by a longer phrase dies; 'granny
+  smith apples' retires smith/granny/'smith apples'; 4-grams mined only to
+  subsume; n-grams can't start/end on function words) + ATTESTED PLURAL
+  FOLDING ('apples'+'apple' = one lemma, folded only when the singular is
+  corpus-attested — molasses safe; display = the cohort's most-written
+  surface of the WHOLE term, never a per-token Frankenstein like "eggs
+  yolks"). Apple Cake before/after: fragments dead, 'granny smith apples'
+  seated, freed slots surfaced nutmeg/allspice/dark rum. A staple filter
+  (leaveners/sugars/flours) was built, shipped, and REVERTED the same hour —
+  curator settled the principle: **signals = measurement, kept FULL; classes
+  = sellable inventory; the sellability rule lives at the JOIN (the proposal
+  prompt), never in the measurement.**
+* **Delete audit → doctrine → six gaps fixed** (curator: "no way to delete a
+  collections search item"; agent audit of all 25 pages; memory/
+  feedback_delete_exclusion_pattern). On delete-and-replace lists a bare row
+  delete resurrects next run, so removal = persistent EXCLUSION: candidates
+  (`excluded` col, survives replace, blocks re-entry by ASIN, Restore strip
+  + ⓘ; medal-clear '×'→'–' — it read as row-delete), curated picks (ban by
+  ASIN→brand+title, slot re-key on collision, materialize skips), products
+  offers (full offers-list editor replaces the offers[0]-only form), domains
+  top list (per-row ✕, junction spot-fix — candidate filters stay the
+  durable ban), rejected class proposals (🗑 rejected-only hard delete), and
+  the dead rejects PATCH wired (per-row triage select). Armed two-click =
+  the sub-item standard.
+* **Medal "doesn't work" forensics:** the gold click had LANDED and
+  persisted — the awarded state was an invisible bold 'G'. Medal buttons now
+  paint in medal palette + "✓ gold — saved" status; failures surface
+  (handler had ignored the response entirely). Cohort default order →
+  RealRank (screened first); "screen score" renamed Wilson + ⓘ. Both
+  collection pages' intros grew the ⓘ explaining the two supply lines
+  (owners-say vs authorities-say, converging in ONE catalog by ASIN).
+* **Mechanical matcher PUNTED, on evidence** (scripts/
+  calibrate_class_match.py + match_one_dish.py, kept + rerunnable, cache
+  gitignored). Calibration on 578 junction-labeled pairs: separation is huge
+  (hard negs p10 1.05) BUT positives are ~exact-lookup (signals were seeded
+  from the same evidence — circular), embeddings CANNOT bridge synonyms
+  (bundt→tube 0.906; curator hand-encoded bundt/angel-food/fluted onto Tube
+  Pan instead), name-surface is median +0.75 worse than signal-surface (the
+  founding claim, quantified), and hygiene dominates (identity terms leaked
+  onto implication classes made Baking Soda rank #1 under an exclusivity
+  discount). Verdict: matching = lookup over curated trigger phrases; the
+  LLM is the implication engine.
+* **THE MATCHER IS THE LLM — `dish_class_propose` rebuilt.** Prompt now
+  carries the FULL cohort signals, the class roster WITH trigger phrases,
+  and the METHOD TEXT of the top-3 winners (prep implications live in
+  instructions the miner doesn't read; method-quoted evidence = anecdotal,
+  tier-capped T3). Output = descending ORDER OF NEED → junction `sort`;
+  re-propose REPLACES the proposed tier (approved/rejected untouched);
+  sellability fence in the rules (no produce/leavener/sugar/flour classes —
+  "identity fruit is IDENTITY, not a product we sell"); **NO
+  auto-registration** — a new-class chip mints its registry row only on
+  curator APPROVAL (set_status). Prompt template moved to system_config
+  (`dish_class_propose_prompt`, [[TOKEN]] substitution, curator-editable,
+  no restart — code constant is seed only). Apple Cake proof run: Apple
+  Corer #1 / Vegetable Peeler #2 (evidence-honest — the cohort SAYS
+  vegetable peeler), Loaf Pans arrived via method text, Applesauce proposed
+  as an unregistered chip.
+* **Registry repossessed (260 → 90).** The 2026-08-29 "sweep" was exposed by
+  its own logs as 26/247 + the B-prefix batch — 38 dishes, alphabet-biased,
+  pre-fence, auto-registering: that's where the junk came from. Deleted the
+  3 named staples (Granny Smith Apples/Baking Soda/Powdered Sugar) + 167
+  sweep-provisional unused classes; KEPT everything curator-created (39
+  spices, Tube Pan, Loaf Pans…), everything in-use, everything
+  curator-approved. 286 proposed chips now reference unregistered names —
+  valid by design (approval re-mints). 'Piec Plate' typo removed the
+  correct way: rename→'Pie Plate', then MERGED Pie Pans + Pie Pans (9- in) +
+  Pie Dishes (9 in) onto it (signals union + 'pie pan' triggers, junction
+  moved, curated collection re-pointed; 7 products, one Emile Henry dup
+  noted for a products-editor merge).
+* **docs/m2m-migration-map.md** — the junction idiom owed to TWO patients:
+  dish↔recipe (the known stamp problem) AND product↔class/collection (the
+  Piec Plate incident: class = free-text stamp, collection links half-die
+  on delete). Verdict recorded: bite the bullet on the PRODUCT side before
+  the impressions/EV layer bakes class strings into append-only logs;
+  design pending.
+
+### Open
+
+* v3 signals sweep finishing (in flight at write). Proposal runs stay
+  PER-DISH, curator-triggered — no proposal sweep, ever, without asking.
+* Products editor: merge the Emile Henry pie-dish duplicate rows.
+* In-use junk classes await their products/collections cleanup first:
+  Recycling, Food Recyclers ×2, Flour (1 kg), Bread Slicers, Apple Corers/
+  Nutmeg oddities, Meatloaf/Loaf pairs, Bundt Pan (shadowed by Tube Pan).
+* Product-side M2M migration design (class-by-key + placement junction +
+  delete preflight) — next big build, before the render/EV layer.
+* Carried: Pistou fr-line Reserve rerun; per-publisher cap; twins merges;
+  render side per 08-29; grey-list produce classes now moot (fence).

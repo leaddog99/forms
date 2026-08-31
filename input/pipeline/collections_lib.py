@@ -110,6 +110,21 @@ def clear_members(conn, collection_type, collection_key) -> int:
     return cur.rowcount
 
 
+def remove_member(conn, collection_type, collection_key, url_normalized) -> bool:
+    """Drop ONE member row (the junction only — never the recipe row it may
+    point at). A curator spot-fix for one bad ledger entry; unlike an
+    exclusion this is NOT a ban — the next harvest re-ranks the pool and may
+    seat the URL again (per-domain candidate filters are the durable ban
+    surface, when built)."""
+    ensure_collection_members_table(conn)
+    cur = conn.execute(
+        "DELETE FROM collection_members WHERE collection_type = ? "
+        "AND collection_key = ? AND url_normalized = ?",
+        (collection_type, collection_key, url_normalized))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def get_collection_top(conn, collection_type, collection_key, limit=50,
                        selected_only=False) -> list:
     """Top members of a collection, LEFT-JOINed to master_recipes on url_normalized

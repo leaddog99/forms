@@ -842,6 +842,13 @@
         const pick = m.ingested
           ? `<span class="ms-pick-done" title="already in the corpus — nothing to select" aria-label="already in the corpus" style="flex:0 0 auto;width:15px;height:15px;line-height:15px;text-align:center;color:var(--muted);font-size:11px">✓</span>`
           : `<input type="checkbox" class="ms-pick" data-url="${escapeHtml(m.url || '')}" title="select to process into master" style="flex:0 0 auto;width:15px;height:15px;accent-color:var(--accent)">`;
+        // Per-row ledger removal (delete audit 2026-08-31): spot-fix for one bad
+        // entry, junction row only — the recipe row (if ingested) is untouched,
+        // and the next harvest re-ranks the pool (candidate filters are the
+        // durable ban surface). Armed two-click like every sub-item delete.
+        const rm = `<button type="button" class="ms-rm" data-rmurl="${escapeHtml(m.url_normalized || m.url || '')}"
+          title="Remove this row from the stored list (the recipe itself is untouched; a future harvest may re-rank it)"
+          style="flex:0 0 auto;border:0;background:none;cursor:pointer;color:var(--muted);font-size:13px;padding:0 2px">✕</button>`;
         return `<li class="ed-t10-row"${m.selected ? '' : ' style="opacity:.62"'}>` +
           pick +
           `<span class="ed-t10-rank">${m.rank || i + 1}</span>${thumb}` +
@@ -854,8 +861,25 @@
             `<span class="ed-t10-stat pct"><span class="v">${da}</span><span class="l">da</span></span>` +
             `<span class="ed-t10-stat pct"><span class="v">${pa}</span><span class="l">pa</span></span>` +
           `</span>` +
+          rm +
           `</li>`;
       }).join('');
+      el.querySelectorAll('.ms-rm').forEach(b => b.addEventListener('click', async () => {
+        if (!b.dataset.armed) {
+          b.dataset.armed = '1'; b.textContent = 'sure?';
+          b.style.color = 'var(--ed-warn)'; b.style.fontSize = '11px'; b.style.fontWeight = '700';
+          setTimeout(() => { if (b.isConnected) { b.dataset.armed = ''; b.textContent = '✕';
+            b.style.color = 'var(--muted)'; b.style.fontSize = '13px'; b.style.fontWeight = ''; } }, 3000);
+          return;
+        }
+        b.disabled = true;
+        try {
+          const r = await fetch(`/domains/${encodeURIComponent(selected)}/top/member?url=${encodeURIComponent(b.dataset.rmurl)}`, { method: 'DELETE' });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+          // One junction table feeds BOTH panels — reload both so they agree.
+          loadDomainTop(selected); loadDomainCohort(selected);
+        } catch (e) { b.disabled = false; b.textContent = 'failed'; console.error(e); }
+      }));
     }
 
     // Winners list — the kept top-N (always winners-only now; the full cohort lives in

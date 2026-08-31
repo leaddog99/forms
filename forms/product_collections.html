@@ -103,7 +103,10 @@
     let selected = null, term = '', sortBy = 'name';
     let mode = 'view';            // 'view' | 'add' | 'edit'
     let detail = null;            // full collection + candidates
-    let candOrder = 'wilson';
+    // RealRank by default (curator 2026-08-31): it's THE index; unscored rows
+    // sink to the bottom naturally (NULL sorts last on DESC). Wilson stays as
+    // an option under its honest name.
+    let candOrder = 'realrank';
     let es = null;                // job SSE
 
     async function load(keep){
@@ -169,7 +172,9 @@
       try { c = await ensureDetail(); }
       catch(e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; return; }
 
-      const cands = c.candidates || [];
+      const all = c.candidates || [];
+      const cands = all.filter(x => !x.excluded);
+      const excluded = all.filter(x => x.excluded);
       const screened = cands.filter(x => x.screened);
       $('#page').innerHTML = `
         <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="back">← Collections</button></div>
@@ -206,18 +211,41 @@
             <span class="muted" style="font-weight:400">— everything the search returned, kept</span></h3>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <select id="candOrder" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.82rem">
-              <option value="wilson">Order: screen score</option>
               <option value="realrank">Order: RealRank</option>
+              <option value="wilson">Order: Wilson screen</option>
               <option value="position">Order: Amazon's own</option>
               <option value="ratings">Order: most rated</option>
               <option value="rating">Order: highest stars</option>
-            </select>
+            </select><button type="button" class="info-dot" data-info-title="The two scores"
+              data-info="RealRank is THE index — computed from the real star histogram, but only
+              for the top candidates a fetch was spent on (the shortlist). Wilson screen is the
+              cheap stage-1 gate every candidate gets: a lower bound on quality implied by the
+              star average and count, so 4.8★ from 22,000 ratings beats 4.9★ from 111. Ordering
+              by RealRank shows the scored shortlist first; unscored rows sink to the bottom
+              with their Wilson number."></button>
             <span class="muted" style="font-size:.8rem">Dimmed rows were returned but not screened.</span>
             <button type="button" class="ed-btn" id="materializeBtn" style="margin-left:auto"
               title="Create/update a catalog product record for every medaled candidate (find-or-create by ASIN, then brand+title — no duplicates; re-running updates)">⬇ Medalists → catalog</button>
             <span class="muted" id="matHint" style="font-size:.8rem"></span>
           </div>
           ${cands.length ? cands.map(candRow).join('') : '<p class="muted">— no run yet —</p>'}
+          ${excluded.length ? `
+            <h3 class="ed-block-label" style="margin-top:14px">Excluded
+              <span class="muted" style="font-weight:400">— removed by you, stays out</span><button
+                type="button" class="info-dot" data-info-title="Excluded candidates"
+                data-info="Removing a candidate is a persistent exclusion, not a one-off delete:
+                the search would return the same ASIN on every refresh, so the row is kept,
+                flagged, and skipped by refresh, screening, medals and materialize until you
+                restore it. Excluding cleared any medal it held."></button></h3>
+            ${excluded.map(x => `
+              <div class="cd dim">
+                <div style="width:44px"></div>
+                <div class="cd-main">
+                  <div class="cd-t">${escapeHtml(x.title||x.asin)}</div>
+                  <div class="cd-meta"><span class="star">★</span>${x.rating ?? '—'} · ${(x.ratings_total||0).toLocaleString()} ratings${x.link?` · <a href="${escapeHtml(x.link)}" target="_blank" rel="noopener">open ↗</a>`:''}</div>
+                </div>
+                <div class="cd-sc"><button type="button" class="ed-btn" data-restore="${escapeHtml(x.asin)}" style="padding:2px 8px;font-size:.74rem">Restore</button></div>
+              </div>`).join('')}` : ''}
         </section>`;
 
       $('#candOrder').value = candOrder;
@@ -247,10 +275,43 @@
       });
       $('#page').querySelectorAll('[data-medal]').forEach(b => b.addEventListener('click', async () => {
         const { asin, medal } = b.dataset;
-        await fetch(`/product-collections/${encodeURIComponent(selected)}/medal`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ asin, medal }) });
-        detail = null; await renderDetail();
+        // Surface failure (2026-08-31): this used to ignore the response, so a
+        // failed medal re-rendered silently and read as "the button does nothing".
+        try {
+          const r = await fetch(`/product-collections/${encodeURIComponent(selected)}/medal`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ asin, medal }) });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'HTTP ' + r.status);
+          detail = null; await renderDetail();
+          // Say it saved — a repaint alone reads as nothing (chip-save lesson).
+          const st = $('#jobStatus');
+          if (st) st.textContent = medal ? `✓ ${medal} — saved` : '✓ medal cleared';
+        } catch (e) {
+          const st = $('#jobStatus'); if (st) st.textContent = `medal failed: ${e.message || e}`;
+          console.error(e);
+        }
+      }));
+      // Armed two-click, the sub-item standard: first click asks, second commits.
+      $('#page').querySelectorAll('[data-exclude]').forEach(b => b.addEventListener('click', async () => {
+        if (!b.dataset.armed) {
+          b.dataset.armed = '1'; b.textContent = 'sure?'; b.style.fontWeight = '800';
+          setTimeout(() => { if (b.isConnected) { b.dataset.armed=''; b.textContent='remove'; b.style.fontWeight=''; } }, 3000);
+          return;
+        }
+        b.disabled = true;
+        try {
+          const r = await fetch(`/product-collections/${encodeURIComponent(selected)}/candidates/${encodeURIComponent(b.dataset.exclude)}`, { method:'DELETE' });
+          if (!r.ok) throw new Error((await r.json()).detail || 'HTTP '+r.status);
+          detail = null; await renderDetail();
+        } catch(e){ b.disabled = false; b.textContent = 'failed'; console.error(e); }
+      }));
+      $('#page').querySelectorAll('[data-restore]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          const r = await fetch(`/product-collections/${encodeURIComponent(selected)}/candidates/${encodeURIComponent(b.dataset.restore)}/restore`, { method:'POST' });
+          if (!r.ok) throw new Error((await r.json()).detail || 'HTTP '+r.status);
+          detail = null; await renderDetail();
+        } catch(e){ b.disabled = false; b.textContent = 'failed'; console.error(e); }
       }));
       wireDelete();
     }
@@ -259,10 +320,19 @@
       const pol = (x.polarization||'').toLowerCase();
       // Medals are only offered on SCREENED candidates: a gold awarded off an unscreened
       // average would be exactly the judgement stage 2 exists to prevent.
+      // Clear-medal renders as '–': the earlier '×' beside G/S/B read as
+      // "remove this row" while removal didn't exist (delete audit 2026-08-31).
+      // The AWARDED medal paints its button in the medal palette — a bold-only
+      // state at .68rem was invisible and read as "the button does nothing"
+      // (curator 2026-08-31; same lesson as the dish chips' quiet save).
+      const MPAL = { gold: 'background:#fbf1d4;color:#96700c;border-color:#d9b44a',
+                     silver: 'background:#eceff1;color:#5c6b73;border-color:#9fb0b8',
+                     bronze: 'background:#f6e3d6;color:#96552a;border-color:#c98d5f' };
       const medals = !x.screened ? '' : ['gold','silver','bronze',''].map(m =>
         `<button type="button" class="ed-btn" data-medal="${m}" data-asin="${escapeHtml(x.asin)}"
-           title="${m||'clear'}" style="padding:1px 6px;font-size:.68rem${x.medal===m?';font-weight:800':''}"
-           >${m ? m[0].toUpperCase() : '×'}</button>`).join(' ');
+           title="${m||'clear medal'}" style="padding:1px 6px;font-size:.68rem${
+             x.medal===m && m ? ';font-weight:800;'+MPAL[m] : ''}"
+           >${m ? m[0].toUpperCase() : '–'}</button>`).join(' ');
       return `
         <div class="cd ${x.screened?'':'dim'}">
           ${x.image?`<img src="${escapeHtml(x.image)}" alt="" onerror="this.style.visibility='hidden'">`:'<div style="width:44px"></div>'}
@@ -281,6 +351,9 @@
             ${x.realrank_score!=null?`<b>${x.realrank_score}</b><div class="muted" style="font-size:.7rem">RealRank</div>`
                                     :`<b class="muted">${x.wilson_score ?? '—'}</b><div class="muted" style="font-size:.7rem">screen</div>`}
             ${medals?`<div style="margin-top:4px">${medals}</div>`:''}
+            <div style="margin-top:4px"><button type="button" class="ed-btn" data-exclude="${escapeHtml(x.asin)}"
+              title="Remove from this collection — stays out across refreshes; restorable below"
+              style="padding:1px 8px;font-size:.68rem;color:#b23b3b">remove</button></div>
           </div>
         </div>`;
     }
@@ -316,7 +389,17 @@
         <p class="muted">A collection is a saved Amazon search. Build the search in Amazon
           until the results are right, paste the URL here, and Refresh keeps every ASIN it
           returns — screening the strongest against their real star histograms. Pick one (☰)
-          or ＋ to add.</p>`;
+          or ＋ to add.<button type="button" class="info-dot"
+          data-info-title="Search vs Curated — the two supply lines"
+          data-info="This page asks WHAT THOUSANDS OF OWNERS SAY: an Amazon search returns a
+          cohort, a free Wilson screen ranks it, the top keep-N get real star histograms and a
+          RealRank score, and YOU judge with medals. Its sibling, Curated collections, asks WHAT
+          THE NAMED AUTHORITIES SAY: it reads the expert reviews for a product class, ranks with
+          written reasoning, and verifies each pick against Amazon. The two never feed each
+          other — they converge in the ONE product catalog (find-or-create by ASIN, then
+          brand+title), so a product picked by both carries both kinds of evidence on one
+          record. Use Search for classes no authority covers (egg separators); use Curated
+          where the reviewers have real coverage (Dutch ovens)."></button></p>`;
     }
 
     function renderForm(c){

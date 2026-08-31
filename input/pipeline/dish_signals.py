@@ -19,6 +19,21 @@ Cohort = master rows whose dish_effective resolves to the dish (the
 resolution ladder, all three rungs — a loose nearest is still evidence).
 Stored on dishes.cohort_signals per the persist-derived rule (value + method
 + inputs, re-stamped when recomputed; never compute-on-read).
+
+v2 adds nested-term subsumption (the closed-pattern rule from terminology
+extraction, cf. C-value): a term whose cohort support is (nearly) fully
+explained by a longer candidate containing it is a fragment, not a signal —
+"granny smith apples" retires "smith", "granny", "granny smith" and
+"smith apples"; "apples" survives on its independent occurrences. Trigrams
+are mined so 3-word phrases exist to subsume their cross-boundary bigrams.
+
+v3 adds attested plural folding: "apple"/"apples" are one concept whose
+support was split across two terms (misranking both, and hiding
+"granny smith apple" below min_df). A plural token folds to its singular
+ONLY when the singular is itself observed in the corpus (>=2), so
+molasses/couscous/hummus never manufacture garbage stems. Folding runs on
+BOTH the cohort and the corpus-baseline text, keeping lift honest; the
+displayed term uses the most frequent surface form.
 """
 from __future__ import annotations
 
@@ -28,7 +43,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-METHOD = "df-lift-v1"
+METHOD = "df-lift-v3"
 
 # Quantity/unit/prep noise stripped from ingredient lines before term mining.
 _NOISE = re.compile(
@@ -58,15 +73,92 @@ def _clean(line: str) -> str:
     return _WS.sub(" ", s).strip()
 
 
-def _terms(cleaned: str) -> set:
-    toks = [t for t in cleaned.split() if len(t) > 2]
-    out = set()
-    for t in toks:
-        if t not in _STOP:
-            out.add(t)
-    for a, b in zip(toks, toks[1:]):
-        out.add(f"{a} {b}")
+# Function words that make an n-gram boundary ill-formed ("apples peeled
+# and", "cored and"). Interior is fine. Distinct from _STOP, which also
+# holds CONTENT commodities (cream, sugar) that n-grams must keep.
+_FUNC = {"and", "the", "with", "for", "into", "onto", "from", "that",
+         "this", "then", "your", "you", "such", "like", "very", "few",
+         "bit", "them", "each", "until", "about", "over", "under", "not"}
+
+
+def _terms(cleaned: str, fold: dict | None = None) -> dict:
+    """{folded term: surface form as written} for all well-formed
+    1..4-grams. 4-grams exist ONLY to feed the subsumption check
+    (compute_signals filters them out of candidates). Folding is
+    per-token so positions align and each lemma remembers the exact
+    phrase it came from ("egg yolk" -> "egg yolks", never a
+    token-by-token Frankenstein like "eggs yolks")."""
+    fold = fold or {}
+    ot = [t for t in cleaned.split() if len(t) > 2]
+    ft = [fold.get(t, t) for t in ot]
+    out: dict = {}
+    for i, t in enumerate(ft):
+        if t not in _STOP and t not in _FUNC:
+            out.setdefault(t, ot[i])
+    for n in (2, 3, 4):
+        for i in range(len(ft) - n + 1):
+            gram = ft[i:i + n]
+            if gram[0] in _FUNC or gram[-1] in _FUNC:
+                continue
+            out.setdefault(" ".join(gram), " ".join(ot[i:i + n]))
     return out
+
+
+def _prune_nested(cdf: Counter, cand: set) -> set:
+    """Approximately-closed filter: drop a candidate whose cohort df is
+    (nearly) matched by a longer mined phrase containing it — the fragment
+    carries no independent evidence. Supers come from the FULL df table
+    (sub-min_df phrases still subsume: "vegetable or canola oil" at df 2
+    retires "vegetable canola" at df 3... within tolerance). Tolerance
+    max(1, 10% of df) so one stray standalone doc doesn't resurrect
+    "smith"."""
+    by_word: defaultdict = defaultdict(set)
+    for s in cdf:
+        if " " in s:
+            for w in set(s.split()):
+                by_word[w].add(s)
+    kept = set()
+    for t in cand:
+        pt = f" {t} "
+        best = 0
+        for s in by_word.get(t.split()[0], ()):
+            if len(s) > len(t) and pt in f" {s} " and cdf[s] > best:
+                best = cdf[s]
+        if best and cdf[t] - best <= max(1, 0.1 * cdf[t]):
+            continue
+        kept.add(t)
+    return kept
+
+
+# Corpus-wide token vocabulary -> fold map, cached for the process (the
+# sweep stamps ~250 dishes in one process; key = master row count so a
+# grown corpus invalidates).
+_FOLD_CACHE: dict = {"key": None, "fold": {}}
+
+
+def _corpus_fold(conn: sqlite3.Connection) -> dict:
+    key = conn.execute("SELECT COUNT(*) FROM master_recipes").fetchone()[0]
+    if _FOLD_CACHE["key"] == key:
+        return _FOLD_CACHE["fold"]
+    vocab: Counter = Counter()
+    for (dj,) in conn.execute("SELECT data FROM master_recipes"):
+        lines, _ = _row_texts(dj)
+        for ln in lines:
+            vocab.update(ln.split())
+    fold: dict = {}
+    for t in vocab:
+        if len(t) <= 3 or not t.endswith("s") or t.endswith(("ss", "us", "is")):
+            continue
+        if t.endswith("ies"):
+            cands = [t[:-3] + "y"]
+        else:
+            cands = [t[:-1]] + ([t[:-2]] if t.endswith("es") else [])
+        for c in cands:
+            if vocab.get(c, 0) >= 2:
+                fold[t] = c
+                break
+    _FOLD_CACHE.update(key=key, fold=fold)
+    return fold
 
 
 def _row_texts(data_json: str) -> tuple[list, list]:
@@ -92,20 +184,27 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
     if not cn:
         return {"method": METHOD, "computed_at": _now(), "cohort_n": 0}
 
-    ing_df: Counter = Counter()          # term -> cohort doc frequency
+    fold = _corpus_fold(conn)
+
+    def _fold_line(cleaned: str) -> str:
+        return " ".join(fold.get(t, t) for t in cleaned.split())
+
+    ing_df: Counter = Counter()          # folded term -> cohort doc frequency
     eq_df: Counter = Counter()
-    examples: defaultdict = defaultdict(Counter)   # term -> cleaned line -> count
+    examples: defaultdict = defaultdict(Counter)   # folded term -> original cleaned line
+    term_surface: defaultdict = defaultdict(Counter)   # folded term -> as-written form
     prov_eth: Counter = Counter()
     prov_reg: Counter = Counter()
     for (dj,) in cohort:
         lines, eq_names = _row_texts(dj)
         seen = set()
         for ln in lines:
-            for t in _terms(ln):
+            for t, surf in _terms(ln, fold).items():
                 if t not in seen:
                     ing_df[t] += 1
                     seen.add(t)
                 examples[t][ln] += 1
+                term_surface[t][surf] += 1
         for name in set(eq_names):
             eq_df[name] += 1
         try:
@@ -118,7 +217,13 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
         except Exception:
             pass
 
-    ing_cand = {t for t, n in ing_df.items() if n >= min_df}
+    ing_cand = _prune_nested(
+        ing_df, {t for t, n in ing_df.items()
+                 if n >= min_df and t.count(" ") <= 2})
+    # NOTE (curator, 2026-08-31, same day it was tried): NO sellability
+    # filtering here — signals are the dish's full measurement, and staple
+    # terms are still identity/context. Sellability is enforced where classes
+    # are PROPOSED (dish_class_proposals prompt), never in the measurement.
     eq_cand = {t for t, n in eq_df.items() if n >= min_df}
 
     # Authority profile of the cohort — free (generated columns, one fetch).
@@ -152,7 +257,7 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
     for (dj,) in conn.execute("SELECT data FROM master_recipes"):
         gn += 1
         lines, eq_names = _row_texts(dj)
-        text = " " + " ".join(lines) + " "
+        text = " " + " ".join(_fold_line(ln) for ln in lines) + " "
         for t in ing_cand:
             if f" {t} " in text or text.strip().startswith(t) or text.strip().endswith(t):
                 g_ing[t] += 1
@@ -183,6 +288,13 @@ def compute_signals(conn: sqlite3.Connection, dish_name: str, *,
         if with_examples:
             for r in rows:
                 r["examples"] = [ln for ln, _ in examples[r["term"]].most_common(max_examples)]
+                # Display face last (examples are keyed by the lemma):
+                # the cohort's most-written surface form of the WHOLE term
+                # ("egg yolk" shows as "egg yolks" because that is what the
+                # lines say — never a per-token pick like "eggs yolks").
+                sc = term_surface.get(r["term"])
+                if sc:
+                    r["term"] = sc.most_common(1)[0][0]
         return rows
 
     return {

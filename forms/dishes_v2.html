@@ -791,7 +791,11 @@
         const acts = r.status === 'proposed'
           ? `<button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="approved" style="padding:2px 10px">✓ Approve</button>
              <button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="rejected" style="padding:2px 10px">✕ Reject</button>`
-          : `<button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="proposed" style="padding:2px 10px" title="Back to proposed">↩ ${r.status === 'approved' ? 'Revoke' : 'Restore'}</button>`;
+          : `<button type="button" class="ed-btn dpc-act" data-cls="${escapeHtml(r.class_name)}" data-status="proposed" style="padding:2px 10px" title="Back to proposed">↩ ${r.status === 'approved' ? 'Revoke' : 'Restore'}</button>${
+             r.status === 'rejected'
+               ? `<button type="button" class="ed-btn dpc-forget" data-cls="${escapeHtml(r.class_name)}" style="padding:2px 10px;color:#b23b3b"
+                    title="Delete this rejection entirely — declutters the list, but the next ✨ Propose may seat the class again">🗑</button>`
+               : ''}`;
         const tierSel = `<select class="dpc-tier" data-cls="${escapeHtml(r.class_name)}" style="padding:2px 4px;font:inherit;font-size:.82em" ${dim ? 'disabled' : ''}>
           ${[1,2,3].map(t => `<option value="${t}" ${r.tier === t ? 'selected' : ''}>T${t}</option>`).join('')}</select>`;
         return `<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-left:${border};margin-bottom:8px;background:var(--card,#fff);border-radius:0 8px 8px 0;${dim ? 'opacity:.55' : ''}">
@@ -842,6 +846,23 @@
       body.querySelectorAll('.dpc-tier').forEach(s => s.addEventListener('change', () =>
         _update({ class_name: s.dataset.cls, tier: parseInt(s.value, 10) },
                 `✓ ${s.dataset.cls} → T${s.value} — saved`)));
+      // Armed two-click, the sub-item standard.
+      body.querySelectorAll('.dpc-forget').forEach(b => b.addEventListener('click', async () => {
+        if (!b.dataset.armed) {
+          b.dataset.armed = '1'; b.textContent = 'sure?'; b.style.fontWeight = '800';
+          setTimeout(() => { if (b.isConnected) { b.dataset.armed = ''; b.textContent = '🗑'; b.style.fontWeight = ''; } }, 3000);
+          return;
+        }
+        b.disabled = true;
+        const r = await fetch(`/dishes/${encodeURIComponent(name)}/class-proposals?class_name=${encodeURIComponent(b.dataset.cls)}`, { method: 'DELETE' });
+        if (r.ok) flash(`✓ ${b.dataset.cls} rejection deleted`);
+        else {
+          const d = await r.json().catch(() => ({}));
+          flash(`✗ not deleted: ${d.detail || 'HTTP ' + r.status}` +
+                (r.status === 401 || r.status === 403 ? ' — unlock admin from the header' : ''));
+        }
+        loadClassProposals(name);
+      }));
     }
 
     async function runProposals(name){
@@ -957,10 +978,18 @@
         const ouOf = (x) => (typeof x.ou === 'number' ? x.ou : -999);
         const qual = (x) => (bar != null && typeof x.ou === 'number' && x.ou >= bar);
         rejects.sort((a,b) => (qual(b)-qual(a)) || (ouOf(b)-ouOf(a)));
+        // Triage select per row (delete audit 2026-08-31): the PATCH endpoint for
+        // reject status existed with no UI caller — the list rendered read-only.
+        // 'new' = actionable; the marked statuses record the curator's verdict and
+        // sort below fresh rows on reload.
+        const STATUSES = ['new','recovered','skipped','unreachable'];
         wrap.innerHTML = rejects.map(x => {
           const q = qual(x);
           const antibot = /anti-bot|fetch-fail/i.test(x.reason || '');
           const host = hostOf(x.url);
+          const sel = `<select class="rej-status" data-id="${x.id}" title="${escapeHtml(x.notes || 'triage this reject')}"
+              style="flex:0 0 auto;padding:1px 2px;font:inherit;font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:5px;background:transparent">
+            ${STATUSES.map(s => `<option value="${s}" ${ (x.status||'new')===s?'selected':'' }>${s}</option>`).join('')}</select>`;
           return `<li class="ed-t10-row${q ? ' row-flag-near' : ''}">
             <span class="ed-t10-main">
               <span class="ed-t10-name"><a href="${escapeHtml(x.url)}" target="_blank" rel="noopener">${escapeHtml(host)}</a>${q?' <span class="ed-t10-grade" title="OU beats the cut bar">would’ve qualified</span>':''}${antibot?' <span class="ed-t10-grade" title="likely anti-bot block">anti-bot?</span>':''}</span>
@@ -971,8 +1000,22 @@
               <span class="ed-t10-stat pct"><span class="v">${x.da ?? '—'}</span><span class="l">da</span></span>
               <span class="ed-t10-stat pct"><span class="v">${x.pa ?? '—'}</span><span class="l">pa</span></span>
             </span>
+            ${sel}
           </li>`;
         }).join('');
+        wrap.querySelectorAll('.rej-status').forEach(s => s.addEventListener('change', async () => {
+          s.disabled = true;
+          try {
+            const r = await fetch(`/dishes/${encodeURIComponent(name)}/rejects/${s.dataset.id}`, {
+              method: 'PATCH', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ status: s.value }) });
+            if (!r.ok) {
+              const d = await r.json().catch(() => ({}));
+              throw new Error(d.detail || 'HTTP ' + r.status);
+            }
+            s.disabled = false;
+          } catch(e){ s.disabled = false; s.style.borderColor = 'var(--ed-warn)'; s.title = String(e.message||e); }
+        }));
       } catch(e){ wrap.innerHTML = `<li class="ed-empty-fit">${escapeHtml(String(e.message||e))}</li>`; }
     }
 
