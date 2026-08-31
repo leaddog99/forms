@@ -8336,6 +8336,7 @@ jobs_lib.register_handler("dish_class_propose", _handle_dish_class_propose_job)
 def _class_usage(conn, name: str) -> dict:
     """Everything that references a class name — the refcounts every
     destructive action must show first."""
+    conn.row_factory = sqlite3.Row    # callers vary; dict(r) needs Row here
     dishes = [dict(r) for r in conn.execute(
         "SELECT dish_name, status, tier FROM dish_product_classes "
         "WHERE class_name = ? ORDER BY status, dish_name", (name,))]
@@ -8351,7 +8352,9 @@ def _class_usage(conn, name: str) -> dict:
 @app.get("/product-classes")
 def product_classes_list_endpoint(request: Request):
     _require_perm(request, "edit_master")
+    from intake.products import class_registry as _cr
     with _db() as conn:
+        _cr.ensure_registry(conn)
         conn.row_factory = sqlite3.Row
         rows = [dict(r) for r in conn.execute(
             "SELECT name, family, category, created_at, updated_at, "
@@ -8412,12 +8415,16 @@ def product_class_detail_endpoint(request: Request, name: str):
     with _db() as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT name, family, category, criteria, buying_guide, "
+            "SELECT name, family, category, criteria, buying_guide, signals, "
             "created_at, updated_at, embedding IS NOT NULL AS embedded "
             "FROM product_classes WHERE name = ?", (name,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Class not found")
         out = dict(row)
+        try:
+            out["signals"] = json.loads(out.get("signals") or "[]")
+        except Exception:
+            out["signals"] = []
         out["usage"] = _class_usage(conn, name)
     return out
 
@@ -8435,6 +8442,23 @@ def product_class_patch_endpoint(request: Request, name: str, payload: dict = Bo
         sets.append("family = ?"); params.append(fam)
     if "category" in payload:
         sets.append("category = ?"); params.append((payload["category"] or "").strip())
+    if "signals" in payload:
+        raw = payload["signals"]
+        if raw is None:
+            items = []
+        elif isinstance(raw, str):
+            items = [p.strip() for chunk in raw.splitlines() for p in chunk.split(",")]
+        elif isinstance(raw, list):
+            items = [str(p).strip() for p in raw]
+        else:
+            raise HTTPException(status_code=400,
+                                detail="signals must be a list, a string, or null")
+        seen, cleaned = set(), []
+        for s in items:
+            if s and s.lower() not in seen:
+                seen.add(s.lower()); cleaned.append(s)
+        sets.append("signals = ?")
+        params.append(json.dumps(cleaned, ensure_ascii=False) if cleaned else None)
     if not sets:
         raise HTTPException(status_code=400, detail="Nothing to update")
     sets.append("updated_at = ?"); params.append(datetime.now(timezone.utc).isoformat())

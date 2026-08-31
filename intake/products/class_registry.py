@@ -44,6 +44,15 @@ def ensure_registry(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE product_classes ADD COLUMN family TEXT NOT NULL DEFAULT 'equipment'")
     if "embedding_text" not in cols:
         conn.execute("ALTER TABLE product_classes ADD COLUMN embedding_text TEXT")
+    if "signals" not in cols:
+        # Curator-editable TRIGGER PHRASES (JSON array) — what a cohort signal
+        # can look like when it means this class ("peeled apples" -> Apple
+        # Peeler; "egg yolks" -> Egg Separators). The class NAME embeds poorly
+        # against ingredient phrasing (curator's insight, 2026-08-31: 'Apple
+        # Peeler' is nowhere near 'granny smith'); these phrases are the
+        # matchable surface, term-to-term. Encoding an implication here ONCE
+        # makes it a free distance match forever after.
+        conn.execute("ALTER TABLE product_classes ADD COLUMN signals TEXT")
     conn.commit()
 
 

@@ -16,7 +16,7 @@
   <style>
     .pc-form .ed-field { margin-bottom: 10px; }
     .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
-    .pc-form input, .pc-form select { width: 100%; padding: 8px 10px;
+    .pc-form input, .pc-form select, .pc-form textarea { width: 100%; padding: 8px 10px;
       border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
     .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
@@ -201,6 +201,10 @@
                   `<a href="/forms/products.html?product=${encodeURIComponent(p.product_id)}">${escapeHtml(p.name)} ↗</a>`).join(' · ')
                 + (u.products.length > 6 ? ` <span class="muted">+${u.products.length - 6} more</span>` : '')
               : '<span class="muted">none</span>'}</div>
+            <div class="k">Signals<button type="button" class="info-dot" data-info-title="Class signals" data-info="The phrases a dish&#39;s measured cohort signals can look like when they mean THIS class — &#39;peeled apples&#39; or &#39;granny smith apples&#39; for an Apple Peeler, &#39;egg yolks&#39; for Egg Separators. The class NAME alone embeds poorly against ingredient phrasing; these are the matchable surface, matched term-to-term. Encode an implication here once and it&#39;s recognized mechanically ever after. Edit them under Edit.">i</button></div>
+            <div>${(c.signals || []).length
+              ? c.signals.map(s => `<code style="margin-right:6px">${escapeHtml(s)}</code>`).join(' ')
+              : '<span class="muted">none — the class matches by name only</span>'}</div>
             <div class="k">Dishes</div>
             <div>${(u.dishes || []).length
               ? `<ul class="use-list">${u.dishes.map(dishLine).join('')}</ul>`
@@ -242,6 +246,8 @@
             <div class="ed-field"><label for="f_category">Category <span class="muted" style="font-weight:400;text-transform:none">(free text)</span></label>
               <input id="f_category" type="text" value="${escapeHtml(c.category || '')}"></div>
           </div>
+          <div class="ed-field"><label for="f_signals">Signals <span class="muted" style="font-weight:400;text-transform:none">(one per line or comma-separated — the phrases that mean this class in a dish's measured signals)</span></label>
+            <textarea id="f_signals" rows="4" placeholder="peeled apples&#10;granny smith apples&#10;cored apples">${escapeHtml((c.signals || []).join(String.fromCharCode(10)))}</textarea></div>
           <div class="pc-form-actions">
             <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
             <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
@@ -253,7 +259,7 @@
         try {
           const r = await fetch(`/product-classes/${encodeURIComponent(c.name)}`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ family: $('#f_family').value, category: $('#f_category').value.trim() })});
+            body: JSON.stringify({ family: $('#f_family').value, category: $('#f_category').value.trim(), signals: $('#f_signals').value })});
           const d = await r.json().catch(() => ({}));
           if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
           flash && flash('Saved');
