@@ -7442,3 +7442,37 @@ materialize/propose all run out-of-process; page changes are reload-only.
 * Carried: product-side M2M design; in-use junk classes; per-publisher cap;
   Pistou Reserve; twins; render/EV layer (now with Amazon-first + /go/
   routing groundwork laid).
+
+## Session log — 2026-08-31 (evening) — store ≠ network ≠ program, and research before schema
+
+No code since 18481c3 — this entry records a DECISION and work in flight.
+
+* **Curator caught the conflation in the affiliate seeding:** the 13 Shopify
+  prospects were seeded as PROGRAM rows, but a store (Made In: hosts,
+  platform, contact) is not a monetization relationship (Made In × Impact:
+  publisher id, rate, link template). Flat `affiliate_programs` would
+  repeat network credentials per merchant and can't express one merchant
+  reachable via two relationships. Agreed target: THREE entities — stores
+  (absorbing retailer_hosts), networks (our accounts), programs (the join,
+  time/status-carrying) — with /go/ resolving click host → store → best
+  ACTIVE program (priority), which is the fullest expression of the
+  codes-minted-at-click rule. Timing argument accepted: the subsystem is
+  two days old (1 active program, no click history) — restructure is
+  cheapest NOW, same logic as the M2M map.
+* **Research BEFORE schema (curator's call, feedback_research_before_design):**
+  three parallel web-research agents in flight — (1) affiliate link-
+  management platforms' data models (Affilimate/Trackonomics/Skimlinks/
+  Sovrn/Geniuslink APIs), SubID architecture, conversion-reversal
+  reconciliation, link rot, Amazon ToS constraints; (2) metasearch
+  monetization architecture (Kayak/Trivago/TripAdvisor/Skyscanner: partner
+  layers, click-out tracking, what transfers to small scale); (3) content-
+  commerce publishers (Wirecutter/Dotdash/BuzzFeed: offers-service pattern,
+  editorial/monetization firewall, revenue-per-page attribution). Findings
+  synthesize into docs/affiliate-programs-and-clicks.md as the proposed
+  schema for curator sign-off BEFORE migration code.
+
+### Open
+
+* Synthesize research -> schema design -> curator sign-off -> build the
+  three-entity migration (stores/networks/programs + /go/ + editor).
+* Everything carried from the two earlier 2026-08-31 entries.
