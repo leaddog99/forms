@@ -33,6 +33,14 @@
     .pill-w.bad { color: #b4552f; border-color: #f0d8cb; background: #fbefe8; }
     .kv { display: grid; grid-template-columns: 170px 1fr; gap: 5px 14px; font-size: .88rem; }
     .kv .k { color: var(--ed-ink-soft); }
+    /* Phone: the shell's drawer handles the sidebar; the page's own grids
+       must collapse too or fields shrink to slivers (curator 2026-08-31). */
+    @media (max-width: 640px) {
+      .pc-row2, .pc-row3 { grid-template-columns: 1fr; }
+      .kv { grid-template-columns: 1fr; gap: 1px 0; }
+      .kv .k { margin-top: 7px; font-size: .74rem; }
+      .kv > div { overflow-wrap: anywhere; }
+    }
   </style>
 </head>
 <body>
@@ -54,6 +62,7 @@
           </button>
         </div>
       </div>
+      <div id="secTabs" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 8px"></div>
       <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
     </aside>
 
@@ -79,6 +88,11 @@
     // STORES are merchants (a store with no program = a prospect),
     // NETWORKS carry our connections + subid mechanics.
     let rows = [], stores = [], networks = [], selected = null, selType = 'program', mode = 'view';
+    // Sidebar TABS (curator 2026-08-31, "accordions… or tabs" — tabs won:
+    // one clean list at a time, no invisible collapsed state). The active
+    // tab sticks per browser; selecting across types switches tabs.
+    let activeSec = 'program';
+    try { activeSec = localStorage.getItem('affActiveSec') || 'program'; } catch {}
 
     function renderList(){
       $('#count').textContent = `(${rows.length}·${stores.length})`;
@@ -100,17 +114,48 @@
           <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(n.display_name || n.name)}</span></div>
           <div class="ed-item-meta">${n.subid_param?`subid: ${escapeHtml(n.subid_param)} ≤${n.subid_max}`:'no subid param'} · ${(n.connections||[]).length} connection${(n.connections||[]).length===1?'':'s'}</div>
         </li>`).join('');
-      const head = (label) => `<li class="ed-empty" style="padding:8px 12px 2px;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase">${label}</li>`;
-      $('#list').innerHTML =
-        head(`Programs (${rows.length})`) + (progLis || '<li class="ed-empty">none — press +</li>')
-        + head(`Stores (${stores.length})`) + (storeLis || '<li class="ed-empty">none</li>')
-        + head(`Networks (${networks.length})`) + netLis;
+      if (selected) activeSec = selType;    // a cross-type jump switches tabs
+      const tabs = [
+        ['program', `Programs (${rows.length})`],
+        ['network', `Networks (${networks.length})`],
+        ['store', `Stores (${stores.length})`],
+      ];
+      $('#secTabs').innerHTML = tabs.map(([k, label]) => `
+        <button type="button" class="ed-btn" data-sec="${k}" style="padding:3px 9px;font-size:.72rem;border-radius:999px;${
+          k===activeSec ? 'font-weight:800;border-color:var(--accent,#0f6e5c);color:var(--accent,#0f6e5c)' : 'color:var(--ed-ink-soft)'}">${label}</button>`).join('');
+      $('#secTabs').querySelectorAll('[data-sec]').forEach(b =>
+        b.addEventListener('click', () => {
+          activeSec = b.dataset.sec;
+          try { localStorage.setItem('affActiveSec', activeSec); } catch {}
+          selected = null; mode = 'view'; renderList(); renderDetail();
+        }));
+      const body = { program: progLis || '<li class="ed-empty">none — press +</li>',
+                     network: netLis || '<li class="ed-empty">none</li>',
+                     store: storeLis || '<li class="ed-empty">none</li>' }[activeSec];
+      $('#list').innerHTML = body;
       $('#list').querySelectorAll('li[data-name]').forEach(li =>
         li.addEventListener('click', () => { selected = li.dataset.name; selType = li.dataset.type; mode='view'; renderList(); renderDetail(); nav.afterSelect(); }));
     }
 
     async function renderDetail(){
       const page = $('#page');
+      if (mode === 'add-choose'){
+        page.innerHTML = `
+          <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Add</span></div>
+          <h1 class="ed-title">Add what?</h1>
+          <p class="ed-submeta" style="max-width:60ch">A <b>store</b> is a merchant (hosts, platform) — a
+            prospect until it has a program. A <b>program</b> is a monetizing relationship: this store
+            through one of our network connections. Networks are the fixed rails — add your account on
+            one from its own page.</p>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button type="button" class="ed-btn primary" id="addProg">＋ Program</button>
+            <button type="button" class="ed-btn" id="addStore">＋ Store</button>
+          </div>`;
+        $('#addProg').addEventListener('click', () => { mode='add'; renderDetail(); });
+        $('#addStore').addEventListener('click', () => { mode='add-store'; renderDetail(); });
+        return;
+      }
+      if (mode === 'add-store') return renderStoreCreate();
       if (mode === 'add') return renderForm(null);
       if (selected && selType === 'store') return renderStore();
       if (selected && selType === 'network') return renderNetwork();
@@ -149,6 +194,12 @@
             <div class="k">Campaign id</div><div>${escapeHtml(p.campaign_id||'—')}</div>
             <div class="k">Account ref</div><div>${escapeHtml(p.account_ref||'—')}</div>
             <div class="k">Dashboard</div><div>${p.dashboard_url?`<a href="${escapeHtml(p.dashboard_url)}" target="_blank" rel="noopener">${escapeHtml(p.dashboard_url)}</a>`:'—'}</div>
+            <div class="k">Their program page</div><div>${(() => {
+              const st = stores.find(x => x.name === p.store);
+              return st && st.affiliate_program_url
+                ? `<a href="${escapeHtml(st.affiliate_program_url)}" target="_blank" rel="noopener">${escapeHtml(st.affiliate_program_url)}</a>`
+                : '<span class="muted">— set on the store</span>';
+            })()}</div>
             <div class="k">Contact</div><div>${escapeHtml(p.contact||'—')}</div>
           </div></section>
         <section class="ed-block"><h3 class="ed-block-label">Link building</h3>
@@ -193,8 +244,13 @@
             </div>
             <div class="pc-row2">
               <div class="ed-field"><label>Platform</label><select id="s_platform">${['','shopify','marketplace','custom'].map(o=>`<option value="${o}" ${(s.platform||'')===o?'selected':''}>${o||'— unknown —'}</option>`).join('')}</select></div>
-              <div class="ed-field"><label>Contact</label><input id="s_contact" value="${escapeHtml(s.contact||'')}"></div>
+              <div class="ed-field"><label>Contact (person/team)</label><input id="s_contact" value="${escapeHtml(s.contact||'')}"></div>
             </div>
+            <div class="pc-row2">
+              <div class="ed-field"><label>Email</label><input id="s_email" type="email" value="${escapeHtml(s.email||'')}"></div>
+              <div class="ed-field"><label>Phone</label><input id="s_phone" value="${escapeHtml(s.phone||'')}"></div>
+            </div>
+            ${urlField('s_progurl', 'Their affiliate program URL (signup/terms page)', s.affiliate_program_url||'', { ph: 'https://…/affiliate-program' })}
             <div class="ed-field"><label>Hosts (one per line)</label><textarea id="s_hosts" rows="3">${escapeHtml((s.hosts||[]).join('\n'))}</textarea></div>
             <div class="ed-field"><label>Notes</label><textarea id="s_notes" rows="4">${escapeHtml(s.notes||'')}</textarea></div>
             <div class="pc-form-actions">
@@ -207,6 +263,8 @@
         $('#sSave').addEventListener('click', async () => {
           const body = { display_name: $('#s_display').value.trim(), merchant: $('#s_merchant').value.trim(),
             platform: $('#s_platform').value, contact: $('#s_contact').value.trim(),
+            phone: $('#s_phone').value.trim(), email: $('#s_email').value.trim(),
+            affiliate_program_url: $('#s_progurl').value.trim(),
             notes: $('#s_notes').value, hosts: $('#s_hosts').value };
           const r = await fetch(`/affiliate-stores/${encodeURIComponent(s.name)}`, {
             method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
@@ -227,6 +285,17 @@
           <button type="button" class="ed-btn" id="sEdit">Edit</button>
           <button type="button" class="ed-btn danger" id="sDel">Delete</button>
         </div>
+        <section class="ed-block"><h3 class="ed-block-label">Their affiliate program</h3>
+          <div style="font-size:.88rem">${s.affiliate_program_url
+            ? `<a href="${escapeHtml(s.affiliate_program_url)}" target="_blank" rel="noopener">${escapeHtml(s.affiliate_program_url)}</a>`
+            : '<span class="muted">unknown — find their signup/terms page and add it via Edit</span>'}</div></section>
+        ${(s.contact||s.phone||s.email) ? `
+        <section class="ed-block"><h3 class="ed-block-label">Contact</h3>
+          <div class="kv">
+            ${s.contact?`<div class="k">Who</div><div>${escapeHtml(s.contact)}</div>`:''}
+            ${s.email?`<div class="k">Email</div><div><a href="mailto:${escapeHtml(s.email)}">${escapeHtml(s.email)}</a></div>`:''}
+            ${s.phone?`<div class="k">Phone</div><div><a href="tel:${escapeHtml(s.phone.replace(/[^+0-9]/g,''))}">${escapeHtml(s.phone)}</a></div>`:''}
+          </div></section>` : ''}
         <section class="ed-block"><h3 class="ed-block-label">Hosts <span class="ed-count">(${(s.hosts||[]).length})</span></h3>
           <div style="font-size:.88rem">${(s.hosts||[]).map(h=>`<a href="https://${escapeHtml(h)}/" target="_blank" rel="noopener">${escapeHtml(h)}</a>`).join('<br>')||'—'}</div></section>
         <section class="ed-block"><h3 class="ed-block-label">Programs <span class="ed-count">(${(s.programs||[]).length})</span></h3>
@@ -243,6 +312,52 @@
       page.querySelectorAll('[data-goprog]').forEach(a => a.addEventListener('click', (e) => {
         e.preventDefault(); selected = a.dataset.goprog; selType='program'; renderList(); renderDetail();
       }));
+    }
+
+    function renderStoreCreate(){
+      const page = $('#page');
+      page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · New Store</span></div>
+        <h1 class="ed-title" style="margin-bottom:14px">Add a store</h1>
+        <div class="pc-form">
+          <div class="pc-row2">
+            <div class="ed-field"><label>Name (immutable key — lowercase, e.g. <code>made-in</code>; blank = from merchant)</label><input id="ns_name" placeholder="made-in"></div>
+            <div class="ed-field"><label>Merchant (as a shopper knows it)</label><input id="ns_merchant" placeholder="Made In Cookware"></div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Display name</label><input id="ns_display"></div>
+            <div class="ed-field"><label>Platform</label><select id="ns_platform">${['','shopify','marketplace','custom'].map(o=>`<option value="${o}">${o||'— unknown —'}</option>`).join('')}</select></div>
+          </div>
+          ${urlField('ns_progurl', 'Their affiliate program URL (signup/terms page)', '', { ph: 'https://…/affiliate-program' })}
+          <div class="pc-row3">
+            <div class="ed-field"><label>Contact (person/team)</label><input id="ns_contact"></div>
+            <div class="ed-field"><label>Email</label><input id="ns_email" type="email"></div>
+            <div class="ed-field"><label>Phone</label><input id="ns_phone"></div>
+          </div>
+          <div class="ed-field"><label>Hosts (one per line)</label><textarea id="ns_hosts" rows="3" placeholder="madeincookware.com"></textarea></div>
+          <div class="ed-field"><label>Notes</label><textarea id="ns_notes" rows="3"></textarea></div>
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="nsSave">Create</button>
+            <button type="button" class="ed-btn" id="nsCancel">Cancel</button>
+            <span class="ed-save-hint" id="hint"></span>
+          </div>
+        </div>`;
+      $('#nsCancel').addEventListener('click', () => { mode='view'; renderDetail(); });
+      $('#nsSave').addEventListener('click', async () => {
+        const body = { name: $('#ns_name').value.trim().toLowerCase(),
+          merchant: $('#ns_merchant').value.trim(), display_name: $('#ns_display').value.trim(),
+          platform: $('#ns_platform').value, hosts: $('#ns_hosts').value,
+          affiliate_program_url: $('#ns_progurl').value.trim(),
+          contact: $('#ns_contact').value.trim(), email: $('#ns_email').value.trim(),
+          phone: $('#ns_phone').value.trim(),
+          notes: $('#ns_notes').value };
+        if (!body.merchant && !body.name){ $('#hint').textContent = 'Merchant (or name) required'; return; }
+        const r = await fetch('/affiliate-stores', { method:'POST',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        const d = await r.json().catch(()=>({}));
+        if (r.ok){ flash('✓ Store created'); selected = d.name; selType='store'; mode='view'; await load(); }
+        else $('#hint').textContent = 'Create failed: ' + (d.detail || `HTTP ${r.status}`);
+      });
     }
 
     function renderNetwork(){
@@ -407,7 +522,7 @@
       renderList(); renderDetail();
     }
 
-    $('#addToggle').addEventListener('click', () => { mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
+    $('#addToggle').addEventListener('click', () => { mode='add-choose'; renderList(); renderDetail(); nav.afterSelect(); });
     load();
   </script>
 </body>

@@ -178,6 +178,18 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # here — this adds the column, the editor control and the harvest behaviour.
     if "source_language" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN source_language TEXT")
+    # STORY + COOK'S NOTES (2026-08-31, project_dish_story_ethnicity built at
+    # last): dish-level editorial, drafted by ✨ (grounded in cohort signals +
+    # winner method text — the domains deep-enrich pattern: LLM fills the FORM,
+    # curator reviews, Save persists; never saved unseen). Recipes will inherit
+    # unless overridden (render-time, later phase). cook_notes = JSON
+    # {"tips": [], "techniques": [], "landmines": []} — landmines mined from
+    # where the cohort's recipes actually disagree.
+    if "story" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN story TEXT")
+        conn.execute("ALTER TABLE dishes ADD COLUMN ethnicity TEXT")
+        conn.execute("ALTER TABLE dishes ADD COLUMN origin_region TEXT")
+        conn.execute("ALTER TABLE dishes ADD COLUMN cook_notes TEXT")  # JSON
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -687,7 +699,8 @@ def row_to_dict(row: tuple) -> dict:
      last_ou_fit, last_run_bottom_ou, description, chapter,
      embedding_text, embedding_model, embedding_updated_at,
      identity_card_json, competitiveness_pct, field_clout, display_name,
-     source_language, aliases_json) = row
+     source_language, aliases_json, story, ethnicity, origin_region,
+     cook_notes_json) = row
     try:
         queries_raw = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -751,8 +764,21 @@ def row_to_dict(row: tuple) -> dict:
         # Other names this dish answers to — feeds the matcher's name-exact
         # override (an alias claims recipes as strongly as the name itself).
         "aliases": aliases,
+        # Dish-level editorial (2026-08-31): drafted by ✨, curator-owned.
+        "story": story or "",
+        "ethnicity": ethnicity or "",
+        "origin_region": origin_region or "",
+        "cook_notes": _decode_cook_notes(cook_notes_json),
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
+
+
+def _decode_cook_notes(raw) -> dict:
+    try:
+        d = json.loads(raw) if raw else {}
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
 
 
 _SELECT_ALL_COLS = (
@@ -761,7 +787,8 @@ _SELECT_ALL_COLS = (
     "created_at, updated_at, last_run_log_filename, auto_enrich, "
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
-    "competitiveness_pct, field_clout, display_name, source_language, aliases"
+    "competitiveness_pct, field_clout, display_name, source_language, aliases, "
+    "story, ethnicity, origin_region, cook_notes"
 )
 
 
@@ -1012,6 +1039,7 @@ _PATCHABLE = {
     "queries", "query_rows", "top_n_serpapi", "top_n_final",
     "refresh_ttl_days", "notes", "auto_enrich",
     "description", "display_name", "source_language", "aliases",
+    "story", "ethnicity", "origin_region", "cook_notes",
 }
 
 # ISO 639-1 codes the translator can actually handle — _LANG_NAMES in
@@ -1130,6 +1158,41 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
                 params.append(stripped)
             else:
                 sets.append("display_name = NULL")
+
+    for _f in ("story", "ethnicity", "origin_region"):
+        if _f in patch:
+            v = patch[_f]
+            if v is None or (isinstance(v, str) and not v.strip()):
+                sets.append(f"{_f} = NULL")
+            elif isinstance(v, str):
+                sets.append(f"{_f} = ?")
+                params.append(v.strip())
+            else:
+                raise ValueError(f"{_f} must be a string or null")
+
+    if "cook_notes" in patch:
+        # {"tips": [...], "techniques": [...], "landmines": [...]} — each a
+        # list of strings. Blank/None clears; unknown keys rejected so a
+        # typo'd section never silently vanishes.
+        cn = patch["cook_notes"]
+        if cn is None or cn == {} or cn == "":
+            sets.append("cook_notes = NULL")
+        else:
+            if not isinstance(cn, dict):
+                raise ValueError("cook_notes must be an object or null")
+            bad = set(cn.keys()) - {"tips", "techniques", "landmines"}
+            if bad:
+                raise ValueError(f"cook_notes: unknown sections {sorted(bad)}")
+            clean = {}
+            for k in ("tips", "techniques", "landmines"):
+                items = [str(x).strip() for x in (cn.get(k) or []) if str(x).strip()]
+                if items:
+                    clean[k] = items
+            if clean:
+                sets.append("cook_notes = ?")
+                params.append(json.dumps(clean, ensure_ascii=False))
+            else:
+                sets.append("cook_notes = NULL")
 
     if "aliases" in patch:
         # Other names this dish answers to. Feeds name_index -> the matcher's

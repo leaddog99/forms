@@ -7530,3 +7530,82 @@ mid-rehearsal; verified complete and correct after the fact).
   carries each of the 13); aggregator (Skimlinks/Sovrn) as the floor.
 * Everything carried from the earlier 2026-08-31 entries (Nutmeg re-run,
   KitchenAid mixer re-run, Emile Henry merge, product-side M2M design…).
+
+## Session log — 2026-08-31 (late night) — dishes get their story, picks get faces confirmed, and the prospects get named
+
+Commits: this one (follows 2063908 + c89d365 same day). RESTART OWED for:
+/dishes/{name}/story-draft, the dish PATCH whitelist (story fields), the
+prospect thin-sample retry + exactly-6 prompt, and the auto-rematch-on-
+create. Pages are reload-only.
+
+* **Affiliates editor finished to spec:** sidebar sections became TABS
+  (accordions tried first, curator called tabs — one clean list at a time,
+  active tab sticks per browser, cross-type links switch tabs); ＋ is now a
+  chooser (Program | Store — a prospect is a store without a program, by
+  definition); phone layout fixed (page grids + kv collapse ≤640px; the
+  shell drawer already handled the sidebar); stores carry THEIR
+  affiliate-program URL (shown on store AND program panes) + contact/
+  phone/email (mailto:/tel: links).
+* **Prospect research pass (3 parallel web agents, sourced, blank-beats-
+  guess) filled all 13 Shopify stores.** Actionable now: Burlap & Barrel
+  (agency-run, partnerships@; ~10%/14d), Made In (Impact, ~8%/30d), Our
+  Place (Impact CID 4218057), Emile Henry (own page, courts food bloggers,
+  info@eh-usa.com, Awin), Graza (email-first). Stubs/none: Flavortown
+  (Refersion pixel, blank page), GIR (Affiliatery portal half-deployed),
+  McCormick/Taza/Milk Street/Cangshan/Abioto/Life&Home (none/discontinued
+  — outreach or aggregator). **LOAD-BEARING: ShareASale was SHUT DOWN by
+  Awin 2025-10-06** (post-cutoff; the research caught it) — network row
+  marked CLOSED, Awin marked successor; stale shareasale links on merchant
+  pages (Emile Henry's own!) resolve to Awin now. The agent also caught MY
+  seeded B&B URL 404ing (/pages/affiliate-program → /pages/affiliate).
+  Verdict: Impact = the highest-value single signup.
+* **The holes/empty-dish mystery resolved END TO END.** Baked Chicken
+  Breast (created off the holes list) measured cohort=0 → panel said "not
+  measured yet" → curator hunted a phantom bug. Three fixes: (1) panel now
+  distinguishes measured-EMPTY from never-measured, with the alias-vs-
+  refresh guidance; (2) the missing hop was REMATCH — run live: 43 rows
+  flowed in (2 matched/41 nearest, incl. strays off Baked Stuffed Shrimp
+  and Chicken Wings; siblings' 30+30 curated winners untouched) — the hole
+  was REAL; (3) dish CREATE now auto-enqueues the free rematch (entity-
+  deduped) so hole-born dishes populate in ~1 min instead of overnight.
+* **Proposer breadth + ordering fixed.** Apple Brown Betty returned ONE
+  proposal against apple-corer-at-55x signals — model variance (rerun gave
+  9). Thin-sample retry added (<3 → one auto-retry, keep larger), then
+  curator: "tell it how many" → EXACTLY 6. And the curator caught
+  cinnamon/nutmeg outranking the corer: NEED redefined in the prompt as
+  BUY-LIKELIHOOD (ownership-gap × dish-demand — a tool most kitchens lack
+  beats a staple they own); TIER regraded as evidence-confidence,
+  independent of order. Rerun: Apple Corer #1, Apple Peeler #2, spices
+  demoted to upgrade slots. Purge collateral repaired: Apple Corer
+  restored (renamed from the junk 'Apple Corers', implication-only
+  signals), Ground Nutmeg re-familied gourmet + signals back.
+* **Dish story + cook's notes BUILT** (project_dish_story_ethnicity, at
+  last): dishes.story/ethnicity/origin_region/cook_notes ({tips,
+  techniques, landmines} JSON), PATCHable with validation, in every read.
+  ✨ Draft endpoint = the domains deep-enrich pattern GROUNDED in the
+  dish's own cohort (signals + top-3 winner method text; "where recipes
+  disagree, that disagreement IS a landmine") — drafts fill the FORM,
+  never the row. New accordion in the dish editor with auto-growing
+  textareas (size to content on open/type/draft — no inner scrolling).
+  Recipes INHERIT at render time = later phase, on record.
+* **Curated pick images confirmed working** — the "still no images" report
+  was a pre-capture collection (Stand Mixer) + a frozen screenshot red
+  herring; tonight's runs (blenders, Ground Nutmeg ×3 via the NEW
+  amazon-search ASIN recovery — whole-vs-ground resolved with distinct
+  ASINs + models — and Apple Corers) all carry m.media-amazon photos +
+  model numbers, verified rendering live. Old collections fill on re-run,
+  or via an offered image-only backfill (~1 credit/pick).
+
+### Open
+
+* RESTART, then: Apple Brown Betty ✨ Draft as the story demo; re-run
+  Stand Mixer (KitchenAid model disambiguation NEEDS the new review-first
+  model_number rule); decide image backfill vs re-runs for old collections.
+* Baked Chicken Breast: keep as parent vs alias the siblings — curator
+  call now that it holds 43 rows. Holes page: show nearest-existing-dish
+  + distance per cluster (alias-holes vs real holes at a glance).
+* Impact signup (Made In + Our Place); Burlap & Barrel application;
+  Emile Henry email. 'Nutmeg' class merge (4 rows). Rejected junk chips
+  (Vanilla Extract on ABB). Recipes-inherit-story render phase.
+* Carried: product-side M2M design; per-publisher cap; twins; Pistou
+  Reserve; render/EV layer.

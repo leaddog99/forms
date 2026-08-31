@@ -556,6 +556,28 @@
         </section>
 
         <section class="ed-block">
+          <details class="ed-accordion" id="storyAcc" ${d.story || (d.cook_notes && Object.keys(d.cook_notes).length) ? 'open' : ''}>
+            <summary>Story &amp; cook's notes <span class="ed-pill" style="margin-left:6px">${d.story ? 'written' : 'empty'}</span></summary>
+            <p class="ed-notes-help" style="margin:10px 0 12px">Dish-level editorial — recipes will inherit it unless they override.<button type="button" class="info-dot" data-info-title="Story &amp; cook's notes" data-info="<b>✨ Draft</b> writes a grounded first pass from the dish&#39;s OWN cohort — the measured signals and the top winners&#39; method text — so tips and landmines come from where the recipes actually agree and disagree, not model folklore. Nothing saves until YOU press Save. Landmines = the ways this dish goes wrong; techniques = what it turns on.">i</button></p>
+            <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
+              <button type="button" class="ed-btn" id="storyDraftBtn" title="Draft story + notes from the cohort (~one Sonnet call); fills the fields for review — nothing saves until you Save">✨ Draft</button>
+              <span class="ed-save-hint" id="storyHint"></span>
+            </div>
+            <div class="ed-field"><label style="display:block;font-size:.78rem;font-weight:600;margin-bottom:3px">Story</label>
+              <textarea id="f_story" class="auto-grow" rows="8" style="width:100%;min-height:150px;overflow:hidden;resize:vertical;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.9rem">${escapeHtml(d.story || '')}</textarea></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+              <div class="ed-field"><label style="display:block;font-size:.78rem;font-weight:600;margin-bottom:3px">Ethnicity</label>
+                <input id="f_ethnicity" value="${escapeHtml(d.ethnicity || '')}" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.9rem"></div>
+              <div class="ed-field"><label style="display:block;font-size:.78rem;font-weight:600;margin-bottom:3px">Origin region</label>
+                <input id="f_region" value="${escapeHtml(d.origin_region || '')}" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.9rem"></div>
+            </div>
+            ${['tips','techniques','landmines'].map(k => `
+            <div class="ed-field" style="margin-top:8px"><label style="display:block;font-size:.78rem;font-weight:600;margin-bottom:3px;text-transform:capitalize">${k} <span class="muted" style="font-weight:400">(one per line)</span></label>
+              <textarea id="f_cn_${k}" class="auto-grow" rows="5" style="width:100%;min-height:96px;overflow:hidden;resize:vertical;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.88rem">${escapeHtml(((d.cook_notes||{})[k]||[]).join('\n'))}</textarea></div>`).join('')}
+          </details>
+        </section>
+
+        <section class="ed-block">
           <details class="ed-accordion">
             <summary>Metadata</summary>
             <div class="ed-kv" style="margin-top:12px">
@@ -603,6 +625,31 @@
       });
       $('#dpcProposeBtn')?.addEventListener('click', () => runProposals(d.name));
       $('#sigMeasureBtn')?.addEventListener('click', () => runSignals(d.name));
+      // Auto-grow textareas (curator 2026-08-31: no scrolling inside the box)
+      // — size to content on open, and the story accordion may render closed
+      // with zero heights, so re-size on its first open too.
+      const _growAll = () => $('#page').querySelectorAll('textarea.auto-grow').forEach(autoGrow);
+      _growAll();
+      $('#storyAcc')?.addEventListener('toggle', function(){ if (this.open) _growAll(); });
+      $('#storyDraftBtn')?.addEventListener('click', async () => {
+        const btn = $('#storyDraftBtn'), hint = $('#storyHint');
+        btn.disabled = true; hint.textContent = 'drafting from the cohort…';
+        try {
+          const r = await fetch(`/dishes/${encodeURIComponent(d.name)}/story-draft`, { method: 'POST' });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.detail || 'HTTP ' + r.status);
+          const dr = j.draft || {};
+          if (dr.story) $('#f_story').value = dr.story;
+          if (dr.ethnicity) $('#f_ethnicity').value = dr.ethnicity;
+          if (dr.origin_region) $('#f_region').value = dr.origin_region;
+          for (const k of ['tips', 'techniques', 'landmines'])
+            if (((dr.cook_notes || {})[k] || []).length) $('#f_cn_' + k).value = dr.cook_notes[k].join('\n');
+          _growAll();   // filled programmatically — no input event fires
+          hint.textContent = 'drafted — review, edit, then Save';
+          const sb = $('#saveBtn'); if (sb) sb.disabled = false;   // drafts arm Save
+        } catch (e) { hint.textContent = 'failed: ' + (e.message || e); }
+        btn.disabled = false;
+      });
       attachRunningRefresh(d.name);   // a job already running must be VISIBLE on open
       $('#ecAddBtn').addEventListener('click', () => addPin(d.name));
       $('#ecUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPin(d.name); } });
@@ -706,8 +753,20 @@
         body.innerHTML = `<p class="ed-empty-fit">Couldn’t load (${escapeHtml(String(e.message || e))}).</p>`;
         return;
       }
-      if (!sig || !sig.cohort_n){
+      if (!sig || !sig.method){
         body.innerHTML = '<p class="ed-empty-fit">Not measured yet — click <b>📊 Measure</b> above.</p>';
+        return;
+      }
+      if (!sig.cohort_n){
+        // Measured, honestly EMPTY (2026-08-31: Baked Chicken Breast measured
+        // fine, stamped cohort=0, and this panel said "not measured yet" —
+        // the curator re-ran it twice hunting a bug that wasn't one).
+        if (pill) pill.textContent = `0 recipes · ${fmtDate(sig.computed_at)}`;
+        body.innerHTML = `<p class="ed-empty-fit">Measured ${escapeHtml(fmtDate(sig.computed_at))} —
+          the cohort is <b>EMPTY</b>: no recipe currently resolves to this dish. A new dish gets a
+          cohort from its own <b>refresh</b> (winners claim it), or from rematch re-homing unclaimed
+          rows. If an existing dish already covers this concept (a qualifier sibling, say), recipes
+          stay with it — consider an alias or a merge instead.</p>`;
         return;
       }
       if (pill) pill.textContent = `${sig.cohort_n} recipes · ${fmtDate(sig.computed_at)}`;
@@ -1242,6 +1301,17 @@
         // '' (not null) is meaningful: it clears a stated locale and hands the
         // dish back to the query-text guess.
         source_language: ($('#f_srclang') ? $('#f_srclang').value : ''),
+        story: ($('#f_story')?.value ?? '').trim() || null,
+        ethnicity: ($('#f_ethnicity')?.value ?? '').trim() || null,
+        origin_region: ($('#f_region')?.value ?? '').trim() || null,
+        cook_notes: (() => {
+          const cn = {};
+          for (const k of ['tips', 'techniques', 'landmines']) {
+            const lines = ($('#f_cn_' + k)?.value ?? '').split('\n').map(s => s.trim()).filter(Boolean);
+            if (lines.length) cn[k] = lines;
+          }
+          return Object.keys(cn).length ? cn : null;
+        })(),
       };
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Saving…'; btn.classList.remove('done');
       try {
@@ -1530,7 +1600,17 @@
       if (!t || !(/^f_/.test(t.id || '') || (t.closest && t.closest('#qrows_edit')))) return;
       const b = $('#saveBtn'); if (b) b.disabled = false;
     };
-    $('#page').addEventListener('input', _markDirty);
+    // Grow-to-fit: height follows content so the box never scrolls inside
+    // itself (min-height still applies via the inline style; resize handle
+    // stays for manual shrink).
+    function autoGrow(t){
+      t.style.height = 'auto';
+      t.style.height = Math.max(t.scrollHeight + 2, parseInt(t.style.minHeight) || 0) + 'px';
+    }
+    $('#page').addEventListener('input', (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains('auto-grow')) autoGrow(e.target);
+      _markDirty(e);
+    });
     $('#page').addEventListener('change', _markDirty);
     $('#addToggle').addEventListener('click', () => { selected = '__new__'; renderList(); renderMain(); nav.afterSelect(); });
     $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });

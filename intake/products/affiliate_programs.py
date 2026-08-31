@@ -61,7 +61,8 @@ EDITABLE = ("display_name", "merchant", "network", "status", "store", "connectio
             "link_strategy", "link_template", "subtag_param", "supports_deeplink",
             "default_rate", "commission_note", "cookie_days", "priority", "notes")
 
-STORE_EDITABLE = ("display_name", "merchant", "platform", "contact", "notes")
+STORE_EDITABLE = ("display_name", "merchant", "platform", "contact", "phone", "email",
+                  "notes", "affiliate_program_url")
 CONNECTION_EDITABLE = ("network", "publisher_id", "tracking_id", "account_ref", "region",
                        "login_url", "dashboard_url", "contact", "status", "notes")
 
@@ -138,11 +139,20 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             display_name TEXT,
             merchant     TEXT NOT NULL,         -- 'Made In Cookware' — as a shopper knows it
             platform     TEXT,                  -- shopify | marketplace | '' unknown
-            contact      TEXT,
+            contact      TEXT,                  -- a person/team name
+            phone        TEXT,
+            email        TEXT,
             notes        TEXT,
+            affiliate_program_url TEXT,         -- THEIR program page (signup/terms)
             created_at   TEXT,
             updated_at   TEXT
         )""")
+    scols = {r[1] for r in conn.execute("PRAGMA table_info(affiliate_stores)")}
+    if scols and "affiliate_program_url" not in scols:
+        conn.execute("ALTER TABLE affiliate_stores ADD COLUMN affiliate_program_url TEXT")
+    if scols and "phone" not in scols:
+        conn.execute("ALTER TABLE affiliate_stores ADD COLUMN phone TEXT")
+        conn.execute("ALTER TABLE affiliate_stores ADD COLUMN email TEXT")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS affiliate_store_hosts (
             host       TEXT PRIMARY KEY,        -- 'walmart.com', matched as host or *.host
@@ -703,10 +713,13 @@ def create_store(conn: sqlite3.Connection, patch: dict) -> dict:
         raise ValueError(f"store {name!r} already exists")
     now = _now()
     conn.execute("INSERT INTO affiliate_stores(name, display_name, merchant, platform, "
-                 "contact, notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                 "contact, phone, email, notes, affiliate_program_url, created_at, updated_at) "
+                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                  (name, (patch.get("display_name") or "").strip(), merchant,
                   (patch.get("platform") or "").strip(), (patch.get("contact") or "").strip(),
-                  (patch.get("notes") or "").strip(), now, now))
+                  (patch.get("phone") or "").strip(), (patch.get("email") or "").strip(),
+                  (patch.get("notes") or "").strip(),
+                  (patch.get("affiliate_program_url") or "").strip(), now, now))
     conn.commit()
     if patch.get("hosts"):
         set_hosts(conn, name, patch["hosts"])

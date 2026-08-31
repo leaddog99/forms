@@ -3971,6 +3971,20 @@ async def create_dish_endpoint(request: Request):
             # so every caller gets it and not just this endpoint. Re-read so the
             # response reflects the auto-filled description + chapter.
             created = dishes_lib.get_dish(conn, name) or created
+            # AUTO-REMATCH on create (2026-08-31): a hole-born dish stays at
+            # cohort ZERO until a rematch re-aims the loose rows the holes
+            # report counted — 'Baked Chicken Breast' measured empty, the
+            # curator hunted a bug, one rematch later it held 43 rows. The
+            # sweep is free (~20s) and entity-skipped if one is in flight.
+            try:
+                existing = jobs_lib.find_in_flight_for_entity(conn, "dish-rematch:all")
+                if not existing:
+                    job_id = jobs_lib.enqueue_job(conn, type="dish_rematch", params={},
+                                                  entity_ref="dish-rematch:all")
+                    _spawn_job_runner(job_id)
+                    created["rematch_job_id"] = job_id
+            except Exception as e:
+                print(f"[CREATE-DISH] auto-rematch enqueue skipped: {e}")
             return created
     except sqlite3.IntegrityError:
         # PRIMARY KEY COLLATE NOCASE — duplicate (case-insensitive) name.
@@ -7067,6 +7081,75 @@ def dish_class_proposal_update_endpoint(request: Request, name: str, payload: di
                 "tier": payload.get("tier")}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.post("/dishes/{name}/story-draft")
+def dish_story_draft_endpoint(request: Request, name: str):
+    """✨ Draft the dish's story + ethnicity/region + cook's notes (tips /
+    techniques / landmines) — the domains deep-enrich pattern: one in-process
+    Sonnet call GROUNDED in the dish's own cohort (signals + winner method
+    text), returned as DRAFTS for the form. Saves NOTHING — the curator
+    reviews and Saves (feedback: LLM fills the form, never the row)."""
+    _require_perm(request, "manage_dishes")
+    from intake.products.dish_class_proposals import _winner_methods
+    import llm
+    with _db() as conn:
+        d = dishes_lib.get_dish(conn, name)
+        if d is None:
+            raise HTTPException(status_code=404, detail="Dish not found")
+        sig = {}
+        try:
+            row = conn.execute("SELECT cohort_signals FROM dishes WHERE name = ?",
+                               (name,)).fetchone()
+            sig = json.loads(row[0]) if row and row[0] else {}
+        except Exception:
+            pass
+        methods = _winner_methods(conn, name, k=3, cap=1500)
+    terms = ", ".join(f"{r['term']} ({r['pct']}%/{r['lift']}x)"
+                      for r in (sig.get("ingredients") or [])[:15])
+    eq = ", ".join(r["term"] for r in (sig.get("equipment") or [])[:10])
+    prov = sig.get("provenance") or {}
+    meth = "\n".join(f"--- {m['name']}\n{m['method']}" for m in methods) or "(none)"
+    prompt = f"""Write dish-level editorial for a cooking site. GROUND every claim in the
+material below — the measured signals and the actual method text; where recipes
+disagree, that disagreement IS a landmine. No invented brands, no purple prose.
+
+DISH: {d['name']} (chapter: {d.get('chapter') or '?'})
+DESCRIPTION: {(d.get('description') or '')[:300]}
+MEASURED SIGNALS ({sig.get('cohort_n') or 0} recipes): {terms or '(none)'}
+EQUIPMENT: {eq or '(none)'}
+PROVENANCE: ethnicities={prov.get('ethnicities') or {}} regions={prov.get('regions') or {}}
+METHOD TEXT OF TOP RECIPES:
+{meth}
+
+Return STRICT JSON (no markdown, no quotes inside string values):
+{{"story": "120-180 words — what this dish is, where it comes from, why it works; a
+   reader-facing narrative in a warm, knowledgeable voice",
+  "ethnicity": "one word/phrase, or empty if genuinely mixed/unclear",
+  "origin_region": "region/country, or empty",
+  "tips": ["3-5 short, concrete, grounded in the methods"],
+  "techniques": ["2-4 named techniques the dish turns on, each with one sentence of why"],
+  "landmines": ["2-4 ways this dish actually goes wrong — prefer points where the
+                 cohort's recipes disagree or the methods warn"]}}"""
+    llm.enter(recipe_id=f"dish:{name}", user_id=0)
+    msg = llm.create(operation="dish_story_draft", model="claude-sonnet-5", max_tokens=1500,
+                     messages=[{"role": "user", "content": prompt}])
+    raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+    m = re.search(r"\{.*\}", raw, re.S)
+    if not m:
+        raise HTTPException(status_code=502, detail="model reply unusable — run again")
+    try:
+        out = json.loads(m.group(0))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502,
+                            detail=f"model reply unusable ({e}) — run again") from e
+    return {"dish": name, "draft": {
+        "story": (out.get("story") or "").strip(),
+        "ethnicity": (out.get("ethnicity") or "").strip(),
+        "origin_region": (out.get("origin_region") or "").strip(),
+        "cook_notes": {k: [str(x).strip() for x in (out.get(k) or []) if str(x).strip()]
+                       for k in ("tips", "techniques", "landmines")},
+    }}
 
 
 @app.delete("/dishes/{name}/class-proposals")

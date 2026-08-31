@@ -125,18 +125,25 @@ EXISTING CLASS REGISTRY (reuse these names VERBATIM when the concept matches;
 use them as association hints):
 [[CLASS_REGISTRY]]
 
-Propose 6-12 classes as a JSON array IN DESCENDING ORDER OF NEED — the class
-a reader of this dish is most likely to actually buy for comes FIRST. Each item:
+Propose EXACTLY 6 classes as a JSON array IN DESCENDING ORDER OF NEED — return fewer ONLY when the dish genuinely offers fewer sellable concepts, never because the obvious ones felt like enough. Need means
+BUY-LIKELIHOOD, which is ownership-gap times dish-demand: an item this dish
+requires that most kitchens LACK (a specialty tool, an unusual ingredient)
+outranks a pantry staple most kitchens already hold — no matter how often the
+staple appears in the recipes. A premium upgrade of an owned staple
+(single-origin cinnamon, estate olive oil) ranks on upgrade appeal, BELOW
+true gaps. Each item:
 {"class_name": str, "family": "equipment|gourmet|travel|books|alcohol",
   "pattern": "identity|implication|passthrough",
   "route": "contains|does|from|served_with",
   "tier": 1|2|3, "rationale": one sentence, "evidence": [signal terms used]}
 
 Rules:
-- identity = the signal IS the category (chocolate -> Baking Chocolate). Tier 1
-  for the dish's DIFFERENTIATING ingredients, tier 2 for its core gear.
+- identity = the signal IS the category (chocolate -> Baking Chocolate).
 - implication = one reasoning step (egg yolks x6 -> Egg Separators; provenance ->
-  cuisine cookbooks). Tier 3 unless overwhelming. Cite the evidence terms.
+  cuisine cookbooks). Cite the evidence terms.
+- TIER grades EVIDENCE CONFIDENCE, not importance and not order: 1 = the
+  signals nail it, 2 = solid, 3 = plausible/anecdotal. A tier-2 tool may
+  correctly rank ABOVE a tier-1 staple — order and tier are independent.
 - passthrough = resolved by a marketplace at render (local cooking classes,
   experiences). Rare; only when provenance clearly supports it.
 - route served_with = what you'd SERVE with the finished dish (wine pairing).
@@ -224,11 +231,26 @@ def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
     methods = _winner_methods(conn, dish_name)
 
     llm.enter(recipe_id=f"dish:{dish_name}", user_id=0)
+    prompt_text = _prompt(dish, sig, registry, methods)
     msg = llm.create(operation="dish_class_propose", model=MODEL, max_tokens=MAX_TOKENS,
-                     messages=[{"role": "user",
-                                "content": _prompt(dish, sig, registry, methods)}])
+                     messages=[{"role": "user", "content": prompt_text}])
     raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
     proposals = _parse_proposals(raw, dish_name)
+    # Thin-sample retry (2026-08-31): Apple Brown Betty returned ONE proposal
+    # against apple-corer-at-55x signals; the rerun gave nine. The prompt asks
+    # for 6-12, so <3 on a signal-rich dish is a bad SAMPLE, not a verdict —
+    # one automatic retry, keep the larger answer.
+    if len(proposals) < 3:
+        print(f"[PROPOSE] {dish_name}: only {len(proposals)} proposal(s) — retrying once")
+        msg2 = llm.create(operation="dish_class_propose", model=MODEL, max_tokens=MAX_TOKENS,
+                          messages=[{"role": "user", "content": prompt_text}])
+        raw2 = "".join(b.text for b in msg2.content if getattr(b, "type", None) == "text")
+        try:
+            p2 = _parse_proposals(raw2, dish_name)
+            if len(p2) > len(proposals):
+                proposals = p2
+        except ValueError:
+            pass
 
     now = _now()
     out = []
