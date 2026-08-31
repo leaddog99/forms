@@ -8325,6 +8325,241 @@ async def _handle_dish_class_propose_job(job: dict) -> dict:
 jobs_lib.register_handler("dish_class_propose", _handle_dish_class_propose_job)
 
 
+# ---- Product-class REGISTRY editor (forms/classes.html) --------------------
+# The registry (product_classes) is the join hub of the whole commerce chain
+# — signals→class→collection→products all meet on the NAME string — and until
+# now it was SQL-only. These endpoints give it the ACDV treatment. Rename is
+# the load-bearing one: it re-keys every referencing table in one
+# transaction, and renaming ONTO an existing name is the merge the
+# provisional-class cleanup needs.
+
+def _class_usage(conn, name: str) -> dict:
+    """Everything that references a class name — the refcounts every
+    destructive action must show first."""
+    dishes = [dict(r) for r in conn.execute(
+        "SELECT dish_name, status, tier FROM dish_product_classes "
+        "WHERE class_name = ? ORDER BY status, dish_name", (name,))]
+    products = [dict(r) for r in conn.execute(
+        "SELECT product_id, name FROM products WHERE product_class = ? ORDER BY name",
+        (name,))]
+    collections = [r[0] for r in conn.execute(
+        "SELECT name FROM curated_collections WHERE product_class = ?", (name,))]
+    return {"dishes": dishes, "products": products, "collections": collections,
+            "approved_dishes": sum(1 for d in dishes if d["status"] == "approved")}
+
+
+@app.get("/product-classes")
+def product_classes_list_endpoint(request: Request):
+    _require_perm(request, "edit_master")
+    with _db() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT name, family, category, created_at, updated_at, "
+            "embedding IS NOT NULL AS embedded FROM product_classes ORDER BY name")]
+        dj = {r[0]: (r[1], r[2]) for r in conn.execute(
+            "SELECT class_name, COUNT(*), SUM(status='approved') "
+            "FROM dish_product_classes GROUP BY class_name")}
+        pc = dict(conn.execute(
+            "SELECT product_class, COUNT(*) FROM products "
+            "WHERE COALESCE(product_class,'') != '' GROUP BY product_class"))
+        cc = dict(conn.execute(
+            "SELECT product_class, COUNT(*) FROM curated_collections "
+            "WHERE COALESCE(product_class,'') != '' GROUP BY product_class"))
+        for r in rows:
+            d = dj.get(r["name"], (0, 0))
+            r["dish_count"], r["approved_count"] = d[0], int(d[1] or 0)
+            r["product_count"] = pc.get(r["name"], 0)
+            r["collection_count"] = cc.get(r["name"], 0)
+    return {"classes": rows}
+
+
+@app.post("/product-classes")
+def product_class_create_endpoint(request: Request, payload: dict = Body(...)):
+    """Staff-supplied class (memory/feedback: categories are curator inputs,
+    not model output). Embedded immediately so snap() and the proposer can
+    reuse it on the very next run."""
+    _require_perm(request, "edit_master")
+    from intake.products.dish_class_proposals import FAMILIES
+    name = (payload.get("name") or "").strip()
+    fam = (payload.get("family") or "equipment").strip().lower()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if fam not in FAMILIES:
+        raise HTTPException(status_code=400,
+                            detail=f"family must be one of {', '.join(FAMILIES)}")
+    now = datetime.now(timezone.utc).isoformat()
+    with _db() as conn:
+        if conn.execute("SELECT 1 FROM product_classes WHERE name = ?",
+                        (name,)).fetchone():
+            raise HTTPException(status_code=409, detail=f"Class {name!r} already exists")
+        conn.execute(
+            "INSERT INTO product_classes(name, category, criteria, buying_guide, data, "
+            "family, created_at, updated_at) VALUES(?,?,'[]','','{}',?,?,?)",
+            (name, (payload.get("category") or "").strip(), fam, now, now))
+        conn.commit()
+    try:
+        from intake.products import class_registry
+        with _db() as conn:
+            class_registry.ensure_embeddings(conn)
+    except Exception as e:
+        print(f"[CLASSES] embed after create skipped: {e}")
+    return product_class_detail_endpoint(request, name)
+
+
+@app.get("/product-classes/{name}")
+def product_class_detail_endpoint(request: Request, name: str):
+    _require_perm(request, "edit_master")
+    with _db() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT name, family, category, criteria, buying_guide, "
+            "created_at, updated_at, embedding IS NOT NULL AS embedded "
+            "FROM product_classes WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Class not found")
+        out = dict(row)
+        out["usage"] = _class_usage(conn, name)
+    return out
+
+
+@app.patch("/product-classes/{name}")
+def product_class_patch_endpoint(request: Request, name: str, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    from intake.products.dish_class_proposals import FAMILIES
+    sets, params = [], []
+    if "family" in payload:
+        fam = (payload["family"] or "").strip().lower()
+        if fam not in FAMILIES:
+            raise HTTPException(status_code=400,
+                                detail=f"family must be one of {', '.join(FAMILIES)}")
+        sets.append("family = ?"); params.append(fam)
+    if "category" in payload:
+        sets.append("category = ?"); params.append((payload["category"] or "").strip())
+    if not sets:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    sets.append("updated_at = ?"); params.append(datetime.now(timezone.utc).isoformat())
+    with _db() as conn:
+        cur = conn.execute(
+            f"UPDATE product_classes SET {', '.join(sets)} WHERE name = ?",
+            params + [name])
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Class not found")
+        conn.commit()
+    return product_class_detail_endpoint(request, name)
+
+
+@app.post("/product-classes/{name}/rename")
+def product_class_rename_endpoint(request: Request, name: str, payload: dict = Body(...)):
+    """Rename — or, when the target already exists, MERGE onto it. One
+    transaction re-keys every referencing table; junction duplicates keep the
+    more-decided row (approved > rejected > proposed)."""
+    _require_perm(request, "edit_master")
+    to = (payload.get("to") or "").strip()
+    if not to:
+        raise HTTPException(status_code=400, detail="'to' is required")
+    if to == name:
+        raise HTTPException(status_code=400, detail="Same name")
+    now = datetime.now(timezone.utc).isoformat()
+    with _db() as conn:
+        conn.row_factory = sqlite3.Row
+        src = conn.execute("SELECT * FROM product_classes WHERE name = ?",
+                           (name,)).fetchone()
+        if src is None:
+            raise HTTPException(status_code=404, detail="Class not found")
+        merging = conn.execute("SELECT 1 FROM product_classes WHERE name = ?",
+                               (to,)).fetchone() is not None
+        if not merging:
+            conn.execute(
+                "INSERT INTO product_classes(name, category, criteria, buying_guide, "
+                "data, family, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                (to, src["category"], src["criteria"], src["buying_guide"],
+                 src["data"], src["family"], src["created_at"], now))
+        # Junction: move rows; on a (dish, target) collision keep the more-
+        # decided side — an approval must never be silently downgraded.
+        _rank = "CASE status WHEN 'approved' THEN 2 WHEN 'rejected' THEN 1 ELSE 0 END"
+        moved = dropped = 0
+        for r in conn.execute(
+                "SELECT dish_name, status FROM dish_product_classes WHERE class_name = ?",
+                (name,)).fetchall():
+            tgt = conn.execute(
+                "SELECT status FROM dish_product_classes WHERE dish_name = ? AND class_name = ?",
+                (r["dish_name"], to)).fetchone()
+            if tgt is None:
+                conn.execute(
+                    "UPDATE dish_product_classes SET class_name = ? "
+                    "WHERE dish_name = ? AND class_name = ?",
+                    (to, r["dish_name"], name))
+                moved += 1
+            else:
+                keep_src = conn.execute(
+                    f"SELECT ({_rank}) > (SELECT {_rank} FROM dish_product_classes "
+                    f"WHERE dish_name = ? AND class_name = ?) "
+                    f"FROM dish_product_classes WHERE dish_name = ? AND class_name = ?",
+                    (r["dish_name"], to, r["dish_name"], name)).fetchone()[0]
+                if keep_src:
+                    conn.execute(
+                        "DELETE FROM dish_product_classes WHERE dish_name = ? AND class_name = ?",
+                        (r["dish_name"], to))
+                    conn.execute(
+                        "UPDATE dish_product_classes SET class_name = ? "
+                        "WHERE dish_name = ? AND class_name = ?",
+                        (to, r["dish_name"], name))
+                    moved += 1
+                else:
+                    conn.execute(
+                        "DELETE FROM dish_product_classes WHERE dish_name = ? AND class_name = ?",
+                        (r["dish_name"], name))
+                    dropped += 1
+        n_prod = conn.execute(
+            "UPDATE products SET product_class = ? WHERE product_class = ?",
+            (to, name)).rowcount
+        n_coll = conn.execute(
+            "UPDATE curated_collections SET product_class = ? WHERE product_class = ?",
+            (to, name)).rowcount
+        conn.execute("DELETE FROM product_classes WHERE name = ?", (name,))
+        conn.commit()
+    # Fresh embedding for a brand-new name (merge target already has one).
+    try:
+        from intake.products import class_registry
+        with _db() as conn:
+            class_registry.ensure_embeddings(conn)
+    except Exception as e:
+        print(f"[CLASSES] re-embed after rename skipped: {e}")
+    return {"renamed": name, "to": to, "merged": merging,
+            "junction_moved": moved, "junction_kept_target": dropped,
+            "products": n_prod, "collections": n_coll}
+
+
+@app.delete("/product-classes/{name}")
+def product_class_delete_endpoint(request: Request, name: str):
+    """Delete a class nothing depends on. Products, collections, or APPROVED
+    junction rows block it (merge instead); its proposed/rejected junction
+    rows are cleaned up with it."""
+    _require_perm(request, "edit_master")
+    with _db() as conn:
+        if conn.execute("SELECT 1 FROM product_classes WHERE name = ?",
+                        (name,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Class not found")
+        usage = _class_usage(conn, name)
+        blockers = []
+        if usage["products"]:
+            blockers.append(f"{len(usage['products'])} product(s)")
+        if usage["collections"]:
+            blockers.append(f"collection(s): {', '.join(usage['collections'])}")
+        if usage["approved_dishes"]:
+            blockers.append(f"{usage['approved_dishes']} approved dish junction(s)")
+        if blockers:
+            raise HTTPException(
+                status_code=409,
+                detail="In use — " + "; ".join(blockers) + ". Merge it onto "
+                       "another class instead of deleting.")
+        n_j = conn.execute("DELETE FROM dish_product_classes WHERE class_name = ?",
+                           (name,)).rowcount
+        conn.execute("DELETE FROM product_classes WHERE name = ?", (name,))
+        conn.commit()
+    return {"deleted": name, "junction_rows_removed": n_j}
+
+
 async def _handle_page_cache_purge_job(job: dict) -> dict:
     """Nightly: delete cached raw pages past their retention and reclaim the disk.
 

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Classes</title>
+  <!-- ACDV editor over product_classes — the join hub of the commerce chain:
+       signals → class → collection → products all meet on the class NAME.
+       Cloned from affiliates.html per memory/feedback_editor_template_not_runtime.
+       Rename is the load-bearing action: it re-keys every referencing table in
+       one transaction, and renaming ONTO an existing class is the MERGE that
+       cleans up the proposal sweep's provisional near-duplicates. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828b">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260813b">
+  <style>
+    .pc-form .ed-field { margin-bottom: 10px; }
+    .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .pc-form input, .pc-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .muted { color: var(--ed-ink-soft); }
+    .fam { display: inline-block; font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+      text-transform: uppercase; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--ed-ink-soft); margin-left: 5px; }
+    .kv { display: grid; grid-template-columns: 170px 1fr; gap: 5px 14px; font-size: .88rem; }
+    .kv .k { color: var(--ed-ink-soft); }
+    .use-list { margin: 4px 0 0; padding-left: 18px; font-size: .86rem; line-height: 1.55; }
+    .filterbar { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+    .filterbar button { font: inherit; font-size: .74rem; padding: 3px 9px; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--card); cursor: pointer; color: var(--ed-ink-soft); }
+    .filterbar button[aria-pressed="true"] { background: var(--ed-accent, #9c5b34); border-color: var(--ed-accent, #9c5b34); color: #fff; }
+    .searchbar { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+    .searchbar input { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .88rem; background: var(--card); }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Classes <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="addToggle" title="Add a class" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <div class="searchbar"><input id="search" type="search" placeholder="Search classes…" aria-label="Search classes"></div>
+      <div class="filterbar" id="famFilter"></div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260830d"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'classes' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Classes', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, fmtDate, flash } = LibraryShell;
+
+    const FAMILIES = ['equipment', 'gourmet', 'alcohol', 'books', 'travel'];
+    let rows = [], selected = null, mode = 'view', term = '', fam = '';
+
+    const useMeta = (c) => {
+      const bits = [];
+      bits.push(c.product_count ? `${c.product_count} product${c.product_count === 1 ? '' : 's'}` : 'no products');
+      if (c.collection_count) bits.push(`${c.collection_count} collection${c.collection_count === 1 ? '' : 's'}`);
+      if (c.dish_count) bits.push(`${c.dish_count} dish${c.dish_count === 1 ? '' : 'es'}${c.approved_count ? ` (${c.approved_count}✓)` : ''}`);
+      return bits.join(' · ');
+    };
+
+    function shown(){
+      const t = term.trim().toLowerCase();
+      return rows.filter(c => (!fam || c.family === fam)
+        && (!t || c.name.toLowerCase().includes(t) || (c.category || '').toLowerCase().includes(t)));
+    }
+
+    function renderFamFilter(){
+      const counts = {};
+      rows.forEach(c => counts[c.family] = (counts[c.family] || 0) + 1);
+      $('#famFilter').innerHTML =
+        `<button aria-pressed="${fam === '' ? 'true' : 'false'}" data-fam="">all ${rows.length}</button>` +
+        FAMILIES.filter(f => counts[f]).map(f =>
+          `<button aria-pressed="${fam === f ? 'true' : 'false'}" data-fam="${f}">${f} ${counts[f]}</button>`).join('');
+      $('#famFilter').querySelectorAll('button').forEach(b =>
+        b.addEventListener('click', () => { fam = b.dataset.fam; renderFamFilter(); renderList(); }));
+    }
+
+    function renderList(){
+      const rs = shown();
+      $('#count').textContent = `(${rs.length})`;
+      $('#list').innerHTML = rs.length ? rs.map(c => `
+        <li class="ed-item ${c.name === selected ? 'selected' : ''}" data-name="${escapeHtml(c.name)}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(c.name)}</span><span class="fam">${escapeHtml(c.family)}</span></div>
+          <div class="ed-item-meta">${useMeta(c)}</div>
+        </li>`).join('') : '<li class="ed-empty">No classes match.</li>';
+      $('#list').querySelectorAll('li[data-name]').forEach(li =>
+        li.addEventListener('click', () => { selected = li.dataset.name; mode = 'view'; renderList(); renderDetail(); nav.afterSelect(); }));
+    }
+
+    async function renderDetail(){
+      const page = $('#page');
+      if (mode === 'add'){
+        page.innerHTML = `
+          <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Classes · New</span></div>
+          <h1 class="ed-title">New class</h1>
+          <p class="ed-submeta" style="max-width:60ch">A staff-supplied shoppable category. It is
+          embedded immediately, so the very next proposal run can reuse it and snap near-misses onto it.</p>
+          <div class="pc-form" style="max-width:460px;margin-top:14px">
+            <div class="ed-field"><label for="n_name">Name (the canonical join key)</label>
+              <input id="n_name" type="text" placeholder="e.g. Apple Peeler"></div>
+            <div class="pc-row2">
+              <div class="ed-field"><label for="n_family">Family</label>
+                <select id="n_family">${FAMILIES.map(f => `<option value="${f}">${f}</option>`).join('')}</select></div>
+              <div class="ed-field"><label for="n_category">Category <span class="muted" style="font-weight:400;text-transform:none">(optional)</span></label>
+                <input id="n_category" type="text"></div>
+            </div>
+            <div class="pc-form-actions">
+              <button type="button" class="ed-btn primary" id="createBtn">Create</button>
+              <button type="button" class="ed-btn" id="cancelAdd">Cancel</button>
+              <span class="ed-save-hint" id="hint"></span>
+            </div>
+          </div>`;
+        $('#cancelAdd').addEventListener('click', () => { mode = 'view'; renderDetail(); });
+        $('#createBtn').addEventListener('click', async () => {
+          const name = $('#n_name').value.trim();
+          if (!name) return $('#hint').textContent = 'Name is required';
+          try {
+            const r = await fetch('/product-classes', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name, family: $('#n_family').value, category: $('#n_category').value.trim() })});
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+            flash && flash('Created + embedded');
+            mode = 'view'; selected = name;
+            await load(name); renderDetail();
+          } catch (e){ $('#hint').textContent = String(e.message || e); }
+        });
+        return;
+      }
+      if (!selected){ page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Classes</span></div>
+        <h1 class="ed-title">Product classes</h1>
+        <p class="ed-submeta" style="max-width:64ch">The shoppable categories the whole commerce chain
+        joins on — a dish's approved classes decide what can advertise beside its recipes, and each
+        class links to the collection and products that supply it.<button type="button" class="info-dot"
+        data-info-title="What a class is" data-info="One canonical NAME per shoppable category
+        (&#39;Tube Pan&#39;, &#39;Baking Chocolate&#39;). Signals propose classes onto dishes; you approve them;
+        collections and products carry the same name — the name IS the join. Most rows here were
+        created provisionally by the proposal sweep, so expect near-duplicates: <b>Rename onto an
+        existing class to MERGE</b> (junction rows, products and collections all follow; approvals are
+        never downgraded). Delete works only on a class nothing depends on.">i</button></p>
+        <p class="ed-submeta">Pick a class from the list. Search or filter by family.</p>`;
+        return;
+      }
+      let c;
+      try {
+        const r = await fetch(`/product-classes/${encodeURIComponent(selected)}`);
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
+        c = await r.json();
+      } catch (e){ page.innerHTML = `<p class="ed-empty">Couldn’t load (${escapeHtml(String(e.message || e))}).</p>`; return; }
+      const u = c.usage || {};
+      const dishLine = (d) =>
+        `<li><a href="/forms/dishes_v2.html" title="open the dish editor">${escapeHtml(d.dish_name)}</a>
+           <span class="muted">${escapeHtml(d.status)}${d.tier ? ` · T${d.tier}` : ''}</span></li>`;
+      page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Class</span></div>
+        <h1 class="ed-title" style="margin-bottom:2px">${escapeHtml(c.name)} <span class="fam">${escapeHtml(c.family)}</span></h1>
+        <p class="ed-submeta">${c.category ? escapeHtml(c.category) + ' · ' : ''}created ${fmtDate(c.created_at)} · ${c.embedded ? 'embedded' : '<b>not embedded</b>'}</p>
+
+        <div class="ed-actions" style="position:static;background:none;padding:6px 0 14px">
+          <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          <button type="button" class="ed-btn danger" id="delBtn">Delete</button>
+          <span class="ed-save-hint" id="hint"></span>
+        </div>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Used by</h3>
+          <div class="kv" style="margin-top:10px">
+            <div class="k">Collections</div>
+            <div>${(u.collections || []).length
+              ? u.collections.map(n => `<a href="/forms/curated_collections.html?collection=${encodeURIComponent(n)}">${escapeHtml(n)} ↗</a>`).join(' · ')
+              : '<span class="muted">none — a Collections/Curated run for this class builds the supply</span>'}</div>
+            <div class="k">Products</div>
+            <div>${(u.products || []).length
+              ? `${u.products.length} — ` + u.products.slice(0, 6).map(p =>
+                  `<a href="/forms/products.html?product=${encodeURIComponent(p.product_id)}">${escapeHtml(p.name)} ↗</a>`).join(' · ')
+                + (u.products.length > 6 ? ` <span class="muted">+${u.products.length - 6} more</span>` : '')
+              : '<span class="muted">none</span>'}</div>
+            <div class="k">Dishes</div>
+            <div>${(u.dishes || []).length
+              ? `<ul class="use-list">${u.dishes.map(dishLine).join('')}</ul>`
+              : '<span class="muted">no dish proposes or carries this class</span>'}</div>
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Rename / merge<button type="button" class="info-dot"
+            data-info-title="Rename or merge" data-info="Renaming re-keys EVERYTHING that uses this
+            class — dish chips, products, collections — in one transaction, then re-embeds. If the
+            new name already exists this becomes a MERGE onto it: duplicates on the same dish keep
+            the more-decided row (an approval is never downgraded). This is the cleanup tool for the
+            proposal sweep&#39;s provisional near-duplicates.">i</button></h3>
+          <div class="pc-form" style="max-width:460px;margin-top:10px">
+            <div class="ed-field"><label for="renameTo">New name (an existing class = merge onto it)</label>
+              <input id="renameTo" type="text" placeholder="${escapeHtml(c.name)}"></div>
+            <div class="pc-form-actions">
+              <button type="button" class="ed-btn" id="renameBtn">Rename / merge</button>
+            </div>
+          </div>
+        </section>`;
+
+      $('#editBtn').addEventListener('click', () => renderEdit(c));
+      $('#delBtn').addEventListener('click', () => doDelete(c));
+      $('#renameBtn').addEventListener('click', () => doRename(c));
+    }
+
+    function renderEdit(c){
+      const page = $('#page');
+      page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Class · Edit</span></div>
+        <h1 class="ed-title">${escapeHtml(c.name)}</h1>
+        <div class="pc-form" style="max-width:460px;margin-top:14px">
+          <div class="pc-row2">
+            <div class="ed-field"><label for="f_family">Family</label>
+              <select id="f_family">${FAMILIES.map(f =>
+                `<option value="${f}" ${c.family === f ? 'selected' : ''}>${f}</option>`).join('')}</select></div>
+            <div class="ed-field"><label for="f_category">Category <span class="muted" style="font-weight:400;text-transform:none">(free text)</span></label>
+              <input id="f_category" type="text" value="${escapeHtml(c.category || '')}"></div>
+          </div>
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="saveBtn">Save</button>
+            <button type="button" class="ed-btn" id="cancelBtn">Cancel</button>
+            <span class="ed-save-hint" id="hint"></span>
+          </div>
+        </div>`;
+      $('#cancelBtn').addEventListener('click', () => renderDetail());
+      $('#saveBtn').addEventListener('click', async () => {
+        try {
+          const r = await fetch(`/product-classes/${encodeURIComponent(c.name)}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ family: $('#f_family').value, category: $('#f_category').value.trim() })});
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+          flash && flash('Saved');
+          await load(selected); renderDetail();
+        } catch (e){ $('#hint').textContent = String(e.message || e); }
+      });
+    }
+
+    async function doRename(c){
+      const to = $('#renameTo').value.trim();
+      if (!to) return $('#hint').textContent = 'Type the new name first';
+      const exists = rows.some(x => x.name === to);
+      const verb = exists ? `MERGE "${c.name}" into "${to}"` : `Rename "${c.name}" to "${to}"`;
+      if (!confirm(`${verb}?\n\nEvery dish chip, product and collection using it follows. This cannot be undone from this page.`)) return;
+      try {
+        const r = await fetch(`/product-classes/${encodeURIComponent(c.name)}/rename`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to })});
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        flash && flash(`${d.merged ? 'Merged' : 'Renamed'} — ${d.junction_moved} dish row(s), ${d.products} product(s), ${d.collections} collection(s) follow`);
+        selected = to;
+        await load(to); renderDetail();
+      } catch (e){ $('#hint').textContent = String(e.message || e); }
+    }
+
+    async function doDelete(c){
+      const u2 = c.usage || {};
+      const facts = [
+        `${(u2.products || []).length} product(s)`,
+        `${(u2.collections || []).length} collection(s)`,
+        `${(u2.dishes || []).length} dish row(s), ${u2.approved_dishes || 0} approved`,
+      ].join(' · ');
+      if (!confirm(`Delete class "${c.name}"?
+
+Currently: ${facts}.
+Delete only works when nothing depends on it; its un-approved dish proposals are removed with it. In-use classes should be MERGED instead.`)) return;
+      try {
+        const r = await fetch(`/product-classes/${encodeURIComponent(c.name)}`, { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || `HTTP ${r.status}`);
+        flash && flash(`Deleted (${d.junction_rows_removed} proposal row(s) cleaned up)`);
+        selected = null;
+        await load(); renderDetail();
+      } catch (e){ $('#hint').textContent = String(e.message || e); }
+    }
+
+    async function load(keep){
+      try {
+        const r = await fetch('/product-classes');
+        if (!r.ok) throw new Error(r.status === 401 || r.status === 403
+          ? 'Curator tools are locked — unlock admin from the header, then reload.' : `HTTP ${r.status}`);
+        const d = await r.json();
+        rows = d.classes || [];
+        if (keep && rows.some(x => x.name === keep)) selected = keep;
+        else if (selected && !rows.some(x => x.name === selected)) selected = null;
+        renderFamFilter(); renderList();
+      } catch (e){
+        $('#list').innerHTML = `<li class="ed-empty">${escapeHtml(String(e.message || e))}</li>`;
+      }
+    }
+
+    $('#search').addEventListener('input', (e) => { term = e.target.value; renderList(); });
+    $('#addToggle').addEventListener('click', () => { mode = 'add'; renderDetail(); nav.afterSelect(); });
+
+    // Deep-link: ?class=<name> opens that class (the dish chips may link here later).
+    (async () => {
+      const want = new URLSearchParams(location.search).get('class');
+      await load(want || undefined);
+      if (want && rows.some(x => x.name === want)) { mode = 'view'; renderList(); }
+      renderDetail();
+    })();
+  </script>
+</body>
+</html>

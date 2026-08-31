@@ -986,6 +986,9 @@
     { page: 'cook-kb',   label: 'Tips/Checks', href: '/forms/cook_kb.html', perm: 'edit_master', group: 'admin', section: 'Corpus' },
     // — Commerce: products, reviews, money links —
     { page: 'affiliates', label: 'Affiliates', href: '/forms/affiliates.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
+    // The join hub of the commerce chain — every class name that dishes,
+    // collections and products meet on. Merge/rename lives here.
+    { page: 'classes', label: 'Classes', href: '/forms/classes.html', perm: 'edit_master', group: 'admin', section: 'Commerce' },
     // Two selection techniques, both live: /Search starts from a saved Amazon
     // search URL and screens the cohort on owner ratings; /Curated starts from
     // a class name and the expert reviews. Both end in product records.

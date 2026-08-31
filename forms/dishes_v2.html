@@ -81,7 +81,7 @@
     <main class="ed-content"><div class="ed-page" id="page"></div></main>
   </div>
 
-  <script src="/forms/library-shell.js?v=20260830c"></script>
+  <script src="/forms/library-shell.js?v=20260830d"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -799,7 +799,7 @@
             <div><b>${escapeHtml(r.class_name)}</b>
               <span class="ed-pill" style="margin-left:6px">${escapeHtml(r.family)}</span>
               <span style="font-size:.76em;color:var(--muted)">${escapeHtml(r.pattern)} · ${escapeHtml(r.route)}</span>
-              ${r.new_class ? '<span class="ed-pill" title="This class was created by the proposal — not yet a settled registry entry" style="margin-left:4px">new class</span>' : ''}</div>
+              ${r.new_class ? '<span class="ed-pill" title="This class was created by the proposal — review it in Classes before trusting it" style="margin-left:4px">new class</span>' : ''}</div>
             <div style="font-size:.82em;color:var(--muted);margin-top:2px">${escapeHtml(r.rationale || '')}</div>
             ${(r.evidence || []).length ? `<div style="font-size:.78em;color:var(--muted);margin-top:2px">evidence: ${ev(r)}</div>` : ''}
             <div style="font-size:.78em;margin-top:2px">${r.collection
