@@ -246,3 +246,86 @@ does not.
   membership — which, given the hosts in §1, will happen. Leaning to promoting it.
 - **Is `user_id` in scope yet?** It means nothing until there are real end users;
   `session_id` alone works today and extends later at no cost.
+
+---
+
+## 9. Research round (2026-08-31) — the revised entity model
+
+Curator caught the flat `affiliate_programs` table conflating STORE with
+RELATIONSHIP (the 13 Shopify prospects were seeded as programs). Before
+restructuring, three parallel research passes: (a) affiliate link-management
+platforms' data models (Strackr, Affilimate, Skimlinks, Sovrn, Trackonomics/
+impact.com, Wecantrack, Geniuslink), (b) metasearch monetization (trivago
+20-F, TripAdvisor 10-K, Kayak/Booking filings, Skyscanner partner docs),
+(c) content-commerce publishers (Wirecutter/NYT, Dotdash, BuzzFeed, Future
+plc's Hawk). Full reports in the session transcript 2026-08-31; condensed
+findings and the model they force:
+
+### The five entities (all three sources converge)
+
+1. **stores** — the merchant as displayed (Made In: hosts, platform=shopify,
+   contact). Exists whether or not monetized. Trivago: advertiser≠property.
+   Wirecutter: the pick references the product/store, never the money.
+2. **networks** — Impact, ShareASale/Awin, CJ, Rakuten, Amazon Associates,
+   Skimlinks/Sovrn, direct. Carries the network's MECHANICS: subid param
+   name + max length + charset (Impact subId1 255 alnum · Awin clickref 50 ·
+   Rakuten u1 72 · ShareASale afftrack 255 · Amazon ascsubtag restricted) —
+   link building reads this metadata, never hardcodes.
+3. **connections** — OUR ACCOUNT on a network (publisher id, region,
+   credentials ref, dashboard). The entity the flat model missed entirely;
+   Strackr and Trackonomics both model it first-class (one publisher can
+   hold several accounts per network). Amazon tags = per-site tracking ids
+   under one connection.
+4. **programs** — the JOIN: store × connection, with status ladder
+   (prospect→applied→approved→active→dead), priority, link template,
+   deeplink support, commission schedule. Rates are TIME-VERSIONED data
+   (trivago prices every click in advance; bids change daily) — the
+   applicable rate is STAMPED ON THE CLICK, so history survives rate edits.
+5. **ledgers** — immutable events only:
+   - clicks: UUID minted at redirect (Skyscanner redirect_id pattern);
+     the UUID IS the subid (opaque, alnum, ≤32 — the safe envelope across
+     all networks; composite human-readable subids "spiral out of control"
+     and are merchant-visible on some networks). Page/module/product/rate
+     context lives on OUR click row, never encoded in the subid.
+   - conversion EVENTS keyed (connection, network_transaction_id): each
+     report row/webhook = an event (observed_at, status, amount, currency);
+     reversal = a new event, NEVER an update (CJ ships corrections as
+     deltas; Impact webhooks fire created/updated/reversed). Derived
+     current-state view on top. click_id FK NULLABLE with match_status —
+     25-30% attribution loss is structural (metasearch-measured).
+   - payouts/statements: periodic aggregation with adjustment rows;
+     reconcile payments-received vs approved-conversions per connection.
+
+### Principles the research settled
+
+- **Own click ledger = truth for behavior; network numbers = truth for
+  money.** Reconcile identifier-by-identifier, never aggregates.
+- **Editorial firewall (Wirecutter):** the pick record carries no retailer;
+  commission rates NEVER surface in curation UIs, only in this admin.
+  Routing CLICKS by earnings is normal; re-ranking PICKS by commission is
+  the trust-killer. (Matches feedback_no_vendor_names + buy-links rule.)
+- **Retailer priority is an offer-layer rule:** in-stock → Amazon-first
+  (curator policy, Prime) → rate/EPC.
+- **Amazon constraints shape the design:** /go/ must stay same-domain and
+  transparent (no cloaking); displayed prices only ever from PA-API with
+  ≤1h staleness (never scraped/hand-entered — don't display until PA-API);
+  PA-API is GATED (3 sales/180d, revoked after 30 idle days) so degraded
+  mode is the default; tags are a first-class column, not a subid.
+- **Link health = two jobs** (later phase): program-status diffing from
+  network merchant lists (program dead ⇒ links dead) + destination
+  crawling; every link gets a fallback cascade (preferred program → other
+  program same store → plain URL).
+- **What NOT to build:** auctions/bidding (that's marketplace-scale), live
+  price scraping, multi-touch attribution (a network negotiation, not
+  infrastructure), merchant-of-record anything.
+
+### Phasing
+
+- **Phase 1 (now):** stores/networks/connections tables + program re-key;
+  migrate amazon → connection, 13 prospects → stores; /go/ resolves host →
+  store → best ACTIVE program (priority); rate stamped on click; editor
+  grows Stores + Networks panes. Ledgers stay empty-compatible.
+- **Phase 2 (first non-Amazon activation):** conversion-event ingestion
+  (updated-since polling per connection, raw payloads kept), reconciliation
+  diff report (reported-by-network vs observed-by-us).
+- **Phase 3:** link-health jobs, payout/statement reconciliation.

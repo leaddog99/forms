@@ -68,25 +68,52 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             user_agent    TEXT,
             device        TEXT,
             counted       INTEGER DEFAULT 1,
-            suppressed_by TEXT
+            suppressed_by TEXT,
+            store         TEXT,                -- resolved store (host -> store)
+            rate          REAL                 -- program rate AT CLICK TIME — rates are
+                                               -- time-versioned data; history must
+                                               -- survive rate edits (design note §9)
         )""")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(affiliate_clicks)")}
+    if "store" not in cols:
+        conn.execute("ALTER TABLE affiliate_clicks ADD COLUMN store TEXT")
+        conn.execute("ALTER TABLE affiliate_clicks ADD COLUMN rate REAL")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clk_time ON affiliate_clicks(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clk_program ON affiliate_clicks(program, created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clk_product ON affiliate_clicks(product_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clk_counted ON affiliate_clicks(counted, created_at)")
+    # Conversions = an IMMUTABLE EVENT LOG (design note §9): every network
+    # report row / webhook is an event; a reversal is a NEW event, never an
+    # UPDATE (networks ship corrections as deltas for 60+ days post-sale).
+    # A derived current-state view sits on top when ingestion lands (Phase 2).
+    # click_id is NULLABLE with match_status — 25-30% attribution loss is
+    # structural; a conversion with no subid is a fact, not an error.
+    try:
+        old = conn.execute("SELECT COUNT(*) FROM affiliate_conversions").fetchone()
+        if old and old[0] == 0:
+            conn.execute("DROP TABLE affiliate_conversions")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_conversions (
-            conversion_id TEXT PRIMARY KEY,
-            click_id      TEXT,
-            program       TEXT,
-            occurred_at   TEXT,
-            reported_at   TEXT,
-            order_total   REAL,
-            commission    REAL,
-            currency      TEXT,
-            status        TEXT,
-            raw           TEXT
+        CREATE TABLE IF NOT EXISTS affiliate_conversion_events (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            connection     TEXT,               -- which of our accounts reported it
+            network_txn_id TEXT,               -- the network's transaction id (dedupe key)
+            observed_at    TEXT NOT NULL,      -- when WE saw this event
+            event          TEXT,               -- created | updated | reversed | paid
+            status         TEXT,               -- network status verbatim (pending/locked/…)
+            order_total    REAL,
+            commission     REAL,
+            currency       TEXT,
+            click_id       TEXT,               -- NULLABLE — see match_status
+            match_status   TEXT,               -- matched | no_subid | unknown_click
+            program        TEXT,
+            raw            TEXT                -- the report row/payload, verbatim
         )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ace_txn "
+                 "ON affiliate_conversion_events(connection, network_txn_id, observed_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ace_click "
+                 "ON affiliate_conversion_events(click_id)")
     # One row per rendered ITEM (with its position): the EV denominator.
     # P(click|shown) has no meaning without knowing what was shown where.
     conn.execute("""
@@ -195,11 +222,16 @@ def record_click(conn: sqlite3.Connection, click_id: str, params: dict, *,
         final = dest
     tagged = 1 if (final or "") != (clean_url(dest) or dest) else 0
     host = (urlparse(dest).hostname or "").replace("www.", "").lower()
-    program = None
+    program, store, rate = None, None, None
     try:
         from intake.products import affiliate_programs as ap
         prog = ap.program_for_url(dest, conn)
-        program = prog["name"] if prog else None
+        if prog:
+            program = prog.get("name")
+            store = prog.get("store")
+            # Rate stamped AT CLICK TIME — rates are time-versioned data and
+            # this row must still say what the click was worth after edits.
+            rate = prog.get("default_rate")
     except Exception:
         pass
 
@@ -208,15 +240,16 @@ def record_click(conn: sqlite3.Connection, click_id: str, params: dict, *,
     conn.execute(
         "INSERT OR IGNORE INTO affiliate_clicks(click_id, created_at, day, hour, program, "
         "merchant_host, dest_url, final_url, tagged, surface, product_id, collection, "
-        "slot, page_url, referrer, session_id, ip_hash, user_agent, counted, suppressed_by) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "slot, page_url, referrer, session_id, ip_hash, user_agent, counted, suppressed_by, "
+        "store, rate) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (click_id, now.isoformat(), local.strftime("%Y-%m-%d"), local.hour, program,
          host, dest, final, tagged,
          params.get("sf") or "", params.get("pid") or "", params.get("col") or "",
          params.get("sl") or "", params.get("pg") or "", headers.get("referer") or "",
          session_id,
          hashlib.sha256(secret + client_ip.encode()).hexdigest()[:32] if client_ip else "",
-         ua[:300], 0 if suppressed else 1, suppressed or None))
+         ua[:300], 0 if suppressed else 1, suppressed or None, store, rate))
     conn.commit()
     return final or dest
 

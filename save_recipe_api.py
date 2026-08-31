@@ -7199,6 +7199,69 @@ def affiliate_program_delete_endpoint(request: Request, name: str):
     return {"deleted": name}
 
 
+# ---- Stores / networks / connections (five-entity model, design note §9) ----
+
+@app.get("/affiliate-stores")
+def affiliate_stores_list_endpoint():
+    from intake.products import affiliate_programs as ap
+    with _db() as conn:
+        return {"stores": ap.list_stores(conn)}
+
+
+@app.post("/affiliate-stores")
+def affiliate_store_create_endpoint(request: Request, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    try:
+        with _db() as conn:
+            return ap.create_store(conn, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.put("/affiliate-stores/{name}")
+def affiliate_store_update_endpoint(request: Request, name: str, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    with _db() as conn:
+        s = ap.update_store(conn, name, payload)
+    if s is None:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return s
+
+
+@app.delete("/affiliate-stores/{name}")
+def affiliate_store_delete_endpoint(request: Request, name: str):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    try:
+        with _db() as conn:
+            ok = ap.delete_store(conn, name)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    if not ok:
+        raise HTTPException(status_code=404, detail="Store not found")
+    return {"deleted": name}
+
+
+@app.get("/affiliate-networks")
+def affiliate_networks_list_endpoint():
+    from intake.products import affiliate_programs as ap
+    with _db() as conn:
+        return {"networks": ap.list_networks(conn)}
+
+
+@app.post("/affiliate-connections")
+def affiliate_connection_upsert_endpoint(request: Request, payload: dict = Body(...)):
+    _require_perm(request, "edit_master")
+    from intake.products import affiliate_programs as ap
+    try:
+        with _db() as conn:
+            return ap.upsert_connection(conn, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @app.get("/semrush-ranks")
 def semrush_ranks_status_endpoint():
     """Per-region summary of the imported SEMrush Rank reference data (rows, file

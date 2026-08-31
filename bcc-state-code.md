@@ -7476,3 +7476,57 @@ No code since 18481c3 — this entry records a DECISION and work in flight.
 * Synthesize research -> schema design -> curator sign-off -> build the
   three-entity migration (stores/networks/programs + /go/ + editor).
 * Everything carried from the two earlier 2026-08-31 entries.
+
+## Session log — 2026-08-31 (night) — three research agents report, and the affiliate layer gets its real shape
+
+Commits: this one. RESTART OWED for the new /affiliate-stores, /affiliate-
+networks, /affiliate-connections endpoints (the migration itself already ran
+LIVE — a curator-triggered job loaded the new code from disk and executed it
+mid-rehearsal; verified complete and correct after the fact).
+
+* **Research round (3 parallel agents; condensed into design doc §9).**
+  Sources: link-management platforms' public APIs (Strackr/Affilimate/
+  Skimlinks/Sovrn/Trackonomics/Wecantrack), trivago 20-F + TripAdvisor 10-K
+  + Skyscanner partner docs, Wirecutter/Dotdash/BuzzFeed/Future-Hawk
+  reporting. All three converge on the same model AND independently
+  validate decisions already taken (codes-minted-at-click, own click
+  ledger, /go/ redirect, Amazon-first at the offer layer, commission data
+  never near ranking — the Wirecutter firewall, complete with NYT's 2019
+  breach as the cautionary tale).
+* **The five entities (flat table → researched shape):** stores (merchant:
+  hosts, platform; a store with no program IS a prospect) · networks (the
+  rails + their subid MECHANICS: param name + safe max, seeded from
+  research: Impact subId1/255, Awin clickref/50, Rakuten u1/72, Amazon
+  ascsubtag/restricted) · connections (OUR account per network — the entity
+  every flat model misses; Strackr and Trackonomics both carry it) ·
+  programs (the store×connection JOIN: status ladder, priority, template) ·
+  immutable ledgers.
+* **Phase 1 BUILT + live-migrated:** amazon → store 'amazon' + connection
+  'amazon-associates' (tag carried) + program re-keyed; the 13 Shopify
+  prospects became STORES (platform stamped from retailer_hosts), their
+  program rows deleted — a prospect is a store without a program, by
+  definition now. /go/ resolution: host → store → best ACTIVE program by
+  status-ladder+priority, merged with connection creds + network subid
+  metadata. Minted Amazon link verified byte-identical pre/post.
+* **Click ledger upgraded:** clicks stamp `store` + `rate` AT CLICK TIME
+  (trivago: price fixed in advance of the click; history survives rate
+  edits). Conversions REPLACED (empty) by `affiliate_conversion_events` —
+  immutable event log, reversal = new event, click_id NULLABLE with
+  match_status (25-30% attribution loss is structural, per metasearch).
+* **Editor = three panes** (affiliates.html): Programs / Stores (platform
+  chip, PROSPECT state, clickable hosts, guarded delete) / Networks (subid
+  mechanics + inline connection upsert). Program form gained store +
+  connection selects (connection fills credential blanks).
+* **Deliberately NOT built (research: wrong scale or wrong side):**
+  auctions/bidding, live price scraping, multi-touch attribution,
+  merchant-of-record. Phase 2 = conversion polling + reconciliation diff
+  on first non-Amazon activation; Phase 3 = link-health jobs + payout
+  reconciliation.
+
+### Open
+
+* RESTART for the new endpoints; then eyeball the three-pane editor.
+* Network research per prospect (which of ShareASale/Impact/CJ/Rakuten
+  carries each of the 13); aggregator (Skimlinks/Sovrn) as the floor.
+* Everything carried from the earlier 2026-08-31 entries (Nutmeg re-run,
+  KitchenAid mixer re-run, Emile Henry merge, product-side M2M design…).

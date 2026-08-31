@@ -75,23 +75,45 @@
     const STRATEGIES = ['template','amazon_tag','none'];
     const statusPill = (s) => `<span class="pill-w ${s==='active'?'ok':(s==='paused'||s==='rejected'||s==='closed')?'bad':'warn'}">${escapeHtml(s||'prospect')}</span>`;
 
-    let rows = [], selected = null, mode = 'view';
+    // Five-entity model (design note §9): PROGRAMS are relationships,
+    // STORES are merchants (a store with no program = a prospect),
+    // NETWORKS carry our connections + subid mechanics.
+    let rows = [], stores = [], networks = [], selected = null, selType = 'program', mode = 'view';
 
     function renderList(){
-      $('#count').textContent = `(${rows.length})`;
-      $('#list').innerHTML = rows.length ? rows.map(p => `
-        <li class="ed-item ${p.name===selected&&mode!=='add'?'selected':''}" data-name="${escapeHtml(p.name)}">
+      $('#count').textContent = `(${rows.length}·${stores.length})`;
+      const sel = (t, n) => (t===selType && n===selected && mode!=='add') ? 'selected' : '';
+      const progLis = rows.map(p => `
+        <li class="ed-item ${sel('program', p.name)}" data-type="program" data-name="${escapeHtml(p.name)}">
           <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(p.display_name || p.name)}</span>
             ${p.status==='active' ? '<span class="ed-item-flag ok" title="Active — mints codes"></span>' : ''}</div>
           <div class="ed-item-meta">${escapeHtml(p.merchant||'—')} · ${escapeHtml(p.network||'no network')} · ${escapeHtml(p.status||'prospect')} · ${p.host_count||0} host${(p.host_count||0)===1?'':'s'}${p.default_rate!=null?` · ${(p.default_rate*100).toFixed(1)}%`:''}</div>
-        </li>`).join('') : '<li class="ed-empty">No programs — press +.</li>';
+        </li>`).join('');
+      const storeLis = stores.map(s => `
+        <li class="ed-item ${sel('store', s.name)}" data-type="store" data-name="${escapeHtml(s.name)}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(s.display_name || s.merchant || s.name)}</span></div>
+          <div class="ed-item-meta">${escapeHtml(s.platform||'platform ?')} · ${(s.hosts||[]).length} host${(s.hosts||[]).length===1?'':'s'} · ${
+            (s.programs||[]).length ? escapeHtml((s.programs||[]).map(p=>p.status).join(', ')) : 'PROSPECT — no program'}</div>
+        </li>`).join('');
+      const netLis = networks.map(n => `
+        <li class="ed-item ${sel('network', n.name)}" data-type="network" data-name="${escapeHtml(n.name)}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(n.display_name || n.name)}</span></div>
+          <div class="ed-item-meta">${n.subid_param?`subid: ${escapeHtml(n.subid_param)} ≤${n.subid_max}`:'no subid param'} · ${(n.connections||[]).length} connection${(n.connections||[]).length===1?'':'s'}</div>
+        </li>`).join('');
+      const head = (label) => `<li class="ed-empty" style="padding:8px 12px 2px;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase">${label}</li>`;
+      $('#list').innerHTML =
+        head(`Programs (${rows.length})`) + (progLis || '<li class="ed-empty">none — press +</li>')
+        + head(`Stores (${stores.length})`) + (storeLis || '<li class="ed-empty">none</li>')
+        + head(`Networks (${networks.length})`) + netLis;
       $('#list').querySelectorAll('li[data-name]').forEach(li =>
-        li.addEventListener('click', () => { selected = li.dataset.name; mode='view'; renderList(); renderDetail(); nav.afterSelect(); }));
+        li.addEventListener('click', () => { selected = li.dataset.name; selType = li.dataset.type; mode='view'; renderList(); renderDetail(); nav.afterSelect(); }));
     }
 
     async function renderDetail(){
       const page = $('#page');
       if (mode === 'add') return renderForm(null);
+      if (selected && selType === 'store') return renderStore();
+      if (selected && selType === 'network') return renderNetwork();
       if (!selected){ page.innerHTML = `
         <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Affiliate Programs</span></div>
         <h1 class="ed-title">Affiliate programs</h1>
@@ -156,6 +178,125 @@
       });
     }
 
+    function renderStore(){
+      const s = stores.find(x => x.name === selected);
+      const page = $('#page');
+      if (!s){ page.innerHTML = '<p class="ed-empty">Store not found.</p>'; return; }
+      if (mode === 'edit'){
+        page.innerHTML = `
+          <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Edit Store</span></div>
+          <h1 class="ed-title" style="margin-bottom:14px">${escapeHtml(s.display_name||s.merchant||s.name)}</h1>
+          <div class="pc-form">
+            <div class="pc-row2">
+              <div class="ed-field"><label>Display name</label><input id="s_display" value="${escapeHtml(s.display_name||'')}"></div>
+              <div class="ed-field"><label>Merchant</label><input id="s_merchant" value="${escapeHtml(s.merchant||'')}"></div>
+            </div>
+            <div class="pc-row2">
+              <div class="ed-field"><label>Platform</label><select id="s_platform">${['','shopify','marketplace','custom'].map(o=>`<option value="${o}" ${(s.platform||'')===o?'selected':''}>${o||'— unknown —'}</option>`).join('')}</select></div>
+              <div class="ed-field"><label>Contact</label><input id="s_contact" value="${escapeHtml(s.contact||'')}"></div>
+            </div>
+            <div class="ed-field"><label>Hosts (one per line)</label><textarea id="s_hosts" rows="3">${escapeHtml((s.hosts||[]).join('\n'))}</textarea></div>
+            <div class="ed-field"><label>Notes</label><textarea id="s_notes" rows="4">${escapeHtml(s.notes||'')}</textarea></div>
+            <div class="pc-form-actions">
+              <button type="button" class="ed-btn primary" id="sSave">Save</button>
+              <button type="button" class="ed-btn" id="sCancel">Cancel</button>
+              <span class="ed-save-hint" id="hint"></span>
+            </div>
+          </div>`;
+        $('#sCancel').addEventListener('click', () => { mode='view'; renderDetail(); });
+        $('#sSave').addEventListener('click', async () => {
+          const body = { display_name: $('#s_display').value.trim(), merchant: $('#s_merchant').value.trim(),
+            platform: $('#s_platform').value, contact: $('#s_contact').value.trim(),
+            notes: $('#s_notes').value, hosts: $('#s_hosts').value };
+          const r = await fetch(`/affiliate-stores/${encodeURIComponent(s.name)}`, {
+            method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+          const d = await r.json().catch(()=>({}));
+          if (r.ok){ flash('✓ Saved'); mode='view'; await load(); }
+          else $('#hint').textContent = 'Save failed: ' + (d.detail || `HTTP ${r.status}`);
+        });
+        return;
+      }
+      const progs = (s.programs||[]).map(p =>
+        `<a href="#" data-goprog="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a> ${statusPill(p.status)}`).join('<br>')
+        || '<span class="pill-w warn">prospect</span> <span class="muted">no program yet — create one with ＋ and pick this store</span>';
+      page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Store</span></div>
+        <h1 class="ed-title" style="margin-bottom:2px">${escapeHtml(s.display_name || s.merchant || s.name)}</h1>
+        <p class="ed-submeta">${escapeHtml(s.merchant||'')} · ${escapeHtml(s.platform||'platform unknown')} · key <code>${escapeHtml(s.name)}</code></p>
+        <div class="ed-actions" style="position:static;background:none;padding:6px 0 14px">
+          <button type="button" class="ed-btn" id="sEdit">Edit</button>
+          <button type="button" class="ed-btn danger" id="sDel">Delete</button>
+        </div>
+        <section class="ed-block"><h3 class="ed-block-label">Hosts <span class="ed-count">(${(s.hosts||[]).length})</span></h3>
+          <div style="font-size:.88rem">${(s.hosts||[]).map(h=>`<a href="https://${escapeHtml(h)}/" target="_blank" rel="noopener">${escapeHtml(h)}</a>`).join('<br>')||'—'}</div></section>
+        <section class="ed-block"><h3 class="ed-block-label">Programs <span class="ed-count">(${(s.programs||[]).length})</span></h3>
+          <div style="font-size:.88rem">${progs}</div></section>
+        ${s.notes?`<section class="ed-block"><h3 class="ed-block-label">Notes</h3><p style="font-size:.9rem;white-space:pre-wrap">${escapeHtml(s.notes)}</p></section>`:''}`;
+      $('#sEdit').addEventListener('click', () => { mode='edit'; renderDetail(); });
+      $('#sDel').addEventListener('click', async () => {
+        if (!confirm(`Delete store ${s.name}? Its hosts stop resolving. A store with programs is refused.`)) return;
+        const r = await fetch(`/affiliate-stores/${encodeURIComponent(s.name)}`, { method:'DELETE' });
+        const d = await r.json().catch(()=>({}));
+        if (r.ok){ flash('Store deleted'); selected=null; await load(); }
+        else flash('Delete failed: ' + (d.detail || `HTTP ${r.status}`));
+      });
+      page.querySelectorAll('[data-goprog]').forEach(a => a.addEventListener('click', (e) => {
+        e.preventDefault(); selected = a.dataset.goprog; selType='program'; renderList(); renderDetail();
+      }));
+    }
+
+    function renderNetwork(){
+      const n = networks.find(x => x.name === selected);
+      const page = $('#page');
+      if (!n){ page.innerHTML = '<p class="ed-empty">Network not found.</p>'; return; }
+      const connRow = (c) => `
+        <div class="pc-form" data-conn="${escapeHtml(c.name||'')}" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px">
+          <div class="pc-row3">
+            <div class="ed-field"><label>Connection key</label><input class="c_name" value="${escapeHtml(c.name||'')}" ${c.name?'readonly':''} placeholder="${escapeHtml(n.name)}-main"></div>
+            <div class="ed-field"><label>Publisher id</label><input class="c_pub" value="${escapeHtml(c.publisher_id||'')}"></div>
+            <div class="ed-field"><label>Tracking id ${n.name==='amazon'?'(the tag)':''}</label><input class="c_track" value="${escapeHtml(c.tracking_id||'')}"></div>
+          </div>
+          <div class="pc-row3">
+            <div class="ed-field"><label>Account ref</label><input class="c_acct" value="${escapeHtml(c.account_ref||'')}"></div>
+            <div class="ed-field"><label>Region</label><input class="c_region" value="${escapeHtml(c.region||'')}" placeholder="US"></div>
+            <div class="ed-field"><label>Status</label><select class="c_status">${['active','paused','closed'].map(o=>`<option ${((c.status||'active')===o)?'selected':''}>${o}</option>`).join('')}</select></div>
+          </div>
+          <div class="pc-row2">
+            ${urlField('c_dash_'+(c.name||'new').replace(/[^a-z0-9]/gi,''), 'Dashboard URL', c.dashboard_url||'', { ph: 'https://…' })}
+            <div class="ed-field"><label>Contact</label><input class="c_contact" value="${escapeHtml(c.contact||'')}"></div>
+          </div>
+          <div class="pc-form-actions"><button type="button" class="ed-btn primary c_save">${c.name?'Save':'Add connection'}</button>
+            <span class="ed-save-hint c_hint"></span></div>
+        </div>`;
+      page.innerHTML = `
+        <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Network</span></div>
+        <h1 class="ed-title" style="margin-bottom:2px">${escapeHtml(n.display_name || n.name)}</h1>
+        <p class="ed-submeta">subid param: <code>${escapeHtml(n.subid_param||'—')}</code>${n.subid_max?` · max ${n.subid_max} chars`:''} · key <code>${escapeHtml(n.name)}</code></p>
+        ${n.notes?`<section class="ed-block"><p style="font-size:.88rem" class="muted">${escapeHtml(n.notes)}</p></section>`:''}
+        <section class="ed-block"><h3 class="ed-block-label">Our connections <span class="ed-count">(${(n.connections||[]).length})</span></h3>
+          ${(n.connections||[]).map(connRow).join('')}
+          ${connRow({})}
+        </section>`;
+      page.querySelectorAll('.c_save').forEach(btn => btn.addEventListener('click', async () => {
+        const box = btn.closest('[data-conn]');
+        const dash = box.querySelector('input[id^="c_dash_"]');
+        const body = { name: box.querySelector('.c_name').value.trim(), network: n.name,
+          publisher_id: box.querySelector('.c_pub').value.trim(),
+          tracking_id: box.querySelector('.c_track').value.trim(),
+          account_ref: box.querySelector('.c_acct').value.trim(),
+          region: box.querySelector('.c_region').value.trim(),
+          status: box.querySelector('.c_status').value,
+          dashboard_url: dash ? dash.value.trim() : '',
+          contact: box.querySelector('.c_contact').value.trim() };
+        if (!body.name){ box.querySelector('.c_hint').textContent = 'Connection key required'; return; }
+        const r = await fetch('/affiliate-connections', { method:'POST',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        const d = await r.json().catch(()=>({}));
+        if (r.ok){ flash('✓ Connection saved'); await load(); }
+        else box.querySelector('.c_hint').textContent = 'Failed: ' + (d.detail || `HTTP ${r.status}`);
+      }));
+    }
+
     function renderForm(p){
       const isEdit = !!p;
       const v = (k, d='') => escapeHtml((p && p[k] != null ? p[k] : d) + '');
@@ -176,7 +317,13 @@
             <div class="ed-field"><label>Priority (low wins ties)</label><input id="f_priority" type="number" value="${v('priority','100')}"></div>
           </div>
           <div class="pc-row2">
-            <div class="ed-field"><label>Publisher id</label><input id="f_publisher" value="${v('publisher_id')}"></div>
+            <div class="ed-field"><label>Store <span class="muted" style="font-weight:400">(the merchant this monetizes)</span></label>
+              <select id="f_store">${['',...stores.map(s=>s.name)].map(o=>`<option value="${escapeHtml(o)}" ${((p&&p.store)||'')===o?'selected':''}>${escapeHtml(o||'— auto from merchant —')}</option>`).join('')}</select></div>
+            <div class="ed-field"><label>Connection <span class="muted" style="font-weight:400">(our network account)</span></label>
+              <select id="f_connection">${['',...networks.flatMap(n=>(n.connections||[]).map(c=>c.name))].map(o=>`<option value="${escapeHtml(o)}" ${((p&&p.connection)||'')===o?'selected':''}>${escapeHtml(o||'— none yet —')}</option>`).join('')}</select></div>
+          </div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Publisher id <span class="muted" style="font-weight:400">(override — connection fills blanks)</span></label><input id="f_publisher" value="${v('publisher_id')}"></div>
             <div class="ed-field"><label>Tracking id (Amazon: tag)</label><input id="f_tracking" value="${v('tracking_id')}"></div>
           </div>
           <div class="pc-row2">
@@ -216,6 +363,7 @@
         });
         const body = {
           display_name: $('#f_display').value.trim(), merchant: $('#f_merchant').value.trim(),
+          store: $('#f_store').value, connection: $('#f_connection').value,
           network: $('#f_network').value, status: $('#f_status').value,
           priority: parseInt($('#f_priority').value, 10) || 100,
           publisher_id: $('#f_publisher').value.trim(), tracking_id: $('#f_tracking').value.trim(),
@@ -246,9 +394,12 @@
 
     async function load(){
       try {
-        const r = await fetch('/affiliate-programs');
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        rows = (await r.json()).programs || [];
+        const [rp, rs, rn] = await Promise.all([
+          fetch('/affiliate-programs'), fetch('/affiliate-stores'), fetch('/affiliate-networks')]);
+        if (!rp.ok) throw new Error(`HTTP ${rp.status}`);
+        rows = (await rp.json()).programs || [];
+        stores = rs.ok ? (await rs.json()).stores || [] : [];
+        networks = rn.ok ? (await rn.json()).networks || [] : [];
       } catch (e){
         $('#list').innerHTML = `<li class="ed-empty">Couldn’t load (${escapeHtml(String(e.message||e))}).</li>`;
         return;
