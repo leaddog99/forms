@@ -5989,7 +5989,19 @@ distance; curator merging (alla Nerano keeps the name, spaghetti spellings are
 aliases). BIG NAMED GAP: dish↔recipe M2M was never migrated onto
 collection_members (publishers only) — needs a migration map, identity
 (dish_effective) versus membership kept separate. Admin menu now grouped
-Corpus/Commerce/Jobs/System. Restart owed: gap-report admin gate.
+Corpus/Commerce/Jobs/System.
+
+EVENING (same day, read that log too): per-line **slot reservation** (`keep`
+on query rows — the language-tax fix) + per-line min-OU relax; the **info-dot
+convention** (field explanations pop a card; everywhere from now on); the
+**concentration report's second edition** says the top-200 is now an NYT/BBC
+monoculture (115/200 NYT, first food blog at rank 145) → a **per-publisher
+cap is overdue** and the reservation seating is its machinery; SEMrush inbox
+removed; a **session watchdog** re-verifies the displayed user against
+/auth/me (focus/interval) after the iPhone spent an evening as a phantom
+user 5; cancelled/failed-early refreshes preserve the prior run's
+count/fit/schedule. Twins (Pastitsio/Matzo/Strawberries) STILL pending —
+the earlier attempt was silently auth-blocked.
 
 ## Prior START HERE — state of play as of 2026-08-28
 
@@ -7084,3 +7096,73 @@ parser quote repair — belong to the prior session's render-side start.)
   stays dish_effective) — design doc before any code.
 * Hygiene report: orphans with no dish within ~0.75 → curator review surface.
 * Restart owed: gap-report admin_ui gate. Render side continues per 08-29.
+
+## Session log — 2026-08-30 (evening) — the language tax gets seats, the corpus meets its landlords, and every page learns to doubt its own login
+
+Commits `a8d4bf4`..`ed341ea` + this log. The curator drove dish creation off
+the holes list all evening (Sourdough Bread, Apple Cake, Chicken Salad,
+alla colatura proposals) while the tooling grew around them.
+
+* **Per-line slot reservation SHIPPED (`1edb1b2`)** — the language-tax fix.
+  Pistou measured it: the fr/fr line's marmiton (DA 83) lost every winner
+  seat to anglophone pages on PA alone (link-graph geography, not merit).
+  Query rows carry `keep` = reserved winner seats for that line's own
+  candidates (floor not cap; unfillable reserves return to the pool via a
+  top-up pass; seats consume on SAVE success so failures backfill in-line;
+  no reserves = exact prior behavior, simulation-verified). Reserve column
+  in the row editor; form blocks reserves > Winners.
+* **Per-LINE min-OU relax (`f23821b`).** The foreign-locale floor relax was
+  all-or-nothing per run — one French line switched the negative-OU roundup
+  protection off for the English candidates too. Mixed batches (foreign
+  verdict from row locales) now relax per candidate; dish-declared or
+  query-inferred foreign stays run-wide.
+* **ⓘ info-dot convention (`1edb1b2`, sweep `584673e`)** — curator's call:
+  field explanations behind a small dot popping a centered card, never
+  inline prose walls; EVERYWHERE from now on. Shared component in
+  library-shell (delegated listener + LibraryShell.showInfo). Sweep fixed
+  real staleness — dishes winners and chapters top-10 both still said "by
+  OU" (blend since weeks), Sources-in predated row locales AND the relax
+  scope — and migrated dishes/domains/coverage explainers (the coverage
+  paragraph walls were what buried the holes table; also `a8d4bf4` capped
+  both tables at 62vh, `955904e` put holes rows on the coverage layout).
+* **Corpus-concentration report, SECOND EDITION (`955aa1e`,
+  docs/reports/corpus-concentration.html).** Same method, 2.5x corpus:
+  top-200 publishers 34 → **13**, HHI 667 → **3,753**, top-3 share 34% →
+  **84%**. The publisher harvests seated the DA-95 giants in a block —
+  NYT holds 115/200, ranks 1–77 are exclusively NYT+BBC, the first food
+  blog appears at 145; Serious Eats/Martha/BBC-Good-Food (100+ rows each)
+  place ZERO. July's webmd 1-for-1 persists. 'Cap the publisher' is now
+  overdue — and the slot-reservation seating is the machinery a per-
+  publisher cap needs.
+* **SEMrush inbox REMOVED (`603ae4f`)** — never used; the harvest reads
+  exports directly. Kept: semrush_inbox_dir (search dir), upload-export,
+  worklist. Also `e4df3f0`: a stale form's blank save can't clobber
+  semrush_report_url (splendidtable lost its seeded link minutes after the
+  21-domain backfill; same guard family as the paywall-discount blank).
+* **Session watchdog (`eadd53d`)** — identity was fetched once and believed
+  forever; the iPhone showed its persisted picker ('user 5') over an
+  anonymous session all evening. The shell re-validates /auth/me on focus/
+  visibility/5-min interval/post-boot; lapse → red banner + badge/nav
+  re-render; pages get `bcc:identity-changed` (recipe form re-resolves
+  Enrich). The trail that led here (`7e771d2`): a master grab on the phone
+  had NO Enrich — boot hid it (stale picker + anonymous), then the harvest
+  lock's early return froze it hidden; visibility now applies pre-lock.
+* **Run-record honesty (`ed341ea`, `b646d36`).** A cancelled Apple Cake
+  refresh (0/65) stamped count=0 over 15 standing winners AND bumped the
+  schedule a full TTL. record_run_result gains preserve_outcome/
+  preserve_schedule (cancel keeps both, pre-save error keeps outcome);
+  Apple Cake restored from job #1209's stored result. And ✨ Propose says
+  "model reply unusable — run again" instead of a silent empty panel
+  (alla colatura #1213 failed inside a 'success' job; rerun gave 12).
+* Misc: dishes-list sort always visible (`29ca5e3`); Reserve spinner edits
+  arm Save (`7e406a0`); gap-report gated admin_ui (`70706d5`).
+
+### Open
+
+* Rerun Pistou with a Reserve on the fr line — first live use of the seats.
+* **Per-publisher cap at selection** — promoted by the report from "worth
+  doing" to overdue; design = the reservation seating keyed on host.
+* Twins still pending: Pastitsio / Matzo / Strawberries pairs (delete →
+  alias → rematch); the earlier attempt was silently blocked by the
+  expired session the watchdog now catches.
+* M2M migration map; orphan hygiene report (~0.75+); render side per 08-29.
