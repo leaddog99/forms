@@ -5972,7 +5972,46 @@ rows, each measured publisher's flagship. Facets and counts cascade under it.
    G1 ADAM retention policy, Greek Yogurt Pizza Dough unfiling, ingredient
    quantities.
 
-## START HERE — state of play as of 2026-08-30
+## START HERE — state of play as of 2026-08-31 (start of day)
+
+Read the three 2026-08-30 logs (bottom of file: morning, evening, late) —
+it was a landmark day. **The commerce funnel is now demonstrable end-to-end
+on Apple Cake with every hop clickable**: cohort signals (tube pan 151.7×)
+→ proposed class chip with cited evidence → its curated collection
+(?collection= deep-link) → catalog product records (?product= deep-link,
+RealRank/offers attached). Only the render side (public ad block + /go/ +
+EV bandit) remains unbuilt past the impressions/clickstream plumbing.
+
+**Classes** (say "Classes", never "the registry") is now a first-class
+surface: `product_classes` = 256 rows, all embedded, 220 with `signals`
+(trigger phrases ON the class record — curator's design: 'Apple Peeler'
+never embeds near 'granny smith apples', so term-to-term is the matchable
+surface; implications like 'egg yolks'→Egg Separators encode once, match
+free forever). Full ACDV editor at admin → Commerce → Classes: Add
+(staff-supplied, embeds immediately), rename/MERGE (re-keys chips+products+
+collections, approvals never downgraded), guarded delete. Gourmet curated:
+vegetables purged, 39 spices/dried-herbs added with signals.
+
+**NEXT BUILD (spec agreed, awaiting nothing):** the mechanical matcher
+pre-pass in dish_class_propose — dish signals × class signal-phrases by
+embedding distance, identity candidates seated deterministically BEFORE the
+LLM (which keeps implications/served_with/tiering); calibrate the distance
+bar on live pairs and show the table before fixing it. Then: Apple Peeler
+loop test (run collection → re-propose Apple Cake → approve), the GREY LIST
+(fresh herbs/fruits as classes — Granny Smith is T1-proposed, decide),
+equipment dupe merges (Pie/Meatloaf/Loaf pairs).
+
+Standing items: per-publisher cap at selection (the concentration report's
+second edition made it overdue — NYT holds 115/200; the slot-reservation
+seating is the machinery); Pistou rerun with a fr-line Reserve (per-line
+`keep` + per-line OU relax shipped); the dish↔recipe M2M migration map;
+the three twin merges (Pastitsio/Matzo/Strawberries — prior attempt was
+auth-blocked, the session watchdog now makes that loud); orphan hygiene
+report. Ops notes: restarts KILL in-flight jobs; propose ~30s, curated
+collection ~5min, EN refresh ~2.5-7min, foreign now fast (it/fr phrase
+packs); the jobs CLI --dish flag is refresh-only.
+
+## Prior START HERE — state of play as of 2026-08-30
 
 Read the 2026-08-30 log (bottom of file) first. The commerce pilot remains
 complete end-to-end (see 08-29); this session hardened the DISH LAYER under
@@ -7166,3 +7205,68 @@ alla colatura proposals) while the tooling grew around them.
   alias → rematch); the earlier attempt was silently blocked by the
   expired session the watchdog now catches.
 * M2M migration map; orphan hygiene report (~0.75+); render side per 08-29.
+
+## Session log — 2026-08-30/31 (late) — the commerce chain closes every link, and the Classes table gets a throne room
+
+Commits `9fa18a8`..`746305a` + DB curation + this log. Apple Cake served as
+the end-to-end test case all night, curator-driven.
+
+* **Phrase packs it+fr (`9fa18a8`).** The 63-minute alla colatura refresh
+  decomposed: Italian had NO phrase pack → ~85s full-page translation per
+  candidate ×43, THEN a restart killed it at 43/50 ("owning process is
+  gone" — restarts kill in-flight jobs; let long runs land first). One
+  offline call each: it.json (133 phrases), fr.json (152). Italian/French
+  refreshes now filter at English speed. Runtime cheat-sheet: propose ~30s,
+  curated collection ~5min, EN dish refresh 2.5-7min.
+* **The chain became clickable end-to-end.** Products page honors the
+  ?product= deep-link the picks always sent (`4be68fe`, UUID not row id);
+  curated runs REGISTER their class at completion + chips carry the supply
+  side — 'collection: Tube Pan ↗ · 3 products' with a ?collection= deep-link
+  (`a9403ba`). Root cause of the Tube Pan mystery: the collection created
+  products under a class the class list never learned, so the proposer
+  (told to reuse known names) took Springform (26×) over tube pan (151.7×).
+  Re-proposed with the class known: Tube Pan seated, T2, evidence cited.
+  Apple Cake now demonstrates signals→class→collection→products with every
+  hop a link.
+* **jobs CLI --dish hijack (`92a6fe2`) — disclosure:** 'run dish_class_propose
+  --dish X' silently launched a PAID dish_refresh (the sugar branch ignored
+  the type). Two unintended Apple Cake refreshes were mine. --dish now
+  refresh-only; other types get params.dish_name.
+* **Classes editor SHIPPED (`145eec2`) — vocabulary per curator: "Classes",
+  never "the registry".** Full ACDV on the affiliates template: search +
+  family chips, Used-by panel (collection/product/dish links), staff Add
+  (embedded immediately), family/category edit, RENAME/MERGE re-keying
+  chips+products+collections transactionally (approvals never downgraded),
+  guarded delete (409 with reasons; fixed a row_factory 500). Admin menu →
+  Commerce → Classes.
+* **Class `signals` (`761c94d`) — curator's design insight:** 'Apple Peeler'
+  the NAME embeds nowhere near 'granny smith apples' the phrase, so the
+  matchable surface lives ON the class record: a signals list (trigger
+  phrases), edited in the Classes editor, matched term-to-term. Encoding an
+  implication once ('egg yolks' on Egg Separators) = a free mechanical
+  match forever. SEEDED from junction evidence: 192 classes. The mechanical
+  pre-pass (distance candidates before the LLM, spec agreed) is the
+  NEXT BUILD — calibrate the distance bar on live pairs first.
+* **ⓘ redesigned (`746305a`):** standard Material outlined-i via CSS mask,
+  injected from library-shell.js because the styles lived in a css file the
+  EDITOR pages never load (the real reason it looked ugly); spacing +
+  middle alignment fixed; comma-delimited signal chips; deeper textarea.
+* **Gourmet curation (DB, via the new editor's endpoints):** 11 fresh
+  vegetables deleted (Asparagus…Zucchini — not shoppable ad categories),
+  Colossal→Jumbo Shrimp merged, Pasta Pots + Rice Cooker re-familied to
+  equipment, and **39 spice/dried-herb classes created with signals**
+  (Black Peppercorns…Za'atar; Dried Oregano…Dried Mint) — curator: every
+  spice and dried herb is a class. Now 256 classes / 160 gourmet, all
+  embedded, 220 with signals.
+
+### Open
+
+* GREY LIST for curator: fresh herbs/fruits as classes (Fresh Basil/
+  Cilantro/Ginger/Lime/Parsley/Sage, berries, Ripe Bananas, Roma Tomatoes,
+  Granny Smith Apples) — same fresh-produce logic as the deleted
+  vegetables, but Granny Smith is T1-proposed on Apple Cake. Decide, then
+  the same delete/merge pass. Equipment dupes too (Pie Pans pair, Meatloaf
+  pair, Loaf pair).
+* Mechanical matcher pre-pass (spec agreed; signals surface now exists).
+* Apple Peeler test: run the collection → re-propose Apple Cake → approve.
+* Rerun Pistou with fr-line Reserve; per-publisher cap; M2M map; twins.
