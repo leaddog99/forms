@@ -796,7 +796,16 @@
     // Boot: load the catalog, then — if the product bookmarklet landed us here with ?staged —
     // auto-extract and open the prefilled Add form (inside the normal ACDV shell, list in the menu).
     (async () => {
-      await load();
+      // Deep-link: ?product=<id> selects that record on open — the curated-
+      // collections page has linked here this way since the picks shipped,
+      // but nothing ever READ the param, so 'product record ↗' landed on the
+      // intro screen (found on the Tube Pan run, 2026-08-30).
+      const want = (qs('product') || '').trim();   // product_id is a UUID string
+      await load(want || undefined);
+      if (want){
+        if (byId[want]) { mode = 'view'; renderList(); renderDetail(); nav.afterSelect(); }
+        else LibraryShell.flash && LibraryShell.flash('Product not found — it may have been deleted');
+      }
       const staged = qs('staged') || qs('url');
       if (await tryStagedImport()){ renderList(); renderDetail(); nav.afterSelect(); }
       else if (staged){
