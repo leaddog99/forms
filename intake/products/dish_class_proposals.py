@@ -200,11 +200,23 @@ def list_for_dish(conn: sqlite3.Connection, dish_name: str) -> list:
         "SELECT * FROM dish_product_classes WHERE dish_name = ? "
         "ORDER BY CASE status WHEN 'proposed' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, "
         "tier, class_name", (dish_name,))]
+    # Supply-side join (2026-08-30): each class chip says whether the shop
+    # side exists yet — the curated collection built FOR this class, and how
+    # many product records carry it. An approved class with neither is the
+    # build-me signal; one with a collection links straight to it.
+    coll = {r[0]: r[1] for r in conn.execute(
+        "SELECT product_class, name FROM curated_collections "
+        "WHERE COALESCE(product_class,'') != ''")}
+    pcount = {r[0]: r[1] for r in conn.execute(
+        "SELECT product_class, COUNT(*) FROM products "
+        "WHERE COALESCE(product_class,'') != '' GROUP BY product_class")}
     for r in rows:
         try:
             r["evidence"] = json.loads(r["evidence"] or "[]")
         except Exception:
             r["evidence"] = []
+        r["collection"] = coll.get(r["class_name"])
+        r["product_count"] = pcount.get(r["class_name"], 0)
     return rows
 
 

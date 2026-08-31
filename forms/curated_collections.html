@@ -452,7 +452,14 @@
     $('#sort').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
     $('#addToggle').addEventListener('click', () => { selected=null; detail=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
 
-    load();
+    // Deep-link: ?collection=<name> opens that collection — the dish form's
+    // class chips link here (dish -> class -> its collection, 2026-08-30).
+    (() => {
+      const want = new URLSearchParams(location.search).get('collection');
+      load(want || undefined).then(() => {
+        if (want && byName[want]) { mode = 'view'; renderList(); renderDetail(); nav.afterSelect(); }
+      });
+    })();
   </script>
 </body>
 </html>

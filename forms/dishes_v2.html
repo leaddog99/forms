@@ -802,6 +802,11 @@
               ${r.new_class ? '<span class="ed-pill" title="This class was created by the proposal — not yet a settled registry entry" style="margin-left:4px">new class</span>' : ''}</div>
             <div style="font-size:.82em;color:var(--muted);margin-top:2px">${escapeHtml(r.rationale || '')}</div>
             ${(r.evidence || []).length ? `<div style="font-size:.78em;color:var(--muted);margin-top:2px">evidence: ${ev(r)}</div>` : ''}
+            <div style="font-size:.78em;margin-top:2px">${r.collection
+              ? `<a href="/forms/curated_collections.html?collection=${encodeURIComponent(r.collection)}" target="_blank" rel="noopener">collection: ${escapeHtml(r.collection)} ↗</a>${r.product_count ? ` <span style="color:var(--muted)">· ${r.product_count} product${r.product_count === 1 ? '' : 's'}</span>` : ''}`
+              : (r.product_count
+                  ? `<span style="color:var(--muted)">${r.product_count} product${r.product_count === 1 ? '' : 's'} in catalog · no collection yet</span>`
+                  : `<span style="color:var(--muted)">no products yet — a Collections/Curated run for this class builds them</span>`)}</div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;flex:0 0 auto">${tierSel}${acts}</div>
         </div>`;

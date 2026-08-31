@@ -207,6 +207,24 @@ def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str
             note = " [ASIN withheld — listing looked like another product]" if suspect else ""
             print(f"[CURATE]   {action:<7} {_pick_label(p):<22} {brand} {title}"[:150] + note)
 
+    # Register this run's class in the PRODUCT-CLASS REGISTRY (idempotent —
+    # seed_from_catalog only adds names not already present, and embeds them
+    # so snap() sees them). Without this, a curated run created products under
+    # a class the registry never learned: the Tube Pan collection existed,
+    # Apple Cake's signals showed tube pan at 151.7x lift, and the class
+    # proposer — told to reuse registry names — proposed Springform Pan (26x)
+    # instead, because Tube Pan wasn't on the list it was reusing from
+    # (2026-08-30). The Amazon-search run's classes reached the registry via
+    # the one-shot seeding; new curated classes now register at run end.
+    try:
+        from intake.products import class_registry
+        seeded = class_registry.seed_from_catalog(conn)
+        class_registry.ensure_embeddings(conn)
+        if seeded.get("added"):
+            print(f"[CURATE] class registry: added {seeded['added']}")
+    except Exception as e:
+        print(f"[CURATE] class-registry seeding skipped: {type(e).__name__}: {e}")
+
     return {"products_created": created, "products_merged": merged,
             "placements": len(picks), "skipped": skipped,
             "distinct_products": len(groups)}
