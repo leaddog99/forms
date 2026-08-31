@@ -36,6 +36,8 @@
       border: 1px solid var(--line); color: var(--ed-ink-soft); }
     .pk-place.p1 { background: #fbf1d4; color: #96700c; border-color: #eedfb4; }
     .pk-main { flex: 1; min-width: 0; }
+    .pk-thumb { flex: 0 0 auto; width: 54px; height: 54px; object-fit: contain;
+      border: 1px solid var(--line); border-radius: 7px; background: #fff; }
     .pk-t { font-weight: 600; }
     .pk-why { margin: 4px 0 0; }
     .pk-line { margin: 3px 0 0; font-size: .82rem; }
@@ -253,7 +255,7 @@
                 <div class="pk-place">✕</div>
                 <div class="pk-main">
                   <div class="pk-t">${escapeHtml([p.manufacturer, p.product_title].filter(Boolean).join(' ').trim() || '—')}</div>
-                  <div class="pk-meta">${p.asin?`ASIN ${escapeHtml(p.asin)} · `:''}${p.section?escapeHtml(p.section)+' · ':''}was #${p.place ?? '?'}</div>
+                  <div class="pk-meta">${p.asin?`ASIN <a href="${asinHref(p.asin)}" target="_blank" rel="noopener">${escapeHtml(p.asin)}</a> · `:''}${p.section?escapeHtml(p.section)+' · ':''}was #${p.place ?? '?'}</div>
                 </div>
                 <div class="pk-sc"><button type="button" class="ed-btn" data-restore="${escapeHtml(p.slot)}" style="padding:2px 8px;font-size:.74rem">Restore</button></div>
               </div>`).join('')}` : ''}
@@ -311,15 +313,26 @@
 
     function money(v){ return (v==null || isNaN(v)) ? '—' : '$' + Number(v).toFixed(2); }
 
+    // Clean /dp/ link built from the ASIN — deliberately NOT the harvested
+    // amazon_link, which can carry a rival's affiliate tag (buy-links rule).
+    // (The old AsinImage widget endpoint is DEAD — DNS gone; thumbnails come
+    // from pick.image, captured by verify's listing lookup and hotlinked.)
+    const asinHref = (asin) => `https://www.amazon.com/dp/${encodeURIComponent(asin)}`;
+
     function pickRow(p){
       const offers = p.offers || [];
       const srcs = p.source_links || [];
+      const thumb = p.image
+        ? `<img class="pk-thumb" src="${escapeHtml(p.image)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : '';
       return `
         <div class="pk">
           <div class="pk-place ${p.place===1?'p1':''}">${p.place ?? '?'}</div>
+          ${thumb ? (p.asin ? `<a href="${asinHref(p.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${thumb}</a>` : thumb) : ''}
           <div class="pk-main">
             <div class="pk-t">${escapeHtml([p.manufacturer, p.product_title].filter(Boolean).join(' ').trim() || '—')}
               ${p.capacity?`<span class="muted" style="font-weight:400"> · ${escapeHtml(p.capacity)}</span>`:''}
+              ${p.model_number?`<span class="muted" style="font-weight:400" title="Manufacturer's model number"> · ${escapeHtml(p.model_number)}</span>`:''}
               ${p.identity_warning ? '<span class="pill-w bad">identity</span>'
                 : (p.verified_title ? '<span class="pill-w ok">verified</span>' : '')}</div>
             ${p.best_for?`<div class="pk-line"><b>Best for:</b> ${escapeHtml(p.best_for)}</div>`:''}
@@ -329,7 +342,7 @@
             ${p.identity_warning?`<div class="pk-line warn"><b>⚠</b> ${escapeHtml(p.identity_warning)} — no Amazon buy link was published for this pick.</div>`:''}
             <div class="pk-meta">
               ${money(p.typical_price)} typical${p.price_type==='sale'&&p.current_price?` · on sale ${money(p.current_price)}`:''}
-              ${p.asin?` · ASIN ${escapeHtml(p.asin)}${p.asin_source?` <span class="muted">(${escapeHtml(p.asin_source)})</span>`:''}`:' · no verified ASIN'}
+              ${p.asin?` · ASIN <a href="${asinHref(p.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${escapeHtml(p.asin)}</a>${p.asin_source?` <span class="muted">(${escapeHtml(p.asin_source)})</span>`:''}`:' · no verified ASIN'}
               ${offers.length?` · buy at ${offers.map(o=>escapeHtml(o.retailer||'?')).join(', ')}`:''}
             </div>
             <div class="pk-meta">

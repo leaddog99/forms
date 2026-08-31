@@ -115,6 +115,10 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
         "brand": p.get("brand", ""),
         # For the posting card: the listing photo and the current asking price.
         "image": (p.get("main_image") or {}).get("link", ""),
+        # Manufacturer's model/part number when the listing states it — the
+        # only unambiguous identity inside a brand's sibling line (KHM7210
+        # vs the other KitchenAid 7-speeds, 2026-08-31).
+        "model_number": p.get("model_number") or "",
         "price": price.get("raw") or "",
         "rating": p.get("rating"),
         "ratings_total": p.get("ratings_total"),

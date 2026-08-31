@@ -109,7 +109,9 @@
         p = await r.json();
       } catch (e){ page.innerHTML = `<p class="ed-empty">Couldn’t load (${escapeHtml(String(e.message||e))}).</p>`; return; }
       if (mode === 'edit') return renderForm(p);
-      const hosts = (p.hosts||[]).map(h => `${escapeHtml(h.host)}${h.kind==='network_redirector'?' <span class="pill-w">redirector</span>':''}`).join('<br>') || '—';
+      const hosts = (p.hosts||[]).map(h =>
+        `<a href="https://${escapeHtml(h.host)}/" target="_blank" rel="noopener" title="Open the store">${escapeHtml(h.host)}</a>${h.kind==='network_redirector'?' <span class="pill-w">redirector</span>':''}`
+      ).join('<br>') || '—';
       page.innerHTML = `
         <div class="ed-kicker"><span class="ed-purpose-toggle" style="cursor:default">Admin · Affiliate Program</span></div>
         <h1 class="ed-title" style="margin-bottom:2px">${escapeHtml(p.display_name || p.name)} ${statusPill(p.status)}</h1>
@@ -182,7 +184,7 @@
             <div class="ed-field"><label>Account ref</label><input id="f_account" value="${v('account_ref')}"></div>
           </div>
           <div class="pc-row2">
-            <div class="ed-field"><label>Dashboard URL</label><input id="f_dashboard" value="${v('dashboard_url')}" placeholder="https://…"></div>
+            ${urlField('f_dashboard', 'Dashboard URL', (p&&p.dashboard_url)||'', { ph: 'https://…' })}
             <div class="ed-field"><label>Contact</label><input id="f_contact" value="${v('contact')}"></div>
           </div>
           <div class="pc-row3">

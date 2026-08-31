@@ -99,6 +99,14 @@ RESEARCH RULES
 1. Use current manufacturer pages, major-retailer listings, Amazon product pages, and
    reputable independent product-testing sources.
 2. Verify product title, manufacturer, capacity, typical price, and purchase link.
+2b. Record the MANUFACTURER'S MODEL/PART NUMBER in `model_number` (e.g. KHM7210,
+   5.5SQCI). Within a brand's product line it is the only unambiguous identity —
+   "KitchenAid 7-speed hand mixer" names several different mixers; the model number
+   names one. Source it FROM THE REVIEWS FIRST: the SUPPLIED SOURCE DOCUMENTS state
+   the exact model the reviewer tested, and THAT model is the recommendation — a
+   model number taken from a retail listing instead can silently name a sibling the
+   reviewer never tested. Fall back to the manufacturer page only when no review
+   states it. Blank if unverifiable; never guessed.
 3. Rank on TYPICAL price — the normal selling price, not a temporary discount. Record today's
    price separately in `current_price` and set `price_type` to "regular" or "sale". A sale
    must never move a product's rank; it is perishable and we re-check it on a schedule.
@@ -195,6 +203,7 @@ Use this exact structure:
       "product_title": "",
       "manufacturer": "",
       "capacity": "",
+      "model_number": "",
       "typical_price": 0.00,
       "current_price": 0.00,
       "price_type": "regular",
@@ -215,6 +224,7 @@ Use this exact structure:
       "product_title": "",
       "manufacturer": "",
       "capacity": "",
+      "model_number": "",
       "typical_price": 0.00,
       "current_price": 0.00,
       "price_type": "regular",

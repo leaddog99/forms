@@ -85,6 +85,8 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             product_title   TEXT,
             manufacturer    TEXT,
             capacity        TEXT,
+            model_number    TEXT,               -- manufacturer's part no — the disambiguator
+            image           TEXT,               -- listing photo (from verify's identity call)
             typical_price   REAL,               -- the RANKING input
             current_price   REAL,               -- perishable
             price_type      TEXT,
@@ -115,6 +117,12 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
     if "excluded" not in cols:
         conn.execute("ALTER TABLE curated_collection_picks "
                      "ADD COLUMN excluded INTEGER DEFAULT 0")
+    if "model_number" not in cols:
+        # KitchenAid-7-speed lesson (2026-08-31): within a brand's sibling
+        # line only the manufacturer's model number names ONE product.
+        conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN model_number TEXT")
+    if "image" not in cols:
+        conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN image TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ccp_collection "
                  "ON curated_collection_picks(collection, section, place)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ccp_asin "
@@ -332,13 +340,15 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
             or prior_slot.get(slot)
         conn.execute(
             "INSERT INTO curated_collection_picks(collection, slot, section, place, "
-            "product_title, manufacturer, capacity, typical_price, current_price, price_type, "
+            "product_title, manufacturer, capacity, model_number, image, "
+            "typical_price, current_price, price_type, "
             "best_for, why_it_ranks_here, edge_over_next, important_tradeoff, buy_link, "
             "amazon_link, asin, asin_source, verified_title, identity_warning, source_links, "
             "offers, owner_rating, owner_count, owner_histogram, realrank_score, rating_shape, "
-            "product_id, run_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "product_id, run_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, slot, p.get("_section", ""), p.get("place"),
              p.get("product_title", ""), p.get("manufacturer", ""), p.get("capacity", ""),
+             (p.get("model_number") or "").strip(), p.get("image", ""),
              _num(p.get("typical_price")), _num(p.get("current_price")),
              p.get("price_type", ""), p.get("best_for", ""), p.get("why_it_ranks_here", ""),
              p.get("edge_over_next", ""), p.get("important_tradeoff", ""),

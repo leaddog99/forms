@@ -83,6 +83,11 @@ def _offers_for(picks: list, *, drop_amazon: bool) -> list:
             out.append({"retailer": "Amazon", "asin": asin,
                         "source_url": f"https://www.amazon.com/dp/{asin}",
                         "affiliate_url": "", "price": None})
+    # Amazon FIRST (curator policy 2026-08-31): Prime shipping makes it the
+    # preferred buy path wherever it carries the product; other retailers
+    # (Walmart, Kohl's, Shopify stores) follow. Stable within each group.
+    out.sort(key=lambda o: 0 if (o.get("retailer") or "").lower() == "amazon"
+             or "amazon." in (o.get("source_url") or "").lower() else 1)
     return out
 
 
@@ -183,10 +188,13 @@ def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str
             "product_class": product_class,
             "brand": brand,
             "name": title,
-            "specs": {"capacity": rows[0].get("capacity") or ""},
+            "specs": {"capacity": rows[0].get("capacity") or "",
+                      "model_number": rows[0].get("model_number") or ""},
             "retailer_offers": offers,
             "sources": sorted({s for p in rows for s in _sources_of(p)}),
         }
+        if rows[0].get("image"):
+            product["image_url"] = rows[0]["image"]
 
         res = catalog_store.save_product(conn, product,
                                          merge_into=_existing_row(conn, rows, asin, suspect,

@@ -239,10 +239,10 @@
                 restore it. Excluding cleared any medal it held."></button></h3>
             ${excluded.map(x => `
               <div class="cd dim">
-                <div style="width:44px"></div>
+                ${x.image?`<a href="${x.asin?asinHref(x.asin):escapeHtml(x.link||'#')}" target="_blank" rel="noopener" title="Open on Amazon"><img src="${escapeHtml(x.image)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></a>`:'<div style="width:44px"></div>'}
                 <div class="cd-main">
                   <div class="cd-t">${escapeHtml(x.title||x.asin)}</div>
-                  <div class="cd-meta"><span class="star">★</span>${x.rating ?? '—'} · ${(x.ratings_total||0).toLocaleString()} ratings${x.link?` · <a href="${escapeHtml(x.link)}" target="_blank" rel="noopener">open ↗</a>`:''}</div>
+                  <div class="cd-meta"><span class="star">★</span>${x.rating ?? '—'} · ${(x.ratings_total||0).toLocaleString()} ratings${x.asin?` · ASIN <a href="${asinHref(x.asin)}" target="_blank" rel="noopener">${escapeHtml(x.asin)}</a>`:''}${x.link?` · <a href="${escapeHtml(x.link)}" target="_blank" rel="noopener">open ↗</a>`:''}</div>
                 </div>
                 <div class="cd-sc"><button type="button" class="ed-btn" data-restore="${escapeHtml(x.asin)}" style="padding:2px 8px;font-size:.74rem">Restore</button></div>
               </div>`).join('')}` : ''}
@@ -316,6 +316,12 @@
       wireDelete();
     }
 
+    // Same treatment as curated_collections (2026-08-31): clean /dp/ link
+    // built from the ASIN (never the harvested link's tracking). Images come
+    // from the stored search-result photo; the old AsinImage widget endpoint
+    // is DEAD (DNS gone) — never reference it.
+    const asinHref = (asin) => `https://www.amazon.com/dp/${encodeURIComponent(asin)}`;
+
     function candRow(x){
       const pol = (x.polarization||'').toLowerCase();
       // Medals are only offered on SCREENED candidates: a gold awarded off an unscreened
@@ -335,7 +341,11 @@
            >${m ? m[0].toUpperCase() : '–'}</button>`).join(' ');
       return `
         <div class="cd ${x.screened?'':'dim'}">
-          ${x.image?`<img src="${escapeHtml(x.image)}" alt="" onerror="this.style.visibility='hidden'">`:'<div style="width:44px"></div>'}
+          ${x.image
+            ? (x.asin
+                ? `<a href="${asinHref(x.asin)}" target="_blank" rel="noopener" title="Open on Amazon"><img src="${escapeHtml(x.image)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></a>`
+                : `<img src="${escapeHtml(x.image)}" alt="" onerror="this.style.visibility='hidden'">`)
+            : '<div style="width:44px"></div>'}
           <div class="cd-main">
             <div class="cd-t">${escapeHtml(x.title||x.asin)}
               ${x.medal?`<span class="medal ${escapeHtml(x.medal)}">${escapeHtml(x.medal)}</span>`:''}
@@ -343,6 +353,7 @@
             <div class="cd-meta">
               <span class="star">★</span>${x.rating ?? '—'} · ${(x.ratings_total||0).toLocaleString()} ratings
               ${x.price?` · ${escapeHtml(x.price)}`:''} · #${x.position ?? '?'} on Amazon
+              ${x.asin?` · ASIN <a href="${asinHref(x.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${escapeHtml(x.asin)}</a>`:''}
               ${pol?`<span class="pill-w ${escapeHtml(pol)}">${escapeHtml(pol)}</span>`:''}
               ${x.link?` · <a href="${escapeHtml(x.link)}" target="_blank" rel="noopener">open ↗</a>`:''}
             </div>

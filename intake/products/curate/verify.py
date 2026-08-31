@@ -182,6 +182,52 @@ def _asin_from_corpus(conn, title: str, manufacturer: str) -> tuple:
     return best[0], best[1]
 
 
+_FORM_WORDS = ("whole", "ground", "organic", "smoked", "sticks", "powder",
+               "seeds", "dried", "fresh", "instant")
+
+
+def _asin_from_search(r: dict) -> tuple:
+    """Blank-ASIN recovery via ONE EasyParser Amazon search (1 credit).
+
+    Built for the Nutmeg run (2026-08-31): every pick blank because the only
+    prior recovery was our review corpus, which has no spice coverage. Query
+    = brand + model number (the review-stated disambiguator, when present) +
+    title + capacity. The FORM GUARD is the point: 'whole nutmeg' must never
+    resolve to the ground jar — any form word in the pick title must appear
+    in the listing title too. Step-2 identity verification still re-checks
+    whatever this returns. -> (asin, note) or ("", "")."""
+    from urllib.parse import quote_plus
+    try:
+        from intake.products import easyparser as ep
+    except Exception:
+        return "", ""
+    q = " ".join(x for x in (r.get("manufacturer", ""), r.get("model_number", ""),
+                             r.get("product_title", ""), r.get("capacity", "")) if x).strip()
+    if not q:
+        return "", ""
+    try:
+        res = ep.search_url(f"https://www.amazon.com/s?k={quote_plus(q)}", pages=1)
+    except Exception:
+        return "", ""
+    if not res.get("ok"):
+        return "", ""
+    brand_raw = (r.get("manufacturer") or "").split("(")[0].strip().lower()
+    brand = next((w for w in brand_raw.split() if len(w) >= 3), brand_raw)
+    want = (r.get("product_title") or "").lower()
+    want_forms = {f for f in _FORM_WORDS if f in want}
+    for it in (res.get("items") or [])[:10]:
+        t = (it.get("title") or "").lower()
+        hay = f"{(it.get('brand') or '').lower()} {t}"
+        if brand and brand not in hay:
+            continue
+        if any(f not in t for f in want_forms):
+            continue
+        asin = (it.get("asin") or "").strip().upper()
+        if asin:
+            return asin, (it.get("title") or "")[:60]
+    return "", ""
+
+
 def enrich(data: dict, *, use_network: bool = True) -> dict:
     """Attach identity + owner evidence to every ranked row. Returns a report."""
     report = {"verified": [], "rejected": [], "filled": [], "scored": [], "notes": []}
@@ -208,6 +254,17 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
                 r["amazon_link"] = f"https://www.amazon.com/dp/{asin}"
                 r["asin_source"] = f"our review corpus ({', '.join(who)})"
                 report["filled"].append(f"{label}: {asin} via {', '.join(who)}")
+
+        # 1b. Still blank and allowed online: ONE Amazon search (1 credit),
+        #     form-guarded (whole vs ground). Step 2 re-verifies the result.
+        if not asin and use_network:
+            found, ltitle_note = _asin_from_search(r)
+            if found:
+                asin = found
+                r["amazon_asin"] = asin
+                r["amazon_link"] = f"https://www.amazon.com/dp/{asin}"
+                r["asin_source"] = "amazon search"
+                report["filled"].append(f"{label}: {asin} via amazon search — {ltitle_note}")
 
         if not asin or not use_network:
             continue
@@ -237,6 +294,14 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
             report["rejected"].append(f"{label}: {r['identity_warning']}")
             continue
         r["verified_title"] = ltitle
+        # The listing lookup already carries the photo and often the
+        # manufacturer's model number — keep both on the pick (the photo is
+        # the row's thumbnail; the model number disambiguates brand siblings).
+        # Research's own model_number wins; the listing only fills a blank.
+        if listing.get("image"):
+            r["image"] = listing["image"]
+        if listing.get("model_number") and not (r.get("model_number") or "").strip():
+            r["model_number"] = listing["model_number"]
         report["verified"].append(f"{label}: {asin} — {ltitle[:56]}")
 
         # 2b. WHERE TO BUY — every retailer the reviews link, not just Amazon. A pick with

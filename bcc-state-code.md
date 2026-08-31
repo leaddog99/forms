@@ -7368,3 +7368,77 @@ SWEEP was in flight (237/283, clean) as this was written.
   delete preflight) — next big build, before the render/EV layer.
 * Carried: Pistou fr-line Reserve rerun; per-publisher cap; twins merges;
   render side per 08-29; grey-list produce classes now moot (fence).
+
+## Session log — 2026-08-31 (later) — picks get faces and part numbers, Amazon leads, and Shopify names the prospects
+
+Commits: this one (follows ea710c2 same day). No restarts owed — verify/
+materialize/propose all run out-of-process; page changes are reload-only.
+
+* **CCP re-propose proof run:** approvals untouchable and ranked top by the
+  model; merged Pie Plate seated at #3 citing the union signals; Fine Mesh
+  Strainer arrived via method text (anecdotal T3); Port Wine proposed as an
+  UNREGISTERED chip (gate working). Two findings: the model shoehorned Oreos
+  into 'Chocolate Chunks (8 oz)' after the purge deleted Oreo Cookies
+  (reject it or soften the reuse-verbatim prompt line — curator's call, the
+  prompt is Settings-editable now); and the 08-29 Tawny Port APPROVAL was
+  already gone before the purge (revoked or lost — the purge only deleted
+  approval-less classes).
+* **signal-terms report** (docs/reports/signal-terms.html +
+  scripts/report_signal_terms.py): all 2,182 unique v3 terms, deduped,
+  alpha, filter box + click-sortable columns. v3 proof corpus-wide: zero
+  bare fragments ('smith'/'purpose'/'yolks' survive only inside phrases).
+* **Model number = the sibling disambiguator (KitchenAid 7-speed case).**
+  Research prompt rule 2b: `model_number` sourced FROM THE REVIEWS FIRST
+  (the model the reviewer TESTED is the recommendation; a listing's number
+  can name an untested sibling), manufacturer page fallback, blank-never-
+  guessed. Stored on picks (+ migration), shown in the row, materializes
+  into specs.model_number (strengthens _mfg_key dedupe).
+* **Pick images.** The old AsinImage widget endpoint is DEAD (DNS gone) —
+  that was the "no images" report. verify's identity call (az.product_
+  ratings) already carried the listing photo + model_number and dropped
+  both; now kept on the pick (image, model blank-fill). Thumbnails render
+  from pick.image, hotlinked m.media-amazon.com, ASIN text links to a CLEAN
+  /dp/ built from the ASIN (never the harvested link) on BOTH collection
+  pages incl. excluded strips.
+* **Blank-ASIN recovery (Nutmeg run: 3 picks, all blank — the only prior
+  recovery was our review corpus, no spice coverage).** New verify rung 1b:
+  ONE EasyParser Amazon search per blank pick (brand + review-stated model
+  + title + capacity), FORM-GUARDED both ways (whole nutmeg never resolves
+  to the ground jar), step-2 identity still re-verifies. Re-run Nutmeg to
+  fill; also decide its class family (registered 'Nutmeg' equipment vs the
+  spice batch's 'Ground Nutmeg').
+* **Amazon-first offer policy (curator: Prime makes Amazon the preferred
+  buy path).** _offers_for sorts Amazon first at storage; audit showed the
+  ASIN⇒Amazon-offer invariant already held (0 violations); 33 existing
+  products reordered. affiliate_url stays blank — /go/ mints at click,
+  which is what makes "always available" true without storing tags.
+* **Shopify = the prospect classifier** (intake/products/shopify_detect.py
+  + retailer_hosts table — the evidence cache, 90d re-probe). THE TEST:
+  GET /products.json?limit=1 -> 200 {"products":[...]} (headers unreliable
+  through CDNs; page markers corroborate). 54 catalog hosts probed: 13
+  Shopify stores incl. McCormick, Made In (json gated, markers caught it),
+  Emile Henry USA, Our Place, Milk Street, Taza, Burlap & Barrel. Bonus:
+  the .json payload carries per-variant SKUs — a free structured feed.
+  OXO/W-S 403 and Mercer/Norpro 202 = anti-bot walls, not clean negatives.
+* **The 13 seeded as PROSPECT programs in the affiliates ledger** (the
+  status tier existed for exactly this), hosts wired into affiliate_
+  program_hosts so activation needs zero plumbing. No universal Shopify
+  code exists — consolidation is at the network tier (ShareASale/Impact/
+  CJ/Rakuten; apply-not-negotiate) or aggregators (Skimlinks/Sovrn — one
+  deal, haircut rates). Ladder: aggregator floor -> networks for proven
+  earners -> direct for concentrated volume.
+* **goto.* tracking links cleaned:** two offers carried a reviewer's Impact
+  redirects (goto.walmart/goto.target, publisher 2204542) — destinations
+  decoded from the u= param, clean walmart/target product URLs stored.
+* **Affiliates editor links clickable:** hosts list links to the stores;
+  Dashboard URL field now uses the shared urlField control.
+
+### Open
+
+* Re-run Nutmeg + the KitchenAid mixer collection (ASIN recovery + models
+  + images); decide Nutmeg class family. Emile Henry pie-dish product merge.
+* Prospect research pass: which network carries each of the 13.
+* Rejected 'Chocolate Chunks' shoehorn: soften reuse-verbatim prompt line?
+* Carried: product-side M2M design; in-use junk classes; per-publisher cap;
+  Pistou Reserve; twins; render/EV layer (now with Amazon-first + /go/
+  routing groundwork laid).
