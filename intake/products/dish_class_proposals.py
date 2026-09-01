@@ -30,11 +30,24 @@ import sqlite3
 from datetime import datetime, timezone
 
 MODEL = "claude-sonnet-5"
-MAX_TOKENS = 3000
+MAX_TOKENS = 14000   # thinking + answer share this budget: 3000 was intermittently
+                    # eaten ENTIRELY by thinking (stop=max_tokens, no text) — the
+                    # real cause behind 'model reply unusable' and thin samples (2026-09-01)
 
 FAMILIES = ("equipment", "gourmet", "travel", "books", "alcohol")
-PATTERNS = ("identity", "implication", "passthrough")
+# Four evidence channels (2026-09-01 four-channel design, replacing
+# identity/implication/passthrough — the old values remain valid on stored
+# rows): direct = the recipes NAME the class; functional = they name the
+# OPERATION it exists for; inferred = the workload implies it (which knife);
+# affinity = the DISH ITSELF dictates it (pairing from character, travel/
+# books from what the dish IS — not from anything the recipes write).
+PATTERNS = ("direct", "functional", "inferred", "affinity",
+            "identity", "implication", "passthrough")   # last three: legacy rows
 ROUTES = ("contains", "does", "from", "served_with")
+# Confidence tier derives from the channel — the channels ARE the evidence
+# grades, strongest first.
+TIER_BY_PATTERN = {"direct": 1, "functional": 2, "inferred": 2, "affinity": 3,
+                   "identity": 1, "implication": 2, "passthrough": 3}
 
 
 def ensure_junction(conn: sqlite3.Connection) -> None:
@@ -97,81 +110,85 @@ def _winner_methods(conn: sqlite3.Connection, dish_name: str,
 # `dish_class_propose_prompt`; this constant is only the seed/fallback).
 # [[TOKENS]] are substituted at call time; everything else is literal text,
 # no escaping rules to trip on.
-PROMPT_SEED = """You select PRODUCT CLASSES worth advertising beside recipes for one dish.
-A product class is a shoppable category ("Baking Chocolate", "Egg Separators",
-"French Cookbooks"), not a specific product.
+PROMPT_SEED = """You analyze ONE dish class and select the PRODUCT CLASSES worth recommending
+beside its recipes. A product class is a shoppable category ("Santoku Knife",
+"Dutch Ovens (5-6 qt)", "Sauvignon Blanc", "Greek Cookbooks"), not a specific product.
 
 DISH: [[DISH]] (chapter: [[CHAPTER]])
 DESCRIPTION: [[DESCRIPTION]]
+DISH IDENTITY / PROVENANCE: [[PROVENANCE]]
 
-MEASURED SIGNALS from the dish's [[COHORT_N]] recipes (lift = how many
-times more often the term appears here than across all recipes; <3x = commodity,
-10x+ = part of this dish's identity):
+DISTINCTIVE TERMS (statistically measured across the full [[COHORT_N]]-recipe cohort;
+lift = times more frequent here than corpus-wide — context, not a constraint):
+[[DISTINCTIVE_TERMS]]
 
-INGREDIENTS:
-[[INGREDIENT_SIGNALS]]
-
-EQUIPMENT:
-[[EQUIPMENT_SIGNALS]]
-
-PROVENANCE: ethnicities=[[ETHNICITIES]] regions=[[REGIONS]]
-
-METHOD TEXT from representative winning recipes (implication evidence the
-ingredient signals may miss — peeling, coring, straining, the pan used):
-[[METHOD_TEXT]]
+REPRESENTATIVE RECIPES (ingredients + method text — your PRIMARY evidence):
+[[RECIPES]]
 
 EXISTING CLASS REGISTRY (reuse these names VERBATIM when the concept matches;
-"triggers" are phrases whose presence in recipe text suggests that class —
-use them as association hints):
+"triggers" are association hints):
 [[CLASS_REGISTRY]]
 
-Propose EXACTLY 6 classes as a JSON array IN DESCENDING ORDER OF NEED — return fewer ONLY when the dish genuinely offers fewer sellable concepts, never because the obvious ones felt like enough. Need means
-BUY-LIKELIHOOD, which is ownership-gap times dish-demand: an item this dish
-requires that most kitchens LACK (a specialty tool, an unusual ingredient)
-outranks a pantry staple most kitchens already hold — no matter how often the
-staple appears in the recipes. A premium upgrade of an owned staple
-(single-origin cinnamon, estate olive oil) ranks on upgrade appeal, BELOW
-true gaps. Each item:
-{"class_name": str, "family": "equipment|gourmet|travel|books|alcohol",
-  "pattern": "identity|implication|passthrough",
-  "route": "contains|does|from|served_with",
-  "tier": 1|2|3, "rationale": one sentence, "evidence": [signal terms used]}
+STEP 1 — OPERATIONS. Read the methods and extract the recurring or central cooking
+operations as ACTION + OBJECT + IMPORTANT QUALIFIER ("slice beef, thin, across the
+grain" — never a bare verb). Also flag any recipe that is clearly a DIFFERENT dish
+contaminating the set; exclude its evidence everywhere.
+
+STEP 2 — CLASSES. Propose the product classes with a strong, meaningful, repeated or
+central relationship to MAKING or ENJOYING this dish. At most 10; typically 6-8;
+never pad with conceivable-but-marginal items (a cutting board is used everywhere —
+that is exactly why it is not a recommendation). Order by BUY-LIKELIHOOD: an item the
+dish demands that most kitchens LACK outranks a staple most kitchens own; premium
+upgrades of owned staples rank below true gaps.
+
+Each class carries its EVIDENCE CHANNEL:
+- "direct"     — the recipes NAME the class ("pizza stone", "stand mixer").
+- "functional" — the recipes name the OPERATION the class exists for
+                 ("knead dough" -> Stand Mixer; "juice the lemons" -> Citrus Juicer).
+- "inferred"   — the WORKLOAD implies it: reason from the Step-1 operations to the
+                 right class. This is where knife specificity lives: repeated thin
+                 slicing / fine mincing -> Santoku or Chef's Knife; carving a rested
+                 roast -> Carving Knife; a slit pocket -> Boning/Paring. Never a bare
+                 "knife".
+- "affinity"   — THE DISH ITSELF dictates it; the recipes need not mention anything.
+                 PAIRING: from the dish's character as eaten (rich grilled beef ->
+                 Cabernet; citrus-herb seafood -> Sauvignon Blanc). Distinguish
+                 alcohol IN the dish (that is a gourmet ingredient class) from
+                 alcohol SERVED WITH it. At most one or two pairings.
+                 TRAVEL / BOOKS: from what the dish IS — its cuisine and place as
+                 culinary fact ("Pastitsio is Greek" earns Greek food tours and Greek
+                 cookbooks even if no recipe says so). The geography must be specific
+                 and recognizable; a dish that is not really OF anywhere gets NO
+                 travel. An affiliate opportunity must NEVER manufacture relevance.
 
 Rules:
-- identity = the signal IS the category (chocolate -> Baking Chocolate).
-- implication = one reasoning step (egg yolks x6 -> Egg Separators; provenance ->
-  cuisine cookbooks). Cite the evidence terms.
-- TIER grades EVIDENCE CONFIDENCE, not importance and not order: 1 = the
-  signals nail it, 2 = solid, 3 = plausible/anecdotal. A tier-2 tool may
-  correctly rank ABOVE a tier-1 staple — order and tier are independent.
-- passthrough = resolved by a marketplace at render (local cooking classes,
-  experiences). Rare; only when provenance clearly supports it.
-- route served_with = what you'd SERVE with the finished dish (wine pairing).
-  Include AT MOST ONE, family "alcohol", pattern passthrough, tier 3; evidence
-  may be empty (world knowledge) but the rationale must name the pairing.
-- We only advertise products worth BUYING SPECIALLY: durable kitchen
-  equipment, specialty/premium gourmet goods (quality chocolate, spice
-  blends, preserves, finishing oils), books, travel, drink pairings. NEVER
-  propose supermarket staples a reader gets at any grocery — fresh produce
-  (apples, herbs, bananas), leaveners (baking soda/powder), sugars
-  (granulated/powdered/brown), flour, eggs, dairy, juices. A dish's
-  identity fruit is its IDENTITY, not a product we sell.
-- NEVER propose commodities (sugar, butter, salt, water, flour, milk, whisks-
-  grade generic gear with lift under 3).
-- Evidence terms come from the MEASURED SIGNALS above. A short phrase quoted
-  from METHOD TEXT is also allowed WHEN the signals miss the implication
-  (e.g. the method says "peel and core the apples" but no signal carries it) —
-  but a proposal whose evidence is ONLY method-quoted is anecdotal: tier 3.
-- served_with is the one exemption from evidence (world knowledge).
-- Precise beats vague: the form data in example lines matters ("Baking
-  Chocolate" not "Chocolate" when the lines show bars/chopped).
-- STRICT JSON: never put a double-quote character INSIDE a string value.
-  Write inch as "in" (9x13 in, never 9x13"), and quote nothing in
-  rationales.
-Return ONLY the JSON array."""
+- SCOPE each class: "core" (the dish as such needs it) | "variant" (essential only to
+  a named variation) | "helpful" (workaround exists — name it).
+- COUNT prevalence over the supplied recipes ("k/[[N_RECIPES]]") for direct/functional/
+  inferred; count carefully from the text, never estimate. Affinity has no count.
+- EVIDENCE: verbatim quoted fragments (with recipe name) for direct/functional/inferred;
+  for affinity, one sentence naming the identity or character basis.
+- DISAGREEMENT is information: where recipes split on vessel or technique, say so.
+- We only recommend products worth BUYING SPECIALLY: durable equipment, specialty or
+  premium gourmet goods, books, travel, drink pairings. NEVER supermarket staples —
+  fresh produce, leaveners, sugars, flour, eggs, dairy, juices. A dish's identity
+  fruit is its identity, not a product.
+- Commercial appeal never creates a relationship; it only orders classes that have one.
+- Reuse registry names verbatim when the concept truly matches; a genuinely new
+  concept gets a natural new name (it becomes a chip pending curator approval).
+
+Return ONLY a JSON object, no prose, double quotes never inside string values:
+{"operations": [{"action": "", "object": "", "qualifier": ""}],
+ "classes": [{"class_name": "", "family": "equipment|gourmet|travel|books|alcohol",
+   "channel": "direct|functional|inferred|affinity",
+   "route": "contains|does|from|served_with",
+   "scope": "core|variant|helpful", "variant_or_workaround": "",
+   "prevalence": "", "reason": "",
+   "evidence": [""]}],
+ "contaminants": [""], "notes": ""}"""
 
 
-def _prompt(dish: dict, sig: dict, registry: list, methods: list) -> str:
+def _prompt(dish: dict, sig: dict, registry: list, recipes: list) -> str:
     def _sig_lines(rows, with_ex):
         out = []
         for r in rows:
@@ -186,8 +203,30 @@ def _prompt(dish: dict, sig: dict, registry: list, methods: list) -> str:
             trig = []
         reg_lines.append(f"- {n} [{f}]" + (f" — triggers: {', '.join(trig)}" if trig else ""))
     reg = "\n".join(reg_lines)
-    meth = "\n".join(f'--- {m["name"]}\n{m["method"]}' for m in methods) or "(none available)"
-    prov = sig.get("provenance") or {}
+    # Distinctive terms: context, not constraint (four-channel design) —
+    # a compact hint of what the FULL cohort over-uses vs the corpus.
+    dist = "; ".join(f"{r['term']} ({r['pct']}%/{r['lift']}x)"
+                     for r in (sig.get("ingredients") or [])[:12])
+    dist_eq = "; ".join(f"{r['term']} ({r['pct']}%/{r['lift']}x)"
+                        for r in (sig.get("equipment") or [])[:8])
+    dist = (dist + ("\nEQUIPMENT: " + dist_eq if dist_eq else "")) or "(none)"
+    # Provenance merged: the DISH'S OWN identity fields lead (curator
+    # 2026-09-01: the dish dictates affinity), cohort tags corroborate.
+    cprov = sig.get("provenance") or {}
+    prov_bits = []
+    if (dish.get("ethnicity") or "").strip():
+        prov_bits.append(f"dish ethnicity: {dish['ethnicity'].strip()}")
+    if (dish.get("origin_region") or "").strip():
+        prov_bits.append(f"dish region: {dish['origin_region'].strip()}")
+    if cprov.get("ethnicities"):
+        prov_bits.append(f"recipe-tagged ethnicities: {cprov['ethnicities']}")
+    if cprov.get("regions"):
+        prov_bits.append(f"recipe-tagged regions: {cprov['regions']}")
+    prov_line = " · ".join(prov_bits) or "(none stated — rely on what the dish IS)"
+    recs = "\n\n".join(
+        f"--- {r['name']}" + (f"  [provenance: {r['prov']}]" if r["prov"] else "")
+        + f"\nINGREDIENTS: {r['ings']}\nMETHOD: {r['method']}"
+        for r in recipes) or "(none available)"
     try:
         from input.pipeline.system_config import get_setting
         template = str(get_setting("dish_class_propose_prompt", PROMPT_SEED)
@@ -199,16 +238,65 @@ def _prompt(dish: dict, sig: dict, registry: list, methods: list) -> str:
         "[[CHAPTER]]": dish.get("chapter") or "?",
         "[[DESCRIPTION]]": (dish.get("description") or "")[:300],
         "[[COHORT_N]]": str(sig.get("cohort_n")),
-        "[[INGREDIENT_SIGNALS]]": _sig_lines(sig.get("ingredients") or [], True),
-        "[[EQUIPMENT_SIGNALS]]": _sig_lines(sig.get("equipment") or [], False),
-        "[[ETHNICITIES]]": str(prov.get("ethnicities") or {}),
-        "[[REGIONS]]": str(prov.get("regions") or {}),
-        "[[METHOD_TEXT]]": meth,
+        "[[N_RECIPES]]": str(len(recipes)),
+        "[[DISTINCTIVE_TERMS]]": dist,
+        "[[PROVENANCE]]": prov_line,
+        "[[RECIPES]]": recs,
         "[[CLASS_REGISTRY]]": reg,
     }
     for token, value in subs.items():
         template = template.replace(token, value)
     return template
+
+
+def _gather_recipes(conn: sqlite3.Connection, dish_name: str,
+                    k: int = 15, cap: int = 1600) -> list:
+    """The k strongest cohort recipes with ingredients + method + their own
+    provenance tags — the call's primary evidence.
+
+    Rung before OU (2026-09-01, Beef and Broccoli: 51 ungated nearest-rung
+    strays from big sites outranked the dish's own curated winners and only
+    2 core recipes made the sample): assigned winners first, then confident
+    matches, nearest last — OU orders within each rung."""
+    rows = conn.execute(
+        "SELECT data FROM master_recipes WHERE dish_effective = ? "
+        "ORDER BY CASE dish_effective_source WHEN 'assigned' THEN 0 "
+        "WHEN 'matched' THEN 1 ELSE 2 END, effective_ou_score DESC LIMIT ?",
+        (dish_name, k)).fetchall()
+    out = []
+    for (dj,) in rows:
+        try:
+            d = json.loads(dj)
+        except Exception:
+            continue
+        steps = " ".join(_flatten_instructions(d.get("recipeInstructions")))[:cap]
+        if not steps:
+            continue
+        prov = d.get("provenance") or {}
+        out.append({
+            "name": (d.get("name") or "?")[:70],
+            "prov": ", ".join(x for x in (prov.get("ethnicity"), prov.get("originRegion"))
+                              if x and str(x).strip()),
+            "ings": "; ".join((d.get("recipeIngredient") or [])[:18])[:650],
+            "method": steps,
+        })
+    return out
+
+
+def _parse_reply(raw: str, dish_name: str) -> dict:
+    """The reply's JSON object, surviving the usual quote crimes (same repair
+    ladder as the old array parser: plain -> mechanical -> give up loudly)."""
+    m = re.search(r"\{.*\}", raw, re.S)
+    if not m:
+        raise ValueError(f"no JSON object in reply for {dish_name!r}: {raw[:200]}")
+    txt = m.group(0)
+    try:
+        return json.loads(txt)
+    except json.JSONDecodeError:
+        pass
+    fixed = re.sub(r'(\d)\s*"', r"\1 in", txt)
+    fixed = fixed.replace("“", "'").replace("”", "'")
+    return json.loads(fixed)
 
 
 def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
@@ -218,48 +306,79 @@ def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
     cr.ensure_registry(conn)
 
     row = conn.execute(
-        "SELECT name, chapter, description, cohort_signals FROM dishes WHERE name = ?",
-        (dish_name,)).fetchone()
+        "SELECT name, chapter, description, cohort_signals, ethnicity, origin_region "
+        "FROM dishes WHERE name = ?", (dish_name,)).fetchone()
     if row is None:
         raise ValueError(f"dish {dish_name!r} not found")
     if not row[3]:
         raise ValueError(f"dish {dish_name!r} has no cohort_signals — run dish_signals first")
-    dish = {"name": row[0], "chapter": row[1], "description": row[2]}
+    dish = {"name": row[0], "chapter": row[1], "description": row[2],
+            "ethnicity": row[4], "origin_region": row[5]}
     sig = json.loads(row[3])
     registry = conn.execute(
         "SELECT name, family, signals FROM product_classes ORDER BY name").fetchall()
-    methods = _winner_methods(conn, dish_name)
+    recipes = _gather_recipes(conn, dish_name)
 
     llm.enter(recipe_id=f"dish:{dish_name}", user_id=0)
-    prompt_text = _prompt(dish, sig, registry, methods)
-    msg = llm.create(operation="dish_class_propose", model=MODEL, max_tokens=MAX_TOKENS,
-                     messages=[{"role": "user", "content": prompt_text}])
-    raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-    proposals = _parse_proposals(raw, dish_name)
-    # Thin-sample retry (2026-08-31): Apple Brown Betty returned ONE proposal
-    # against apple-corer-at-55x signals; the rerun gave nine. The prompt asks
-    # for 6-12, so <3 on a signal-rich dish is a bad SAMPLE, not a verdict —
-    # one automatic retry, keep the larger answer.
-    if len(proposals) < 3:
-        print(f"[PROPOSE] {dish_name}: only {len(proposals)} proposal(s) — retrying once")
-        msg2 = llm.create(operation="dish_class_propose", model=MODEL, max_tokens=MAX_TOKENS,
-                          messages=[{"role": "user", "content": prompt_text}])
-        raw2 = "".join(b.text for b in msg2.content if getattr(b, "type", None) == "text")
+    prompt_text = _prompt(dish, sig, registry, recipes)
+    reply = {}
+    for attempt in (1, 2):
+        msg = llm.create(operation="dish_class_propose", model=MODEL, max_tokens=MAX_TOKENS,
+                         messages=[{"role": "user", "content": prompt_text}])
+        raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
         try:
-            p2 = _parse_proposals(raw2, dish_name)
-            if len(p2) > len(proposals):
-                proposals = p2
-        except ValueError:
-            pass
+            reply = _parse_reply(raw, dish_name)
+        except (ValueError, json.JSONDecodeError) as e:
+            print(f"[PROPOSE] {dish_name}: attempt {attempt} unusable ({e}); "
+                  f"stop={getattr(msg, 'stop_reason', '?')}")
+            reply = {}
+        # Thin-sample retry: an empty/near-empty answer on a real dish is a
+        # bad SAMPLE (or a thinking-eaten budget), not a verdict.
+        if len(reply.get("classes") or []) >= 3:
+            break
+        if attempt == 1:
+            print(f"[PROPOSE] {dish_name}: only "
+                  f"{len(reply.get('classes') or [])} class(es) — retrying once")
+    proposals = reply.get("classes") or []
+    if not proposals:
+        raise ValueError(f"model reply unusable for {dish_name!r} — run again")
+
+    # STEP-1 OPERATIONS persist on the dish (value + method + inputs): the
+    # audited evidence chain behind the junction rows, and dish data in its
+    # own right. Contaminant flags ride along — free cohort hygiene.
+    ops_blob = {
+        "method": "four-channel-v1", "model": MODEL, "extracted_at": _now(),
+        "source_recipes": len(recipes),
+        "operations": reply.get("operations") or [],
+        "contaminants": reply.get("contaminants") or [],
+        "notes": (reply.get("notes") or "")[:600],
+    }
+    conn.execute("UPDATE dishes SET operations = ? WHERE name = ?",
+                 (json.dumps(ops_blob, ensure_ascii=False), dish_name))
+    for c in ops_blob["contaminants"]:
+        print(f"[PROPOSE] {dish_name}: cohort contaminant flagged — {str(c)[:110]}")
 
     now = _now()
     out = []
     for rank, p in enumerate(proposals, 1):
         name = (p.get("class_name") or "").strip()
         family = p.get("family") if p.get("family") in FAMILIES else "equipment"
-        pattern = p.get("pattern") if p.get("pattern") in PATTERNS else "implication"
-        route = p.get("route") if p.get("route") in ROUTES else "contains"
-        tier = int(p.get("tier") or 3)
+        pattern = (p.get("channel") or p.get("pattern") or "").strip().lower()
+        if pattern not in PATTERNS:
+            pattern = "inferred"
+        route = p.get("route") if p.get("route") in ROUTES else \
+            ("served_with" if pattern == "affinity" and family == "alcohol" else
+             "from" if pattern == "affinity" else "does")
+        tier = TIER_BY_PATTERN.get(pattern, 3)
+        scope = (p.get("scope") or "").strip().lower()
+        vw = (p.get("variant_or_workaround") or "").strip()
+        prevalence = (p.get("prevalence") or "").strip()
+        rationale = (p.get("reason") or p.get("rationale") or "").strip()
+        tail_bits = [b for b in (
+            scope + (f": {vw}" if vw and scope in ("variant", "helpful") else ""),
+            prevalence and f"{prevalence} of supplied recipes") if b]
+        if tail_bits:
+            rationale = f"{rationale} [{' · '.join(tail_bits)}]"
         if not name:
             continue
         snapres = cr.snap(conn, name)
@@ -275,20 +394,23 @@ def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
             # doesn't exist and future snaps can't converge on it — that's
             # the point.
             new_class = 1
-        # Evidence terms enriched with their measured stats, so the approve
-        # chip can say "egg yolks 44%/14x" without re-deriving. A term absent
-        # from the signals came from method text: anecdotal (no df/lift), and
-        # a proposal with ONLY anecdotal evidence is capped at tier 3.
+        # Evidence is now mostly QUOTED method fragments (the four-channel
+        # design); a fragment that happens to be a measured signal term still
+        # gets its pct/lift so chips keep their numbers. Quotes are marked
+        # anecdotal only in the display sense — the tier comes from the
+        # CHANNEL, which already grades the evidence.
         stats = {r["term"]: r for r in (sig.get("ingredients") or []) + (sig.get("equipment") or [])}
         evidence = []
         for t in (p.get("evidence") or []):
-            e = {"term": t, "pct": stats.get(t, {}).get("pct"),
-                 "lift": stats.get(t, {}).get("lift")}
-            if e["pct"] is None and e["lift"] is None:
+            t = str(t).strip()
+            if not t:
+                continue
+            hit = stats.get(t.lower())
+            e = {"term": t, "pct": hit.get("pct") if hit else None,
+                 "lift": hit.get("lift") if hit else None}
+            if not hit:
                 e["anecdotal"] = True
             evidence.append(e)
-        if route != "served_with" and evidence and all(e.get("anecdotal") for e in evidence):
-            tier = 3
         existing = conn.execute(
             "SELECT status FROM dish_product_classes WHERE dish_name=? AND class_name=?",
             (dish_name, name)).fetchone()
@@ -304,7 +426,7 @@ def propose_for_dish(conn: sqlite3.Connection, dish_name: str) -> dict:
             "sort=excluded.sort, rationale=excluded.rationale, evidence=excluded.evidence, "
             "new_class=excluded.new_class, proposed_at=excluded.proposed_at",
             (dish_name, name, family, pattern, route, tier, rank,
-             (p.get("rationale") or "").strip(), json.dumps(evidence), new_class, now))
+             rationale, json.dumps(evidence), new_class, now))
         out.append({"class": name, "family": family, "pattern": pattern,
                     "route": route, "tier": tier, "rank": rank,
                     "new_class": bool(new_class)})

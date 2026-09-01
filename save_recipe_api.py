@@ -7132,7 +7132,7 @@ Return STRICT JSON (no markdown, no quotes inside string values):
   "landmines": ["2-4 ways this dish actually goes wrong — prefer points where the
                  cohort's recipes disagree or the methods warn"]}}"""
     llm.enter(recipe_id=f"dish:{name}", user_id=0)
-    msg = llm.create(operation="dish_story_draft", model="claude-sonnet-5", max_tokens=1500,
+    msg = llm.create(operation="dish_story_draft", model="claude-sonnet-5", max_tokens=6000,
                      messages=[{"role": "user", "content": prompt}])
     raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
     m = re.search(r"\{.*\}", raw, re.S)
@@ -7518,6 +7518,20 @@ def patch_domain_endpoint(request: Request, domain: str, payload: dict = Body(..
     """Update editable fields on a domain row."""
     # GATED 2026-07-29 (see POST /domains).
     _require_perm(request, "edit_master")
+    # Candidate-filter rule: validate + normalize before it hits the row —
+    # a malformed condition must fail the SAVE, never a harvest at 2am.
+    if "candidate_filter" in payload:
+        from input.pipeline import candidate_filter as cfilt
+        raw = payload["candidate_filter"]
+        if raw in (None, "", {}, []):
+            payload["candidate_filter"] = ""
+        else:
+            rule = cfilt.parse_rule(raw)
+            if not rule:
+                raise HTTPException(status_code=400,
+                                    detail="candidate_filter has no valid conditions "
+                                           "(check field/criterion names)")
+            payload["candidate_filter"] = json.dumps(rule)
     try:
         from input.pipeline import domains_lib
         with _db() as conn:
@@ -7527,6 +7541,31 @@ def patch_domain_endpoint(request: Request, domain: str, payload: dict = Body(..
     except Exception as e:
         print(f"[ERROR] patch_domain({domain!r}) failed: {e}")
         raise HTTPException(status_code=500, detail=f"Update error: {e}") from e
+
+
+@app.post("/domains/{domain}/filter-compile")
+def domain_filter_compile_endpoint(request: Request, domain: str, payload: dict = Body(...)):
+    """Plain English -> compiled filter conditions (ONE model call, author=llm
+    on every row). Returns a DRAFT for the editor — nothing is saved here;
+    the curator reviews the rows and Saves the domain."""
+    _require_perm(request, "edit_master")
+    from input.pipeline import candidate_filter as cfilt, domains_lib, collections_lib
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    host = domains_lib._canon_host(domain)
+    samples = []
+    try:
+        with _db() as conn:
+            samples = [r.get("url") for r in collections_lib.get_collection_top(
+                conn, "publisher", host, limit=15) if r.get("url")]
+    except Exception:
+        pass
+    try:
+        rule = cfilt.compile_rule(text, host, samples)
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"domain": host, "rule": rule}
 
 
 # =========================================================================
@@ -10763,6 +10802,39 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
         f"SELECT rowid AS id, -bm25({fts}) AS rel FROM {fts} WHERE {fts} MATCH ?",
         [expr],
     )
+    # DISH-AWARE layer (2026-09-01 — the beef-WITH-broccoli 15-vs-2): FTS ANDs
+    # every typed word, so one connector ('with' where titles say 'and') hides
+    # an entire dish. If the query names a catalog dish, display name or alias
+    # — folded exactly like the matcher's name-exact override, with connector
+    # words (and/with/&) neutralized on BOTH sides — then every row RESOLVING
+    # to that dish (dish_effective: covers publisher-harvested rows too) joins
+    # the match, ranked above the text hits. Exact folded equality only; the
+    # token-subset trap stays rejected (Boston Cream Pie ≠ Cream Pie).
+    try:
+        from input.pipeline import dish_match
+
+        def _conn_norm(s: str) -> str:
+            s = f" {dish_match._fold_name(s)} "
+            for w in (" and ", " with ", " & ", " w ", " n "):
+                s = s.replace(w, " ")
+            return " ".join(s.split())
+
+        want = _conn_norm(q)
+        if want:
+            idx: dict = {}
+            for k, v in dish_match.name_index(conn).items():
+                idx.setdefault(_conn_norm(k), v)
+            dish = idx.get(want)
+            if dish:
+                top = conn.execute(
+                    "SELECT COALESCE(MAX(rel), 0) FROM temp.q_match").fetchone()[0]
+                conn.execute(
+                    f"INSERT INTO temp.q_match(id, rel) "
+                    f"SELECT id, ? FROM {table} WHERE dish_effective = ? "
+                    f"AND id NOT IN (SELECT id FROM temp.q_match)",
+                    (float(top or 0) + 1.0, dish))
+    except Exception as e:
+        print(f"[SEARCH] dish-aware layer skipped: {e}")
 
 
 def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,

@@ -7609,3 +7609,76 @@ create. Pages are reload-only.
   (Vanilla Extract on ABB). Recipes-inherit-story render phase.
 * Carried: product-side M2M design; per-publisher cap; twins; Pistou
   Reserve; render/EV layer.
+
+## Session log — 2026-09-01 — four channels of evidence, filters before fetch, and search learns what a dish is
+
+Commits: this one (follows c6b0a0a). RESTART OWED for: the dish-aware
+search, the candidate-filter PATCH validation + /domains/{domain}/
+filter-compile endpoint, and the four-channel proposer (propose runs
+in-server). Pages are reload-only (CSS bumped v=20260901a).
+
+* **The proposer became the four-channel matcher.** After the equipment
+  experiment (verb-object pairs across ABB + Baked Chicken Breast —
+  docs/reports/equipment-llm-experiment.md) and the curator's ChatGPT
+  design handoff, PATTERNS moved to direct/functional/inferred/affinity
+  (legacy identity/implication/passthrough stay valid on stored rows);
+  TIER now DERIVES from channel (direct=1, functional/inferred=2,
+  affinity=3) — the channels ARE the evidence grades. The prompt was
+  rebuilt around the recipes as primary evidence with DISTINCTIVE_TERMS
+  demoted to "context, not a constraint", and affinity is grounded in
+  DISH IDENTITY per the curator's amendment ("the dish would dictate
+  affinity") — provenance tallies, not recipe-tag votes. Count loosened
+  from exactly-6 to "at most 10, typically 6-8". Operations extraction
+  (ACTION+OBJECT+QUALIFIER) persists to dishes.operations. Proven live:
+  Beef and Broccoli inferred the santoku from "thin strips against the
+  grain"; Pastitsio proposed Kefalotiri (new chip) and Greek tours/
+  cookbooks off dish identity. Prompt synced to system_config
+  (dish_class_propose_prompt; DB canonical, code seed).
+* **ROOT CAUSE of every "thin/empty model reply": thinking ate the
+  budget.** stop=max_tokens with ONLY a thinking block = zero text.
+  Proposer 3000→14000, story-draft 1500→6000, experiments 9000.
+* **B&B 15-vs-2 solved twice over.** (a) The proposer sampled by OU
+  alone, so 51 UNGATED nearest-rung strays outranked the 15 assigned
+  winners — _gather_recipes now orders rung-first (assigned → matched →
+  nearest), THEN OU; re-propose: 8 proposals, zero contaminants; all 15
+  winners verified intact (NOT last-run-wins). The strays' true homes
+  are catalog holes: Fried Rice, Chow Mein, Mongolian Beef, Pepper
+  Steak. The matcher surfaces cohort contamination FOR FREE. (b) The
+  recipe search found 2 of 70 because FTS ANDs the literal word "with" —
+  _materialise_text_match grew a dish-aware layer: connector-normalized
+  query (and/with/&/w/n) against the fold+alias name_index → all
+  dish_effective rows injected ABOVE text hits. beef with broccoli → 70;
+  "boston cream pie" (no dish) stays text-only — no Cream-Pie collapse.
+  Title embeddings deferred; identity vectors are the phase-2 reserve.
+* **Candidate filters SHIPPED** (docs/candidate-filters.md → real).
+  input/pipeline/candidate_filter.py: {keep,drop} condition rules
+  (SEMrush-filter-shaped; url/url_path/title strings, url_depth/traffic/
+  traffic_pct/rank numbers), evaluated PRE-FETCH; author provenance
+  (curator final, llm overturnable) → ledger reasons filter-curator/
+  filter-llm; ✨ Compile = plain English → rule via ONE Sonnet call,
+  never per-candidate. recipe_path + exclude_words REPLACED (27 domains
+  migrated as curator rules; loud fail if a rule drops everything).
+  Barilla vindication: 18 dropped pre-fetch, 21 stored — no more
+  unblocker credits burned on category pages.
+* **Signals verdict: LEAVE IT.** The blob is 100% derived (recreatable
+  by one free sweep — verified: no curator state inside) but it is NOT
+  just the ugly term lists: cohort authority stats + the provenance
+  tallies live there, and provenance currently FEEDS the affinity
+  channel while dishes.ethnicity/origin_region sit empty (~280 dishes).
+  Teardown milestone: when the story/ethnicity fields are populated,
+  slim the sweep to authority-only. Curator: "just leave it".
+* Menu scroll fixed (library-shell nav-menu max-height + overflow-y) —
+  the grown admin menu was unreadable; CSS version bumped on 14 pages.
+
+### Open
+
+* RESTART, then verify: beef-with-broccoli search, a filter-compile on
+  some domain, a re-propose. B&B chips await approval: Oyster Sauce,
+  Toasted Sesame Oil, Riesling — and Soy Sauce (staple-boundary call).
+  Pastitsio: Kefalotiri chip. Create the hole dishes (Fried Rice, Chow
+  Mein, Mongolian Beef, Pepper Steak) — auto-rematch drains the strays
+  on create.
+* Carried: Baked Chicken Breast keep-vs-alias; Nutmeg class merge;
+  Stand Mixer re-run; Impact signup / B&B application / Emile Henry
+  email; product-side M2M design; per-publisher cap; twins; Pistou
+  Reserve; recipes-inherit-story render; render/EV layer.

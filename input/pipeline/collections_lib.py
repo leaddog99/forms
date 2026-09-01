@@ -949,7 +949,39 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         dropped_candidates.append({"url": url, "title": title or "",
                                    "_dropped_reason": reason, "_stage": stage})
 
-    if recipe_path:
+    # THE per-domain candidate filter (docs/candidate-filters.md, 2026-09-01):
+    # one rule surface, SEMrush-filter-shaped, evaluated pre-fetch for free.
+    # When present it SUPERSEDES the legacy recipe_path scope (the migration
+    # ported those values into it as curator-authored keep conditions).
+    # Born on the barilla run: a 403-walled domain paid an unblocker credit
+    # per CATEGORY page just to drop it post-fetch, while /recipe/all/ told
+    # the whole story in the URL.
+    from input.pipeline import candidate_filter as cfilt
+    _cf_rule = cfilt.parse_rule((_drow or {}).get("candidate_filter"))
+    if _cf_rule:
+        n_before = len(found)
+        kept_f = []
+        for _idx, (l, t) in enumerate(found, 1):
+            _meta = file_meta.get(l) or {}
+            ok, why = cfilt.evaluate(_cf_rule, {
+                "url": l, "title": t,
+                "traffic": _meta.get("traffic"),
+                "traffic_pct": _meta.get("traffic_pct"),
+                "rank": _meta.get("file_seq") or _idx})
+            if ok:
+                kept_f.append((l, t))
+            else:
+                _drop(l, t, why, "prefilter")
+        found = kept_f
+        if len(found) < n_before:
+            print(f"  [harvest] candidate filter dropped {n_before - len(found)} "
+                  f"URL(s) pre-fetch, {len(found)} kept")
+        if n_before > 0 and not found:
+            raise ValueError(
+                "candidate_filter dropped ALL discovered URL(s) — the rule "
+                "matches nothing on this publisher. Fix or clear it on the "
+                "domain record.")
+    elif recipe_path:
         n_before = len(found)
         kept_scoped = []
         for l, t in found:

@@ -190,6 +190,13 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dishes ADD COLUMN ethnicity TEXT")
         conn.execute("ALTER TABLE dishes ADD COLUMN origin_region TEXT")
         conn.execute("ALTER TABLE dishes ADD COLUMN cook_notes TEXT")  # JSON
+    # OPERATIONS profile (2026-09-01, four-channel matcher design): the
+    # ACTION+OBJECT+QUALIFIER list the class-matching call extracts from
+    # representative recipes, persisted per the derived-values rule
+    # (value + method + inputs). Auditable evidence for the junction, and
+    # dish data in its own right (cook-view, landmines).
+    if "operations" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN operations TEXT")  # JSON
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.

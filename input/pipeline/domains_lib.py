@@ -109,6 +109,8 @@ EDITABLE_FIELDS = (
     "brand_authority",     # Moz V3 Brand Authority 0-100 (managed by deep-enrich; overridable)
     "referring_domains",   # Moz V3 referring-domain count (managed; overridable)
     "ranking_keywords",    # JSON list of top keywords the site ranks for (managed)
+    "candidate_filter",    # JSON {keep,drop} rule — THE per-domain pre-fetch surface
+                           # (docs/candidate-filters.md; supersedes recipe_path+exclude_words)
 )
 
 
@@ -451,6 +453,32 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
     for col, decl in _QUALITY_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    # Candidate-filter rule (docs/candidate-filters.md, built 2026-09-01):
+    # the ONE per-domain pre-fetch surface. On first migration, port the two
+    # legacy per-domain mechanisms into it as curator-authored conditions —
+    # recipe_path (13 domains) becomes a keep, exclude_words (1) becomes
+    # drops — so their intent survives in the surface that replaces them.
+    if "candidate_filter" not in have:
+        conn.execute("ALTER TABLE domains ADD COLUMN candidate_filter TEXT NOT NULL DEFAULT ''")
+        ported = 0
+        for host, rp, ew in conn.execute(
+                "SELECT domain, recipe_path, exclude_words FROM domains "
+                "WHERE COALESCE(recipe_path,'') != '' OR COALESCE(exclude_words,'') != ''"):
+            rule = {"keep": [], "drop": []}
+            seg = (rp or "").strip().strip("/").split("/")[0]
+            if seg:
+                rule["keep"].append({"field": "url_path", "criterion": "starts with",
+                                     "value": f"/{seg}", "author": "curator"})
+            for w in (ew or "").replace(",", " ").split():
+                rule["drop"].append({"field": "url_path", "criterion": "containing",
+                                     "value": f"/{w.strip().strip('/')}", "author": "curator"})
+            if rule["keep"] or rule["drop"]:
+                conn.execute("UPDATE domains SET candidate_filter = ? WHERE domain = ?",
+                             (json.dumps(rule), host))
+                ported += 1
+        if ported:
+            print(f"[DOMAINS] candidate_filter: ported {ported} legacy recipe_path/"
+                  f"exclude_words rule(s) as curator-authored conditions")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_domains_root ON domains(root_domain)"
     )

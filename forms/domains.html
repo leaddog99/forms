@@ -489,7 +489,28 @@
               <span class="cfg-note">applies to every source below</span></div>
             <div class="ed-form-grid">
               ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
-              ${field('f_exclude_words', 'Exclude sections — skip these URL sections', d.exclude_words || '', { ph: 'restaurant chef news holiday event jobs', full: true })}
+            </div>
+            <div class="ed-field full" style="margin-top:10px">
+              <label>Candidate filter — pre-fetch URL rules<button type="button" class="info-dot"
+                data-info-title="Candidate filter"
+                data-info="ONE per-domain rule surface, shaped like SEMrush&#39;s advanced filter:
+                rows of Include/Exclude × field × criterion × value, evaluated on every
+                discovered URL BEFORE any fetch — free, and on anti-bot domains it saves a
+                paid unblocker credit per drop (barilla&#39;s category pages, 2026-09-01).
+                Every Include must hold; any Exclude kills; Exclude wins. Fields: url,
+                url_path, title (text) and url_depth, traffic, traffic_pct, rank (numbers —
+                traffic only exists on SEMrush-export harvests; a condition on a missing
+                field does nothing). Write the rule in plain English and ✨ Compile drafts
+                the rows (marked llm — those drops stay overturnable by the reconsider pool);
+                editing a row makes it yours (curator — final). Replaces the old Recipe URL
+                path + Exclude sections fields, whose values were migrated in.">i</button></label>
+              <div style="display:flex;gap:8px;margin:4px 0 8px;flex-wrap:wrap">
+                <input id="cfEnglish" placeholder='e.g. "recipes only — keep /en-us/recipe/all/, drop pages with no traffic"' style="flex:1;min-width:220px">
+                <button type="button" class="ed-btn" id="cfCompileBtn">✨ Compile</button>
+                <span class="ed-save-hint" id="cfHint" style="font-size:.82em"></span>
+              </div>
+              <div id="cfRows"></div>
+              <button type="button" class="ed-btn" id="cfAddBtn" style="padding:2px 10px;font-size:.8em;margin-top:4px">＋ condition</button>
             </div>
           </div>
 
@@ -512,10 +533,8 @@
               <div class="ed-form-grid" style="margin-top:10px">
                 ${field('f_records', 'Records to pull from file', d.harvest_records || 100, { type: 'number' })}
                 ${field('f_harvest_ttl_days_bf', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
-                ${field('f_recipe_path_bf', 'Recipe URL path (blank = no scope)', d.recipe_path || '', { ph: 'recipes' })}
                 ${field('f_backlinks_dir', 'Export folder OR exact file path (blank = auto-detect newest in Downloads)', d.backlinks_dir || '', { ph: 'C:\\Users\\john\\Downloads\\https___www.domain.com_-organic.PagesV3-us-….xlsx', full: true })}
               </div>
-              <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Path = the segment the publisher's recipes live under (<code>recipes</code> keeps only <code>/recipes/…</code>) — a KEEP filter applied before any fetch, and a run that a path drops to ZERO now fails loudly. Leave <b>blank</b> where there's no clean prefix.</p>
               <div class="ed-block-label" style="margin:12px 0 2px;font-size:.82em">SEMrush deep-link <span style="font-weight:400;color:var(--muted,#8a7f72)">(yours to edit — nothing regenerates it)</span></div>
               ${urlField('f_semrush_report_url', 'Deep-link — ↗ opens the report to Export', d.semrush_report_url || '', { full: true })}
               <p class="ed-notes-help" style="margin:4px 0 0;font-size:.8em">Seeded once at create, then yours.<button type="button" class="info-dot" data-info-title="SEMrush report URL" data-info="For anything the plain link can&#39;t reach — a subdomain, a path, a multi-condition filter — build the query in SEMrush, copy the URL from the address bar, and paste it here. Nothing regenerates a saved URL, and a stale form saving a BLANK can&#39;t erase it either (blank against a stored link is ignored; blank against a blank re-seeds the default).">i</button></p>
@@ -528,7 +547,6 @@
                 ${field('f_serp_query', 'Query (verbatim, incl. site:) — how to FIND candidates', d.serp_query || '', { ph: 'site:bostonglobe.com recipe', full: true })}
                 ${field('f_search_pages', 'Depth — pages (×10 results)', d.search_pages || 10, { type: 'number' })}
                 ${field('f_harvest_ttl_days_serp', 'Refresh every (days)', d.harvest_ttl_days || 90, { type: 'number' })}
-                ${field('f_recipe_path_serp', 'Recipe URL path (blank = no scope)', d.recipe_path || '', { ph: 'recipes' })}
               </div>
             </div>
           </div>
@@ -708,11 +726,99 @@
       document.querySelectorAll('input[name=harvestMode]').forEach(r =>
         r.addEventListener('change', () => applyHarvestMode(r.value)));
       applyHarvestMode(inferHarvestMode(d), { dirty: false });   // initial — don't dirty on load
+      cfInit(d);                       // candidate-filter rows + compile wiring
       loadBacklinksFile(d.domain);     // detect the SEMrush export → fills the file line
       loadDomainRecipes(d.domain);     // counts + browse dropdowns (refresh-on-open)
       loadDomainTop(d.domain);         // stored winners (kept top-N)
       loadDomainCohort(d.domain);      // full scored cohort (persistent panel)
       loadDomainCandidates(d.domain);  // pre-scoring drops (candidate ledger)
+    }
+
+    /* ---------------- candidate filter (docs/candidate-filters.md) -------- */
+    // One flat working list; serialized back to {keep,drop} on save. Editing
+    // any part of an llm-authored row transfers ownership to the curator
+    // (design: curator drops = facts, llm drops = overturnable).
+    let cfConds = [];
+    const CF_STR = ['url', 'url_path', 'title'];
+    const CF_NUM = ['url_depth', 'traffic', 'traffic_pct', 'rank'];
+    const CF_STRC = ['containing', 'not containing', 'exactly', 'starts with', 'ends with', 'matches'];
+    const CF_NUMC = ['>', '>=', '<', '<=', '='];
+
+    function cfInit(d){
+      cfConds = [];
+      try {
+        const r = JSON.parse(d.candidate_filter || '""') || {};
+        for (const c of (r.keep || [])) cfConds.push({ side: 'include', ...c });
+        for (const c of (r.drop || [])) cfConds.push({ side: 'exclude', ...c });
+      } catch {}
+      cfRender();
+      $('#cfAddBtn')?.addEventListener('click', () => {
+        cfConds.push({ side: 'include', field: 'url_path', criterion: 'starts with', value: '', author: 'curator' });
+        cfRender(); markDirtyNow();
+      });
+      $('#cfCompileBtn')?.addEventListener('click', async () => {
+        const text = ($('#cfEnglish')?.value || '').trim(), hint = $('#cfHint');
+        if (!text){ hint.textContent = 'write the rule in plain English first'; return; }
+        $('#cfCompileBtn').disabled = true; hint.textContent = 'compiling…';
+        try {
+          const r = await fetch(`/domains/${encodeURIComponent(selected)}/filter-compile`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
+          cfConds = [];
+          for (const c of (j.rule.keep || [])) cfConds.push({ side: 'include', ...c });
+          for (const c of (j.rule.drop || [])) cfConds.push({ side: 'exclude', ...c });
+          cfRender(); markDirtyNow();
+          hint.textContent = 'compiled — review the rows, then Save';
+        } catch (e) { hint.textContent = 'compile failed: ' + (e.message || e); }
+        $('#cfCompileBtn').disabled = false;
+      });
+    }
+
+    function markDirtyNow(){
+      const box = $('#cfRows'); if (box) box.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function cfRender(){
+      const box = $('#cfRows'); if (!box) return;
+      const sel = (opts, cur) => opts.map(o => `<option ${o === cur ? 'selected' : ''}>${o}</option>`).join('');
+      box.innerHTML = cfConds.map((c, i) => {
+        const crits = CF_NUM.includes(c.field) ? CF_NUMC : CF_STRC;
+        return `
+        <div data-cfi="${i}" style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap">
+          <select class="cf-side" style="width:96px">${sel(['include', 'exclude'], c.side)}</select>
+          <select class="cf-field" style="width:110px">${sel([...CF_STR, ...CF_NUM], c.field)}</select>
+          <select class="cf-crit" style="width:130px">${sel(crits, c.criterion)}</select>
+          <input class="cf-val" value="${escapeHtml(String(c.value ?? ''))}" style="flex:1;min-width:140px">
+          <span class="pill-w" title="${c.author === 'llm' ? 'compiled by the model — its drops stay overturnable; edit to take ownership' : 'curator-authored — drops are final'}" style="font-size:.62em">${c.author === 'llm' ? 'llm' : 'curator'}</span>
+          <button type="button" class="cf-del ed-btn" style="padding:0 7px;color:#b23b3b" title="Remove condition">✕</button>
+        </div>`;
+      }).join('') || '<p class="ed-notes-help" style="margin:0;font-size:.8em">No conditions — every discovered URL passes to the next gates.</p>';
+      box.querySelectorAll('[data-cfi]').forEach(row => {
+        const i = +row.dataset.cfi, c = cfConds[i];
+        const own = () => { if (c.author === 'llm'){ c.author = 'curator'; cfRender(); } };
+        row.querySelector('.cf-side').addEventListener('change', e => { c.side = e.target.value; own(); });
+        row.querySelector('.cf-field').addEventListener('change', e => {
+          c.field = e.target.value;
+          const crits = CF_NUM.includes(c.field) ? CF_NUMC : CF_STRC;
+          if (!crits.includes(c.criterion)) c.criterion = crits[0];
+          own(); cfRender();
+        });
+        row.querySelector('.cf-crit').addEventListener('change', e => { c.criterion = e.target.value; own(); });
+        row.querySelector('.cf-val').addEventListener('input', e => { c.value = e.target.value; if (c.author === 'llm') c.author = 'curator'; });
+        row.querySelector('.cf-del').addEventListener('click', () => { cfConds.splice(i, 1); cfRender(); markDirtyNow(); });
+      });
+    }
+
+    function cfSerialize(){
+      const rule = { keep: [], drop: [] };
+      for (const c of cfConds) {
+        if (!String(c.value ?? '').trim()) continue;
+        rule[c.side === 'exclude' ? 'drop' : 'keep'].push(
+          { field: c.field, criterion: c.criterion, value: c.value, author: c.author || 'curator' });
+      }
+      return (rule.keep.length || rule.drop.length) ? rule : '';
     }
 
     // The active source's copy of a duplicated per-run field (_bf / _serp).
@@ -1522,7 +1628,7 @@
         extract_notes: $('#f_extract_notes').value.trim(),
         domain_authority: numOrNull($('#f_domain_authority').value),
         notes: $('#f_notes').value.trim(),
-        recipe_path: (srcVal('f_recipe_path')?.value || '').trim(),
+        candidate_filter: cfSerialize(),   // supersedes recipe_path + exclude_words
         keep_top_n: numOrNull($('#f_keep_top_n')?.value) || 10,
         harvest_records: numOrNull($('#f_records')?.value) || 100,
 

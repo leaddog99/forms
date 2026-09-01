@@ -56,8 +56,11 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     ("disallowed-path",   "disallowed", False),   # curator blocklist
     ("domain-exclude",    "is_recipe",  False),   # curator per-domain exclude
     ("collection-title",  "is_recipe",  False),   # it IS a roundup/listicle
-    ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope
+    ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope (legacy)
     ("archive-url",       "prefilter",  False),   # /tag/, /category/, feeds — never a recipe
+    ("filter-curator",    "prefilter",  False),   # candidate-filter condition, curator-authored
+    # --- candidate-filter, LLM-compiled: overturnable (design §provenance) --
+    ("filter-llm",        "prefilter",  True),
     # --- inferences: overturnable ----------------------------------------
     ("no-recipe-structure", "is_recipe", True),   # detection failure
     ("recipe-score<",       "is_recipe", True),   # heuristic threshold

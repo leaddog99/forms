@@ -183,6 +183,12 @@ body:not(.sidebar-open) .sidebar-opener { display: inline-flex; }
   box-shadow: 0 6px 20px rgba(60,40,20,.18);
   z-index: 101;
   display: none;
+  /* The admin menu outgrew short viewports (2026-09-01): cap to the space
+     below the header and scroll inside — items were unreachable, not gone. */
+  max-height: calc(100vh - var(--header-h) - 20px);
+  max-height: calc(100dvh - var(--header-h) - 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .nav-menu.open { display: block; }
 .nav-menu .nav-item {
