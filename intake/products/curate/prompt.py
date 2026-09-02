@@ -260,8 +260,29 @@ Use this exact structure:
 """
 
 
+EDITORS_CHOICE_ASKED = """\
+
+EDITOR'S CHOICE
+The curator has pinned this product for analysis alongside the ranking:
+  {pick}
+Add a top-level "editors_choice" object to the JSON — the same row shape as an
+overall_top_three entry, with "place": 1. Analyze it with the SAME rigor: real
+product_title, manufacturer, model_number, typical_price, buy_link; the ASIN rules
+above apply unchanged. It must NOT displace, reorder, or appear in overall_top_three
+or any category — it is a separate, labeled slot with curator provenance.
+Honesty rules for it: if none of the supplied source documents tested this product,
+say so plainly at the START of why_it_ranks_here ("Curator's pick — not tested by
+the supplied sources; ...") and ground the analysis in what CAN be verified
+(manufacturer specs, retailer listings — those pages are then your source_links).
+Never cite a supplied source for a claim it did not make about THIS product.
+why_it_ranks_here explains what this pick offers relative to the ranked three;
+important_tradeoff keeps its meaning; for edge_over_next, state honestly how it
+compares to the overall #1 (it has no "next" — a candid comparison is the useful
+answer)."""
+
+
 def build_prompt(product_class: str, categories: list, docs: list | None = None,
-                 weights: list | None = None) -> str:
+                 weights: list | None = None, editors_choice: str = "") -> str:
     """Assemble the research prompt, with our fetched source documents inlined.
 
     `docs` = [{label, url, markdown, via}] from BCC's fetch stack. Supplying them is the
@@ -297,6 +318,8 @@ def build_prompt(product_class: str, categories: list, docs: list | None = None,
         weights="\n".join(f"- {n}: {int(w*100)}%   ({what})" for n, w, what in weights),
         schema=SCHEMA,
     )]
+    if (editors_choice or "").strip():
+        parts.append(EDITORS_CHOICE_ASKED.format(pick=editors_choice.strip()))
 
     supplied = [d for d in (docs or []) if d.get("markdown")]
     if supplied:

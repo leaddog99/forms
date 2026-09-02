@@ -94,7 +94,7 @@ def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None 
 
 
 def research(product_class: str, categories=None, *, docs: list | None = None,
-             refresh: bool = False,
+             refresh: bool = False, editors_choice: str = "",
              should_cancel: Callable[[], bool] | None = None) -> dict:
     """Fetch the authorities ourselves, then ask the model to curate FROM THEM.
 
@@ -118,7 +118,9 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
     got = sum(1 for d in docs if d.get("markdown"))
     print(f"[CURATE] {got}/{len(docs)} sources retrieved; curating…")
 
-    text = P.build_prompt(product_class, categories, docs)
+    if (editors_choice or "").strip():
+        print(f"[CURATE] editor's choice pinned: {editors_choice.strip()}")
+    text = P.build_prompt(product_class, categories, docs, editors_choice=editors_choice)
     import llm
     # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
     with llm.stream(operation="curate_research", model=rr.MODEL, max_tokens=MAX_TOKENS,
@@ -145,6 +147,9 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
     # What was ASKED FOR, not merely what came back: without it a renamed, dropped or invented
     # category is indistinguishable from a requested one.
     data["categories_requested"] = categories
+    # Same idea for the pinned pick: stamping the REQUEST makes its absence checkable.
+    if (editors_choice or "").strip():
+        data["editors_choice_requested"] = editors_choice.strip()
     return data
 
 
@@ -166,7 +171,7 @@ def verify_and_render(data: dict, *, use_network: bool = True) -> tuple:
 
 
 def run(product_class: str, categories=None, *, refresh: bool = False,
-        use_network: bool = True, terms: list | None = None,
+        use_network: bool = True, terms: list | None = None, editors_choice: str = "",
         should_cancel: Callable[[], bool] | None = None) -> dict:
     """The whole pass. Returns {record, report, brief_text, sources}.
 
@@ -178,7 +183,8 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
                       should_cancel=should_cancel)
     sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
                "missing": [d["label"] for d in docs if not d.get("markdown")]}
-    data = research(product_class, categories, docs=docs, should_cancel=should_cancel)
+    data = research(product_class, categories, docs=docs, editors_choice=editors_choice,
+                    should_cancel=should_cancel)
     # Per-source ACCOUNTING: fetch facts (ours) merged with the model's reading of each
     # document (source_report in the reply — what the page actually covers, whether it
     # was usable). One row per named authority, failures included, so "Serious Eats got
@@ -228,4 +234,9 @@ def picks_from(data: dict) -> list:
         for r in sorted(rows, key=lambda x: int(x.get("place", 9))):
             out.append(dict(r, _section=cat,
                             _slot=f"{_slug(cat)}.{r.get('place', '')}"))
+    # The curator-pinned pick, in its own labeled section — provenance stays visible
+    # all the way into the picks table.
+    ec = data.get("editors_choice")
+    if isinstance(ec, dict):
+        out.append(dict(ec, place=1, _section="Editor's Choice", _slot="editors-choice.1"))
     return out

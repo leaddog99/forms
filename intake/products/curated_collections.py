@@ -48,7 +48,7 @@ def _dicts(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list:
 
 
 EDITABLE = ("display_name", "product_class", "categories", "ws_category_id", "ws_path",
-            "notes", "use_network", "search_terms")
+            "notes", "use_network", "search_terms", "editors_choice")
 
 # Columns holding JSON, decoded on read so callers never json.loads by hand.
 _JSON_PICK_FIELDS = ("source_links", "offers", "owner_histogram")
@@ -70,6 +70,11 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
                                                 -- the on-class filter ("Multicooker" for
                                                 -- Electric Pressure Cooker); also widen the
                                                 -- filter's accept set
+            editors_choice  TEXT,               -- curator-pinned product (name/ASIN, free
+                                                -- text): analyzed by the run with full rigor
+                                                -- in its own labeled slot — NEVER mixed into
+                                                -- the review-sourced ranking (provenance
+                                                -- firewall)
             last_run_at     TEXT,
             last_job_id     INTEGER,
             last_pick_count INTEGER,
@@ -122,6 +127,8 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
     ccols = {r[1] for r in conn.execute("PRAGMA table_info(curated_collections)")}
     if "search_terms" not in ccols:
         conn.execute("ALTER TABLE curated_collections ADD COLUMN search_terms TEXT")
+    if "editors_choice" not in ccols:
+        conn.execute("ALTER TABLE curated_collections ADD COLUMN editors_choice TEXT")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(curated_collection_picks)")}
     if "excluded" not in cols:
         conn.execute("ALTER TABLE curated_collection_picks "
@@ -195,13 +202,15 @@ def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
     now = _now()
     conn.execute(
         "INSERT INTO curated_collections(name, display_name, product_class, categories, "
-        "ws_category_id, ws_path, notes, use_network, search_terms, created_at, updated_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        "ws_category_id, ws_path, notes, use_network, search_terms, editors_choice, "
+        "created_at, updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
         (name, (patch.get("display_name") or "").strip(), pclass,
          json.dumps(_clean_categories(patch.get("categories"))),
          patch.get("ws_category_id"), (patch.get("ws_path") or ""),
          (patch.get("notes") or ""), 1 if patch.get("use_network", True) else 0,
-         json.dumps(_clean_search_terms(patch.get("search_terms"))), now, now))
+         json.dumps(_clean_search_terms(patch.get("search_terms"))),
+         (patch.get("editors_choice") or "").strip(), now, now))
     conn.commit()
     return get_collection(conn, name)
 
@@ -244,6 +253,8 @@ def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict 
             v = json.dumps(_clean_categories(v))
         elif f == "search_terms":
             v = json.dumps(_clean_search_terms(v))
+        elif f == "editors_choice":
+            v = (v or "").strip()
         elif f == "use_network":
             v = 1 if v else 0
         elif f == "product_class":

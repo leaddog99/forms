@@ -467,6 +467,12 @@
             <input id="f_class" value="${escapeHtml(v.product_class||'')}" placeholder="Loaf pans">
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">What gets researched. Write it
               the way a reviewer would title a roundup.</p></div>
+          <div class="ed-field"><label>Editor's choice — a product to pin (optional)</label>
+            <input id="f_ec" value="${escapeHtml(v.editors_choice||'')}" placeholder="Breville Control Grip BSB510XL">
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">A product the review sites
+              didn't select that you want analyzed anyway — full identity, price, and owner-evidence
+              treatment in its own labeled slot. It never displaces the review-sourced ranking,
+              and its write-up says plainly when no source tested it.</p></div>
           <div class="ed-field"><label>Fallback search terms — one per line (optional)</label>
             <textarea id="f_terms" style="min-height:56px" placeholder="Multicooker&#10;pressure canning">${escapeHtml((v.search_terms||[]).join('\n'))}</textarea>
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">The class name is always
@@ -508,6 +514,7 @@
         product_class: ($('#f_class').value||'').trim(),
         categories: ($('#f_cats').value||''),
         search_terms: ($('#f_terms').value||''),
+        editors_choice: ($('#f_ec').value||'').trim(),
         use_network: !!$('#f_net').checked,
         notes: ($('#f_notes').value||'').trim(),
       };

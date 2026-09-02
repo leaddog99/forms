@@ -51,6 +51,11 @@ def rows_of(data: dict) -> list:
         out.append((f"overall #{r.get('place', i)}", r))
     for i, r in enumerate(data.get("category_rankings") or [], 1):
         out.append((f"{r.get('category', '?')} #{r.get('place', i)}", r))
+    ec = data.get("editors_choice")
+    if isinstance(ec, dict):
+        # The curator-pinned pick gets the SAME identity/owner/offer machinery as every
+        # ranked row — analysis parity is the point; only its provenance label differs.
+        out.append(("editors-choice", ec))
     return out
 
 
@@ -141,6 +146,12 @@ def validate_shape(data: dict) -> list:
         # Provenance: required by the prompt, unchecked by the original validator.
         if not [u for u in (r.get("source_links") or []) if str(u).strip()]:
             errs.append(f"{label}: source_links is empty — a claim we cannot trace")
+
+    # The pinned pick is a REQUEST like categories are: asked-for but absent is an error,
+    # not a silent omission.
+    if data.get("editors_choice_requested") and not isinstance(data.get("editors_choice"), dict):
+        errs.append(f"editors_choice was requested "
+                    f"({data['editors_choice_requested']!r}) but is missing from the result")
 
     crit = data.get("ranking_criteria")
     if not isinstance(crit, list) or not crit:

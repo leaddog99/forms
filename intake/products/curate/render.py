@@ -138,6 +138,16 @@ def render(data: dict, report: dict | None = None) -> str:
                 r["_slot"] = f"{slug}.{cslug}.{r.get('place','')}"
                 lines += [_row(r), ""]
 
+    # Curator-pinned pick — full analysis, separate slot, provenance stated. Placed after
+    # the rankings so the review-sourced order reads first, never diluted.
+    ec = data.get("editors_choice")
+    if isinstance(ec, dict):
+        lines += ["", "EDITOR'S CHOICE", "-" * 15,
+                  "  Curator-selected — analyzed with the same evidence and rigor;",
+                  "  not chosen by the supplied review sources.", ""]
+        ec["_slot"] = f"{slug}.editors-choice.1"
+        lines += [_row(ec, show_place=False), ""]
+
     crit = data.get("ranking_criteria") or []
     if crit:
         lines += ["", "HOW WE RANKED", "-" * 13, ""]
