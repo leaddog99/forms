@@ -35,9 +35,15 @@
       place-items: center; font-size: .8rem; font-weight: 800; background: var(--bg);
       border: 1px solid var(--line); color: var(--ed-ink-soft); }
     .pk-place.p1 { background: #fbf1d4; color: #96700c; border-color: #eedfb4; }
-    .pk-main { flex: 1; min-width: 0; }
-    .pk-thumb { flex: 0 0 auto; width: 54px; height: 54px; object-fit: contain;
-      border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+    .pk-main { flex: 1; min-width: 0; display: flow-root; } /* flow-root contains the floated thumb */
+    /* The thumb floats RIGHT inside the content block: every row's text keeps the
+       same left edge (no jagged indent on image-less rows) and the prose flows
+       around the picture, magazine-style. ~1/3 of the block, capped. */
+    .pk-thumb-wrap { float: right; width: 33%; max-width: 210px; min-width: 110px;
+      margin: 0 0 8px 14px; }
+    .pk-thumb { display: block; width: 100%; height: auto; max-height: 240px;
+      object-fit: contain; border: 1px solid var(--line); border-radius: 9px;
+      background: #fff; padding: 6px; box-sizing: border-box; }
     .pk-t { font-weight: 600; }
     .pk-why { margin: 4px 0 0; }
     .pk-line { margin: 3px 0 0; font-size: .82rem; }
@@ -319,17 +325,25 @@
     // from pick.image, captured by verify's listing lookup and hotlinked.)
     const asinHref = (asin) => `https://www.amazon.com/dp/${encodeURIComponent(asin)}`;
 
+    // Amazon image URLs carry a size modifier (e.g. ._AC_SX342_.jpg); rewrite it
+    // to _SL500_ for a display-worthy resolution. No modifier = already full size.
+    const bigImg = (u) => u.replace(/\._[^/.]*_\.(jpe?g|png|webp)$/i, '._SL500_.$1');
+
     function pickRow(p){
       const offers = p.offers || [];
       const srcs = p.source_links || [];
-      const thumb = p.image
-        ? `<img class="pk-thumb" src="${escapeHtml(p.image)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      const img = p.image
+        ? `<img class="pk-thumb" src="${escapeHtml(bigImg(p.image))}" alt="" loading="lazy" onerror="this.closest('.pk-thumb-wrap').style.display='none'">`
+        : '';
+      const thumb = img
+        ? `<div class="pk-thumb-wrap">${p.asin
+            ? `<a href="${asinHref(p.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${img}</a>` : img}</div>`
         : '';
       return `
         <div class="pk">
           <div class="pk-place ${p.place===1?'p1':''}">${p.place ?? '?'}</div>
-          ${thumb ? (p.asin ? `<a href="${asinHref(p.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${thumb}</a>` : thumb) : ''}
           <div class="pk-main">
+            ${thumb}
             <div class="pk-t">${escapeHtml([p.manufacturer, p.product_title].filter(Boolean).join(' ').trim() || '—')}
               ${p.capacity?`<span class="muted" style="font-weight:400"> · ${escapeHtml(p.capacity)}</span>`:''}
               ${p.model_number?`<span class="muted" style="font-weight:400" title="Manufacturer's model number"> · ${escapeHtml(p.model_number)}</span>`:''}
