@@ -106,10 +106,10 @@ def _row(r: dict, *, show_place: bool = True) -> str:
     # left the ORDER unexplained — nothing ever said why #1 outranked #2. Ranking here is a
     # model judgment, not arithmetic (no weighted score is computed), so the reasoning IS the
     # audit trail; without it a rank can't be challenged, only accepted.
-    if r.get("edge_over_next"):
-        out.append(f"     Ahead of the next: {r['edge_over_next']}")
     if r.get("important_tradeoff"):
         out.append(f"     The catch: {r['important_tradeoff']}")
+    if r.get("edge_over_next"):
+        out.append(f"     Ahead of the next: {r['edge_over_next']}")
     out += _evidence(r)
     return "\n".join(out)
 

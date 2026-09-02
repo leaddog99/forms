@@ -363,8 +363,8 @@
                 : (p.verified_title ? '<span class="pill-w ok">verified</span>' : '')}</div>
             ${p.best_for?`<div class="pk-line"><b>Best for:</b> ${escapeHtml(p.best_for)}</div>`:''}
             ${p.why_it_ranks_here?`<p class="pk-why">${escapeHtml(p.why_it_ranks_here)}</p>`:''}
-            ${p.edge_over_next?`<div class="pk-line"><b>Ahead of the next:</b> ${escapeHtml(p.edge_over_next)}</div>`:''}
             ${p.important_tradeoff?`<div class="pk-line"><b>The catch:</b> ${escapeHtml(p.important_tradeoff)}</div>`:''}
+            ${p.edge_over_next?`<div class="pk-line"><b>Ahead of the next:</b> ${escapeHtml(p.edge_over_next)}</div>`:''}
             ${p.identity_warning?`<div class="pk-line warn"><b>⚠</b> ${escapeHtml(p.identity_warning)} — no Amazon buy link was published for this pick.</div>`:''}
             <div class="pk-meta">
               ${money(p.typical_price)} typical${p.price_type==='sale'&&p.current_price?` · on sale ${money(p.current_price)}`:''}
