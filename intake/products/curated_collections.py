@@ -30,6 +30,7 @@ challenged.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -47,7 +48,7 @@ def _dicts(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list:
 
 
 EDITABLE = ("display_name", "product_class", "categories", "ws_category_id", "ws_path",
-            "notes", "use_network")
+            "notes", "use_network", "search_terms")
 
 # Columns holding JSON, decoded on read so callers never json.loads by hand.
 _JSON_PICK_FIELDS = ("source_links", "offers", "owner_histogram")
@@ -64,6 +65,11 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             ws_path         TEXT,               -- denormalized for display/sort
             notes           TEXT,
             use_network     INTEGER DEFAULT 1,  -- enrichment may call out (identity/ratings)
+            search_terms    TEXT,               -- JSON list: FALLBACK terms tried after the
+                                                -- class name when a publisher's page flunks
+                                                -- the on-class filter ("Multicooker" for
+                                                -- Electric Pressure Cooker); also widen the
+                                                -- filter's accept set
             last_run_at     TEXT,
             last_job_id     INTEGER,
             last_pick_count INTEGER,
@@ -113,6 +119,9 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
             excluded        INTEGER DEFAULT 0,  -- curator: rejected pick, stays out (see set_pick_excluded)
             PRIMARY KEY (collection, slot)
         )""")
+    ccols = {r[1] for r in conn.execute("PRAGMA table_info(curated_collections)")}
+    if "search_terms" not in ccols:
+        conn.execute("ALTER TABLE curated_collections ADD COLUMN search_terms TEXT")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(curated_collection_picks)")}
     if "excluded" not in cols:
         conn.execute("ALTER TABLE curated_collection_picks "
@@ -135,7 +144,8 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
 # --------------------------------------------------------------------------- #
 
 def _decode(c: dict) -> dict:
-    for f, default in (("categories", []), ("result_json", None), ("report_json", None)):
+    for f, default in (("categories", []), ("search_terms", []),
+                       ("result_json", None), ("report_json", None)):
         raw = c.get(f)
         if raw:
             try:
@@ -185,12 +195,13 @@ def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
     now = _now()
     conn.execute(
         "INSERT INTO curated_collections(name, display_name, product_class, categories, "
-        "ws_category_id, ws_path, notes, use_network, created_at, updated_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "ws_category_id, ws_path, notes, use_network, search_terms, created_at, updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         (name, (patch.get("display_name") or "").strip(), pclass,
          json.dumps(_clean_categories(patch.get("categories"))),
          patch.get("ws_category_id"), (patch.get("ws_path") or ""),
-         (patch.get("notes") or ""), 1 if patch.get("use_network", True) else 0, now, now))
+         (patch.get("notes") or ""), 1 if patch.get("use_network", True) else 0,
+         json.dumps(_clean_search_terms(patch.get("search_terms"))), now, now))
     conn.commit()
     return get_collection(conn, name)
 
@@ -200,6 +211,24 @@ def _clean_categories(value) -> list:
     exactly what will be asked for. Empty is a real answer: rank the whole class."""
     from intake.products.curate.prompt import normalize_categories
     return normalize_categories(value)
+
+
+def _clean_search_terms(value) -> list:
+    """Fallback search terms — a list or a `;`/`,`/newline-delimited string. The class name
+    is NOT stored here: it is always the ladder's first rung at run time, so the stored list
+    is only the aliases tried after it ("Multicooker", "pressure canning"). Empty is the
+    common case. Deduped case-insensitively, order preserved (order = ladder order)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    parts = [p.strip() for v in value for p in re.split(r"[;,\n]", str(v))]
+    out, seen = [], set()
+    for p in parts:
+        if p and p.lower() not in seen:
+            seen.add(p.lower())
+            out.append(p)
+    return out
 
 
 def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict | None:
@@ -213,6 +242,8 @@ def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict 
         v = patch[f]
         if f == "categories":
             v = json.dumps(_clean_categories(v))
+        elif f == "search_terms":
+            v = json.dumps(_clean_search_terms(v))
         elif f == "use_network":
             v = 1 if v else 0
         elif f == "product_class":

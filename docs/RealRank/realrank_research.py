@@ -110,6 +110,51 @@ def _host_ok(url, site):
     return (u.path or "/").lstrip("/").lower().startswith(want_path.lower()) if want_path else True
 
 
+def _class_pattern(product):
+    """The ON-CLASS test — the review-side analog of the recipe candidate filter.
+
+    A `site:` search returns the publisher's NEAREST page, not necessarily one about
+    this class: every canner run fetched ATK's pressure-COOKER roundup (0 mentions of
+    "canner") and supplied it as though ATK had answered. The discriminator is the HEAD
+    of the class name — its last two words ("Stovetop Pressure Canner" -> "pressure
+    canner"), since a qualifier may legitimately be absent from a generic on-class
+    roundup, but the head noun separates canner from cooker, chef knife from bread
+    knife.
+
+    The pattern fuzzes what real pages do to the head: plurals ("canners"), f->ves
+    ("knives"), possessives ("chef's knife"), and the -er->-ing gerund ("pressure
+    canning" — how advice pages talk about the tool). Matches the full class name too.
+    """
+    words = [w for w in re.findall(r"[A-Za-z0-9']+", product.lower()) if w]
+    if not words:
+        return None
+
+    def _word(w, last=False):
+        base = re.escape(w.rstrip("'s") if w.endswith("'s") else w) + "(?:'s)?"
+        if not last:
+            return base
+        alts = [base + "(?:e?s)?"]
+        if w.endswith("fe"):
+            alts.append(re.escape(w[:-2]) + "ves")
+        elif w.endswith("f"):
+            alts.append(re.escape(w[:-1]) + "ves")
+        if w.endswith("er") and len(w) > 4:
+            alts.append(re.escape(w[:-2]) + "ing")
+        return "(?:" + "|".join(alts) + ")"
+
+    def _phrase(ws):
+        return r"[\s\-]+".join(_word(w, last=(i == len(ws) - 1)) for i, w in enumerate(ws))
+
+    pats = [_phrase(words[-2:] if len(words) >= 2 else words)]
+    if len(words) > 2:
+        pats.append(_phrase(words))
+    return re.compile(r"\b(?:" + "|".join(pats) + r")\b", re.I)
+
+
+def _on_class_hits(text, pat):
+    return len(pat.findall(text or "")) if pat else 0
+
+
 def _keywords(product):
     """Distinctive tokens from the product name — model numbers first, then words worth
     matching. Drives the relevance trim so a 100k roundup contributes the right paragraphs."""
@@ -142,66 +187,121 @@ def _trim_for_prompt(md, keys, budget=DOC_CHAR_BUDGET):
     return trimmed[:budget] if len(trimmed) > budget else trimmed
 
 
-def fetch_source_docs(product, sites=SOURCE_SITES, max_workers=4, should_cancel=None):
+def fetch_source_docs(product, sites=SOURCE_SITES, max_workers=4, should_cancel=None,
+                      terms=None):
     """Fetch each named source's own page through BCC's fetch stack.
 
     One SERP call per source to locate its page (`site:` filter), then the SAME tiered
     ladder the recipe pipeline climbs — UA chain -> unblocker -> Wayback snapshot
     (`fetch_with_full_fallback`, reached via `html_to_markdown(unblocker=True)`).
 
-    Returns [{label, url, markdown, via, error}]. `via` records which rung actually served
-    the page (direct / unblocker / wayback), so a source read from a years-old snapshot is
-    visible rather than passing as current. `markdown` empty means every rung failed — and
-    `url` still carries the page we found, because the LAST rung is human: capture it with
-    the review bookmarklet (forms/reviews.html -> /extract-review).
+    `terms` = the curator's FALLBACK LADDER for this class (curated_collections
+    .search_terms): aliases tried, in order, after the class name itself when a
+    publisher's page flunks the on-class filter — "Multicooker" for Electric Pressure
+    Cooker, because Wirecutter files the class under its old name. Aliases also WIDEN
+    the on-class accept set: a page saying "multicooker" thirty times is an on-class
+    answer for that collection.
+
+    Returns [{label, url, markdown, via, class_hits, error}]. `via` records which rung
+    actually served the page (direct / unblocker / wayback), so a source read from a
+    years-old snapshot is visible rather than passing as current. `markdown` empty means
+    every rung failed OR every fetched page was off-class — and `url` still carries the
+    best page we found, because the LAST rung is human: capture it with the review
+    bookmarklet (forms/reviews.html -> /extract-review).
     """
     from input.pipeline.serp_search import serp_search
     from to_markdown.html_to_markdown import html_to_markdown
 
     keys = _keywords(product)
 
-    # A model number pins the query too tightly for a roundup review ("The Best Stand Mixers"
-    # never says KSM150PS in its title), and a `site:` miss falls back to unrestricted results.
-    # So: precise query first, then the same query without model numbers.
-    broad = " ".join(t for t in product.split() if not any(c.isdigit() for c in t))
+    ladder = [product] + [t for t in (terms or [])
+                          if t.strip() and t.strip().lower() != product.strip().lower()]
+    # The on-class test accepts ANY rung of the ladder — the aliases are the curator
+    # saying "these words mean this class here".
+    pats = [p for p in (_class_pattern(t) for t in ladder) if p is not None]
+    cls_pat = re.compile("|".join(p.pattern for p in pats), re.I) if pats else None
+
+    MAX_FETCHES = 3   # per site, across the whole ladder — credits are the scarce
+                      # resource, not SERP calls
 
     def one(entry):
         label, site = entry
-        rec = {"label": label, "url": "", "markdown": "", "via": "", "error": ""}
-        # Cancel checkpoint per source: the fetch phase is the long one (a SERP call plus an
-        # unblocker fetch each), so a cancel shouldn't have to wait for all eight.
-        if should_cancel and should_cancel():
-            rec["error"] = "cancelled"
-            return rec
-        hit = None
-        for q in (f"site:{site} {product} review", f"site:{site} {broad} review"):
-            try:
-                hits = serp_search(q, pages=1, want=5)
-            except Exception as e:
-                rec["error"] = f"search failed: {e}"
+        rec = {"label": label, "url": "", "markdown": "", "via": "", "error": "",
+               "class_hits": 0}
+        fetches, seen, best_offclass, best_url = 0, set(), None, ""
+        for term in ladder:
+            # Cancel checkpoint per source AND per rung: the fetch phase is the long one,
+            # so a cancel shouldn't have to wait out the whole ladder.
+            if should_cancel and should_cancel():
+                rec["error"] = "cancelled"
                 return rec
-            # Keep ONLY results actually on that publisher's site (see _host_ok).
-            hit = next((h for h in hits if _host_ok(h.get("link", ""), site)), None)
-            if hit:
+            # A model number pins the query too tightly for a roundup review ("The Best
+            # Stand Mixers" never says KSM150PS in its title) — precise query first, then
+            # without model numbers.
+            broad = " ".join(w for w in term.split() if not any(c.isdigit() for c in w))
+            queries = [f"site:{site} {term} review"]
+            if broad and broad != term:
+                queries.append(f"site:{site} {broad} review")
+            cands = []
+            for q in queries:
+                try:
+                    hits = serp_search(q, pages=1, want=5)
+                except Exception as e:
+                    rec["error"] = rec["error"] or f"search failed: {e}"
+                    hits = []
+                # Keep ONLY results actually on that publisher's site (see _host_ok).
+                for h in hits:
+                    link = h.get("link", "")
+                    if _host_ok(link, site) and link not in seen:
+                        seen.add(link)
+                        cands.append(h)
+                if cands:
+                    break
+            if not cands:
+                continue
+            best_url = best_url or cands[0].get("link", "")
+
+            # ON-CLASS FILTER, two rungs — the review analog of the recipe candidate
+            # filter. Rung 1, pre-fetch and free: prefer candidates whose TITLE names the
+            # class, so the (expensive) fetch is spent on the likeliest page first.
+            # Rung 2, post-fetch and decisive: the page must actually TALK about the class
+            # (>= 2 mentions of a ladder term) or it is rejected as off-class — an ATK
+            # pressure-COOKER roundup no longer passes for a pressure-CANNER answer just
+            # because the fetch succeeded.
+            cands.sort(key=lambda h: 0 if _on_class_hits(h.get("title", ""), cls_pat) else 1)
+            for hit in cands[:2]:
+                if fetches >= MAX_FETCHES:
+                    break
+                fetches += 1
+                rec["url"] = hit.get("link", "")
+                timings = {}
+                try:
+                    doc = html_to_markdown(rec["url"], timings, unblocker=True, render=True)
+                except Exception as e:
+                    rec["error"] = f"fetch failed: {e}"
+                    continue
+                via = timings.get("fetch_source") or "direct"
+                if timings.get("wayback_timestamp"):
+                    via += f":{timings['wayback_timestamp']}"
+                md = (doc or {}).get("markdown") or ""
+                if not md.strip():
+                    rec["error"] = "fetched but empty (blocked or JS-only)"
+                    continue
+                n = _on_class_hits(md, cls_pat)
+                if cls_pat is not None and n < 2:
+                    title = (hit.get("title") or "").strip() or rec["url"]
+                    best_offclass = best_offclass or (
+                        f"off-class: best page was {title!r} ({n} mention(s) of the class)")
+                    rec["error"] = best_offclass
+                    continue
+                rec.update({"via": via, "markdown": _trim_for_prompt(md, keys),
+                            "class_hits": n, "error": ""})
+                return rec
+            if fetches >= MAX_FETCHES:
                 break
-        if not hit:
+        if not rec["error"]:
             rec["error"] = "no page found on this site"
-            return rec
-        rec["url"] = hit.get("link", "")
-        timings = {}
-        try:
-            doc = html_to_markdown(rec["url"], timings, unblocker=True, render=True)
-        except Exception as e:
-            rec["error"] = f"fetch failed: {e}"
-            return rec
-        rec["via"] = timings.get("fetch_source") or "direct"
-        if timings.get("wayback_timestamp"):
-            rec["via"] += f":{timings['wayback_timestamp']}"
-        md = (doc or {}).get("markdown") or ""
-        if not md.strip():
-            rec["error"] = "fetched but empty (blocked or JS-only)"
-            return rec
-        rec["markdown"] = _trim_for_prompt(md, keys)
+        rec["url"] = rec["url"] or best_url
         return rec
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:

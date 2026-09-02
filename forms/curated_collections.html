@@ -455,6 +455,12 @@
             <input id="f_class" value="${escapeHtml(v.product_class||'')}" placeholder="Loaf pans">
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">What gets researched. Write it
               the way a reviewer would title a roundup.</p></div>
+          <div class="ed-field"><label>Fallback search terms — one per line (optional)</label>
+            <textarea id="f_terms" style="min-height:56px" placeholder="Multicooker&#10;pressure canning">${escapeHtml((v.search_terms||[]).join('\n'))}</textarea>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">The class name is always
+              searched first. When a publisher's page flunks the on-class check (it never
+              mentions the class), these are tried next, in order — use them for a
+              publisher's own name for the class. They also count as on-class language.</p></div>
           <div class="ed-field"><label>Categories — one per line (optional)</label>
             <textarea id="f_cats" style="min-height:84px" placeholder="Best value&#10;Nonstick&#10;Pullman">${escapeHtml((v.categories||[]).join('\n'))}</textarea>
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">Each one is a three-product
@@ -489,6 +495,7 @@
         display_name: ($('#f_display').value||'').trim(),
         product_class: ($('#f_class').value||'').trim(),
         categories: ($('#f_cats').value||''),
+        search_terms: ($('#f_terms').value||''),
         use_network: !!$('#f_net').checked,
         notes: ($('#f_notes').value||'').trim(),
       };

@@ -59,9 +59,11 @@ def cache_path(product_class: str, suffix: str = "docs.json") -> str:
     return os.path.join(CACHE_DIR, f"{_slug(product_class)}.{suffix}")
 
 
-def fetch_docs(product_class: str, *, refresh: bool = False,
+def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None = None,
                should_cancel: Callable[[], bool] | None = None) -> list:
-    """The named sources, CACHED on disk by class."""
+    """The named sources, CACHED on disk by class. `terms` = the curator's fallback
+    search ladder (curated_collections.search_terms); NOTE the cache is keyed by class
+    alone, so after editing the terms pass refresh to make them matter."""
     path = cache_path(product_class)
     if not refresh and os.path.exists(path):
         with open(path, encoding="utf-8") as f:
@@ -76,10 +78,12 @@ def fetch_docs(product_class: str, *, refresh: bool = False,
         return docs
 
     import realrank_research as rr
-    print(f"[CURATE] fetching named sources for: {product_class}")
-    docs = rr.fetch_source_docs(product_class)
+    print(f"[CURATE] fetching named sources for: {product_class}"
+          + (f" (fallback terms: {', '.join(terms)})" if terms else ""))
+    docs = rr.fetch_source_docs(product_class, terms=terms)
     for d in docs:
-        state = (f"{len(d['markdown']):>6} chars via {d['via']} | {_doc_title(d['markdown'])}"
+        state = (f"{len(d['markdown']):>6} chars via {d['via']} "
+                 f"({d.get('class_hits', '?')} on-class) | {_doc_title(d['markdown'])}"
                  if d.get("markdown") else f"FAILED — {d.get('error')}")
         print(f"[CURATE]   {d['label']:<24} {state}")
     if should_cancel and should_cancel():
@@ -162,7 +166,7 @@ def verify_and_render(data: dict, *, use_network: bool = True) -> tuple:
 
 
 def run(product_class: str, categories=None, *, refresh: bool = False,
-        use_network: bool = True,
+        use_network: bool = True, terms: list | None = None,
         should_cancel: Callable[[], bool] | None = None) -> dict:
     """The whole pass. Returns {record, report, brief_text, sources}.
 
@@ -170,7 +174,8 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
     answered — a run grounded in three publishers and one grounded in eight are not the same
     artifact, and the summary is what a curator reads without opening the log.
     """
-    docs = fetch_docs(product_class, refresh=refresh, should_cancel=should_cancel)
+    docs = fetch_docs(product_class, refresh=refresh, terms=terms,
+                      should_cancel=should_cancel)
     sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
                "missing": [d["label"] for d in docs if not d.get("markdown")]}
     data = research(product_class, categories, docs=docs, should_cancel=should_cancel)
@@ -185,6 +190,7 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
     for d in docs:
         row = {"source": d["label"], "via": d.get("via") or "",
                "chars": len(d.get("markdown") or ""),
+               "class_hits": d.get("class_hits", 0),
                "page_title": _doc_title(d["markdown"]) if d.get("markdown") else "",
                "error": d.get("error") or ""}
         m = model_rep.get(d["label"])
