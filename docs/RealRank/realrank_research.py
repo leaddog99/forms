@@ -57,7 +57,7 @@ MODEL = os.environ.get("REALRANK_MODEL", "claude-sonnet-4-5")  # set to your cur
 
 DEFAULT_SOURCES = [
     "America's Test Kitchen", "Serious Eats", "Wirecutter", "The Kitchn",
-    "Reviewed", "Tom's Guide", "TechGearLab", "Consumer Reports",
+    "Reviewed", "Tom's Guide", "TechGearLab", "Consumer Reports", "BestReviews",
     "and owner reviews on Amazon / Best Buy / Walmart / the retailer's own page",
 ]
 
@@ -73,6 +73,12 @@ SOURCE_SITES = [
     ("Tom's Guide",            "tomsguide.com"),
     ("TechGearLab",            "techgearlab.com"),
     ("Consumer Reports",       "consumerreports.org"),
+    # BestReviews = the engine behind the newspaper review verticals
+    # (reviews.chicagotribune.com and the other Nexstar/Tribune papers serve
+    # identical pages); the originals live on bestreviews.com, so that is the
+    # site: filter. Research-driven rather than hands-on-testing — the model
+    # weighs it accordingly. Last on purpose: order = order in the brief.
+    ("BestReviews",            "bestreviews.com"),
 ]
 
 # Per-document budget handed to the model. ATK's stand-mixer page is ~100k chars; the part
