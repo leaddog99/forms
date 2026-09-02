@@ -7682,3 +7682,35 @@ in-server). Pages are reload-only (CSS bumped v=20260901a).
   Stand Mixer re-run; Impact signup / B&B application / Emile Henry
   email; product-side M2M design; per-publisher cap; twins; Pistou
   Reserve; recipes-inherit-story render; render/EV layer.
+
+## Session log — 2026-09-01 (night) — the holes get their dishes, and 89 strays go home
+
+Post-restart close-out. The four catalog holes the B&B contamination
+exposed were created via dishes_lib (auto-describe + embed on create),
+then one dish_rematch sweep drained the strays: 89 master rows + 4
+local moved, zero failures.
+
+* Fried Rice (Rice & Grains) — 33 rows (10 matched / 23 nearest)
+* Chow Mein (Pasta & Noodles) — 16 rows (4 / 12)
+* Pepper Steak (Meat) — 25 rows (3 / 22)
+* Mongolian Beef (Meat) — 15 rows (3 / 12)
+
+Beef and Broccoli slimmed 70 → 47 with its 15 assigned winners intact;
+rows magnetized from Kimchi / Cabbage / Chicken Noodle Soup found their
+real homes. B&B still carries 28 nearest — mix of genuine variants and
+possibly one more hole; glance at the holes page.
+
+### START HERE tomorrow (clear morning)
+
+1. **Spin the four-channel matcher on a virgin dish:** cohort measure +
+   propose on Fried Rice (then the other three). None of the four new
+   dishes are measured or proposed yet.
+2. **Chip approvals waiting:** B&B — Oyster Sauce, Toasted Sesame Oil,
+   Riesling, and the Soy Sauce staple-boundary call; Pastitsio —
+   Kefalotiri. (Chips mint classes only on approval.)
+3. **Verify the restart took:** search "beef with broccoli" (expect the
+   full dish cohort ranked first), try a ✨ Compile on a domain filter.
+4. Then the carried queue: Baked Chicken Breast keep-vs-alias · Nutmeg
+   merge · Stand Mixer re-run · Impact signup / B&B application /
+   Emile Henry email · holes-page nearest-dish display · product-side
+   M2M design.
