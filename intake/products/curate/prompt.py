@@ -129,7 +129,18 @@ RESEARCH RULES
 13. Prefer the SUPPLIED SOURCE DOCUMENTS below over anything you find by searching. They were
     retrieved directly from the publishers named in them. If a supplied document contradicts
     a search result, the supplied document wins, and say so in `why_it_ranks_here`.
-14. EXPLAIN THE ORDER, not just the picks. `why_it_ranks_here` says why a product is good;
+14. ACCOUNT FOR EVERY SUPPLIED SOURCE DOCUMENT in `source_report` — one entry per
+    supplied document, `source` copied exactly from its ===== label =====.
+    `page_covers`: a few words saying what the page ACTUALLY reviews — its own
+    subject, not the subject we hoped it covered. `relevance`: "on-class" (the page
+    reviews this exact product class), "related" (an adjacent class, a single-product
+    review, or an advice/safety article that still informed your judgment), or
+    "off-topic" (a different class — e.g. a pressure-COOKER roundup supplied for a
+    pressure-CANNER run). `used_in_ranking`: whether the document actually influenced
+    a pick. An honestly-reported off-topic page is a GOOD answer — it tells the
+    curator that this publisher has no review of this class; never stretch an
+    off-topic page into citations to make a source look consulted.
+15. EXPLAIN THE ORDER, not just the picks. `why_it_ranks_here` says why a product is good;
     `edge_over_next` must say why it beat the one below it — name that product and name the
     criterion from RANKING WEIGHTS that separated them. For the LAST place in a list, name the
     strongest product that did NOT make the list and say what kept it out. If two picks are
@@ -153,6 +164,7 @@ Before returning the JSON, confirm internally that:
 - Every typical_price is numeric, not text.
 - Every row's source_links is a non-empty list of URLs you actually used.
 - Every row's edge_over_next names a specific competing product, not a generic quality.
+- source_report has exactly one entry per supplied source document, honest about relevance.
 """
 
 # The two shapes this prompt takes. Written out rather than assembled from fragments so each
@@ -239,6 +251,9 @@ Use this exact structure:
   ],
   "ranking_criteria": [
     {"criterion": "", "weight": 0.25, "what_was_considered": "", "effect_on_ranking": ""}
+  ],
+  "source_report": [
+    {"source": "", "page_covers": "", "relevance": "on-class", "used_in_ranking": true}
   ],
   "methodology_note": ""
 }

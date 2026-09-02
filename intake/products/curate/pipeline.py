@@ -42,6 +42,18 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-") or "class"
 
 
+def _doc_title(md: str) -> str:
+    """The fetched page's own first heading — what the page says IT is about. A byte count
+    tells the curator a source ANSWERED; the title is what shows an off-topic answer (an
+    ATK pressure-COOKER roundup fetched for a pressure-CANNER run reads identically in
+    bytes)."""
+    for m in re.finditer(r"^#+\s*(.+?)\s*$", md or "", re.M):
+        t = m.group(1).strip()
+        if t and t.upper() != "PAGE CONTENT":
+            return t[:90]
+    return (md or "").strip().split("\n", 1)[0][:90]
+
+
 def cache_path(product_class: str, suffix: str = "docs.json") -> str:
     os.makedirs(CACHE_DIR, exist_ok=True)
     return os.path.join(CACHE_DIR, f"{_slug(product_class)}.{suffix}")
@@ -57,14 +69,18 @@ def fetch_docs(product_class: str, *, refresh: bool = False,
         got = sum(1 for d in docs if d.get("markdown"))
         print(f"[CURATE] {got}/{len(docs)} sources from cache ({os.path.basename(path)}) "
               f"— pass refresh to re-fetch")
+        for d in docs:
+            state = (f"{len(d['markdown']):>6} chars | {_doc_title(d['markdown'])}"
+                     if d.get("markdown") else f"FAILED — {d.get('error')}")
+            print(f"[CURATE]   {d['label']:<24} {state}")
         return docs
 
     import realrank_research as rr
     print(f"[CURATE] fetching named sources for: {product_class}")
     docs = rr.fetch_source_docs(product_class)
     for d in docs:
-        state = f"{len(d['markdown']):>6} chars via {d['via']}" if d.get("markdown") \
-            else f"FAILED — {d.get('error')}"
+        state = (f"{len(d['markdown']):>6} chars via {d['via']} | {_doc_title(d['markdown'])}"
+                 if d.get("markdown") else f"FAILED — {d.get('error')}")
         print(f"[CURATE]   {d['label']:<24} {state}")
     if should_cancel and should_cancel():
         raise KeyboardInterrupt("cancelled after fetching sources")
@@ -158,6 +174,30 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
     sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
                "missing": [d["label"] for d in docs if not d.get("markdown")]}
     data = research(product_class, categories, docs=docs, should_cancel=should_cancel)
+    # Per-source ACCOUNTING: fetch facts (ours) merged with the model's reading of each
+    # document (source_report in the reply — what the page actually covers, whether it
+    # was usable). One row per named authority, failures included, so "Serious Eats got
+    # cited again" is answerable from the summary: the others answered off-topic, or
+    # didn't answer at all.
+    model_rep = {(r.get("source") or "").strip(): r
+                 for r in (data.get("source_report") or []) if isinstance(r, dict)}
+    sources["report"] = []
+    for d in docs:
+        row = {"source": d["label"], "via": d.get("via") or "",
+               "chars": len(d.get("markdown") or ""),
+               "page_title": _doc_title(d["markdown"]) if d.get("markdown") else "",
+               "error": d.get("error") or ""}
+        m = model_rep.get(d["label"])
+        if m:
+            row.update({"page_covers": (m.get("page_covers") or "").strip(),
+                        "relevance": (m.get("relevance") or "").strip(),
+                        "used_in_ranking": bool(m.get("used_in_ranking"))})
+        elif not d.get("markdown"):
+            row["relevance"] = "not-retrieved"
+        sources["report"].append(row)
+    # Stash on the record: the renderer prints it in the brief, and set_run_result
+    # stores the record, so the accounting survives into result_json for the editor.
+    data["_source_accounting"] = sources["report"]
     if should_cancel and should_cancel():
         raise KeyboardInterrupt("cancelled before verification")
     report, brief_text = verify_and_render(data, use_network=use_network)

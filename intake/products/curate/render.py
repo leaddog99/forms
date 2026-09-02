@@ -150,6 +150,24 @@ def render(data: dict, report: dict | None = None) -> str:
     if data.get("methodology_note"):
         lines += ["", "NOTE", "-" * 4, "  " + data["methodology_note"], ""]
 
+    # What each named authority's page ACTUALLY contained — the answer to "why does one
+    # publisher get all the citations". An authority that never reviewed this class shows
+    # up here as off-topic or not-retrieved instead of silently missing from the sources.
+    srep = data.get("_source_accounting") or data.get("source_report") or []
+    if srep:
+        lines += ["", "SOURCES CONSULTED", "-" * 17]
+        for s in srep:
+            label = s.get("source") or "?"
+            if s.get("error"):
+                lines.append(f"  {label:<24} could not be retrieved — {s['error']}")
+                continue
+            rel = s.get("relevance") or "?"
+            used = ("used" if s.get("used_in_ranking") else "not used") \
+                if "used_in_ranking" in s else ""
+            covers = s.get("page_covers") or s.get("page_title") or ""
+            lines.append(f"  {label:<24} {rel:<13} {used:<9} {covers}")
+        lines.append("")
+
     lines += ["", "AFFILIATE NOTE", "-" * 14,
               "  Amazon links carry our tag plus an ascsubtag naming the placement, so the",
               "  Associates report says WHICH surface earned the sale. `tag` is the only",

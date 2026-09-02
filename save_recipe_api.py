@@ -9351,8 +9351,25 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
         # Report what each number IS. The first cut labelled the verified-pick count
         # "sources", which read as "3 of 8 publishers answered" when it meant "3 picks had
         # their listing confirmed" — the summary is what a curator sees without opening a log.
+        # SOURCE ACCOUNTING in the log, not just byte counts: what each authority's page
+        # actually contained (per the model's reading of it) and whether it was usable.
+        # This is how "why does Serious Eats get cited every time" is answered from the
+        # log — the others often answered with an off-topic page or not at all.
+        srep = (out.get("sources") or {}).get("report") or []
+        if srep:
+            print("[CURATE] source accounting:")
+            for r in srep:
+                if r.get("error"):
+                    print(f"[CURATE]   {r['source']:<24} FAILED — {r['error']}")
+                else:
+                    used = ("used" if r.get("used_in_ranking") else "not used") \
+                        if "used_in_ranking" in r else "?"
+                    covers = r.get("page_covers") or r.get("page_title") or ""
+                    print(f"[CURATE]   {r['source']:<24} {r.get('relevance') or '?':<13} "
+                          f"{used:<9} | {covers}")
         summary.update({"collection": name, "product_class": pclass,
                         "categories": cats, "picks": len(picks),
+                        "source_report": srep,
                         "sources_retrieved": len((out.get("sources") or {}).get("retrieved") or []),
                         "sources_missing": (out.get("sources") or {}).get("missing") or [],
                         "identity_verified": len(report.get("verified") or []),
