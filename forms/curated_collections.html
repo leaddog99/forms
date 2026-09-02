@@ -45,7 +45,9 @@
       object-fit: contain; border: 1px solid var(--line); border-radius: 9px;
       background: #fff; padding: 6px; box-sizing: border-box; }
     .pk-t { font-weight: 600; }
-    .pk-why { margin: 4px 0 0; }
+    /* One size for the whole description body — the why-paragraph used to sit at the
+       row's .88rem beside .82rem detail lines, which read as random size changes. */
+    .pk-why { margin: 4px 0 0; font-size: .82rem; }
     .pk-line { margin: 3px 0 0; font-size: .82rem; }
     .pk-line b { font-weight: 600; color: var(--ed-ink-soft); }
     .pk-meta { font-size: .78rem; color: var(--ed-ink-soft); margin-top: 5px; }
@@ -325,6 +327,16 @@
     // from pick.image, captured by verify's listing lookup and hotlinked.)
     const asinHref = (asin) => `https://www.amazon.com/dp/${encodeURIComponent(asin)}`;
 
+    // Brand + title without repeating the brand — stored titles usually lead with it
+    // ("Braun" + "Braun MultiQuick 7…"). Mirrors render.py's _name(); compares on the
+    // brand's first word so "All American (Wisconsin Aluminum Foundry)" still matches.
+    function pkName(p){
+      const brand=(p.manufacturer||'').trim(), title=(p.product_title||'').trim();
+      const first=brand.toLowerCase().split(/[\s(]+/)[0];
+      if (brand && title && first && title.toLowerCase().startsWith(first)) return title;
+      return (brand+' '+title).trim() || '—';
+    }
+
     // Amazon image URLs carry a size modifier (e.g. ._AC_SX342_.jpg); rewrite it
     // to _SL500_ for a display-worthy resolution. No modifier = already full size.
     const bigImg = (u) => u.replace(/\._[^/.]*_\.(jpe?g|png|webp)$/i, '._SL500_.$1');
@@ -344,8 +356,8 @@
           <div class="pk-place ${p.place===1?'p1':''}">${p.place ?? '?'}</div>
           <div class="pk-main">
             ${thumb}
-            <div class="pk-t">${escapeHtml([p.manufacturer, p.product_title].filter(Boolean).join(' ').trim() || '—')}
-              ${p.capacity?`<span class="muted" style="font-weight:400"> · ${escapeHtml(p.capacity)}</span>`:''}
+            <div class="pk-t">${escapeHtml(pkName(p))}
+              ${(p.capacity&&p.capacity.length<=60&&!/^n\/?a\b/i.test(p.capacity.trim()))?`<span class="muted" style="font-weight:400"> · ${escapeHtml(p.capacity)}</span>`:''}
               ${p.model_number?`<span class="muted" style="font-weight:400" title="Manufacturer's model number"> · ${escapeHtml(p.model_number)}</span>`:''}
               ${p.identity_warning ? '<span class="pill-w bad">identity</span>'
                 : (p.verified_title ? '<span class="pill-w ok">verified</span>' : '')}</div>
