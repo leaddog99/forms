@@ -95,6 +95,7 @@ def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None 
 
 def research(product_class: str, categories=None, *, docs: list | None = None,
              refresh: bool = False, editors_choice: str = "",
+             class_criteria: str = "",
              should_cancel: Callable[[], bool] | None = None) -> dict:
     """Fetch the authorities ourselves, then ask the model to curate FROM THEM.
 
@@ -120,7 +121,10 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
 
     if (editors_choice or "").strip():
         print(f"[CURATE] editor's choice pinned: {editors_choice.strip()}")
-    text = P.build_prompt(product_class, categories, docs, editors_choice=editors_choice)
+    if (class_criteria or "").strip():
+        print(f"[CURATE] curator class boundary in force ({len(class_criteria.strip())} chars)")
+    text = P.build_prompt(product_class, categories, docs, editors_choice=editors_choice,
+                          class_criteria=class_criteria)
     import llm
     # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
     with llm.stream(operation="curate_research", model=rr.MODEL, max_tokens=MAX_TOKENS,
@@ -172,6 +176,7 @@ def verify_and_render(data: dict, *, use_network: bool = True) -> tuple:
 
 def run(product_class: str, categories=None, *, refresh: bool = False,
         use_network: bool = True, terms: list | None = None, editors_choice: str = "",
+        class_criteria: str = "",
         should_cancel: Callable[[], bool] | None = None) -> dict:
     """The whole pass. Returns {record, report, brief_text, sources}.
 
@@ -184,7 +189,14 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
     sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
                "missing": [d["label"] for d in docs if not d.get("markdown")]}
     data = research(product_class, categories, docs=docs, editors_choice=editors_choice,
-                    should_cancel=should_cancel)
+                    class_criteria=class_criteria, should_cancel=should_cancel)
+    # Deterministic on-class title gate (curator suggestion 2026-09-03, layered
+    # under the prompt boundary): a pick whose title names neither the class nor
+    # any fallback term gets a visible identity_warning — flagged, not deleted,
+    # because legitimate products omit the phrase ("Stainless Steel Canner with
+    # Rack" IS a water-bath canner) while imposters can include it ("Multi-
+    # Cooker/Canner"). The flag is for the curator's eye and the brief.
+    V.flag_offclass_titles(data, product_class, terms or [])
     # Per-source ACCOUNTING: fetch facts (ours) merged with the model's reading of each
     # document (source_report in the reply — what the page actually covers, whether it
     # was usable). One row per named authority, failures included, so "Serious Eats got

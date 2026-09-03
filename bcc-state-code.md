@@ -8052,3 +8052,35 @@ UPDATE.
   slow too.
 * Recipes list rows are ~5KB each in the paged fetch — slim-projection
   win available if it ever matters.
+
+## Session log — 2026-09-03 (night) — the class boundary: collections learn what to reject
+
+Curator: Water Bath Canner run ranked an electric multi-cooker #2 and a
+wire-basket-imaged Norpro #3 — "maybe a hint as to what the llm should
+expect or reject?" Built as TWO layers:
+
+* **curated_collections.class_criteria** (new column + editor textarea):
+  the curator's binding definition — what counts, what to reject — fed
+  VERBATIM into the research prompt, explicitly outranking the model's
+  own judgment. Plus an ALWAYS-ON "CLASS BOUNDARY" prompt section for
+  every run: no neighboring class, no different power source/working
+  principle, no bigger appliance that merely CAN do the job, no
+  accessories/racks/lids — exclusions named in methodology_note.
+* **Deterministic on-class title gate** (curator's suggestion,
+  V.flag_offclass_titles): pick titles must name the class or a fallback
+  search_term (singular/plural fuzz) or get a visible identity_warning.
+  FLAG, never delete — the Presto contains "Canner" and is off-class;
+  the Norpro omits "water bath" and IS on-class — titles can't convict
+  or acquit alone. Proven on the stored canner result: flags exactly
+  the two bad picks, clears Granite Ware.
+* Wiring: prompt.build_prompt(class_criteria=) → pipeline.research/run →
+  job handler passes coll.class_criteria; editor + save in
+  curated_collections.html. Restart needed only for SAVING the field
+  (update endpoint); runs pick everything up per-spawn.
+
+### Open
+
+* Curator: write the Water Bath Canner class_criteria + re-run to
+  confirm ("stovetop pot with jar rack; reject electric/digital
+  canners, pressure canners, bare racks/baskets, multi-cookers").
+* Consider surfacing identity_warning more loudly in the picks UI/brief.

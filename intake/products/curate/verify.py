@@ -59,6 +59,52 @@ def rows_of(data: dict) -> list:
     return out
 
 
+def flag_offclass_titles(data: dict, product_class: str, terms: list) -> int:
+    """Deterministic on-class title gate (curator suggestion, 2026-09-03): every
+    ranked pick's title should name the class — or one of the collection's
+    fallback search_terms — with singular/plural fuzz. A miss stamps a visible
+    `identity_warning` (FLAG, never delete: 'Stainless Steel Canner with Rack'
+    IS a water-bath canner whose title omits the phrase, while the Presto
+    'Multi-Cooker/Canner' contains 'canner' and is NOT one — titles alone can't
+    convict or acquit, so the flag points the curator's eye and the prompt's
+    CLASS BOUNDARY carries the judgment). Editors-choice rows are exempt — the
+    curator pinned those personally. Returns the number flagged."""
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9 ]+", " ", (s or "").lower()).strip()
+
+    def _variants(phrase: str) -> set:
+        words = phrase.split()
+        if not words:
+            return set()
+        outs = {phrase}
+        last = words[-1]
+        if last.endswith("s"):
+            outs.add(" ".join(words[:-1] + [last[:-1]]))
+        else:
+            outs.add(" ".join(words[:-1] + [last + "s"]))
+        return outs
+
+    pats: set = set()
+    for a in [product_class] + [t for t in (terms or []) if (t or "").strip()]:
+        pats |= _variants(_norm(a))
+    flagged = 0
+    for label, r in rows_of(data):
+        if label == "editors-choice":
+            continue
+        title = " " + _norm(r.get("product_title")) + " "
+        if any(p and f" {p} " in title for p in pats):
+            continue
+        note = (f"title does not name the class {product_class!r}"
+                + (" or any fallback term" if terms else "")
+                + " — verify this is on-class, not a neighbor or accessory")
+        prev = (r.get("identity_warning") or "").strip()
+        r["identity_warning"] = (prev + "; " if prev else "") + note
+        flagged += 1
+    if flagged:
+        print(f"[CURATE] on-class title gate: {flagged} pick(s) flagged")
+    return flagged
+
+
 # --------------------------------------------------------------------------- #
 #  Shape — the curator's original contract
 # --------------------------------------------------------------------------- #

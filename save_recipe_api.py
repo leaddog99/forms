@@ -9414,6 +9414,7 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
                            use_network=bool(coll.get("use_network", 1)),
                            terms=coll.get("search_terms") or [],
                            editors_choice=coll.get("editors_choice") or "",
+                           class_criteria=coll.get("class_criteria") or "",
                            should_cancel=_should_cancel)
         record, report, brief_text = out["record"], out["report"], out["brief_text"]
 

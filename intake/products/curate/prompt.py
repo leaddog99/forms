@@ -281,8 +281,35 @@ compares to the overall #1 (it has no "next" — a candid comparison is the usef
 answer)."""
 
 
+# Always-on class boundary — the Water-Bath-Canner lesson (2026-09-03): with only
+# the class NAME to go on, the model ranked an electric multi-cooker #2 and an
+# accessory rack matched as #3. The boundary is stated for EVERY run; the curator's
+# per-collection criteria (curated_collections.class_criteria), when present, are
+# appended as the binding definition that outranks the model's own judgment.
+CLASS_BOUNDARY = """
+
+CLASS BOUNDARY — WHAT COUNTS AS A {product_class}
+Before researching, fix what a {product_class} IS and IS NOT. Every ranked product must be
+one a shopper who searched "{product_class}" would accept as EXACTLY that — never:
+- a neighboring class or a variant with a different power source or working principle
+  (an electric multi-cooker is not a stovetop water-bath canner; a pressure canner is not
+  a water-bath canner);
+- a larger or multi-purpose appliance that merely CAN do the job;
+- an accessory, insert, rack, basket, lid, or replacement part FOR the class.
+When a strong, well-reviewed candidate fails this boundary, LEAVE IT OUT of every ranking —
+name it and the reason in `methodology_note` instead, so the curator sees the judgment call.
+"""
+
+CURATOR_CRITERIA = """
+THE CURATOR'S BINDING DEFINITION for this collection — where it conflicts with your own
+reading of the class, the curator wins. Reject anything it excludes, even a #1 product:
+{criteria}
+"""
+
+
 def build_prompt(product_class: str, categories: list, docs: list | None = None,
-                 weights: list | None = None, editors_choice: str = "") -> str:
+                 weights: list | None = None, editors_choice: str = "",
+                 class_criteria: str = "") -> str:
     """Assemble the research prompt, with our fetched source documents inlined.
 
     `docs` = [{label, url, markdown, via}] from BCC's fetch stack. Supplying them is the
@@ -318,6 +345,9 @@ def build_prompt(product_class: str, categories: list, docs: list | None = None,
         weights="\n".join(f"- {n}: {int(w*100)}%   ({what})" for n, w, what in weights),
         schema=SCHEMA,
     )]
+    parts.append(CLASS_BOUNDARY.format(product_class=product_class))
+    if (class_criteria or "").strip():
+        parts.append(CURATOR_CRITERIA.format(criteria=class_criteria.strip()))
     if (editors_choice or "").strip():
         parts.append(EDITORS_CHOICE_ASKED.format(pick=editors_choice.strip()))
 

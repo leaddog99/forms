@@ -473,6 +473,13 @@
               didn't select that you want analyzed anyway — full identity, price, and owner-evidence
               treatment in its own labeled slot. It never displaces the review-sourced ranking,
               and its write-up says plainly when no source tested it.</p></div>
+          <div class="ed-field"><label>Class boundary — what counts, what to reject (optional)</label>
+            <textarea id="f_criteria" style="min-height:70px" placeholder="A stovetop pot with a jar rack for boiling-water canning.&#10;Reject: electric/digital canners, pressure canners, bare racks or baskets, multi-cookers.">${escapeHtml(v.class_criteria||'')}</textarea>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">Your binding definition of the
+              class, fed to the run verbatim — it outranks the model's own judgment. Say what a
+              qualifying product IS and name the near-misses to reject (the electric cousin, the
+              accessory, the bigger appliance that merely can do the job). Every run also gets a
+              built-in boundary rule; this field is for lines only you can draw.</p></div>
           <div class="ed-field"><label>Fallback search terms — one per line (optional)</label>
             <textarea id="f_terms" style="min-height:56px" placeholder="Multicooker&#10;pressure canning">${escapeHtml((v.search_terms||[]).join('\n'))}</textarea>
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">The class name is always
@@ -515,6 +522,7 @@
         categories: ($('#f_cats').value||''),
         search_terms: ($('#f_terms').value||''),
         editors_choice: ($('#f_ec').value||'').trim(),
+        class_criteria: ($('#f_criteria').value||'').trim(),
         use_network: !!$('#f_net').checked,
         notes: ($('#f_notes').value||'').trim(),
       };
