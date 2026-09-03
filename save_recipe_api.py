@@ -1259,6 +1259,15 @@ def init_db():
             ensure_bcc_token_journal_table(conn)
             ensure_llm_extract_cache_table(conn)
             dishes_lib.ensure_dishes_table(conn)
+            # Materialized dish card thumbnails: catch-all sweep at startup so a
+            # restored/synced DB (BAILEY) or rows changed outside the job hooks
+            # converge. Quiet when nothing changed; prints each row it touches.
+            try:
+                n_prev = dishes_lib.refresh_preview_images(conn)
+                if n_prev:
+                    print(f"[SETUP] dish preview_image backfill: {n_prev} row(s) updated")
+            except Exception as e:
+                print(f"[WARN] dish preview_image backfill failed: {e}")
             from input.pipeline.chapters import ensure_chapters_table
             ensure_chapters_table(conn)
             jobs_lib.ensure_jobs_table(conn)
@@ -3864,21 +3873,33 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
 
 @app.get("/dishes")
 def list_dishes_endpoint():
+    """SLIM list projection (2026-09-03, the iPad wait): exactly the fields the
+    sidebar renders + the client-side sorters/attention count read. The old
+    shape returned every editor field for every dish — 500KB, plus a 275ms
+    thumbnail derivation per load (preview_image is now a STORED column,
+    refreshed by refresh_preview_images at write time). The detail pane
+    fetches the full shape per-dish via GET /dishes/{name} on select."""
     try:
         with _db() as conn:
             dishes = dishes_lib.list_dishes(conn)
-            # Card image DERIVED from each dish's top recipe (recipe table), not a
-            # stored column — Phase 0 of docs/recipe-table-backed-lists.md.
-            imgs = dishes_lib.representative_images(conn)
-            for d in dishes:
-                d["preview_image"] = imgs.get(d.get("name")) or None
-                # LIST projection: the sidebar cache needs neither the embedding
-                # text nor the identity-card BODY (222 dishes × multi-KB JSON on
-                # every page load). The form only displays PRESENCE; the
-                # single-dish GET keeps the full shape.
-                d["identity_card_present"] = d.pop("identity_card", None) is not None
-                d.pop("embedding_text", None)
-            return dishes
+        out = []
+        for d in dishes:
+            out.append({
+                "name": d.get("name"),
+                "display_name": d.get("display_name"),
+                "chapter": d.get("chapter"),
+                "last_refreshed": d.get("last_refreshed"),
+                "last_run_status": d.get("last_run_status"),
+                "last_run_count": d.get("last_run_count"),
+                "is_due": d.get("is_due"),
+                "next_run_at": d.get("next_run_at"),
+                "preview_image": d.get("preview_image"),
+                # Presence flags only — bodies come with the detail fetch.
+                "identity_card_present": d.get("identity_card") is not None,
+                "last_ou_fit": {"used": (d.get("last_ou_fit") or {}).get("used")}
+                               if d.get("last_ou_fit") else None,
+            })
+        return out
     except Exception as e:
         print(f"[ERROR] list_dishes failed: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
@@ -8423,6 +8444,14 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             bottom_ou=bottom_ou,
         )
 
+    # The run replaced this dish's master set — re-derive its stored card
+    # thumbnail (dishes.preview_image) from the new winners. Never fatal.
+    try:
+        with _db() as conn:
+            dishes_lib.refresh_preview_images(conn, only_dish=canonical_name)
+    except Exception as e:  # noqa: BLE001
+        print(f"[REFRESH-DISH] preview_image refresh failed (non-fatal): {e}")
+
     print(f"[REFRESH-DISH] {canonical_name!r} done: "
           f"saved={saved_count} rejects={len(rejects)} "
           f"bottom_ou={bottom_ou}")
@@ -8504,6 +8533,15 @@ async def _handle_dish_rematch_job(job: dict) -> dict:
             print(f"[REMATCH]   {table} {rid}: {' · '.join(bits) or 'distance moved'}")
         if len(moves) > 50:
             print(f"[REMATCH]   ... {len(moves) - 50} more")
+    # Rows moved between dishes — the stored card thumbnails may point at
+    # recipes that left. Full sweep (~300ms nightly), prints what changed.
+    try:
+        with _db() as conn:
+            n_prev = dishes_lib.refresh_preview_images(conn)
+        if n_prev:
+            print(f"[REMATCH] preview_image sweep: {n_prev} dish(es) updated")
+    except Exception as e:  # noqa: BLE001
+        print(f"[REMATCH] preview_image sweep failed (non-fatal): {e}")
     return summaries
 
 

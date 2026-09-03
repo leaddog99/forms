@@ -197,6 +197,14 @@ def ensure_dishes_table(conn: sqlite3.Connection) -> None:
     # dish data in its own right (cook-view, landmines).
     if "operations" not in cols:
         conn.execute("ALTER TABLE dishes ADD COLUMN operations TEXT")  # JSON
+    # CARD THUMBNAIL (2026-09-03): stored per the derived-values rule after the
+    # curator called it — "why are we recomputing the thumbnail every time...
+    # we should just store it." Deriving on every /dishes load cost 275ms of
+    # JSON-parsing 4k master rows PER PAGE LOAD (the iPad "noticeable wait").
+    # Written by refresh_preview_images(): per-dish at the end of dish_refresh,
+    # full sweep after the nightly dish_rematch, one-time backfill at startup.
+    if "preview_image" not in cols:
+        conn.execute("ALTER TABLE dishes ADD COLUMN preview_image TEXT")
     # last_run_rejects column was briefly added 2026-05-27 then moved
     # to dish_rejects table — column stays nullable + unused for
     # forward-compat with rows created during the brief window.
@@ -707,7 +715,7 @@ def row_to_dict(row: tuple) -> dict:
      embedding_text, embedding_model, embedding_updated_at,
      identity_card_json, competitiveness_pct, field_clout, display_name,
      source_language, aliases_json, story, ethnicity, origin_region,
-     cook_notes_json) = row
+     cook_notes_json, preview_image) = row
     try:
         queries_raw = json.loads(queries_json) if queries_json else []
     except Exception:
@@ -776,6 +784,7 @@ def row_to_dict(row: tuple) -> dict:
         "ethnicity": ethnicity or "",
         "origin_region": origin_region or "",
         "cook_notes": _decode_cook_notes(cook_notes_json),
+        "preview_image": preview_image,
         # rejects fetched on-demand via /dishes/<name>/rejects
     }
 
@@ -795,7 +804,7 @@ _SELECT_ALL_COLS = (
     "last_ou_fit, last_run_bottom_ou, description, chapter, "
     "embedding_text, embedding_model, embedding_updated_at, identity_card, "
     "competitiveness_pct, field_clout, display_name, source_language, aliases, "
-    "story, ethnicity, origin_region, cook_notes"
+    "story, ethnicity, origin_region, cook_notes, preview_image"
 )
 
 
@@ -899,6 +908,58 @@ def representative_images(conn: sqlite3.Connection) -> dict:
     except Exception as e:
         print(f"[dishes] representative_images failed: {e}")
         return {}
+
+
+def refresh_preview_images(conn: sqlite3.Connection, only_dish: str | None = None,
+                           log=print) -> int:
+    """MATERIALIZE the derived card thumbnail into dishes.preview_image.
+
+    2026-09-03 curator call ("why are we recomputing the thumbnail every time…
+    we should just store it"): the per-load derivation cost 275ms of JSON-parsing
+    ~4k master rows on EVERY /dishes fetch. The value is still 100% derived from
+    master_recipes (same pick: best-ranked master with an image, og-thumb over
+    hotlink) — it is just derived at WRITE time now, at the three moments the
+    inputs can change: the end of a dish_refresh (that dish only), after the
+    nightly dish_rematch sweep (rows move between dishes), and the one-time
+    startup backfill. Prints every row it changes (bulk-UPDATE visibility rule).
+
+    Returns the number of dish rows updated. `only_dish` scopes both the scan
+    (via the indexed dish_key generated column) and the writes to one dish."""
+    sql = """
+        SELECT json_extract(data, '$._master.dish') AS dish,
+               COALESCE(
+                   NULLIF(json_extract(data, '$._source.previewImage'), ''),
+                   json_extract(data, '$.image[0]')
+               ) AS img,
+               COALESCE(CAST(json_extract(data, '$._master.rank') AS INTEGER), 9999) AS rank
+        FROM master_recipes
+        WHERE json_extract(data, '$._master.dish') IS NOT NULL
+    """
+    args: tuple = ()
+    if only_dish:
+        sql += " AND dish_key = ?"
+        args = (only_dish,)
+    best: dict = {}   # dish -> (rank, img)
+    for dish, img, rank in conn.execute(sql, args):
+        if not dish or not img:
+            continue
+        if dish not in best or rank < best[dish][0]:
+            best[dish] = (rank, img)
+
+    where, wargs = ("WHERE name = ?", (only_dish,)) if only_dish else ("", ())
+    changed = 0
+    for name, stored in conn.execute(
+            f"SELECT name, preview_image FROM dishes {where}", wargs):
+        new = (best.get(name) or (None, None))[1]
+        if new != stored:
+            conn.execute("UPDATE dishes SET preview_image = ? WHERE name = ?",
+                         (new, name))
+            changed += 1
+            log(f"[dishes] preview_image {name!r}: "
+                f"{(stored or '(none)')[:60]} -> {(new or '(none)')[:60]}")
+    if changed:
+        conn.commit()
+    return changed
 
 
 def get_dish(conn: sqlite3.Connection, name: str) -> Optional[dict]:

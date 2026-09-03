@@ -306,10 +306,25 @@
 
     /* ----------------------------- dispatch ----------------------------- */
     function dish(){ return dishes[selected]; }
-    function renderMain(){
+    async function renderMain(){
       if (selected === '__new__') return renderCreate();
       const d = dish();
       if (!d){ const first = sortedDishes()[0]; selected = first ? first.name : null; if (!selected){ $('#page').innerHTML = '<div class="ed-block" style="border-top:none"><p class="ed-empty-fit">No dishes yet.</p></div>'; return; } return renderMain(); }
+      // The list is a SLIM projection (2026-09-03) — the editor fields arrive
+      // with the per-dish detail fetch, once, on first select. The slim row's
+      // list-only fields (preview_image etc.) survive the merge because
+      // Object.assign only overwrites keys the detail actually carries.
+      if (!d.__full){
+        try {
+          const r = await fetch(`/dishes/${encodeURIComponent(d.name)}`);
+          if (r.ok){ Object.assign(d, await r.json()); d.__full = true; }
+          else { $('#page').innerHTML = `<div class="ed-block" style="border-top:none"><p class="ed-empty-fit">Couldn’t load “${escapeHtml(d.display_name || d.name)}” (HTTP ${r.status}).</p></div>`; return; }
+        } catch (e){
+          $('#page').innerHTML = `<div class="ed-block" style="border-top:none"><p class="ed-empty-fit">Couldn’t load “${escapeHtml(d.display_name || d.name)}” — is the server up?</p></div>`;
+          return;
+        }
+        if (selected !== d.name) return;   // user moved on while we fetched
+      }
       renderDetail(d);
     }
 

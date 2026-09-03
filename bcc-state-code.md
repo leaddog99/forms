@@ -7912,9 +7912,11 @@ shredded. All three traced, all fixed, service restarted + smoke-tested.
 
 ### Open
 
-* ~2,200 existing `_cook`s predate v2.3 — any may carry silent technique
-  drift; detectable by prompt_version < v2.3. A batch fidelity-audit
-  (sonnet-only, ~$0.008/recipe ≈ $18 for all) could triage which need
+* 52 existing `_cook`s predate v2.3 (34 user + 19 master, minus the
+  re-run pesto — CORRECTED from "~2,200", which was the equipment
+  backfill count, curator caught it) — any may carry silent technique
+  drift; detectable by prompt_version < v2.3. Batch fidelity-audit
+  (sonnet-only, ~$0.008/recipe ≈ $0.50 total) triages which need
   re-reworking. Not launched — curator's call.
 * Voice path history is wired but untested live (cook-voice surface).
 * Chunked mise-bundle labels still say "washed and thoroughly dried"
@@ -7922,3 +7924,35 @@ shredded. All three traced, all fixed, service restarted + smoke-tested.
   via the reserved back-ref; left alone.
 * START HERE queue from 09-02 unchanged: chip approvals (300) ·
   editors-choice live test · BAILEY NSSM · FK → render/EV.
+
+## Session log — 2026-09-03 (cont.) — the iPad wait: 900ms → 30ms, and the thumbnail learns to be stored
+
+Curator: "when i first click dishes the wait was noticeable… i suspect we
+don't have an index on that view." Measured first (no index was missing —
+the sort is client-side): the /dishes load was ~900ms server-side =
+275ms re-deriving every card thumbnail (JSON-parsing 4,114 master rows
+PER PAGE LOAD) + a 500KB all-editor-fields payload + ~400ms of
+middleware body-shuttling that scales with size.
+
+* **dishes.preview_image is now a STORED column** (curator call mid-
+  investigation: "why are we recomputing the thumbnail every time...we
+  should just store it" — beats the TTL cache I was circling, which
+  wouldn't fix first load). refresh_preview_images() derives at WRITE
+  time: end of dish_refresh (that dish, via dish_key index), after the
+  nightly dish_rematch sweep, and an init_db catch-all (heals BAILEY
+  restores). Prints every row it changes. Backfilled all 293.
+* **GET /dishes is a SLIM projection** — the 11 fields the sidebar +
+  sorters + attention count read (last_ou_fit collapsed to {used}).
+  The editor pane fetches the full shape via GET /dishes/{name} on
+  first select (~10-30ms, cached on the row, refetched after save
+  because loadDishes rebuilds the map). renderMain went async.
+* **Result: ~30ms / 15KB on the wire** (was ~900ms / 93KB gzipped).
+  Verified live post-restart; detail fetch verified full.
+* **Audited the sibling lists on request:** recipes ALREADY has scroll
+  paging (08-20 rebuild — IntersectionObserver → loadMoreRecipes, 100/
+  page via /recipes/search = 36ms/16KB; the bare GET /recipes is
+  API-only, no UI calls it unpaged). domains = 133ms, fine. Recipe
+  rows are ~5KB each in the paged fetch — a future slim-projection
+  win, not today's pain.
+* Lesson repeated: localhost vs 127.0.0.1 on Windows — urllib paid a
+  ~2s IPv6-first stall that curl didn't; measure against 127.0.0.1.
