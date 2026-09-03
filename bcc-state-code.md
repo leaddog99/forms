@@ -7714,3 +7714,96 @@ possibly one more hole; glance at the holes page.
    merge · Stand Mixer re-run · Impact signup / B&B application /
    Emile Henry email · holes-page nearest-dish display · product-side
    M2M design.
+
+## Session log — 2026-09-02 — sources get honest, the curator gets a pinned slot, and the revenue path gets its map
+
+RESTART not owed on MARLEY (user restarted after each server-side change;
+the last batch of edits — source accounting, on-class filter, editors
+choice — went in before the immersion-blender tests). BAILEY: see incident.
+
+* **BestReviews joined BOTH inventories** — the Tribune ask exposed that
+  "review sites" live in two places: review_sources/ (bookmarklet
+  decoders; new bestreviews.py covers bestreviews.com + every newspaper
+  white-label via the reader-supported header signature; pressure-canners
+  page ingested clean: 5 products, tripled carousel deduped, cross-sell
+  excluded) AND realrank_research SOURCE_SITES (curate authorities; added
+  as seat #9). Both canner collections re-run with it seated — Stovetop
+  drew the first-ever 9/9 source full house.
+* **"Why always Serious Eats?" answered with data, then fixed three ways.**
+  The cache showed every canner run fetching ATK/Wirecutter/CR pressure-
+  COOKER pages (0 canner mentions) — byte counts made off-topic look like
+  answers. Now: (1) fetch log prints each page's own title + on-class hit
+  count; (2) the research reply must file a source_report (page_covers /
+  relevance / used_in_ranking — "off-topic honestly reported is a GOOD
+  answer"); (3) it lands in job log, summary JSON, and a SOURCES
+  CONSULTED brief section.
+* **Review sources got their candidate filter** (the recipe-filter analog
+  the curator asked for): pre-fetch, SERP candidates are title-ordered;
+  post-fetch, a page must mention the class ≥2× (plural/possessive/
+  knife→knives/canner→canning fuzz) or it's rejected off-class with the
+  title named. Max 3 fetches/site. Proven live both directions on ATK.
+  Plus the FALLBACK LADDER: curated_collections.search_terms (editor
+  field) — aliases tried in order when the class name flunks, and they
+  WIDEN the on-class accept set ("Multicooker"). Cache is keyed by class
+  alone — tick re-fetch after editing terms.
+* **Editor's choice slot BUILT**: curator pins a product on the
+  collection (free-text field); the run must return an editors_choice row
+  (requested-but-missing = shape error), analyzed with full rigor via
+  rows_of parity — identity, owners, offers — in its own labeled section
+  in picks + brief. Provenance firewall in the prompt: never displaces
+  the ranking; no-source-tested must be said aloud; edge_over_next
+  becomes an honest comparison to overall #1. Margin note: point it at
+  high-rate D2C stores (Made In ~8% vs Amazon ~3-4%).
+* Pick-row polish: brand said once (pkName mirrors render._name), one
+  body font size, capacity prose (>60ch / "N/A…") off the title line,
+  The catch ABOVE Ahead-of-the-next (both surfaces).
+* **RealRank decomposed for the curator** (the "more than NPS+Wilson"
+  question): the missing piece is the −1..+1 → 0..100 rescale (50 =
+  promoters equal detractors); plus Agresti-Coull pseudo-obs (the
+  13-ratings-scores-100 fix) and 4★-passive. Braun 84.7 reproduced
+  stage by stage. Multi-retailer pooling: plumbing real, NEVER fed —
+  zero products carry pooled_from; Amazon-only today by design gap.
+* **Class vs collection settled**: class = demand-side join hub (M2M,
+  283 named, most uncurated) and the proposer's controlled vocabulary
+  (roster carries name+family+6 trigger phrases — signals ARE used, as
+  prompt hints); collection = supply-side workproduct. The one true
+  redundancy = the name-string join → FK is the fix (m2m map), not
+  deleting either.
+* **Revenue playbook shipped as artifact** (Sink-or-Swim Playbook,
+  live DB numbers): funnel 9,033 recipes → 292 dishes → 8 with approved
+  needs → 52 approved briefs → 1 active program → ZERO recipe pages
+  showing products. Gate 1 = render layer (engineering ask verbatim,
+  FK first). Corrected after curator's "what's a chip": ~305 of 342
+  proposed chips are STALE Aug-29-era (same vintage as the repossessed
+  registry, many name deleted classes) — re-propose over them, don't
+  triage. Batch of 36 re-proposes RUNNING now (resumable by design).
+* **Render/EV layer design ON PAPER** (docs/render-ev-layer.md +
+  memory): curator asked for ad-style dynamic selection — decomposed as
+  eligibility (chip gate = ad review, human, later auto-approve-above-
+  confidence) vs serving (EV = p(click)×p(buy)×price×rate). Phases:
+  FK first → deterministic EV + impressions log → Thompson sampling
+  seeded from need order → learned p(click)+taste profile at volume.
+  Curator amendment ON RECORD: "noise can be valuable" — noisy SERVING
+  is a feature at every volume (exploration floor never zero); only
+  noisy ESTIMATES wait for volume. Firewall at every phase: EV picks
+  classes and offers, never reorders picks inside a class.
+* **BAILEY incident**: "failed to fetch" on the clone = server down
+  since ~Aug 26 AND recipes.db there MALFORMED (dies in init_db before
+  binding 8009 — drill task spawns pythons that never listen; pages the
+  curator saw were browser cache). bcc_restart.bat can't work there
+  (NSSM "BCC" is MARLEY-only; BAILEY = schtasks BCC-Drill). Remedy
+  RUNNING: bcc_sync_bailey.ps1 -WithDbs -FreshBackup. Durable fix on
+  the list: install the NSSM service on BAILEY so death is loud.
+
+### Open
+
+* In flight: 36-dish re-propose batch (relaunch until stale=0; then the
+  APPROVAL pass is the curator's queue) · BAILEY -WithDbs sync (verify
+  health check at end; then consider NSSM install on BAILEY).
+* Editors-choice live test still pending: pin was never saved (stale
+  browser page) — hard reload, Edit → Editor's choice → Save → verify
+  survives reopen → Run.
+* Gate 2 actions: Impact signup, B&B application, Emile Henry email.
+* Carried: render/EV build (after FK) · Nutmeg merge · Stand Mixer
+  re-run · product-side M2M design · per-publisher cap · twins ·
+  Pistou Reserve · recipes-inherit-story.
