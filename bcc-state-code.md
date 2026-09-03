@@ -8108,3 +8108,25 @@ prompt grammar updated earlier (ca19b25); then the DATA:
   class↔collection FK migration should sweep these.
 * result_json/brief_text snapshots inside renamed collections still say
   the plural — they regenerate on next run; display keys all agree now.
+
+## Session log — 2026-09-03 (close) — the honest gap: a ranking may run out of products
+
+Canner re-run with criteria: #1 Granite Ware and #2 Victorio both legit
+stovetop water-bath canners, source_report brutally honest (6/7 docs
+off-topic, said so) — but #3 was STILL the electric Presto, flagged by
+the title gate yet present, because the schema DEMANDED exactly three
+and the sources only contain two qualifying products. The contract
+forced the padding. Curator: build the honest gap.
+
+* **omitted_slots SHIPPED**: schema field {section, place, reason};
+  prompt orders "never pad a ranking" — declare unfilled places instead;
+  validate_shape now checks each place 1-3 is filled XOR declared
+  (undeclared shortfall still fails, so truncation can't masquerade;
+  declared-but-filled = contradiction; place 1 may never be omitted —
+  a section with no winner is not a section; reason required). Brief
+  renders "#3 — left open: <reason>" in overall + categories.
+  Unit-tested all six shapes.
+* Curator ran the canner with class_criteria set ("stovetop pot with
+  jar rack… reject electric/digital/pressure/multi-cookers, bare
+  racks/kits") — criteria + boundary + title gate all live and visibly
+  working; next canner run may now honestly return two.

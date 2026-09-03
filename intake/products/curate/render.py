@@ -125,6 +125,12 @@ def render(data: dict, report: dict | None = None) -> str:
     for r in sorted(data.get("overall_top_three") or [], key=lambda x: int(x.get("place", 9))):
         r["_slot"] = f"{slug}.overall.{r.get('place','')}"
         lines += [_row(r), ""]
+    # THE HONEST GAP — a declared-empty slot is content, not absence: the reader
+    # learns the class ran out of qualifying products, instead of being handed a
+    # padded off-class #3 (the Water-Bath-Canner lesson, 2026-09-03).
+    for s in (data.get("omitted_slots") or []):
+        if not str(s.get("section") or "").strip():
+            lines += [f"  #{s.get('place')} — left open: {s.get('reason','')}", ""]
 
     cats: dict[str, list] = {}
     for r in data.get("category_rankings") or []:
@@ -137,6 +143,9 @@ def render(data: dict, report: dict | None = None) -> str:
             for r in sorted(rows, key=lambda x: int(x.get("place", 9))):
                 r["_slot"] = f"{slug}.{cslug}.{r.get('place','')}"
                 lines += [_row(r), ""]
+            for s in (data.get("omitted_slots") or []):
+                if str(s.get("section") or "").strip().lower() == cat.strip().lower():
+                    lines += [f"  #{s.get('place')} — left open: {s.get('reason','')}", ""]
 
     # Curator-pinned pick — full analysis, separate slot, provenance stated. Placed after
     # the rankings so the review-sourced order reads first, never diluted.

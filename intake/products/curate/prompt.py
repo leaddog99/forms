@@ -157,7 +157,8 @@ Return valid JSON only. No Markdown, no commentary outside the JSON, no code fen
 
 VALIDATION CHECKLIST
 Before returning the JSON, confirm internally that:
-- overall_top_three contains exactly three entries with places 1, 2 and 3.
+- overall_top_three has places 1, 2, 3 — filled by a ranked row, or declared in
+  omitted_slots with a reason (never both, never neither, and place 1 is always a row).
 {checklist_categories}
 - No Amazon ASIN appears without an Amazon link, and none is invented.
 - Every Amazon link is https://www.amazon.com/dp/ASIN and every ASIN is exactly 10 characters.
@@ -255,6 +256,9 @@ Use this exact structure:
   "source_report": [
     {"source": "", "page_covers": "", "relevance": "on-class", "used_in_ranking": true}
   ],
+  "omitted_slots": [
+    {"section": "", "place": 3, "reason": ""}
+  ],
   "methodology_note": ""
 }
 """
@@ -298,6 +302,14 @@ one a shopper who searched "{product_class}" would accept as EXACTLY that — ne
 - an accessory, insert, rack, basket, lid, or replacement part FOR the class.
 When a strong, well-reviewed candidate fails this boundary, LEAVE IT OUT of every ranking —
 name it and the reason in `methodology_note` instead, so the curator sees the judgment call.
+
+THE HONEST GAP — never pad a ranking to fill it. If fewer than three products inside the
+boundary can actually be verified, return the ones you can and DECLARE each unfilled place
+in `omitted_slots`: {{"section": "", "place": 3, "reason": "..."}} ("" = the overall
+ranking; otherwise the category name). The reason names what you looked at and why nothing
+qualified — an off-class product promoted to fill a slot is a defect (the Water-Bath-Canner
+run padded #3 with an electric multi-cooker the boundary excluded); a declared gap is a
+correct answer. Omit the field entirely when every slot is filled.
 """
 
 CURATOR_CRITERIA = """

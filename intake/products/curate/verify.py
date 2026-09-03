@@ -145,14 +145,66 @@ def _check_requested(data: dict, grouped: dict) -> list:
     return errs
 
 
+def _declared_omissions(data: dict) -> tuple:
+    """(set of (section_lower, place), errors) from `omitted_slots` — THE HONEST GAP
+    (2026-09-03, the Water-Bath-Canner padding): a ranking place may be unfilled ONLY
+    when the model declares it with a reason. An undeclared shortfall still fails (a
+    truncated reply must not masquerade as an honest gap), a declared-but-filled place
+    is a contradiction, and place 1 can never be omitted — a section with no winner at
+    all is not a section."""
+    errs, declared = [], set()
+    slots = data.get("omitted_slots") or []
+    if not isinstance(slots, list):
+        return set(), ["omitted_slots must be a list"]
+    for s in slots:
+        if not isinstance(s, dict):
+            errs.append("omitted_slots entries must be objects")
+            continue
+        section = str(s.get("section") or "").strip().lower()
+        try:
+            place = int(s.get("place", 0))
+        except (TypeError, ValueError):
+            place = 0
+        if place not in (2, 3):
+            errs.append(f"omitted slot {s.get('section')!r}#{s.get('place')}: only places "
+                        f"2 and 3 may be omitted — place 1 is the section's reason to exist")
+            continue
+        if not str(s.get("reason") or "").strip():
+            errs.append(f"omitted slot {s.get('section')!r}#{place}: a reason is required")
+            continue
+        declared.add((section, place))
+    return declared, errs
+
+
+def _check_places(rows: list, declared: set, section: str, label: str) -> list:
+    """Places 1..3 each filled by a row XOR declared omitted."""
+    errs = []
+    have = sorted(int(r.get("place", 0)) for r in rows)
+    if len(set(have)) != len(have):
+        return [f"{label}: duplicate places {have}"]
+    key = section.strip().lower()
+    for place in (1, 2, 3):
+        filled = place in have
+        omitted = (key, place) in declared
+        if filled and omitted:
+            errs.append(f"{label} place {place}: both ranked and declared omitted")
+        elif not filled and not omitted:
+            errs.append(f"{label} place {place}: missing — rank a product or declare "
+                        f"the slot in omitted_slots with a reason")
+    extra = [p for p in have if p not in (1, 2, 3)]
+    if extra:
+        errs.append(f"{label}: invalid places {extra}")
+    return errs
+
+
 def validate_shape(data: dict) -> list:
     """Structural errors. Empty list = the artifact may be built."""
-    errs = []
+    declared, errs = _declared_omissions(data)
     overall = data.get("overall_top_three")
-    if not isinstance(overall, list) or len(overall) != 3:
-        errs.append("overall_top_three must contain exactly three rows")
-    elif sorted(int(r.get("place", 0)) for r in overall) != [1, 2, 3]:
-        errs.append("overall places must be 1, 2 and 3")
+    if not isinstance(overall, list) or not overall:
+        errs.append("overall_top_three must contain at least one ranked row")
+    else:
+        errs += _check_places(overall, declared, "", "overall")
 
     # An EMPTY category_rankings is valid: no categories were asked for, so the brief is the
     # overall three over the whole class. Whether that emptiness was REQUESTED is the separate
@@ -169,8 +221,8 @@ def validate_shape(data: dict) -> list:
         for cat, rows in grouped.items():
             if not cat:
                 errs.append("a category row is missing its category name")
-            elif sorted(int(r.get("place", 0)) for r in rows) != [1, 2, 3]:
-                errs.append(f"category {cat!r} must have exactly places 1, 2 and 3")
+            else:
+                errs += _check_places(rows, declared, cat, f"category {cat!r}")
         errs += _check_requested(data, grouped)
 
     for label, r in rows_of(data):
