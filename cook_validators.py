@@ -264,25 +264,43 @@ def v_single_deployment(cook: CookMetadata) -> List[str]:
     for i in cook.ingredients:
         if i.to_taste or _LAYERED_STAPLE.search(i.id) or _LAYERED_STAPLE.search(i.name or ""):
             layered.add(i.id)
-    members_by_bundle = {b.id: {m.ingredient_id for m in b.members} for b in cook.bundles}
-    # ingredient -> [(step, via)] fresh entries only
+    def _amt_key(a) -> str:
+        if a is None:
+            return ""
+        return f"{(a.imperial or '').strip().lower()}|{(a.metric or '').strip().lower()}"
+
+    members_by_bundle = {b.id: {m.ingredient_id: m for m in b.members} for b in cook.bundles}
+    # ingredient -> [(step, via, amount_key)] fresh entries only
     entries: dict = {}
     for s in sorted(cook.steps, key=lambda x: x.number):
         for si in s.ingredients:
             if si.reused_from_step is not None or (si.definiteness or "") in ("reserved", "from-step"):
                 continue  # acknowledged re-use, not a fresh entry
             if si.ingredient_id in members_by_bundle:      # a bundle deployed as a unit
-                for mid in members_by_bundle[si.ingredient_id]:
+                for mid, m in members_by_bundle[si.ingredient_id].items():
                     if mid not in layered:
-                        entries.setdefault(mid, []).append((s.number, f"bundle {si.ingredient_id}"))
+                        entries.setdefault(mid, []).append(
+                            (s.number, f"bundle {si.ingredient_id}", _amt_key(m.amount)))
             elif si.ingredient_id not in layered:
-                entries.setdefault(si.ingredient_id, []).append((s.number, "directly"))
+                entries.setdefault(si.ingredient_id, []).append(
+                    (s.number, "directly", _amt_key(si.amount)))
     for iid, hits in entries.items():
-        if len(hits) > 1:
-            where = " and ".join(f"step {n} ({via})" for n, via in hits)
-            out.append(f"ingredient {iid}: enters the method more than once — {where} — "
-                       f"deploy it once (prep lives in the mise OR a step, never both; "
-                       f"a real later re-use points back via reused_from_step)")
+        if len(hits) < 2:
+            continue
+        # DIVIDED USE is legitimate and stays silent: the same ingredient split
+        # across different bundles in DIFFERENT portions (milk-infusion sugar +
+        # custard sugar). The pesto-class defect is the SAME amount appearing
+        # twice (prep mention + use mention), or a direct ref re-entering with
+        # no back-reference — those we flag.
+        all_bundles = all(via != "directly" for _, via, _ in hits)
+        amounts = {amt for _, _, amt in hits}
+        if all_bundles and len(amounts) == len(hits):
+            continue
+        where = " and ".join(f"step {n} ({via})" for n, via, _ in hits)
+        out.append(f"ingredient {iid}: enters the method more than once — {where} — "
+                   f"deploy it once (prep lives in the mise OR a step, never both; "
+                   f"a real later re-use points back via reused_from_step; a genuine "
+                   f"divided use splits DIFFERENT portions across bundles)")
     return out
 
 

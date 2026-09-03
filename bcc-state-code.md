@@ -7956,3 +7956,51 @@ middleware body-shuttling that scales with size.
   win, not today's pain.
 * Lesson repeated: localhost vs 127.0.0.1 on Windows — urllib paid a
   ~2s IPv6-first stall that curl didn't; measure against 127.0.0.1.
+
+## Session log — 2026-09-03 (afternoon) — one job ran twice, and the queue learns to claim
+
+Curator: "sidebar says 10 records but detail form shows only 8." Not a
+too-few-steps problem — job #1350 (Guacamole refresh) EXECUTED TWICE,
+concurrently (two log files, one id; second exec started 06:18 ET while
+the first ran to 06:37). Two delete-and-replace refreshes interleaved →
+15 master rows with colliding ranks, ledger showing 8 selected under one
+model_version, sidebar 10 from the last finisher. Likely trigger: the
+dishes page Run flow's drain fallback after a slow tunnel spawn
+response (iPad). Nothing refused: /jobs/{id}/spawn accepted running
+jobs, _run_job_id accepted running jobs, mark_running was a blind
+UPDATE.
+
+* **mark_running is now an ATOMIC CLAIM** (jobs.py): UPDATE gated on
+  status='queued' (or 'running' with the observed DEAD pid in the
+  WHERE — single-winner takeover of a crashed executor). A loser
+  raises JobAlreadyClaimed; _run_one_job aborts WITHOUT mark_finished
+  (stomping the live run's row is the exact torn state this prevents).
+  Unit-tested all three paths. pid added to the job row projection;
+  /jobs/{id}/spawn 409s on a live-pid running job (live at next
+  restart; the executor-side claim is already active).
+* **Eggplant Caponata was torn the same way** (22 rows / top-20; scan
+  found only these two). Both re-run clean: Guacamole 10=10=10=10=10,
+  Caponata 20 everywhere across master rows / ranks / sidebar /
+  ledger — and the new preview_image job hook refreshed both stored
+  thumbnails in production.
+* **Fidelity audit of all 52 pre-v2.3 cooks ($0.50): 24 clean, 20 real
+  defects** after triage. Two auditor defects found and fixed by the
+  audit itself: (1) sonnet padded 8 reports with items whose own text
+  says "not a violation" — gate prompt now orders OMIT on
+  self-dismissal; (2) v_single_deployment flagged legitimate DIVIDED
+  USE (Galaktoboureko's split sugar) — now silent when an ingredient
+  splits across bundles in DIFFERENT amounts; same-amount double-
+  mention and unmarked direct re-entry still flag (verified both
+  directions). Standouts: Gravlax drops the cure-on-skin application,
+  Paella pre-crumbles saffron + deletes "stir in" option, Broccoli
+  soup invents florets.
+* **20-recipe re-rework batch RUNNING** (~$11, sequential, canonical
+  jobs path; manifest + driver in scratchpad). 12 personal + 8 master.
+
+### Open
+
+* Verify the batch: 20/20 success, spot-check Gravlax cure-on-skin and
+  Paella saffron survive; re-audit is free (validator) + cheap (gate
+  runs inside each rework now).
+* /jobs/{id}/spawn 409 guard + dishes-page drain fallback belt: live
+  at next server restart (claim already protects).

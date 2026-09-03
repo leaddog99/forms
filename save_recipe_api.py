@@ -10385,6 +10385,14 @@ def spawn_job_endpoint(job_id: int, request: Request):
     if job["status"] not in ("queued", "running"):
         raise HTTPException(status_code=409,
                             detail=f"Job #{job_id} is {job['status']}, not runnable")
+    # A 'running' job is spawnable ONLY if its executor died (crash recovery).
+    # Spawning one with a live owner was the Guacamole double-run: two refreshes
+    # interleaving delete-and-replace on the same dish. The atomic claim in
+    # mark_running is the real guarantee; this 409 is the honest UI answer.
+    if job["status"] == "running" and jobs_lib.pid_alive(job.get("pid")):
+        raise HTTPException(status_code=409,
+                            detail=f"Job #{job_id} is already running "
+                                   f"(pid {job.get('pid')}) — watch its stream instead")
     _spawn_job_runner(job_id)
     return {"job_id": job_id, "spawned": True, "stream_url": f"/jobs/{job_id}/stream"}
 

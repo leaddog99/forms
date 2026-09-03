@@ -75,7 +75,12 @@ into bundles; the plan splits or merges steps; the plan tightens wording; a chan
 that IS declared in technique_changes (even loosely — judge intent, not word match).
 
 Report via report_fidelity exactly once. Be precise and quote the source. An empty
-violations list is the correct answer for a faithful plan — do not invent nitpicks.\
+violations list is the correct answer for a faithful plan — do not invent nitpicks.
+Report ONLY actual violations: if while examining an item you conclude it IS declared
+in technique_changes, or is otherwise not a violation, OMIT it entirely — never emit
+an entry whose explanation says "this is not a violation" (the 2026-09-03 batch audit
+padded 5 recipes' reports with exactly such self-dismissed entries, and every entry
+you emit fails the rework and triggers a paid repair pass).\
 """
 
 

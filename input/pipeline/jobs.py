@@ -190,14 +190,14 @@ def reset_interrupted_jobs(conn: sqlite3.Connection) -> int:
 
 _SELECT_COLS = (
     "id, type, params, entity_ref, status, scheduled_at, "
-    "created_at, started_at, finished_at, log_filename, result, error_detail"
+    "created_at, started_at, finished_at, log_filename, result, error_detail, pid"
 )
 
 
 def _row_to_dict(row: tuple) -> dict:
     (id_, type_, params_json, entity_ref, status, scheduled_at,
      created_at, started_at, finished_at, log_filename, result_json,
-     error_detail) = row
+     error_detail, pid) = row
     try:
         params = json.loads(params_json) if params_json else {}
     except Exception:
@@ -220,6 +220,7 @@ def _row_to_dict(row: tuple) -> dict:
         "log_url": f"/logs/{log_filename}" if log_filename else None,
         "result": result,
         "error_detail": error_detail,
+        "pid": pid,
     }
 
 
@@ -282,16 +283,58 @@ def find_next_ready(conn: sqlite3.Connection) -> Optional[dict]:
     return _row_to_dict(row) if row else None
 
 
+class JobAlreadyClaimed(RuntimeError):
+    """A second executor tried to run a job another live process owns."""
+
+
 def mark_running(conn: sqlite3.Connection, job_id: int, log_filename: str) -> None:
+    """ATOMICALLY claim the job, or raise JobAlreadyClaimed.
+
+    2026-09-03, the Guacamole incident: job #1350 executed TWICE, concurrently
+    (a spawn plus the dishes page's drain fallback after a slow tunnel response
+    — two log files, one job id). Both refreshes interleaved delete-and-replace
+    on the same dish → 15 master rows with colliding ranks, a ledger with 8
+    selected under one model_version, and three surfaces telling three stories.
+    This blind UPDATE was the hole: any `jobs exec --job-id N` re-ran a job
+    regardless of state. Now the UPDATE is the claim — a competitor loses the
+    WHERE race and aborts before doing any work.
+
+    A 'running' row may be re-claimed ONLY when its recorded owner process is
+    dead (a crashed executor that reset_interrupted_jobs hasn't seen yet); the
+    stale pid in the WHERE makes even that race single-winner.
+    """
     now = datetime.now(timezone.utc).isoformat()
-    # Stamp the OWNER. Without it, reset_interrupted_jobs can only assume that a
-    # 'running' row belongs to a dead process, and that assumption is wrong every
-    # time a second process merely IMPORTS the app while a job is in flight.
-    conn.execute(
-        "UPDATE jobs SET status='running', started_at=?, log_filename=?, pid=? WHERE id=?",
-        (now, log_filename, os.getpid(), job_id),
-    )
+    row = conn.execute("SELECT status, pid FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if row is None:
+        raise JobAlreadyClaimed(f"job #{job_id} not found")
+    status, owner_pid = row
+    if status == "running":
+        if pid_alive(owner_pid):
+            raise JobAlreadyClaimed(
+                f"job #{job_id} is already running (pid {owner_pid} is alive) — "
+                f"refusing duplicate execution")
+        # Owner is dead — take over, but only if nobody beat us to it: the WHERE
+        # requires the SAME stale pid we just observed.
+        cur = conn.execute(
+            "UPDATE jobs SET status='running', started_at=?, log_filename=?, pid=? "
+            "WHERE id=? AND status='running' AND pid IS ?",
+            (now, log_filename, os.getpid(), job_id, owner_pid),
+        )
+    elif status == "queued":
+        # Stamp the OWNER. Without it, reset_interrupted_jobs can only assume a
+        # 'running' row belongs to a dead process, and that assumption is wrong
+        # every time a second process merely IMPORTS the app mid-flight.
+        cur = conn.execute(
+            "UPDATE jobs SET status='running', started_at=?, log_filename=?, pid=? "
+            "WHERE id=? AND status='queued'",
+            (now, log_filename, os.getpid(), job_id),
+        )
+    else:
+        raise JobAlreadyClaimed(f"job #{job_id} is {status!r}, not runnable")
     conn.commit()
+    if cur.rowcount != 1:
+        raise JobAlreadyClaimed(
+            f"job #{job_id}: another executor claimed it first")
 
 
 def mark_finished(conn: sqlite3.Connection, job_id: int, *,
@@ -432,6 +475,11 @@ async def _run_one_job(job: dict, db_path: str, log_dir: Path) -> None:
         with _connect(db_path) as conn:
             mark_finished(conn, job["id"], status="success", result=result)
         print(f"=== Job #{job['id']} success ===")
+    except JobAlreadyClaimed as e:
+        # Another live executor owns this job — abort WITHOUT touching the row
+        # (a mark_finished here would stomp the real run's status, which is the
+        # exact torn-state this claim exists to prevent). Nothing was executed.
+        print(f"=== Job #{job['id']} NOT RUN — {e} ===")
     except JobCancelled as e:
         with _connect(db_path) as conn:
             mark_finished(conn, job["id"], status="cancelled",
