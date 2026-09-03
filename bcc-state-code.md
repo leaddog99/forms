@@ -7807,3 +7807,49 @@ choice — went in before the immersion-blender tests). BAILEY: see incident.
 * Carried: render/EV build (after FK) · Nutmeg merge · Stand Mixer
   re-run · product-side M2M design · per-publisher cap · twins ·
   Pistou Reserve · recipes-inherit-story.
+
+## Session log — 2026-09-02 (night) — BAILEY's real killer found in four blank names, and the chip queue is reborn
+
+Close-out of the two in-flight arcs. Working tree committed through 10f467d
+before this entry; MARLEY server current (no restart owed).
+
+* **BAILEY closed end to end.** The corrupt DB wasn't the disease — it was
+  the symptom: `bcc_sync_bailey.ps1 -WithDbs` had NEVER delivered a file.
+  The $copies table's `,@(src,dst)` rows double-wrapped, so $c[1] (the
+  destination) was $null on every row — rclone failed all four copies
+  ("can't use empty string as a path"), and the failure banner printed
+  four BLANK names, which is what finally gave it away. The 08-26 "13MB
+  short" truncation and every stale day since trace to this. Fixed
+  (plain nested arrays, post-mortem in the comment, 10f467d), re-run
+  clean: all four copies size-verified, sidecars cleared, BCC-Drill
+  restarted, health 200. VERIFIED on BAILEY itself: integrity_check ok,
+  292 dishes, Fried Rice present (= tonight's backup set is live).
+  Also learned: clearing stale WAL/SHM alone let the OLD db boot — the
+  "malformed" at startup was partly sidecar pairing.
+* **Re-propose batch: 36/36 ok, 0 skipped, 0 failed.** Stale Aug-29-era
+  chips now ZERO; the proposed tier is 300 chips, all four-channel,
+  need-ordered, across ~44 dishes. The approval queue is real again.
+
+### START HERE (post-/clear morning)
+
+1. **Chip approvals — the queue is finally worth your time.** 300
+   current-quality proposals across ~44 dishes (Dishes → dish → Product
+   classes). Approve sellable, reject junk; approvals feed Gate 4
+   (curate what accumulates demand). This is Gate 3 of the playbook:
+   https://claude.ai/code/artifact/f3a4ea52-5c5b-40f2-b960-7718364fe7ed
+2. **Editors-choice live test** (never completed — the pin never saved
+   off a stale page): hard-reload curated collections, Edit Immersion
+   Blender → "Editor's choice" field → Save → REOPEN to confirm it
+   stuck → Run. Expect an EDITOR'S CHOICE section in picks + brief.
+3. **Gate 2 money actions (curator-only):** Impact signup (Made In +
+   Our Place CID 4218057), Burlap & Barrel application (partnerships@),
+   Emile Henry email (info@eh-usa.com).
+4. **BAILEY durable fix:** install the NSSM "BCC" service there (mirror
+   MARLEY's) so bcc_restart.bat works and a dead server is loud; until
+   then it's `schtasks /Run /TN BCC-Drill`.
+5. Engineering next-big-build unchanged: class↔collection FK, then the
+   render/EV layer (docs/render-ev-layer.md — Phase 1 deterministic EV
+   + impressions log).
+6. Carried: propose the ~250 never-proposed dishes (biggest cohorts
+   first) · Nutmeg merge · Stand Mixer re-run · product-side M2M ·
+   per-publisher cap · twins · Pistou Reserve · recipes-inherit-story.
