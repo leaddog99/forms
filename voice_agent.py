@@ -50,6 +50,7 @@ def stream_grounded(
     tools: Optional[list] = None,
     operation: str = "voice_ask",
     usage_log: Optional[list] = None,
+    history: Optional[list] = None,
 ) -> Iterator[dict]:
     """Stream a grounded answer (or a navigation action) as event dicts.
 
@@ -66,11 +67,23 @@ def stream_grounded(
         return
 
     user = f"{context}\n\n{question}" if context else question
+    # Prior conversation turns (oldest first, roles 'user'/'assistant') ride
+    # ahead of the grounded message — only the final message carries the entity
+    # context, so history costs its own words, not N copies of the grounding.
+    msgs: list = []
+    for h in (history or []):
+        role = h.get("role")
+        content = (h.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            msgs.append({"role": role, "content": content})
+    while msgs and msgs[0]["role"] != "user":   # API requires user-first alternation
+        msgs.pop(0)
+    msgs.append({"role": "user", "content": user})
     kwargs: dict[str, Any] = dict(
         model=model,
         max_tokens=max_tokens,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=msgs,
     )
     if tools:
         kwargs["tools"] = tools

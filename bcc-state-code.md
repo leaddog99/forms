@@ -7841,9 +7841,11 @@ before this entry; MARLEY server current (no restart owed).
    off a stale page): hard-reload curated collections, Edit Immersion
    Blender → "Editor's choice" field → Save → REOPEN to confirm it
    stuck → Run. Expect an EDITOR'S CHOICE section in picks + brief.
-3. **Gate 2 money actions (curator-only):** Impact signup (Made In +
-   Our Place CID 4218057), Burlap & Barrel application (partnerships@),
-   Emile Henry email (info@eh-usa.com).
+3. **Gate 2 money actions — PARKED (curator decision 2026-09-03):**
+   no affiliate signups (Impact/Made In/Our Place, Burlap & Barrel,
+   Emile Henry) until there is a DEMONSTRABLE user product to show
+   in the applications. Amazon-only until then — which makes the
+   render layer (item 5) the unblock for this item too.
 4. **BAILEY durable fix:** install the NSSM "BCC" service there (mirror
    MARLEY's) so bcc_restart.bat works and a dead server is loud; until
    then it's `schtasks /Run /TN BCC-Drill`.
@@ -7853,3 +7855,70 @@ before this entry; MARLEY server current (no restart owed).
 6. Carried: propose the ~250 never-proposed dishes (biggest cohorts
    first) · Nutmeg merge · Stand Mixer re-run · product-side M2M ·
    per-publisher cap · twins · Pistou Reserve · recipes-inherit-story.
+
+## Session log — 2026-09-03 — the pesto kept its chunks: technique becomes identity, and Chef gets a memory
+
+The curator cooked John's Pesto (recipe 863) last night and caught the cook
+rework red-handed: it had silently turned the source's "add the Pecorino in
+chunks and pound" into "finely grate" (mouthfeel = the recipe's identity),
+duplicated ingredient mentions, and Ask Chef INSISTED the recipe said
+shredded. All three traced, all fixed, service restarted + smoke-tested.
+
+* **Root causes.** (1) The rework prompt's own license: "Result fidelity
+  matters; source fidelity does not" + the mise mandate pushed cheese to
+  grated-ahead; the change wasn't declared in technique_changes and NO
+  gauntlet gate checks meaning. (2) Prep lived twice — mise bundle labels
+  AND steps 1–2; amounts re-listed at prep step and use step (basil 70g
+  ×2, garlic ×2). (3) cook_ask.build_context grounds ONLY on `_cook` when
+  present — Chef was a confident witness for the corruption; and every ask
+  was a single-turn call, nothing persisted (the "shredded" answer was
+  unrecoverable — token journal had counts, nobody had words).
+* **Prompt v2.3** (`cook-rework-v2.3-2026-09-03`): TECHNIQUE IS IDENTITY —
+  stated technique/tool/ingredient-form survives the rework exactly; add
+  only where the source is silent; "a change you would not write down
+  [in technique_changes] is a change you must not make." Plus SINGLE
+  DEPLOYMENT (an ingredient enters the method once; prep in mise OR step).
+* **Fidelity gate** (cook_fidelity.py NEW, sonnet ~$0.008/run): post-
+  gauntlet LLM audit of source vs plan; undeclared technique substitution
+  = failure → one repair pass → unrepaired fails the rework. Recorded in
+  validators.ran as "source-fidelity".
+* **`single-deployment` validator** (cook_validators.py): deterministic —
+  flags an ingredient entering via a step AND a bundle (exempt: layered
+  staples/to_taste, refs pointing back via reused_from_step/reserved).
+  PROVEN: run against last night's corrupt _cook it flags exactly the
+  basil and garlic double-mentions.
+* **Chef grounds on BOTH docs** (cook_ask.build_context): `_cook` +
+  `authors_original_steps/ingredients`; CHEF_SYSTEM now orders: on
+  conflict, never insist — say the plan and the author disagree, quote
+  the original, let the cook choose.
+* **Chef memory** (cook_chat.py NEW): cook_chat table (recipe_id, user_id,
+  surface cook|cook-voice|notes, role, text); all three ask paths (typed,
+  streaming voice, notes chat) persist every exchange and pass the LAST 5
+  exchanges as real conversation turns (curator accepted token cost;
+  history = bare Q/A text, only the final message carries the recipe
+  context). Also the audit trail that was missing last night.
+* **Pesto re-reworked** (job 1362, $0.53): step 5 = the source verbatim
+  ("Add the Pecorino in chunks and pound to incorporate, then add the
+  Parmigiano in chunks and do the same"), mise keeps cheeses "broken into
+  chunks", model self-declared the preservation in technique_changes,
+  fidelity gate passed, basil enters once (step 4 references step-1 basil
+  as `reserved`). Live smoke test: the exact question that failed last
+  night now answers chunks + quotes the author; follow-up "what did I just
+  ask you" recalled correctly; 4 rows in cook_chat.
+* **Also this morning:** Gate-2 affiliate signups PARKED (curator: no
+  applications until a demonstrable user product; Amazon-only) — recorded
+  in the 09-02 START HERE + memory; render layer is now the unblock for
+  BOTH revenue gates.
+
+### Open
+
+* ~2,200 existing `_cook`s predate v2.3 — any may carry silent technique
+  drift; detectable by prompt_version < v2.3. A batch fidelity-audit
+  (sonnet-only, ~$0.008/recipe ≈ $18 for all) could triage which need
+  re-reworking. Not launched — curator's call.
+* Voice path history is wired but untested live (cook-voice surface).
+* Chunked mise-bundle labels still say "washed and thoroughly dried"
+  while step 1 washes — cosmetic tension, single-deployment is satisfied
+  via the reserved back-ref; left alone.
+* START HERE queue from 09-02 unchanged: chip approvals (300) ·
+  editors-choice live test · BAILEY NSSM · FK → render/EV.

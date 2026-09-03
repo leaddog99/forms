@@ -1229,6 +1229,10 @@ def init_db():
                     updated_at        TEXT NOT NULL
                 );
             """)
+            # Chef conversation ledger — memory + audit for Ask-Chef exchanges
+            # (cook view + notes chat). DDL lives in cook_chat.py.
+            import cook_chat as _cook_chat
+            _cook_chat.ensure_table(conn)
             try:
                 conn.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email "
@@ -1791,10 +1795,14 @@ def cook_ask_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="recipe_id and question are required.")
 
     table = _recipes_table_for(user_id)
+    import cook_chat
     with _db() as conn:
         row = conn.execute(
             f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
         ).fetchone()
+        # Chef's memory: the last N exchanges for this recipe+user ride along as
+        # real conversation turns (cook_chat ledger; see the module docstring).
+        history = cook_chat.recent_history(conn, recipe_id=recipe_id, user_id=user_id)
     if not row:
         raise HTTPException(status_code=404, detail="Recipe not found.")
     recipe = json.loads(row[0])
@@ -1805,19 +1813,32 @@ def cook_ask_endpoint(payload: dict = Body(...)):
     try:
         if allow_actions:
             from cook_ask import ask_or_act
-            result = ask_or_act(recipe, question, current_step=current_step, usage_log=usage_log)
+            result = ask_or_act(recipe, question, current_step=current_step,
+                                usage_log=usage_log, history=history)
         else:
             from cook_ask import ask as chef_ask
             result = {"kind": "answer",
-                      "text": chef_ask(recipe, question, current_step=current_step, usage_log=usage_log)}
+                      "text": chef_ask(recipe, question, current_step=current_step,
+                                       usage_log=usage_log, history=history)}
     except Exception as e:
         print(f"[ERROR] /cook/ask({recipe_id}): {e}")
         raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.") from e
     _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
     if result.get("kind") == "action":
         return {"action": result.get("action"), "step": result.get("step")}
+    answer = result.get("text", "")
+    # Persist the exchange (memory for the next ask + audit trail). Nav actions
+    # aren't conversation, so only answers land in the ledger. Never fatal.
+    if answer:
+        try:
+            with _db() as conn:
+                cook_chat.record_exchange(conn, recipe_id=recipe_id, user_id=user_id,
+                                          surface="cook", question=question, answer=answer)
+                conn.commit()
+        except Exception as e:  # noqa: BLE001 — the answer still goes out
+            print(f"[WARN] cook_chat record failed for {recipe_id}: {e}")
     # Back-compat: always include `answer` so existing callers keep working.
-    return {"answer": result.get("text", "")}
+    return {"answer": answer}
 
 
 @app.post("/cook/ask-stream")
@@ -1838,10 +1859,12 @@ def cook_ask_stream_endpoint(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="recipe_id and question are required.")
 
     table = _recipes_table_for(user_id)
+    import cook_chat
     with _db() as conn:
         row = conn.execute(
             f"SELECT data FROM {table} WHERE recipe_id = ?", (recipe_id,)
         ).fetchone()
+        history = cook_chat.recent_history(conn, recipe_id=recipe_id, user_id=user_id)
     if not row:
         raise HTTPException(status_code=404, detail="Recipe not found.")
     recipe = json.loads(row[0])
@@ -1849,19 +1872,35 @@ def cook_ask_stream_endpoint(payload: dict = Body(...)):
     usage_log: list = []
 
     def events():
+        spoken: list = []   # sentences streamed — joined into the ledger's answer row
         try:
             # NOTE: streaming SSE journals via the plain usage_log (voice_agent appends
             # to it), NOT the llm.py contextvar gateway — Starlette drives this generator
             # across separate threadpool contexts, so a contextvar set here is discarded
             # before the flush. The shared list survives. _journal_usage writes it below.
             from cook_ask import ask_or_act_stream
-            for ev in ask_or_act_stream(recipe, question, current_step=current_step, usage_log=usage_log):
+            for ev in ask_or_act_stream(recipe, question, current_step=current_step,
+                                        usage_log=usage_log, history=history):
+                if ev.get("type") == "sentence" and ev.get("text"):
+                    spoken.append(ev["text"])
                 yield ev
         except Exception as e:  # noqa: BLE001
             print(f"[ERROR] /cook/ask-stream({recipe_id}): {e}")
             yield {"type": "error", "detail": "Chef is unavailable right now — try again in a moment."}
         finally:
             _journal_usage(usage_log, recipe_id=recipe_id, user_id=user_id)
+            # Persist the exchange (memory + audit) — answers only, nav actions
+            # aren't conversation. Same ledger the non-streaming path writes.
+            if spoken:
+                try:
+                    with _db() as conn2:
+                        cook_chat.record_exchange(
+                            conn2, recipe_id=recipe_id, user_id=user_id,
+                            surface="cook-voice", question=question,
+                            answer=" ".join(spoken))
+                        conn2.commit()
+                except Exception as e:  # noqa: BLE001
+                    print(f"[WARN] cook_chat record failed for {recipe_id}: {e}")
 
     import voice_agent
     return StreamingResponse(
@@ -9925,16 +9964,33 @@ def notes_ask_endpoint(recipe_id: str, payload: dict = Body(...)):
             detail="Add a name, ingredients, or steps first so Chef has something to answer about.",
         )
 
+    # Chef's memory — only for a SAVED recipe (a never-saved "_new" has no stable
+    # key to remember under; its history starts once the recipe is saved).
+    import cook_chat
+    has_ledger_key = bool(recipe_id) and recipe_id != "_new"
+    history = None
+    if has_ledger_key:
+        with _db() as conn:
+            history = cook_chat.recent_history(conn, recipe_id=recipe_id, user_id=user_id)
+
     import llm  # gateway: attribute this Q&A to the recipe/user, label it notes_chat
     llm.enter(recipe_id=(recipe_id or "_new"), user_id=user_id)
     try:
         from cook_ask import ask as chef_ask
-        answer = chef_ask(recipe, question, operation="notes_chat")
+        answer = chef_ask(recipe, question, operation="notes_chat", history=history)
     except Exception as e:
         print(f"[ERROR] /recipes/{recipe_id}/notes-ask: {e}")
         raise HTTPException(status_code=503, detail="Chef is unavailable right now — try again in a moment.") from e
     finally:
         llm.flush()   # write the buffered notes_chat usage to the journal
+    if has_ledger_key and answer:
+        try:
+            with _db() as conn:
+                cook_chat.record_exchange(conn, recipe_id=recipe_id, user_id=user_id,
+                                          surface="notes", question=question, answer=answer)
+                conn.commit()
+        except Exception as e:  # noqa: BLE001 — the answer still goes out
+            print(f"[WARN] cook_chat record failed for {recipe_id}: {e}")
     return {"answer": answer}
 
 

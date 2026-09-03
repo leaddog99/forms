@@ -43,7 +43,12 @@ _MAX_TOKENS = 16000
 # them from the PUBLISHED KB with provenance (kb_id).
 # v2.2: model-authored voice-pacing `substeps` (split-on-independence, terse-voice/
 # screen-numbers) per docs/procedural-instruction-research.md.
-REWORK_PROMPT_VERSION = "cook-rework-v2.2-2026-06-16"
+# v2.3: TECHNIQUE IS IDENTITY — a stated technique/tool/ingredient-form must survive
+# the rework (the John's Pesto incident: "Pecorino in chunks, pounded" silently became
+# "finely grated", changing the mouthfeel the recipe exists for). Plus single-deployment
+# (an ingredient enters the method once — prep lives in the mise OR a step, never both)
+# and an LLM source-fidelity gate after the mechanical gauntlet (cook_fidelity.py).
+REWORK_PROMPT_VERSION = "cook-rework-v2.3-2026-09-03"
 
 
 # --------------------------------------------------------------------------- #
@@ -320,7 +325,22 @@ WHAT TO DO:
 - Cook it in your head (fix the COOKING, not just the copy): add missing technique (reserve \
 liquid, finish in sauce, rest, bloom, deglaze, temper), doneness cues, seasoning staging \
 (account for salty components added later), safety discards, wrong-order cooking. Put each \
-change in `technique_changes` with WHY. Result fidelity matters; source fidelity does not.
+change in `technique_changes` with WHY.
+- TECHNIQUE IS IDENTITY. A technique, tool, motion, or ingredient FORM the source STATES \
+(whole, in chunks, grated, sliced, pounded, torn, whisked by hand…) is the recipe's identity \
+and MUST survive the rework exactly as stated — never modernize or standardize it to the \
+usual way. If the source works cheese in as CHUNKS pounded in a mortar, the plan keeps chunks \
+pounded in a mortar; do not "improve" it to grated. You may ADD technique where the source is \
+SILENT, fix objective errors (wrong-order cooking, unsafe handling), and tighten the copy. \
+EVERY real change to the cooking goes in `technique_changes` with WHY — a change you would \
+not write down there is a change you must not make.
+- SINGLE DEPLOYMENT — each ingredient enters the method EXACTLY ONCE: either directly in one \
+step or via one bundle (staged staples/to-taste seasoning exempt; a genuine later re-use \
+points back via reused_from_step/put-aside). Prep work lives in ONE place: if the mise \
+presents an ingredient already prepped ("washed and dried", "halved and cored"), no method \
+step repeats that prep; if prep IS a method step you keep (following the source), the mise \
+presents that ingredient raw. A bundle member's prep_verb/label must match the FORM the \
+source uses at the moment of deployment.
 - Schedule: give steps duration_minutes, attention (active/passive), depends_on, resource.
 - Bundle the mise: pre-combine ingredients added at the same moment into labeled bundles \
 (combine_note = why); keep separate when combining early harms (excluded_reason). Put \
@@ -485,11 +505,45 @@ def rework_recipe(recipe: dict, log: Callable = print) -> Tuple[CookMetadata, ob
             "re-emit the full corrected recipe via emit_cook. Failures:\n- "
             + "\n- ".join(report.failures)
             + "\n\nThe recipe you produced:\n" + json.dumps(emitted, ensure_ascii=False))
-        emitted2, _ = _emit_cook([{"role": "user", "content": repair_user}], log, usages)
-        cook = _assemble(emitted2)
+        emitted, _ = _emit_cook([{"role": "user", "content": repair_user}], log, usages)
+        cook = _assemble(emitted)
         report = run_all(cook)
         log(f"[cook-rework] after repair: passed={report.passed}"
             + (f" ({len(report.failures)} failures)" if not report.passed else ""))
+
+    # SOURCE-FIDELITY gate (LLM, cook_fidelity.py) — runs only over a structurally
+    # sound plan. The gauntlet checks structure; this checks MEANING: a technique/
+    # tool/ingredient-form the source states that the plan silently substitutes
+    # (the John's Pesto "chunks → finely grated" incident passed every structural
+    # gate). A violation gets ONE repair pass — restore the source's technique or
+    # declare the change — then both gates re-run; an unrepaired violation FAILS
+    # the rework (callers persist only on report.passed).
+    if report.passed:
+        from cook_fidelity import check_fidelity
+        fid = check_fidelity(inp, cook, log, usages)
+        log(f"[cook-rework] fidelity: passed={not fid}"
+            + (f" ({len(fid)} violations)" if fid else ""))
+        if fid:
+            log("[cook-rework] repair pass (opus) on the fidelity violations…")
+            repair_user = (
+                "Your reworked recipe FAILED the source-fidelity audit — it changes "
+                "technique/tool/ingredient-form the source states, without declaring it. "
+                "TECHNIQUE IS IDENTITY: restore the source's stated way of doing it "
+                "(preferred), or — only where the change is objectively better for the "
+                "result — keep it AND declare it explicitly in technique_changes. Fix "
+                "ONLY these issues and re-emit the full corrected recipe via emit_cook. "
+                "Violations:\n- " + "\n- ".join(fid)
+                + "\n\nThe recipe you produced:\n" + json.dumps(emitted, ensure_ascii=False))
+            emitted, _ = _emit_cook([{"role": "user", "content": repair_user}], log, usages)
+            cook = _assemble_with_repair(emitted, log, usages)
+            report = run_all(cook)
+            fid = check_fidelity(inp, cook, log, usages) if report.passed else fid
+            log(f"[cook-rework] after fidelity repair: gauntlet={report.passed}, "
+                f"fidelity={'pass' if not fid else f'{len(fid)} violations'}")
+        report.ran.append("source-fidelity")
+        if fid:
+            report.failures.extend(f"[source-fidelity] {f}" for f in fid)
+            report.passed = False
 
     # Augment ONLY a structurally-sound cook (no point annotating a failed rework).
     # Additive + best-effort: a failure here never sinks the rework. Provenance —

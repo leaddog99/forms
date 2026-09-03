@@ -85,6 +85,11 @@ CHEF_SYSTEM = (
     "answer the off-topic question.\n"
     "- Never invent specifics about this recipe that aren't in the context. If something "
     "genuinely isn't specified, say so briefly and give your best general guidance.\n"
+    "- The context may carry BOTH the cook plan (steps/mise) and the author's original "
+    "wording (authors_original_steps). If they disagree — a technique, a form, an amount "
+    "— NEVER insist on one: say plainly that the cook plan says one thing but the "
+    "author's original says another, quote the original briefly, and let the cook choose "
+    "(the original is the author's own voice; the plan is our derived rework).\n"
     "- Be calm and encouraging. On anything touching food safety (doneness temperatures, "
     "raw meat/eggs/seafood, preserving), be accurate and do not hand-wave.\n"
     "- The cook can ask you anything at any moment; the app itself handles step "
@@ -178,6 +183,16 @@ def build_context(recipe: dict, current_step: Optional[int]) -> str:
         ctx["finish"] = ck.get("finish")
         ctx["cooks_note"] = ck.get("cooks_note")
         ctx["good_to_know"] = [a.get("text") for a in (ck.get("tips") or [])]
+        # The author's ORIGINAL wording rides along even when a `_cook` exists.
+        # The rework is derived and can drift (the John's Pesto incident: it
+        # silently turned "Pecorino in chunks, pounded" into "finely grated",
+        # and Chef — grounded on `_cook` alone — confidently insisted the
+        # recipe said grated). With both in view, Chef can surface a conflict
+        # instead of defending the drift. ~a few hundred tokens per ask.
+        instrs = recipe.get("recipeInstructions") or []
+        orig = [(s.get("text") if isinstance(s, dict) else str(s)) for s in instrs]
+        ctx["authors_original_ingredients"] = recipe.get("recipeIngredient")
+        ctx["authors_original_steps"] = [t for t in orig if t]
     else:
         # Fallback: faithful capture (recipe never reworked — still answerable).
         ctx["ingredients"] = recipe.get("recipeIngredient")
@@ -197,14 +212,38 @@ def build_context(recipe: dict, current_step: Optional[int]) -> str:
 # --------------------------------------------------------------------------- #
 # The call
 # --------------------------------------------------------------------------- #
+def _with_history(history: Optional[list], user: str) -> list:
+    """Prepend prior conversation turns (cook_chat rows as {'role','content'}
+    dicts, oldest first, roles already 'user'/'assistant') to the grounded user
+    message. Only the FINAL message carries the recipe context — history entries
+    are the bare Q/A text, so five prior exchanges cost their own words, not five
+    copies of the recipe."""
+    msgs = []
+    for h in (history or []):
+        role = h.get("role")
+        content = (h.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            msgs.append({"role": role, "content": content})
+    # The API requires alternating roles starting with 'user'; a well-formed
+    # history from cook_chat already alternates — drop a malformed leading
+    # assistant turn rather than 400 the whole ask.
+    while msgs and msgs[0]["role"] != "user":
+        msgs.pop(0)
+    msgs.append({"role": "user", "content": user})
+    return msgs
+
+
 def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
-        usage_log: Optional[list] = None, operation: str = "cook_ask") -> str:
+        usage_log: Optional[list] = None, operation: str = "cook_ask",
+        history: Optional[list] = None) -> str:
     """Answer `question` as Chef, grounded in `recipe`. Returns plain text
     suitable for TTS. `operation` is the billing/journal label — the cook view
     uses the default "cook_ask"; the Chef's-Notes chat passes "notes_chat" so its
-    spend is legible per-feature in bcc_token_journal. Appends a token-journal
-    entry to `usage_log` if provided. Raises on a hard API failure — the caller
-    (endpoint) maps that to a friendly 503 rather than leaking a stack trace."""
+    spend is legible per-feature in bcc_token_journal. `history` = prior
+    exchanges for this recipe+user (from cook_chat), oldest first, so Chef
+    remembers the conversation. Appends a token-journal entry to `usage_log` if
+    provided. Raises on a hard API failure — the caller (endpoint) maps that to
+    a friendly 503 rather than leaking a stack trace."""
     question = (question or "").strip()
     if not question:
         return "What would you like to know?"
@@ -219,7 +258,7 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
         operation=operation, model=MODEL,
         max_tokens=_MAX_TOKENS,
         system=CHEF_SYSTEM,
-        messages=[{"role": "user", "content": user}],
+        messages=_with_history(history, user),
     )
     # usage auto-journaled by the gateway (operation="cook_ask").
     parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]
@@ -227,7 +266,7 @@ def ask(recipe: dict, question: str, *, current_step: Optional[int] = None,
 
 
 def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = None,
-               usage_log: Optional[list] = None) -> dict:
+               usage_log: Optional[list] = None, history: Optional[list] = None) -> dict:
     """Voice-loop entry: ONE Sonnet call that either ANSWERS the cook's question
     or, when the utterance is clearly navigation phrased conversationally
     ("okay I'm done, move on" / "take me back one"), returns a structured
@@ -251,7 +290,7 @@ def ask_or_act(recipe: dict, question: str, *, current_step: Optional[int] = Non
         max_tokens=_MAX_TOKENS,
         system=CHEF_SYSTEM,
         tools=[_NAVIGATE_TOOL],
-        messages=[{"role": "user", "content": user}],
+        messages=_with_history(history, user),
     )
     # usage auto-journaled by the gateway (operation="cook_ask").
 
@@ -284,7 +323,7 @@ def _grounding_context(recipe: dict, current_step: Optional[int]) -> str:
 
 
 def ask_or_act_stream(recipe: dict, question: str, *, current_step: Optional[int] = None,
-                      usage_log: Optional[list] = None):
+                      usage_log: Optional[list] = None, history: Optional[list] = None):
     """STREAMING voice variant — delegates the LLM/streaming/tool/journaling
     mechanics to the generic `voice_agent` engine, supplying only the recipe
     domain specifics (Chef persona, recipe grounding, step-navigation tool). A
@@ -300,7 +339,7 @@ def ask_or_act_stream(recipe: dict, question: str, *, current_step: Optional[int
     for ev in voice_agent.stream_grounded(
         system=CHEF_SYSTEM, context=ctx, question=question, model=MODEL,
         max_tokens=_MAX_TOKENS, tools=[_NAVIGATE_TOOL], operation="cook_ask",
-        usage_log=usage_log,
+        usage_log=usage_log, history=history,
     ):
         if ev["type"] == "action" and ev.get("name") == "navigate":
             inp = ev.get("input") or {}

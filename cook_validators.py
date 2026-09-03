@@ -249,6 +249,43 @@ def v_reuse_referenced(cook: CookMetadata) -> List[str]:
     return out
 
 
+def v_single_deployment(cook: CookMetadata) -> List[str]:
+    """An ingredient enters the method EXACTLY ONCE — directly in a step OR via a
+    deployed bundle, never both (and never via two different bundles). The John's
+    Pesto rework mentioned basil with its full 70 g at step 1 directly AND again at
+    step 5 inside the basil+salt bundle, garlic at steps 2 and 3 — reading as
+    duplicated ingredients to the cook. `v_reuse_referenced` can't see this: the
+    direct id and the bundle id differ, so its per-id re-use map never fires.
+    Exempt: layered staples / to_taste (seasoning in stages is not a re-entry) and
+    direct refs that explicitly point BACK (reused_from_step, or definiteness
+    'reserved'/'from-step') — those are acknowledged re-uses, not fresh mentions."""
+    out = []
+    layered = set()
+    for i in cook.ingredients:
+        if i.to_taste or _LAYERED_STAPLE.search(i.id) or _LAYERED_STAPLE.search(i.name or ""):
+            layered.add(i.id)
+    members_by_bundle = {b.id: {m.ingredient_id for m in b.members} for b in cook.bundles}
+    # ingredient -> [(step, via)] fresh entries only
+    entries: dict = {}
+    for s in sorted(cook.steps, key=lambda x: x.number):
+        for si in s.ingredients:
+            if si.reused_from_step is not None or (si.definiteness or "") in ("reserved", "from-step"):
+                continue  # acknowledged re-use, not a fresh entry
+            if si.ingredient_id in members_by_bundle:      # a bundle deployed as a unit
+                for mid in members_by_bundle[si.ingredient_id]:
+                    if mid not in layered:
+                        entries.setdefault(mid, []).append((s.number, f"bundle {si.ingredient_id}"))
+            elif si.ingredient_id not in layered:
+                entries.setdefault(si.ingredient_id, []).append((s.number, "directly"))
+    for iid, hits in entries.items():
+        if len(hits) > 1:
+            where = " and ".join(f"step {n} ({via})" for n, via in hits)
+            out.append(f"ingredient {iid}: enters the method more than once — {where} — "
+                       f"deploy it once (prep lives in the mise OR a step, never both; "
+                       f"a real later re-use points back via reused_from_step)")
+    return out
+
+
 def v_has_steps(cook: CookMetadata) -> List[str]:
     """A rework with ZERO steps is not a cook — it's a truncated or failed emit. All
     the other gates iterate OVER steps, so they pass vacuously on an empty method and
@@ -314,6 +351,7 @@ VALIDATORS = [
     ("mise-complete", v_mise_complete),
     ("appearance-order", v_appearance_order),
     ("reuse-referenced", v_reuse_referenced),
+    ("single-deployment", v_single_deployment),
     ("bundling", v_bundling),
     ("substeps", v_substeps),
 ]
