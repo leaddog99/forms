@@ -126,6 +126,12 @@ RESEARCH RULES
 11. Record the date checked.
 12. EVERY row must carry at least one entry in `source_links` — the URLs you actually used to
     verify that row. A claim we cannot trace is a claim we cannot publish.
+12b. A RANK REQUIRES INDEPENDENT EVIDENCE. At least one source_link per ranked row must be
+    an independent review/testing source (a supplied source document, or an independent
+    publication you verified) — the manufacturer's own site and retailer listings verify
+    identity and price but can NEVER alone justify a ranking (a maker's page saying its pot
+    is good is not evidence). If no independent source covers a would-be pick, do not rank
+    it: declare the slot in omitted_slots instead — that honesty is the correct answer.
 13. Prefer the SUPPLIED SOURCE DOCUMENTS below over anything you find by searching. They were
     retrieved directly from the publishers named in them. If a supplied document contradicts
     a search result, the supplied document wins, and say so in `why_it_ranks_here`.

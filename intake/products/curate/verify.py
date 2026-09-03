@@ -145,6 +145,47 @@ def _check_requested(data: dict, grouped: dict) -> list:
     return errs
 
 
+def check_independent_sources(data: dict) -> list:
+    """The Bean Pot lesson (2026-09-03): a pick ranked #3 on the strength of the
+    MANUFACTURER'S OWN product page — rule 12 required source_links, nothing
+    required them independent. Deterministic backstop under prompt rule 12b:
+    a ranked row whose every source_link is self-referential — same host as its
+    own buy_link/amazon_link, any amazon domain, or a host whose name contains
+    the manufacturer's name (squashed) — has NO independent evidence and errors.
+    Heuristic on purpose: an unrecognized independent host passes (the prompt
+    carries the judgment); the common self-citation shapes cannot.
+    Editors-choice rows are exempt — curator provenance, honesty rules apply."""
+    def _host(u: str) -> str:
+        m = re.search(r"https?://([^/]+)", str(u or "").lower())
+        return (m.group(1) if m else "").removeprefix("www.")
+
+    def _squash(s: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(s or "").lower())
+
+    errs = []
+    for label, r in rows_of(data):
+        if label == "editors-choice":
+            continue
+        links = [u for u in (r.get("source_links") or []) if str(u or "").strip()]
+        if not links:
+            continue  # rule-12 emptiness is validate_shape/enrich territory
+        own_hosts = {h for h in (_host(r.get("buy_link")), _host(r.get("amazon_link"))) if h}
+        maker = _squash(r.get("manufacturer"))
+        independent = []
+        for u in links:
+            h = _host(u)
+            if not h or h in own_hosts or "amazon." in h:
+                continue
+            if maker and len(maker) >= 5 and maker[:12] in _squash(h):
+                continue  # the maker's own site under another spelling
+            independent.append(u)
+        if not independent:
+            errs.append(f"{label} ({r.get('product_title')!r}): every source_link is the "
+                        f"product's own maker/retailer page — a rank requires at least one "
+                        f"independent review source, or the slot goes to omitted_slots")
+    return errs
+
+
 def _declared_omissions(data: dict) -> tuple:
     """(set of (section_lower, place), errors) from `omitted_slots` — THE HONEST GAP
     (2026-09-03, the Water-Bath-Canner padding): a ranking place may be unfilled ONLY
@@ -200,6 +241,7 @@ def _check_places(rows: list, declared: set, section: str, label: str) -> list:
 def validate_shape(data: dict) -> list:
     """Structural errors. Empty list = the artifact may be built."""
     declared, errs = _declared_omissions(data)
+    errs += check_independent_sources(data)
     overall = data.get("overall_top_three")
     if not isinstance(overall, list) or not overall:
         errs.append("overall_top_three must contain at least one ranked row")

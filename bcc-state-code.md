@@ -8130,3 +8130,27 @@ forced the padding. Curator: build the honest gap.
   jar rack… reject electric/digital/pressure/multi-cookers, bare
   racks/kits") — criteria + boundary + title gate all live and visibly
   working; next canner run may now honestly return two.
+
+## Session log — 2026-09-03 (later still) — a rank requires independent evidence
+
+Curator: "the third beanpot entry did not refer to any review at all —
+how did it get in?" Through a loophole open since day one: rule 12
+required source_links non-empty, nothing required them INDEPENDENT —
+Bean Pot #3 (Robinson Ransbottom) was ranked entirely on the
+manufacturer's own product page, forced in by the old exactly-three
+contract when the supplied docs covered only two bean pots.
+
+* **Rule 12b SHIPPED**: at least one source_link per ranked row must be
+  an independent review/testing source; maker sites and retail listings
+  verify identity/price, never justify a rank; no independent coverage →
+  omitted_slots (the honest gap makes this affordable).
+* **check_independent_sources SHIPPED** (validate_shape): deterministic
+  backstop — a row whose every source_link is self-referential (host of
+  its own buy_link/amazon_link, any amazon domain, or maker-name host)
+  errors. Proven on the stored Bean Pot: convicts #3 exactly, clears
+  the Emile Henry and La Chamba rows. Editors-choice exempt (curator
+  provenance; its own honesty rules).
+* The three collection defenses now stack: class boundary (what it IS)
+  → independent evidence (who VOUCHES) → honest gap (running out is a
+  correct answer). Stored Bean Pot #3 stays visible until a re-run or a
+  curator exclude.
