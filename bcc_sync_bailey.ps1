@@ -61,11 +61,17 @@ if ($WithDbs) {
   # Each copy checked; one retry after 10s; failures collected and FAILED LOUDLY
   # at the end (exit 1) — the 08-26 run buried three rclone errors under exit 0.
   $failed = @()
+  # Plain nested arrays: comma-separated @(src,dst) pairs inside @() stay nested.
+  # The previous ",@(...)" unary-comma rows DOUBLE-wrapped each pair, so $c[1]
+  # (the destination) was $null on every row — rclone then failed all four
+  # copies with 'can''t use empty string as a path', and the retry/failure
+  # messages printed blank names (caught 2026-09-02; -WithDbs had never
+  # actually delivered a file through this loop).
   $copies = @(
-    ,@($newestDb.FullName,       "$dst/recipes.db"),
-    ,@($newestTr.FullName,       "$dst/training.db"),
-    ,@("$adam\media_latest.db",  "$dst/media.db"),
-    ,@("$adam\env.backup",       "$dst/.env"))
+    @($newestDb.FullName,       "$dst/recipes.db"),
+    @($newestTr.FullName,       "$dst/training.db"),
+    @("$adam\media_latest.db",  "$dst/media.db"),
+    @("$adam\env.backup",       "$dst/.env"))
   # SIZE-VERIFIED copies: on 2026-08-26 rclone delivered recipes.db 13MB SHORT
   # of the source (503,853,056 vs 517,066,752) and still exited 0 — BAILEY then
   # failed startup with 'database disk image is malformed'. Trust nothing:
