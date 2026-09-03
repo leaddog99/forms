@@ -465,8 +465,10 @@
           </div>
           <div class="ed-field"><label>Product class *</label>
             <input id="f_class" value="${escapeHtml(v.product_class||'')}" placeholder="Loaf pans">
-            <p class="muted" style="font-size:.78rem;margin:5px 0 0">What gets researched. Write it
-              the way a reviewer would title a roundup.</p></div>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">What gets researched.
+              <b>Singular</b> by convention ("Muffin Pan", "Water Bath Canner") — it's the join
+              key naming one product type, and must match the class-registry spelling. Plural
+              only when the purchasable unit is a set ("Steak Knives", "Mason Jars").</p></div>
           <div class="ed-field"><label>Editor's choice — a product to pin (optional)</label>
             <input id="f_ec" value="${escapeHtml(v.editors_choice||'')}" placeholder="Breville Control Grip BSB510XL">
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">A product the review sites

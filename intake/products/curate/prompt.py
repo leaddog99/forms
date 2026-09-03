@@ -324,7 +324,10 @@ def build_prompt(product_class: str, categories: list, docs: list | None = None,
     categories = normalize_categories(categories)
     weights = weights or DEFAULT_WEIGHTS
 
-    objective = [f"The top three {product_class} overall."]
+    # Number-neutral phrasing: class names are canonically SINGULAR ("Muffin
+    # Pan" — they are join keys naming a product type), so the sentence can't
+    # lean on the name being plural.
+    objective = [f"The top three products in the {product_class} class, overall."]
     if categories:
         objective.append("The top three products in each requested category.")
     objective += ["A normal retailer purchase link.",
