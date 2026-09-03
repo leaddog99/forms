@@ -8004,3 +8004,51 @@ UPDATE.
   runs inside each rework now).
 * /jobs/{id}/spawn 409 guard + dishes-page drain fallback belt: live
   at next server restart (claim already protects).
+
+## Session log — 2026-09-03 (evening) — the extract gets an honest progress bar, the dots learn commerce, and 19 of 20 reworks land
+
+* **Bookmarklet wait analyzed** (curator: "recipe gen has been taking a
+  long time"): the 38s Jamaican extracts = ~28s streamed haiku
+  markdown_to_recipe (26K in / 3.2K out — jamdownfoodie has JSON-LD but
+  NO Recipe object, so the 4s fast lane legitimately can't fire; no
+  harvest bug) + ~7s sequential tail. Tail (chapter + Moz + identity)
+  now runs PARALLEL via copy_context threads (~5s saved); the rest is
+  model-bound.
+* **Real status + progress bar SHIPPED** (curator: "real status updates
+  ... maybe even a progress bar"): extract_progress.py in-memory
+  registry; extract-from-markdown takes progress_token, stamps every
+  phase; the ALREADY-streamed LLM call now counts its deltas → true
+  within-call pct (chars/11K expected); GET /extract-progress/{token};
+  form polls ~1/s → bar + English phase line, funny rotation demoted to
+  flavor below. Smoke-tested live end-to-end (temp API key, deleted).
+* **Dish commerce dots SHIPPED**: /dishes slim rows carry
+  classes_proposed/approved (one GROUP BY on dish_product_classes);
+  dot = amber/hollow for attention (still wins), full green = has
+  approved classes, half green = proposals waiting, accent = fresh but
+  no classes; meta line says it in English ("2 approved · 3 to
+  review"); "Sort: incomplete first". editor-shell.css carries the two
+  new flag states.
+* **Similar-recipes panel bug FIXED** (curator report): results
+  lingered across recipe loads + no close. resetSimilarResults() on
+  loadForm + populateFormFromRecipe; panel got a header + ✕.
+* **Re-rework campaign: 19/20 landed on v2.3** (~$14 total). The
+  gates earned three refinements along the way, each from a real hold:
+  (1) fidelity auditor drops blank-quote junk rows; (2) divided use
+  fully understood — different amounts pass however deployed, equal
+  splits pass when the later portion's label says so ("remaining
+  dill"), same-whole-amount-twice still flags (regression-tested);
+  (3) prep TIMING is never a violation (mise pre-slicing ≠ technique
+  change) unless the source depends on it. Prompt teaches the
+  split-label convention. STILL HELD: Tandoori Chicken with Raita
+  (transient appearance-order miss; v2.2 cook remains live — one real
+  fidelity defect outstanding there).
+
+### Open
+
+* Tandoori Chicken re-rework: one more attempt someday (~$0.55), or
+  cook it and let the next edit trigger it.
+* Extract progress: extract-from-url path still has no phase stamps
+  (bookmarklet/markdown path was the ask); wire if the URL box feels
+  slow too.
+* Recipes list rows are ~5KB each in the paged fetch — slim-projection
+  win available if it ever matters.

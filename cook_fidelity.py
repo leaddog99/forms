@@ -73,6 +73,11 @@ ahead; source whisks by hand, plan uses a food processor; source folds, plan sti
 NOT violations: the plan adds a doneness cue the source lacks; the plan pre-measures
 into bundles; the plan splits or merges steps; the plan tightens wording; a change
 that IS declared in technique_changes (even loosely — judge intent, not word match).
+WHEN prep happens is NEVER a violation: moving slicing/chopping/grating from a mid-
+method moment into the up-front mise is the rework's whole job, as long as the FORM
+matches ("thinly sliced" ahead of time vs "thinly slice, then add" = the same
+technique, faithful). Only report a prep move if the source explicitly depends on
+the timing (e.g. "grate directly over the hot pasta so it melts on contact").
 
 Report via report_fidelity exactly once. Be precise and quote the source. An empty
 violations list is the correct answer for a faithful plan — do not invent nitpicks.
@@ -149,5 +154,10 @@ def check_fidelity(rework_input: dict, cook: CookMetadata, log: Callable,
         f"restore the source's technique/form, or (only if objectively better for the "
         f"result) keep it AND declare it in technique_changes"
         for v in violations
+        # A violation with a blank quote is auditor noise, not a finding — an
+        # empty source_says row held Gambas al Ajillo through two paid repair
+        # passes (2026-09-03 batch) because there was nothing to actually fix.
         if isinstance(v, dict)
+        and (v.get("source_says") or "").strip()
+        and (v.get("plan_says") or "").strip()
     ]

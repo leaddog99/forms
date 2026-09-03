@@ -79,6 +79,7 @@ def markdown_to_recipe(
     timings: Optional[dict] = None,
     prompts: Optional[dict] = None,
     usage_log: Optional[list] = None,
+    on_progress=None,
 ) -> Optional[dict]:
     """Extract a full RecipeModel from canonical markdown in one LLM call.
 
@@ -163,6 +164,23 @@ def markdown_to_recipe(
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     ) as stream:
+        if on_progress is not None:
+            # The stream was already here (SDK-timeout insurance) but its
+            # deltas were discarded. Counting them gives the caller REAL
+            # within-call progress for the form's bar: a full recipe emits
+            # ~8-13K chars of JSON, so chars/11K ≈ fraction done. Clamped —
+            # a long recipe overshooting the estimate parks near the top
+            # instead of wrapping. Callback failures never sink an extract.
+            _EXPECTED_CHARS = 11_000
+            seen = 0
+            for text in stream.text_stream:
+                seen += len(text)
+                if on_progress is None:
+                    continue  # keep draining the stream for get_final_message
+                try:
+                    on_progress(min(seen / _EXPECTED_CHARS, 0.97))
+                except Exception:
+                    on_progress = None  # a broken callback is dropped, not retried
         response = stream.get_final_message()
     # usage is auto-journaled by the gateway (operation="markdown_to_recipe").
 

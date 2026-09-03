@@ -269,8 +269,15 @@ def v_single_deployment(cook: CookMetadata) -> List[str]:
             return ""
         return f"{(a.imperial or '').strip().lower()}|{(a.metric or '').strip().lower()}"
 
+    # A label that SAYS it is a split portion ("remaining dill", "half the
+    # yogurt", "rest of the herbs") marks legitimate divided use even when the
+    # amount strings match (a 50/50 split carries the same amount twice).
+    _SPLIT_LABEL = re.compile(
+        r"\b(remaining|rest of|the rest|half|other half|divided|second half|"
+        r"reserved|for (?:the )?(?:garnish|serving|finishing))\b", re.IGNORECASE)
+
     members_by_bundle = {b.id: {m.ingredient_id: m for m in b.members} for b in cook.bundles}
-    # ingredient -> [(step, via, amount_key)] fresh entries only
+    # ingredient -> [(step, via, amount_key, label)] fresh entries only
     entries: dict = {}
     for s in sorted(cook.steps, key=lambda x: x.number):
         for si in s.ingredients:
@@ -280,27 +287,34 @@ def v_single_deployment(cook: CookMetadata) -> List[str]:
                 for mid, m in members_by_bundle[si.ingredient_id].items():
                     if mid not in layered:
                         entries.setdefault(mid, []).append(
-                            (s.number, f"bundle {si.ingredient_id}", _amt_key(m.amount)))
+                            (s.number, f"bundle {si.ingredient_id}", _amt_key(m.amount),
+                             m.label or ""))
             elif si.ingredient_id not in layered:
                 entries.setdefault(si.ingredient_id, []).append(
-                    (s.number, "directly", _amt_key(si.amount)))
+                    (s.number, "directly", _amt_key(si.amount), si.label or ""))
     for iid, hits in entries.items():
         if len(hits) < 2:
             continue
-        # DIVIDED USE is legitimate and stays silent: the same ingredient split
-        # across different bundles in DIFFERENT portions (milk-infusion sugar +
-        # custard sugar). The pesto-class defect is the SAME amount appearing
-        # twice (prep mention + use mention), or a direct ref re-entering with
-        # no back-reference — those we flag.
-        all_bundles = all(via != "directly" for _, via, _ in hits)
-        amounts = {amt for _, _, amt in hits}
-        if all_bundles and len(amounts) == len(hits):
+        # DIVIDED USE is legitimate and stays silent, recognized two ways:
+        #   • every entry carries a DIFFERENT amount (marinade ¼ cup + raita
+        #     2 cups; milk-infusion sugar + custard sugar), regardless of how
+        #     each portion is deployed; or
+        #   • the later entries' LABELS declare the split ("remaining dill",
+        #     "half the yogurt") — covers equal 50/50 splits.
+        # The pesto-class defect this gate exists for is the SAME whole amount
+        # appearing twice with nothing calling itself a portion (prep mention +
+        # use mention of one quantity).
+        amounts = {amt for _, _, amt, _ in hits}
+        if len(amounts) == len(hits):
             continue
-        where = " and ".join(f"step {n} ({via})" for n, via, _ in hits)
+        if all(_SPLIT_LABEL.search(lbl) for _, _, _, lbl in hits[1:]):
+            continue
+        where = " and ".join(f"step {n} ({via})" for n, via, _, _ in hits)
         out.append(f"ingredient {iid}: enters the method more than once — {where} — "
-                   f"deploy it once (prep lives in the mise OR a step, never both; "
-                   f"a real later re-use points back via reused_from_step; a genuine "
-                   f"divided use splits DIFFERENT portions across bundles)")
+                   f"deploy it once (prep lives in the mise OR a step, never both; a "
+                   f"real later re-use points back via reused_from_step; a genuine "
+                   f"divided use gives each portion its own amount, or labels the "
+                   f"later portion as such: 'remaining …', 'half the …')")
     return out
 
 

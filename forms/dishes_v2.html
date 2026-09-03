@@ -63,6 +63,7 @@
       <div class="ed-controls" id="controls">
         <select id="sort" aria-label="Sort dishes">
           <option value="attention">Sort: needs attention</option>
+          <option value="progress">Sort: incomplete first</option>
           <option value="name">Sort: name (A–Z)</option>
           <option value="recipes">Sort: recipes kept (most)</option>
           <option value="updated">Sort: last refreshed</option>
@@ -255,10 +256,29 @@
     const isError = (d) => !!(d.last_run_status && String(d.last_run_status).startsWith('error'));
     const neverRun = (d) => !d.last_refreshed;
     function needsAttention(d){ return neverRun(d) || isError(d) || !!d.is_due; }
+    // Sidebar dot (2026-09-03): attention states keep the dot (amber/hollow) —
+    // a broken dish must stay loud. A healthy dish shows its COMMERCE standing:
+    // full green = has approved product classes, half green = proposals waiting
+    // for review, plain accent = refreshed but no classes proposed yet.
     function flag(d){
       if (neverRun(d)) return 'none';
       if (isError(d) || d.is_due) return 'warn';
+      if ((d.classes_approved || 0) > 0) return 'approved';
+      if ((d.classes_proposed || 0) > 0) return 'proposed';
       return 'ok';
+    }
+    // English commerce standing for the meta line + the progress sort.
+    function commerceText(d){
+      const p = d.classes_proposed || 0, a = d.classes_approved || 0;
+      if (a && p) return `${a} approved · ${p} to review`;
+      if (a) return `${a} approved`;
+      if (p) return `${p} to review`;
+      return 'no classes yet';
+    }
+    function commerceRank(d){   // lower = less complete (sorts first)
+      if ((d.classes_approved || 0) > 0) return 2;
+      if ((d.classes_proposed || 0) > 0) return 1;
+      return 0;
     }
     function num(v, dgt = 4){ if (v == null) return '—'; const n = Number(v); return isFinite(n) ? n.toFixed(dgt) : '—'; }
     function cap(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
@@ -267,7 +287,7 @@
     function warnHint(msg){ const h = $('#hint'); if (h){ h.style.color = 'var(--ed-warn)'; h.textContent = msg; } }
     function listMeta(d){
       if (neverRun(d)) return `${escapeHtml(d.chapter || '—')} · never run`;
-      return `${escapeHtml(d.chapter || '—')} · ${d.last_run_count ?? 0} kept · ${fmtDate(d.last_refreshed)}`;
+      return `${escapeHtml(d.chapter || '—')} · ${d.last_run_count ?? 0} kept · ${fmtDate(d.last_refreshed)} · ${commerceText(d)}`;
     }
 
     function sortedDishes(){
@@ -278,6 +298,11 @@
         name:    (a, b) => a.name.localeCompare(b.name),
         recipes: (a, b) => (b.last_run_count || 0) - (a.last_run_count || 0) || a.name.localeCompare(b.name),
         updated: (a, b) => String(b.last_refreshed || '').localeCompare(String(a.last_refreshed || '')) || a.name.localeCompare(b.name),
+        // Least commerce-complete first: no classes → proposals waiting →
+        // approved. Within the "waiting" band, the biggest review queues lead.
+        progress: (a, b) => (commerceRank(a) - commerceRank(b))
+          || ((b.classes_proposed || 0) - (a.classes_proposed || 0))
+          || a.name.localeCompare(b.name),
       };
       return rows.sort(sorters[sortKey] || sorters.attention);
     }

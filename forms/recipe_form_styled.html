@@ -1530,6 +1530,22 @@
       color: var(--accent);
     }
 
+    /* Real extract progress (2026-09-03): the bar + phase line are the honest
+       status; the rotating .processing-text below stays as flavor. */
+    .extract-progress { margin-top: 14px; width: min(340px, 80%); margin-left: auto; margin-right: auto; }
+    .extract-progress-bar {
+      height: 8px; border-radius: 4px; overflow: hidden;
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+    .extract-progress-fill {
+      height: 100%; width: 0%; border-radius: 4px;
+      background: var(--accent);
+      transition: width 0.45s ease;
+    }
+    .extract-progress-phase {
+      margin-top: 8px; font-size: 0.88em; font-weight: 600; color: var(--text);
+    }
+
     /* Modal dialog */
     dialog#errorDialog,
     dialog#filterDialog {
@@ -2121,6 +2137,10 @@
         <div class="drop-zone-hint">AI will extract the recipe and fill the form</div>
         <div class="drop-zone-spinner">
           <div class="spinner"></div>
+          <div class="extract-progress" id="extractProgress" hidden>
+            <div class="extract-progress-bar"><div class="extract-progress-fill" id="extractProgressFill"></div></div>
+            <div class="extract-progress-phase" id="extractProgressPhase"></div>
+          </div>
           <div class="processing-text">Extracting recipe...</div>
         </div>
         <input type="file" id="extractImageInput" accept=".md,text/markdown,image/*,.pdf,application/pdf" />
@@ -2165,7 +2185,14 @@
             style="font:inherit;font-size:.9em;padding:8px 14px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:8px;cursor:pointer">
             ✨ Show top recipes like this
           </button>
-          <div id="similarResults" hidden style="margin-top:10px;border:1px solid var(--line);border-radius:11px;padding:6px"></div>
+          <div id="similarResults" hidden style="margin-top:10px;border:1px solid var(--line);border-radius:11px;padding:6px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 8px 6px">
+              <span style="font-size:.82em;color:var(--muted);font-weight:600">Top recipes like this</span>
+              <button type="button" id="similarClose" title="Close"
+                style="font:inherit;font-size:1em;line-height:1;border:none;background:none;color:var(--muted);cursor:pointer;padding:2px 4px">✕</button>
+            </div>
+            <div id="similarList"></div>
+          </div>
         </div>
 
         <!-- Header rework 2026-08-24: TITLE featured full-width, the source
@@ -3006,6 +3033,51 @@
         target.textContent = list[i];
       }, intervalMs);
       return function stop() { clearInterval(id); };
+    }
+
+    // === Real extract progress (2026-09-03) =============================
+    // The rotating novelty messages stay as flavor, but the primary status is
+    // now honest: the server stamps each pipeline phase into an in-memory
+    // registry keyed by a client-minted token (passed as progress_token on the
+    // extract POST), and the big AI call streams true within-call progress.
+    // We poll GET /extract-progress/<token> ~1/s and drive a bar + phase line.
+    const EXTRACT_PHASE_LABELS = {
+      'reading':         'Reading the page…',
+      'cache-check':     'Checking for a previous extraction…',
+      'cache-hit':       'Found a previous extraction — loading it…',
+      'translating':     'Translating the page to English…',
+      'structured-data': 'Reading the site’s structured recipe data…',
+      'ai-extract':      'AI is reading the recipe…',
+      'equipment':       'Working out the equipment list…',
+      'finalizing':      'Classifying, scoring the source, building the dish identity…',
+      'done':            'Done — filling the form…',
+      'error':           'The extraction hit a problem…',
+    };
+    function startExtractProgress(token) {
+      const wrap = document.getElementById('extractProgress');
+      const fill = document.getElementById('extractProgressFill');
+      const phaseEl = document.getElementById('extractProgressPhase');
+      if (!wrap || !fill || !phaseEl) return function () {};
+      wrap.hidden = false;
+      fill.style.width = '2%';
+      phaseEl.textContent = 'Starting…';
+      const id = setInterval(async () => {
+        try {
+          const r = await fetch(`${API}/extract-progress/${encodeURIComponent(token)}`);
+          if (!r.ok) return;
+          const s = await r.json();
+          if (!s || !s.phase) return;
+          fill.style.width = `${Math.max(2, Math.round((s.pct || 0) * 100))}%`;
+          const label = EXTRACT_PHASE_LABELS[s.phase] || s.phase;
+          const pctTxt = s.phase === 'ai-extract' ? ` ${Math.round((s.pct || 0) * 100)}%` : '';
+          phaseEl.textContent = label + pctTxt;
+        } catch (e) { /* transient poll failures are fine */ }
+      }, 900);
+      return function stop() {
+        clearInterval(id);
+        fill.style.width = '100%';
+        setTimeout(() => { wrap.hidden = true; fill.style.width = '0%'; phaseEl.textContent = ''; }, 600);
+      };
     }
 
     // Manual-from-reject hydrate. Locks the user-id picker to 0
@@ -5359,6 +5431,8 @@
       // they reflect the last extract action, not the loaded record.
       const urlInput = document.getElementById("extractUrlInput");
       if (urlInput) urlInput.value = "";
+      // Similar-recipes panel belongs to the PREVIOUS recipe — never carry it over.
+      resetSimilarResults();
       // Don't clear the trace here — we re-render from the loaded recipe's
       // _extract_trace below if it exists, so a sidebar click on a saved
       // recipe shows the timings/prompt from when it was last extracted.
@@ -6252,9 +6326,23 @@
     // "Show top recipes like this": temp-embeds the current recipe (server
     // side) and returns the curated master recipes most similar to it,
     // ranked by rank_score. Recipe→recipe similarity — no dish-match step.
+    // Close + reset for the similar-recipes panel. Called by the ✕, and by
+    // populateFormFromRecipe — results computed for one recipe must never
+    // linger on the next (2026-09-03 bug: pick a recipe from the browse list
+    // and the PREVIOUS recipe's "top recipes like this" stayed on screen,
+    // with no way to dismiss it).
+    function resetSimilarResults(){
+      const panel = document.getElementById('similarResults');
+      const list = document.getElementById('similarList');
+      if (panel) panel.hidden = true;
+      if (list) list.innerHTML = '';
+    }
+    document.getElementById('similarClose').onclick = resetSimilarResults;
+
     document.getElementById("similarBtn").onclick = async () => {
       const btn = document.getElementById("similarBtn");
-      const out = document.getElementById("similarResults");
+      const panel = document.getElementById("similarResults");
+      const out = document.getElementById("similarList");
       const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g,
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       const name = (document.getElementById('name').value || '').trim();
@@ -6268,7 +6356,7 @@
         recipeCuisine: document.getElementById('recipeCuisine').value || '',
       };
       btn.disabled = true; const lbl = btn.textContent; btn.textContent = "Finding…";
-      out.hidden = false;
+      panel.hidden = false;
       out.innerHTML = '<div style="color:var(--muted);font-size:.88em;padding:6px 8px">Searching our top recipes…</div>';
       try {
         const res = await fetch(`${API}/recipes/similar-master`, {
@@ -7954,6 +8042,8 @@
     async function extractFromMarkdown(file, sourceUrl = '', title = '') {
       dropZone.classList.add('processing');
       const stopRotation = startStatusRotation('extract');
+      const progressToken = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+      const stopProgress = startExtractProgress(progressToken);
 
       try {
         const formData = new FormData();
@@ -7961,6 +8051,7 @@
         if (sourceUrl) formData.append('source_url', sourceUrl);
         if (title) formData.append('title', title);
         formData.append('user_id', document.getElementById('user_id')?.value || '1');
+        formData.append('progress_token', progressToken);
 
         const res = await fetch(`${API}/extract-from-markdown`, {
           method: 'POST',
@@ -7969,6 +8060,7 @@
 
         const result = await res.json();
         stopRotation();
+        stopProgress();
 
         if (res.ok && result.success) {
           // Coopt the hero image: if the bookmarklet captured + uploaded
@@ -8035,6 +8127,7 @@
         }
       } finally {
         stopRotation();
+        stopProgress();
         dropZone.classList.remove('processing');
       }
     }
@@ -8044,6 +8137,8 @@
       // A fresh extract is owned by whoever ran it; no claim affordance.
       const claimBtn = document.getElementById('claimBtn');
       if (claimBtn) claimBtn.style.display = 'none';
+      // Similar-recipes results belong to whatever was loaded before this.
+      resetSimilarResults();
       // The BCC permalink only makes sense for SAVED rows. A fresh extract
       // has a recipe_id (minted by extract) but no DB row yet, so /r/<id>
       // would 404.

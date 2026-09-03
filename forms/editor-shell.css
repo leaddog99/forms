@@ -163,6 +163,10 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-item-flag.ok{ background:var(--accent); }
 .ed-item-flag.warn{ background:var(--ed-warn); }
 .ed-item-flag.none{ border:1.5px solid var(--muted); }
+/* Commerce-pipeline standing (dishes sidebar, 2026-09-03): half green =
+   proposals awaiting review, full green = has approved product classes. */
+.ed-item-flag.proposed{ background:linear-gradient(to right,#3d9a4e 50%,transparent 50%); border:1.5px solid #3d9a4e; }
+.ed-item-flag.approved{ background:#3d9a4e; }
 /* pending = "nothing has happened for this record yet" (e.g. a domain with no
    extracts from any harvest). Yellow: not an error, a to-do. */
 .ed-item-flag.pending{ background:#d9a514; }

@@ -336,11 +336,15 @@ EVERY real change to the cooking goes in `technique_changes` with WHY — a chan
 not write down there is a change you must not make.
 - SINGLE DEPLOYMENT — each ingredient enters the method EXACTLY ONCE: either directly in one \
 step or via one bundle (staged staples/to-taste seasoning exempt; a genuine later re-use \
-points back via reused_from_step/put-aside). Prep work lives in ONE place: if the mise \
-presents an ingredient already prepped ("washed and dried", "halved and cored"), no method \
-step repeats that prep; if prep IS a method step you keep (following the source), the mise \
-presents that ingredient raw. A bundle member's prep_verb/label must match the FORM the \
-source uses at the moment of deployment.
+points back via reused_from_step/put-aside). DIVIDED USE is fine — an ingredient split \
+between a marinade and a sauce, or added half now half at the end — but each portion must \
+carry its OWN amount, and an equal split must SAY so in the later portion's label \
+("remaining dill", "half the yogurt"); the same whole amount written twice reads as a \
+duplicate to the cook. Prep work lives in ONE place: if the mise presents an ingredient \
+already prepped ("washed and dried", "halved and cored"), no method step repeats that prep; \
+if prep IS a method step you keep (following the source), the mise presents that ingredient \
+raw. A bundle member's prep_verb/label must match the FORM the source uses at the moment of \
+deployment.
 - Schedule: give steps duration_minutes, attention (active/passive), depends_on, resource.
 - Bundle the mise: pre-combine ingredients added at the same moment into labeled bundles \
 (combine_note = why); keep separate when combining early harms (excluded_reason). Put \

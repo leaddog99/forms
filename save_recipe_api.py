@@ -3882,9 +3882,23 @@ def list_dishes_endpoint():
     try:
         with _db() as conn:
             dishes = dishes_lib.list_dishes(conn)
+            # Commerce-pipeline standing per dish (the sidebar dot + status
+            # text + "incomplete" sort): one GROUP BY over the proposals
+            # junction — {dish: {'proposed': n, 'approved': n}}.
+            cls_counts: dict = {}
+            try:
+                for dn, st, n in conn.execute(
+                        "SELECT dish_name, status, COUNT(*) FROM dish_product_classes "
+                        "WHERE status IN ('proposed','approved') GROUP BY dish_name, status"):
+                    cls_counts.setdefault(dn, {})[st] = n
+            except sqlite3.OperationalError:
+                pass  # junction not created yet on a fresh install
         out = []
         for d in dishes:
+            cc = cls_counts.get(d.get("name")) or {}
             out.append({
+                "classes_proposed": cc.get("proposed", 0),
+                "classes_approved": cc.get("approved", 0),
                 "name": d.get("name"),
                 "display_name": d.get("display_name"),
                 "chapter": d.get("chapter"),
@@ -9678,16 +9692,37 @@ def _ensure_equipment(recipe: dict, *, path_used: str = "") -> None:
         print(f"[EXTRACT] equipment derive failed: {type(e).__name__}: {e}")
 
 
-def _finalize_extract_recipe(recipe, *, url_norm=None, usage_log=None) -> None:
+def _finalize_extract_recipe(recipe, *, url_norm=None, usage_log=None,
+                             progress_token: str = "") -> None:
     """The per-recipe enrichment triplet every extract endpoint runs AFTER the extract
     cache write: cookbook chapter + Moz PA/DA/OU scoring + dish identity card. Converges
     the identical block that was copy-pasted across extract-from-{image,pdf,markdown}
     (each step idempotent / best-effort). Equipment is deliberately NOT here — it runs
     BEFORE the cache write (see _ensure_equipment) so a fast-lane recipe's derived tools
-    are cached; chapter/moz/identity intentionally re-stamp per serve as before."""
-    _attach_chapter(recipe, usage_log=usage_log)
-    _attach_moz_scoring(recipe, url_norm)
-    _attach_identity_card(recipe, usage_log=usage_log)
+    are cached; chapter/moz/identity intentionally re-stamp per serve as before.
+
+    PARALLEL since 2026-09-03 (the bookmarklet-wait session): the three attaches are
+    independent (two small LLM calls + one Moz HTTP call) and ran back to back —
+    ~7s serial, ~5s of it identity. Each runs under contextvars.copy_context() so
+    the llm gateway's buffered-journal contextvars survive the thread hop; the
+    per-attach usage_log appends are GIL-atomic list.append calls."""
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor
+    import extract_progress as _ep
+    _ep.update(progress_token, "finalizing", 0.82)
+    jobs = [
+        (lambda: _attach_chapter(recipe, usage_log=usage_log)),
+        (lambda: _attach_moz_scoring(recipe, url_norm)),
+        (lambda: _attach_identity_card(recipe, usage_log=usage_log)),
+    ]
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futs = [pool.submit(contextvars.copy_context().run, fn) for fn in jobs]
+        for f in futs:
+            try:
+                f.result()
+            except Exception as e:  # each step was already best-effort when serial
+                print(f"[FINALIZE] attach step failed (non-fatal): {e}")
+    _ep.update(progress_token, "finalizing", 0.97)
 
 
 # A BCC self-permalink — our own page, nothing to screenshot.
@@ -12655,6 +12690,7 @@ async def extract_from_markdown_endpoint(
     source_url: str = Form(""),
     title: str = Form(""),
     user_id: int = Form(PLACEHOLDER_USER_ID),
+    progress_token: str = Form(""),
 ):
     # PAID WORK — an authenticated caller only. These endpoints each spend
     # real LLM money, and until 2026-07-30 every one of them was reachable
@@ -12699,6 +12735,9 @@ async def extract_from_markdown_endpoint(
         prompts: dict = {}
         usage_log: list = []
         import llm  # gateway: attribute migrated-module usage to this recipe/user
+        import extract_progress
+        _prog = progress_token.strip()[:64]
+        extract_progress.update(_prog, "reading", 0.02)
         llm.enter(recipe_id=new_recipe_id, user_id=user_id)
         t_start = time.perf_counter()
 
@@ -12708,10 +12747,13 @@ async def extract_from_markdown_endpoint(
         # the lookup even runs. This mirrors the URL path's speculative
         # fast-path: never do expensive work for a result we already have.
         url_norm = normalize_url(effective_url) if effective_url else ""
+        extract_progress.update(_prog, "cache-check", 0.04)
         recipe, prior_fp, _src_fp, cache_status = _extract_cache_lookup(url_norm, usage_log=usage_log)
         drift = False
         path_used = "cache-hit" if recipe is not None else ""
         translation_meta_bm: dict | None = None
+        if recipe is not None:
+            extract_progress.update(_prog, "cache-hit", 0.85)
 
         # Cache HIT that carries no equipment — a row cached from the JSON-LD fast lane
         # (or before equipment was derived at extract time). Derive it now and HEAL the
@@ -12740,6 +12782,7 @@ async def extract_from_markdown_endpoint(
                 page_lang_bm = detect_language("", headers=None, visible_text=effective_md)
                 if is_non_english(page_lang_bm):
                     t_xlate0 = time.perf_counter()
+                    extract_progress.update(_prog, "translating", 0.06)
                     try:
                         xr = translate_extraction_markdown(effective_md, page_lang_bm)
                         xlate_ms = int((time.perf_counter() - t_xlate0) * 1000)
@@ -12777,6 +12820,7 @@ async def extract_from_markdown_endpoint(
             # extract_recipe_from_url().
             if envelope.get("jsonld"):
                 print(f"[EXTRACT] has_jsonld=True -> trying jsonld-direct fast lane")
+                extract_progress.update(_prog, "structured-data", 0.30)
                 try:
                     from extract.jsonld_to_recipe import best_recipe_jsonld
                     block = best_recipe_jsonld(envelope["jsonld"])
@@ -12797,6 +12841,12 @@ async def extract_from_markdown_endpoint(
 
             if recipe is None:
                 path_used = "markdown-llm"
+                extract_progress.update(_prog, "ai-extract", 0.08)
+                # The streamed LLM call reports real within-call progress:
+                # its output-char fraction maps onto the 0.08→0.75 slice of
+                # the overall bar (it IS ~70% of the wall time on this path).
+                _llm_progress = (lambda frac: extract_progress.update(
+                    _prog, "ai-extract", 0.08 + 0.67 * frac)) if _prog else None
                 try:
                     recipe = await asyncio.to_thread(
                         markdown_to_recipe,
@@ -12807,16 +12857,19 @@ async def extract_from_markdown_endpoint(
                         timings=timings,
                         prompts=prompts,
                         usage_log=usage_log,
+                        on_progress=_llm_progress,
                     )
                 except Exception as e:
                     print(f"[ERROR] Extraction failed: {e}")
                     print(f"[ERROR] Traceback: {traceback.format_exc()}")
                     _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+                    extract_progress.finish(_prog, ok=False)
                     raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
                 if recipe is None:
                     print("[ERROR] Extraction failed - no result")
                     _journal_usage(usage_log, recipe_id=new_recipe_id, user_id=user_id)
+                    extract_progress.finish(_prog, ok=False)
                     raise HTTPException(status_code=500, detail="Failed to extract recipe from markdown")
 
             # Stamp translation provenance on cache row (so refetch sees it).
@@ -12824,6 +12877,7 @@ async def extract_from_markdown_endpoint(
                 _stamp_translation_provenance(recipe, translation_meta_bm)
 
             # Every extract carries equipment (fast lane emits none). See _ensure_equipment.
+            extract_progress.update(_prog, "equipment", 0.77)
             _ensure_equipment(recipe, path_used=path_used)
 
             # Page screenshot — DEFERRED on this path, because this is the one a
@@ -12839,8 +12893,10 @@ async def extract_from_markdown_endpoint(
         timings["path"] = path_used
         _stamp_cache_timings(timings, status=cache_status, url_normalized=url_norm, drift=drift)
 
-        _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log)
+        _finalize_extract_recipe(recipe, url_norm=url_norm, usage_log=usage_log,
+                                 progress_token=_prog)
         recipe["id"] = new_recipe_id
+        extract_progress.finish(_prog)
         # Journal LLM token usage before returning.
         return _extract_response(
             recipe, new_recipe_id=new_recipe_id, timings=timings, prompts=prompts,
@@ -12851,6 +12907,11 @@ async def extract_from_markdown_endpoint(
     except Exception as e:
         print(f"[ERROR] Error extracting from markdown: {e}")
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        try:
+            import extract_progress as _ep
+            _ep.finish(progress_token.strip()[:64], ok=False)
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Extraction error: {e}") from e
 
 
@@ -13447,6 +13508,20 @@ async def extract_from_url_endpoint(
         if msg.startswith("Failed to fetch/convert URL"):
             raise HTTPException(status_code=502, detail=msg) from e
         raise HTTPException(status_code=500, detail=msg) from e
+
+
+@app.get("/extract-progress/{token}")
+def extract_progress_endpoint(token: str):
+    """Live phase/percent for an in-flight extract (extract_progress.py). The
+    form mints a token, passes it as `progress_token` on the extract POST, and
+    polls here ~1/s to drive the real status line + progress bar. Unknown token
+    → not started yet (the POST may not have reached the phase stamps): the
+    client keeps its indeterminate state. Cheap dict read, no auth needed —
+    a token is an unguessable client-minted UUID and the payload is a phase
+    name and a float."""
+    import extract_progress
+    state = extract_progress.get(token.strip()[:64])
+    return state or {"phase": None, "pct": 0.0, "done": False}
 
 
 @app.get("/screenshot-status")
