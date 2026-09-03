@@ -8084,3 +8084,27 @@ expect or reject?" Built as TWO layers:
   confirm ("stovetop pot with jar rack; reject electric/digital
   canners, pressure canners, bare racks/baskets, multi-cookers").
 * Consider surfacing identity_warning more loudly in the picks UI/brief.
+
+## Session log — 2026-09-03 (late) — class names go singular: 74 rows renamed, clean
+
+Convention settled with the curator: class names are SINGULAR ("Muffin
+Pan") — they are join keys naming a product type; plural only where the
+purchasable unit is a set (Steak Knives, Mason Jars). Editor hint +
+prompt grammar updated earlier (ca19b25); then the DATA:
+
+* **Renamed 8 plural classes across 10 tables, 74 rows, zero
+  collisions, verified clean + no orphans**: Sheet/Loaf/Meatloaf/
+  Titanium Pan(s), Bread Slicer(s), Mixing Bowl(s), Instant-read/Candy
+  Thermometer(s) — in products, reviews, product_review_links,
+  product_class_ws_map, curated_collections (name+product_class),
+  curated_collection_picks, dish_product_classes, commerce_impressions,
+  and the product_classes registry. Transactional, every row printed.
+* Deliberately NOT renamed (set-unit or non-product): Steak Knives,
+  Mason Jars, Canning Sets, Cumin Seeds, Cinnamon Sticks, Juniper
+  Berries, Sun-dried Tomatoes, the *Cookbooks/*Tours/Programs rows.
+* Pre-existing gap surfaced (not caused by the renames): 8 junction
+  class_names have NO product_classes registry row (Alsatian Cookbooks,
+  food tours, Bean Pot…) — the name-string join misses them; the
+  class↔collection FK migration should sweep these.
+* result_json/brief_text snapshots inside renamed collections still say
+  the plural — they regenerate on next run; display keys all agree now.
