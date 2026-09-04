@@ -368,7 +368,7 @@ def _asin_from_search(r: dict) -> tuple:
     whatever this returns. -> (asin, note) or ("", "")."""
     from urllib.parse import quote_plus
     try:
-        from intake.products import easyparser as ep
+        from intake.products import amazon_rainforest as ep   # Traject, 2026-09-04
     except Exception:
         return "", ""
     q = " ".join(x for x in (r.get("manufacturer", ""), r.get("model_number", ""),

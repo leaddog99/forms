@@ -8444,3 +8444,31 @@ doing that IN THE RECIPE and saving it."
   + enrich_provenance merge (ethnicity). Backfilled 163 stored rows
   (101 distinct folds, printed). Server-side extract picks up the
   canonicalizer at next restart; job spawns have it now.
+
+## Session log — 2026-09-04 (provider) — EasyParser retired mid-failure; Amazon search back on Traject
+
+The 129-run cookbook batch died at ~run 18: EasyParser 402 Payment
+Required — and the curator found it before I did ("look at the job
+status..they are all failing" → "you should be doing that"). Lesson
+into permanent memory (feedback_monitor_batches): sample a batch's
+FIRST results after launch; every driver gets a 3-consecutive-
+identical-failures circuit breaker; recognize account-level errors
+(402/401/quota) and stop, don't march on.
+
+* **EasyParser RETIRED** (curator: "schlock provider — can't extend,
+  can't send me a message, can't validate my phone"). Amazon search is
+  back on Traject Data's Rainforest — whose key already powers the
+  identity/variant lookups. NEW amazon_rainforest.search_url: drop-in
+  contract match for easyparser.search_url (type=search with the raw
+  saved URL); consumers swapped (collection_refresh handler +
+  _asin_from_search); easyparser.py stays for params_from_url (pure
+  URL parsing, no API). Live-tested: 24 items, full metadata, 1 credit.
+* **Cookbook URLs switched to relevance sort**: the smoke test showed
+  s=review-rank surfacing globally top-rated books loosely matching
+  ("Mastering the Art of French Cooking" atop a Jamaican search) —
+  fine for high-specificity equipment queries, wrong for broad book
+  queries. 119 pending URLs fixed; Wilson still re-ranks within
+  candidates.
+* Remaining ~119 cookbook runs relaunched on Rainforest with the
+  breaker driver + a live Monitor on the output. 17 EasyParser-era
+  successes stand.

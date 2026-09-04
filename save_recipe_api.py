@@ -4400,7 +4400,7 @@ def collection_get_endpoint(name: str, order: str = "wilson"):
 async def collection_create_endpoint(request: Request):
     """Create a collection. Auto-classifies it against the WS taxonomy from its name+keyword
     (the same matcher the commerce join uses) unless the curator pinned a category."""
-    from intake.products import collections_store as cst, easyparser as ep
+    from intake.products import collections_store as cst, easyparser as ep  # params_from_url only (no API call)
     body = await request.json()
     try:
         with _db() as conn:
@@ -9333,7 +9333,9 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
 
     Params: collection (required, the name — identity, never the URL off argv).
     """
-    from intake.products import collections_store as cst, easyparser as ep, amazon_widget as aw
+    # 2026-09-04: Amazon search back on Traject Data's Rainforest (EasyParser retired
+    # — account unmanageable). amazon_rainforest.search_url keeps the same contract.
+    from intake.products import collections_store as cst, amazon_rainforest as ep, amazon_widget as aw
     params = job.get("params") or {}
     name = (params.get("collection") or "").strip()
     if not name:

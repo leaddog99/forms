@@ -129,6 +129,60 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
     }
 
 
+def search_url(url: str, *, pages: int = 1, exclude_sponsored: bool = True) -> dict:
+    """Run a saved Amazon search URL through Rainforest (Traject Data) —
+    drop-in replacement for easyparser.search_url, SAME return contract:
+    {ok, items, count, credits, warnings, params, error}.
+
+    2026-09-04: the curator pulled the plug on EasyParser ("schlock provider —
+    can't extend, can't message them, phone validation broken") and moved
+    Amazon search back to Traject's parser, whose key already powers the
+    identity lookups here. Rainforest accepts the raw search URL via `url`
+    (type=search), so the collection's saved URL stays the query, verbatim.
+    """
+    from urllib.parse import urlparse, parse_qs
+    q = parse_qs(urlparse(url or "").query)
+    warn = []
+    if "/s" not in (urlparse(url or "").path or ""):
+        warn.append(f"not an Amazon search path (/s): {url!r}")
+    params_note = {"keyword": (q.get("k") or [""])[0], "url": url, "provider": "rainforest"}
+    if not params_note["keyword"] and not q.get("rh"):
+        return {"ok": False, "error": "; ".join(warn) or "unusable URL",
+                "warnings": warn, "params": params_note}
+    items, seen = [], set()
+    total_credits = 0
+    try:
+        for page in range(1, max(1, pages) + 1):
+            d = _get({"type": "search", "url": url, "page": page})
+            total_credits += 1
+            for p in (d.get("search_results") or []):
+                asin = (p.get("asin") or "").strip()
+                sponsored = bool(p.get("sponsored") or p.get("is_sponsored"))
+                if not asin or asin in seen or (exclude_sponsored and sponsored):
+                    continue
+                seen.add(asin)
+                price = p.get("price") or {}
+                items.append({
+                    "asin": asin, "title": p.get("title", ""),
+                    "brand": p.get("brand", ""),
+                    "rating": p.get("rating"),
+                    "ratings_total": p.get("ratings_total"),
+                    "price": price.get("raw", "") if isinstance(price, dict) else "",
+                    "image": p.get("image", ""),
+                    "link": p.get("link", ""),
+                    "position": p.get("position"),
+                    "is_sponsored": sponsored,
+                    "categories": [c.get("name") for c in (p.get("categories") or [])
+                                   if isinstance(c, dict) and c.get("name")],
+                })
+    except Exception as e:
+        if not items:
+            return {"ok": False, "error": str(e), "warnings": warn, "params": params_note}
+        warn.append(f"page fetch stopped early: {e}")
+    return {"ok": True, "items": items, "count": len(items), "warnings": warn,
+            "params": params_note, "credits": {"used": total_credits}}
+
+
 def variant_asins(asin: str, *, domain: str = DEFAULT_DOMAIN) -> dict:
     """Every ASIN in this product's variation FAMILY — all colours, all sizes.
 
