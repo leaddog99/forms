@@ -8364,3 +8364,27 @@ on every path.
   DISABLES BCC-Drill, kills orphan servers, health-checks). Curator
   runs ON BAILEY from an elevated PowerShell:
   powershell -ExecutionPolicy Bypass -File C:\Users\john\PycharmProjects\forms\bcc_install_service_bailey.ps1
+
+## Session log — 2026-09-04 (final) — the five re-runs land; the first honestly-empty collection
+
+* **Electric Hand Mixer**: 8/8 sources, Breville Handy Mix Scraper #1
+  (ATK+SE winner) / Cuisinart / KitchenAid 7-Speed. Evidence clean.
+* **Red Wine Vinegar**: Laurent du Clos #1 (ATK taste-test favorite),
+  #2-3 honestly open — no independent on-class taste test exists.
+* **Water Bath Canner**: THE PRESTO IS GONE. Granite Ware alone at #1,
+  #2-3 declared open. Boundary + evidence + honest gap all converged.
+* **Ground Nutmeg**: the FIRST honestly-EMPTY collection — all three
+  places declared with reasons (no independent review evaluates any
+  ground nutmeg product), zero sources used, zero picks persisted.
+  Contract extended for it (d8b4a4e): fully-declared empty ranking =
+  valid; #2-without-#1 still fails. Curator options: capture a spice
+  review via bookmarklet, add search terms, or park the class.
+* **Utility Knife**: transformed by the kitchen-sense criteria + fresh
+  docs — box cutters (Milwaukee Fastback/DeWalt) OUT; MAC Professional
+  6" / Togiharu Petty 5.9" / Misono Petty now, ATK+SE evidence, clean.
+  The homonym-class lesson: a class name with a hardware twin NEEDS
+  class_criteria from day one.
+
+Audit debt now: title-phrasing flags across ~43 collections = ack-able
+eyeball work in the UI, plus re-run-before-publish policy. No fleet
+refresh needed.
