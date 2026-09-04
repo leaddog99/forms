@@ -8221,3 +8221,26 @@ real problems. Diagnosed against the stored run + cache, all fixed:
 * CURATOR FLOW for CR: open the CR review logged in → review
   bookmarklet → next run of that class reads the full text as the CR
   document.
+
+## Session log — 2026-09-04 (cont.) — the capture link becomes explicit, and parchment redeems itself
+
+* **"How does the CR review get linked to the class? I didn't specify
+  anything"** — it was fuzzy-inferred (extractor guesses product_class;
+  overlay string-matches). Now explicit + visible: reviews editor gains
+  a Product-class field (datalist of collection classes; update path
+  already accepted it), matcher extracted to public matched_captures()
+  (shared, single path), new GET /curated-collections/{name}/
+  captured-reviews + a 📎 line on the collection page showing exactly
+  which captures join the next run (or how to fix a miss).
+* **Editors-choice pin never blocks an earned rank** (prompt clarified
+  da5a94b) — curator asked whether to delete the King Arthur pin to
+  avoid duplication; answer: keep it (insurance), duplication is two
+  display slots + one deduped catalog row.
+* **Parchment re-run: total convergence.** ATK retrieved (84 on-class
+  hits — the SERP retry class of failure gone this run), CR = the
+  curator's 24,798-char CAPTURE via bookmarklet-capture replacing the
+  7,682-char paywall teaser, 9/9 sources retrieved, The Kitchn unused
+  WITH not_used_reason. Result: King Arthur #1 ON THE MERITS, EC slot
+  says "same physical product as our overall #1", all picks on-class,
+  no PFAS-suspect products. Every defense built these two days fired
+  correctly in one run.

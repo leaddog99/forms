@@ -647,6 +647,14 @@
           <div class="pc-row2">
             ${reviewerField}
             <div class="ed-field"><label>Title</label><input id="f_title" value="${escapeHtml(v.title||'')}" placeholder="The Best Loaf Pans of 2026"></div>
+          <div class="ed-field"><label>Product class — the curated-collection join key</label>
+            <input id="f_pclass" list="dl_pclass" value="${escapeHtml(v.product_class||'')}" placeholder="Parchment Paper">
+            <datalist id="dl_pclass"></datalist>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">This string is how the capture
+              reaches curated-collection runs as a source document (matched with singular/plural
+              give). The extractor guessed it at capture time — correct it here to the collection's
+              exact class name if the guess missed. The collection page shows which captures
+              matched.</p></div>
           </div>
           <div class="ed-field"><label>Taxonomy — search the product category (headline › section › subcategory › leaf)</label>
             <input id="f_tax" list="dl_tax" value="${escapeHtml(curTax)}" placeholder="Type to search… e.g. Loaf Pans">
@@ -671,6 +679,15 @@
       $('#cancelForm').addEventListener('click', () => { mode='view'; renderDetail(); });
       $('#saveForm').addEventListener('click', () => saveForm(isEdit ? existing : null));
       (isEdit ? $('#f_title') : $('#f_reviewer')).focus();
+      // Collection classes for the product-class picker (fail-soft — a plain
+      // typed value works the same; the list just prevents typos).
+      fetch('/curated-collections').then(r => r.ok ? r.json() : []).then(list => {
+        const dl = $('#dl_pclass');
+        if (!dl || !Array.isArray(list)) return;
+        const seen = new Set();
+        dl.innerHTML = list.map(c => c.product_class).filter(pc => pc && !seen.has(pc) && seen.add(pc))
+          .sort().map(pc => `<option value="${escapeHtml(pc)}">`).join('');
+      }).catch(() => {});
     }
 
     function resolveTax(){
@@ -690,6 +707,7 @@
         let savedId;
         if (isEdit){
           const body = { title: $('#f_title').value.trim(),
+            product_class: $('#f_pclass').value.trim(),
             url: $('#f_url').value.trim(), last_updated: $('#f_updated').value.trim(),
             captured_at: $('#f_captured').value.trim(), rating_scale: $('#f_scale').value.trim(),
             buying_guide: $('#f_guide').value.trim(), notes: $('#f_notes').value.trim() };

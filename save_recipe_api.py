@@ -4623,6 +4623,25 @@ def curated_pick_restore_endpoint(name: str, slot: str):
     return {"collection": name, "slot": slot, "excluded": False}
 
 
+@app.get("/curated-collections/{name}/captured-reviews")
+def curated_captured_reviews_endpoint(name: str):
+    """Which bookmarklet captures will join this collection's next run — the
+    visibility half of the capture↔class linkage (the matching is fuzzy string
+    logic on the capture's product_class; this line lets the curator SEE it and
+    fix a miss by editing the review's product class in the Reviews editor)."""
+    from intake.products import curated_collections as ccs
+    from intake.products.curate.pipeline import matched_captures
+    with _db() as conn:
+        coll = ccs.get_collection(conn, name)
+    if not coll:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    caps = matched_captures(coll["product_class"], coll.get("search_terms") or [])
+    return [{"review_id": c["review_id"], "reviewer": c["reviewer"],
+             "product_class": c["product_class"], "title": c["title"],
+             "url": c["url"], "captured_at": c["captured_at"],
+             "chars": len(c["markdown"]), "digest": c["digest"]} for c in caps]
+
+
 @app.post("/curated-collections/{name}/picks/{slot}/ack-warning")
 def curated_pick_ack_warning_endpoint(name: str, slot: str, payload: dict = Body(default={})):
     """Curator marks a pick's identity_warning as reviewed-and-fine (or un-marks

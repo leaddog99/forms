@@ -231,6 +231,7 @@
           <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
         </div>
         ${c.last_error ? `<div class="banner"><b>Last run failed.</b> ${escapeHtml(c.last_error)}</div>` : ''}
+        <div id="capturedLine" class="muted" style="font-size:.82rem;margin:2px 0 4px"></div>
         <div id="joblog" hidden></div>
 
         <section class="ed-block">
@@ -276,6 +277,21 @@
             <div id="brief">${escapeHtml(c.brief_text)}</div></details>
         </section>` : ''}`;
 
+      // Which bookmarklet captures will join the NEXT run — the visible half of
+      // the capture↔class linkage. A capture missing here means its product_class
+      // string didn't match: fix it in the Reviews editor.
+      fetch(`/curated-collections/${encodeURIComponent(selected)}/captured-reviews`)
+        .then(r => r.ok ? r.json() : []).then(caps => {
+          const el = $('#capturedLine');
+          if (!el) return;
+          if (!Array.isArray(caps) || !caps.length){
+            el.innerHTML = 'No captured reviews linked — capture one with the review bookmarklet, or fix a capture’s <a href="/forms/reviews.html">product class</a>.';
+            return;
+          }
+          el.innerHTML = '📎 Captured reviews joining the next run: ' + caps.map(x =>
+            `<b>${escapeHtml(x.reviewer||'?')}</b> — “${escapeHtml((x.title||'').slice(0,60))}” (${x.digest?'digest':`${Math.round(x.chars/1000)}K chars`}, class “${escapeHtml(x.product_class)}”)`
+          ).join(' · ');
+        }).catch(() => {});
       $('#back').addEventListener('click', () => { selected=null; detail=null; renderList(); renderDetail(); });
       $('#editBtn').addEventListener('click', () => { mode='edit'; renderDetail(); });
       $('#runBtn').addEventListener('click', doRun);
