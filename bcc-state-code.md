@@ -8388,3 +8388,29 @@ on every path.
 Audit debt now: title-phrasing flags across ~43 collections = ack-able
 eyeball work in the UI, plus re-run-before-publish policy. No fleet
 refresh needed.
+
+## Session log — 2026-09-04 (night) — the Nerano incident: sibling classes must never snap
+
+Curator: alla Nerano (Campania) carried a "Greek Cookbooks" chip with a
+fully ITALIAN rationale. Mechanism proven: the proposer emits "Italian
+Cookbooks", registry has no such class, and class_registry.snap's
+embedding match landed it on "Greek Cookbooks" at d=0.578 — inside the
+0.60 gate, because the shared head noun dominates the embedding and the
+QUALIFIER (the whole identity difference) is embedding-invisible. The
+dish-alias qualifier-sibling lesson, now on the product side.
+
+* **SIBLING VETO in snap()**: deterministic rule atop the distance — if
+  BOTH names carry tokens the other lacks (italian vs greek), they are
+  sibling classes, never the same; refuse the snap, keep new_class=1.
+  One-sided extras still snap (Dutch Oven→Dutch Ovens (5-6 qt), Egg
+  Yolk Separator→Egg Separators). Four-way regression tested.
+* **Five casualties fixed in data** (all still 'proposed', caught
+  before approval): Nerano, alla colatura, Braciole, Brown Butter &
+  Sage, Bruschetta — all renamed Greek→Italian Cookbooks new_class=1
+  (approval mints the registry row). Zero Greek-labeled Italian
+  rationales remain.
+* **Class word order question (curator: "Cookbooks Greek"?)** — settled
+  NO: names are load-bearing natural language (SERP queries, prompt
+  vocabulary, briefs); category grouping belongs to the registry
+  `family` column, and word order wouldn't have prevented the snap bug
+  (same tokens). UI can group by family if the flat list hurts.

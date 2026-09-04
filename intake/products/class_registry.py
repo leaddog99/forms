@@ -130,8 +130,30 @@ def snap(conn: sqlite3.Connection, candidate: str, *, max_dist: float = 0.60) ->
         d = float(np.linalg.norm(qn - vn))       # L2 on unit vectors (matches dish match)
         if d < best_d:
             best_name, best_family, best_d = name, family, d
+
+    # SIBLING VETO (2026-09-04, the Nerano incident): "Italian Cookbooks"
+    # snapped onto "Greek Cookbooks" at d=0.578 — the shared head noun
+    # dominates the embedding and the QUALIFIER is what distinguishes sibling
+    # classes (the qualifier-sibling lesson from dish aliases). Deterministic
+    # rule on top of the distance: if BOTH names carry tokens the other lacks
+    # (italian vs greek), they are siblings, never the same class — refuse the
+    # snap and let the candidate stand as a NEW class. One-sided extra tokens
+    # still snap ("Dutch Oven"→"Dutch Ovens (5-6 qt)", "Egg Yolk Separator"→
+    # "Egg Separators").
+    def _toks(s: str) -> set:
+        t = re.sub(r"\([^)]*\)", " ", str(s or "").lower())
+        t = re.sub(r"[^a-z0-9 ]+", " ", t)
+        stop = {"the", "a", "an", "of", "for", "and", "with"}
+        return {w[:-1] if w.endswith("s") else w
+                for w in t.split() if w and w not in stop}
+
+    snapped = best_d <= max_dist
+    if snapped and best_name:
+        ct, tt = _toks(candidate), _toks(best_name)
+        if (ct - tt) and (tt - ct):
+            snapped = False
     return {"name": best_name, "family": best_family,
-            "distance": round(best_d, 4), "snapped": best_d <= max_dist}
+            "distance": round(best_d, 4), "snapped": snapped}
 
 
 def _now() -> str:
