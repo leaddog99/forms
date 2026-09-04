@@ -59,6 +59,100 @@ def cache_path(product_class: str, suffix: str = "docs.json") -> str:
     return os.path.join(CACHE_DIR, f"{_slug(product_class)}.{suffix}")
 
 
+def _overlay_captured_reviews(docs: list, product_class: str, terms: list | None) -> list:
+    """THE HUMAN RUNG, wired (2026-09-04): bookmarklet-captured review pages from
+    the `reviews` store join the supplied documents. This is how the curator's own
+    subscription reaches the run — they read Consumer Reports logged in, capture
+    with the review bookmarklet, and the page text becomes the CR document; no
+    credentials stored, no paywall fought (the Milk Street doctrine).
+
+    Matching: the capture's product_class equals the collection's class or any
+    fallback term (case-insensitive, singular/plural fuzz on the last word).
+    A capture REPLACES a seated source's doc when that source failed or came back
+    off-class/empty (label match on reviewer); an unseated reviewer is APPENDED as
+    an extra document. A capture with no stored page_markdown contributes a
+    structured digest built from its extracted products — older captures predate
+    the markdown column but their substance still counts."""
+    import sqlite3
+
+    def _norm(s):
+        return re.sub(r"[^a-z0-9 ]+", " ", str(s or "").lower()).strip()
+
+    def _variants(name):
+        n = _norm(name)
+        w = n.split()
+        if not w:
+            return set()
+        outs = {n}
+        if w[-1].endswith("s"):
+            outs.add(" ".join(w[:-1] + [w[-1][:-1]]))
+        else:
+            outs.add(" ".join(w[:-1] + [w[-1] + "s"]))
+        return outs
+
+    want = set()
+    for t in [product_class] + [x for x in (terms or []) if str(x or "").strip()]:
+        want |= _variants(t)
+
+    try:
+        conn = sqlite3.connect(V.DB)
+        rows = conn.execute(
+            "SELECT r.review_id, r.reviewer, r.product_class, r.title, r.url, "
+            "r.captured_at, r.page_markdown FROM reviews r").fetchall()
+    except Exception as e:
+        print(f"[CURATE] captured-review overlay skipped: {e}")
+        return docs
+
+    def _capture_variants(pclass: str) -> set:
+        # Captures often carry a qualifier — "Loaf Pans (1 lb)" — that the
+        # collection class doesn't; match with and without the parenthetical.
+        outs = _variants(pclass)
+        stripped = re.sub(r"\([^)]*\)", " ", str(pclass or ""))
+        outs |= _variants(stripped)
+        return outs
+
+    matches = [r for r in rows if _capture_variants(r[2]) & want]
+    for rid, reviewer, pclass, title, url, captured_at, md in matches:
+        if not (md or "").strip():
+            # Digest fallback: the extraction's structured substance as prose.
+            try:
+                items = conn.execute(
+                    "SELECT name, brand, tier, summary, price_at_test FROM review_products "
+                    "WHERE review_id = ? ORDER BY id", (rid,)).fetchall()
+            except Exception:
+                items = []
+            if not items:
+                continue
+            lines = [f"# {title or pclass} — {reviewer} (captured review digest)",
+                     f"URL: {url}", f"Captured: {captured_at}", ""]
+            for name, brand, tier, summary, price in items:
+                lines.append(f"- {tier or 'reviewed'}: {brand or ''} {name}".strip()
+                             + (f" — ${price}" if price else ""))
+                if summary:
+                    lines.append(f"  {summary}")
+            md = "\n".join(lines)
+        entry = {"label": reviewer or "Captured review", "url": url or "",
+                 "markdown": md, "via": "bookmarklet-capture",
+                 "class_hits": len(md) // 1000, "error": ""}
+        seat = next((d for d in docs
+                     if _norm(d.get("label")) == _norm(reviewer)), None)
+        if seat is not None:
+            if not (seat.get("markdown") or "").strip():
+                print(f"[CURATE]   {reviewer:<24} captured page replaces the failed fetch "
+                      f"({len(md)} chars, {captured_at or 'undated'})")
+                seat.update(entry, label=seat["label"])
+            else:
+                # Both exist: the CAPTURE wins — it's the page a human chose,
+                # often the full text behind a paywall the fetch only teased.
+                print(f"[CURATE]   {reviewer:<24} captured page replaces the fetched one "
+                      f"({len(md)} chars vs {len(seat.get('markdown') or '')})")
+                seat.update(entry, label=seat["label"])
+        else:
+            print(f"[CURATE]   {reviewer:<24} captured review ADDED ({len(md)} chars)")
+            docs.append(entry)
+    return docs
+
+
 def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None = None,
                should_cancel: Callable[[], bool] | None = None) -> list:
     """The named sources, CACHED on disk by class. `terms` = the curator's fallback
@@ -75,7 +169,7 @@ def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None 
             state = (f"{len(d['markdown']):>6} chars | {_doc_title(d['markdown'])}"
                      if d.get("markdown") else f"FAILED — {d.get('error')}")
             print(f"[CURATE]   {d['label']:<24} {state}")
-        return docs
+        return _overlay_captured_reviews(docs, product_class, terms)
 
     import realrank_research as rr
     print(f"[CURATE] fetching named sources for: {product_class}"
@@ -88,9 +182,11 @@ def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None 
         print(f"[CURATE]   {d['label']:<24} {state}")
     if should_cancel and should_cancel():
         raise KeyboardInterrupt("cancelled after fetching sources")
+    # Cache holds the FETCH results only; captures overlay after, on every load,
+    # so a new bookmarklet capture takes effect without a refresh.
     with open(path, "w", encoding="utf-8") as f:
         json.dump(docs, f)
-    return docs
+    return _overlay_captured_reviews(docs, product_class, terms)
 
 
 def research(product_class: str, categories=None, *, docs: list | None = None,

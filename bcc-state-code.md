@@ -8192,3 +8192,32 @@ real problems. Diagnosed against the stored run + cache, all fixed:
   (the "last rung is human") — curator call per source.
 * Still pending from earlier: stale-pick re-enrich backfill (13 ASINs,
   38 images) — offered, not yet approved.
+
+## Session log — 2026-09-04 (cont.) — SERP waits examined, and the human rung finally wired
+
+* **"Are we waiting long enough for the SERP result?"** — the wait was
+  fine (60s HTTP, 3 network retries); the hole was a DELIVERED response
+  carrying a transient failure (rate-limit/overloaded) or an empty page,
+  both accepted on first sight. _scaleserp now retries transient
+  provider errors through the same budget; the sources fetcher's
+  empty-retry breather 2s→4s. Live-verified the ATK query returns its
+  parchment review as hit #1.
+* **CR subscription → the review bookmarklet, wired end to end** (the
+  Milk Street doctrine: no stored credentials, no wall-fighting; the
+  curator reads logged-in, one click captures). Was aspiration in a
+  docstring — now real: reviews.page_markdown column stores the
+  captured page (ingest stamps it; re-capture refreshes); 3 legacy
+  captures backfilled from review_ingest job params; NEW
+  _overlay_captured_reviews in fetch_docs joins captures to every run's
+  supplied documents — a capture REPLACES a seated source's failed OR
+  fetched doc (the human-chosen page wins, e.g. full text behind a
+  paywall teaser), an unseated reviewer is APPENDED; missing markdown
+  falls back to a structured digest from review_products; qualified
+  class names ("Loaf Pans (1 lb)") match their collection. Overlay runs
+  on the cache path too — a new capture takes effect with no refresh.
+* Verified live against store data: Serious Eats loaf-pan capture
+  replaces a failed seat (47,759 chars); Dutch Oven pulls ATK's full
+  91,947-char captured page + two digests.
+* CURATOR FLOW for CR: open the CR review logged in → review
+  bookmarklet → next run of that class reads the full text as the CR
+  document.

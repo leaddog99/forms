@@ -94,6 +94,14 @@ def ingest_review(conn: sqlite3.Connection, md: str, *, url: str = "",
     })
     rid = review["review_id"]
 
+    # Keep the captured page ITSELF, not just its distillate — a re-capture
+    # refreshes it. This is what lets a curated run read the curator's own
+    # logged-in copy of a paywalled review as a supplied document.
+    if (md or "").strip():
+        conn.execute("UPDATE reviews SET page_markdown = ? WHERE review_id = ?",
+                     (md, rid))
+        conn.commit()
+
     # On (re-)ingest, fill EMPTY header fields from the extraction — a review created empty by an
     # earlier import (or a first pass that found nothing) gets its title/date/scale/buying-guide
     # backfilled — without clobbering anything the curator already set.

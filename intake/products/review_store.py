@@ -104,6 +104,15 @@ def ensure_reviews_table(conn: sqlite3.Connection) -> None:
     rp_have = {r[1] for r in conn.execute("PRAGMA table_info(review_products)")}
     if "asin" not in rp_have:
         conn.execute("ALTER TABLE review_products ADD COLUMN asin TEXT")
+    # THE CAPTURED PAGE ITSELF (2026-09-04, the CR-subscription bridge): the
+    # bookmarklet has always SENT the full page markdown, and the extractor kept
+    # only its structured distillate. Stored now, the capture becomes a supplied
+    # SOURCE DOCUMENT for curated-collection runs — the curator's own logged-in
+    # read of a paywalled review (Consumer Reports, Milk Street pattern) reaches
+    # the research model verbatim, no wall-fighting.
+    r_have = {r[1] for r in conn.execute("PRAGMA table_info(reviews)")}
+    if "page_markdown" not in r_have:
+        conn.execute("ALTER TABLE reviews ADD COLUMN page_markdown TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_rp_asin ON review_products(asin)")
     # WS-taxonomy classification (the curator's single type-ahead pick): the review's place in the
     # 4-level ws_categories tree (headline > section > subcategory > leaf), stored as the id + cached
