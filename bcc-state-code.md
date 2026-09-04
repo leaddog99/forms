@@ -8244,3 +8244,15 @@ real problems. Diagnosed against the stored run + cache, all fixed:
   says "same physical product as our overall #1", all picks on-class,
   no PFAS-suspect products. Every defense built these two days fired
   correctly in one run.
+
+## Session log — 2026-09-04 (cont.) — the stale-pick backfill lands
+
+Surgical re-enrich over 68 pre-Sep-1 picks (scratchpad script; canonical
+V.enrich machinery, needy rows only, ranks/prose untouched, every cell
+printed): **49 picks updated — ASIN coverage 85%→92%, images 62%→87%**,
+10 ASINs recovered by form-guarded search, 45 owner-scored, 47 gained
+retailer offers. 11 identity REJECTIONS got honest identity_warnings
+(review with the new ack checkbox — some may be old picks whose listing
+moved). Remaining blanks are structural (tours/affiliate programs,
+artisan/D2C products with no Amazon presence). 2 histogram parse
+notes ("percentages total 0.0%") — known widget-parse edge, unfixed.
