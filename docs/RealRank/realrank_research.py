@@ -261,7 +261,7 @@ def fetch_source_docs(product, sites=SOURCE_SITES, max_workers=4, should_cancel=
                     if hits:
                         break
                     if attempt == 1:
-                        time.sleep(2.0)
+                        time.sleep(4.0)
                         print(f"    [SOURCES] empty SERP for {q!r} — retrying once")
                 # Keep ONLY results actually on that publisher's site (see _host_ok).
                 for h in hits:

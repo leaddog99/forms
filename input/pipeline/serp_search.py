@@ -17,6 +17,7 @@ filter=0 (no Google similar-page collapsing), optional early-stop at `want`.
 from __future__ import annotations
 
 import os
+import re
 import time
 import requests
 
@@ -254,9 +255,32 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
         org = data.get("organic_results") or []
         if not org:
             ri = data.get("request_info") or {}
-            if not ri.get("success"):  # surface a real error (e.g. out of credits), not a silent 0
-                print(f"  [scaleserp] page {p}: {ri.get('message') or data.get('error')}")
-            break
+            if not ri.get("success"):
+                # A DELIVERED failure can still be transient (rate limit, engine
+                # overloaded, temporary) — the ATK parchment case (2026-09-04)
+                # accepted one such page instantly and a whole named source
+                # vanished from the run. Retry those through the same budget the
+                # network errors get; only a non-transient message (credits,
+                # bad request) stops on first sight.
+                msg = str(ri.get("message") or data.get("error") or "")
+                if re.search(r"rate|limit|overload|temporar|try again|timeout|busy",
+                             msg, re.I):
+                    attempts, backoff = _serp_retry_cfg()
+                    for extra in range(2, attempts + 1):
+                        print(f"  [scaleserp] page {p}: transient provider error "
+                              f"({msg[:60]}) — retry {extra}/{attempts} in {backoff}s")
+                        time.sleep(backoff)
+                        data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
+                                              label="scaleserp", page=p)
+                        org = (data or {}).get("organic_results") or []
+                        if org:
+                            break
+                        ri = (data or {}).get("request_info") or {}
+                        msg = str(ri.get("message") or (data or {}).get("error") or "")
+                if not org:
+                    if not ri.get("success"):  # real error (e.g. out of credits), not a silent 0
+                        print(f"  [scaleserp] page {p}: {msg or 'unsuccessful response'}")
+                    break
         for it in org:
             link = it.get("link") or it.get("url") or ""
             if link and link not in seen:
