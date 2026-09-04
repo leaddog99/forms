@@ -299,6 +299,11 @@ overall_top_three entry, with "place": 1. Analyze it with the SAME rigor: real
 product_title, manufacturer, model_number, typical_price, buy_link; the ASIN rules
 above apply unchanged. It must NOT displace, reorder, or appear in overall_top_three
 or any category — it is a separate, labeled slot with curator provenance.
+THE PIN NEVER BLOCKS AN EARNED PLACE: if the supplied sources independently justify
+ranking this product in overall_top_three (or a category), RANK IT THERE on the
+merits exactly as if no pin existed — the separate editors_choice slot still gets its
+analysis, and its write-up notes plainly that the pick also earned #N in the ranking.
+"Must not displace" means the pin adds no unearned advantage; it never subtracts one.
 Honesty rules for it: if none of the supplied source documents tested this product,
 say so plainly at the START of why_it_ranks_here ("Curator's pick — not tested by
 the supplied sources; ...") and ground the analysis in what CAN be verified
