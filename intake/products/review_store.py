@@ -689,12 +689,13 @@ def get_review(conn: sqlite3.Connection, review_id: str) -> dict | None:
     row = conn.execute(
         "SELECT review_id, reviewer, product_class, category, title, url, last_updated, "
         "captured_at, rating_scale, screenshot_id, notes, ws_category_id, ws_path, "
-        "buying_guide, data FROM reviews WHERE review_id=?", (review_id,)).fetchone()
+        "buying_guide, data, COALESCE(LENGTH(page_markdown), 0) "
+        "FROM reviews WHERE review_id=?", (review_id,)).fetchone()
     if not row:
         return None
     cols = ("review_id", "reviewer", "product_class", "category", "title", "url",
             "last_updated", "captured_at", "rating_scale", "screenshot_id", "notes",
-            "ws_category_id", "ws_path", "buying_guide", "_data")
+            "ws_category_id", "ws_path", "buying_guide", "_data", "page_markdown_chars")
     d = dict(zip(cols, row))
     d["buying_guide"] = d.get("buying_guide") or ""
     try:

@@ -388,6 +388,31 @@
       </div>`;
     }
 
+    // Class-variant give shared by the view-mode join line and the edit-form
+    // snap — mirrors the server matcher (case, singular/plural, parentheticals).
+    function classVariants(name){
+      const outs = new Set();
+      for (const base of [name, String(name||'').replace(/\([^)]*\)/g, ' ')]) {
+        const n = String(base||'').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim().replace(/\s+/g, ' ');
+        if (!n) continue;
+        outs.add(n);
+        const w = n.split(' ');
+        const last = w[w.length-1];
+        outs.add([...w.slice(0,-1), last.endsWith('s') ? last.slice(0,-1) : last+'s'].join(' '));
+      }
+      return outs;
+    }
+    let _collClasses = null;   // fetched once, fail-soft
+    async function collectionClasses(){
+      if (_collClasses) return _collClasses;
+      try {
+        const r = await fetch('/curated-collections');
+        const list = r.ok ? await r.json() : [];
+        _collClasses = [...new Set(list.map(c => c.product_class).filter(Boolean))].sort();
+      } catch(e){ _collClasses = []; }
+      return _collClasses;
+    }
+
     async function renderDetail(){
       if (mode === 'add')  return renderForm(null);
       if (mode === 'edit' && selected){ try { return renderForm(await ensureFull(selected)); } catch(e){ return renderIntro(e); } }
@@ -403,12 +428,15 @@
         <h1 class="ed-title">${escapeHtml(v.reviewer||'(no reviewer)')}</h1>
         <p class="ed-submeta">${escapeHtml(v.title||'')}</p>
         <div class="ed-status-strip">
+          <span class="ed-pill" title="Product class — the curated-collection join key"><i class="d"></i>class: ${escapeHtml(v.product_class||'— none —')}</span>
           <span class="ed-pill" title="WS taxonomy"><i class="d"></i>${escapeHtml(v.ws_path||v.category||'— untaxonomized —')}</span>
           <span class="ed-pill"><i class="d"></i>${items.length} items</span>
           <span class="ed-pill"><i class="d"></i>${linked}/${items.length} linked</span>
           ${v.last_updated?`<span class="ed-pill"><i class="d"></i>upd. ${escapeHtml(v.last_updated)}</span>`:''}
           ${v.rating_scale?`<span class="ed-pill"><i class="d"></i>${escapeHtml(v.rating_scale)}</span>`:''}
+          <span class="ed-pill" title="Page text stored for curated runs"><i class="d"></i>${v.page_markdown_chars?Math.round(v.page_markdown_chars/1000)+'K chars captured':'no page text (digest only)'}</span>
         </div>
+        <div id="classJoinLine" class="muted" style="font-size:.82rem;margin:2px 0 4px"></div>
         <div class="rv-toolbar">
           <button type="button" class="ed-btn" id="editBtn">Edit header</button>
           <button type="button" class="ed-btn" id="resolveBtn">Resolve links</button>
@@ -427,6 +455,20 @@
           ${LibraryShell.urlControl(v.url, {display:true})}
           ${v.captured_at?`<p class="muted" style="margin-top:4px">Captured ${escapeHtml(v.captured_at)}</p>`:''}</section>`;
       wireDetail();
+      // Collection-join status, evaluable WITHOUT entering edit mode (2026-09-04
+      // curator ask): does this class reach a curated collection's runs?
+      collectionClasses().then(classes => {
+        const el = $('#classJoinLine');
+        if (!el) return;
+        const current = v.product_class || '';
+        if (!current){ el.innerHTML = '⚠ No product class — this capture joins no curated run. Edit header to set one.'; return; }
+        const cur = classVariants(current);
+        const hit = classes.find(pc => pc === current)
+          || classes.find(pc => [...classVariants(pc)].some(x => cur.has(x)));
+        el.innerHTML = hit
+          ? `📎 Joins curated collection runs for <b>${escapeHtml(hit)}</b>${hit !== current ? ` <span class="muted">(fuzzy from “${escapeHtml(current)}” — edit header to normalize)</span>` : ''}`
+          : `⚠ Class “${escapeHtml(current)}” matches no curated collection — this capture joins no run until one exists or the class is corrected.`;
+      });
     }
 
     function wireDetail(){
@@ -683,31 +725,16 @@
       // first, then registry-only classes), current value preselected even if
       // it matches nothing yet. Fail-soft: if the fetch dies, the select still
       // holds the current value.
-      fetch('/curated-collections').then(r => r.ok ? r.json() : []).then(list => {
+      // NEAREST-CLASS SNAP: same give as the run's matcher — an extractor guess
+      // of "Parchment Papers" preselects the "Parchment Paper" collection, and
+      // saving NORMALIZES the stored class to the collection's exact spelling.
+      collectionClasses().then(classes => {
         const sel = $('#f_pclass');
-        if (!sel || !Array.isArray(list)) return;
+        if (!sel) return;
         const current = sel.dataset.current || '';
-        const classes = [...new Set(list.map(c => c.product_class).filter(Boolean))].sort();
-        // NEAREST-CLASS SNAP: same give as the run's matcher (case, singular/
-        // plural on the last word, parentheticals stripped) — so an extractor
-        // guess of "Parchment Papers" preselects the "Parchment Paper"
-        // collection instead of stranding in "(not a collection yet)". Saving
-        // then NORMALIZES the stored class to the collection's exact spelling.
-        const variants = (name) => {
-          const outs = new Set();
-          for (const base of [name, String(name||'').replace(/\([^)]*\)/g, ' ')]) {
-            const n = String(base||'').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim().replace(/\s+/g, ' ');
-            if (!n) continue;
-            outs.add(n);
-            const w = n.split(' ');
-            const last = w[w.length-1];
-            outs.add([...w.slice(0,-1), last.endsWith('s') ? last.slice(0,-1) : last+'s'].join(' '));
-          }
-          return outs;
-        };
-        const cur = variants(current);
+        const cur = classVariants(current);
         const exact = classes.find(pc => pc === current);
-        const near = exact || classes.find(pc => [...variants(pc)].some(v => cur.has(v)));
+        const near = exact || classes.find(pc => [...classVariants(pc)].some(v => cur.has(v)));
         sel.innerHTML =
           `<option value="">(no class — capture won't join any run)</option>` +
           classes.map(pc =>
