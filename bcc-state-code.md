@@ -8472,3 +8472,13 @@ identical-failures circuit breaker; recognize account-level errors
 * Remaining ~119 cookbook runs relaunched on Rainforest with the
   breaker driver + a live Monitor on the output. 17 EasyParser-era
   successes stand.
+
+## Session log — 2026-09-04 (cookbooks complete) — 137/137 on Rainforest, monitored this time
+
+Breaker-driver batch on Traject/Rainforest: **119/119 ok, 0 failed**
+(watched live via Monitor — first results sampled, milestones tracked,
+breaker never armed). Every one of the 137 cookbook collections has now
+run; every one holds candidates (2,941 total); NO thin shelves (<8
+candidates). The cookbook supply line is fully stocked: registry class
++ search collection + Amazon candidate cohort per cuisine, ready for
+Wilson bake-offs/medals whenever a dish's cookbook chip gets approved.
