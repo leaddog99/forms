@@ -300,6 +300,19 @@ def validate_shape(data: dict) -> list:
         total = sum(float(c.get("weight", 0)) for c in crit)
         if abs(total - 1.0) > 0.001:
             errs.append(f"ranking weights must total 1.0; found {total:.3f}")
+
+    # A RELEVANT source silently unused reads as a defect (the Consumer Reports
+    # parchment case, 2026-09-04: on-class, used=false, no explanation — the
+    # fetched page was a paywall teaser, but nothing said so). The reason is
+    # required, so ignoring a relevant document is always an accountable act.
+    for s in (data.get("source_report") or []):
+        if not isinstance(s, dict):
+            continue
+        rel = str(s.get("relevance") or "").strip().lower()
+        if rel in ("on-class", "related") and not s.get("used_in_ranking") \
+                and not str(s.get("not_used_reason") or "").strip():
+            errs.append(f"source_report {s.get('source')!r}: {rel} but unused with no "
+                        f"not_used_reason — say why a relevant page didn't count")
     return errs
 
 

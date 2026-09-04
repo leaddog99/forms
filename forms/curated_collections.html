@@ -302,6 +302,22 @@
           detail = null; await renderDetail();
         } catch(e){ b.disabled = false; b.textContent = 'failed'; console.error(e); }
       }));
+      // Warning ack — the cheap human intervention: "looks right — dismiss"
+      // drops the alarm styling; the warning text stays on the row (undo link).
+      const ackCall = async (slot, ack) => {
+        const r = await fetch(`/curated-collections/${encodeURIComponent(selected)}/picks/${encodeURIComponent(slot)}/ack-warning`,
+          { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ack}) });
+        if (!r.ok) throw new Error((await r.json()).detail || 'HTTP '+r.status);
+        detail = null; await renderDetail();
+      };
+      $('#page').querySelectorAll('.pk-ack').forEach(cb => cb.addEventListener('change', async () => {
+        cb.disabled = true;
+        try { await ackCall(cb.dataset.slot, true); } catch(e){ cb.disabled=false; cb.checked=false; console.error(e); }
+      }));
+      $('#page').querySelectorAll('.pk-unack').forEach(a => a.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        try { await ackCall(a.dataset.slot, false); } catch(e){ console.error(e); }
+      }));
       wireDelete();
     }
 
@@ -359,13 +375,18 @@
             <div class="pk-t">${escapeHtml(pkName(p))}
               ${(p.capacity&&p.capacity.length<=60&&!/^n\/?a\b/i.test(p.capacity.trim()))?`<span class="muted" style="font-weight:400"> · ${escapeHtml(p.capacity)}</span>`:''}
               ${p.model_number?`<span class="muted" style="font-weight:400" title="Manufacturer's model number"> · ${escapeHtml(p.model_number)}</span>`:''}
-              ${p.identity_warning ? '<span class="pill-w bad">identity</span>'
+              ${p.identity_warning ? (p.warning_ack
+                  ? '<span class="pill-w ok" title="Warning reviewed by curator">reviewed ✓</span>'
+                  : '<span class="pill-w bad">identity</span>')
                 : (p.verified_title ? '<span class="pill-w ok">verified</span>' : '')}</div>
             ${p.best_for?`<div class="pk-line"><b>Best for:</b> ${escapeHtml(p.best_for)}</div>`:''}
             ${p.why_it_ranks_here?`<p class="pk-why">${escapeHtml(p.why_it_ranks_here)}</p>`:''}
             ${p.important_tradeoff?`<div class="pk-line"><b>The catch:</b> ${escapeHtml(p.important_tradeoff)}</div>`:''}
             ${p.edge_over_next?`<div class="pk-line"><b>Ahead of the next:</b> ${escapeHtml(p.edge_over_next)}</div>`:''}
-            ${p.identity_warning?`<div class="pk-line warn"><b>⚠</b> ${escapeHtml(p.identity_warning)} — no Amazon buy link was published for this pick.</div>`:''}
+            ${p.identity_warning && !p.warning_ack?`<div class="pk-line warn"><b>⚠</b> ${escapeHtml(p.identity_warning)}
+                <label style="margin-left:8px;white-space:nowrap;font-weight:400;cursor:pointer"><input type="checkbox" class="pk-ack" data-slot="${escapeHtml(p.slot)}" style="width:auto;vertical-align:middle"> looks right — dismiss</label></div>`:''}
+            ${p.identity_warning && p.warning_ack?`<div class="pk-line muted" style="font-size:.82em">warning reviewed &amp; dismissed by curator
+                <a href="#" class="pk-unack" data-slot="${escapeHtml(p.slot)}" style="margin-left:6px">undo</a> · <span title="${escapeHtml(p.identity_warning)}">hover for original text</span></div>`:''}
             <div class="pk-meta">
               ${money(p.typical_price)} typical${p.price_type==='sale'&&p.current_price?` · on sale ${money(p.current_price)}`:''}
               ${p.asin?` · ASIN <a href="${asinHref(p.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${escapeHtml(p.asin)}</a>${p.asin_source?` <span class="muted">(${escapeHtml(p.asin_source)})</span>`:''}`:' · no verified ASIN'}

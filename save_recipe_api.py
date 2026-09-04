@@ -4623,6 +4623,20 @@ def curated_pick_restore_endpoint(name: str, slot: str):
     return {"collection": name, "slot": slot, "excluded": False}
 
 
+@app.post("/curated-collections/{name}/picks/{slot}/ack-warning")
+def curated_pick_ack_warning_endpoint(name: str, slot: str, payload: dict = Body(default={})):
+    """Curator marks a pick's identity_warning as reviewed-and-fine (or un-marks
+    with {"ack": false}). The cheap human intervention for a title-gate flag —
+    the warning text stays for the audit trail, the alarm styling goes."""
+    from intake.products import curated_collections as ccs
+    ack = bool(payload.get("ack", True))
+    with _db() as conn:
+        ok = ccs.set_pick_warning_ack(conn, name, slot, ack)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Pick not found.")
+    return {"collection": name, "slot": slot, "warning_ack": ack}
+
+
 @app.post("/curated-collections/{name}/run")
 def curated_run_endpoint(name: str, payload: dict = Body(default={})):
     """THE BUTTON. Research -> verify -> picks -> product records, as one tracked job.

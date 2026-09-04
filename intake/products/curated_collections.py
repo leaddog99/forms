@@ -140,6 +140,15 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
     if "excluded" not in cols:
         conn.execute("ALTER TABLE curated_collection_picks "
                      "ADD COLUMN excluded INTEGER DEFAULT 0")
+    if "warning_ack" not in cols:
+        # Curator reviewed a pick's identity_warning and judged it fine (the
+        # title gate flags but cannot convict — 2026-09-04, the parchment
+        # phrasing case cost a paid re-run where "a simple ignore checkbox
+        # would have sufficed"). Ack hides the warning styling; the warning
+        # TEXT stays on the row for the audit trail. Reset on replace_picks
+        # implicitly (a new run writes fresh rows).
+        conn.execute("ALTER TABLE curated_collection_picks "
+                     "ADD COLUMN warning_ack INTEGER DEFAULT 0")
     if "model_number" not in cols:
         # KitchenAid-7-speed lesson (2026-08-31): within a brand's sibling
         # line only the manufacturer's model number names ONE product.
@@ -463,6 +472,20 @@ def set_pick_excluded(conn: sqlite3.Connection, name: str, slot: str,
     cur = conn.execute(
         "UPDATE curated_collection_picks SET excluded = ? "
         "WHERE collection = ? AND slot = ?", (1 if excluded else 0, name, slot))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def set_pick_warning_ack(conn: sqlite3.Connection, name: str, slot: str,
+                         ack: bool) -> bool:
+    """Curator acknowledged ONE pick's identity_warning as reviewed-and-fine.
+    The warning text stays on the row (audit trail); the UI drops the alarm
+    styling. The cheap human intervention the parchment case asked for
+    (2026-09-04) — instead of a paid re-run to silence a phrasing flag."""
+    ensure_tables(conn)
+    cur = conn.execute(
+        "UPDATE curated_collection_picks SET warning_ack = ? "
+        "WHERE collection = ? AND slot = ?", (1 if ack else 0, name, slot))
     conn.commit()
     return cur.rowcount > 0
 

@@ -28,6 +28,7 @@ import os
 import re
 import sys
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -244,11 +245,24 @@ def fetch_source_docs(product, sites=SOURCE_SITES, max_workers=4, should_cancel=
                 queries.append(f"site:{site} {broad} review")
             cands = []
             for q in queries:
-                try:
-                    hits = serp_search(q, pages=1, want=5)
-                except Exception as e:
-                    rec["error"] = rec["error"] or f"search failed: {e}"
-                    hits = []
+                # A site: query occasionally returns an EMPTY result transiently
+                # (SERP provider served a throttled/blank page) — one retry before
+                # accepting emptiness. The ATK parchment case (2026-09-04): "no page
+                # found on this site" while the same query, minutes later, returned
+                # ATK's full equipment review as hit #1. One extra credit, only on
+                # empty results, is far cheaper than a silently source-less run.
+                hits = []
+                for attempt in (1, 2):
+                    try:
+                        hits = serp_search(q, pages=1, want=5)
+                    except Exception as e:
+                        rec["error"] = rec["error"] or f"search failed: {e}"
+                        hits = []
+                    if hits:
+                        break
+                    if attempt == 1:
+                        time.sleep(2.0)
+                        print(f"    [SOURCES] empty SERP for {q!r} — retrying once")
                 # Keep ONLY results actually on that publisher's site (see _host_ok).
                 for h in hits:
                     link = h.get("link", "")

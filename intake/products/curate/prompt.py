@@ -123,6 +123,17 @@ RESEARCH RULES
 9. If an Amazon result is a marketplace bundle, used item, accessory, replacement lid,
    miniature pot, or wrong capacity, reject it.
 10. Keep product comments factual, concise, and useful rather than promotional.
+10b. HEALTH HAZARDS ARE A SERIOUS NEGATIVE — PFAS/PFOA/PTFE ("forever chemicals"),
+    microplastic shedding, and suspect chemical coatings on food-contact products. A
+    product with a credible, unresolved concern in these areas is NOT ranked — leave the
+    slot to omitted_slots and name the concern; we do not push products that are suspect
+    health threats. A product whose maker credibly addresses the concern (e.g. certified
+    PFAS-free, uncoated, silicone-coated where silicone is the accepted safe coating) may
+    rank, and its `important_tradeoff` or `why_it_ranks_here` states the coating/material
+    composition plainly. A supplied document about coatings, plastics, or chemical safety
+    is EVIDENCE for this rule even when it ranks nothing — use it to interrogate every
+    candidate, mark it used_in_ranking=true when it shaped your judgment, and reflect it
+    in ranking_criteria.
 11. Record the date checked.
 12. EVERY row must carry at least one entry in `source_links` — the URLs you actually used to
     verify that row. A claim we cannot trace is a claim we cannot publish.
@@ -146,6 +157,13 @@ RESEARCH RULES
     a pick. An honestly-reported off-topic page is a GOOD answer — it tells the
     curator that this publisher has no review of this class; never stretch an
     off-topic page into citations to make a source look consulted.
+    `not_used_reason` (REQUIRED whenever an on-class or related document has
+    used_in_ranking=false): one sentence saying exactly why a relevant page did not
+    influence the ranking — "paywall teaser: names the test but the winners are cut
+    off", "advice piece, ranks nothing". An on-class document silently unused reads
+    as a defect to the curator (the Consumer Reports parchment case, 2026-09-04);
+    the reason turns it back into information. Note: a paywalled teaser that names
+    which brands WON still counts as evidence for those brands — use what survived.
 15. EXPLAIN THE ORDER, not just the picks. `why_it_ranks_here` says why a product is good;
     `edge_over_next` must say why it beat the one below it — name that product and name the
     criterion from RANKING WEIGHTS that separated them. For the LAST place in a list, name the
@@ -260,7 +278,8 @@ Use this exact structure:
     {"criterion": "", "weight": 0.25, "what_was_considered": "", "effect_on_ranking": ""}
   ],
   "source_report": [
-    {"source": "", "page_covers": "", "relevance": "on-class", "used_in_ranking": true}
+    {"source": "", "page_covers": "", "relevance": "on-class", "used_in_ranking": true,
+     "not_used_reason": ""}
   ],
   "omitted_slots": [
     {"section": "", "place": 3, "reason": ""}

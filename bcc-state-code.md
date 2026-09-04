@@ -8154,3 +8154,41 @@ contract when the supplied docs covered only two bean pots.
   → independent evidence (who VOUCHES) → honest gap (running out is a
   correct answer). Stored Bean Pot #3 stays visible until a re-run or a
   curator exclude.
+
+## Session log — 2026-09-04 — the parchment postmortem: five defects, five fixes
+
+Curator audited the Parchment Paper run line by line and caught five
+real problems. Diagnosed against the stored run + cache, all fixed:
+
+* **ATK "no page found" = transient empty SERP.** The same query, re-run
+  by hand, returns ATK's full parchment equipment review as hit #1.
+  fetch_source_docs now RETRIES an empty site: result once (2s pause,
+  one extra credit only on emptiness) before declaring no page.
+* **Consumer Reports on-class-yet-unused = paywall teaser.** The fetched
+  7.6KB was intro + link-farm; the four winners are behind the wall. The
+  model's used=False was CORRECT but looked insane because nothing said
+  why. source_report gains not_used_reason — REQUIRED whenever an
+  on-class/related doc goes unused (validate_shape enforces); teaser
+  facts that DID survive (which brands won) count as usable evidence.
+* **PFAS/forever-chemicals/microplastics = serious negative (rule 10b,
+  curator directive)**: credible unresolved concern → NOT ranked (honest
+  gap takes the slot, concern named); addressed concern → rankable with
+  the coating/material stated plainly. Safety/coating docs (the unused
+  Serious Eats plastics piece) are EVIDENCE for this rule even ranking
+  nothing — must interrogate candidates + show in ranking_criteria.
+* **Title-gate warnings get the cheap human intervention**: picks gain
+  warning_ack ("looks right — dismiss" checkbox + undo; warning text
+  kept for audit). No more paid re-runs to silence a phrasing flag —
+  the curator's fallback-terms fix still works, ack is the $0 route.
+* Endpoint POST /curated-collections/{name}/picks/{slot}/ack-warning
+  (needs restart); prompt/verify/fetch fixes are per-spawn live.
+
+### Open
+
+* Parchment re-run recommended once restarted: ATK retry + CR
+  not_used_reason + health rule all bear on this exact collection
+  (King Arthur EC pin may become ATK-backed #1).
+* CR paywall: full content needs the review bookmarklet/Queue route
+  (the "last rung is human") — curator call per source.
+* Still pending from earlier: stale-pick re-enrich backfill (13 ASINs,
+  38 images) — offered, not yet approved.
