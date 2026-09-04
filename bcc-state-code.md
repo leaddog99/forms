@@ -8317,3 +8317,26 @@ the fail-soft rendered "no captures linked". Restart clears it.
   explicitly, naming it as Serious Eats' top pick excluded by the
   curator's definition), Le Creuset Round #1, Le Creuset Oval #2,
   Tramontina 9.5" #3 (the n=1 pick — now displayed honestly).
+
+## Session log — 2026-09-04 (close) — the Tramontina verified: new product, not a mismatch
+
+Curator questioned the n=1 Tramontina bread oven ("reviewed by two
+reviewers but 1 Amazon review — same oven, or a new version?").
+Traced end to end: the ASIN (B0F12JLD3Z) came from SERIOUS EATS' OWN
+BUY LINK (the reviewer naming the listing they tested), verified title
+matches, and the variation-family lookup returns a FAMILY OF ONE — no
+predecessor listing or sibling color holding hidden ratings. B0F1…
+prefix = recent ASIN: Tramontina's brand-new entry in the bread-oven
+category, pro-reviewed at launch before owners accumulate. (The "two
+reviewers" were ATK/Wirecutter reviewing Tramontina DUTCH ovens — the
+neighboring rows in the review store.) System read reality correctly;
+the new RealRank floor displays it honestly.
+
+ASIN sourcing precedence, confirmed for the record: (1) reviewer's own
+buy link — at ingest (resolve_asin digs ASINs out of affiliate
+redirectors) and in-run (corpus first, model reads the supplied docs);
+(2) EasyParser Amazon string search LAST, form-guarded, its result
+still re-verified; asin_source on each pick says which path won (blank
+= model-from-docs). Link-derived ASINs can name a sibling variant (the
+KitchenAid 7-speed lesson) — which is why identity verification runs
+on every path.
