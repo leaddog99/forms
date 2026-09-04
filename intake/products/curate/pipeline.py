@@ -155,12 +155,19 @@ def _overlay_captured_reviews(docs: list, product_class: str, terms: list | None
                 print(f"[CURATE]   {reviewer:<24} captured page replaces the failed fetch "
                       f"({len(md)} chars, {captured_at or 'undated'})")
                 seat.update(entry, label=seat["label"])
-            else:
-                # Both exist: the CAPTURE wins — it's the page a human chose,
-                # often the full text behind a paywall the fetch only teased.
+            elif not cap["digest"]:
+                # Both exist and the capture is a REAL page: the capture wins —
+                # it's the page a human chose, often the full text behind a
+                # paywall the fetch only teased.
                 print(f"[CURATE]   {reviewer:<24} captured page replaces the fetched one "
                       f"({len(md)} chars vs {len(seat.get('markdown') or '')})")
                 seat.update(entry, label=seat["label"])
+            else:
+                # A structured DIGEST never replaces real fetched text (the
+                # Bread Oven run: a 6K digest clobbered ATK's 15K live page).
+                # Digests fill empty seats and append unseated reviewers only.
+                print(f"[CURATE]   {reviewer:<24} capture is a digest; keeping the "
+                      f"fetched page ({len(seat.get('markdown') or '')} chars)")
         else:
             print(f"[CURATE]   {reviewer:<24} captured review ADDED ({len(md)} chars)")
             docs.append(entry)

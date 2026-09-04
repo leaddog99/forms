@@ -8256,3 +8256,24 @@ retailer offers. 11 identity REJECTIONS got honest identity_warnings
 moved). Remaining blanks are structural (tours/affiliate programs,
 artisan/D2C products with no Amazon presence). 2 histogram parse
 notes ("percentages total 0.0%") — known widget-parse edge, unfixed.
+
+## Session log — 2026-09-04 (cont.) — bread oven false alarm, digest guard, class dropdown
+
+Curator captured 3 Bread Oven reviews, set their class, ran the
+collection — UI said "didn't find any in reviews". DIAGNOSIS: the run
+(fresh spawn) found and used ALL FOUR captures (Serious Eats 55K
+replaced the 18K fetch; picks: Challenger / Le Creuset / Brod &
+Taylor). The lie was the collection page's 📎 line — the NEW
+/captured-reviews endpoint 404s until the pending server restart, and
+the fail-soft rendered "no captures linked". Restart clears it.
+
+* **Real bug caught in the same look**: ATK's 6K DIGEST replaced its
+  real 15K fetched page — "capture wins" was too aggressive. Now a
+  digest never replaces fetched text (fills empty seats + appends
+  unseated reviewers only); real page_markdown still wins. Verified.
+* **Product class is now a DROPDOWN** (curator ask): select of the
+  available collection classes, current value preselected, "(not a
+  collection yet)" marker for orphans, "(no class)" opt-out.
+* RESTART OWED: /captured-reviews 📎 line, ack-warning endpoint,
+  class_criteria save — all server-side and pending since yesterday's
+  last restart.

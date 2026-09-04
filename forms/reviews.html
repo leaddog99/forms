@@ -648,13 +648,13 @@
             ${reviewerField}
             <div class="ed-field"><label>Title</label><input id="f_title" value="${escapeHtml(v.title||'')}" placeholder="The Best Loaf Pans of 2026"></div>
           <div class="ed-field"><label>Product class — the curated-collection join key</label>
-            <input id="f_pclass" list="dl_pclass" value="${escapeHtml(v.product_class||'')}" placeholder="Parchment Paper">
-            <datalist id="dl_pclass"></datalist>
-            <p class="muted" style="font-size:.78rem;margin:5px 0 0">This string is how the capture
-              reaches curated-collection runs as a source document (matched with singular/plural
-              give). The extractor guessed it at capture time — correct it here to the collection's
-              exact class name if the guess missed. The collection page shows which captures
-              matched.</p></div>
+            <select id="f_pclass" data-current="${escapeHtml(v.product_class||'')}">
+              <option value="${escapeHtml(v.product_class||'')}">${escapeHtml(v.product_class||'(none)')}${v.product_class?' (current)':''}</option>
+            </select>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">How the capture reaches
+              curated-collection runs as a source document (matched with singular/plural give).
+              The extractor guessed it at capture time — pick the collection's class here if the
+              guess missed. The collection page shows which captures matched.</p></div>
           </div>
           <div class="ed-field"><label>Taxonomy — search the product category (headline › section › subcategory › leaf)</label>
             <input id="f_tax" list="dl_tax" value="${escapeHtml(curTax)}" placeholder="Type to search… e.g. Loaf Pans">
@@ -679,14 +679,21 @@
       $('#cancelForm').addEventListener('click', () => { mode='view'; renderDetail(); });
       $('#saveForm').addEventListener('click', () => saveForm(isEdit ? existing : null));
       (isEdit ? $('#f_title') : $('#f_reviewer')).focus();
-      // Collection classes for the product-class picker (fail-soft — a plain
-      // typed value works the same; the list just prevents typos).
+      // Product-class DROPDOWN: the available curation classes (collections
+      // first, then registry-only classes), current value preselected even if
+      // it matches nothing yet. Fail-soft: if the fetch dies, the select still
+      // holds the current value.
       fetch('/curated-collections').then(r => r.ok ? r.json() : []).then(list => {
-        const dl = $('#dl_pclass');
-        if (!dl || !Array.isArray(list)) return;
-        const seen = new Set();
-        dl.innerHTML = list.map(c => c.product_class).filter(pc => pc && !seen.has(pc) && seen.add(pc))
-          .sort().map(pc => `<option value="${escapeHtml(pc)}">`).join('');
+        const sel = $('#f_pclass');
+        if (!sel || !Array.isArray(list)) return;
+        const current = sel.dataset.current || '';
+        const classes = [...new Set(list.map(c => c.product_class).filter(Boolean))].sort();
+        sel.innerHTML =
+          `<option value="">(no class — capture won't join any run)</option>` +
+          classes.map(pc =>
+            `<option value="${escapeHtml(pc)}"${pc === current ? ' selected' : ''}>${escapeHtml(pc)}</option>`).join('') +
+          (current && !classes.includes(current)
+            ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (not a collection yet)</option>` : '');
       }).catch(() => {});
     }
 
