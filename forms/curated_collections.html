@@ -434,6 +434,14 @@
     async function doRun(){
       const btn = $('#runBtn'), st = $('#jobStatus'), log = $('#joblog');
       btn.disabled = true; st.textContent = 'Starting…'; log.hidden = false; log.textContent = '';
+      // Cancel appears only while a run is live (2026-09-04 curator ask). It's
+      // the jobs system's COOPERATIVE cancel — the run stops at its next
+      // checkpoint (between source fetches, before curating, before
+      // materializing), not mid-LLM-call.
+      const endRun = () => {
+        btn.disabled = false;
+        $('#cancelRunBtn')?.remove();
+      };
       try {
         const r = await fetch(`/curated-collections/${encodeURIComponent(selected)}/run`, {
           method:'POST', headers:{'Content-Type':'application/json'},
@@ -441,6 +449,17 @@
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'HTTP '+r.status);
         st.textContent = d.already_running ? `job #${d.job_id} already running…` : `job #${d.job_id} running…`;
+        if (!$('#cancelRunBtn')){
+          const c = document.createElement('button');
+          c.type = 'button'; c.className = 'ed-btn'; c.id = 'cancelRunBtn';
+          c.textContent = '✕ Cancel run'; c.style.color = '#b23b3b';
+          btn.after(c);
+          c.addEventListener('click', async () => {
+            c.disabled = true; c.textContent = 'Cancelling…';
+            try { await fetch(`/jobs/${d.job_id}/cancel`, { method:'POST' }); }
+            catch(e){ c.disabled = false; c.textContent = '✕ Cancel run'; }
+          });
+        }
         if (es) es.close();
         es = new EventSource(`/jobs/${d.job_id}/stream`);
         es.addEventListener('log', e => {
@@ -448,11 +467,11 @@
         });
         es.addEventListener('status', e => { st.textContent = `job #${d.job_id} ${e.data}`; });
         es.addEventListener('done', async () => {
-          es.close(); es = null; btn.disabled = false;
+          es.close(); es = null; endRun();
           detail = null; await load(selected);
         });
-        es.onerror = () => { es && es.close(); es = null; btn.disabled = false; };
-      } catch(e){ btn.disabled = false; st.textContent = 'Failed: ' + (e.message||e); }
+        es.onerror = () => { es && es.close(); es = null; endRun(); };
+      } catch(e){ endRun(); st.textContent = 'Failed: ' + (e.message||e); }
     }
 
     async function doApprove(){

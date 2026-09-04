@@ -4744,20 +4744,26 @@ async def reviews_find_endpoint(request: Request):
 
 @app.post("/reviews/ingest-url")
 async def reviews_ingest_url_endpoint(request: Request):
-    """Fetch ONE curator-approved review URL through the unblocker and ingest it (same rails as
-    the bookmarklet's /extract-review). Body: {url}.
-
-    One URL per call on purpose — an unblocker fetch of a paywalled review takes tens of
-    seconds, so the UI walks the approved list sequentially and reports each row as it lands.
-    A page we can't fetch or decode fails as itself; we never substitute another source for it.
-    """
-    from intake.products import review_finder
+    """Enqueue + spawn ONE review-URL ingest as a real job (type review_ingest_url)
+    and return immediately with {job_id}. The finder's multi-select enqueues each
+    approved URL as its own job — they run in parallel out-of-process, show in the
+    jobs list, and are cancellable, instead of serially blocking server workers
+    (the pre-2026-09-04 shape). A page we can't fetch or decode fails as itself;
+    we never substitute another source for it. Entity-locked per URL so a
+    double-click can't ingest the same page twice concurrently."""
     body = await request.json()
     url = (body.get("url") or "").strip() if isinstance(body, dict) else ""
     if not url:
         raise HTTPException(status_code=400, detail="url required")
+    entity_ref = f"review-url:{url[:180]}"
     with _db() as conn:
-        return review_finder.ingest_url(conn, url)
+        existing = jobs_lib.find_in_flight_for_entity(conn, entity_ref)
+        if existing:
+            return {"job_id": existing["id"], "already_running": True}
+        job_id = jobs_lib.enqueue_job(conn, type="review_ingest_url",
+                                      params={"url": url}, entity_ref=entity_ref)
+    _spawn_job_runner(job_id)
+    return {"job_id": job_id, "stream_url": f"/jobs/{job_id}/stream"}
 
 
 @app.get("/reviews/{review_id}")
@@ -9559,6 +9565,26 @@ async def _handle_review_ingest_job(job: dict) -> dict:
 
 
 jobs_lib.register_handler("review_ingest", _handle_review_ingest_job)
+
+
+async def _handle_review_ingest_url_job(job: dict) -> dict:
+    """Fetch ONE review URL through the unblocker and ingest it — the finder's
+    'Fetch selected' as a REAL job (2026-09-04: the multi-select used to run
+    each fetch inside the HTTP request, invisible to the jobs list and blocking
+    a server worker for tens of unblocker-seconds per URL)."""
+    params = job.get("params") or {}
+    url = (params.get("url") or "").strip()
+    if not url:
+        raise ValueError("review_ingest_url requires params.url")
+
+    def _run():
+        from intake.products import review_finder
+        with _db() as conn:
+            return review_finder.ingest_url(conn, url)
+    return await asyncio.to_thread(_run)
+
+
+jobs_lib.register_handler("review_ingest_url", _handle_review_ingest_url_job)
 
 
 async def _handle_domain_scoring_job(job: dict) -> dict:

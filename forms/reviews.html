@@ -641,30 +641,47 @@
       if (!picks.length){ $('#fd_fetch_status').textContent = 'Nothing selected.'; return; }
       const btn = $('#fd_fetch');
       btn.disabled = true;
-      let ok = 0, failed = 0;
-      // Sequential on purpose: an unblocker fetch runs tens of seconds, and the curator
-      // watches each source land (or fail as itself) rather than staring at one spinner.
-      for (const [n, i] of picks.entries()){
+      // REAL JOBS (2026-09-04): each approved URL is its own review_ingest_url
+      // job — enqueued up front, running in parallel out-of-process, visible
+      // in the jobs list, each row reporting its own job as it lands.
+      const pending = new Map();   // job_id -> row index
+      let failed = 0;
+      for (const i of picks){
         const c = findResults[i];
         const st = document.querySelector(`.fd-row-status[data-i="${i}"]`);
-        if (st) st.textContent = 'Fetching…';
-        $('#fd_fetch_status').textContent = `Fetching ${n+1} of ${picks.length}…`;
         try {
           const r = await fetch('/reviews/ingest-url', {
             method: 'POST', headers: {'Content-Type':'application/json'},
             body: JSON.stringify({ url: c.url }) });
           const d = await r.json();
-          if (d.ok){
-            ok++;
-            c.review_id = d.review_id;
-            if (st) st.innerHTML = `✓ stored as <strong>${escapeHtml(d.reviewer||'review')}</strong> — ${d.product_count} product(s)`;
-          } else {
-            failed++;
-            if (st) st.textContent = '✕ ' + (d.error || d.detail || 'failed');
-          }
+          if (!r.ok || !d.job_id) throw new Error(d.detail || 'enqueue failed');
+          pending.set(d.job_id, i);
+          if (st) st.textContent = `⏳ job #${d.job_id} running…`;
         } catch (e) {
           failed++;
           if (st) st.textContent = '✕ ' + (e.message || e);
+        }
+      }
+      let ok = 0;
+      while (pending.size){
+        $('#fd_fetch_status').textContent = `${pending.size} job(s) running — see Jobs monitor…`;
+        await new Promise(res => setTimeout(res, 2500));
+        for (const [jid, i] of [...pending]){
+          try {
+            const j = await (await fetch(`/jobs/${jid}`)).json();
+            if (!['success','error','cancelled'].includes(j.status)) continue;
+            pending.delete(jid);
+            const c = findResults[i];
+            const st = document.querySelector(`.fd-row-status[data-i="${i}"]`);
+            const d = j.result || {};
+            if (j.status === 'success' && d.ok){
+              ok++; c.review_id = d.review_id;
+              if (st) st.innerHTML = `✓ stored as <strong>${escapeHtml(d.reviewer||'review')}</strong> — ${d.product_count} product(s)`;
+            } else {
+              failed++;
+              if (st) st.textContent = '✕ ' + (d.error || j.error_detail || j.status);
+            }
+          } catch(e){ /* transient poll failure — keep waiting */ }
         }
       }
       $('#fd_fetch_status').textContent = `Done — ${ok} stored${failed?`, ${failed} failed`:''}.`;

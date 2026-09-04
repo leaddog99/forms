@@ -8277,3 +8277,26 @@ the fail-soft rendered "no captures linked". Restart clears it.
 * RESTART OWED: /captured-reviews 📎 line, ack-warning endpoint,
   class_criteria save — all server-side and pending since yesterday's
   last restart.
+
+## Session log — 2026-09-04 (evening) — cancel button, finder jobs, view-mode class
+
+* **Curation runs got a Cancel button** (collections page): appears only
+  while a run is live, wired to the jobs system's cooperative cancel
+  (stops at the next checkpoint — between fetches, before curating,
+  before materializing; not mid-LLM-call).
+* **Finder "Fetch selected" became REAL JOBS** (curator: "running
+  synchronously... nothing appears in the job list"): each approved URL
+  = its own review_ingest_url job (new handler), enqueued up front,
+  parallel out-of-process, entity-locked per URL, visible/cancellable
+  in the jobs monitor; the reviews page polls per-row. The old shape
+  ran each unblocker fetch INSIDE the HTTP request. RESTART OWED for
+  the endpoint change (old server = old in-request behavior).
+* **Review class evaluable in VIEW mode** (earlier tonight): class
+  pill + captured-text pill (NNK chars vs digest-only) + 📎 join-status
+  line with fuzzy-match callout; dropdown snaps extractor guesses to
+  the nearest real class and normalizes on save.
+* **Bread Oven re-run with the digest guard**: ATK's full page now
+  used=on-class (was clobbered by its own 6K digest); ranking
+  reshuffled — Brod & Taylor steel+shell to #1, Le Creuset #2, 9.5"
+  cast iron #3, all four sources used. Singular class names confirmed
+  in force.
