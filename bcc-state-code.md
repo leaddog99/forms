@@ -8414,3 +8414,33 @@ dish-alias qualifier-sibling lesson, now on the product side.
   vocabulary, briefs); category grouping belongs to the registry
   `family` column, and word order wouldn't have prevented the snap bug
   (same tokens). UI can group by family if the flat list hurts.
+
+## Session log — 2026-09-04 (cookbooks) — the cookbook family manufactured, and cuisine gets canonical AT THE RECIPE
+
+Curator directive arc: "manufacture cookbook classes by ethnicity, use
+the search collection, create the Amazon URL for each" → "do them all"
+→ "take the first part of a concatenated ethnicity" → "we should be
+doing that IN THE RECIPE and saving it."
+
+* **~137 cookbook classes + search collections manufactured** from the
+  corpus's own cuisine distribution (both provenance.ethnicity AND
+  _identity.cuisine, both tables — the first pass read one field and
+  missed Jamaican/Haitian, curator caught it). Registry rows family=
+  books with embeddings (snap converges); product_collections rows
+  with review-rank Amazon Books URLs (s?k=<cuisine>+cookbook&i=
+  stripbooks&s=review-rank), keep_top_n=10. Junk free-text rejected
+  (Viking, Vegan, "Greek, Turkish"); ~129 first runs launched
+  (1 EasyParser credit each).
+* **intake/cuisine_canon.py NEW — canonicalize at the recipe**: fold
+  concatenations to the FIRST cuisine (Greek-Mexican fusion→Greek,
+  Cajun/Creole→Cajun), strip descriptor words (Modern Australian→
+  Australian), normalize variants (Chinese American→Chinese-American,
+  TexMex→Tex-Mex), diaspora X-American kept whole, hyphen folds ONLY
+  when both halves are known cuisines (Emilia-Romagna and Tex-Mex stay
+  whole — the first backfill mangled 48 Tex-Mex rows to 'Tex' + Soul
+  Food to 'Soul'; fixed + repaired 38 rows). Never destructive:
+  unfoldable input passes through.
+* Wired into BOTH stamp sites: identity-card scrub (cuisine/ethnicity)
+  + enrich_provenance merge (ethnicity). Backfilled 163 stored rows
+  (101 distinct folds, printed). Server-side extract picks up the
+  canonicalizer at next restart; job spawns have it now.

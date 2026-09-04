@@ -441,6 +441,19 @@ def _scrub_placeholders(card: dict) -> dict:
         v = card.get(f)
         if isinstance(v, str) and v.strip().lower() in _PLACEHOLDERS:
             card[f] = ""
+    # Canonicalize AT THE RECIPE (curator 2026-09-04): fold free-text fusions
+    # to their first cuisine ("Greek-Mexican fusion" -> "Greek"), normalize
+    # variants ("Chinese American" -> "Chinese-American"), so facets, cookbook
+    # classes, and joins see ONE spelling. Never destructive — an unfoldable
+    # value passes through unchanged.
+    try:
+        from intake.cuisine_canon import canonicalize
+        for f in ("cuisine", "ethnicity"):
+            v = card.get(f)
+            if isinstance(v, str) and v.strip():
+                card[f] = canonicalize(v)
+    except ImportError:
+        pass
     return card
 
 

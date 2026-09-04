@@ -631,6 +631,15 @@ def enrich_recipe(
         existing = recipe.get(block.name) or {}
         merged = dict(existing)
         merged.update(parsed)
+        # Canonicalize ethnicity AT THE RECIPE (curator 2026-09-04): fold
+        # free-text fusions to the first cuisine, normalize variants — so the
+        # SAVED value is the canonical one, not a per-consumer patch.
+        if block.name == "provenance" and isinstance(merged.get("ethnicity"), str):
+            try:
+                from intake.cuisine_canon import canonicalize
+                merged["ethnicity"] = canonicalize(merged["ethnicity"])
+            except ImportError:
+                pass
         recipe[block.name] = merged
 
     return recipe
