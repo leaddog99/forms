@@ -206,9 +206,8 @@ def _declared_omissions(data: dict) -> tuple:
             place = int(s.get("place", 0))
         except (TypeError, ValueError):
             place = 0
-        if place not in (2, 3):
-            errs.append(f"omitted slot {s.get('section')!r}#{s.get('place')}: only places "
-                        f"2 and 3 may be omitted — place 1 is the section's reason to exist")
+        if place not in (1, 2, 3):
+            errs.append(f"omitted slot {s.get('section')!r}#{s.get('place')}: place must be 1-3")
             continue
         if not str(s.get("reason") or "").strip():
             errs.append(f"omitted slot {s.get('section')!r}#{place}: a reason is required")
@@ -218,7 +217,11 @@ def _declared_omissions(data: dict) -> tuple:
 
 
 def _check_places(rows: list, declared: set, section: str, label: str) -> list:
-    """Places 1..3 each filled by a row XOR declared omitted."""
+    """Places 1..3 each filled by a row XOR declared omitted. Place 1 may be
+    omitted ONLY as part of a fully-empty section (all three declared, the
+    Ground-Nutmeg case, 2026-09-04: no product had independent evidence and the
+    model honestly wanted to rank nothing — an empty ranking beats a padded
+    one). A #2 with no #1 remains nonsense and still fails."""
     errs = []
     have = sorted(int(r.get("place", 0)) for r in rows)
     if len(set(have)) != len(have):
@@ -232,6 +235,9 @@ def _check_places(rows: list, declared: set, section: str, label: str) -> list:
         elif not filled and not omitted:
             errs.append(f"{label} place {place}: missing — rank a product or declare "
                         f"the slot in omitted_slots with a reason")
+    if (key, 1) in declared and have:
+        errs.append(f"{label}: place 1 omitted while later places are ranked — "
+                    f"a section with a #2 but no #1 is not a ranking")
     extra = [p for p in have if p not in (1, 2, 3)]
     if extra:
         errs.append(f"{label}: invalid places {extra}")
@@ -243,8 +249,8 @@ def validate_shape(data: dict) -> list:
     declared, errs = _declared_omissions(data)
     errs += check_independent_sources(data)
     overall = data.get("overall_top_three")
-    if not isinstance(overall, list) or not overall:
-        errs.append("overall_top_three must contain at least one ranked row")
+    if not isinstance(overall, list):
+        errs.append("overall_top_three must be a list")
     else:
         errs += _check_places(overall, declared, "", "overall")
 

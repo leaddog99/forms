@@ -339,7 +339,10 @@ in `omitted_slots`: {{"section": "", "place": 3, "reason": "..."}} ("" = the ove
 ranking; otherwise the category name). The reason names what you looked at and why nothing
 qualified — an off-class product promoted to fill a slot is a defect (the Water-Bath-Canner
 run padded #3 with an electric multi-cooker the boundary excluded); a declared gap is a
-correct answer. Omit the field entirely when every slot is filled.
+correct answer. If NOTHING qualifies, an entirely empty ranking is valid: declare all
+three places with reasons and rank nothing. A #1 may only be omitted this way, as part of
+a fully-empty section — a section with a #2 but no #1 is never valid. Omit the field
+entirely when every slot is filled.
 """
 
 CURATOR_CRITERIA = """
