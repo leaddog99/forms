@@ -52,8 +52,15 @@ def _evidence(r: dict) -> list:
         if bars:
             lines.append(f"            {bars}")
         if r.get("realrank_score") is not None:
-            lines.append(f"    RealRank {r['realrank_score']} "
-                         f"(promoters minus detractors, discounted for sample size)")
+            # Under the floor the shrinkage IS the score — say so instead of
+            # printing a number that reads as a verdict (realrank_index
+            # .MIN_RATINGS_FOR_SCORE; the one-review bread oven case).
+            if int(r.get("owner_count") or 0) < 20:
+                lines.append(f"    RealRank withheld — only "
+                             f"{int(r.get('owner_count') or 0)} rating(s), too few to score")
+            else:
+                lines.append(f"    RealRank {r['realrank_score']} "
+                             f"(promoters minus detractors, discounted for sample size)")
     if r.get("identity_warning"):
         lines.append(f"    ⚠ {r['identity_warning']}")
     if r.get("amazon_asin"):

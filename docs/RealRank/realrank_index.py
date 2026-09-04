@@ -15,6 +15,15 @@ Dependencies: standard library only.
 import math
 
 
+# Below this many owner ratings the confidence shrinkage DOMINATES the signal
+# (a perfect 5-star record scores ~20 at n=1, ~67 at n=10) — the number stops
+# describing the product and starts describing our ignorance. Surfaces show
+# "too few ratings" instead of the score under this floor (2026-09-04, the
+# one-review bread oven that displayed "20"). The score is still computed and
+# stored — the floor is presentation, not math.
+MIN_RATINGS_FOR_SCORE = 20
+
+
 def realrank_index(distribution, n_reviews, z=1.96, four_star_weight=0.0):
     """Return a 0-100 RealRank score for a product.
 

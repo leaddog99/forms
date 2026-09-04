@@ -8300,3 +8300,20 @@ the fail-soft rendered "no captures linked". Restart clears it.
   reshuffled — Brod & Taylor steel+shell to #1, Le Creuset #2, 9.5"
   cast iron #3, all four sources used. Singular class names confirmed
   in force.
+
+## Session log — 2026-09-04 (late) — RealRank learns to say "not enough", boundary evicts the steel
+
+* **RealRank small-sample display** (curator: "score of 20-something
+  with 1 review!!"): the MATH was right — 20.2 IS the shrinkage penalty
+  on a perfect one-rating record (5★×1→20, ×10→67, ×100→95) — but the
+  display read as a verdict. Floor added (realrank_index
+  .MIN_RATINGS_FOR_SCORE = 20, presentation only, score still stored):
+  brief prints "RealRank withheld — only N rating(s)"; picks card shows
+  "n=1 · too few to score" with the full explanation on hover.
+* **Bread Oven boundary tightened + re-run**: closed lidded cast-iron/
+  enameled/ceramic vessel used inside a home oven; reject steels/
+  stones, bare shells, bread machines, loaf pans, outdoor ovens.
+  Result: Brod & Taylor steel+shell EVICTED (methodology_note says so
+  explicitly, naming it as Serious Eats' top pick excluded by the
+  curator's definition), Le Creuset Round #1, Le Creuset Oval #2,
+  Tramontina 9.5" #3 (the n=1 pick — now displayed honestly).

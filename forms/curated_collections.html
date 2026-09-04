@@ -419,7 +419,9 @@
           </div>
           <div class="pk-sc">
             ${p.realrank_score!=null
-              ? `<b>${p.realrank_score}</b><div class="muted" style="font-size:.7rem">RealRank</div>`
+              ? (Number(p.owner_count||0) >= 20
+                  ? `<b>${p.realrank_score}</b><div class="muted" style="font-size:.7rem">RealRank</div>`
+                  : `<b class="muted" title="RealRank ${p.realrank_score} withheld — with ${p.owner_count} rating(s) the small-sample penalty IS the score (a perfect 5★ record scores ~20 at n=1). Mirrors realrank_index.MIN_RATINGS_FOR_SCORE.">n=${p.owner_count}</b><div class="muted" style="font-size:.7rem">too few to score</div>`)
               : '<b class="muted">—</b><div class="muted" style="font-size:.7rem">no histogram</div>'}
             ${p.owner_count?`<div class="muted" style="font-size:.7rem;margin-top:3px">${
               p.owner_rating??'—'}★ · ${Number(p.owner_count).toLocaleString()}</div>`:''}
