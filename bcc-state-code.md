@@ -8340,3 +8340,27 @@ still re-verified; asin_source on each pick says which path won (blank
 = model-from-docs). Link-derived ASINs can name a sibling variant (the
 KitchenAid 7-speed lesson) — which is why identity verification runs
 on every path.
+
+## Session log — 2026-09-04 (planning) — chips cleared for approval, audit triages collections, BAILEY install staged
+
+* **Chips: GO.** The 300 proposals are untouched by the two-day
+  curation learnings (all collection-side); the singular renames
+  already swept the junction; "unregistered" proposed classes are
+  pending NEW classes by design (approval mints the registry row).
+  One convention wobble: rename "Egg Separators"→"Egg Separator" at
+  approval.
+* **Collections: no blanket refresh.** Free retroactive audit (today's
+  deterministic gates over stored results): 48/71 flag, but almost all
+  are ack-able title-phrasing flags. The REAL disease (ranks w/o
+  independent evidence) is in 5 product collections: Electric Hand
+  Mixer, Ground Nutmeg, Red Wine Vinegar, Utility Knife, Water Bath
+  Canner (~$2 to re-run). Policy: re-run those 5 + any collection just
+  before publishing; eyeball/ack the title flags in the UI.
+* **BAILEY NSSM: staged, one elevated command left.** SSH to BAILEY
+  works but NOT elevated → service install can't be remote. Staged
+  over scp: tools/nssm.exe (from MARLEY's Downloads) + NEW
+  bcc_install_service_bailey.ps1 (mirrors MARLEY's service verbatim:
+  venv python, uvicorn 8009, stdout/stderr logs, auto-start; stops+
+  DISABLES BCC-Drill, kills orphan servers, health-checks). Curator
+  runs ON BAILEY from an elevated PowerShell:
+  powershell -ExecutionPolicy Bypass -File C:\Users\john\PycharmProjects\forms\bcc_install_service_bailey.ps1
