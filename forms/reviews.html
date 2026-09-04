@@ -688,11 +688,31 @@
         if (!sel || !Array.isArray(list)) return;
         const current = sel.dataset.current || '';
         const classes = [...new Set(list.map(c => c.product_class).filter(Boolean))].sort();
+        // NEAREST-CLASS SNAP: same give as the run's matcher (case, singular/
+        // plural on the last word, parentheticals stripped) — so an extractor
+        // guess of "Parchment Papers" preselects the "Parchment Paper"
+        // collection instead of stranding in "(not a collection yet)". Saving
+        // then NORMALIZES the stored class to the collection's exact spelling.
+        const variants = (name) => {
+          const outs = new Set();
+          for (const base of [name, String(name||'').replace(/\([^)]*\)/g, ' ')]) {
+            const n = String(base||'').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim().replace(/\s+/g, ' ');
+            if (!n) continue;
+            outs.add(n);
+            const w = n.split(' ');
+            const last = w[w.length-1];
+            outs.add([...w.slice(0,-1), last.endsWith('s') ? last.slice(0,-1) : last+'s'].join(' '));
+          }
+          return outs;
+        };
+        const cur = variants(current);
+        const exact = classes.find(pc => pc === current);
+        const near = exact || classes.find(pc => [...variants(pc)].some(v => cur.has(v)));
         sel.innerHTML =
           `<option value="">(no class — capture won't join any run)</option>` +
           classes.map(pc =>
-            `<option value="${escapeHtml(pc)}"${pc === current ? ' selected' : ''}>${escapeHtml(pc)}</option>`).join('') +
-          (current && !classes.includes(current)
+            `<option value="${escapeHtml(pc)}"${pc === near ? ' selected' : ''}>${escapeHtml(pc)}${(pc === near && !exact) ? ` (matched from “${escapeHtml(current)}”)` : ''}</option>`).join('') +
+          (current && !near
             ? `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (not a collection yet)</option>` : '');
       }).catch(() => {});
     }
