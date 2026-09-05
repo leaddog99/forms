@@ -4826,9 +4826,15 @@
 
     function _listQuery(offset) {
       const uid = (document.getElementById('user_id')?.value || '1').trim() || '1';
+      // A TYPED QUERY means relevance ordering (2026-09-05, the black-beans-
+      // rice search: results were date-ordered, so recency beat aboutness).
+      // The user's explicit sort choice still wins — only the date defaults
+      // are overridden while a query is present.
+      let sort = document.getElementById('sidebar_sort')?.value || 'updated_desc';
+      if (_searchQuery && (sort === 'updated_desc' || sort === 'created_desc')) sort = 'relevance';
       const p = new URLSearchParams({
         user_id: uid,
-        sort: document.getElementById('sidebar_sort')?.value || 'updated_desc',
+        sort,
         limit: String(LIST_PAGE),
         offset: String(offset),
       });

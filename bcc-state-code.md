@@ -8575,3 +8575,32 @@ original ask: sweet-paprika search returned SMOKED paprikas.
   (needs restart).
 * **G-S-B buttons finger-sized**: 40×38px targets (were 1×6px padding
   at .68rem — "too small for most fingers").
+
+## Session log — 2026-09-05 (search) — "how in god's name" answered: three defects under the flagship search
+
+Curator: "black beans rice" returned weakly-related recipes — "the most
+important search we have." Three stacked defects, root-caused:
+
+* **THE BIG ONE — phantom dishes in the dish-aware layer**: search
+  consumed dish_effective UNGATED, and dish_effective deliberately
+  includes the 'nearest' rung (for gear inheritance, badged by
+  dish_effective_source). 3,704 master rows wear a REJECTED match's
+  nearest candidate — Mojito carries dish_effective='Black Beans and
+  Rice' (confident:false, d=1.03) — and the search boosted ALL 28
+  "dish rows" including cocktails to the top. Fix: the search layer
+  now requires dish_effective_source IN ('assigned','matched') —
+  identity only, never nearest. The column itself is UNCHANGED (its
+  nearest rung is by-design for product-class inheritance; measurement
+  reads identity, never membership).
+* **Unweighted bm25**: a name hit scored the same as an ingredient-
+  scatter hit; short docs floated. Now bm25(fts, 10, 8, 2, 1) for
+  (name, dish, ingredients, cuisine).
+* **Date-ordered "search"**: the form sent updated/created sort even
+  with a typed query. Now a typed query implies relevance unless the
+  curator explicitly picked a different sort.
+* Verified: top 8 for "black beans rice" are all assigned-identity
+  Black Beans and Rice recipes. NEEDS RESTART to serve.
+* WATCHLIST: other dish_effective consumers should be audited for the
+  same nearest-rung leak where identity is meant (dish signals'
+  _winner_methods orders by OU but does not gate source; the 09-01
+  rung-ordering work may cover proposals — verify).

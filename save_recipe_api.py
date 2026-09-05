@@ -11064,9 +11064,15 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
         conn.execute("CREATE TEMP TABLE q_match (id INTEGER PRIMARY KEY, rel REAL)")
         return
     fts = f"{table}_fts"
+    # WEIGHTED bm25 (2026-09-05, the black-beans-rice search): unweighted, a
+    # name hit counted the same as an ingredient-scatter hit, and bm25's
+    # short-doc bias floated cocktails over the actual dish. Columns are
+    # (name, dish, ingredients, cuisine): a match in the NAME or canonical
+    # dish is the recipe being ABOUT the query; ingredients merely contain it.
     conn.execute(
         f"CREATE TEMP TABLE q_match AS "
-        f"SELECT rowid AS id, -bm25({fts}) AS rel FROM {fts} WHERE {fts} MATCH ?",
+        f"SELECT rowid AS id, -bm25({fts}, 10.0, 8.0, 2.0, 1.0) AS rel "
+        f"FROM {fts} WHERE {fts} MATCH ?",
         [expr],
     )
     # DISH-AWARE layer (2026-09-01 — the beef-WITH-broccoli 15-vs-2): FTS ANDs
@@ -11095,9 +11101,16 @@ def _materialise_text_match(conn, user_id: int, q: str) -> None:
             if dish:
                 top = conn.execute(
                     "SELECT COALESCE(MAX(rel), 0) FROM temp.q_match").fetchone()[0]
+                # IDENTITY ONLY — never the 'nearest' rung (2026-09-05, the
+                # black-beans-rice search: Mojito led the results because its
+                # REJECTED match's nearest candidate was this dish, and
+                # dish_effective serves that rung for gear inheritance). A
+                # search for a dish means recipes that ARE the dish:
+                # assigned or confidently matched, nothing looser.
                 conn.execute(
                     f"INSERT INTO temp.q_match(id, rel) "
                     f"SELECT id, ? FROM {table} WHERE dish_effective = ? "
+                    f"AND dish_effective_source IN ('assigned','matched') "
                     f"AND id NOT IN (SELECT id FROM temp.q_match)",
                     (float(top or 0) + 1.0, dish))
     except Exception as e:
