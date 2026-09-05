@@ -8617,3 +8617,41 @@ quote). RECOMMENDATION for the curator: for X-American cookbook
 collections with weak candidates, either fold the URL to the parent
 cuisine's phrase or park the collection; a per-collection eyeball via
 the collections page is the cheap pass.
+
+## START HERE — post-/clear (as of 2026-09-05 midday) — SUPERSEDES the earlier one above
+
+Read the 2026-09-03→05 session logs for the full arcs. Server RESTARTED
+just now — everything below is LIVE and verified (search returns
+identity dish members first with relevance scores; screen button,
+finder jobs, canonicalizer, 📎 line, ack checkbox all serving).
+
+DONE this morning (no action): cookbook family redone on the curator's
+quoted-URL model, 137/137, honestly graded (diaspora-compound shelves
+weak — see item 3); recipe search fixed at the root (phantom 'nearest'
+dishes gated out, weighted bm25, relevance sort on typed queries,
+weaker-matches divider in the sidebar; score in API only — pill was
+TMI); collections form defaults to the quoted-phrase URL; paprika
+postmortem fixes (brand+clean names on materialize, off-form chip,
+✨ off-class screen, finger-sized G-S-B).
+
+1. **BAILEY NSSM — one elevated command** (everything staged there):
+   powershell -ExecutionPolicy Bypass -File C:\Users\john\PycharmProjects\forms\bcc_install_service_bailey.ps1
+2. **Chip approvals (Gate 3) — GO**: 300+ proposals, cookbook chips now
+   land on stocked classes; rename "Egg Separators"→"Egg Separator".
+3. **Cookbook eyeball pass**: X-American diaspora collections came back
+   weak (Israeli-American = 1796 facsimiles — Amazon has no such
+   shelf); fold those URLs to the parent cuisine or park them.
+4. **Curation hygiene at leisure**: ack/exclude title-phrasing flags
+   (~43 collections); Ground Nutmeg honestly EMPTY (capture a spice
+   review or park); re-run-before-publish policy.
+5. **Watchlist**: audit other dish_effective consumers for the
+   nearest-rung leak where identity is meant (dish signals'
+   _winner_methods first). · Tandoori Chicken rework retry (~$0.55).
+6. **Next big build**: class↔collection FK → render/EV Phase 1 — also
+   unblocks the PARKED Gate-2 affiliate signups (Amazon-only until a
+   demonstrable user product).
+7. Small carried: EasyParser account cancel/dispute · extract-from-url
+   progress stamps · recipes-list slim projection · ~250 never-proposed
+   dishes · Nutmeg (dish) merge · Stand Mixer re-run · product-side
+   M2M · per-publisher cap · twins · Pistou Reserve ·
+   recipes-inherit-story.
