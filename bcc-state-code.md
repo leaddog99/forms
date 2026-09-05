@@ -8482,3 +8482,49 @@ run; every one holds candidates (2,941 total); NO thin shelves (<8
 candidates). The cookbook supply line is fully stocked: registry class
 + search collection + Amazon candidate cohort per cuisine, ready for
 Wilson bake-offs/medals whenever a dish's cookbook chip gets approved.
+
+## START HERE — post-/clear (as of 2026-09-05)
+
+Catch up by reading the 2026-09-03 and 2026-09-04 session logs above —
+two dense days: cook rework v2.3 + Chef memory + the pesto fix; the
+job-runner atomic claim; dishes list 30x; extract progress bar; the
+curation defense stack (class boundary → independent evidence → honest
+gap → PFAS rule → captured reviews as documents → sibling veto);
+cuisine canonicalized AT the recipe; 137 cookbook classes/collections
+manufactured and stocked (2,941 candidates); EasyParser retired, all
+Amazon data on Traject/Rainforest. Memory files updated throughout
+(see project_curate_defenses, feedback_monitor_batches).
+
+1. **RESTART OWED (one bcc_restart.bat)** — server-side changes since
+   the last restart: /reviews/ingest-url now enqueues real
+   review_ingest_url jobs (until restart the OLD in-request behavior
+   runs), get_review page_markdown_chars, cuisine canonicalizer in the
+   extract path. Everything job-side is already live.
+2. **BAILEY NSSM — one elevated command, everything staged**: on
+   BAILEY, elevated PowerShell:
+   powershell -ExecutionPolicy Bypass -File C:\Users\john\PycharmProjects\forms\bcc_install_service_bailey.ps1
+   (nssm.exe + script already scp'd there; disables BCC-Drill, installs
+   supervised auto-start service, health-checks.)
+3. **Chip approvals (Gate 3) — GO, and richer than before**: 300+
+   proposals across ~44 dishes, verified safe from the week's
+   learnings; cookbook chips now land on real stocked classes.
+   Rename "Egg Separators"→"Egg Separator" when approving it.
+4. **Curation hygiene, at leisure**: ack-or-exclude the title-phrasing
+   flags across ~43 collections (checkbox shipped); policy = re-run a
+   collection just before publishing it; Ground Nutmeg is honestly
+   EMPTY (capture a spice review via bookmarklet, add terms, or park).
+5. **Cookbook next step when wanted**: collections hold candidates;
+   the medal/bake-off step per collection turns them into ranked picks
+   (Wilson) — do on demand as dishes' cookbook chips get approved.
+6. **One held rework**: Tandoori Chicken with Raita (~$0.55 retry;
+   its v2.2 cook stays live meanwhile).
+7. **Engineering next-big-build unchanged**: class↔collection FK →
+   render/EV layer Phase 1 (docs/render-ev-layer.md). This is also the
+   unblock for the PARKED Gate-2 affiliate signups (Amazon-only until
+   a demonstrable user product — decision 2026-09-03).
+8. Small carried: EasyParser account — cancel/dispute at easyparser
+   .com if any balance recoverable · extract-from-url progress stamps
+   (bookmarklet path has them) · recipes-list slim projection someday ·
+   propose the ~250 never-proposed dishes · Nutmeg (dish) merge ·
+   Stand Mixer re-run · product-side M2M · per-publisher cap · twins ·
+   Pistou Reserve · recipes-inherit-story.
