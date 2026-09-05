@@ -8604,3 +8604,16 @@ important search we have." Three stacked defects, root-caused:
   same nearest-rung leak where identity is meant (dish signals'
   _winner_methods orders by OU but does not gate source; the 09-01
   rung-ordering work may cover proposals — verify).
+
+## Session log — 2026-09-05 (cookbooks redone) — 137/137 on the quoted model, honestly graded
+
+Full re-run complete: 137/137 ok, 2,086 candidates (was 2,941 — the
+quotes tightened the net). Eyeball-graded a random sample: single-
+cuisine and real-category shelves are STRONG (West African = Ghana/
+Senegal titles; Irish-American 14/16). One honest weakness found:
+DIASPORA COMPOUND shelves that Amazon doesn't have — Israeli-American
+returned 1796 "American Cookery" facsimiles (no such shelf exists to
+quote). RECOMMENDATION for the curator: for X-American cookbook
+collections with weak candidates, either fold the URL to the parent
+cuisine's phrase or park the collection; a per-collection eyeball via
+the collections page is the cheap pass.
