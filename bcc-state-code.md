@@ -8549,3 +8549,29 @@ runs WITHOUT re-sampling the fix.
   session starts before it finishes, check task output + then verify
   per-collection candidate quality (titles mention the cuisine) on a
   few samples before calling it done.
+
+## Session log — 2026-09-05 (paprika postmortem) — the pick that DID post, and four fixes
+
+Curator's sweet-paprika session surfaced a cluster (correction: the
+pick was McCormick CULINARY): the medaled Culinary paprika DID
+materialize ("2 new 1 updated" = Hungarian created, Simply Organic
+merged, Culinary created) — but it was UNRECOGNIZABLE: blank brand +
+the raw 40-word Amazon listing title as the product name. Plus the
+original ask: sweet-paprika search returned SMOKED paprikas.
+
+* **materialize_medals fixed**: brand falls back to _guess_brand(title)
+  (search providers often omit it; Rainforest now supplies it anyway);
+  product NAME is the listing title CLEANED (cut at ' - '/'|', trailing
+  size clauses and nested parenthetical sizes stripped via balance
+  scan). Both paprika rows backfilled: "McCormick Culinary Paprika",
+  "Hungarian Sweet Paprika from Kalocsa, Hungary".
+* **Off-form chip (deterministic)**: candidate titles carrying a form
+  word contradicting the collection's ("smoked" ≠ "sweet" — the
+  whole-vs-ground family) get an amber ⚠ chip. Flags, never hides.
+* **✨ Screen off-class button (curator's cheap-LLM suggestion)**: one
+  haiku call over the candidate titles; off-class candidates get the
+  standard restorable per-ASIN exclusion with a three-word reason.
+  Unsure = keep. POST /product-collections/{name}/screen-offclass
+  (needs restart).
+* **G-S-B buttons finger-sized**: 40×38px targets (were 1×6px padding
+  at .68rem — "too small for most fingers").

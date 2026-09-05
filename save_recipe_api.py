@@ -4478,6 +4478,55 @@ async def collection_medal_endpoint(name: str, request: Request):
     return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
 
 
+@app.post("/product-collections/{name}/screen-offclass")
+async def collection_screen_offclass_endpoint(name: str):
+    """Post-harvest relevance screen (curator ask, 2026-09-05: 'sweet paprika'
+    returned smoked paprikas): ONE cheap haiku call over the candidate titles;
+    candidates judged off-class get the standard per-ASIN exclusion (restorable,
+    reason in the UI via the exclusion state). Deterministic guards stay in the
+    page (the off-form chip); this is the judgment layer on top."""
+    from intake.products import collections_store as cst
+    import llm
+    with _db() as conn:
+        coll = cst.get_collection(conn, name)
+        if not coll:
+            raise HTTPException(status_code=404, detail="Collection not found.")
+        cands = [c for c in cst.list_candidates(conn, name)
+                 if not c.get("excluded")] if hasattr(cst, "list_candidates") else []
+        if not cands:
+            rows = conn.execute(
+                "SELECT asin, title FROM product_collection_candidates "
+                "WHERE collection = ? AND (excluded IS NULL OR excluded = 0)", (name,)).fetchall()
+            cands = [{"asin": a, "title": t} for a, t in rows]
+    if not cands:
+        return {"screened": 0, "excluded": []}
+    listing = "\n".join(f"- {c['asin']}: {c['title']}" for c in cands if c.get("asin"))
+    prompt = (
+        f"A shopper searched for exactly: {coll['name']!r} (the product class). Below are "
+        f"Amazon results. List ONLY the ASINs that are NOT that class — a different form "
+        f"(smoked vs sweet, ground vs whole), a different product, an accessory, or a "
+        f"bundle of something else. When unsure, keep it (do NOT list it). Reply as JSON: "
+        f'{{"off_class": [{{"asin": "...", "reason": "three words"}}]}}\n\n{listing}')
+    resp = llm.create(operation="collection_screen", model="claude-haiku-4-5",
+                      max_tokens=1000, messages=[{"role": "user", "content": prompt}])
+    text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+    import re as _re
+    m = _re.search(r"\{.*\}", text, _re.S)
+    out = []
+    if m:
+        try:
+            for o in (json.loads(m.group(0)).get("off_class") or []):
+                asin = (o.get("asin") or "").strip().upper()
+                if asin:
+                    with _db() as conn:
+                        cst.set_excluded(conn, name, asin, True)
+                    out.append({"asin": asin, "reason": o.get("reason") or "off-class"})
+        except Exception as e:
+            print(f"[SCREEN] parse failed: {e}")
+    print(f"[SCREEN] {name}: {len(out)} candidate(s) excluded as off-class")
+    return {"screened": len(cands), "excluded": out}
+
+
 @app.delete("/product-collections/{name}/candidates/{asin}")
 def collection_candidate_exclude_endpoint(name: str, asin: str):
     """Curator removes one candidate from the cohort. A persistent per-ASIN

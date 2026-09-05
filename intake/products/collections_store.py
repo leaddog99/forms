@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -346,7 +347,31 @@ def materialize_medals(conn: sqlite3.Connection, name: str) -> dict:
             out.append({"asin": cand.get("asin"), "skipped": "no title"})
             continue
         asin = (cand.get("asin") or "").strip().upper()
-        brand = (cand.get("brand") or "").strip()
+        # Brand: candidate's own, else guessed from the title — a blank brand
+        # made the McCormick Culinary paprika invisible under its brand in the
+        # products list (2026-09-05). Search providers often omit brand.
+        from intake.products.catalog_store import _guess_brand
+        brand = (cand.get("brand") or "").strip() or _guess_brand(title)
+        # Product NAME: the listing title CLEANED, not the raw 40-word Amazon
+        # blob ("…, 18 oz - One 18 Ounce Container of…, Perfect with Chicken…")
+        # — that blob is why the curator didn't recognize their own pick.
+        title = re.split(r"\s+-\s+|\s*\|\s*", title)[0].strip()
+        title = re.sub(r",\s*\d[\d./]*\s*(?:oz|ounces?|lbs?|pounds?|count|pack|ct|g|kg|ml)\b.*$",
+                       "", title, flags=re.IGNORECASE).strip().rstrip(",")
+        # Trailing parenthetical size groups, nesting included: "(8.8 ounce (250g))".
+        while title.endswith(")"):
+            depth, i = 0, len(title) - 1
+            while i >= 0:
+                depth += 1 if title[i] == ")" else (-1 if title[i] == "(" else 0)
+                if depth == 0:
+                    break
+                i -= 1
+            inner = title[i + 1:-1] if i >= 0 else ""
+            if i >= 0 and re.search(r"\d", inner) and re.search(
+                    r"oz|ounce|g\b|kg|lb|pound|ml|count|pack", inner, re.IGNORECASE):
+                title = title[:i].strip().rstrip(",")
+            else:
+                break
         price = None
         try:
             price = float(str(cand.get("price") or "").replace("$", "").replace(",", "")) or None

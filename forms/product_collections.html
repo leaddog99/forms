@@ -226,6 +226,8 @@
             <span class="muted" style="font-size:.8rem">Dimmed rows were returned but not screened.</span>
             <button type="button" class="ed-btn" id="materializeBtn" style="margin-left:auto"
               title="Create/update a catalog product record for every medaled candidate (find-or-create by ASIN, then brand+title — no duplicates; re-running updates)">⬇ Medalists → catalog</button>
+            <button type="button" class="ed-btn" id="screenOffclassBtn"
+              title="One cheap AI pass over the titles: candidates that aren't this class (smoked when you asked for sweet, accessories, bundles) get the standard restorable exclusion.">✨ Screen off-class</button>
             <span class="muted" id="matHint" style="font-size:.8rem"></span>
           </div>
           ${cands.length ? cands.map(candRow).join('') : '<p class="muted">— no run yet —</p>'}
@@ -252,6 +254,20 @@
       $('#back').addEventListener('click', () => { selected=null; detail=null; renderList(); renderDetail(); });
       $('#editBtn').addEventListener('click', () => { mode='edit'; renderDetail(); });
       $('#refreshBtn').addEventListener('click', doRefresh);
+      $('#screenOffclassBtn')?.addEventListener('click', async () => {
+        const b = $('#screenOffclassBtn');
+        b.disabled = true; const lbl = b.textContent; b.textContent = 'Screening…';
+        try {
+          const r = await fetch(`/product-collections/${encodeURIComponent(selected)}/screen-offclass`, { method: 'POST' });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.detail || 'HTTP '+r.status);
+          flash && flash(d.excluded.length
+            ? `${d.excluded.length} off-class excluded: ${d.excluded.map(x=>x.reason).slice(0,4).join(' · ')}`
+            : 'All candidates look on-class');
+          detail = null; await renderDetail();
+        } catch(e){ flash && flash('Screen failed: ' + (e.message||e)); }
+        finally { b.disabled = false; b.textContent = lbl; }
+      });
       $('#materializeBtn')?.addEventListener('click', async () => {
         const btn = $('#materializeBtn'), hint = $('#matHint');
         btn.disabled = true; hint.textContent = 'materializing…';
@@ -334,11 +350,21 @@
       const MPAL = { gold: 'background:#fbf1d4;color:#96700c;border-color:#d9b44a',
                      silver: 'background:#eceff1;color:#5c6b73;border-color:#9fb0b8',
                      bronze: 'background:#f6e3d6;color:#96552a;border-color:#c98d5f' };
+      // Touch-sized (2026-09-05, curator: "too small for most fingers"):
+      // 40px targets, comfortably tappable on the iPad.
       const medals = !x.screened ? '' : ['gold','silver','bronze',''].map(m =>
         `<button type="button" class="ed-btn" data-medal="${m}" data-asin="${escapeHtml(x.asin)}"
-           title="${m||'clear medal'}" style="padding:1px 6px;font-size:.68rem${
+           title="${m||'clear medal'}" style="min-width:40px;min-height:38px;padding:6px 10px;font-size:.9em${
              x.medal===m && m ? ';font-weight:800;'+MPAL[m] : ''}"
            >${m ? m[0].toUpperCase() : '–'}</button>`).join(' ');
+      // OFF-FORM chip: deterministic contradicting-form guard (sweet vs smoked
+      // — the whole-vs-ground rule, surfaced post-harvest). Flags, never hides.
+      const FORMS = ['sweet','smoked','hot','whole','ground','powder','sticks','seeds','dried','fresh','instant'];
+      const collForms = FORMS.filter(f => (selected||'').toLowerCase().includes(f));
+      const titleForms = FORMS.filter(f => (x.title||'').toLowerCase().includes(f));
+      const clash = collForms.length ? titleForms.filter(f => !collForms.includes(f)) : [];
+      const offForm = clash.length
+        ? `<span class="rv-src" style="background:#fff2df;color:#8a5a1b;border:1px solid #d9a55a" title="Title says ${clash.join('/')} but the collection asked for ${collForms.join('/')}">⚠ ${escapeHtml(clash[0])} ≠ ${escapeHtml(collForms[0])}</span>` : '';
       return `
         <div class="cd ${x.screened?'':'dim'}">
           ${x.image
@@ -348,6 +374,7 @@
             : '<div style="width:44px"></div>'}
           <div class="cd-main">
             <div class="cd-t">${escapeHtml(x.title||x.asin)}
+              ${offForm}
               ${x.medal?`<span class="medal ${escapeHtml(x.medal)}">${escapeHtml(x.medal)}</span>`:''}
               ${x.product_id?`<span class="pill-w" title="Materialized into the product catalog (${escapeHtml(x.product_id)})" style="background:#e2efeb;color:#0f6e5c">in catalog</span>`:''}</div>
             <div class="cd-meta">
