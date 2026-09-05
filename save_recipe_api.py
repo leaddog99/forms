@@ -11169,9 +11169,15 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                 f"SELECT COUNT(*) FROM {table} WHERE user_id = ?", [user_id]
             ).fetchone()[0]
 
+            # `relevance` rides along when a query is present (2026-09-05
+            # curator ask): the weighted-bm25 rank (higher = better), or the
+            # flat above-text boost for identity dish members — so a caller
+            # can SEE why a row placed where it did. NULL when no query.
+            rel_col = (f", (SELECT rel FROM temp.q_match WHERE id = {table}.id)"
+                       if q else ", NULL")
             rows = conn.execute(
                 f"SELECT id, recipe_id, user_id, data, source_changed_at, "
-                f"created_at, updated_at FROM {table} WHERE {where} "
+                f"created_at, updated_at{rel_col} FROM {table} WHERE {where} "
                 f"ORDER BY {order_by} LIMIT ? OFFSET ?",
                 [*params, limit, offset],
             ).fetchall()
@@ -11188,6 +11194,7 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
                     "data": _recipe_list_data(data),
                     "source_changed_at": row[4], "created_at": row[5],
                     "updated_at": row[6], "bccUrl": _bcc_permalink(row[1]),
+                    "relevance": round(row[7], 3) if row[7] is not None else None,
                 })
 
             facet_counts: dict = {}
