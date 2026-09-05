@@ -516,12 +516,19 @@
     /* Grade — inline letterspaced caps, NYT's small-caps label register.
        A-tier wears the lone color accent (terracotta), matching the red
        NYT uses for its star ratings and save-heart. */
-    .recipe-item .rel-score {
-      display: inline-block; margin-left: 7px; padding: 0 6px;
-      font-size: 0.7rem; font-weight: 700; font-variant-numeric: tabular-nums;
-      color: #6b5b4f; background: #f3ede6; border-radius: 999px;
-      vertical-align: 2px;
+    /* Weaker-matches divider (2026-09-05): per-query adaptive — rows under
+       ~60% of the query's top relevance sit below this line, dimmed. Nothing
+       is hidden; the tail (arancini under "risotto") stays findable. */
+    .rel-divider {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px 4px; color: #9a8c7f; font-size: 0.74rem;
+      font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+      user-select: none;
     }
+    .rel-divider::before, .rel-divider::after {
+      content: ''; flex: 1; border-top: 1px solid #e4dcd2;
+    }
+    .recipe-item.rel-weak { opacity: 0.62; }
     .recipe-item .grade-mark {
       font-family: var(--sans);
       font-size: 11px;
@@ -4464,6 +4471,12 @@
     // The card builder is captured by renderRecipes (it closes over the field
     // pickers) and parked here, because pages arrive from loadMoreRecipes which
     // is not inside renderRecipes' scope.
+    // Weaker-matches divider state: the threshold is 60% of THIS query's top
+    // relevance (page 0, row 0 — the list is relevance-ordered when a query
+    // is typed). Reset per search; survives loadMore pages so the divider
+    // lands once wherever the curve crosses, even mid-pagination.
+    let _relThreshold = null, _relDividerDone = false;
+
     function renderListRows(rows, { replace }) {
       if (!_listBuildCard) return;
       if (replace) {
@@ -4473,11 +4486,27 @@
         // past the end, showing an empty box. Always start at the top.
         const root = listScrollRoot();
         if (root) root.scrollTop = 0;
+        _relThreshold = null; _relDividerDone = false;
+        if (rows.length && rows[0].relevance != null) {
+          _relThreshold = rows[0].relevance * 0.6;
+        }
       }
       // One fragment, one reflow — appending cards individually costs a layout
       // pass each.
       const frag = document.createDocumentFragment();
-      rows.forEach(r => frag.appendChild(_listBuildCard(r)));
+      rows.forEach(r => {
+        const weak = _relThreshold != null && r.relevance != null && r.relevance < _relThreshold;
+        if (weak && !_relDividerDone) {
+          const div = document.createElement('li');
+          div.className = 'rel-divider';
+          div.textContent = 'weaker matches';
+          frag.appendChild(div);
+          _relDividerDone = true;
+        }
+        const card = _listBuildCard(r);
+        if (weak) card.classList.add('rel-weak');
+        frag.appendChild(card);
+      });
       listEl.appendChild(frag);
       syncListSentinel();
     }
@@ -5201,16 +5230,6 @@
         const title = document.createElement('div');
         title.className = 'title';
         title.textContent = getName(r) || '[Untitled]';
-        // Relevance score (2026-09-05): present only on query searches — the
-        // weighted-bm25 rank, so the curator can SEE why a row placed here.
-        // Identity dish members share the flat above-text boost at the top.
-        if (r.relevance != null) {
-          const rel = document.createElement('span');
-          rel.className = 'rel-score';
-          rel.title = 'Search relevance (weighted match rank; dish-identity rows carry the top boost)';
-          rel.textContent = Number(r.relevance).toFixed(1);
-          title.appendChild(rel);
-        }
         body.appendChild(title);
 
         // Byline — sans small grey, hidden when no author.
