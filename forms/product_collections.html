@@ -428,11 +428,13 @@
           </div>
           <div class="ed-field"><label>Amazon search URL *</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input id="f_url" value="${escapeHtml(v.url||'')}" placeholder="https://www.amazon.com/s?k=dutch+oven&s=review-rank" style="flex:1">
+              <input id="f_url" value="${escapeHtml(v.url||'')}" placeholder="https://www.amazon.com/s?k=%22dutch+ovens%22" style="flex:1">
               ${LibraryShell.urlControl('', {inputId:'f_url'})}
             </div>
-            <p class="muted" style="font-size:.78rem;margin:5px 0 0">Filter and sort in Amazon
-              until the result set is right, then paste the address bar here.</p></div>
+            <p class="muted" style="font-size:.78rem;margin:5px 0 0">Defaults to the
+              QUOTED-PHRASE model built from the name — quotes hold Amazon to the topic
+              (curator standard, 2026-09-05; the unquoted form drifted off-topic). Edit
+              freely for refinements/sorts; a hand-built URL is never overwritten.</p></div>
           <div class="pc-row3">
             <div class="ed-field"><label>Category (WS taxonomy)</label>
               <input id="f_cat" list="dl_cat" value="${escapeHtml(v.ws_path||'')}" placeholder="auto on create">
@@ -451,6 +453,21 @@
         </div>`;
       $('#cancel').addEventListener('click', () => { mode='view'; renderDetail(); });
       $('#save').addEventListener('click', () => saveForm(isEdit ? c : null));
+      // Quoted-phrase default: the URL auto-builds from the name as the curator
+      // types — k=%22<name>%22 — and keeps following the name while the field
+      // still holds an auto-built value. The moment the curator edits the URL
+      // by hand, auto-fill stands down (dataset.auto no longer matches).
+      const nameEl = $('#f_name'), urlEl = $('#f_url');
+      if (nameEl && urlEl && !isEdit){
+        const quotedUrl = (n) => 'https://www.amazon.com/s?k=%22' +
+          encodeURIComponent(n.trim().toLowerCase()).replace(/%20/g, '+') + '%22';
+        nameEl.addEventListener('input', () => {
+          const cur = urlEl.value.trim();
+          if (cur && cur !== urlEl.dataset.auto) return;   // hand-built — leave it
+          urlEl.value = nameEl.value.trim() ? quotedUrl(nameEl.value) : '';
+          urlEl.dataset.auto = urlEl.value;
+        });
+      }
       (isEdit ? $('#f_url') : $('#f_name')).focus();
     }
 
