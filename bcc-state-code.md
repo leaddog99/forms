@@ -8528,3 +8528,24 @@ Amazon data on Traject/Rainforest. Memory files updated throughout
    propose the ~250 never-proposed dishes · Nutmeg (dish) merge ·
    Stand Mixer re-run · product-side M2M · per-publisher cap · twins ·
    Pistou Reserve · recipes-inherit-story.
+
+## Session log — 2026-09-05 (pre-clear) — cookbook URLs redone on the curator's quoted model
+
+Curator caught the relevance failure I shipped: the unquoted k= query
+drifted off-topic ("the books had nothing to do with the topic") — and
+the sharper lesson, second time in two days: "check your results on a
+SAMPLE before doing an entire batch." I had sampled once, seen the
+review-rank drift, switched to relevance sort, and then launched 119
+runs WITHOUT re-sampling the fix.
+
+* All 137 cookbook collection URLs moved to the curator's model:
+  https://www.amazon.com/s?k=%22<cuisine>+cookbooks%22 — QUOTED phrase,
+  plural. Sampled BEFORE batching this time: Afghan 16/16 on-topic
+  (was 15/16 stored), Haitian 14/16, Jamaican 11/16 with misses being
+  Caribbean-adjacent, not off-topic.
+* Full re-run of all 137 launched (replace_candidates wipes stale
+  rows — verified before firing). Breaker driver + Monitor with an
+  early-sample trigger. IN FLIGHT ACROSS THE /clear — if the next
+  session starts before it finishes, check task output + then verify
+  per-collection candidate quality (titles mention the cuisine) on a
+  few samples before calling it done.
