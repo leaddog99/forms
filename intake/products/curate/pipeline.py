@@ -242,9 +242,23 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
         print(f"[CURATE] curator class boundary in force ({len(class_criteria.strip())} chars)")
     text = P.build_prompt(product_class, categories, docs, editors_choice=editors_choice,
                           class_criteria=class_criteria)
+    data = _call_and_parse(product_class, text, operation="curate_research",
+                           model=rr.MODEL)
+    # What was ASKED FOR, not merely what came back: without it a renamed, dropped or invented
+    # category is indistinguishable from a requested one.
+    data["categories_requested"] = categories
+    # Same idea for the pinned pick: stamping the REQUEST makes its absence checkable.
+    if (editors_choice or "").strip():
+        data["editors_choice_requested"] = editors_choice.strip()
+    return data
+
+
+def _call_and_parse(product_class: str, text: str, *, operation: str,
+                    model: str) -> dict:
+    """One research call -> parsed record. Shared by both source modes."""
     import llm
     # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
-    with llm.stream(operation="curate_research", model=rr.MODEL, max_tokens=MAX_TOKENS,
+    with llm.stream(operation=operation, model=model, max_tokens=MAX_TOKENS,
                     messages=[{"role": "user", "content": text}]) as s:
         msg = s.get_final_message()
     raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
@@ -265,26 +279,30 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
         raise ValueError("no JSON in the model reply:\n" + raw[:400])
     data = json.loads(m.group(1))
     data.setdefault("product_class", product_class)
-    # What was ASKED FOR, not merely what came back: without it a renamed, dropped or invented
-    # category is indistinguishable from a requested one.
-    data["categories_requested"] = categories
-    # Same idea for the pinned pick: stamping the REQUEST makes its absence checkable.
-    if (editors_choice or "").strip():
-        data["editors_choice_requested"] = editors_choice.strip()
     return data
 
 
-def verify_and_render(data: dict, *, use_network: bool = True) -> tuple:
+def verify_and_render(data: dict, *, use_network: bool = True,
+                      book_evidence: dict | None = None) -> tuple:
     """Shape -> enrichment -> brief. Returns (report, brief_text).
 
     Raises on a shape error: refusing to build beats emitting a plausible-but-broken artifact
     that a curator would have to disprove rather than merely read.
+
+    `book_evidence` switches to the amazon_pool verify: no network, no ASIN
+    recovery — closed-world check + facts copied from the already-fetched pool
+    evidence. The independent-sources rule is skipped there (every source_link
+    is legitimately an amazon host; the arithmetic is the independent evidence).
     """
-    errs = V.validate_shape(data)
+    errs = V.validate_shape(data, require_independent_sources=book_evidence is None)
     if errs:
         raise ValueError("shape errors — refusing to build:\n  - " + "\n  - ".join(errs))
-    print("[CURATE] shape OK; verifying identity + owner evidence…")
-    report = V.enrich(data, use_network=use_network)
+    if book_evidence is not None:
+        print("[CURATE] shape OK; verifying against pool evidence (no network)…")
+        report = V.book_enrich(data, book_evidence)
+    else:
+        print("[CURATE] shape OK; verifying identity + owner evidence…")
+        report = V.enrich(data, use_network=use_network)
     for key in ("verified", "filled", "offers", "scored", "rejected", "notes"):
         for item in report.get(key) or []:
             print(f"[CURATE]   [{key}] {item}")
@@ -293,27 +311,63 @@ def verify_and_render(data: dict, *, use_network: bool = True) -> tuple:
 
 def run(product_class: str, categories=None, *, refresh: bool = False,
         use_network: bool = True, terms: list | None = None, editors_choice: str = "",
-        class_criteria: str = "",
+        class_criteria: str = "", source_mode: str = "authorities",
+        pool_collection: str = "",
         should_cancel: Callable[[], bool] | None = None) -> dict:
     """The whole pass. Returns {record, report, brief_text, sources}.
 
     Fetches here rather than inside `research` so the caller can report WHICH authorities
     answered — a run grounded in three publishers and one grounded in eight are not the same
     artifact, and the summary is what a curator reads without opening the log.
+
+    `source_mode='amazon_pool'` (docs/book-review-curation.md) swaps ONLY the
+    sources stage: evidence comes from the linked search collection's own
+    candidates (per-ASIN Amazon product data) instead of publisher pages, the
+    prompt becomes the closed-world book variant, and verify runs against the
+    already-fetched evidence with no network. Everything downstream — record
+    shape, picks, brief, editor, materialize — is shared.
     """
-    docs = fetch_docs(product_class, refresh=refresh, terms=terms,
-                      should_cancel=should_cancel)
+    evidence = None
+    if source_mode == "amazon_pool":
+        from intake.products.curate import book_sources as B
+        if not (pool_collection or "").strip():
+            raise ValueError("amazon_pool mode requires pool_collection — the search "
+                             "collection whose candidates form the pool")
+        docs, evidence = B.fetch_book_docs(pool_collection, product_class,
+                                           refresh=refresh, terms=terms,
+                                           editors_choice=editors_choice,
+                                           should_cancel=should_cancel)
+    else:
+        docs = fetch_docs(product_class, refresh=refresh, terms=terms,
+                          should_cancel=should_cancel)
     sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
                "missing": [d["label"] for d in docs if not d.get("markdown")]}
-    data = research(product_class, categories, docs=docs, editors_choice=editors_choice,
-                    class_criteria=class_criteria, should_cancel=should_cancel)
-    # Deterministic on-class title gate (curator suggestion 2026-09-03, layered
-    # under the prompt boundary): a pick whose title names neither the class nor
-    # any fallback term gets a visible identity_warning — flagged, not deleted,
-    # because legitimate products omit the phrase ("Stainless Steel Canner with
-    # Rack" IS a water-bath canner) while imposters can include it ("Multi-
-    # Cooker/Canner"). The flag is for the curator's eye and the brief.
-    V.flag_offclass_titles(data, product_class, terms or [])
+    if source_mode == "amazon_pool":
+        if P.normalize_categories(categories):
+            print("[CURATE] NOTE: categories are not supported in amazon_pool mode yet — "
+                  "ranking the whole class")
+        import realrank_research as rr
+        text = P.build_book_prompt(product_class, docs, editors_choice=editors_choice,
+                                   class_criteria=class_criteria)
+        print(f"[CURATE] {len(sources['retrieved'])} pool book(s) in evidence; curating…")
+        data = _call_and_parse(product_class, text, operation="curate_book_research",
+                               model=rr.MODEL)
+        data["categories_requested"] = []
+        if (editors_choice or "").strip():
+            data["editors_choice_requested"] = editors_choice.strip()
+        # No title gate for books — a cookbook's title rarely names its class
+        # ("Acadiana Table" ∉ "Acadian Cookbooks"); the closed-world ASIN check
+        # in book_enrich is the deterministic gate here.
+    else:
+        data = research(product_class, categories, docs=docs, editors_choice=editors_choice,
+                        class_criteria=class_criteria, should_cancel=should_cancel)
+        # Deterministic on-class title gate (curator suggestion 2026-09-03, layered
+        # under the prompt boundary): a pick whose title names neither the class nor
+        # any fallback term gets a visible identity_warning — flagged, not deleted,
+        # because legitimate products omit the phrase ("Stainless Steel Canner with
+        # Rack" IS a water-bath canner) while imposters can include it ("Multi-
+        # Cooker/Canner"). The flag is for the curator's eye and the brief.
+        V.flag_offclass_titles(data, product_class, terms or [])
     # Per-source ACCOUNTING: fetch facts (ours) merged with the model's reading of each
     # document (source_report in the reply — what the page actually covers, whether it
     # was usable). One row per named authority, failures included, so "Serious Eats got
@@ -341,7 +395,8 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
     data["_source_accounting"] = sources["report"]
     if should_cancel and should_cancel():
         raise KeyboardInterrupt("cancelled before verification")
-    report, brief_text = verify_and_render(data, use_network=use_network)
+    report, brief_text = verify_and_render(data, use_network=use_network,
+                                           book_evidence=evidence)
     return {"record": data, "report": report, "brief_text": brief_text, "sources": sources}
 
 

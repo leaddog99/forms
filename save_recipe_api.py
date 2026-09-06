@@ -4705,6 +4705,42 @@ def curated_pick_ack_warning_endpoint(name: str, slot: str, payload: dict = Body
     return {"collection": name, "slot": slot, "warning_ack": ack}
 
 
+@app.post("/curated-collections/{name}/picks/{slot}/set-asin")
+def curated_pick_set_asin_endpoint(name: str, slot: str, payload: dict = Body(default={})):
+    """Curator supplies the RIGHT ASIN for one pick — the Cheese Knife case
+    (2026-09-05): the corpus blank-filler matched 'OXO … Good Grips' tokens to
+    a loaf-pan review's buy link, and the only remedy was a whole paid re-run.
+    Re-verifies identity against the new listing and re-pulls image/model/
+    offers/owner evidence for that row alone — verify's own step-2/3 code, one
+    row instead of all. A mismatched listing stamps a FRESH identity_warning
+    rather than failing, so a wrong entry stays visible, not silent."""
+    from intake.products import curated_collections as ccs
+    from intake.products.curate import verify as cvf
+    asin = (payload.get("asin") or "").strip().upper()
+    if not cvf.ASIN_RE.match(asin):
+        raise HTTPException(status_code=400, detail="ASIN must be 10 letters/digits.")
+    with _db() as conn:
+        pick = next((p for p in ccs.list_picks(conn, name) if p.get("slot") == slot), None)
+        if pick is None:
+            raise HTTPException(status_code=404, detail="Pick not found.")
+        r = {"manufacturer": pick.get("manufacturer") or "",
+             "product_title": pick.get("product_title") or "",
+             "capacity": pick.get("capacity") or "",
+             "buy_link": pick.get("buy_link") or "",
+             "model_number": pick.get("model_number") or "",
+             "amazon_asin": asin,
+             "amazon_link": f"https://www.amazon.com/dp/{asin}",
+             "asin_source": "curator"}
+        report = cvf.enrich_one(conn, r, label=slot)
+        ccs.apply_pick_asin(conn, name, slot, r)
+    print(f"[CURATE] {name}/{slot}: curator set ASIN {asin} — "
+          + ("verified" if r.get("verified_title") else
+             (r.get("identity_warning") or "no listing data")))
+    return {"collection": name, "slot": slot, "asin": asin,
+            "verified": bool(r.get("verified_title")),
+            "identity_warning": r.get("identity_warning") or "", "report": report}
+
+
 @app.post("/curated-collections/{name}/run")
 def curated_run_endpoint(name: str, payload: dict = Body(default={})):
     """THE BUTTON. Research -> verify -> picks -> product records, as one tracked job.
@@ -4741,6 +4777,159 @@ async def curated_approve_endpoint(name: str, request: Request):
     if c is None:
         raise HTTPException(status_code=404, detail="Curated collection not found.")
     return {"collection": name, "approved_by": who, "approved_at": c.get("approved_at")}
+
+
+# ---- Menus (forms/menus.html) -----------------------------------------------------
+# Dated, per-user groups of the user's own recipes + a persisted shopping list —
+# Option A of docs/meal-planning-research.md (the dinner-party flag). Membership
+# is a small personal junction on the possess side; the corpus is never involved.
+
+@app.get("/menus")
+def menus_list_endpoint(user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        return {"menus": ms.list_menus(conn, user_id), "categories": ms.CATEGORIES}
+
+
+@app.post("/menus")
+def menus_create_endpoint(payload: dict = Body(default={}),
+                          user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    try:
+        with _db() as conn:
+            return ms.create_menu(conn, user_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.get("/menus/{menu_id}")
+def menus_get_endpoint(menu_id: int, user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        m = ms.get_menu(conn, user_id, menu_id)
+    if m is None:
+        raise HTTPException(status_code=404, detail="Menu not found.")
+    return m
+
+
+@app.put("/menus/{menu_id}")
+def menus_update_endpoint(menu_id: int, payload: dict = Body(default={}),
+                          user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    try:
+        with _db() as conn:
+            m = ms.update_menu(conn, user_id, menu_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if m is None:
+        raise HTTPException(status_code=404, detail="Menu not found.")
+    return m
+
+
+@app.delete("/menus/{menu_id}")
+def menus_delete_endpoint(menu_id: int, user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        ok = ms.delete_menu(conn, user_id, menu_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Menu not found.")
+    return {"deleted": menu_id}
+
+
+@app.post("/menus/{menu_id}/recipes")
+def menus_add_recipe_endpoint(menu_id: int, payload: dict = Body(default={}),
+                              user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    rid = (payload.get("recipe_id") or "").strip()
+    if not rid:
+        raise HTTPException(status_code=400, detail="recipe_id required")
+    try:
+        with _db() as conn:
+            ok = ms.add_recipe(conn, user_id, menu_id, rid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if not ok:
+        raise HTTPException(status_code=404, detail="Menu not found.")
+    return {"menu_id": menu_id, "recipe_id": rid, "added": True}
+
+
+@app.delete("/menus/{menu_id}/recipes/{recipe_id}")
+def menus_remove_recipe_endpoint(menu_id: int, recipe_id: str,
+                                 user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        ok = ms.remove_recipe(conn, user_id, menu_id, recipe_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Menu or recipe not found.")
+    return {"menu_id": menu_id, "recipe_id": recipe_id, "removed": True}
+
+
+@app.put("/menus/{menu_id}/recipes/{recipe_id}")
+def menus_multiplier_endpoint(menu_id: int, recipe_id: str,
+                              payload: dict = Body(default={}),
+                              user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        ok = ms.set_multiplier(conn, user_id, menu_id, recipe_id,
+                               payload.get("multiplier", 1))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Menu or recipe not found.")
+    return {"menu_id": menu_id, "recipe_id": recipe_id,
+            "multiplier": payload.get("multiplier", 1)}
+
+
+@app.post("/menus/{menu_id}/shopping/build")
+def menus_build_list_endpoint(menu_id: int, user_id: int = PLACEHOLDER_USER_ID):
+    """Parse (cached per recipe) -> scale -> conservative merge -> persisted
+    checklist. In-process: one cheap haiku call at most, seconds."""
+    import menus_store as ms
+    try:
+        with _db() as conn:
+            return ms.build_shopping_list(conn, user_id, menu_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        print(f"[MENU] shopping build failed for menu {menu_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Build failed: {e}") from e
+
+
+@app.post("/menus/{menu_id}/shopping/items")
+def menus_add_item_endpoint(menu_id: int, payload: dict = Body(default={}),
+                            user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    try:
+        with _db() as conn:
+            r = ms.add_item(conn, user_id, menu_id, payload.get("display") or "",
+                            payload.get("category") or "other")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    if r is None:
+        raise HTTPException(status_code=404, detail="Menu not found.")
+    return r
+
+
+@app.put("/menus/{menu_id}/shopping/items/{item_id}")
+def menus_item_state_endpoint(menu_id: int, item_id: int,
+                              payload: dict = Body(default={}),
+                              user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        ok = ms.set_item_state(conn, user_id, menu_id, item_id, payload)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Menu or item not found.")
+    return {"menu_id": menu_id, "item_id": item_id, **{k: payload[k]
+            for k in ("have", "checked") if k in payload}}
+
+
+@app.delete("/menus/{menu_id}/shopping/items/{item_id}")
+def menus_delete_item_endpoint(menu_id: int, item_id: int,
+                               user_id: int = PLACEHOLDER_USER_ID):
+    import menus_store as ms
+    with _db() as conn:
+        ok = ms.delete_item(conn, user_id, menu_id, item_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Menu or item not found.")
+    return {"menu_id": menu_id, "item_id": item_id, "deleted": True}
 
 
 # ---- Reviews ACDV editor (forms/reviews.html) -------------------------------------
@@ -9370,15 +9559,23 @@ async def _handle_realrank_research_job(job: dict) -> dict:
 jobs_lib.register_handler("realrank_research", _handle_realrank_research_job)
 
 
+# How deep the widget-measurement pass reaches into the Wilson-ordered cohort
+# (curator calibration, 2026-09-05). Shortlist (keep_top_n) stays separate.
+MEASURE_TOP_N = 30
+
+
 async def _handle_collection_refresh_job(job: dict) -> dict:
     """Run a product collection: the saved Amazon search URL -> the cohort -> a screened
     shortlist (intake/products/collections_store).
 
     Stage 1 — EasyParser SEARCH on the URL (1 credit per page). Every ASIN returned is KEPT,
-    each with a Wilson screen computed from its average and count. Stage 2 — the top
-    `keep_top_n` get a real star histogram from the free Amazon widget and are rescored with
-    the RealRank index. We deliberately do not spend a fetch on candidates we've already
-    screened out; `screened` records which ones we did.
+    each with a Wilson screen computed from its average and count. Stage 2 — the Wilson
+    top-30 get a real star histogram from the free Amazon widget and a RealRank score
+    (curator, 2026-09-05: batch system, free widget — but "ordered first by wilson with a
+    limit of top 30 you wouldn't miss any that mattered": Wilson is a conservative lower
+    bound, so nothing below its top-30 can rescore into a top-10 pool; measuring past 30
+    is pure endpoint traffic). `keep_top_n` still sizes the SHORTLIST (`selected=1`, who
+    reaches the bake-off); measurement covers three times that.
 
     Params: collection (required, the name — identity, never the URL off argv).
     """
@@ -9416,15 +9613,23 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
         with _db() as conn:
             cst.replace_candidates(conn, name, items)
             cohort = cst.list_candidates(conn, name)
+        # Measure the Wilson top-30 — wide enough that RealRank rescoring can't
+        # promote anything from below it into a top-10 pool, narrow enough to
+        # go easy on the undocumented widget endpoint. The shortlist flag stays
+        # top-keep_top_n by Wilson.
+        screen = [c for c in cohort if c.get("wilson_score") and not c.get("excluded")
+                  ][:MEASURE_TOP_N]
+        shortlist = {c["asin"] for c in screen[:int(coll.get("keep_top_n") or 10)]}
         print(f"[COLLECTION] {len(items)} candidates kept "
-              f"(credits {res.get('credits')}) — screening top {coll.get('keep_top_n')}")
-
-        top = [c for c in cohort if c.get("wilson_score") and not c.get("excluded")
-               ][:int(coll.get("keep_top_n") or 10)]
+              f"(credits {res.get('credits')}) — measuring Wilson top {len(screen)}, "
+              f"shortlisting top {len(shortlist)}")
         screened, failed = 0, 0
-        for c in top:
+        for c in screen:
             if _should_cancel():
                 raise KeyboardInterrupt("cancelled during screening")
+            # Pacing: 0.4s back-to-back drew a widget throttle (25 straight
+            # failures, measured 2026-09-05) — batch job, a second is free.
+            time.sleep(1.0)
             h = aw.rating_histogram(c["asin"])
             if not h.get("ok") or not h.get("histogram"):
                 failed += 1
@@ -9434,12 +9639,14 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
             pol = (polarization(h["histogram"]) or {}).get("label") or ""
             with _db() as conn:
                 cst.set_screen_result(conn, name, c["asin"], histogram=h["histogram"],
-                                      realrank_score=score, polarization=pol)
+                                      realrank_score=score, polarization=pol,
+                                      selected=c["asin"] in shortlist)
             screened += 1
             print(f"[COLLECTION]   {c['asin']} wilson {c['wilson_score']} -> real {score}"
-                  f"{' (' + pol + ')' if pol else ''}")
+                  f"{' (' + pol + ')' if pol else ''}"
+                  + ("" if c["asin"] in shortlist else "  (measured, not shortlisted)"))
         # Every histogram failing is systemic (throttled/endpoint moved), not a bad candidate.
-        if top and failed == len(top):
+        if screen and failed == len(screen):
             raise ValueError(f"all {failed} histogram fetches failed — widget may be blocked "
                              f"or its endpoint moved; not publishing an unscored shortlist")
         with _db() as conn:
@@ -9498,13 +9705,18 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
             raise ValueError(f"curated collection {name!r} not found")
         pclass = coll["product_class"]
         cats = coll.get("categories") or []
-        print(f"[CURATE] {name} -> {pclass}")
+        mode = (coll.get("source_mode") or "authorities").strip() or "authorities"
+        print(f"[CURATE] {name} -> {pclass}"
+              + (f" (amazon_pool ← {coll.get('pool_collection')})"
+                 if mode == "amazon_pool" else ""))
 
         out = pipeline.run(pclass, cats, refresh=bool(params.get("refresh")),
                            use_network=bool(coll.get("use_network", 1)),
                            terms=coll.get("search_terms") or [],
                            editors_choice=coll.get("editors_choice") or "",
                            class_criteria=coll.get("class_criteria") or "",
+                           source_mode=mode,
+                           pool_collection=coll.get("pool_collection") or "",
                            should_cancel=_should_cancel)
         record, report, brief_text = out["record"], out["report"], out["brief_text"]
 

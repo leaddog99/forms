@@ -244,10 +244,16 @@ def _check_places(rows: list, declared: set, section: str, label: str) -> list:
     return errs
 
 
-def validate_shape(data: dict) -> list:
-    """Structural errors. Empty list = the artifact may be built."""
+def validate_shape(data: dict, *, require_independent_sources: bool = True) -> list:
+    """Structural errors. Empty list = the artifact may be built.
+
+    `require_independent_sources=False` is the amazon_pool (book) mode: the
+    evidence IS the Amazon listing data, so every source_link is legitimately
+    an amazon host — there the independent evidence is the owner ARITHMETIC,
+    and the closed-world pool check in book_enrich replaces this rule."""
     declared, errs = _declared_omissions(data)
-    errs += check_independent_sources(data)
+    if require_independent_sources:
+        errs += check_independent_sources(data)
     overall = data.get("overall_top_three")
     if not isinstance(overall, list):
         errs.append("overall_top_three must be a list")
@@ -306,6 +312,21 @@ def validate_shape(data: dict) -> list:
         total = sum(float(c.get("weight", 0)) for c in crit)
         if abs(total - 1.0) > 0.001:
             errs.append(f"ranking weights must total 1.0; found {total:.3f}")
+
+    # also_considered (optional): the structured strongest-non-placer, added
+    # 2026-09-05 so the "also considered" line is clickable rather than a name
+    # buried in prose. Same ASIN discipline as ranked rows.
+    for a in (data.get("also_considered") or []):
+        if not isinstance(a, dict):
+            errs.append("also_considered entries must be objects")
+            continue
+        asin = str(a.get("amazon_asin") or "").strip().upper()
+        if asin:
+            if not ASIN_RE.fullmatch(asin):
+                errs.append(f"also_considered {a.get('product_title')!r}: "
+                            f"invalid ASIN {asin!r}")
+            else:
+                a["amazon_asin"] = asin
 
     # A RELEVANT source silently unused reads as a defect (the Consumer Reports
     # parchment case, 2026-09-04: on-class, used=false, no explanation — the
@@ -438,94 +459,169 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
 
         if not asin or not use_network:
             continue
-
-        # 2. Identity: is this listing actually the product named? Brand + type noun.
-        try:
-            listing = az.product_ratings(asin)
-        except Exception as e:
-            report["notes"].append(f"{label}: listing lookup failed ({e})")
-            continue
-        ltitle = listing.get("title") or ""
-        # Compare on the manufacturer's LEADING TOKEN, not the whole string. Publishers write
-        # parent companies and sub-brands in ("Staub (Zwilling)", "Lodge Cast Iron"), and
-        # asking whether "staub (zwilling)" appears inside the listing's "STAUB" is backwards
-        # — it flagged four correct rows.
-        brand_raw = (r.get("manufacturer") or "").split("(")[0].strip().lower()
-        brand = next((w for w in brand_raw.split() if len(w) >= 3), brand_raw)
-        hay = f"{(listing.get('brand') or '').lower()} {ltitle.lower()}"
-        brand_ok = (not brand) or brand in hay
-        # Shared vocabulary: knows a cocotte IS a dutch oven while a bread oven is not, and
-        # fails OPEN on anything ambiguous rather than dropping a legitimate product.
-        type_ok, type_why = same_type(f"{title} {r.get('capacity','')}", ltitle)
-        if not (brand_ok and type_ok):
-            why = type_why if not type_ok else "brand does not match"
-            r["identity_warning"] = (
-                f"ASIN {asin} looks like a different product ({why}): {ltitle[:60]}")
-            report["rejected"].append(f"{label}: {r['identity_warning']}")
-            continue
-        r["verified_title"] = ltitle
-        # The listing lookup already carries the photo and often the
-        # manufacturer's model number — keep both on the pick (the photo is
-        # the row's thumbnail; the model number disambiguates brand siblings).
-        # Research's own model_number wins; the listing only fills a blank.
-        if listing.get("image"):
-            r["image"] = listing["image"]
-        if listing.get("model_number") and not (r.get("model_number") or "").strip():
-            r["model_number"] = listing["model_number"]
-        report["verified"].append(f"{label}: {asin} — {ltitle[:56]}")
-
-        # 2b. WHERE TO BUY — every retailer the reviews link, not just Amazon. A pick with
-        # only an Amazon link earns nothing from a reader who buys at Williams-Sonoma, and
-        # premium brands sell heavily direct. Tracking is stripped (a harvested link carries
-        # the REVIEWER's affiliate tag — republished, it would pay them, not us) and
-        # affiliate_url is left blank because our codes are applied at click time.
-        try:
-            from intake.products import buy_links as BL
-            fam = {asin}
-            try:
-                pass  # offers match the EXACT asin; the family is for identity, not links
-            except Exception:
-                pass
-            offers = BL.offers_from_reviews(conn, asins=fam,
-                                            name_like=r.get("product_title", ""))
-            # The model's own buy_link counts too, once cleaned — merged BY RETAILER so it
-            # doesn't produce a second "Williams Sonoma" row differing only by a trailing
-            # slash. The model's link wins for that retailer: it points at the exact size and
-            # colour it ranked, where a review may link a sibling.
-            own = BL.clean_url(r.get("buy_link") or "")
-            if own:
-                name = BL.retailer_name(own) or "source"
-                existing = next((o for o in offers if o["retailer"] == name), None)
-                if existing:
-                    existing["url"] = own
-                else:
-                    offers.insert(0, {"retailer": name, "url": own,
-                                      "affiliate_url": "", "seen_in": []})
-            if offers:
-                r["offers"] = offers
-                report["offers"] = report.get("offers", [])
-                report["offers"].append(
-                    f"{label}: {len(offers)} retailer(s) — "
-                    + ", ".join(o["retailer"] for o in offers[:5]))
-        except Exception as e:
-            report["notes"].append(f"{label}: buy-link gathering failed ({e})")
-
-        # 3. Owner evidence: the real histogram, free, plus the index.
-        try:
-            h = aw.rating_histogram(asin)
-        except Exception as e:
-            report["notes"].append(f"{label}: histogram failed ({e})")
-            continue
-        if h.get("ok") and h.get("histogram"):
-            r["owner_rating"] = h.get("avg_rating")
-            r["owner_count"] = h.get("ratings_total")
-            r["owner_histogram"] = h.get("histogram_pct")
-            r["realrank_score"] = round(realrank_index(h["histogram"], h["ratings_total"]), 1)
-            r["rating_shape"] = (polarization(h["histogram"]) or {}).get("label") or ""
-            report["scored"].append(
-                f"{label}: {r['owner_rating']}* x {r['owner_count']} -> {r['realrank_score']}"
-                + (f" ({r['rating_shape']})" if r["rating_shape"] else ""))
-        else:
-            report["notes"].append(f"{label}: no histogram ({h.get('error','')})")
+        _verify_score_row(conn, r, label, asin, report, az=az, aw=aw,
+                          realrank_index=realrank_index, polarization=polarization)
     conn.close()
     return report
+
+
+def book_enrich(data: dict, evidence: dict) -> dict:
+    """The amazon_pool verify stage (docs/book-review-curation.md): no network,
+    no ASIN recovery — the evidence was fetched BY ASIN, so identity is given.
+    Two jobs: enforce the CLOSED WORLD deterministically (a ranked ASIN outside
+    the pool gets an identity_warning — the model was told, this catches it
+    anyway), and copy the already-fetched listing facts onto each row
+    (verified_title, image, owner histogram, RealRank) so the picks table and
+    brief carry the same evidence the ranking read."""
+    report = {"verified": [], "rejected": [], "filled": [], "scored": [], "notes": []}
+    for label, r in rows_of(data):
+        asin = str(r.get("amazon_asin") or "").strip().upper()
+        if not asin:
+            report["notes"].append(f"{label}: no ASIN — a pool pick should carry one")
+            continue
+        ev = evidence.get(asin)
+        if not ev:
+            r["identity_warning"] = (
+                f"ASIN {asin} is not in the candidate pool — the model ranked a book "
+                f"nobody supplied (closed-world violation)")
+            report["rejected"].append(f"{label}: {r['identity_warning']}")
+            continue
+        r["verified_title"] = ev.get("title") or ""
+        if ev.get("image"):
+            r["image"] = ev["image"]
+        # ISBN-10 in model_number = the cross-retailer identity for books; the
+        # prompt asks for it, the evidence backfills a miss.
+        if ev.get("isbn_10") and not (r.get("model_number") or "").strip():
+            r["model_number"] = ev["isbn_10"]
+        report["verified"].append(f"{label}: {asin} — {r['verified_title'][:56]}")
+        if ev.get("histogram") and ev.get("ratings_total"):
+            r["owner_rating"] = ev.get("rating")
+            r["owner_count"] = ev.get("ratings_total")
+            hist, total = ev["histogram"], ev["ratings_total"]
+            r["owner_histogram"] = [round(100 * c / total, 1) if total else 0
+                                    for c in hist]
+            if ev.get("realrank_score") is not None:
+                r["realrank_score"] = ev["realrank_score"]
+                r["rating_shape"] = ev.get("rating_shape") or ""
+            report["scored"].append(
+                f"{label}: {r['owner_rating']}* x {r['owner_count']}"
+                + (f" -> {r.get('realrank_score')}" if r.get("realrank_score") is not None
+                   else ""))
+        else:
+            report["notes"].append(f"{label}: no histogram in evidence")
+    return report
+
+
+def enrich_one(conn, r: dict, label: str = "pick") -> dict:
+    """Steps 2/2b/3 for ONE row whose amazon_asin is already set: listing
+    identity, image/model fill, retailer offers, owner histogram + RealRank.
+    The per-pick half of enrich(), for the curator's ASIN override (the Cheese
+    Knife loaf-pan case, 2026-09-05) — same code path, one row instead of all."""
+    report = {"verified": [], "rejected": [], "filled": [], "scored": [], "notes": []}
+    try:
+        from intake.products import amazon_rainforest as az, amazon_widget as aw
+        from realrank_index import realrank_index, polarization
+    except Exception as e:                                     # pragma: no cover
+        report["notes"].append(f"enrichment unavailable: {e}")
+        return report
+    asin = str(r.get("amazon_asin") or "").strip().upper()
+    if asin:
+        _verify_score_row(conn, r, label, asin, report, az=az, aw=aw,
+                          realrank_index=realrank_index, polarization=polarization)
+    return report
+
+
+def _verify_score_row(conn, r: dict, label: str, asin: str, report: dict,
+                      *, az, aw, realrank_index, polarization) -> None:
+    """Identity check + offers + owner evidence for one ranked row. Mutates
+    `r` and `report` in place; best-effort — failures annotate, never raise."""
+    title = f"{r.get('manufacturer','')} {r.get('product_title','')}".strip()
+
+    # 2. Identity: is this listing actually the product named? Brand + type noun.
+    try:
+        listing = az.product_ratings(asin)
+    except Exception as e:
+        report["notes"].append(f"{label}: listing lookup failed ({e})")
+        return
+    ltitle = listing.get("title") or ""
+    # Compare on the manufacturer's LEADING TOKEN, not the whole string. Publishers write
+    # parent companies and sub-brands in ("Staub (Zwilling)", "Lodge Cast Iron"), and
+    # asking whether "staub (zwilling)" appears inside the listing's "STAUB" is backwards
+    # — it flagged four correct rows.
+    brand_raw = (r.get("manufacturer") or "").split("(")[0].strip().lower()
+    brand = next((w for w in brand_raw.split() if len(w) >= 3), brand_raw)
+    hay = f"{(listing.get('brand') or '').lower()} {ltitle.lower()}"
+    brand_ok = (not brand) or brand in hay
+    # Shared vocabulary: knows a cocotte IS a dutch oven while a bread oven is not, and
+    # fails OPEN on anything ambiguous rather than dropping a legitimate product.
+    type_ok, type_why = same_type(f"{title} {r.get('capacity','')}", ltitle)
+    if not (brand_ok and type_ok):
+        why = type_why if not type_ok else "brand does not match"
+        r["identity_warning"] = (
+            f"ASIN {asin} looks like a different product ({why}): {ltitle[:60]}")
+        report["rejected"].append(f"{label}: {r['identity_warning']}")
+        return
+    r["verified_title"] = ltitle
+    # The listing lookup already carries the photo and often the
+    # manufacturer's model number — keep both on the pick (the photo is
+    # the row's thumbnail; the model number disambiguates brand siblings).
+    # Research's own model_number wins; the listing only fills a blank.
+    if listing.get("image"):
+        r["image"] = listing["image"]
+    if listing.get("model_number") and not (r.get("model_number") or "").strip():
+        r["model_number"] = listing["model_number"]
+    report["verified"].append(f"{label}: {asin} — {ltitle[:56]}")
+
+    # 2b. WHERE TO BUY — every retailer the reviews link, not just Amazon. A pick with
+    # only an Amazon link earns nothing from a reader who buys at Williams-Sonoma, and
+    # premium brands sell heavily direct. Tracking is stripped (a harvested link carries
+    # the REVIEWER's affiliate tag — republished, it would pay them, not us) and
+    # affiliate_url is left blank because our codes are applied at click time.
+    try:
+        from intake.products import buy_links as BL
+        fam = {asin}
+        try:
+            pass  # offers match the EXACT asin; the family is for identity, not links
+        except Exception:
+            pass
+        offers = BL.offers_from_reviews(conn, asins=fam,
+                                        name_like=r.get("product_title", ""))
+        # The model's own buy_link counts too, once cleaned — merged BY RETAILER so it
+        # doesn't produce a second "Williams Sonoma" row differing only by a trailing
+        # slash. The model's link wins for that retailer: it points at the exact size and
+        # colour it ranked, where a review may link a sibling.
+        own = BL.clean_url(r.get("buy_link") or "")
+        if own:
+            name = BL.retailer_name(own) or "source"
+            existing = next((o for o in offers if o["retailer"] == name), None)
+            if existing:
+                existing["url"] = own
+            else:
+                offers.insert(0, {"retailer": name, "url": own,
+                                  "affiliate_url": "", "seen_in": []})
+        if offers:
+            r["offers"] = offers
+            report["offers"] = report.get("offers", [])
+            report["offers"].append(
+                f"{label}: {len(offers)} retailer(s) — "
+                + ", ".join(o["retailer"] for o in offers[:5]))
+    except Exception as e:
+        report["notes"].append(f"{label}: buy-link gathering failed ({e})")
+
+    # 3. Owner evidence: the real histogram, free, plus the index.
+    try:
+        h = aw.rating_histogram(asin)
+    except Exception as e:
+        report["notes"].append(f"{label}: histogram failed ({e})")
+        return
+    if h.get("ok") and h.get("histogram"):
+        r["owner_rating"] = h.get("avg_rating")
+        r["owner_count"] = h.get("ratings_total")
+        r["owner_histogram"] = h.get("histogram_pct")
+        r["realrank_score"] = round(realrank_index(h["histogram"], h["ratings_total"]), 1)
+        r["rating_shape"] = (polarization(h["histogram"]) or {}).get("label") or ""
+        report["scored"].append(
+            f"{label}: {r['owner_rating']}* x {r['owner_count']} -> {r['realrank_score']}"
+            + (f" ({r['rating_shape']})" if r["rating_shape"] else ""))
+    else:
+        report["notes"].append(f"{label}: no histogram ({h.get('error','')})")

@@ -170,6 +170,12 @@ RESEARCH RULES
     strongest product that did NOT make the list and say what kept it out. If two picks are
     genuinely close, say that rather than inventing a difference: "essentially tied with X;
     placed ahead on price alone" is a better answer than a manufactured one.
+15b. ALSO record each section's strongest non-placer as STRUCTURED DATA in
+    `also_considered` — section "" for the overall ranking, otherwise the category name;
+    `reason` = one sentence why it missed. The usual ASIN rules apply: `amazon_asin` only
+    when you verified the exact listing, blank otherwise — never inferred. This is what
+    makes the "also considered" line in the published brief CLICKABLE; a name buried in
+    prose is not. Omit the field only when every candidate placed.
 
 RANKING WEIGHTS
 {weights}
@@ -284,6 +290,10 @@ Use this exact structure:
   "omitted_slots": [
     {"section": "", "place": 3, "reason": ""}
   ],
+  "also_considered": [
+    {"section": "", "product_title": "", "manufacturer": "", "amazon_asin": "",
+     "reason": ""}
+  ],
   "methodology_note": ""
 }
 """
@@ -294,6 +304,10 @@ EDITORS_CHOICE_ASKED = """\
 EDITOR'S CHOICE
 The curator has pinned this product for analysis alongside the ranking:
   {pick}
+The pin text above may carry the curator's own notes (why it was pinned, process
+remarks). Those notes steer YOU; they are never reader-facing — do not quote or
+paraphrase them in why_it_ranks_here or any other output field. Identify the
+product from the pin; write the analysis from the evidence.
 Add a top-level "editors_choice" object to the JSON — the same row shape as an
 overall_top_three entry, with "place": 1. Analyze it with the SAME rigor: real
 product_title, manufacturer, model_number, typical_price, buy_link; the ASIN rules
@@ -350,6 +364,189 @@ THE CURATOR'S BINDING DEFINITION for this collection — where it conflicts with
 reading of the class, the curator wins. Reject anything it excludes, even a #1 product:
 {criteria}
 """
+
+
+DEFAULT_BOOK_WEIGHTS = [
+    ("Owner evidence", 0.35,
+     "Rating arithmetic — average, volume, histogram shape, RealRank — plus what owners "
+     "actually praise or fault in the review attributes and review bodies."),
+    ("On-class fit and authenticity", 0.25,
+     "Is this book exactly what a shopper searching the class wants — the real subject, "
+     "an authoritative treatment, not a facsimile reprint, spiral rebind, or neighbor "
+     "cuisine wearing the name."),
+    ("Usability as a cookbook", 0.20,
+     "Recipes that work as written, clear instructions, findable ingredients, useful "
+     "context and technique teaching."),
+    ("Production quality", 0.10,
+     "Photography, layout, binding, index quality — what owners report, not the "
+     "publisher's claims."),
+    ("Value at typical price", 0.10,
+     "Price relative to depth and lasting usefulness."),
+]
+
+BOOK_RULES = """\
+You are producing a current, evidence-based ranking of the {product_class} class —
+these are BOOKS — for a consumer product database and a written buyer's brief.
+
+OBJECTIVE
+Rank the top three books in the {product_class} class, overall, FROM THE SUPPLIED
+CANDIDATE POOL ONLY.
+
+CATEGORIES
+None. Rank the class AS A WHOLE and return `category_rankings` as an empty list.
+Do not invent categories.
+
+THE CLOSED WORLD — the one unbreakable rule
+The supplied documents below ARE the candidate pool: one document per book, fetched by
+us from its Amazon listing. Every ranked row MUST be one of these books, with
+`amazon_asin` copied EXACTLY from its document and `amazon_link` as
+https://www.amazon.com/dp/ASIN. You may not rank, mention as a pick, or substitute any
+book that is not in the pool — however famous, however deserving. If the pool is weak,
+say so through `omitted_slots` and `methodology_note`; never through an import.
+One exception, and only one: a CURATOR PIN document (when present) JOINS the closed
+world — the curator supplied it exactly as the harvest supplied the others — so the
+editor's-choice rules below govern it, including earning a ranked place on the merits.
+
+RESEARCH RULES
+1. Field mapping for books: `product_title` = the book's title (subtitle included when it
+   disambiguates); `manufacturer` = the author(s) as named; `capacity` = "publisher · year"
+   (e.g. "Harvard Common Press · 2016"); `model_number` = the ISBN-10 from the document —
+   it is the book's unambiguous identity across retailers. Blank only if the document
+   lacks it; never guessed.
+2. `typical_price` = the Amazon price in the document (numeric). `current_price` the same,
+   `price_type` "regular" — book prices move little and we re-check on a schedule.
+3. `buy_link` = the book's own https://www.amazon.com/dp/ASIN page.
+4. EVIDENCE ROLES ARE FIXED — do not blend them:
+   - The OWNER ARITHMETIC section (rating × volume, histogram, RealRank, bestseller rank)
+     is the ranking backbone. You may deviate from pure arithmetic order ONLY with a
+     stated, grounded reason in `why_it_ranks_here` (an on-class judgment: a higher-rated
+     book is a facsimile reprint, a general-audience neighbor, thinner than its rating
+     suggests per the reviews) — an unexplained deviation is a defect.
+   - Amazon's AI SUMMARY and the review attributes are the OWNER VOICE — quote or
+     paraphrase them attributed as what "owners say" / "Amazon's review summary";
+     they support and color a rank.
+   - EDITORIAL REVIEWS (when present) are publisher-SELECTED press: attribute each quote
+     to its named source. They may EXPLAIN a pick, never CARRY one — no rank may rest on
+     editorial praise alone.
+   - The PUBLISHER'S DESCRIPTION is marketing — with one carve-out that matters. Its
+     PRAISE is never evidence, but VERIFIABLE PUBLIC CLAIMS inside it are: a named award
+     ("Winner of the 2023 James Beard Award for Single Subject Cookbooks"), a bestseller
+     list placement ("#1 New York Times Bestseller"), a named best-of list (NPR's Books
+     We Love, a publication's Best Cookbook of the year). These are independent
+     institutions' judgments the publisher is REPORTING, not making — mine them, and they
+     MAY support a rank, always quoted with the awarding body named and flagged as
+     publisher-stated ("James Beard Award winner, per the listing"). Generic superlatives
+     with no named institution stay marketing.
+   - TOP CUSTOMER REVIEWS are individual owners — quotable with that framing.
+5. A captured review document (a real published roundup a curator supplied) is the one
+   kind of INDEPENDENT press in the pool: it may both carry and explain judgments,
+   cited by name.
+6. Do not include duplicate editions that differ only by format; rank the edition the
+   pool document describes.
+7. Keep comments factual, concise, and useful rather than promotional.
+8. EVERY row's `source_links` lists the URLs of the documents you actually used for that
+   row — at minimum the book's own /dp/ page; add the captured review's URL when it
+   informed the row.
+9. EXPLAIN THE ORDER, not just the picks. `why_it_ranks_here` says why the book is good
+   AND names the arithmetic (rating × volume, RealRank) it stands on; `edge_over_next`
+   names the book below and the criterion separating them; for the LAST place, name the
+   strongest pool book that did NOT place and say what kept it out. If two are genuinely
+   close, say so plainly.
+9b. ALSO record the strongest non-placer as STRUCTURED DATA in `also_considered`
+   (section "" for the overall ranking): `amazon_asin` copied EXACTLY from its pool
+   document, `reason` = one sentence why it missed. This makes the "also considered"
+   line clickable to its listing and to our cohort analysis; a name buried in prose
+   is not. Omit only when every pool book placed.
+10. ACCOUNT FOR EVERY SUPPLIED DOCUMENT in `source_report` — one entry per document,
+    `source` copied exactly from its ===== label =====. `page_covers`: what the book
+    actually is. `relevance`: "on-class" (exactly what a shopper searching
+    "{product_class}" wants), "related" (adjacent subject, partial fit), or "off-topic"
+    (wrong subject wearing the name — facsimiles and neighbors go here). Every ranked
+    book must be "on-class". `used_in_ranking`: whether it placed OR shaped the
+    boundary/ordering. `not_used_reason` required for any on-class or related book that
+    ranks nowhere — one sentence, e.g. "outscored: 4.6★×210 against the #3's 4.8★×1,900".
+
+RANKING WEIGHTS
+{weights}
+
+OUTPUT REQUIREMENTS
+Return valid JSON only. No Markdown, no commentary outside the JSON, no code fences.
+
+{schema}
+
+VALIDATION CHECKLIST
+Before returning the JSON, confirm internally that:
+- overall_top_three has places 1, 2, 3 — filled by a ranked row, or declared in
+  omitted_slots with a reason (never both, never neither; a #2 without a #1 is invalid).
+- category_rankings is an empty list; no categories were invented.
+- Every ranked amazon_asin appears in the supplied pool, copied exactly, with the
+  canonical https://www.amazon.com/dp/ASIN link.
+- Every typical_price is numeric, not text.
+- Every row's source_links is a non-empty list.
+- Every row's edge_over_next names a specific competing book.
+- source_report has exactly one entry per supplied document, honest about relevance.
+"""
+
+BOOK_BOUNDARY = """
+
+CLASS BOUNDARY — WHAT COUNTS AS {product_class}
+Before ranking, fix what belongs. Every ranked book must be one a shopper who searched
+"{product_class}" would accept as EXACTLY that — never:
+- a facsimile or print-on-demand reprint of a historic text sold as a current cookbook;
+- a neighboring cuisine or general-audience book wearing the class's name;
+- a spiral rebind, summary, workbook, or companion FOR a book in the class.
+When a strong, well-rated candidate fails this boundary, LEAVE IT OUT of the ranking —
+name it and the reason in `methodology_note` so the curator sees the judgment call.
+
+THE HONEST GAP — never pad a ranking to fill it. If fewer than three pool books are
+genuinely on-class and rankable, return the ones that are and DECLARE each unfilled
+place in `omitted_slots` with a reason naming what you saw and why nothing qualified.
+An entirely empty, fully-declared ranking is valid; a padded one never is. A #1 may only
+be omitted as part of a fully-empty ranking.
+"""
+
+
+def build_book_prompt(product_class: str, docs: list | None = None,
+                      weights: list | None = None, editors_choice: str = "",
+                      class_criteria: str = "") -> str:
+    """The amazon_pool variant (docs/book-review-curation.md): same JSON contract
+    as build_prompt so validate_shape/picks_from/render work unchanged, but a
+    closed world — the docs ARE the candidates, and the evidence-role rules
+    replace the independent-source rule (here the arithmetic is the independent
+    evidence; editorial blurbs are publisher-selected and may never carry a
+    rank)."""
+    weights = weights or DEFAULT_BOOK_WEIGHTS
+    parts = [BOOK_RULES.format(
+        product_class=product_class,
+        weights="\n".join(f"- {n}: {int(w*100)}%   ({what})" for n, w, what in weights),
+        schema=SCHEMA,
+    )]
+    parts.append(BOOK_BOUNDARY.format(product_class=product_class))
+    if (class_criteria or "").strip():
+        parts.append(CURATOR_CRITERIA.format(criteria=class_criteria.strip()))
+    if (editors_choice or "").strip():
+        parts.append(EDITORS_CHOICE_ASKED.format(pick=editors_choice.strip()))
+
+    supplied = [d for d in (docs or []) if d.get("markdown")]
+    if supplied:
+        parts.append(
+            "\n\nTHE CANDIDATE POOL — one document per book, fetched by us from its Amazon "
+            "listing (plus any captured review documents, labeled by reviewer). These are "
+            "the ONLY rankable books.\n")
+        for d in supplied:
+            parts.append(f"\n===== {d['label']} =====\nURL: {d.get('url','')}\n"
+                         f"Retrieved via: {d.get('via','')}\n-----\n{d['markdown']}\n"
+                         f"===== end {d['label']} =====\n")
+    missing = [d for d in (docs or []) if not d.get("markdown")]
+    if missing:
+        parts.append(
+            "\nPOOL BOOKS WHOSE EVIDENCE COULD NOT BE FETCHED — do NOT rank these (no "
+            "evidence means no rank; that is what omitted_slots and methodology_note are "
+            "for) and do not substitute anything in their place:\n"
+            + "\n".join(f"- {d['label']} ({d.get('error','')})" for d in missing))
+
+    parts.append("\n\nNow output the single JSON record per the schema.")
+    return "\n".join(parts)
 
 
 def build_prompt(product_class: str, categories: list, docs: list | None = None,

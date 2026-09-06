@@ -552,7 +552,9 @@
     $('#sort').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
     $('#addToggle').addEventListener('click', () => { selected=null; detail=null; mode='add'; renderList(); renderDetail(); nav.afterSelect(); });
 
-    load();
+    // Deep link: #<collection name> opens that collection directly — lets the
+    // curated editor's "our cohort ↗" links land on the analysis (2026-09-05).
+    load(decodeURIComponent((location.hash || '').slice(1)) || undefined);
   </script>
 </body>
 </html>

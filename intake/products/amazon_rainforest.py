@@ -18,6 +18,7 @@ Key: RAINFOREST_KEY in the repo-root .env.
 from __future__ import annotations
 
 import os
+import re
 
 import requests
 
@@ -126,6 +127,93 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
         "distribution_pct": {str(5 - i): (bd.get(k) or {}).get("percentage")
                              for i, k in enumerate(_STAR_KEYS)} if bd else None,
         "top_reviews": reviews,
+    }
+
+
+def _editorial_from_html(page_html: str) -> list:
+    """Editorial reviews recovered from the RAW PAGE — Traject's parser returns
+    `editorial_reviews` empty even when the section exists (measured 0-for-3 on
+    2026-09-05 while The Wok's page carried 27 attributed blurbs at ~1.1MB in).
+    The curator spotted the section and the `include_html` option; this mines
+    it ourselves: strip tags, cut at the next major section, then pair each
+    quoted blurb with the `―`-attributed name that follows it."""
+    import html as H
+    i = (page_html or "").lower().find("editorial review")
+    if i < 0:
+        return []
+    text = H.unescape(re.sub(r"<[^>]+>", "\n", page_html[i:i + 60000]))
+    text = re.sub(r"[ \t]+", " ", text)
+    m = re.search(r"About the Author|Product details|From the Back Cover"
+                  r"|From the Inside Flap", text)
+    if m:
+        text = text[:m.start()]
+    text = re.sub(r"\s*\n\s*", " ", text)
+    pairs = re.findall(r"[\"“](.+?)[\"”]\s*(?:―|—|--|–)\s*"
+                       r"([^\"“]+)", text)
+    return [{"title": a.strip().rstrip(",;·|")[:200], "body": q.strip()[:600]}
+            for q, a in pairs[:10] if len(q.strip()) > 40]
+
+
+def book_product(asin: str, *, domain: str = DEFAULT_DOMAIN) -> dict:
+    """One BOOK listing's full evidence for the book-review-curation pipeline
+    (docs/book-review-curation.md; probed 2026-09-05 on 1558328637/1476753830).
+
+    2 credits (`include_summarization_attributes` doubles the bill) and returns
+    the fields the probe measured as real: the prose AI review summary
+    (`customers_say_summary.text`), per-attribute sentiment with mention counts
+    (`customers_say`), top review bodies, book identity fields, and the
+    5..1 histogram. `editorial_reviews` measured 0-for-2 despite the docs —
+    parsed here anyway so a Traject fix lights it up with no code change."""
+    d = _get({"type": "product", "amazon_domain": domain, "asin": asin,
+              "include_summarization_attributes": "true",
+              # Raw page too: Traject's own editorial_reviews parse is broken
+              # (0-for-3 measured) — _editorial_from_html recovers the section.
+              "include_html": "true"})
+    p = d.get("product") or {}
+    if not p.get("editorial_reviews"):
+        mined = _editorial_from_html(d.get("html") or "")
+        if mined:
+            p["editorial_reviews"] = mined
+            print(f"[rainforest] {asin}: {len(mined)} editorial review(s) mined "
+                  f"from page HTML (parser returned none)")
+    bd = p.get("rating_breakdown") or {}
+    hist = [int((bd.get(k) or {}).get("count") or 0) for k in _STAR_KEYS] if bd else []
+    bb = p.get("buybox_winner") or {}
+    price = (bb.get("price") or {}) if isinstance(bb.get("price"), dict) else {}
+    return {
+        "asin": asin,
+        "title": p.get("title", ""),
+        "sub_title": (p.get("sub_title") or {}).get("text", "")
+                     if isinstance(p.get("sub_title"), dict) else (p.get("sub_title") or ""),
+        "link": p.get("link", ""),
+        "authors": [a.get("name", "") for a in (p.get("authors") or []) if a.get("name")],
+        "publisher": p.get("publisher", ""),
+        "publication_date": p.get("publication_date", ""),
+        "isbn_10": p.get("isbn_10", ""),
+        "isbn_13": p.get("isbn_13", ""),
+        "language": p.get("language", ""),
+        "format": p.get("format", ""),
+        "image": (p.get("main_image") or {}).get("link", ""),
+        "price": price.get("raw") or "",
+        "book_description": (p.get("book_description") or "").strip(),
+        "rating": p.get("rating"),
+        "ratings_total": p.get("ratings_total"),
+        "histogram": hist,                       # counts, 5..1
+        "bestsellers_rank": [{"rank": b.get("rank"), "category": b.get("category", "")}
+                             for b in (p.get("bestsellers_rank") or [])
+                             if b.get("rank")],
+        "customers_say_summary": ((p.get("customers_say_summary") or {}).get("text")
+                                  or "").strip(),
+        "customers_say": [{"name": a.get("name", ""), "value": a.get("value", "")}
+                          for a in (p.get("customers_say") or []) if a.get("name")],
+        "editorial_reviews": [{"title": (e.get("title") or "").strip(),
+                               "body": (e.get("body") or "").strip()}
+                              for e in (p.get("editorial_reviews") or [])
+                              if (e.get("body") or "").strip()],
+        "top_reviews": [{"title": (r.get("title") or "").strip(),
+                         "rating": r.get("rating"),
+                         "body": (r.get("body") or "").strip()[:900]}
+                        for r in (p.get("top_reviews") or [])[:6]],
     }
 
 

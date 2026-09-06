@@ -238,6 +238,10 @@
           <h3 class="ed-block-label">The class</h3>
           <p style="margin:0"><b>${escapeHtml(c.product_class||'')}</b>${
             c.ws_path?` <span class="muted">· ${escapeHtml(c.ws_path)}</span>`:''}</p>
+          ${c.source_mode==='amazon_pool'?`<p class="muted" style="font-size:.82rem;margin:6px 0 0">
+            📚 Book pool mode — evidence from the search collection
+            <b>${escapeHtml(c.pool_collection||'— none set')}</b> (closed world: only its
+            candidates can rank).</p>`:''}
           <p class="muted" style="font-size:.82rem;margin:6px 0 0">${
             cats_.length
               ? 'Categories asked for: ' + cats_.map(x=>escapeHtml(x)).join(' · ')
@@ -249,6 +253,19 @@
           <h3 class="ed-block-label">Picks
             <span class="muted" style="font-weight:400">— and why each one placed where it did</span></h3>
           ${picks.length ? renderPicks(picks) : '<p class="muted">— no run yet —</p>'}
+          ${(() => {
+            // Also-considered: the strongest non-placer(s), clickable — to the
+            // Amazon listing and (book mode) to our cohort analysis. Trust
+            // copy, deliberately NOT a 4th slot (choice-overload research,
+            // 2026-09-05: expand winners by role, never by rank).
+            const ac = (c.result_json && c.result_json.also_considered) || [];
+            return ac.length ? `<div class="muted" style="margin-top:10px;font-size:.84rem;border-top:1px dashed var(--line);padding-top:8px">
+              <b>Also considered:</b> ${ac.map(a => `${escapeHtml([a.manufacturer, a.product_title].filter(Boolean).join(' — '))}${
+                a.amazon_asin ? ` (<a href="${asinHref(a.amazon_asin)}" target="_blank" rel="noopener">Amazon</a>${
+                  c.pool_collection ? ` · <a href="/forms/product_collections.html#${encodeURIComponent(c.pool_collection)}" title="Open the cohort — our RealRank analysis of every candidate">our analysis ↗</a>` : ''})` : ''
+                }${a.section ? ` <span style="opacity:.7">[${escapeHtml(a.section)}]</span>` : ''} — ${escapeHtml(a.reason || '')}`).join('<br>')}
+            </div>` : '';
+          })()}
           ${excludedPicks.length ? `
             <h3 class="ed-block-label" style="margin-top:14px">Excluded
               <span class="muted" style="font-weight:400">— rejected by you, banned from future runs</span><button
@@ -334,6 +351,34 @@
         ev.preventDefault();
         try { await ackCall(a.dataset.slot, false); } catch(e){ console.error(e); }
       }));
+      // Fix ASIN — the link swaps to an inline input; Enter or "set" POSTs the
+      // override, which re-verifies against the NEW listing (a mismatch comes
+      // back as a fresh identity warning on the re-rendered row, not a silent
+      // save). Built for the Cheese Knife loaf-pan ASIN (2026-09-05).
+      $('#page').querySelectorAll('.pk-fixasin').forEach(a => a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const slot = a.dataset.slot;
+        const span = document.createElement('span');
+        span.innerHTML = `<input maxlength="10" placeholder="B0XXXXXXXX" spellcheck="false"
+            style="width:110px;padding:1px 5px;font-size:.78rem;font-family:ui-monospace,Menlo,Consolas,monospace"
+          > <button type="button" class="ed-btn" style="padding:1px 8px;font-size:.72rem">set</button>`;
+        a.replaceWith(span);
+        const inp = span.querySelector('input'), btn = span.querySelector('button');
+        inp.focus();
+        const go = async () => {
+          const asin = inp.value.trim().toUpperCase();
+          if (!/^[A-Z0-9]{10}$/.test(asin)) { inp.style.borderColor = '#b23b3b'; return; }
+          btn.disabled = true; btn.textContent = 'verifying…';
+          try {
+            const r = await fetch(`/curated-collections/${encodeURIComponent(selected)}/picks/${encodeURIComponent(slot)}/set-asin`,
+              { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({asin}) });
+            if (!r.ok) throw new Error((await r.json()).detail || 'HTTP '+r.status);
+            detail = null; await renderDetail();
+          } catch(e){ btn.disabled = false; btn.textContent = 'failed — retry'; console.error(e); }
+        };
+        btn.addEventListener('click', go);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+      }));
       wireDelete();
     }
 
@@ -348,7 +393,7 @@
       }
       return groups.map(g => `
         <div class="sec-h">${g.key ? escapeHtml(g.key) : 'Top three overall'}</div>
-        ${g.rows.map(pickRow).join('')}`).join('');
+        ${g.rows.map((p, i) => pickRow(p, i + 1)).join('')}`).join('');
     }
 
     function money(v){ return (v==null || isNaN(v)) ? '—' : '$' + Number(v).toFixed(2); }
@@ -373,7 +418,13 @@
     // to _SL500_ for a display-worthy resolution. No modifier = already full size.
     const bigImg = (u) => u.replace(/\._[^/.]*_\.(jpe?g|png|webp)$/i, '._SL500_.$1');
 
-    function pickRow(p){
+    function pickRow(p, ord){
+      // Visible medal position = position among the SURVIVING picks: removing a
+      // discontinued product steps the next one up (curator ask, 2026-09-05 —
+      // the OXO cheese-knife set). Stored `place` stays the authorities'
+      // recorded ranking; only the presentation compacts.
+      const shown = ord ?? p.place ?? '?';
+      const stepped = ord != null && p.place != null && ord !== p.place;
       const offers = p.offers || [];
       const srcs = p.source_links || [];
       const img = p.image
@@ -385,7 +436,8 @@
         : '';
       return `
         <div class="pk">
-          <div class="pk-place ${p.place===1?'p1':''}">${p.place ?? '?'}</div>
+          <div class="pk-place ${shown===1?'p1':''}"${stepped
+            ? ` title="Authorities ranked this #${p.place} — stepped up after a removal"` : ''}>${shown}</div>
           <div class="pk-main">
             ${thumb}
             <div class="pk-t">${escapeHtml(pkName(p))}
@@ -406,6 +458,8 @@
             <div class="pk-meta">
               ${money(p.typical_price)} typical${p.price_type==='sale'&&p.current_price?` · on sale ${money(p.current_price)}`:''}
               ${p.asin?` · ASIN <a href="${asinHref(p.asin)}" target="_blank" rel="noopener" title="Open on Amazon">${escapeHtml(p.asin)}</a>${p.asin_source?` <span class="muted">(${escapeHtml(p.asin_source)})</span>`:''}`:' · no verified ASIN'}
+              · <a href="#" class="pk-fixasin" data-slot="${escapeHtml(p.slot)}"
+                   title="Enter the correct ASIN — re-verifies identity and re-pulls photo, offers and owner ratings for this pick only (no re-run)">fix ASIN</a>
               ${offers.length?` · buy at ${offers.map(o=>escapeHtml(o.retailer||'?')).join(', ')}`:''}
             </div>
             <div class="pk-meta">
@@ -527,6 +581,24 @@
               <b>Singular</b> by convention ("Muffin Pan", "Water Bath Canner") — it's the join
               key naming one product type, and must match the class-registry spelling. Plural
               only when the purchasable unit is a set ("Steak Knives", "Mason Jars").</p></div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Evidence source</label>
+              <select id="f_mode">
+                <option value="authorities" ${v.source_mode==='amazon_pool'?'':'selected'}>Named authorities (fetched review pages)</option>
+                <option value="amazon_pool" ${v.source_mode==='amazon_pool'?'selected':''}>Book pool (Amazon listing evidence)</option>
+              </select>
+              <p class="muted" style="font-size:.78rem;margin:5px 0 0">Book pool = for cookbook/book
+                classes with no expert roundups: the run ranks WITHIN the linked search
+                collection's candidates, evidenced by each book's own Amazon data (owner
+                arithmetic, the AI review summary, review bodies). Closed world — it can
+                never introduce a book the pool doesn't hold.</p></div>
+            <div class="ed-field"><label>Pool collection (book pool only)</label>
+              <input id="f_pool" list="dl_pool" value="${escapeHtml(v.pool_collection||'')}" placeholder="Acadian Cookbooks">
+              <datalist id="dl_pool"></datalist>
+              <p class="muted" style="font-size:.78rem;margin:5px 0 0">The search collection whose
+                candidates form the pool — run its Amazon search first so it holds
+                candidates.</p></div>
+          </div>
           <div class="ed-field"><label>Editor's choice — a product to pin (optional)</label>
             <input id="f_ec" value="${escapeHtml(v.editors_choice||'')}" placeholder="Breville Control Grip BSB510XL">
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">A product the review sites
@@ -571,6 +643,13 @@
       $('#cancel').addEventListener('click', () => { mode='view'; renderDetail(); });
       $('#save').addEventListener('click', () => saveForm(isEdit ? c : null));
       (isEdit ? $('#f_class') : $('#f_class')).focus();
+      // Pool picker options — the search collections' names, fetched lazily.
+      fetch('/product-collections').then(r => r.ok ? r.json() : null).then(d => {
+        const dl = $('#dl_pool');
+        if (dl && d && Array.isArray(d.collections))
+          dl.innerHTML = d.collections.map(x =>
+            `<option value="${escapeHtml(x.name)}">`).join('');
+      }).catch(() => {});
     }
 
     async function saveForm(existing){
@@ -583,6 +662,8 @@
         search_terms: ($('#f_terms').value||''),
         editors_choice: ($('#f_ec').value||'').trim(),
         class_criteria: ($('#f_criteria').value||'').trim(),
+        source_mode: ($('#f_mode').value||'authorities'),
+        pool_collection: ($('#f_pool').value||'').trim(),
         use_network: !!$('#f_net').checked,
         notes: ($('#f_notes').value||'').trim(),
       };
