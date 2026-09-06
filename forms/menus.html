@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Menus</title>
+  <!-- MENUS: dated groups of YOUR recipes + a market-run shopping list — the
+       dinner-party flag (docs/meal-planning-research.md, Option A). Personal
+       surface: the corpus is never involved.
+
+       Cloned from curated_collections.html per memory/feedback_editor_template_not_runtime;
+       typography and controls deliberately identical. The shopping list is a
+       persisted checklist: ✓ = in the cart, "have" = already in the pantry
+       (dimmed, not deleted — the Paprika pre-check pattern), + hand-added rows
+       that a rebuild never touches. -->
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828b">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+  <link rel="stylesheet" href="/forms/components.css?v=20260813b">
+  <style>
+    .pc-form .ed-field { margin-bottom: 10px; }
+    .pc-form label { display: block; font-size: .78rem; font-weight: 600; margin-bottom: 3px; color: var(--ed-ink-soft); }
+    .pc-form input, .pc-form textarea, .pc-form select { width: 100%; padding: 8px 10px;
+      border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: .9rem; background: var(--card); }
+    .pc-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pc-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .pc-form-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .muted { color: var(--ed-ink-soft); }
+    /* One flagged recipe row. */
+    .mr { display: flex; gap: 11px; align-items: center; padding: 9px 0;
+      border-top: 1px solid var(--line); font-size: .88rem; }
+    .mr:first-child { border-top: 0; }
+    .mr-thumb { flex: 0 0 auto; width: 52px; height: 52px; object-fit: cover;
+      border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+    .mr-main { flex: 1; min-width: 0; }
+    .mr-t { font-weight: 600; }
+    .mr-meta { font-size: .76rem; color: var(--ed-ink-soft); margin-top: 2px; }
+    .mr-mult { width: 58px; text-align: center; padding: 4px 6px; border: 1px solid var(--line);
+      border-radius: 7px; font: inherit; font-size: .82rem; background: var(--card); }
+    /* Shopping list. */
+    .cat-h { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--ed-ink-soft); margin: 13px 0 3px; }
+    .cat-h:first-of-type { margin-top: 0; }
+    .si { display: flex; gap: 9px; align-items: center; padding: 5px 0; font-size: .88rem; }
+    .si input[type=checkbox] { width: 17px; height: 17px; accent-color: #1f8a54; flex: 0 0 auto; }
+    .si.have .si-t { opacity: .45; text-decoration: none; }
+    .si.checked .si-t { text-decoration: line-through; opacity: .55; }
+    .si-t { flex: 1; min-width: 0; }
+    .si-src { font-size: .7rem; color: var(--ed-ink-soft); }
+    .si-have { font-size: .7rem; cursor: pointer; border: 1px solid var(--line); border-radius: 999px;
+      padding: 1px 8px; color: var(--ed-ink-soft); background: var(--bg); white-space: nowrap; }
+    .si.have .si-have { background: #eaf6ef; border-color: #cfe9da; color: #1f8a54; }
+    .si-del { font-size: .78rem; color: #b23b3b; cursor: pointer; border: 0; background: none; padding: 0 3px; }
+    /* Add-recipe search results dropdown. */
+    #addResults { border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+      max-height: 300px; overflow: auto; margin-top: 4px; }
+    #addResults .mr { padding: 7px 9px; cursor: pointer; }
+    #addResults .mr:hover { background: var(--bg); }
+    .banner { border: 1px solid #f0d8cb; background: #fbefe8; color: #8a3b21; border-radius: 8px;
+      padding: 9px 11px; font-size: .84rem; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <button class="ed-back" id="edBack" aria-label="Toggle list"></button>
+      <div class="ed-brand">Best Cooks Club</div>
+    </div>
+  </header>
+  <div class="ed-scrim" id="edScrim"></div>
+
+  <div class="ed-app">
+    <aside class="ed-sidebar">
+      <div class="ed-sidebar-head">
+        <h2>Menus <span class="ed-count" id="count"></span></h2>
+        <div class="ed-head-actions">
+          <button class="ed-icon-btn" id="addToggle" title="New menu" aria-label="Add">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+        </div>
+      </div>
+      <ul class="ed-list" id="list"><li class="ed-empty">Loading…</li></ul>
+    </aside>
+
+    <main class="ed-content"><div class="ed-page" id="page"></div></main>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260831b"></script>
+  <script>
+    const $ = (s) => document.querySelector(s);
+    LibraryShell.initNav({ currentPage: 'menus' });
+    const nav = LibraryShell.initEditorNav({
+      backButton: '#edBack', scrim: '#edScrim',
+      listLabel: 'Menus', listMode: 'docked', shellWidth: 1200,
+    });
+    const { escapeHtml, flash } = LibraryShell;
+
+    let userId = 1;
+    let rows = [], categories = [];
+    let selected = null;          // menu id
+    let mode = 'view';            // 'view' | 'add' | 'edit'
+    let detail = null;
+
+    const api = (path, opts) => fetch(`${path}${path.includes('?') ? '&' : '?'}user_id=${userId}`, opts)
+      .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'HTTP '+r.status); return r.json(); });
+
+    async function whoami(){
+      try {
+        const r = await fetch('/auth/me');
+        if (r.ok) { const me = await r.json(); if (me && me.user && me.user.user_id) userId = me.user.user_id; }
+      } catch(e){}
+    }
+
+    async function load(keep){
+      try {
+        const d = await api('/menus');
+        rows = d.menus || []; categories = d.categories || [];
+        $('#count').textContent = rows.length ? `(${rows.length})` : '';
+        if (keep != null && rows.some(r => r.id === keep)) selected = keep;
+        if (selected != null && !rows.some(r => r.id === selected)) selected = null;
+        renderList(); await renderDetail();
+      } catch(e){ $('#page').innerHTML = `<p class="muted">Load failed: ${escapeHtml(e.message||e)}</p>`; }
+    }
+
+    /* ---------------- list ---------------- */
+    function dateLabel(d){
+      if (!d) return 'undated';
+      const dt = new Date(d + 'T12:00:00');
+      if (isNaN(dt)) return d;
+      const today = new Date(); today.setHours(12,0,0,0);
+      const diff = Math.round((dt - today) / 86400000);
+      const nice = dt.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+      return diff === 0 ? `today · ${nice}` : diff === 1 ? `tomorrow · ${nice}` : nice;
+    }
+
+    function renderList(){
+      $('#list').innerHTML = rows.length ? rows.map(r => `
+        <li class="ed-item ${r.id===selected?'selected':''}" data-id="${r.id}">
+          <div class="ed-item-top"><span class="ed-item-name">${escapeHtml(r.name)}</span></div>
+          <div class="ed-item-meta">${escapeHtml(dateLabel(r.menu_date))} · ${r.recipe_count||0} recipe${r.recipe_count===1?'':'s'}${
+            r.item_count ? ` · ${r.item_count} list items` : ''}</div>
+        </li>`).join('') : '<li class="ed-empty">No menus yet — hit + to plan one</li>';
+      $('#list').querySelectorAll('li[data-id]').forEach(li =>
+        li.addEventListener('click', async () => {
+          selected = Number(li.dataset.id); mode='view'; detail=null;
+          renderList(); await renderDetail(); nav.afterSelect();
+        }));
+    }
+
+    /* ---------------- detail ---------------- */
+    async function ensureDetail(){
+      if (detail && detail.id === selected) return detail;
+      detail = await api(`/menus/${selected}`);
+      return detail;
+    }
+
+    async function renderDetail(){
+      if (mode === 'add') return renderForm(null);
+      if (mode === 'edit' && selected != null) return renderForm(await ensureDetail());
+      if (selected == null){
+        $('#page').innerHTML = `
+          <h1 class="ed-title">Menus</h1>
+          <p class="muted">Flag a set of recipes for a dinner — tomorrow's party, Thursday's —
+          retrieve them as a group for prep and cooking, and build one merged shopping list
+          for the market run. Pick a menu on the left or hit + to start one.</p>`;
+        return;
+      }
+      const m = await ensureDetail();
+      const shopping = m.shopping || [];
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="back">← Menus</button></div>
+        <h1 class="ed-title">${escapeHtml(m.name)}</h1>
+        <div class="ed-status-strip">
+          <span class="muted">${escapeHtml(dateLabel(m.menu_date))}${m.serve_at ? ` · serve at ${escapeHtml(m.serve_at)}` : ''}</span>
+          <button type="button" class="ed-btn" id="editBtn">Edit</button>
+          <button type="button" class="ed-btn" id="delBtn" style="margin-left:auto;color:#b23b3b">Delete</button>
+        </div>
+        ${m.notes ? `<p class="muted" style="font-size:.86rem">${escapeHtml(m.notes)}</p>` : ''}
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">The menu
+            <span class="muted" style="font-weight:400">— ${m.recipes.length} recipe${m.recipes.length===1?'':'s'}; × scales servings for the list</span></h3>
+          <div id="mrows">${m.recipes.map(r => `
+            <div class="mr" data-rid="${escapeHtml(r.recipe_id)}">
+              ${r.image ? `<img class="mr-thumb" src="${escapeHtml(r.image)}" alt="" loading="lazy">` : '<div class="mr-thumb"></div>'}
+              <div class="mr-main">
+                <div class="mr-t">${r.missing ? '<span class="muted">(recipe no longer in your collection)</span>' : escapeHtml(r.title)}</div>
+                <div class="mr-meta">${r.recipe_yield ? `yields ${escapeHtml(String(r.recipe_yield))} · ` : ''}${r.ingredient_count} ingredients</div>
+              </div>
+              <input class="mr-mult" type="number" step="0.5" min="0.25" max="10" value="${r.multiplier || 1}"
+                     title="Servings multiplier — scales this recipe's quantities in the shopping list">
+              <button type="button" class="ed-btn mr-rm" style="padding:2px 8px;font-size:.72rem;color:#b23b3b">remove</button>
+            </div>`).join('') || '<p class="muted">No recipes flagged yet — search below.</p>'}
+          </div>
+          <div class="ed-field" style="margin-top:10px">
+            <input id="addSearch" placeholder="Search your recipes to add — try 'gravlax'…" autocomplete="off">
+            <div id="addResults" hidden></div>
+          </div>
+        </section>
+
+        <section class="ed-block">
+          <h3 class="ed-block-label">Shopping list
+            <span class="muted" style="font-weight:400">— merged across the menu; ✓ = in the cart, have = already in the pantry</span></h3>
+          <div class="pc-form-actions" style="margin:0 0 8px">
+            <button type="button" class="ed-btn primary" id="buildBtn">${shopping.some(s=>!s.manual) ? 'Rebuild list' : 'Build list'}</button>
+            <span class="muted" id="buildStatus" style="font-size:.8rem"></span>
+          </div>
+          <div id="slist">${renderShopping(shopping)}</div>
+          <div class="pc-row2" style="margin-top:10px;max-width:520px">
+            <input id="addItem" placeholder="Add an item — wine, ice, flowers…">
+            <select id="addItemCat">${categories.map(c=>`<option${c==='other'?' selected':''}>${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+        </section>`;
+
+      $('#back').addEventListener('click', () => { selected=null; detail=null; renderList(); renderDetail(); });
+      $('#editBtn').addEventListener('click', () => { mode='edit'; renderDetail(); });
+      wireDelete();
+      // recipe rows: multiplier + remove
+      $('#page').querySelectorAll('.mr[data-rid]').forEach(row => {
+        const rid = row.dataset.rid;
+        row.querySelector('.mr-mult')?.addEventListener('change', async (e) => {
+          try { await api(`/menus/${selected}/recipes/${encodeURIComponent(rid)}`, {
+            method:'PUT', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({multiplier: Number(e.target.value)||1}) });
+            detail=null; } catch(err){ console.error(err); }
+        });
+        row.querySelector('.mr-rm')?.addEventListener('click', async (e) => {
+          const b = e.target;
+          if (!b.dataset.armed){ b.dataset.armed='1'; b.textContent='sure?';
+            setTimeout(()=>{ if(b.isConnected){ b.dataset.armed=''; b.textContent='remove'; } }, 3000); return; }
+          try { await api(`/menus/${selected}/recipes/${encodeURIComponent(rid)}`, {method:'DELETE'});
+            detail=null; await load(selected); } catch(err){ console.error(err); }
+        });
+      });
+      wireAddSearch();
+      wireShopping();
+      $('#buildBtn').addEventListener('click', doBuild);
+      $('#addItem').addEventListener('keydown', async (e) => {
+        if (e.key !== 'Enter') return;
+        const v = $('#addItem').value.trim(); if (!v) return;
+        try {
+          await api(`/menus/${selected}/shopping/items`, { method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({display: v, category: $('#addItemCat').value}) });
+          detail=null; await load(selected);
+        } catch(err){ console.error(err); }
+      });
+    }
+
+    function renderShopping(items){
+      if (!items.length) return '<p class="muted">No list yet — flag recipes above, then Build.</p>';
+      const groups = [];
+      for (const it of items){
+        const key = it.manual ? 'your additions' : (it.category || 'other');
+        const g = groups.find(x => x.key === key);
+        (g || (groups.push({key, rows:[]}), groups[groups.length-1])).rows.push(it);
+      }
+      return groups.map(g => `
+        <div class="cat-h">${escapeHtml(g.key)}</div>
+        ${g.rows.map(it => `
+          <div class="si ${it.have?'have':''} ${it.checked?'checked':''}" data-iid="${it.id}">
+            <input type="checkbox" ${it.checked?'checked':''} title="Got it — in the cart">
+            <span class="si-t">${escapeHtml(it.display)}${
+              (it.sources||[]).length > 1 ? ` <span class="si-src">×${it.sources.length} recipes</span>` : ''}</span>
+            <span class="si-have" title="Already in the pantry — stays on the list, dimmed">${it.have?'have ✓':'have?'}</span>
+            ${it.manual ? '<button type="button" class="si-del" title="Remove">✕</button>' : ''}
+          </div>`).join('')}`).join('');
+    }
+
+    function wireShopping(){
+      $('#page').querySelectorAll('.si[data-iid]').forEach(row => {
+        const iid = row.dataset.iid;
+        row.querySelector('input[type=checkbox]').addEventListener('change', async (e) => {
+          try { await api(`/menus/${selected}/shopping/items/${iid}`, { method:'PUT',
+            headers:{'Content-Type':'application/json'}, body: JSON.stringify({checked: e.target.checked}) });
+            row.classList.toggle('checked', e.target.checked); detail=null;
+          } catch(err){ console.error(err); }
+        });
+        row.querySelector('.si-have').addEventListener('click', async () => {
+          const now = !row.classList.contains('have');
+          try { await api(`/menus/${selected}/shopping/items/${iid}`, { method:'PUT',
+            headers:{'Content-Type':'application/json'}, body: JSON.stringify({have: now}) });
+            row.classList.toggle('have', now);
+            row.querySelector('.si-have').textContent = now ? 'have ✓' : 'have?';
+            detail=null;
+          } catch(err){ console.error(err); }
+        });
+        row.querySelector('.si-del')?.addEventListener('click', async () => {
+          try { await api(`/menus/${selected}/shopping/items/${iid}`, {method:'DELETE'});
+            detail=null; await load(selected); } catch(err){ console.error(err); }
+        });
+      });
+    }
+
+    async function doBuild(){
+      const b = $('#buildBtn'), st = $('#buildStatus');
+      b.disabled = true; st.textContent = 'Parsing ingredients & merging…';
+      try {
+        const r = await api(`/menus/${selected}/shopping/build`, {method:'POST'});
+        st.textContent = `${r.generated} items from ${r.recipes_parsed} recipes`;
+        detail = null; await load(selected);
+      } catch(e){ st.textContent = 'Failed: ' + (e.message||e); b.disabled = false; }
+    }
+
+    /* ---------------- add-recipe search ---------------- */
+    function wireAddSearch(){
+      const inp = $('#addSearch'), box = $('#addResults');
+      if (!inp) return;
+      let t = null;
+      inp.addEventListener('input', () => {
+        clearTimeout(t);
+        const q = inp.value.trim();
+        if (q.length < 2){ box.hidden = true; return; }
+        t = setTimeout(async () => {
+          try {
+            const d = await api(`/recipes/search?q=${encodeURIComponent(q)}&limit=8&facets=0&sort=relevance`);
+            const inMenu = new Set((detail?.recipes || []).map(r => r.recipe_id));
+            const hits = (d.rows || []).filter(r => !inMenu.has(r.recipe_id));
+            box.innerHTML = hits.length ? hits.map(r => {
+              const dd = r.data || {};
+              let img = dd.image; if (Array.isArray(img)) img = img[0]; if (img && img.url) img = img.url;
+              return `<div class="mr" data-add="${escapeHtml(r.recipe_id)}">
+                ${img ? `<img class="mr-thumb" src="${escapeHtml(img)}" alt="" loading="lazy">` : '<div class="mr-thumb"></div>'}
+                <div class="mr-main"><div class="mr-t">${escapeHtml(dd.name || r.recipe_id)}</div>
+                  <div class="mr-meta">${
+                    // The search endpoint's slim projection strips recipeIngredient —
+                    // "0 ingredients" there was the projection, not the recipe. Show the
+                    // count only when the data actually carries the list.
+                    Array.isArray(dd.recipeIngredient) && dd.recipeIngredient.length
+                      ? `${dd.recipeIngredient.length} ingredients`
+                      : escapeHtml(dd.recipeYield ? `yields ${String(dd.recipeYield)}` : '')}</div></div>
+              </div>`; }).join('') : '<div class="mr"><div class="mr-main muted" style="padding:4px 6px">No matches</div></div>';
+            box.hidden = false;
+            box.querySelectorAll('[data-add]').forEach(el => el.addEventListener('click', async () => {
+              try {
+                await api(`/menus/${selected}/recipes`, { method:'POST',
+                  headers:{'Content-Type':'application/json'},
+                  body: JSON.stringify({recipe_id: el.dataset.add}) });
+                inp.value=''; box.hidden = true; detail=null; await load(selected);
+                flash && flash('Added to the menu');
+              } catch(e){ console.error(e); }
+            }));
+          } catch(e){ console.error(e); }
+        }, 250);
+      });
+      document.addEventListener('click', (e) => {
+        if (!box.contains(e.target) && e.target !== inp) box.hidden = true;
+      });
+    }
+
+    /* ---------------- add / edit form ---------------- */
+    function renderForm(m){
+      const isEdit = !!m;
+      const v = m || {};
+      $('#page').innerHTML = `
+        <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancel">← Cancel</button></div>
+        <h1 class="ed-title">${isEdit ? 'Edit menu' : 'New menu'}</h1>
+        <div class="pc-form" style="max-width:560px">
+          <div class="ed-field"><label>Name *</label>
+            <input id="f_name" value="${escapeHtml(v.name||'')}" placeholder="Saturday dinner party"></div>
+          <div class="pc-row2">
+            <div class="ed-field"><label>Date</label>
+              <input id="f_date" type="date" value="${escapeHtml(v.menu_date||'')}"></div>
+            <div class="ed-field"><label>Serve at</label>
+              <input id="f_serve" type="time" value="${escapeHtml(v.serve_at||'')}">
+              <p class="muted" style="font-size:.75rem;margin:4px 0 0">For the future prep
+                timeline — when dinner hits the table.</p></div>
+          </div>
+          <div class="ed-field"><label>Notes</label>
+            <textarea id="f_notes" style="min-height:64px" placeholder="8 guests · Anna is vegetarian">${escapeHtml(v.notes||'')}</textarea></div>
+          <div class="pc-form-actions">
+            <button type="button" class="ed-btn primary" id="save">${isEdit?'Save':'Create'}</button>
+            <span class="muted" id="formStatus"></span>
+          </div>
+        </div>`;
+      $('#cancel').addEventListener('click', () => { mode='view'; renderDetail(); });
+      $('#save').addEventListener('click', async () => {
+        const body = { name: ($('#f_name').value||'').trim(),
+                       menu_date: $('#f_date').value||'', serve_at: $('#f_serve').value||'',
+                       notes: ($('#f_notes').value||'').trim() };
+        const st = $('#formStatus'); st.textContent = 'Saving…';
+        try {
+          const d = isEdit
+            ? await api(`/menus/${m.id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
+            : await api('/menus', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          mode='view'; detail=null; await load(d.id);
+          flash && flash('Saved');
+        } catch(e){ st.textContent = 'Failed: ' + (e.message||e); }
+      });
+      $('#f_name').focus();
+    }
+
+    function wireDelete(){
+      const del = $('#delBtn');
+      del?.addEventListener('click', async () => {
+        if (del.dataset.armed !== '1'){
+          del.dataset.armed='1'; del.textContent='Confirm delete?';
+          setTimeout(()=>{ if(del.isConnected){ del.dataset.armed=''; del.textContent='Delete'; } }, 3000);
+          return;
+        }
+        del.disabled = true;
+        try {
+          await api(`/menus/${selected}`, { method:'DELETE' });
+          selected=null; detail=null; await load(); flash && flash('Deleted');
+        } catch(e){ del.disabled=false; console.error(e); }
+      });
+    }
+
+    $('#addToggle').addEventListener('click', () => { mode='add'; renderDetail(); nav.afterSelect(); });
+
+    (async () => { await whoami(); await load(); })();
+  </script>
+</body>
+</html>

@@ -963,6 +963,7 @@
   const NAV_ITEMS = [
     // --- user group (the personal cook tool — BCC side) ---
     { page: 'recipes',   label: 'Recipes',   href: '/forms/recipe_form_styled.html', group: 'user' },
+    { page: 'menus',     label: 'Menus',     href: '/forms/menus.html', group: 'user' },
     { page: 'cookbooks', label: 'Cookbooks', comingSoon: true, group: 'user' },
     { page: 'equipment', label: 'Equipment', comingSoon: true, group: 'user' },
     { page: 'gourmet',   label: 'Gourmet',   comingSoon: true, group: 'user' },
