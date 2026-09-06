@@ -121,9 +121,23 @@
       .then(async r => { if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || 'HTTP '+r.status); return r.json(); });
 
     async function whoami(){
+      // SAME identity rule as the recipe form's getSelfUserId (2026-09-06:
+      // menus made here landed under /auth/me's fallback id while the form's
+      // dropdown queried the localStorage identity — two owners, "no menus").
+      // app:self_user_id is the explicit login (0 = master identity, valid);
+      // sidebar:user_id is the legacy fallback; /auth/me last; then 1.
+      try {
+        const explicit = localStorage.getItem('app:self_user_id');
+        if (explicit != null && explicit !== '') {
+          const n = parseInt(explicit, 10);
+          if (Number.isInteger(n) && n >= 0) { userId = n; return; }
+        }
+        const legacy = localStorage.getItem('sidebar:user_id');
+        if (legacy && parseInt(legacy, 10) > 0) { userId = parseInt(legacy, 10); return; }
+      } catch(e){ /* private mode */ }
       try {
         const r = await fetch('/auth/me');
-        if (r.ok) { const me = await r.json(); if (me && me.user && me.user.user_id) userId = me.user.user_id; }
+        if (r.ok) { const me = await r.json(); if (me && me.user && me.user.user_id != null) userId = me.user.user_id; }
       } catch(e){}
     }
 
