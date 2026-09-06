@@ -4806,7 +4806,8 @@ def menus_create_endpoint(payload: dict = Body(default={}),
 def menus_get_endpoint(menu_id: int, user_id: int = PLACEHOLDER_USER_ID):
     import menus_store as ms
     with _db() as conn:
-        m = ms.get_menu(conn, user_id, menu_id)
+        m = ms.get_menu(conn, user_id, menu_id,
+                        recipes_table=_recipes_table_for(user_id))
     if m is None:
         raise HTTPException(status_code=404, detail="Menu not found.")
     return m
@@ -4845,7 +4846,8 @@ def menus_add_recipe_endpoint(menu_id: int, payload: dict = Body(default={}),
         raise HTTPException(status_code=400, detail="recipe_id required")
     try:
         with _db() as conn:
-            ok = ms.add_recipe(conn, user_id, menu_id, rid)
+            ok = ms.add_recipe(conn, user_id, menu_id, rid,
+                               recipes_table=_recipes_table_for(user_id))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if not ok:
@@ -4885,7 +4887,8 @@ def menus_build_list_endpoint(menu_id: int, user_id: int = PLACEHOLDER_USER_ID):
     import menus_store as ms
     try:
         with _db() as conn:
-            return ms.build_shopping_list(conn, user_id, menu_id)
+            return ms.build_shopping_list(conn, user_id, menu_id,
+                                          recipes_table=_recipes_table_for(user_id))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:

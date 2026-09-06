@@ -57,6 +57,23 @@
     #addResults .mr:hover { background: var(--bg); }
     .banner { border: 1px solid #f0d8cb; background: #fbefe8; color: #8a3b21; border-radius: 8px;
       padding: 9px 11px; font-size: .84rem; margin: 8px 0; }
+    /* Recipe quick-view popup (curator, 2026-09-06: "clickable back to the
+       recipe and back... maybe a popup"). Read-only glance — cook/edit live
+       in the full editor, linked from the footer. */
+    .mr-t.link { cursor: pointer; }
+    .mr-t.link:hover { text-decoration: underline; }
+    #rvScrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60; }
+    #rvModal { position: fixed; z-index: 61; top: 4vh; left: 50%; transform: translateX(-50%);
+      width: min(680px, 94vw); max-height: 90vh; overflow: auto; background: var(--card, #fff);
+      border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; box-shadow: 0 18px 60px rgba(0,0,0,.28); }
+    #rvModal h2 { margin: 0 42px 4px 0; font-size: 1.25rem; }
+    #rvModal img.hero { width: 100%; max-height: 260px; object-fit: cover; border-radius: 10px; margin: 10px 0; }
+    #rvModal .rv-close { position: absolute; top: 12px; right: 14px; border: 1px solid var(--line);
+      background: var(--bg); border-radius: 999px; width: 30px; height: 30px; cursor: pointer; font-size: 1rem; }
+    #rvModal h3 { font-size: .8rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ed-ink-soft); margin: 14px 0 5px; }
+    #rvModal ul, #rvModal ol { margin: 0; padding-left: 20px; font-size: .9rem; }
+    #rvModal li { margin: 3px 0; }
+    #rvModal .rv-foot { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
   </style>
 </head>
 <body>
@@ -183,7 +200,8 @@
             <div class="mr" data-rid="${escapeHtml(r.recipe_id)}">
               ${r.image ? `<img class="mr-thumb" src="${escapeHtml(r.image)}" alt="" loading="lazy">` : '<div class="mr-thumb"></div>'}
               <div class="mr-main">
-                <div class="mr-t">${r.missing ? '<span class="muted">(recipe no longer in your collection)</span>' : escapeHtml(r.title)}</div>
+                <div class="mr-t ${r.missing ? '' : 'link'}" ${r.missing ? '' : `data-view="${escapeHtml(r.recipe_id)}" title="Quick view — click for the recipe"`}>${
+                  r.missing ? '<span class="muted">(recipe no longer in your collection)</span>' : escapeHtml(r.title)}</div>
                 <div class="mr-meta">${r.recipe_yield ? `yields ${escapeHtml(String(r.recipe_yield))} · ` : ''}${r.ingredient_count} ingredients</div>
               </div>
               <input class="mr-mult" type="number" step="0.5" min="0.25" max="10" value="${r.multiplier || 1}"
@@ -231,6 +249,8 @@
             detail=null; await load(selected); } catch(err){ console.error(err); }
         });
       });
+      $('#page').querySelectorAll('.mr-t[data-view]').forEach(el =>
+        el.addEventListener('click', () => openRecipeView(el.dataset.view)));
       wireAddSearch();
       wireShopping();
       $('#buildBtn').addEventListener('click', doBuild);
@@ -299,6 +319,53 @@
         st.textContent = `${r.generated} items from ${r.recipes_parsed} recipes`;
         detail = null; await load(selected);
       } catch(e){ st.textContent = 'Failed: ' + (e.message||e); b.disabled = false; }
+    }
+
+    /* ---------------- recipe quick-view popup ---------------- */
+    async function openRecipeView(rid){
+      closeRecipeView();
+      const scrim = document.createElement('div'); scrim.id = 'rvScrim';
+      const box = document.createElement('div'); box.id = 'rvModal';
+      box.innerHTML = '<p class="muted">Loading…</p>';
+      document.body.append(scrim, box);
+      scrim.addEventListener('click', closeRecipeView);
+      document.addEventListener('keydown', rvEsc);
+      try {
+        const r = await fetch(`/recipes/${encodeURIComponent(rid)}?user_id=${userId}`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const row = await r.json();
+        const d = row.data || row;
+        let img = d.image; if (Array.isArray(img)) img = img[0]; if (img && img.url) img = img.url;
+        const steps = (d.recipeInstructions || []).map(s =>
+          typeof s === 'string' ? s : (s.text || s.name || '')).filter(Boolean);
+        box.innerHTML = `
+          <button type="button" class="rv-close" title="Back to the menu">✕</button>
+          <h2>${escapeHtml(d.name || 'Recipe')}</h2>
+          <div class="muted" style="font-size:.82rem">${d.recipeYield ? `yields ${escapeHtml(String(d.recipeYield))}` : ''}${
+            d.totalTime ? ` · ${escapeHtml(String(d.totalTime).replace('PT','').toLowerCase())}` : ''}</div>
+          ${img ? `<img class="hero" src="${escapeHtml(img)}" alt="">` : ''}
+          <h3>Ingredients</h3>
+          <ul>${(d.recipeIngredient || []).map(x => `<li>${escapeHtml(String(x))}</li>`).join('') || '<li class="muted">none recorded</li>'}</ul>
+          <h3>Steps</h3>
+          <ol>${steps.map(x => `<li>${escapeHtml(x)}</li>`).join('') || '<li class="muted">none recorded</li>'}</ol>
+          <div class="rv-foot">
+            <a class="ed-btn" href="/forms/recipe_form_styled.html?recipe_id=${encodeURIComponent(rid)}&user_id=${userId}" target="_blank" rel="noopener">Open in editor ↗</a>
+            <a class="ed-btn" href="/forms/cook.html?recipe_id=${encodeURIComponent(rid)}&user_id=${userId}" target="_blank" rel="noopener">🍳 Cook view ↗</a>
+            <button type="button" class="ed-btn rv-close2" style="margin-left:auto">← Back to the menu</button>
+          </div>`;
+        box.querySelector('.rv-close').addEventListener('click', closeRecipeView);
+        box.querySelector('.rv-close2').addEventListener('click', closeRecipeView);
+      } catch(e){
+        box.innerHTML = `<button type="button" class="rv-close">✕</button>
+          <p class="muted">Couldn't load the recipe: ${escapeHtml(e.message||e)}</p>`;
+        box.querySelector('.rv-close').addEventListener('click', closeRecipeView);
+      }
+    }
+    function rvEsc(e){ if (e.key === 'Escape') closeRecipeView(); }
+    function closeRecipeView(){
+      document.getElementById('rvScrim')?.remove();
+      document.getElementById('rvModal')?.remove();
+      document.removeEventListener('keydown', rvEsc);
     }
 
     /* ---------------- add-recipe search ---------------- */

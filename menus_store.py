@@ -117,7 +117,16 @@ def list_menus(conn: sqlite3.Connection, user_id: int) -> list:
     return [dict(zip(cols, r)) for r in rows]
 
 
-def get_menu(conn: sqlite3.Connection, user_id: int, menu_id: int) -> dict | None:
+def _table(recipes_table: str) -> str:
+    """The caller passes save_recipe_api._recipes_table_for(user_id) — user 0
+    (the master/curator identity) keeps recipes in master_recipes, everyone
+    else in recipes. Whitelisted here so f-string SQL stays safe even if a
+    caller passes junk."""
+    return recipes_table if recipes_table in ("recipes", "master_recipes") else "recipes"
+
+
+def get_menu(conn: sqlite3.Connection, user_id: int, menu_id: int,
+             recipes_table: str = "recipes") -> dict | None:
     ensure_tables(conn)
     row = conn.execute("SELECT id, name, menu_date, serve_at, notes, created_at, "
                        "updated_at FROM menus WHERE id = ? AND user_id = ?",
@@ -126,20 +135,21 @@ def get_menu(conn: sqlite3.Connection, user_id: int, menu_id: int) -> dict | Non
         return None
     m = dict(zip(["id", "name", "menu_date", "serve_at", "notes", "created_at",
                   "updated_at"], row))
-    m["recipes"] = _menu_recipes(conn, user_id, menu_id)
+    m["recipes"] = _menu_recipes(conn, user_id, menu_id, recipes_table)
     m["shopping"] = list_items(conn, menu_id)
     return m
 
 
-def _menu_recipes(conn: sqlite3.Connection, user_id: int, menu_id: int) -> list:
+def _menu_recipes(conn: sqlite3.Connection, user_id: int, menu_id: int,
+                  recipes_table: str = "recipes") -> list:
     """Membership joined to the user's recipe rows for display facts. Reads the
     intrinsic content only — title, image, yield, ingredient count."""
     out = []
     rows = conn.execute(
-        "SELECT mr.recipe_id, mr.multiplier, mr.position, r.data "
-        "FROM menu_recipes mr LEFT JOIN recipes r "
-        "  ON r.recipe_id = mr.recipe_id AND r.user_id = ? "
-        "WHERE mr.menu_id = ? ORDER BY mr.position, mr.added_at", (user_id, menu_id))
+        f"SELECT mr.recipe_id, mr.multiplier, mr.position, r.data "
+        f"FROM menu_recipes mr LEFT JOIN {_table(recipes_table)} r "
+        f"  ON r.recipe_id = mr.recipe_id AND r.user_id = ? "
+        f"WHERE mr.menu_id = ? ORDER BY mr.position, mr.added_at", (user_id, menu_id))
     for rid, mult, pos, data in rows:
         d = {}
         try:
@@ -211,12 +221,13 @@ def delete_menu(conn: sqlite3.Connection, user_id: int, menu_id: int) -> bool:
 
 
 def add_recipe(conn: sqlite3.Connection, user_id: int, menu_id: int,
-               recipe_id: str) -> bool:
+               recipe_id: str, recipes_table: str = "recipes") -> bool:
     ensure_tables(conn)
     if not conn.execute("SELECT 1 FROM menus WHERE id = ? AND user_id = ?",
                         (menu_id, user_id)).fetchone():
         return False
-    if not conn.execute("SELECT 1 FROM recipes WHERE recipe_id = ? AND user_id = ?",
+    if not conn.execute(f"SELECT 1 FROM {_table(recipes_table)} "
+                        f"WHERE recipe_id = ? AND user_id = ?",
                         (recipe_id, user_id)).fetchone():
         raise ValueError("recipe not found in your collection")
     pos = conn.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM menu_recipes "
@@ -315,16 +326,18 @@ def _parse_uncached(conn: sqlite3.Connection, user_id: int, need: dict) -> None:
     conn.commit()
 
 
-def _parsed_for(conn: sqlite3.Connection, user_id: int, menu_id: int) -> dict:
+def _parsed_for(conn: sqlite3.Connection, user_id: int, menu_id: int,
+                recipes_table: str = "recipes") -> dict:
     """{recipe_id: (multiplier, [parsed items])} for the menu, parsing what the
     cache lacks in one batched call."""
     rows = conn.execute(
-        "SELECT mr.recipe_id, mr.multiplier, r.data, p.lines_hash, p.parsed "
-        "FROM menu_recipes mr "
-        "JOIN recipes r ON r.recipe_id = mr.recipe_id AND r.user_id = ? "
-        "LEFT JOIN recipe_ingredient_parse p "
-        "  ON p.recipe_id = mr.recipe_id AND p.user_id = ? "
-        "WHERE mr.menu_id = ?", (user_id, user_id, menu_id)).fetchall()
+        f"SELECT mr.recipe_id, mr.multiplier, r.data, p.lines_hash, p.parsed "
+        f"FROM menu_recipes mr "
+        f"JOIN {_table(recipes_table)} r "
+        f"  ON r.recipe_id = mr.recipe_id AND r.user_id = ? "
+        f"LEFT JOIN recipe_ingredient_parse p "
+        f"  ON p.recipe_id = mr.recipe_id AND p.user_id = ? "
+        f"WHERE mr.menu_id = ?", (user_id, user_id, menu_id)).fetchall()
     need, have, lines_by_rid = {}, {}, {}
     for rid, mult, data, cached_hash, cached in rows:
         try:
@@ -395,14 +408,15 @@ def _display_weight(g: float) -> str:
     return f"{_nice_qty(g)} g"
 
 
-def build_shopping_list(conn: sqlite3.Connection, user_id: int, menu_id: int) -> dict:
+def build_shopping_list(conn: sqlite3.Connection, user_id: int, menu_id: int,
+                        recipes_table: str = "recipes") -> dict:
     """(Re)build the generated rows. Manual rows are never touched; have/checked
     carry over by canonical name."""
     ensure_tables(conn)
     if not conn.execute("SELECT 1 FROM menus WHERE id = ? AND user_id = ?",
                         (menu_id, user_id)).fetchone():
         raise ValueError("menu not found")
-    parsed = _parsed_for(conn, user_id, menu_id)
+    parsed = _parsed_for(conn, user_id, menu_id, recipes_table)
 
     merged: dict = {}   # (canonical, family) -> {qty_base, units_exact, sources, category, item}
     for rid, (mult, items) in parsed.items():

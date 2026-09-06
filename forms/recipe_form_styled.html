@@ -2868,6 +2868,14 @@
            'sidebar:user_id'). Click does a fast in-DB row copy via
            POST /recipes/<id>/claim and redirects to the claimed copy. -->
       <button type="button" id="claimBtn" class="primary" style="display:none">Claim</button>
+      <!-- Add-to-menu (curator ask 2026-09-06): flag the open recipe onto a
+           menu without leaving the form — a dropdown of the user's menus
+           (forms/menus.html manages them). Needs a SAVED recipe. -->
+      <select id="menuAddSelect" class="secondary"
+              title="Add this recipe to a menu — tomorrow's dinner party, Thursday's…"
+              style="font: inherit; font-size: 0.92em; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line, #ccc); background: var(--card, #fff); max-width: 220px;">
+        <option value="">＋ Menu…</option>
+      </select>
       <button type="button" id="deleteBtn" class="danger">Delete</button>
       <div id="feedback"></div>
     </div>
@@ -2929,6 +2937,47 @@
       } catch (e) { /* private mode */ }
       return 1;
     }
+
+    // ADD-TO-MENU: the footer dropdown lists the user's menus (lazy-refreshed
+    // on focus so a menu created in another tab appears without a reload) and
+    // POSTs membership for the OPEN, SAVED recipe. Master/TBOTB rows fail the
+    // server's ownership check with an honest message — claim first.
+    (function initMenuAdd(){
+      const sel = document.getElementById('menuAddSelect');
+      if (!sel) return;
+      let loaded = false;
+      async function fill(){
+        try {
+          const r = await fetch(`${API}/menus?user_id=${getSelfUserId()}`);
+          if (!r.ok) return;
+          const menus = (await r.json()).menus || [];
+          const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+          sel.innerHTML = '<option value="">＋ Menu…</option>'
+            + menus.map(m => `<option value="${m.id}">${esc(m.name)}${m.menu_date ? ' · ' + esc(m.menu_date) : ''}</option>`).join('')
+            + '<option value="__new">＋ New menu…</option>';
+          loaded = true;
+        } catch (e) { /* offline / signed out — the placeholder stays */ }
+      }
+      fill();
+      sel.addEventListener('focus', () => fill());
+      sel.addEventListener('change', async () => {
+        const v = sel.value;
+        const label = sel.selectedOptions[0]?.textContent || 'menu';
+        sel.value = '';
+        if (!v) return;
+        if (v === '__new'){ window.open('/forms/menus.html', '_blank'); loaded = false; return; }
+        const rid = (document.getElementById('recipe_id')?.value || '').trim();
+        if (!rid){ feedback.textContent = 'Save the recipe first — menus hold saved recipes.'; return; }
+        try {
+          const r = await fetch(`${API}/menus/${encodeURIComponent(v)}/recipes?user_id=${getSelfUserId()}`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({recipe_id: rid}) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+          feedback.textContent = `Added to ${label}`;
+        } catch (e) { feedback.textContent = 'Add to menu failed: ' + (e.message || e); }
+      });
+    })();
 
     // Cookbook chapters — KEEP IN SYNC with CHAPTERS in
     // extract/chapter_classifier.py. The server's structured-output
