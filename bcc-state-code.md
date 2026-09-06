@@ -8650,8 +8650,121 @@ postmortem fixes (brand+clean names on materialize, off-form chip,
 6. **Next big build**: class↔collection FK → render/EV Phase 1 — also
    unblocks the PARKED Gate-2 affiliate signups (Amazon-only until a
    demonstrable user product).
-7. Small carried: EasyParser account cancel/dispute · extract-from-url
-   progress stamps · recipes-list slim projection · ~250 never-proposed
-   dishes · Nutmeg (dish) merge · Stand Mixer re-run · product-side
-   M2M · per-publisher cap · twins · Pistou Reserve ·
-   recipes-inherit-story.
+7. Small carried: EasyParser cancel/dispute RESOLVED — see the 09-05
+   afternoon note below · extract-from-url progress stamps ·
+   recipes-list slim projection · ~250 never-proposed dishes · Nutmeg
+   (dish) merge · Stand Mixer re-run · product-side M2M ·
+   per-publisher cap · twins · Pistou Reserve · recipes-inherit-story.
+
+### Note — 2026-09-05 (afternoon): EasyParser pricing, and the record set straight
+
+The curator re-examined EasyParser: **the historical problem was never
+the extract process — it was getting access to their subscription
+page.** That page now works (curator: "easy parser seem to have its
+act together now"), which dissolves the carried "account
+cancel/dispute" item: there is nothing to dispute, extraction always
+worked, and the Demo tier quietly powered the recent collection runs
+(now exhausted: 100/100 credits used, resets 9/24).
+
+Pricing captured from the live plan page, vs Rainforest/Traject's
+public annual-billing sheet (both bill 1 credit/request):
+Beginner $49/100K ($0.49/1K) · Starter $150/350K ($0.43) · Advanced
+$300/750K ($0.40) · Investor $500/1.35M ($0.37) · Venture $1,000/3.3M
+($0.30). Rainforest best-case: Starter $83/10K ($8.30/1K), Production
+$375/250K ($1.50/1K) — EasyParser is ~3–4x cheaper at comparable
+spend, ~17x at entry, and Rainforest's monthly billing looks 2x the
+annual sheet. Open question, deliberately unforced: current volume
+fits free tiers + the free Amazon widget histograms, so no plan is
+needed until volume says otherwise; listing lookups moved to Traject
+on 09-04 and stay there until a week of real EasyParser calls proves
+the reliability story.
+
+
+## Session log — 2026-09-05→06 — the book pipeline ships, menus v1 ships, and two "hung" jobs weren't
+
+* **Book review curation BUILT end-to-end** (docs/book-review-curation.md):
+  NOT a parallel pipeline — ACDV with the sources stage swapped.
+  `curated_collections.source_mode` ('authorities'|'amazon_pool') +
+  `pool_collection` (the class↔collection FK's FIRST live instance).
+  `curate/book_sources.py` fetches per-ASIN evidence (Traject `book_product`,
+  2 credits, disk-cached), stamps RealRank at fetch, overlays captures;
+  `build_book_prompt` = closed world (pool-only ranks; curator PIN joins it),
+  fixed evidence roles (arithmetic backbone w/ argued deviations; customers_say
+  = owner voice; editorial = attributed color; description marketing EXCEPT
+  named awards/lists = verifiable claims — The Wok's James Beard block);
+  `book_enrich` verifies against pool evidence, no network. Live runs:
+  Acadian (boundary rejected the 1955 facsimile, kept 1969 Talk About Good
+  with reasons), Wok (pin recovered Kenji after the quoted harvest missed him
+  — RealRank 93.8, earned #1; pin ASIN regex fixed after matching the word
+  TECHNIQUES; pin notes never quoted into copy), French (deduped the two
+  Julia Child editions; Ina's fate wobbles where class_criteria is silent —
+  one sentence pins it, curator's call). ~$0.20–0.30/class measured.
+* **Editorial reviews recovered from page HTML** (curator spotted both the
+  section and `include_html`): Traject's own editorial_reviews parse is broken
+  (0-for-3 measured); `_editorial_from_html` mines the section in the SAME
+  2-credit call. 10 blurbs on The Wok (Grace Young, Dunlop, Chang…).
+* **Curated editor grew**: per-pick **fix ASIN** (re-verifies + re-pulls
+  photo/offers/owners, no re-run — built off the Cheese Knife loaf-pan ASIN,
+  which came from corpus token-match 'good'+'grips'); **step-up display**
+  (removing a discontinued pick compacts visible medals; stored place stays);
+  **also_considered** structured in the schema → clickable line (Amazon +
+  cohort deep-link via new product_collections `#name` hash). Choice-overload
+  research (Chernev 2015, Wirecutter): expand winners BY ROLE, never by rank —
+  podium stays 3; runners-up are trust copy + EV-layer inventory.
+* **RealRank everywhere it matters**: refresh now measures the Wilson top-30
+  (MEASURE_TOP_N=30, curator calibration; keep_top_n = shortlist only) with 1s
+  pacing (0.4s back-to-back drew a widget throttle); backfill measured 624/628
+  rated top-30 candidates (4 isolated fails; UNRATED rows are absent-not-zero
+  — the 'throttle' that aborted twice was 333 unrated books alphabetically
+  clustered). Book pool doorway sorts realrank-then-wilson.
+* **"Hung" jobs weren't** (Kokokari, Ekmek): stage 3/7 fetch ladder is silent
+  minutes (delish/tripadvisor anti-bot). Re-run succeeded in 8 min, 3 saved.
+  Fix: SLOW-STAGE banner + per-URL 'fetching' heartbeat BEFORE each fetch
+  (shared by dish + publisher runs). TripAdvisor = blacklist candidate.
+* **Menus v1 SHIPPED** (docs/meal-planning-research.md Option A; field
+  research: Paprika/AnyList/Skylight/Time-To-Plate): `menus_store.py` +
+  12 /menus endpoints + forms/menus.html (nav: user group). Dated per-user
+  menus over OWN recipes (possess side), per-recipe multiplier, shopping list
+  = one batched haiku parse CACHED PER RECIPE (Option-B down-payment) →
+  scale → conservative merge (unit families; pinch≠tsp) → aisle-grouped
+  persisted checklist (checked=cart, have=pantry-dim, manual rows survive
+  rebuilds). E2E verified in browser: 37 items / 3 recipes, ×2 coq au vin.
+  B (enrichment-time parse+backfill) and C (prep timeline off serve_at) open.
+* Also: Ground Nutmeg → search collection (quoted URL; screen culled 4 whole-
+  nutmeg); EasyParser record corrected (subscription-page access was the only
+  fault; ~3-17x cheaper than Traject; no plan needed at current volume);
+  alternate-retailers design (Best Buy official API + Home Depot BigBox,
+  model_number = join key); Wok/Greek/French cookbook curations live.
+
+* **Menus follow-ups (same evening)**: add-to-menu dropdown in the recipe
+  form's action footer (lazy-refreshed; posts membership for the open saved
+  recipe); menu rows open a recipe QUICK-VIEW POPUP (ingredients/steps +
+  editor & cook-view deep links, Esc/scrim closes); user 0 (master identity)
+  supported via _recipes_table_for passed into menus_store; 1/8-family
+  fractions; slim-projection "0 ingredients" meta fixed.
+
+## START HERE — post-session (as of 2026-09-06 evening) — SUPERSEDES 09-05 midday
+
+Server restart OWED for: menus fraction fix (1/8) + slim-projection meta fix
+(static HTML immediate; store change needs restart). Sign-in session expired
+in the curator's browser — re-login for auth-gated buttons.
+
+1. **Dinner party is SERVICEABLE NOW**: /forms/menus.html — "Dinner party"
+   (Sun 9/7, 19:00) holds 3 test recipes + a 37-item list. Swap in the real
+   menu, Build, shop. Thursday = second menu.
+2. **Chip approvals (Gate 3) — still GO** (300+); rename "Egg Separators"→
+   "Egg Separator". · BAILEY NSSM one elevated command still staged.
+3. **Ack pass**: ~12 collections / 18 picks remain (skip Electric Hand Mixer
+   + Utility Knife — re-run-bound). Diaspora cookbook fold/park still open.
+4. **Book curation**: scale one-by-one per curator (create curated w/ source
+   'Book pool' + pool + criteria; pin recovers harvest misses). Ina/French +
+   Woks-of-Life/Wok boundary calls = one criteria sentence each when decided.
+5. **Menus next**: Option B (parse at enrichment + corpus backfill → lists go
+   deterministic), then C (prep timeline off serve_at, cook-view anchors).
+6. **Next big build unchanged**: class↔collection FK → render/EV Phase 1
+   (pool_collection is its first instance; also unblocks parked Gate-2).
+7. Small carried: tripadvisor.com blacklist entry · fix-ASIN product-record
+   propagation note · search slim projection (recipes-list) · extract progress
+   stamps (fetch heartbeat shipped; extract stage still terse) · ~250
+   never-proposed dishes · Nutmeg dish merge · Stand Mixer re-run · twins ·
+   Pistou Reserve · recipes-inherit-story · per-publisher cap.
