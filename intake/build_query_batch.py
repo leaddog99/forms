@@ -852,6 +852,11 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         # hosts). Otherwise the static fetch is a guaranteed JS shell and the
         # escalation below pays for the same page a second time.
         _render_now = bool(render or e.get("_allow_render"))
+        # Heartbeat BEFORE the fetch (curator, 2026-09-06: two dish refreshes were
+        # cancelled as "dead" while a delish.com fetch ground through the unblocker
+        # ladder in silence). The KEEP/DROP line only prints AFTER the fetch, and a
+        # single anti-bot host can take minutes — so say what we're waiting on.
+        print(f"  [{i:>2}/{len(entries)}] fetching    {url}", flush=True)
         result = _fetch_for_filter(url, unblocker=unblocker, render=_render_now)
         if _render_now:
             # Already the rendered variant — the escalation has nothing left to try.
@@ -1655,6 +1660,13 @@ def build_batch(
     print(f"      -> kept {len(entries)}, dropped {len(dropped_disallowed)}")
 
     print(f"\n[3/7] is_recipe fetch+score (threshold={IS_RECIPE_THRESHOLD})")
+    # LOUD by design (curator, 2026-09-06): this is the SLOW stage, and a quiet
+    # log here reads as a hung job. Set the expectation before the silence.
+    print(f"      SLOW STAGE: {len(entries)} candidates, each one a LIVE page fetch. "
+          f"Anti-bot publishers (delish.com and friends) can take 60s+ EACH through "
+          f"the direct -> unblocker -> wayback ladder. A quiet gap after a "
+          f"'fetching' line means that fetch is still in flight - not a hang. "
+          f"Expect several minutes total.")
     # URL-text pre-skip (shared self-learning word lists) before the SERP fetch — opt-in
     # via system_config 'url_prefilter_dish_batch'. Proven ~0.2% false-drop on the corpus
     # (foreign-script slugs only), so it's safe to skip obvious non-recipe SERP hits.
