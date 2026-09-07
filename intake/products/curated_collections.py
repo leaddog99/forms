@@ -167,6 +167,12 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN model_number TEXT")
     if "image" not in cols:
         conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN image TEXT")
+    if "identity_score" not in cols:
+        # Listing-identity score + method (identity.py, 2026-09-07): stored
+        # with the row so the curator sees the number and can sort by it —
+        # never recomputed on read.
+        conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN identity_score REAL")
+        conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN identity_method TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ccp_collection "
                  "ON curated_collection_picks(collection, section, place)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ccp_asin "
@@ -423,7 +429,8 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
             "best_for, why_it_ranks_here, edge_over_next, important_tradeoff, buy_link, "
             "amazon_link, asin, asin_source, verified_title, identity_warning, source_links, "
             "offers, owner_rating, owner_count, owner_histogram, realrank_score, rating_shape, "
-            "product_id, run_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "product_id, run_at, identity_score, identity_method) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, slot, p.get("_section", ""), p.get("place"),
              p.get("product_title", ""), p.get("manufacturer", ""), p.get("capacity", ""),
              (p.get("model_number") or "").strip(), p.get("image", ""),
@@ -435,7 +442,8 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
              json.dumps(p.get("source_links") or []), json.dumps(p.get("offers") or []),
              p.get("owner_rating"), p.get("owner_count"),
              json.dumps(p.get("owner_histogram") or []), p.get("realrank_score"),
-             p.get("rating_shape", ""), pid, now))
+             p.get("rating_shape", ""), pid, now,
+             p.get("identity_score"), p.get("identity_method", "")))
     if banned:
         print(f"[CURATE] {banned} pick(s) skipped — match a curator-excluded product")
     kept = len(picks) - banned
@@ -520,14 +528,15 @@ def apply_pick_asin(conn: sqlite3.Connection, name: str, slot: str, r: dict) -> 
         "UPDATE curated_collection_picks SET asin=?, amazon_link=?, asin_source=?, "
         "verified_title=?, identity_warning=?, warning_ack=0, image=?, model_number=?, "
         "offers=?, owner_rating=?, owner_count=?, owner_histogram=?, realrank_score=?, "
-        "rating_shape=? WHERE collection=? AND slot=?",
+        "rating_shape=?, identity_score=?, identity_method=? WHERE collection=? AND slot=?",
         ((r.get("amazon_asin") or "").strip().upper(),
          r.get("amazon_link", ""), r.get("asin_source", "curator"),
          r.get("verified_title", ""), r.get("identity_warning", ""),
          r.get("image", ""), (r.get("model_number") or "").strip(),
          json.dumps(r.get("offers") or []), r.get("owner_rating"),
          r.get("owner_count"), json.dumps(r.get("owner_histogram") or []),
-         r.get("realrank_score"), r.get("rating_shape", ""), name, slot))
+         r.get("realrank_score"), r.get("rating_shape", ""),
+         r.get("identity_score"), r.get("identity_method", ""), name, slot))
     conn.commit()
     return cur.rowcount > 0
 

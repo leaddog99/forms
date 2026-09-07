@@ -8768,3 +8768,72 @@ in the curator's browser — re-login for auth-gated buttons.
    stamps (fetch heartbeat shipped; extract stage still terse) · ~250
    never-proposed dishes · Nutmeg dish merge · Stand Mixer re-run · twins ·
    Pistou Reserve · recipes-inherit-story · per-publisher cap.
+
+## Session log — 2026-09-07 — catch-up · iOS admin-menu scroll · Cheese Knife redone · the ack pass · "why can't it match the product?" — Google finds, one scorer verifies
+
+* **Catch-up**: nothing was lost; the 09-06 session ended on two stray
+  keystrokes. Three SEMrush exports committed (already harvested).
+  Restart verified by nssm event log + PID creation time.
+* **iOS admin menu scrolled the form, not itself** (c743b6b): the recipe
+  form and editor shell inline their own .nav-menu CSS from before the
+  09-01 scroll cap → NO scroll container. Shell JS now sizes the menu from
+  its real top with inline styles + a non-passive touchmove guard.
+  Verified in Chrome at 390×700; NOT yet tried on the phone.
+* **Cheese Knife**: the 09-05 "fix ASIN" never got a real ASIN — both
+  set-asin calls were that session's curl smoke tests. OXO's 3-piece set
+  is not on Amazon at all. Re-run (job 1841): Cangshan #1, Laguiole #2,
+  #3 honestly open (6/8 cached sources off-class).
+* **Ack pass done**: 16 acked as phrasing/brand-alias noise; 5 left as
+  real mismatches — which led to the question that mattered.
+* **WHY so many wrong products** (audit of 223 picks): every ASIN path
+  checked brand + coarse type noun and NOTHING about the product's own
+  words. 73% of ASINs come from the research model's MEMORY (no web);
+  Amazon search fill took the brand's bestseller (Pastene DOP → Kitchen
+  Ready ground); corpus fill matched two tokens ("good grips" → loaf pan).
+  The verify gate passed "tomatoes vs tomatoes". Six wrong buy links
+  carried NO warning; 16 of 21 warnings were noise.
+* **Built** (intake/products/curate/identity.py): ONE listing-identity
+  scorer (distinctive-word recall · model number decisive · type gate ·
+  brand/accessory/variant penalties; verified ≥.6 / weak ≥.34 / reject)
+  used by every path; Google `site:amazon.com` via serp_search is the
+  candidate finder (ASIN from the URL, slug scored for localized pages,
+  retry on Scale SERP's uncharged transient error, retry without a junk
+  model number); **Amazon search RETIRED as a fill**; Traject product
+  lookup unchanged as the verify/details step. Model's rejected ASIN →
+  re-resolve; a replacement the live listing rejects → BLANK + warning.
+  identity_score/identity_method persisted on picks; editor pill shows
+  "verified · 0.83". scripts/audit_pick_identity.py [--dry|--fix].
+* **Audit run**: 7 rows rewritten with verified listings — Pastene DOP
+  (B0774MRBYX), ChefAlarm (B00EHNH3W4), TP16 (B08BBYWBR2), KitchenAid
+  KHM7210 (B00C0QJY0O), Frontier whole nutmeg (B00416R48U — was the
+  GROUND jar, silent), San-J tamari (B077TXFK17), VKP Johnny Apple
+  Slicer. Bands after: 172 verified · 27 weak (silent unless brand
+  absent) · 5 reject (2 acked, Carving Knife not on Amazon under that
+  name, unbranded oregano, Kingrol canisters renamed). Open warnings: 1.
+* Gotchas learned: stored `model_number` can be junk copied FROM a wrong
+  listing (UPC, "Wake.42.34…") → clean_model_number; Google results vary
+  per call; digit-first tokens ("2-Piece") are sizes, not models.
+
+## START HERE — post-session (as of 2026-09-07 evening) — SUPERSEDES 09-06
+
+Server restart OWED: identity.py/verify.py/curated_collections.py are
+in-process for the editor's fix-ASIN endpoint (jobs already pick them up).
+Try the admin ⋮ menu on the iPhone (fix verified in Chrome only).
+
+1. **Dinner party menu** (Sun 9/7 19:00) serviceable on /forms/menus.html.
+2. **Chip approvals (Gate 3) — GO** (300+); "Egg Separators"→"Egg
+   Separator". · BAILEY NSSM one elevated command still staged.
+3. **Identity follow-ups**: capacity/size is NOT scored yet (nutmeg pick
+   1.64 oz landed on the 1 lb bulk bag, score .8 — a size check is the
+   next rung); product-record propagation of a fixed ASIN (item 7 note)
+   now bites 7 rows; Carving Knife #3 needs a curator ASIN or exclusion;
+   Apple Peeler #2 (King Arthur → generic clone) = exclude or withhold.
+4. **Book curation** one-by-one per curator; Ina/French + Woks-of-Life/
+   Wok boundary sentences when decided.
+5. **Menus next**: Option B (parse at enrichment + backfill), then C.
+6. **Next big build unchanged**: class↔collection FK → render/EV Phase 1.
+7. Small carried: tripadvisor.com blacklist · search slim projection ·
+   extract-stage progress stamps · ~250 never-proposed dishes · Nutmeg
+   dish merge · Stand Mixer re-run · twins (Hand Mixer/Electric Hand
+   Mixer) · Pistou Reserve · recipes-inherit-story · per-publisher cap ·
+   Cheese Knife source refresh with better terms.

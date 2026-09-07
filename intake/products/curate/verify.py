@@ -40,8 +40,8 @@ ASIN_RE = re.compile(r"^[A-Z0-9]{10}$")
 DB = os.path.join(_ROOT, "recipes.db")
 
 # Product-type vocabulary is SHARED with realrank (intake/products/product_types) so the two
-# cannot drift — and so both know that a cocotte is a dutch oven.
-from intake.products.product_types import same_type  # noqa: E402
+# cannot drift — and so both know that a cocotte is a dutch oven. It is applied through
+# curate/identity.py, the one listing-identity scorer every ASIN path uses.
 
 
 def rows_of(data: dict) -> list:
@@ -347,76 +347,57 @@ def validate_shape(data: dict, *, require_independent_sources: bool = True) -> l
 #  Enrichment — what needs BCC's stack
 # --------------------------------------------------------------------------- #
 
-def _asin_from_corpus(conn, title: str, manufacturer: str) -> tuple:
-    """Has a reviewer we already hold linked this product? -> (asin, [reviewers]).
-
-    The strongest blank-filler: an ASIN a named publisher put in its own buy link, already in
-    our review store. Matched on brand plus the distinctive words of the title.
-    """
-    toks = [w.lower() for w in re.findall(r"[A-Za-z0-9]+", title) if len(w) > 3][:4]
-    if not toks:
-        return "", []
-    sql = ("SELECT p.asin, r.reviewer, p.name FROM review_products p "
+def _corpus_candidates(conn, r: dict) -> list:
+    """ASINs a reviewer we already hold put in a buy link, for this brand ->
+    [{asin, title, brand, who}]. The scorer picks among them; the old rule
+    (brand LIKE + any two title words) matched 'good grips' to a loaf pan and
+    'kitchenaid mixer' to a stand mixer."""
+    brand = (r.get("manufacturer") or "").split("(")[0].strip().lower()
+    key = next((w for w in brand.split() if len(w) >= 3), "")
+    if not key:
+        return []
+    sql = ("SELECT p.asin, p.name, COALESCE(p.brand,''), r.reviewer FROM review_products p "
            "JOIN reviews r ON r.review_id = p.review_id "
-           "WHERE COALESCE(p.asin,'') <> '' AND lower(p.name) LIKE ?")
-    like = f"%{(manufacturer or toks[0]).lower()}%"
-    hits: dict[str, list] = {}
-    for asin, reviewer, name in conn.execute(sql, (like,)):
-        low = name.lower()
-        if sum(1 for t in toks if t in low) >= max(2, len(toks) - 2):
-            hits.setdefault(asin, [])
-            if reviewer not in hits[asin]:
-                hits[asin].append(reviewer)
-    if not hits:
-        return "", []
-    best = max(hits.items(), key=lambda kv: len(kv[1]))
-    return best[0], best[1]
+           "WHERE COALESCE(p.asin,'') <> '' AND (lower(p.name) LIKE ? OR lower(p.brand) LIKE ?)")
+    out: dict[str, dict] = {}
+    for asin, name, pbrand, reviewer in conn.execute(sql, (f"%{key}%", f"%{key}%")):
+        c = out.setdefault(asin, {"asin": asin, "title": name, "brand": pbrand, "who": []})
+        if reviewer not in c["who"]:
+            c["who"].append(reviewer)
+    return list(out.values())
 
 
-_FORM_WORDS = ("whole", "ground", "organic", "smoked", "sticks", "powder",
-               "seeds", "dried", "fresh", "instant")
+def resolve_asin(conn, r: dict, *, label: str = "pick", prior_asin: str = "",
+                 use_network: bool = True) -> str:
+    """Find the ASIN for a pick with none, or whose ASIN was rejected.
 
-
-def _asin_from_search(r: dict) -> tuple:
-    """Blank-ASIN recovery via ONE EasyParser Amazon search (1 credit).
-
-    Built for the Nutmeg run (2026-08-31): every pick blank because the only
-    prior recovery was our review corpus, which has no spice coverage. Query
-    = brand + model number (the review-stated disambiguator, when present) +
-    title + capacity. The FORM GUARD is the point: 'whole nutmeg' must never
-    resolve to the ground jar — any form word in the pick title must appear
-    in the listing title too. Step-2 identity verification still re-checks
-    whatever this returns. -> (asin, note) or ("", "")."""
-    from urllib.parse import quote_plus
-    try:
-        from intake.products import amazon_rainforest as ep   # Traject, 2026-09-04
-    except Exception:
-        return "", ""
-    q = " ".join(x for x in (r.get("manufacturer", ""), r.get("model_number", ""),
-                             r.get("product_title", ""), r.get("capacity", "")) if x).strip()
-    if not q:
-        return "", ""
-    try:
-        res = ep.search_url(f"https://www.amazon.com/s?k={quote_plus(q)}", pages=1)
-    except Exception:
-        return "", ""
-    if not res.get("ok"):
-        return "", ""
-    brand_raw = (r.get("manufacturer") or "").split("(")[0].strip().lower()
-    brand = next((w for w in brand_raw.split() if len(w) >= 3), brand_raw)
-    want = (r.get("product_title") or "").lower()
-    want_forms = {f for f in _FORM_WORDS if f in want}
-    for it in (res.get("items") or [])[:10]:
-        t = (it.get("title") or "").lower()
-        hay = f"{(it.get('brand') or '').lower()} {t}"
-        if brand and brand not in hay:
-            continue
-        if any(f not in t for f in want_forms):
-            continue
-        asin = (it.get("asin") or "").strip().upper()
-        if asin:
-            return asin, (it.get("title") or "")[:60]
-    return "", ""
+    Candidates in order of evidence strength — a reviewer's own buy link from
+    our corpus, then Google scoped to amazon.com (the ASIN rides in the result
+    URL; Amazon's own search ranked a brand's bestseller over the named product
+    and was retired 2026-09-07) — every one scored by identity.identity_score
+    against the pick's name. Sets amazon_asin / amazon_link / asin_source on
+    `r` and returns the ASIN, or '' when nothing passes: a blank is a correct
+    answer, a guess is not. Step 2 re-verifies against the live listing."""
+    from intake.products.curate import identity as ID
+    skip = {prior_asin.upper()} if prior_asin else set()
+    cands = [c for c in _corpus_candidates(conn, r) if c["asin"] not in skip]
+    best, info = ID.best_candidate(r, cands)
+    if best and info["verdict"] == "verified":
+        r["asin_source"] = f"our review corpus ({', '.join(best['who'])})"
+    else:
+        best = None
+        if use_network:
+            cands = [c for c in ID.google_candidates(r) if c["asin"] not in skip]
+            best, info = ID.best_candidate(r, cands)
+            if best:
+                r["asin_source"] = "google" + (f" (replaced {prior_asin})" if prior_asin else "")
+    if not best:
+        return ""
+    r["amazon_asin"] = best["asin"]
+    r["amazon_link"] = f"https://www.amazon.com/dp/{best['asin']}"
+    shown = best.get("title") or best.get("slug") or ""
+    r["_candidate_note"] = f"{best['asin']} {info['score']} via {r['asin_source']} — {shown[:60]}"
+    return best["asin"]
 
 
 def enrich(data: dict, *, use_network: bool = True) -> dict:
@@ -434,33 +415,42 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
         title = f"{r.get('manufacturer','')} {r.get('product_title','')}".strip()
         asin = str(r.get("amazon_asin") or "").strip().upper()
 
-        # 1. Fill a blank ASIN from our own review corpus first (free, and the strongest
-        #    evidence: a publisher's own buy link for this product).
+        # 1. Blank ASIN: corpus buy links, then Google scoped to amazon.com,
+        #    every candidate scored against the pick's name (resolve_asin).
         if not asin:
-            found, who = _asin_from_corpus(conn, r.get("product_title", ""),
-                                           r.get("manufacturer", ""))
-            if found:
-                asin = found
-                r["amazon_asin"] = asin
-                r["amazon_link"] = f"https://www.amazon.com/dp/{asin}"
-                r["asin_source"] = f"our review corpus ({', '.join(who)})"
-                report["filled"].append(f"{label}: {asin} via {', '.join(who)}")
-
-        # 1b. Still blank and allowed online: ONE Amazon search (1 credit),
-        #     form-guarded (whole vs ground). Step 2 re-verifies the result.
-        if not asin and use_network:
-            found, ltitle_note = _asin_from_search(r)
-            if found:
-                asin = found
-                r["amazon_asin"] = asin
-                r["amazon_link"] = f"https://www.amazon.com/dp/{asin}"
-                r["asin_source"] = "amazon search"
-                report["filled"].append(f"{label}: {asin} via amazon search — {ltitle_note}")
+            asin = resolve_asin(conn, r, label=label, use_network=use_network)
+            if asin:
+                report["filled"].append(f"{label}: {r.pop('_candidate_note', asin)}")
 
         if not asin or not use_network:
             continue
         _verify_score_row(conn, r, label, asin, report, az=az, aw=aw,
                           realrank_index=realrank_index, polarization=polarization)
+
+        # 1b. The model's own ASIN failed identity (it has no web access and
+        #     recalls ASINs from memory — a TP16 became a Bluetooth meat
+        #     thermometer). Treat it as a rejected candidate and resolve again.
+        if r.get("identity_warning") and not r.get("verified_title") and use_network:
+            again = resolve_asin(conn, r, label=label, prior_asin=asin, use_network=True)
+            if again:
+                report["filled"].append(
+                    f"{label}: model's {asin} rejected — {r.pop('_candidate_note', again)}")
+                r["identity_warning"] = ""
+                _verify_score_row(conn, r, label, again, report, az=az, aw=aw,
+                                  realrank_index=realrank_index, polarization=polarization)
+                if not r.get("verified_title"):
+                    # The live listing disagreed with the search result too.
+                    # Two wrong ASINs are not better than one: leave it blank,
+                    # keep the warning that says what was tried.
+                    r["amazon_asin"] = ""
+                    r["amazon_link"] = ""
+                    r["asin_source"] = f"blank (model's {asin} and google's {again} both rejected)"
+                    report["notes"].append(f"{label}: replacement {again} rejected too — ASIN left blank")
+            else:
+                r["amazon_asin"] = ""
+                r["amazon_link"] = ""
+                r["asin_source"] = f"blank (model's {asin} rejected; no listing matched)"
+                report["notes"].append(f"{label}: no listing matched — ASIN left blank")
     conn.close()
     return report
 
@@ -544,23 +534,27 @@ def _verify_score_row(conn, r: dict, label: str, asin: str, report: dict,
         report["notes"].append(f"{label}: listing lookup failed ({e})")
         return
     ltitle = listing.get("title") or ""
-    # Compare on the manufacturer's LEADING TOKEN, not the whole string. Publishers write
-    # parent companies and sub-brands in ("Staub (Zwilling)", "Lodge Cast Iron"), and
-    # asking whether "staub (zwilling)" appears inside the listing's "STAUB" is backwards
-    # — it flagged four correct rows.
-    brand_raw = (r.get("manufacturer") or "").split("(")[0].strip().lower()
-    brand = next((w for w in brand_raw.split() if len(w) >= 3), brand_raw)
-    hay = f"{(listing.get('brand') or '').lower()} {ltitle.lower()}"
-    brand_ok = (not brand) or brand in hay
-    # Shared vocabulary: knows a cocotte IS a dutch oven while a bread oven is not, and
-    # fails OPEN on anything ambiguous rather than dropping a legitimate product.
-    type_ok, type_why = same_type(f"{title} {r.get('capacity','')}", ltitle)
-    if not (brand_ok and type_ok):
-        why = type_why if not type_ok else "brand does not match"
+    # One scorer for every path (identity.py, 2026-09-07): brand token, the
+    # shared type vocabulary as a hard gate, the model number as decisive, and
+    # RECALL of the pick title's distinctive words — the check that "tomatoes
+    # vs tomatoes" used to pass while Pastene's DOP can resolved to its ground
+    # ones. Persisted on the row so the curator sees a number, not a pill.
+    from intake.products.curate.identity import identity_score
+    info = identity_score(r, ltitle, listing.get("brand") or "",
+                          listing.get("model_number") or "")
+    r["identity_score"] = info["score"]
+    r["identity_method"] = info["method"]
+    if info["verdict"] == "reject":
         r["identity_warning"] = (
-            f"ASIN {asin} looks like a different product ({why}): {ltitle[:60]}")
+            f"ASIN {asin} looks like a different product ({info['why']}): {ltitle[:60]}")
         report["rejected"].append(f"{label}: {r['identity_warning']}")
         return
+    if info["verdict"] == "weak" and not info.get("brand_ok"):
+        # Partial match AND the brand is absent or unnamed: listed, but the
+        # curator should look. A weak match with the brand present stays
+        # silent — the score is on the row.
+        r["identity_warning"] = (
+            f"ASIN {asin} only partly matches ({info['why']}): {ltitle[:60]}")
     r["verified_title"] = ltitle
     # The listing lookup already carries the photo and often the
     # manufacturer's model number — keep both on the pick (the photo is

@@ -446,7 +446,7 @@
               ${p.identity_warning ? (p.warning_ack
                   ? '<span class="pill-w ok" title="Warning reviewed by curator">reviewed ✓</span>'
                   : '<span class="pill-w bad">identity</span>')
-                : (p.verified_title ? '<span class="pill-w ok">verified</span>' : '')}</div>
+                : (p.verified_title ? `<span class="pill-w ok" title="${escapeHtml(p.verified_title)}${p.identity_method?' · matched by '+escapeHtml(p.identity_method):''}">verified${p.identity_score!=null?' · '+Number(p.identity_score).toFixed(2):''}</span>` : '')}</div>
             ${p.best_for?`<div class="pk-line"><b>Best for:</b> ${escapeHtml(p.best_for)}</div>`:''}
             ${p.why_it_ranks_here?`<p class="pk-why">${escapeHtml(p.why_it_ranks_here)}</p>`:''}
             ${p.important_tradeoff?`<div class="pk-line"><b>The catch:</b> ${escapeHtml(p.important_tradeoff)}</div>`:''}
