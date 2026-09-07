@@ -1454,11 +1454,41 @@
       // document top, off-screen ("have to scroll up to see it"). Fixed makes
       // it overlay the current viewport under the (fixed/sticky) header toggle.
       const r = toggle.getBoundingClientRect();
+      const top = r.bottom + 6;
       menu.style.position = 'fixed';
-      menu.style.top = (r.bottom + 6) + 'px';
+      menu.style.top = top + 'px';
       menu.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+      // The menu OWNS its scroll box (curator, iPhone, 2026-09-07): the admin
+      // list is taller than a phone screen, and pages that inline their own
+      // .nav-menu rules (recipe form, editor shell) predate the 09-01 CSS cap
+      // — there the menu had no scroll container at all, so a swipe scrolled
+      // the form behind it. Sizing here, from the menu's REAL top, beats any
+      // stylesheet and stays correct when the toggle sits lower than the header.
+      menu.style.maxHeight = Math.max(160, window.innerHeight - top - 12) + 'px';
+      menu.style.overflowY = 'auto';
+      menu.style.overscrollBehavior = 'contain';
+      menu.style.touchAction = 'pan-y';
+      menu.style.webkitOverflowScrolling = 'touch';
       menu.classList.add('open');
     }
+    // iOS Safari scroll-chaining guard. overscroll-behavior alone is not
+    // honoured reliably on iOS: a swipe that starts outside the menu, or one
+    // that reaches the menu's end, scrolls the page underneath. While the menu
+    // is open, block page touch-scrolling entirely and clamp the menu's own
+    // scroll at its boundaries. Registered once; a no-op whenever closed.
+    let _touchY = 0;
+    document.addEventListener('touchstart', (e) => {
+      if (menu.classList.contains('open') && e.touches.length) _touchY = e.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      if (!menu.classList.contains('open')) return;
+      if (!menu.contains(e.target)) { e.preventDefault(); return; }
+      const dy = (e.touches.length ? e.touches[0].clientY : _touchY) - _touchY;
+      const atTop = menu.scrollTop <= 0;
+      const atBottom = menu.scrollTop + menu.clientHeight >= menu.scrollHeight - 1;
+      const fits = menu.scrollHeight <= menu.clientHeight;
+      if (fits || (dy > 0 && atTop) || (dy < 0 && atBottom)) e.preventDefault();
+    }, { passive: false });
 
     toggle.addEventListener('click', (e) => {
       e.stopPropagation();
