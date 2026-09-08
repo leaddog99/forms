@@ -335,6 +335,30 @@ def _load(conn: sqlite3.Connection, product_id: str) -> dict | None:
     return json.loads(row[0]) if row[0] else {}
 
 
+def replace_amazon_offer(conn: sqlite3.Connection, product_id: str, asin: str) -> int:
+    """Keep exactly ONE Amazon offer on the row — the verified ASIN. Offers are
+    keyed by (retailer, asin), so a corrected ASIN was being APPENDED next to
+    the wrong one (ChefAlarm carried the DOT's ASIN beside its own, 2026-09-08).
+    Returns how many stale Amazon offers were dropped."""
+    ensure_product_tables(conn)
+    d = _load(conn, product_id)
+    if d is None or not asin:
+        return 0
+    keep, dropped = [], 0
+    for o in d.get("retailer_offers") or []:
+        if (o.get("retailer") or "").strip().lower() == "amazon" \
+                and (o.get("asin") or "").strip().upper() != asin.strip().upper():
+            dropped += 1
+            continue
+        keep.append(o)
+    if dropped:
+        d["retailer_offers"] = keep
+        conn.execute("UPDATE products SET data=?, updated_at=? WHERE product_id=?",
+                     (json.dumps(d), _now(), product_id))
+        conn.commit()
+    return dropped
+
+
 def set_realrank(conn: sqlite3.Connection, product_id: str, realrank: dict) -> dict | None:
     """Attach the computed SCORE half. Cheap and re-runnable on its own — a ratings refresh
     updates this without touching the write-up or its approval.

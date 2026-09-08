@@ -73,6 +73,7 @@ def fix(conn, rows: list, dry: bool = False) -> None:
     chosen, verifies and writes nothing."""
     from intake.products.curate import verify as V
     from intake.products import curated_collections as ccs
+    touched: set = set()
     for r in rows:
         lt = listing_title_of(r)
         if not lt or identity_score(r, lt)["verdict"] != "reject" or r.get("warning_ack"):
@@ -101,6 +102,15 @@ def fix(conn, rows: list, dry: bool = False) -> None:
               f"score={pick.get('identity_score')} {'written' if ok else 'NOT written'}")
         for n in report.get("rejected") or []:
             print("      ", n)
+        touched.add(r["collection"])
+    # Propagate every corrected pick to the catalog row it materialized.
+    from intake.products.curate import to_products
+    for coll in sorted(touched):
+        try:
+            s = to_products.rematerialize(conn, coll)
+            print(f"[fix] re-materialized {coll}: {s}")
+        except Exception as e:
+            print(f"[fix] re-materialize {coll} FAILED: {e}")
 
 
 if __name__ == "__main__":

@@ -4733,6 +4733,13 @@ def curated_pick_set_asin_endpoint(name: str, slot: str, payload: dict = Body(de
              "asin_source": "curator"}
         report = cvf.enrich_one(conn, r, label=slot)
         ccs.apply_pick_asin(conn, name, slot, r)
+        # Propagate to the catalog row the pick materialized — until 2026-09-08
+        # the product record kept the OLD or withheld ASIN after a fix.
+        try:
+            from intake.products.curate import to_products
+            report["materialize"] = to_products.rematerialize(conn, name)
+        except Exception as e:
+            report["materialize"] = {"error": str(e)}
     print(f"[CURATE] {name}/{slot}: curator set ASIN {asin} — "
           + ("verified" if r.get("verified_title") else
              (r.get("identity_warning") or "no listing data")))

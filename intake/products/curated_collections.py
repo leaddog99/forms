@@ -385,7 +385,11 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
         "SELECT slot, asin, manufacturer, product_title, product_id "
         "FROM curated_collection_picks "
         "WHERE collection = ? AND COALESCE(product_id,'') <> ''", (name,))
-    prior_slot = {r["slot"]: r["product_id"] for r in prior}
+    # Slot carries the link ONLY within a brand — a renamed title of the same
+    # maker. Cheese Knife #2 went OXO → Laguiole between runs and the slot
+    # fallback handed the Laguiole pick the OXO catalog row (2026-09-08).
+    prior_slot = {r["slot"]: (r["product_id"], _name_key(r["manufacturer"], ""))
+                  for r in prior}
     prior_asin = {(r["asin"] or "").upper(): r["product_id"] for r in prior if r["asin"]}
     prior_name = {_name_key(r["manufacturer"], r["product_title"]): r["product_id"]
                   for r in prior}
@@ -419,9 +423,11 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
                          "WHERE collection = ? AND slot = ?", (new_slot, name, slot))
             excl_slots.discard(slot)
             excl_slots.add(new_slot)
+        by_slot = prior_slot.get(slot)
+        same_maker = by_slot and by_slot[1] == _name_key(p.get("manufacturer"), "")
         pid = (prior_asin.get(asin) if asin else None) \
             or prior_name.get(_name_key(p.get("manufacturer"), p.get("product_title"))) \
-            or prior_slot.get(slot)
+            or (by_slot[0] if same_maker else None)
         conn.execute(
             "INSERT INTO curated_collection_picks(collection, slot, section, place, "
             "product_title, manufacturer, capacity, model_number, image, "

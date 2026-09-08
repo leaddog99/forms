@@ -161,6 +161,27 @@ def _existing_row(conn: sqlite3.Connection, rows: list, asin: str, suspect: bool
     return catalog_store.find_by_name(conn, brand, title)
 
 
+def _suspect(p: dict) -> bool:
+    """Should the product record withhold this pick's ASIN?
+
+    Only when the LISTING-IDENTITY scorer rejected the listing (identity.py,
+    2026-09-08). Any identity_warning used to count — including the on-class
+    title-phrasing flag, which is a class-membership question, not a listing
+    one — so Lansinoh's glass bottle and the Laguiole set lost their ASINs on
+    the catalog row while the pick itself was verified. A curator ack clears it."""
+    if p.get("warning_ack"):
+        return False
+    if (p.get("verified_title") or "").strip():
+        return False                     # verified or weak-listed by the scorer
+    score = p.get("identity_score")
+    if score is not None:
+        try:
+            return float(score) < 0.34   # identity.WEAK — the reject band
+        except (TypeError, ValueError):
+            pass
+    return bool(p.get("identity_warning"))
+
+
 def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str,
                 picks: list, job_id: int | None = None,
                 on_result=None) -> dict:
@@ -181,7 +202,7 @@ def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str
             skipped += len(rows)
             continue
         asin = (rows[0].get("asin") or "").strip().upper()
-        suspect = bool(rows[0].get("identity_warning"))
+        suspect = _suspect(rows[0])
         offers = _offers_for(rows, drop_amazon=suspect)
 
         product = {
@@ -202,6 +223,12 @@ def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str
         pid, action = res["product_id"], res["action"]
         created += action == "created"
         merged += action == "merged"
+        if asin and not suspect:
+            # One Amazon offer per row: a corrected ASIN must REPLACE the old
+            # one, not sit beside it (offers merge by (retailer, asin)).
+            stale = catalog_store.replace_amazon_offer(conn, pid, asin)
+            if stale:
+                print(f"[CURATE]   dropped {stale} stale Amazon offer(s) on {title[:40]}")
 
         rr = _realrank_from(rows, collection)
         if rr:
@@ -236,6 +263,23 @@ def materialize(conn: sqlite3.Connection, *, collection: str, product_class: str
     return {"products_created": created, "products_merged": merged,
             "placements": len(picks), "skipped": skipped,
             "distinct_products": len(groups)}
+
+
+def rematerialize(conn: sqlite3.Connection, name: str, *, job_id: int | None = None) -> dict:
+    """Re-run materialize over a collection's STORED picks — no research, no
+    network. The propagation step a fix-ASIN needs (2026-09-08): the pick row
+    was corrected but the catalog row it materialized still carried the old
+    or withheld ASIN. Idempotent: product_id links make every row a merge."""
+    from intake.products import curated_collections as ccs
+    coll = ccs.get_collection(conn, name)
+    if not coll:
+        raise ValueError(f"no curated collection named {name!r}")
+    stored = [p for p in ccs.list_picks(conn, name) if not p.get("excluded")]
+
+    def _link(slot, pid, action):
+        ccs.set_pick_product(conn, name, slot, pid, action)
+    return materialize(conn, collection=name, product_class=coll["product_class"],
+                       picks=stored, job_id=job_id, on_result=_link)
 
 
 def _sources_of(p: dict) -> list:
