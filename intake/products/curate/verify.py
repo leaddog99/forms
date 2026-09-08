@@ -216,6 +216,37 @@ def _declared_omissions(data: dict) -> tuple:
     return declared, errs
 
 
+def _drop_placeholder_rows(data: dict, declared: set) -> list:
+    """Remove EMPTY ranked rows — a place the model declared omitted but also
+    left as a blank template entry (Baby Bottles, 2026-09-08: glass-only
+    boundary left two products; #3 was declared in omitted_slots AND emitted
+    as {"place": 3, "product_title": ""}, and the run died on "both ranked
+    and declared omitted"). A blank row is not a ranking. One that is NOT
+    declared still fails — as a 'missing' place, which is the truthful error."""
+    notes = []
+    for key, sect_of in (("overall_top_three", lambda r: ""),
+                         ("category_rankings", lambda r: str(r.get("category") or ""))):
+        rows = data.get(key)
+        if not isinstance(rows, list):
+            continue
+        keep = []
+        for r in rows:
+            if isinstance(r, dict) and not str(r.get("product_title") or "").strip() \
+                    and not str(r.get("manufacturer") or "").strip():
+                try:
+                    place = int(r.get("place", 0))
+                except (TypeError, ValueError):
+                    place = 0
+                label = f"{sect_of(r) or 'overall'} #{place}"
+                how = "declared omitted" if (sect_of(r).strip().lower(), place) in declared \
+                    else "NOT declared — will fail as a missing place"
+                print(f"[CURATE] dropped blank placeholder row for {label} ({how})")
+                continue
+            keep.append(r)
+        data[key] = keep
+    return notes
+
+
 def _check_places(rows: list, declared: set, section: str, label: str) -> list:
     """Places 1..3 each filled by a row XOR declared omitted. Place 1 may be
     omitted ONLY as part of a fully-empty section (all three declared, the
@@ -252,6 +283,7 @@ def validate_shape(data: dict, *, require_independent_sources: bool = True) -> l
     an amazon host — there the independent evidence is the owner ARITHMETIC,
     and the closed-world pool check in book_enrich replaces this rule."""
     declared, errs = _declared_omissions(data)
+    errs += _drop_placeholder_rows(data, declared)
     if require_independent_sources:
         errs += check_independent_sources(data)
     overall = data.get("overall_top_three")

@@ -350,7 +350,8 @@ name it and the reason in `methodology_note` instead, so the curator sees the ju
 THE HONEST GAP — never pad a ranking to fill it. If fewer than three products inside the
 boundary can actually be verified, return the ones you can and DECLARE each unfilled place
 in `omitted_slots`: {{"section": "", "place": 3, "reason": "..."}} ("" = the overall
-ranking; otherwise the category name). The reason names what you looked at and why nothing
+ranking; otherwise the category name). A declared place gets NO row in the ranking array —
+do not leave a blank template entry for it. The reason names what you looked at and why nothing
 qualified — an off-class product promoted to fill a slot is a defect (the Water-Bath-Canner
 run padded #3 with an electric multi-cooker the boundary excluded); a declared gap is a
 correct answer. If NOTHING qualifies, an entirely empty ranking is valid: declare all

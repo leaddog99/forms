@@ -524,6 +524,17 @@
         es.addEventListener('status', e => { st.textContent = `job #${d.job_id} ${e.data}`; });
         es.addEventListener('done', async () => {
           es.close(); es = null; endRun();
+          // Say WHICH gate failed, in the status line — the traceback in the
+          // log pane buried "shape errors: place 3 both ranked and declared
+          // omitted" under 25 lines of Python (Baby Bottles, 2026-09-08).
+          try {
+            const j = await (await fetch(`/jobs/${d.job_id}`)).json();
+            if (j.status === 'error') {
+              const why = String(j.error_detail || '').replace(/^\w*Error:\s*/, '').trim();
+              st.textContent = `job #${d.job_id} failed — ${why || 'see log'}`;
+              st.style.whiteSpace = 'pre-wrap';
+            }
+          } catch(_) {}
           detail = null; await load(selected);
         });
         es.onerror = () => { es && es.close(); es = null; endRun(); };
