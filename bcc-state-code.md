@@ -8955,3 +8955,30 @@ in-process). Backups + BAILEY mirror run at close of 09-08.
    extract-stage progress stamps · ~250 never-proposed dishes · Nutmeg dish
    merge · Stand Mixer re-run · twins · Pistou Reserve · recipes-inherit-
    story · per-publisher cap · Cheese Knife source refresh.
+
+## Addendum — 2026-09-09 (very late) — the self-learning acquisition design is written
+
+* Discussion: agents vs programs → agents OPERATE the system (triage,
+  diagnosis), pipelines stay programs; the curator's real target is
+  SELF-LEARNING acquisition — techniques as instruments, a policy learned
+  from the system's own failures, stamped per domain, so TTL re-runs stop
+  re-guessing and the fetch ladder gets carved into testable pieces.
+* **docs/acquisition-ledger.md WRITTEN**: one `attempt()` contract for
+  direct · unblocker · unblocker_render · wayback · walker · human · cache;
+  `acquisition_attempts` ledger (technique, rung, ok, reason class, cost,
+  ms, gate verdict, saved); reason classes incl. `wall:membership`; nightly
+  `acquisition_policy` = expected cost-to-first-success → `domains.
+  acquire_policy` + method + inputs; ε-exploration never zero; platform
+  inheritance; bounded model call only to NAME a novel failure. Curator
+  flags remain hard constraints. Success = passed the structure gate.
+* Also tonight: the exact gpt-image-1 prompt for Double Apple Dutch Baby
+  handed over for the new-model comparison (note: our builder pastes the
+  whole headnote — strawberries/whipped cream from the grandmother story —
+  and lists batter ingredients as "visible elements"; a fair second test
+  trims that).
+
+**START HERE addendum — insert as item 1b for 09-09**: after the mollybaz
+spike, build **phase 2 of the acquisition ledger** — `acquisition_attempts`
+table + hooks at the four fetch functions and the walker + harvest gate
+back-fill + `python -m jobs run acquisition_report`. WRITE-ONLY, no
+behavior change; it is the BEFORE measurement the carve is judged against.
