@@ -8895,3 +8895,63 @@ in-process (jobs pick up the breaker without it).
    extract-stage progress stamps · ~250 never-proposed dishes · Nutmeg dish
    merge · Stand Mixer re-run · twins · Pistou Reserve · recipes-inherit-
    story · per-publisher cap · Cheese Knife source refresh.
+
+## Session log — 2026-09-08 (night) — the membership-site answer: a signed-in capture walker (spike built)
+
+* **Decision**: "do it by hand" is not an answer for influential members-only
+  publishers (mollybaz.com CLUB, Milk Street) — and the curator has agreement
+  from the sites for an interactive scrape. Design settled in discussion:
+  (1) automate the BOOKMARKLET, not a screenshot — DOM markdown is exact
+  (fractions, units, JSON-LD), screenshots go through a vision model and
+  lose all of it; screenshot stays the card wallpaper; (2) FILES as the
+  transport — one .md (+ .html + hero) per page in input/captures/<host>/,
+  batch ingests the folder; decouples the browser session from processing;
+  (3) a HUMAN logs in, once, headed; Playwright keeps the persistent
+  profile — no password ever typed by code; (4) URL source = the domain's
+  scored cohort, same rows Process-selected/Queue read; trigger = a future
+  "Walk (signed-in)" button; console-only until a third site.
+* **Built** (90ab87b; restore point tag `pre-capture-walker`):
+  docs/capture-folder-contract.md (front matter + body byte-compatible with
+  the bookmarklet's /stage-markdown payload; statuses captured / signed-out
+  / no-recipe / challenge / error) · intake/capture/{contract,walk}.py —
+  `python -m intake.capture.walk --host H --login` then
+  `--urls-file F | --from-ledger --limit N`; stops on the first signed-out
+  page; 3–7 s pause; hero saved with the session's cookies; ignored folders
+  input/captures/ + data/browser_profiles/. Self-contained: delete the
+  folder to back out.
+* **Finding that matters**: HEADLESS Chromium sat on Cloudflare's "Just a
+  moment…" forever (simplyrecipes.com); the same page HEADED cleared in
+  seconds → full capture (JSON-LD, Ingredients, Directions, hero). Walker
+  runs headed by default and treats interstitials as `challenge`, waiting
+  30 s. This is probably the mollybaz sgcaptcha answer too.
+* Also today: identity-audit rerun 228 picks (176/28/5); three more SEMrush
+  exports committed (alexguarnaschelli, alisoneroman, cutco).
+
+## START HERE — 2026-09-09 morning — SUPERSEDES 09-08 late
+
+Server restart OWED (publisher-refresh guard + set-asin rematerialize are
+in-process). Backups + BAILEY mirror run at close of 09-08.
+
+1. **The mollybaz spike — two commands on MARLEY's console**:
+   `python -m intake.capture.walk --host mollybaz.com --login` (sign in to
+   THE CLUB in the window, press Enter) then
+   `python -m intake.capture.walk --host mollybaz.com --urls-file
+   input/captures/mollybaz.com/_urls.txt` (5 club pages). READ the five .md
+   files: ingredients + steps present → build ingest; teaser → walker says
+   `signed-out`, userscript route remains.
+2. **Ingest (next build)**: `intake/capture/ingest.py` — folder → the exact
+   /stage-markdown record → existing extract → save under `identity`;
+   rename .done/.failed; `--dry-run`. Then Milk Street gets its own profile.
+   Later: permission flag on the domain record; "Walk" button; route the
+   gated breaker + refresh guard to it.
+3. **Chip approvals (Gate 3) — GO** (300+); "Egg Separators"→"Egg
+   Separator". · BAILEY NSSM one elevated command still staged.
+4. **Identity follow-ups**: size/capacity not scored; Carving Knife #3;
+   Apple Peeler #2; Baby Bottles #1 title flag = ack.
+5. **Book curation** one-by-one; boundary sentences (Ina/French, Woks/Wok).
+6. **Menus next**: Option B, then C. **Next big build**: class↔collection
+   FK → render/EV Phase 1.
+7. Small carried: tripadvisor.com blacklist · search slim projection ·
+   extract-stage progress stamps · ~250 never-proposed dishes · Nutmeg dish
+   merge · Stand Mixer re-run · twins · Pistou Reserve · recipes-inherit-
+   story · per-publisher cap · Cheese Knife source refresh.
