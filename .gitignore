@@ -155,3 +155,7 @@ cache/
 # Nothing in here is source; treat it as writable by anyone at any time.
 temp/
 scripts/.class_match_embed_cache.json
+# Signed-in capture walker (docs/capture-folder-contract.md): captured pages
+# are pipeline inputs, the browser profile holds a live session. Never source.
+input/captures/
+data/browser_profiles/
