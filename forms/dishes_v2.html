@@ -83,6 +83,7 @@
   </div>
 
   <script src="/forms/library-shell.js?v=20260831b"></script>
+  <script src="/forms/query-rows.js?v=20260909"></script>
   <script>
     const $ = (s) => document.querySelector(s);
 
@@ -112,143 +113,30 @@
     ];
 
     /* ------------------------- search-line row editor -------------------------
-       A dish's queries are ROWS {q, n, gl, hl}: each line is its own Google
-       search with its own result count and locale; null = follow the dish
-       (n → "SERP candidates", locale → "Sources in"), resolved at run time.
-       Structured fields, not free-form syntax — the server validates again. */
-    // Mirror of dishes._GL_FOR_LANG: country for languages whose code differs.
-    const GL_FOR_LANG = {el:'gr', en:'us', ja:'jp', zh:'cn', ko:'kr', da:'dk', sv:'se', cs:'cz', uk:'ua'};
-    const glForLang = (hl) => GL_FOR_LANG[hl] || hl;
-    const QIN = 'padding:9px 11px;border:1px solid var(--line,#e2d6c3);border-radius:8px;font:inherit;box-sizing:border-box';
-
-    function qRowHtml(r = {}){
-      const langOpts = [['', '— dish default —'], ...SOURCE_LANGS.slice(1)]
-        .map(([c, l]) => `<option value="${c}" ${(r.hl || '') === c ? 'selected' : ''}>${l}</option>`).join('');
-      return `<div class="qrow" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
-        <textarea rows="1" class="qr-q" placeholder='verbatim query — "…" exact, -word / -site:… exclude' style="flex:1;min-width:0;${QIN}">${escapeHtml(r.q || '')}</textarea>
-        <input type="number" class="qr-n" min="1" placeholder="dflt" title="Candidates fetched for THIS line (blank = the dish's SERP candidates default)" value="${r.n ?? ''}" style="width:70px;${QIN}">
-        <select class="qr-hl" title="Search language for this line (dish default = follow 'Sources in')" style="width:150px;${QIN}">${langOpts}</select>
-        <input type="text" class="qr-gl" maxlength="2" placeholder="auto" title="Google country index, 2-letter (auto-derived from the language; override for e.g. English-language results ranking in Greece: language English + country gr)" value="${escapeHtml(r.gl || '')}" style="width:56px;text-transform:lowercase;${QIN}">
-        <input type="number" class="qr-keep" min="1" placeholder="—" title="Reserved winner seats for this line (ⓘ in the header explains)" value="${r.keep ?? ''}" style="width:56px;${QIN}">
-        <button type="button" class="qr-del ed-btn" title="Remove line" style="padding:6px 10px">✕</button>
-      </div>`;
-    }
-
-    function queryRowsBlockHtml(boxId){
-      return `
-        <div id="${boxId}">
-          <div style="display:flex;gap:8px;margin-bottom:4px;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted,#6b5b4f)">
-            <span style="flex:1">Query (verbatim)<button type="button" class="info-dot" data-info-title="Search lines — syntax, locales, examples" data-info="<b>Syntax</b> — <code>&quot;exact phrase&quot;</code> exact match (straight quotes; curly are auto-fixed) &middot; <code>-word</code> exclude pages with that word (drops EVERY page containing it) &middot; <code>-site:domain.com</code> exclude a site &middot; <code>site:gr</code> only that country&#39;s TLD.<br><b>Alternate phrasings go on their own lines</b> — each runs as a separate search and results merge; more reliable than <code>OR</code> (undocumented precedence). Blocklist exclusions are auto-appended each run (System &rarr; Search).<br><br><b>Results</b> — candidates fetched for that line only (blank = the dish&#39;s SERP-candidates default).<br><b>Language / Country</b> — WHICH Google answers, in what language (blank = follow Sources-in). They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece — not the same as <code>site:gr</code>, since most Greek publishers aren&#39;t on .gr.<br><br><b>Examples</b><br><code>&quot;carrot cake&quot; recipe</code> + results blank + language dish-default &rarr; default count, follows Sources-in<br><code>γιουβαρλάκια αυγολέμονο</code> + results 120 + language Greek &rarr; 120 candidates from Greek Google, in Greek<br><code>moules frites</code> + language English + country fr &rarr; English-language pages that rank on google.fr">i</button></span><span style="width:70px">Results</span><span style="width:150px">Language</span><span style="width:56px">Country</span><span style="width:56px">Reserve<button type="button" class="info-dot" data-info-title="Reserved winner seats" data-info="Winners are normally seated purely by the authority ranking — and that ranking is biased toward the anglophone link graph. Measured on Soupe au Pistou: the French line&#39;s marmiton.org (DA&nbsp;83) lost every seat to US pages on page-authority alone.<br><br><b>Reserve</b> holds this many of the dish&#39;s winner seats for THIS line&#39;s own candidates, ranked among themselves by the same scoring. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — the reserve is a floor, not a cap). If the line can&#39;t fill its reserve, the unused seats return to the open pool.<br><br>Blank = no reservation; everything behaves as before.">i</button></span><span style="width:38px"></span>
-          </div>
-          <div class="qrows-list"></div>
-          <button type="button" class="ed-btn qrows-add" style="padding:6px 12px">+ Add line</button>
-        </div>`;
-    }
-
-    function initQueryRows(boxId, rows){
-      const box = document.getElementById(boxId);
-      const list = box.querySelector('.qrows-list');
-      list.innerHTML = (rows && rows.length ? rows : [{}]).map(qRowHtml).join('');
-      // Query boxes grow to fit their content — a long multi-operator query
-      // wraps into view instead of scrolling out of sight.
-      const autosize = (el) => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
-      list.querySelectorAll('.qr-q').forEach(autosize);
-      const dirty = () => box.dispatchEvent(new Event('input', {bubbles: true}));
-      box.querySelector('.qrows-add').addEventListener('click', () => {
-        list.insertAdjacentHTML('beforeend', qRowHtml({}));
-        const q = list.lastElementChild.querySelector('.qr-q');
-        autosize(q); q.focus();
-        dirty();
-      });
-      box.addEventListener('click', (e) => {
-        const del = e.target.closest('.qr-del'); if (!del) return;
-        const row = del.closest('.qrow');
-        if (list.children.length > 1) row.remove();
-        else {
-          // Last line: ✕ means "start over" — clear EVERY field, not just the
-          // text (leftover n/locale on an empty line would block the save).
-          row.querySelector('.qr-q').value = ''; autosize(row.querySelector('.qr-q'));
-          row.querySelector('.qr-n').value = '';
-          row.querySelector('.qr-hl').value = '';
-          row.querySelector('.qr-gl').value = '';
-        }
-        dirty();
-      });
-      box.addEventListener('input', (e) => {
-        const q = e.target.closest('.qr-q'); if (q) autosize(q);
-      });
-      // A query is ONE search — Enter doesn't make newlines, it adds a line row.
-      box.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && e.target.closest('.qr-q')){
-          e.preventDefault();
-          box.querySelector('.qrows-add').click();
-        }
-      });
-      // Picking a language auto-fills its country; still editable afterwards.
-      box.addEventListener('change', (e) => {
-        const sel = e.target.closest('.qr-hl'); if (!sel) return;
-        sel.closest('.qrow').querySelector('.qr-gl').value = sel.value ? glForLang(sel.value) : '';
-      });
-      // Belt-and-braces dirty signal (2026-08-30): the Reserve spinner edit
-      // reached the value without tripping the #page input/change tracker for
-      // the curator. Any key or mouse release on a line input IS an edit —
-      // dispatch the same bubbling 'input' the add/del buttons use, but only
-      // when a value actually differs from what the row rendered with, so
-      // mere clicking around never lights Save falsely.
-      const _vals = () => JSON.stringify([...box.querySelectorAll('input,textarea,select')].map(i => i.value));
-      let _base = _vals();
-      box.addEventListener('keyup', () => { if (_vals() !== _base) { _base = _vals(); dirty(); } });
-      box.addEventListener('mouseup', () => setTimeout(() => {
-        if (_vals() !== _base) { _base = _vals(); dirty(); } }, 0));
-    }
-
-    // "120 recs" almost bit twice (curator, 2026-08-28): "Default results per
-    // line" reads as a RUN total, but three lines at 120 fetch 360. Say the
-    // arithmetic where the number is typed. Sums per-line overrides where set.
-    function paintFetchTotal(boxId, serpId, hintId){
-      const hint = document.getElementById(hintId);
-      const box = document.getElementById(boxId);
-      if (!hint || !box) return;
-      const dflt = parseInt(document.getElementById(serpId)?.value, 10) || 0;
-      const ns = [...box.querySelectorAll('.qr-n')].map(i => parseInt(i.value, 10) || dflt);
-      const total = ns.reduce((a, b) => a + b, 0);
-      const hasOverride = [...box.querySelectorAll('.qr-n')].some(i => i.value.trim());
-      hint.textContent = ns.length
-        ? `${ns.length} line${ns.length === 1 ? '' : 's'}${hasOverride ? ' (with per-line overrides)' : ` × ${dflt}`} ≈ ${total} candidates fetched per run`
-        : '';
-    }
+       Shared component (forms/query-rows.js, lifted from here 2026-09-09 so the
+       product-pool editor uses the SAME rows). A dish's queries are ROWS
+       {q, n, gl, hl, keep}: each line is its own Google search with its own
+       result count and locale; null = follow the dish, resolved at run time. */
+    const glForLang = QueryRows.glForLang;
+    const DISH_QROWS = {
+      langs: SOURCE_LANGS, nLabel: 'Results', nPlaceholder: 'dflt',
+      nTitle: "Candidates fetched for THIS line (blank = the dish's SERP candidates default)",
+      queryPlaceholder: 'verbatim query — "…" exact, -word / -site:… exclude',
+      queryInfoTitle: 'Search lines — syntax, locales, examples',
+      queryInfo: '<b>Syntax</b> — <code>&quot;exact phrase&quot;</code> exact match (straight quotes; curly are auto-fixed) &middot; <code>-word</code> exclude pages with that word (drops EVERY page containing it) &middot; <code>-site:domain.com</code> exclude a site &middot; <code>site:gr</code> only that country&#39;s TLD.<br><b>Alternate phrasings go on their own lines</b> — each runs as a separate search and results merge; more reliable than <code>OR</code> (undocumented precedence). Blocklist exclusions are auto-appended each run (System &rarr; Search).<br><br><b>Results</b> — candidates fetched for that line only (blank = the dish&#39;s SERP-candidates default).<br><b>Language / Country</b> — WHICH Google answers, in what language (blank = follow Sources-in). They diverge on purpose: language <i>English</i> + country <code>gr</code> = English pages that rank in Greece — not the same as <code>site:gr</code>, since most Greek publishers aren&#39;t on .gr.<br><br><b>Examples</b><br><code>&quot;carrot cake&quot; recipe</code> + results blank + language dish-default &rarr; default count, follows Sources-in<br><code>γιουβαρλάκια αυγολέμονο</code> + results 120 + language Greek &rarr; 120 candidates from Greek Google, in Greek<br><code>moules frites</code> + language English + country fr &rarr; English-language pages that rank on google.fr',
+      reserveInfo: 'Winners are normally seated purely by the authority ranking — and that ranking is biased toward the anglophone link graph. Measured on Soupe au Pistou: the French line&#39;s marmiton.org (DA&nbsp;83) lost every seat to US pages on page-authority alone.<br><br><b>Reserve</b> holds this many of the dish&#39;s winner seats for THIS line&#39;s own candidates, ranked among themselves by the same scoring. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — the reserve is a floor, not a cap). If the line can&#39;t fill its reserve, the unused seats return to the open pool.<br><br>Blank = no reservation; everything behaves as before.',
+    };
+    function qRowHtml(r){ return QueryRows.rowHtml(r || {}, DISH_QROWS); }
+    function queryRowsBlockHtml(boxId){ return QueryRows.blockHtml(boxId, DISH_QROWS); }
+    function initQueryRows(boxId, rows){ QueryRows.init(boxId, rows, DISH_QROWS); }
+    function paintFetchTotal(boxId, serpId, hintId){ QueryRows.paintFetchTotal(boxId, serpId, hintId); }
     // One delegated repaint: fires on any typing in the serp default or the
     // line rows (add/remove dispatch input too), for whichever form is open.
     document.addEventListener('input', () => {
       paintFetchTotal('qrows_edit', 'f_serp', 'fetchTotal_edit');
       paintFetchTotal('qrows_new', 'n_serp', 'fetchTotal_new');
     });
-
-    function collectQueryRows(boxId){
-      const out = [];
-      for (const el of document.getElementById(boxId).querySelectorAll('.qrow')){
-        const q = el.querySelector('.qr-q').value.trim();
-        const nRaw = el.querySelector('.qr-n').value.trim();
-        const hl = el.querySelector('.qr-hl').value || null;
-        const glRaw = el.querySelector('.qr-gl').value.trim().toLowerCase();
-        if (!q){
-          // A line with settings but no query would silently vanish on save —
-          // say so instead of quietly dropping the curator's work.
-          if (nRaw !== '' || hl || glRaw)
-            return {error: 'A search line has settings but no query text — type the query, or remove the line with ✕'};
-          continue;
-        }
-        const n = nRaw === '' ? null : parseInt(nRaw, 10);
-        if (nRaw !== '' && !(n > 0)) return {error: `Results for “${q}” must be a positive number`};
-        if (glRaw && !/^[a-z]{2}$/.test(glRaw)) return {error: `Country for “${q}” must be a two-letter code`};
-        const keepRaw = (el.querySelector('.qr-keep')?.value ?? '').trim();
-        const keep = keepRaw === '' ? null : parseInt(keepRaw, 10);
-        if (keepRaw !== '' && !(keep > 0)) return {error: `Reserve for “${q}” must be a positive number (or blank)`};
-        out.push({q, n, gl: glRaw || (hl ? glForLang(hl) : null), hl, keep});
-      }
-      if (!out.length) return {error: 'At least one search query is required'};
-      return {rows: out};
-    }
+    function collectQueryRows(boxId){ return QueryRows.collect(boxId); }
 
     /* ----------------------------- derivations ----------------------------- */
     const fitOf = (d) => d.last_ou_fit || {};

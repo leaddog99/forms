@@ -90,6 +90,7 @@
   </div>
 
   <script src="/forms/library-shell.js?v=20260831b"></script>
+  <script src="/forms/query-rows.js?v=20260909"></script>
   <script>
     const $ = (s) => document.querySelector(s);
     LibraryShell.initNav({ currentPage: 'collections' });
@@ -197,8 +198,13 @@
         <section class="ed-block">
           <h3 class="ed-block-label">The search</h3>
           <div style="display:flex;gap:8px;align-items:center">
-            <input id="urlRO" value="${escapeHtml(c.url||'')}" readonly style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.86rem;background:var(--bg)">
-            ${LibraryShell.urlControl(c.url||'', {display:false})}
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px">${poolRows(c).map(r => `
+              <div style="display:flex;gap:8px;align-items:center">
+                <input value="${escapeHtml(r.q)}" readonly title="${escapeHtml(quotedUrl(r.q))}" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:.86rem;background:var(--bg)">
+                ${r.n ? `<span class="ed-pill" title="Result pages for this line">${r.n} pg</span>` : ''}
+                ${r.keep ? `<span class="ed-pill" title="Reserved shortlist seats for this line">reserve ${r.keep}</span>` : ''}
+                ${LibraryShell.urlControl(quotedUrl(r.q), {display:false})}
+              </div>`).join('')}</div>
           </div>
           <p class="muted" style="font-size:.8rem;margin:6px 0 0">Built in Amazon's own UI; every
             criterion lives in the URL. Refresh translates it to a search call at run time —
@@ -440,6 +446,21 @@
           where the reviewers have real coverage (Dutch ovens)."></button></p>`;
     }
 
+    // Search-line rows for an Amazon pool — the dish form's component
+    // (forms/query-rows.js), without the locale columns: {q, n=pages, keep}.
+    const POOL_QROWS = {
+      langs: null, nLabel: 'Pages', nPlaceholder: 'dflt', nMax: 5,
+      nTitle: "Amazon result pages fetched for THIS line, 1 credit each (blank = the pool's Pages default)",
+      queryPlaceholder: 'search term (quoted-phrase model) — or paste a full Amazon search URL',
+      queryInfoTitle: 'Search lines — Amazon pools',
+      queryInfo: 'A bare term runs as the curator&#39;s QUOTED-PHRASE model, <code>k=&quot;term&quot;</code> — quotes hold Amazon to the topic (2026-09-05). A full Amazon URL runs as-is (refinements, sorts). <b>Alternate phrasings go on their own lines</b> — one quoted phrase runs thin and Amazon pads the page with whatever is near it (&quot;alpine cookbooks&quot; came back with ten Filipino cookbooks, 2026-09-09); each line is its own search and the results merge and dedupe by ASIN. The off-class screen runs once over the union.<br><br><b>Pages</b> — result pages for that line only (blank = the pool&#39;s Pages).<br><b>Reserve</b> — shortlist seats held for this line&#39;s own candidates.<br><br><b>Examples</b><br><code>alpine cookbook</code> + <code>alpine cooking</code> + <code>swiss cookbook</code> reserve 1 &rarr; three searches, one pool, a Swiss title guaranteed a seat',
+      reserveInfo: 'The shortlist (Keep top N) is normally seated purely by RealRank — and a niche class loses to whatever Amazon padded the search with: twenty-rating Alpine titles lost every seat to two-thousand-rating Filipino ones (2026-09-09).<br><br><b>Reserve</b> holds this many shortlist seats for THIS line&#39;s own candidates, ranked among themselves by the same RealRank. The remaining seats stay open to everyone (a reserved line&#39;s candidates can win those too — a floor, not a cap). Unfilled reserves return to the open pool.<br><br>Blank = no reservation.',
+    };
+    const quotedUrl = (q) => /^https?:\/\//i.test(q) ? q
+      : 'https://www.amazon.com/s?k=%22' + encodeURIComponent(q.trim().toLowerCase()).replace(/%20/g, '+') + '%22';
+    const poolRows = (c) => (c.query_rows && c.query_rows.length) ? c.query_rows
+      : (c.url ? [{q: c.url, n: null, keep: null}] : []);
+
     function renderForm(c){
       const isEdit = !!c;
       const v = c || {};
@@ -453,15 +474,9 @@
             <div class="ed-field"><label>Display name</label>
               <input id="f_display" value="${escapeHtml(v.display_name||'')}" placeholder="optional"></div>
           </div>
-          <div class="ed-field"><label>Amazon search URL *</label>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input id="f_url" value="${escapeHtml(v.url||'')}" placeholder="https://www.amazon.com/s?k=%22dutch+ovens%22" style="flex:1">
-              ${LibraryShell.urlControl('', {inputId:'f_url'})}
-            </div>
-            <p class="muted" style="font-size:.78rem;margin:5px 0 0">Defaults to the
-              QUOTED-PHRASE model built from the name — quotes hold Amazon to the topic
-              (curator standard, 2026-09-05; the unquoted form drifted off-topic). Edit
-              freely for refinements/sorts; a hand-built URL is never overwritten.</p></div>
+          <div class="ed-field full"><label>Amazon search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own page count; results merge and dedupe by ASIN)</span></label>
+            ${QueryRows.blockHtml('qrows_pool', POOL_QROWS)}
+            <p class="muted" id="fetchTotal_pool" style="font-size:.78rem;margin:5px 0 0"></p></div>
           <div class="pc-row3">
             <div class="ed-field"><label>Category (WS taxonomy)</label>
               <input id="f_cat" list="dl_cat" value="${escapeHtml(v.ws_path||'')}" placeholder="auto on create">
@@ -480,36 +495,48 @@
         </div>`;
       $('#cancel').addEventListener('click', () => { mode='view'; renderDetail(); });
       $('#save').addEventListener('click', () => saveForm(isEdit ? c : null));
-      // Quoted-phrase default: the URL auto-builds from the name as the curator
-      // types — k=%22<name>%22 — and keeps following the name while the field
-      // still holds an auto-built value. The moment the curator edits the URL
-      // by hand, auto-fill stands down (dataset.auto no longer matches).
-      const nameEl = $('#f_name'), urlEl = $('#f_url');
-      if (nameEl && urlEl && !isEdit){
-        const quotedUrl = (n) => 'https://www.amazon.com/s?k=%22' +
-          encodeURIComponent(n.trim().toLowerCase()).replace(/%20/g, '+') + '%22';
+      // Rows: stored lines, else the legacy URL as line one (the server does the
+      // same fallback, so an old pool edits as one line and saves as rows).
+      const rows = (v.query_rows && v.query_rows.length) ? v.query_rows
+                 : (v.url ? [{q: v.url, n: null, keep: null}] : []);
+      QueryRows.init('qrows_pool', rows, POOL_QROWS);
+      const paint = () => QueryRows.paintFetchTotal('qrows_pool', 'f_pages', 'fetchTotal_pool', 'search pages (1 credit each)');
+      paint(); $('#page').addEventListener('input', paint);
+      // Line one follows the name as the curator types (the quoted-phrase
+      // model: the server builds k=%22<term>%22 from a bare term) — until the
+      // line is edited by hand, then auto-fill stands down.
+      const nameEl = $('#f_name');
+      if (nameEl && !isEdit){
         nameEl.addEventListener('input', () => {
-          const cur = urlEl.value.trim();
-          if (cur && cur !== urlEl.dataset.auto) return;   // hand-built — leave it
-          urlEl.value = nameEl.value.trim() ? quotedUrl(nameEl.value) : '';
-          urlEl.dataset.auto = urlEl.value;
+          const q1 = $('#qrows_pool .qr-q');
+          if (!q1) return;
+          const cur = q1.value.trim();
+          if (cur && cur !== q1.dataset.auto) return;   // hand-typed — leave it
+          q1.value = nameEl.value.trim().toLowerCase();
+          q1.dataset.auto = q1.value;
         });
       }
-      (isEdit ? $('#f_url') : $('#f_name')).focus();
+      (isEdit ? $('#qrows_pool .qr-q') : $('#f_name')).focus();
     }
 
     async function saveForm(existing){
       const catPath = ($('#f_cat').value||'').trim();
       const cat = cats.find(x => x.path === catPath);
+      const st = $('#formStatus');
+      const qr = QueryRows.collect('qrows_pool');
+      if (qr.error) { st.textContent = qr.error; return; }
+      const keepN = Number($('#f_keep').value)||10;
+      const reservedTotal = qr.rows.reduce((s, r) => s + (r.keep || 0), 0);
+      if (reservedTotal > keepN) { st.textContent = `Reserved seats total ${reservedTotal} but only ${keepN} reach the shortlist — lower a Reserve or raise Keep top N`; return; }
       const body = {
         display_name: ($('#f_display').value||'').trim(),
-        url: ($('#f_url').value||'').trim(),
-        keep_top_n: Number($('#f_keep').value)||10,
+        query_rows: qr.rows,
+        keep_top_n: keepN,
         pages: Number($('#f_pages').value)||1,
         notes: ($('#f_notes').value||'').trim(),
       };
       if (cat) { body.ws_category_id = cat.id; body.ws_path = cat.path; }
-      const st = $('#formStatus'); st.textContent = 'Saving…';
+      st.textContent = 'Saving…';
       try {
         let r;
         if (existing) {

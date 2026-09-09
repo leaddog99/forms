@@ -9637,13 +9637,48 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
         if not coll:
             raise ValueError(f"collection {name!r} not found")
 
-        print(f"[COLLECTION] {name} -> {coll['url']}")
-        res = ep.search_url(coll["url"], pages=int(coll.get("pages") or 1))
-        for w in (res.get("warnings") or []):
-            print(f"[COLLECTION] warning: {w}")
-        if not res.get("ok"):
-            raise ValueError(f"search failed: {res.get('error')}")
-        items = res["items"]
+        # SEARCH LINES (2026-09-09, the dish model): each row is its own
+        # Amazon search at its own page count; results union and dedupe by
+        # ASIN, each candidate remembering which lines surfaced it (the seat
+        # reservation reads that). One quoted phrase runs thin and Amazon pads
+        # the page — "alpine cookbooks" came back with ten Filipino cookbooks.
+        rows = cst.rows_of(coll)
+        if not rows:
+            raise ValueError(f"collection {name!r} has no search line")
+        by_asin: dict = {}
+        credits = {}
+        for qi, row in enumerate(rows, 1):
+            url = cst.row_search_url(row["q"])
+            pages = int(row.get("n") or coll.get("pages") or 1)
+            print(f"[COLLECTION] [LINE {qi}/{len(rows)}] {row['q']!r} pages={pages} -> {url}")
+            res = ep.search_url(url, pages=pages)
+            for w in (res.get("warnings") or []):
+                print(f"[COLLECTION] warning: {w}")
+            if not res.get("ok"):
+                raise ValueError(f"search failed for line {row['q']!r}: {res.get('error')}")
+            credits = res.get("credits") or credits
+            added = merged = 0
+            for it in res["items"]:
+                asin = (it.get("asin") or "").strip().upper()
+                if not asin:
+                    continue
+                prior = by_asin.get(asin)
+                if prior is None:
+                    it["_queries"] = [row["q"]]
+                    by_asin[asin] = it
+                    added += 1
+                else:
+                    prior.setdefault("_queries", []).append(row["q"])
+                    p_new, p_old = it.get("position"), prior.get("position")
+                    if p_new is not None and (p_old is None or p_new < p_old):
+                        prior["position"] = p_new
+                    if len(it.get("title") or "") > len(prior.get("title") or ""):
+                        prior["title"] = it["title"]
+                    merged += 1
+            print(f"[COLLECTION]     -> {added} new, {merged} merged with prior lines")
+        items = list(by_asin.values())
+        print(f"[COLLECTION] {len(items)} unique ASINs across {len(rows)} line(s)")
+        res = {"credits": credits}
         with _db() as conn:
             cst.replace_candidates(conn, name, items)
         # OFF-CLASS SCREEN before anything is measured or ranked (2026-09-09,
@@ -9665,7 +9700,16 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
         # top-keep_top_n by Wilson.
         screen = [c for c in cohort if c.get("wilson_score") and not c.get("excluded")
                   ][:MEASURE_TOP_N]
-        shortlist = {c["asin"] for c in screen[:int(coll.get("keep_top_n") or 10)]}
+        # Shortlist with RESERVED SEATS per search line (a floor, not a cap —
+        # the dish refresh's seating, so a thinly-rated line still seats its
+        # own best candidates against a well-rated neighbour class).
+        _target = int(coll.get("keep_top_n") or 10)
+        shortlist = cst.pool_shortlist(screen, rows, _target)
+        _res = {r["q"]: r["keep"] for r in rows if r.get("keep")}
+        if _res:
+            print("[COLLECTION] reserved seats: "
+                  + ", ".join(f"{q!r}={k}" for q, k in _res.items())
+                  + f" | open={max(0, _target - sum(_res.values()))} of {_target}")
         print(f"[COLLECTION] {len(items)} candidates kept "
               f"(credits {res.get('credits')}) — measuring Wilson top {len(screen)}, "
               f"shortlisting top {len(shortlist)}")

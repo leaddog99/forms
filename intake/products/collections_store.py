@@ -50,7 +50,129 @@ def _dicts(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list:
     return [dict(r) for r in cur.execute(sql, args).fetchall()]
 
 
-EDITABLE = ("url", "ws_category_id", "keep_top_n", "pages", "notes", "display_name")
+EDITABLE = ("url", "ws_category_id", "keep_top_n", "pages", "notes", "display_name", "query_rows")
+
+
+# --------------------------------------------------------------------------- #
+#  Search lines (query rows) — the dish model, applied to Amazon pools
+# --------------------------------------------------------------------------- #
+# A pool used to be ONE Amazon search URL. One quoted phrase runs thin and
+# Amazon pads the page with whatever is near it: "alpine cookbooks" came back
+# with ten Filipino cookbooks that out-RealRanked the six Alpine ones
+# (2026-09-09). Dishes solved the same problem with query ROWS — each line its
+# own search, results unioned and deduped, a per-line RESERVE of seats — so
+# pools carry rows too: {q, n, keep}. `q` is a search term (quoted-phrase URL
+# built from it) or a full Amazon URL; `n` = pages for that line (None = the
+# pool's default); `keep` = reserved shortlist seats for that line's own
+# candidates (a floor, not a cap). `url` stays as row one for every reader
+# that predates rows.
+
+def row_search_url(q: str) -> str:
+    """A full Amazon URL passes through; a term becomes the curator's
+    quoted-phrase model (2026-09-05): k=%22<term>%22."""
+    from urllib.parse import quote
+    s = (q or "").strip()
+    if s.lower().startswith("http://") or s.lower().startswith("https://"):
+        return s
+    return "https://www.amazon.com/s?k=%22" + quote(s.lower()).replace("%20", "+") + "%22"
+
+
+def normalize_pool_rows(raw) -> list:
+    """Coerce stored/posted rows to [{q, n, keep}] — never raises."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip().startswith("[") else [raw]
+        except Exception:
+            raw = [raw]
+    if isinstance(raw, dict):
+        raw = [raw]
+    out = []
+    for item in raw or []:
+        if isinstance(item, str):
+            q, n, keep = item, None, None
+        elif isinstance(item, dict):
+            q = item.get("q", item.get("query", item.get("url", "")))
+            n = item.get("n", item.get("pages"))
+            keep = item.get("keep", item.get("reserve"))
+        else:
+            continue
+        q = str(q or "").strip()
+        if not q:
+            continue
+        try:
+            n = int(n) if n not in (None, "") else None
+        except (TypeError, ValueError):
+            n = None
+        try:
+            keep = int(keep) if keep not in (None, "") else None
+        except (TypeError, ValueError):
+            keep = None
+        if n is not None and n <= 0:
+            n = None
+        if keep is not None and keep <= 0:
+            keep = None
+        out.append({"q": q, "n": n, "keep": keep})
+    return out
+
+
+def validate_pool_rows(raw) -> list:
+    rows = normalize_pool_rows(raw)
+    if not rows:
+        raise ValueError("at least one search line is required")
+    for r in rows:
+        if r["n"] is not None and r["n"] > 5:
+            raise ValueError(f"pages for {r['q']!r} must be 1-5 (each page is a credit)")
+        if r["keep"] is not None and r["keep"] > 50:
+            raise ValueError(f"reserve for {r['q']!r} ({r['keep']}) looks like a typo — "
+                             f"a reserve is a few shortlist seats, not a pool size")
+    return rows
+
+
+def rows_of(coll: dict) -> list:
+    """The pool's search lines: stored rows, else the legacy single URL as row one."""
+    rows = normalize_pool_rows(coll.get("query_rows"))
+    if rows:
+        return rows
+    url = (coll.get("url") or "").strip()
+    return [{"q": url, "n": None, "keep": None}] if url else []
+
+
+def _materialize(coll: dict | None) -> dict | None:
+    if coll and isinstance(coll.get("query_rows"), str):
+        coll["query_rows"] = normalize_pool_rows(coll["query_rows"])
+    return coll
+
+
+def pool_shortlist(cohort: list, rows: list, target: int) -> set:
+    """Which ASINs reach the bake-off (`selected=1`). Mirror of the dish
+    refresh's seating (save_recipe_api, 2026-08-30): a line with `keep` holds
+    that many seats for its OWN candidates, ranked among themselves; the rest
+    of the seats are open to everyone in cohort order. Unfilled reserves
+    return to the open pool. No reserves → plain top-`target`."""
+    quotas = {r["q"]: int(r["keep"]) for r in rows if r.get("keep")}
+    if not quotas:
+        return {c["asin"] for c in cohort[:target]}
+    seats: list = []
+    open_n = max(0, target - sum(quotas.values()))
+    deferred = []
+    for c in cohort:
+        lines = c.get("queries") or []
+        line = next((q for q in lines if quotas.get(q, 0) > 0), None)
+        if line is not None:
+            quotas[line] -= 1
+            seats.append(c["asin"])
+        elif open_n > 0:
+            open_n -= 1
+            seats.append(c["asin"])
+        else:
+            deferred.append(c["asin"])
+        if len(seats) >= target:
+            break
+    for asin in deferred:                       # top-up: an exhausted line left seats empty
+        if len(seats) >= target:
+            break
+        seats.append(asin)
+    return set(seats)
 
 
 def ensure_tables(conn: sqlite3.Connection) -> None:
@@ -102,6 +224,16 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         # is skipped by replace/screening/selection, and can be restored.
         conn.execute("ALTER TABLE product_collection_candidates "
                      "ADD COLUMN excluded INTEGER DEFAULT 0")
+    if "queries" not in cols:
+        # Which search LINES surfaced this ASIN (JSON list of row texts) —
+        # the seat reservation reads it (pool_shortlist), and a candidate
+        # found by two lines is a stronger on-class signal.
+        conn.execute("ALTER TABLE product_collection_candidates ADD COLUMN queries TEXT")
+    ccols = {r[1] for r in conn.execute("PRAGMA table_info(product_collections)")}
+    if "query_rows" not in ccols:
+        # Search lines (2026-09-09, the Alpine/Filipino padding): JSON
+        # [{q, n, keep}]; `url` stays as row one for pre-rows readers.
+        conn.execute("ALTER TABLE product_collections ADD COLUMN query_rows TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pcc_collection "
                  "ON product_collection_candidates(collection, wilson_score DESC)")
     conn.commit()
@@ -136,36 +268,49 @@ def wilson_from_mean(mean, n, z: float = 1.96) -> float:
 
 def list_collections(conn: sqlite3.Connection) -> list:
     ensure_tables(conn)
-    return _dicts(conn,
+    return [_materialize(c) for c in _dicts(conn,
         "SELECT c.*, "
         " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name "
         "   AND x.excluded = 0) AS candidate_count, "
         " (SELECT COUNT(*) FROM product_collection_candidates x WHERE x.collection = c.name "
         "   AND x.selected = 1) AS selected_count "
-        "FROM product_collections c ORDER BY c.name")
+        "FROM product_collections c ORDER BY c.name")]
 
 
 def get_collection(conn: sqlite3.Connection, name: str) -> dict | None:
     ensure_tables(conn)
     rows = _dicts(conn, "SELECT * FROM product_collections WHERE name = ?", (name,))
-    return rows[0] if rows else None
+    return _materialize(rows[0]) if rows else None
+
+
+def _rows_and_url(patch: dict, *, fallback_url: str = "") -> tuple:
+    """(rows_json, url) from a create/update patch. Rows win; a bare `url`
+    becomes row one; `url` is always kept equal to row one's search URL so
+    every pre-rows reader (taxonomy match, the detail view) keeps working."""
+    if patch.get("query_rows") not in (None, "", []):
+        rows = validate_pool_rows(patch["query_rows"])
+    else:
+        url = (patch.get("url") or fallback_url or "").strip()
+        if not url:
+            raise ValueError("a search line (or url) is required")
+        rows = [{"q": url, "n": None, "keep": None}]
+    return json.dumps(rows), row_search_url(rows[0]["q"])
 
 
 def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
     ensure_tables(conn)
     name = (patch.get("name") or "").strip()
-    url = (patch.get("url") or "").strip()
     if not name:
         raise ValueError("name is required")
-    if not url:
-        raise ValueError("url is required")
+    rows_json, url = _rows_and_url(patch)
     if get_collection(conn, name):
         raise ValueError(f"collection {name!r} already exists")
     now = _now()
     conn.execute(
-        "INSERT INTO product_collections(name, display_name, url, ws_category_id, ws_path, "
-        "keep_top_n, pages, notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (name, (patch.get("display_name") or "").strip(), url,
+        "INSERT INTO product_collections(name, display_name, url, query_rows, ws_category_id, "
+        "ws_path, keep_top_n, pages, notes, created_at, updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (name, (patch.get("display_name") or "").strip(), url, rows_json,
          patch.get("ws_category_id"), (patch.get("ws_path") or ""),
          int(patch.get("keep_top_n") or 10), int(patch.get("pages") or 1),
          (patch.get("notes") or ""), now, now))
@@ -178,6 +323,12 @@ def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict 
     ensure_tables(conn)
     if not get_collection(conn, name):
         return None
+    patch = dict(patch)
+    if "query_rows" in patch or "url" in patch:
+        # Rows and url move together (rows win; url = row one's search URL).
+        current = get_collection(conn, name) or {}
+        rows_json, url = _rows_and_url(patch, fallback_url=current.get("url") or "")
+        patch["query_rows"], patch["url"] = rows_json, url
     sets, vals = [], []
     for f in EDITABLE:
         if f in patch:
@@ -233,11 +384,12 @@ def replace_candidates(conn: sqlite3.Connection, name: str, items: list) -> int:
         conn.execute(
             "INSERT INTO product_collection_candidates(collection, asin, run_at, position, "
             "title, brand, price, image, link, rating, ratings_total, wilson_score, medal, "
-            "product_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "product_id, queries) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, asin, now, it.get("position"), it.get("title", ""), it.get("brand", ""),
              it.get("price", ""), it.get("image", ""), it.get("link", ""),
              it.get("rating"), it.get("ratings_total"),
-             wilson_from_mean(it.get("rating"), it.get("ratings_total")), medal, pid))
+             wilson_from_mean(it.get("rating"), it.get("ratings_total")), medal, pid,
+             json.dumps(it.get("_queries") or [])))
     kept_n = conn.execute(
         "SELECT COUNT(*) FROM product_collection_candidates "
         "WHERE collection = ? AND excluded = 0", (name,)).fetchone()[0]
@@ -277,6 +429,10 @@ def list_candidates(conn: sqlite3.Connection, name: str, *, order: str = "wilson
                 d["histogram"] = json.loads(d["histogram"])
             except Exception:
                 d["histogram"] = None
+        try:
+            d["queries"] = json.loads(d["queries"]) if d.get("queries") else []
+        except Exception:
+            d["queries"] = []
         out.append(d)
     return out
 
