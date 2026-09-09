@@ -83,6 +83,9 @@ from input.pipeline.validators import (is_recipe, score_recipe_text,          # 
 
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 FETCH_TIMEOUT_S = 10
+# Single-host harvest: stop after this many full-but-recipe-less pages with no
+# keep yet — a membership wall (mollybaz.com's CLUB, 2026-09-08), not bad luck.
+GATED_ABORT_AFTER = 6
 # Step 3's fetch is now shared with step 7's extract via the canonical
 # `fetch_with_ua_fallback`. Both go through the SAME UA chain so a URL
 # that the extract can fetch will always pass step 3's filter — no
@@ -775,6 +778,11 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         _trust_hosts = set()
 
     _src_tally: dict = {}   # fetch-source summary, printed before return
+    # Gated-publisher breaker state (see the no-struct branch below). Only a
+    # single-host run can be judged this way — a dish batch mixes publishers.
+    _hosts = {(root_domain(e.get("url") or "") or "").lower() for e in entries}
+    _single_host = next(iter(_hosts)) if len(_hosts) == 1 and "" not in _hosts else ""
+    _nostruct_streak = 0
     for i, e in enumerate(entries, start=1):
         # Cooperative cancel: a long publisher harvest can be aborted between
         # candidates (each is a fetch + score, the slow unit). Raises up to the job
@@ -962,6 +970,30 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
                 e["_dropped_reason"] = "no-recipe-structure"
                 dropped.append(e)
                 print(f"{_dl} DROP no-struct phrase={score:>2}{tag}  {url}")
+                # GATED-PUBLISHER BREAKER (mollybaz.com, 2026-09-08): a single-
+                # host run whose first pages ALL come back as full, real pages
+                # with no recipe structure is a membership wall, not bad luck —
+                # the recipe body is behind a login the server does not have.
+                # Each candidate costs two paid fetches; 119 of them buy
+                # nothing. Stop after GATED_ABORT_AFTER in a row with no keep,
+                # say so loudly, and leave the rest un-fetched. The curator's
+                # answer is the domain's Human-capture-only flag (📋 Queue +
+                # bookmarklet, signed in), as for Milk Street.
+                _nostruct_streak += 1
+                if (_single_host and not kept and _nostruct_streak >= GATED_ABORT_AFTER
+                        and i < len(entries)):
+                    rest = entries[i:]
+                    for r in rest:
+                        r["recipe_score"] = 0
+                        r["_dropped_reason"] = "gated-suspected: not fetched"
+                        dropped.append(r)
+                    print(f"\n  !! GATED PUBLISHER SUSPECTED — {_single_host}: the first "
+                          f"{_nostruct_streak} pages fetched fine but carry NO recipe structure "
+                          f"(a membership/login wall). Stopping here; {len(rest)} candidates "
+                          f"left un-fetched to save unblocker credits. If the site really is "
+                          f"members-only, set 'Human capture only' on the domain and use "
+                          f"📋 Queue + your bookmarklet.\n", flush=True)
+                    break
             continue
 
         # language ≠ base AND no phrase pack for it: translate the page's text (in its own

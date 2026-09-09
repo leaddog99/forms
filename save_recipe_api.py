@@ -7267,6 +7267,18 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
         # selects winners from the scored list and processes just those. See
         # docs/score-only-curation.md.
         score_only = bool(payload.get("score_only"))
+        # R4 again, at THIS money-spending door (mollybaz.com, 2026-09-08): a
+        # human-capture-only publisher's refresh would fetch every candidate
+        # through the unblocker and extract nothing. Score-only is fine (Moz
+        # ranks, zero fetches); an ingesting refresh is refused here, not in
+        # the harvest after the credits are gone.
+        if not score_only and domains_lib.human_capture_only(conn, host):
+            raise HTTPException(status_code=409, detail=(
+                f"{host} is marked HUMAN CAPTURE ONLY: its recipe bodies sit behind a "
+                f"login the server does not have, so a refresh would spend an unblocker "
+                f"fetch per candidate to reach a membership notice. Run it score-only, "
+                f"or use 📋 Queue + your bookmarklet (your browser is signed in). To "
+                f"override, clear 'Human capture only' on the domain record."))
         # Depth = per-request → per-publisher (domains.search_pages) → system default
         # (system_config 'serp_default_pages', admin-editable). No hard 10 cap now
         # (Scale SERP page-loops); each page is 1 credit + (verify) 1 fetch.

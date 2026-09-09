@@ -8837,3 +8837,61 @@ Try the admin ⋮ menu on the iPhone (fix verified in Chrome only).
    dish merge · Stand Mixer re-run · twins (Hand Mixer/Electric Hand
    Mixer) · Pistou Reserve · recipes-inherit-story · per-publisher cap ·
    Cheese Knife source refresh with better terms.
+
+## Session log — 2026-09-08 — Baby Bottles shape failure · materialize on the scorer · mollybaz.com is members-only
+
+* **Baby Bottles (job 1880) failed on shape**: under the curator's new
+  GLASS-ONLY boundary the model found two products, declared #3 in
+  omitted_slots — and ALSO left the template's blank third row →
+  "place 3: both ranked and declared omitted". validate_shape now drops
+  blank placeholder rows (declared → silent; undeclared → 'missing');
+  prompt says a declared place gets NO row; the editor's status line now
+  shows error_detail instead of burying it under a traceback. Re-run
+  1881: Lansinoh glass #1, Dr. Brown's Options+ glass #2, #3 honestly
+  open — the boundary held (Comotomo/Avent/etc. named as silicone/plastic
+  and excluded; Nuk glass rejected on the 2022 lead recall).
+* **Materialize switched to the scorer** (add1d09): it withheld the ASIN
+  on ANY identity_warning incl. the title-phrasing flag (class question,
+  not listing). `_suspect()` reads verified_title / ack / identity_score.
+  Two more defects found on the way: a corrected ASIN was APPENDED beside
+  the wrong Amazon offer (merge key = retailer+asin) → replace_amazon_offer
+  keeps one; slot-inherited product links crossed brands (Laguiole pick
+  inherited OXO's catalog row) → same-maker required. `rematerialize()`
+  (no network) is called by set-asin and the audit --fix; 8 collections
+  re-materialized, 5 stale Amazon offers dropped, OXO orphan placement
+  cleared.
+* **Audit rerun after restart**: 228 picks — 176 verified · 28 weak ·
+  5 reject (2 acked; Messermeister carving set not on Amazon; unbranded
+  oregano; Kingrol renamed) · 19 no listing.
+* **mollybaz.com "struggling" (job 1884, cancelled 5/119)**: NOT the
+  captcha. Direct fetch = SiteGround sgcaptcha 189-byte stub; the unblocker
+  fetched full 55–108 KB WordPress pages — but the recipe body is inside
+  THE CLUB (membership): intro + times + "Sign In / Try the club", no
+  ingredients/steps, no Recipe JSON-LD. Every candidate = 2 paid fetches
+  for nothing. Marked paywall=1 + human_capture_only=1 with a note (same
+  class as Milk Street → 📋 Queue + bookmarklet, signed in). Built:
+  (1) GATED-PUBLISHER BREAKER in _is_recipe_filter — single-host run,
+  GATED_ABORT_AFTER=6 full-but-recipe-less pages with no keep → stop,
+  loud banner, rest left un-fetched; (2) the publisher-refresh endpoint
+  refuses an ingesting refresh on a human-capture-only domain (score-only
+  still allowed) — R4, refuse where the money is spent.
+
+## START HERE — post-session (as of 2026-09-08 late) — SUPERSEDES 09-07
+
+Server restart OWED: publisher-refresh guard + set-asin rematerialize are
+in-process (jobs pick up the breaker without it).
+
+1. **mollybaz.com**: capture via 📋 Queue + bookmarklet while signed in to
+   THE CLUB, or leave it. Do not un-flag unless the wall goes away.
+2. **Chip approvals (Gate 3) — GO** (300+); "Egg Separators"→"Egg
+   Separator". · BAILEY NSSM one elevated command still staged.
+3. **Identity follow-ups**: size/capacity not scored (nutmeg 1.64 oz → 1 lb
+   bulk, .8); Carving Knife #3 curator ASIN or exclude; Apple Peeler #2
+   exclude/withhold; Baby Bottles #1 title flag = ack.
+4. **Book curation** one-by-one; boundary sentences (Ina/French, Woks/Wok).
+5. **Menus next**: Option B, then C.
+6. **Next big build unchanged**: class↔collection FK → render/EV Phase 1.
+7. Small carried: tripadvisor.com blacklist · search slim projection ·
+   extract-stage progress stamps · ~250 never-proposed dishes · Nutmeg dish
+   merge · Stand Mixer re-run · twins · Pistou Reserve · recipes-inherit-
+   story · per-publisher cap · Cheese Knife source refresh.
