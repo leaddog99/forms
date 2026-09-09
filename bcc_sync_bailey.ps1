@@ -22,6 +22,7 @@
 param([switch]$WithDbs, [switch]$FreshBackup)
 
 $rc    = "C:\Users\john\bin\rclone.exe"
+$ssh   = "C:\Windows\System32\OpenSSH\ssh.exe"   # full path: not on PATH in every shell (2026-09-08)
 $src   = "C:/Users/john/PycharmProjects/forms"
 $dst   = "bailey:/C:/Users/john/PycharmProjects/forms"
 $adam  = "\\Adam\tbotb\Backups\recipes-db"
@@ -32,7 +33,11 @@ Write-Host "== code + assets (incremental) =="
   --exclude "page_cache.db" --exclude "media.db" --exclude "training.db" `
   --exclude "recipes.sql.gz" --exclude "recipes.sqbpro" --exclude "identifier.sqlite" `
   --exclude "__pycache__/**" --exclude ".venv/**" --exclude "logs/**" `
-  --exclude "uvicorn_std*.log" --exclude "backup.log" --exclude "jobs_schedule.log"
+  --exclude "uvicorn_std*.log" --exclude "backup.log" --exclude "jobs_schedule.log" `
+  --exclude "data/browser_profiles/**" --exclude "input/captures/**"
+  # ^ capture walker (2026-09-08): a live Chromium profile holds LOCK files
+  #   (13 rclone errors) and its cookies are a signed-in session that must
+  #   stay on this machine; captures are per-machine pipeline inputs.
 & $rc sync "C:/Users/john/PycharmProjects/recipe-core" "bailey:/C:/Users/john/PycharmProjects/recipe-core" `
   --exclude "__pycache__/**" --exclude "*.egg-info/**" --stats-one-line
 
@@ -44,13 +49,13 @@ if ($WithDbs) {
     Pop-Location
   }
   Write-Host "== stopping BAILEY server =="
-  ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped'"""
+  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped'"""
   # WAIT for python to actually exit and release recipes.db — on 2026-08-26 the
   # copy started immediately, hit 'rename failed: permission denied' x3, and the
   # run still reported success. Poll up to 30s for zero python processes.
   $deadline = (Get-Date).AddSeconds(30)
   while ((Get-Date) -lt $deadline) {
-    $left = ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""(Get-Process python -ErrorAction SilentlyContinue | Measure-Object).Count"""
+    $left = & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""(Get-Process python -ErrorAction SilentlyContinue | Measure-Object).Count"""
     if ("$left".Trim() -eq "0") { break }
     Start-Sleep 3
   }
@@ -97,11 +102,11 @@ if ($WithDbs) {
   }
   # A REPLACED db must never pair with the previous run's WAL/SHM — that pairing
   # reads as 'database disk image is malformed' at startup.
-  ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Remove-Item C:\Users\john\PycharmProjects\forms\*.db-wal, C:\Users\john\PycharmProjects\forms\*.db-shm -Force -ErrorAction SilentlyContinue; 'sidecars cleared'"""
+  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Remove-Item C:\Users\john\PycharmProjects\forms\*.db-wal, C:\Users\john\PycharmProjects\forms\*.db-shm -Force -ErrorAction SilentlyContinue; 'sidecars cleared'"""
   Write-Host "== restarting BAILEY server =="
-  ssh -o BatchMode=yes john@BAILEY "schtasks /Run /TN BCC-Drill"
+  & $ssh -o BatchMode=yes john@BAILEY "schtasks /Run /TN BCC-Drill"
   Start-Sleep 15
-  ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""try{(Invoke-WebRequest -Uri http://127.0.0.1:8009/auth/me -UseBasicParsing -TimeoutSec 5).StatusCode}catch{'NOT ANSWERING'}"""
+  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""try{(Invoke-WebRequest -Uri http://127.0.0.1:8009/auth/me -UseBasicParsing -TimeoutSec 5).StatusCode}catch{'NOT ANSWERING'}"""
   if ($failed.Count -gt 0) {
     Write-Host ("!" * 70)
     Write-Host "!! BAILEY DB SYNC FAILED for: $($failed -join ', ')"
