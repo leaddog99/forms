@@ -4478,13 +4478,18 @@ async def collection_medal_endpoint(name: str, request: Request):
     return {"collection": name, "asin": body.get("asin"), "medal": body.get("medal")}
 
 
-@app.post("/product-collections/{name}/screen-offclass")
-async def collection_screen_offclass_endpoint(name: str):
+def _screen_offclass_sync(name: str) -> dict:
     """Post-harvest relevance screen (curator ask, 2026-09-05: 'sweet paprika'
     returned smoked paprikas): ONE cheap haiku call over the candidate titles;
     candidates judged off-class get the standard per-ASIN exclusion (restorable,
     reason in the UI via the exclusion state). Deterministic guards stay in the
-    page (the off-form chip); this is the judgment layer on top."""
+    page (the off-form chip); this is the judgment layer on top.
+
+    Shared by the endpoint (curator button) AND the collection refresh job
+    (2026-09-09): as a button only, it was never pressed for 'Alpine Cookbooks',
+    whose quoted Amazon search came back padded with ten Filipino cookbooks
+    that out-RealRanked the six Alpine ones and led the book run's evidence
+    fetch. A pool is screened BEFORE it is measured or ranked."""
     from intake.products import collections_store as cst
     import llm
     with _db() as conn:
@@ -4525,6 +4530,13 @@ async def collection_screen_offclass_endpoint(name: str):
             print(f"[SCREEN] parse failed: {e}")
     print(f"[SCREEN] {name}: {len(out)} candidate(s) excluded as off-class")
     return {"screened": len(cands), "excluded": out}
+
+
+@app.post("/product-collections/{name}/screen-offclass")
+async def collection_screen_offclass_endpoint(name: str):
+    """Curator's button: re-run the off-class screen on demand (the refresh
+    job already runs it once per harvest)."""
+    return await asyncio.to_thread(_screen_offclass_sync, name)
 
 
 @app.delete("/product-collections/{name}/candidates/{asin}")
@@ -9634,6 +9646,18 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
         items = res["items"]
         with _db() as conn:
             cst.replace_candidates(conn, name, items)
+        # OFF-CLASS SCREEN before anything is measured or ranked (2026-09-09,
+        # Alpine Cookbooks: Amazon padded the quoted search with Filipino
+        # cookbooks that out-RealRanked the real ones). One haiku call; the
+        # excluded rows are skipped by the measure below and by the book run.
+        try:
+            _scr = _screen_offclass_sync(name)
+            if _scr.get("excluded"):
+                print(f"[COLLECTION] off-class screen excluded {len(_scr['excluded'])}: "
+                      + ", ".join(f"{o['asin']} ({o['reason']})" for o in _scr["excluded"][:8]))
+        except Exception as e:
+            print(f"[COLLECTION] off-class screen skipped: {type(e).__name__}: {e}")
+        with _db() as conn:
             cohort = cst.list_candidates(conn, name)
         # Measure the Wilson top-30 — wide enough that RealRank rescoring can't
         # promote anything from below it into a top-10 pool, narrow enough to
