@@ -170,6 +170,11 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 /* pending = "nothing has happened for this record yet" (e.g. a domain with no
    extracts from any harvest). Yellow: not an error, a to-do. */
 .ed-item-flag.pending{ background:#d9a514; }
+/* source = the record was BORROWED from a discovery list (domains.discovery_source,
+   first batch: punchfork.com/publishers, 2026-09-10) and has not yet earned its
+   place through a harvest. Bright orange by the curator's request so the batch
+   is visible as a batch; the title names the source. */
+.ed-item-flag.source{ background:#ff7a00; }
 /* Multiline by request (curator, 2026-08-28): the meta line wraps to content
    size instead of truncating — the data IS the point of the list. */
 .ed-item-meta{ margin-top:4px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.73em; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.5; overflow-wrap:anywhere; }

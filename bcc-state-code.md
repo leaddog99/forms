@@ -9035,3 +9035,44 @@ as curator decisions.
   steps than the row holds and < 3 → 409, nothing changed. Ledger class
   `aggregator:elsewhere`. Later build: FOLLOW the pointer — feed an
   aggregator's source URLs into the real publishers' cohorts.
+
+## Session log — 2026-09-10 (second terminal) — punchfork read, banana bread repaired, 59 publishers borrowed
+
+* Read job 1911 (punchfork.com publisher refresh) for the curator: 119
+  candidates, 91 KEEP on the phrase gate (ingredient lists), cascade caught
+  73, Moz gave every page PA 29–32 so the pool ranked by tie-break, 13
+  render credits on winners that never had directions, 5 "saved" — every
+  one a single placeholder step. Five saves got in through the
+  RICH-INGREDIENT hatch (1 step + ≥5 ings) because the model wrote "See
+  full directions at…" as a step and the hatch counts, never reads.
+* Damage repaired: master row 4123 (Joy's Easy Banana Bread, allrecipes)
+  had been adopted-by-URL and overwritten by the teaser AND demoted from the
+  Banana Bread dish (rank 6, A-) to a punchfork publisher row. Re-extracted
+  fresh (force_refresh, jsonld-direct, 5 steps) and saved through
+  `_save_recipe_core` with the ORIGINAL `_master` + `_scoring` blocks from
+  the 03:00 backup; `repair_note` on the block. The other four teaser rows
+  (14222/14224/14225/14226 — two punchfork URLs, two filed under
+  justonecookbook.com and dinnerthendessert.com) deleted with vec loaded
+  (trigger cleaned). The aggregator shutdown itself was built in the OTHER
+  terminal (1aa5fb2).
+* Borrowed punchfork's publisher list (curator: "they have some interesting
+  info we can borrow"): scraped /publishers + /publishers/websites (199:
+  178 bloggers, 21 websites; name, avatar, punchfork count; site URL from
+  each detail page) → `input/punchfork_publishers.csv`. 64 already in
+  `domains`, 135 new. Moz DA on the 135 (135 rows billed): median 49 vs 55
+  for our 401 harvestable; 59 at DA ≥ 50. Of the 21 websites we had 17;
+  missed Real Simple (90), BHG (84), TASTE (72), Clean Eating (58).
+* Imported the 59 (DA ≥ 50) via `domains_lib.create_domain`: display_name,
+  DA + da_last_scored, NEW `domains.discovery_source` =
+  'punchfork.com/publishers', provenance line in `notes`. NOT deep-enriched
+  except the four websites (profile/story/known_for/BA/ref-domains stamped
+  the create-path way). Real Simple + BHG are Dotdash Meredith (with
+  allrecipes/seriouseats/simplyrecipes/spruceeats) — expect reference pages;
+  they will want a recipe-path filter.
+* UI: `discovery_source` column (migration + EDITABLE_FIELDS), BRIGHT ORANGE
+  list dot `.ed-item-flag.source` (editor-shell.css) with the source in the
+  title, "via …" in the meta line, orange-edged pill in the detail strip.
+  Data-driven: any future borrowed list sets a different string.
+* Carried: the 55 bloggers are un-enriched (form button); the 76 at DA < 50
+  stay in the CSV only. Image links in the CSV are punchfork's CDN avatars —
+  pointers, not assets (image policy).

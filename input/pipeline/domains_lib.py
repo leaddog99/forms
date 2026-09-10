@@ -110,6 +110,8 @@ EDITABLE_FIELDS = (
     "brand_authority",     # Moz V3 Brand Authority 0-100 (managed by deep-enrich; overridable)
     "referring_domains",   # Moz V3 referring-domain count (managed; overridable)
     "ranking_keywords",    # JSON list of top keywords the site ranks for (managed)
+    "discovery_source",    # where the record came from when borrowed from a list
+                           # (e.g. 'punchfork.com/publishers'); blank = ordinary
     "candidate_filter",    # JSON {keep,drop} rule — THE per-domain pre-fetch surface
                            # (docs/candidate-filters.md; supersedes recipe_path+exclude_words)
 )
@@ -399,6 +401,15 @@ _SEMRUSH_FILTER_COLUMNS = {
 # flag it here so the harvest STOPS paying the per-page LLM cascade for its pages and
 # the curator can review it. MANAGED (recomputed by refresh_poor_publisher_flags), not
 # hand-edited → kept out of EDITABLE_FIELDS.
+# Where a domain record CAME FROM when it was not hand-entered or harvest-
+# discovered: a discovery list we borrowed (first use 2026-09-10: the 59 DA>=50
+# publishers on punchfork.com/publishers). Free text naming the source, so the
+# list can show "discovered via …" as an orange dot and the curator can judge
+# the batch as a batch. Blank = the ordinary case.
+_DISCOVERY_COLUMNS = {
+    "discovery_source": "TEXT",
+}
+
 _QUALITY_COLUMNS = {
     "poor_quality_flag": "INTEGER NOT NULL DEFAULT 0",   # 1 = flagged poor publisher
     "poor_quality_rate": "REAL",                         # fraction of poor_quality verdicts
@@ -468,6 +479,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _QUALITY_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _DISCOVERY_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     # Candidate-filter rule (docs/candidate-filters.md, built 2026-09-01):

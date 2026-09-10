@@ -121,6 +121,7 @@
       const m = d.master_recipe_count || 0, u = d.user_recipe_count || 0;
       if (m || u) bits.push(`${m}m · ${u}u`);
       if (d.harvest_due) bits.push(d.harvest_status === 'new' ? '⏰ SEMrush: new' : '⏰ SEMrush: due');
+      if (d.discovery_source) bits.push('via ' + d.discovery_source);
       if (d.never_extracted) bits.push('no extracts yet');
       if (isPoor(d)) bits.push('⚠ poor' + (d.poor_quality_rate != null ? ` ${Math.round(d.poor_quality_rate * 100)}%` : ''));
       return bits.join(' · ') || '—';
@@ -231,7 +232,7 @@
         const li = document.createElement('li');
         li.className = 'ed-item' + (d.domain === selected ? ' selected' : '');
         li.innerHTML =
-          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or Google) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.discovery_source ? `<span class="ed-item-flag source" title="Discovered via ${escapeHtml(d.discovery_source)} — borrowed from a publisher list, not yet judged by a harvest"></span>` : ''}${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or Google) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
           `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
         // GUARDED record switch. renderDetail() rebuilds the form from scratch, so
         // clicking another domain silently destroys unsaved work — and beforeunload
@@ -408,6 +409,7 @@
         <h1 class="ed-title">${escapeHtml(d.domain)}</h1>
         <div class="ed-status-strip">
           ${isPoor(d) ? `<span class="ed-pill warn" title="is-recipe cascade flagged a messy source"><i class="d"></i>⚠ Poor publisher</span>` : ''}
+          ${d.discovery_source ? `<span class="ed-pill" style="border-color:#ff7a00" title="This record was borrowed from a publisher list and has not yet been judged by a harvest of its own"><i class="d" style="background:#ff7a00"></i>via ${escapeHtml(d.discovery_source)}</span>` : ''}
           ${d.root_domain ? `<span class="ed-pill"><i class="d"></i>root ${escapeHtml(d.root_domain)}</span>` : ''}
           ${d.domain_authority != null ? `<span class="ed-pill"><i class="d"></i>DA ${Math.round(d.domain_authority)}</span>` : ''}
           ${d.bcc_rank != null ? `<span class="ed-pill" title="rank among our allowed publishers by SEMrush organic traffic">BCC rank #${d.bcc_rank}</span>` : ''}
