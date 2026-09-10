@@ -287,6 +287,15 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
     except Exception:
         table_block = set()
     domain_block = {d.lower() for d in DISALLOWED_DOMAINS} | table_block
+    # AGGREGATORS (curated `domains.aggregator`, 2026-09-10 — punchfork): thin
+    # wrappers whose directions live on the real publisher's page. Dropped
+    # before any fetch, under their own reason so the ledger can count them
+    # apart from junk hosts. Their pointers are the future "follow" build.
+    try:
+        from input.pipeline.domains_lib import get_aggregator_root_domains
+        aggregator_block = get_aggregator_root_domains()
+    except Exception:
+        aggregator_block = set()
     # URL-path fragments: the LIVE editable list (system_config), falling back to the
     # config.py seed (imported as DISALLOWED_URL_PATH_FRAGMENTS) if unset/unreadable.
     try:
@@ -300,6 +309,10 @@ def _filter_disallowed(entries: list[dict]) -> tuple[list[dict], list[dict]]:
         domain = (e.get("domain") or "").lower()
         if domain in domain_block:
             e["_dropped_reason"] = f"disallowed-domain:{e.get('domain')}"
+            dropped.append(e)
+            continue
+        if domain in aggregator_block:
+            e["_dropped_reason"] = f"aggregator-host:{e.get('domain')}"
             dropped.append(e)
             continue
         url_lower = (e.get("url") or "").lower()

@@ -559,6 +559,7 @@ def _auto_enrich_applies(user_id: int) -> bool:
 # they used to be hand-kept mirrors, and the mirror went stale the day the
 # first escape hatch landed in only one of them (2026-08-28).
 from input.pipeline.save_gate import is_cacheable as _is_cacheable  # noqa: E402
+from input.pipeline.save_gate import real_instruction_count as _real_instruction_count  # noqa: E402
 
 # What a NON-STAFF user is told when a row could not be scored. Deliberately
 # says nothing about which vendor we buy authority data from, why they haven't
@@ -7291,6 +7292,13 @@ def refresh_domain_top_endpoint(domain: str, payload: dict = Body(default={})):
                 f"fetch per candidate to reach a membership notice. Run it score-only, "
                 f"or use 📋 Queue + your bookmarklet (your browser is signed in). To "
                 f"override, clear 'Human capture only' on the domain record."))
+        if not score_only and domains_lib.is_aggregator(conn, host):
+            raise HTTPException(status_code=409, detail=(
+                f"{host} is marked AGGREGATOR: its recipe pages are thin wrappers that "
+                f"point at the real publisher and never carry the directions (punchfork, "
+                f"job 1911). An ingesting refresh would pay to fetch them and save "
+                f"teasers under other publishers' URLs. Score-only is allowed. To "
+                f"override, clear 'Aggregator' on the domain record."))
         # Depth = per-request → per-publisher (domains.search_pages) → system default
         # (system_config 'serp_default_pages', admin-editable). No hard 10 cap now
         # (Scale SERP page-loops); each page is 1 credit + (verify) 1 fetch.
@@ -12316,6 +12324,22 @@ def _save_recipe_core(payload: dict) -> dict:
     # A row that ALREADY gave up URL ownership (its stored url_normalized is
     # '') re-saves through the "new" path automatically — otherwise the upsert
     # would rewrite the column and hit the unique index.
+    # AGGREGATOR door (curated `domains.aggregator`, 2026-09-10): a page on an
+    # aggregator never holds the recipe — refuse the save outright rather than
+    # file a teaser under the real publisher's slot.
+    if normalized_source_url:
+        try:
+            from urllib.parse import urlparse as _urlparse
+            from input.pipeline import domains_lib as _dl
+            _page_host = (_urlparse(normalized_source_url).netloc or "").lower()
+            with _db() as _c:
+                _is_agg = _dl.is_aggregator(_c, _page_host)
+        except Exception:
+            _is_agg = False
+        if _is_agg:
+            raise HTTPException(status_code=409, detail=(
+                f"{_page_host} is marked AGGREGATOR: its pages point at the real publisher and "
+                f"never carry the directions. Save from the original publisher's page instead."))
     adopted = False
     conflict = None
     url_conflict_mode = str(payload.get("_url_conflict") or "adopt").strip().lower()
@@ -12359,10 +12383,30 @@ def _save_recipe_core(payload: dict) -> dict:
                                         + (f": “{_ename}”" if _ename else "") + "."),
                         }
                     else:
+                        # DEGRADE GUARD (punchfork, job 1911, 2026-09-10): an
+                        # aggregator's teaser resolved its source URL to the
+                        # real publisher's page, adopted THAT row by URL and
+                        # overwrote a full Allrecipes recipe with seven
+                        # ingredients and "See full directions at…". An adopt
+                        # must never replace a record with a thinner one: fewer
+                        # real steps than the row already holds, and fewer
+                        # than three, is refused — the caller records a reject.
+                        _erow = conn.execute(
+                            f"SELECT json_array_length(json_extract(data,'$.recipeInstructions')) "
+                            f"FROM {table} WHERE recipe_id = ? LIMIT 1", (url_owner,)).fetchone()
+                        _existing_steps = int((_erow[0] if _erow and _erow[0] is not None else 0))
+                        _incoming_steps = _real_instruction_count(recipe_dict)
+                        if _incoming_steps < _existing_steps and _incoming_steps < 3:
+                            raise HTTPException(status_code=409, detail=(
+                                f"Refusing to overwrite the saved recipe for {normalized_source_url} "
+                                f"({_existing_steps} steps) with a thinner one ({_incoming_steps} real "
+                                f"step(s)) — a teaser or an aggregator page. Nothing was changed."))
                         print(f"[SAVE] Adopting existing recipe_id {url_owner} for {normalized_source_url!r} "
                               f"(was {recipe_id}) in {table}")
                         recipe_id = url_owner
                         adopted = True
+    except HTTPException:
+        raise                                   # the degrade guard's refusal is the answer
     except Exception as e:
         print(f"[WARN] dup lookup failed (continuing as insert): {e}")
     if conflict:

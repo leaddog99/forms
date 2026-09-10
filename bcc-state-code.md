@@ -9018,3 +9018,20 @@ at a time, ledger re-run after each). Domain-form flags: fetch_strategy +
 render_required become LEARNED indicators in phase 4; score_only /
 human_capture_only / trust_extraction / harvestable / url_prefilter stay
 as curator decisions.
+
+## Addendum — 2026-09-10 (evening) — punchfork: aggregators shut down
+
+* Curator's read of job 1911 confirmed against the data: punchfork.com is an
+  aggregator (thin wrappers, directions never on the page); 13 render
+  credits for nothing; five "recipes" with one placeholder step; the banana
+  bread save ADOPTED the Allrecipes master row by URL and overwrote it (row
+  4123 — curator restored from backup; verified 5 steps at 18:20).
+* Built: `domains.aggregator` (curated flag + domain-form checkbox; punchfork
+  + sidechef set) — publisher refresh refuses ingest (score-only OK); dish
+  harvest drops the host pre-fetch (`aggregator-host`); save endpoint
+  refuses saves from aggregator pages. `save_gate.real_instruction_count`
+  excludes placeholder steps ("see full directions…") so the rich-ingredient
+  hatch cannot fire on a pointer. DEGRADE GUARD on adopt-by-URL: fewer real
+  steps than the row holds and < 3 → 409, nothing changed. Ledger class
+  `aggregator:elsewhere`. Later build: FOLLOW the pointer — feed an
+  aggregator's source URLs into the real publishers' cohorts.

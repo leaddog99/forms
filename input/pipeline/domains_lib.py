@@ -55,6 +55,7 @@ EDITABLE_FIELDS = (
     "fetch_strategy",
     "render_required",   # JS-rendered site → fetch with a real browser (unblocker render=True)
     "score_only",        # harvest MODE: 1 = Curate (score URL-only, pick manually); persists the picker choice
+    "aggregator",        # CURATED: thin-wrapper index of other publishers' recipes — never ingest from it
     "extract_notes",
     "domain_authority",
     "da_last_scored",
@@ -369,6 +370,15 @@ _SEMRUSH_FILTER_COLUMNS = {
     # harvest still discovers, scores and ranks; only the paid content fetch is
     # skipped, and ingestion routes to the curator's signed-in browser.
     "human_capture_only": "INTEGER NOT NULL DEFAULT 0",
+    # CURATED. 1 = an AGGREGATOR: its recipe pages are thin wrappers pointing
+    # at the real publisher (punchfork.com, job 1911, 2026-09-10: 13 render
+    # credits for pages that never carry directions, five "recipes" whose
+    # single step read "See full directions at…", and one of them ADOPTED the
+    # Allrecipes master row by URL and overwrote the real recipe). Shut down
+    # at every door: no ingesting refresh, dropped from dish harvests before
+    # any fetch, and a save from its pages is refused. Its value is the
+    # pointer to the real publisher — following those is a later build.
+    "aggregator": "INTEGER NOT NULL DEFAULT 0",
     # CURATED. 1 = the domain's authority is earned by non-recipe content, so its
     # recipe pages are judged against a bar they did not build. Widens the
     # pa_gap_v1 calibration beyond gated publishers — same fault, different cause.
@@ -1629,6 +1639,31 @@ def refresh_poor_publisher_flags(conn: Optional[sqlite3.Connection] = None,
             conn.close()
     return {"flagged": flagged, "exempted_paywall": exempted, "scored": scored,
             "min_samples": min_samples, "threshold": threshold}
+
+
+def is_aggregator(conn, domain: str) -> bool:
+    """Curated flag: the site is an index of other publishers' recipes (thin
+    wrappers, directions never on the page). Read at every door that would
+    ingest from it. False for an unknown host."""
+    try:
+        ensure_domains_table(conn)
+        row = conn.execute("SELECT aggregator FROM domains WHERE domain = ?",
+                           (_canon_host(domain),)).fetchone()
+        return bool(row and int(row[0] or 0))
+    except Exception:
+        return False
+
+
+def get_aggregator_root_domains(db_path: str = _DEFAULT_DB) -> set:
+    """Root domains of every curated aggregator — the batch SERP filter drops
+    their URLs BEFORE any fetch (reason 'aggregator-host'). Degrades to empty."""
+    try:
+        with _connect(db_path) as conn:
+            ensure_domains_table(conn)
+            rows = conn.execute("SELECT root_domain, domain FROM domains WHERE aggregator = 1").fetchall()
+        return {(r[0] or root_domain(r[1]) or r[1]).lower() for r in rows if (r[0] or r[1])}
+    except Exception:
+        return set()
 
 
 def get_blocked_root_domains(db_path: str = _DEFAULT_DB) -> set:

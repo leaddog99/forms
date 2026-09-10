@@ -43,6 +43,35 @@ SINGLE_STEP_MIN_CJK_CHARS = 40
 RICH_INGREDIENT_MIN_INGS = 5
 RICH_INGREDIENT_MIN_STEPS = 1
 
+# A PLACEHOLDER STEP IS NOT A STEP. Aggregator pages (punchfork.com, job 1911,
+# 2026-09-10) carry the ingredient list and a single line pointing at the real
+# publisher — "See full directions at allrecipes.com/…", "For complete
+# instructions, visit the original recipe". Five of those passed the gate on
+# the rich-ingredient hatch (7 ingredients, 1 "step") and one overwrote a
+# real Allrecipes record. The step count now excludes them, so the hatch
+# cannot fire on a pointer. Matched on the step's own words, case-insensitive.
+import re as _re
+PLACEHOLDER_STEP = _re.compile(
+    r"^\s*(see|view|find|get|read)\b.{0,40}\b(full|complete|original|detailed)\b.{0,40}"
+    r"\b(directions|instructions|recipe|method)\b"
+    r"|^\s*for\b.{0,30}\b(full|complete|detailed)\b.{0,20}\binstructions\b"
+    r"|\bvisit the original\b|\bsee original recipe\b|\bat the original site\b",
+    _re.I)
+
+
+def is_placeholder_step(text) -> bool:
+    return bool(PLACEHOLDER_STEP.search(str(text or "")))
+
+
+def real_instruction_count(recipe: dict) -> int:
+    """Non-blank instruction steps that are not pointers elsewhere."""
+    n = 0
+    for s in (recipe or {}).get("recipeInstructions") or []:
+        text = s.get("text") if isinstance(s, dict) else s
+        if str(text or "").strip() and not is_placeholder_step(text):
+            n += 1
+    return n
+
 
 def is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tuple[bool, str]:
     """Refuse rows that look like a bad extraction (paywall, 404,
@@ -55,11 +84,10 @@ def is_cacheable(recipe: dict, *, min_ings: int = 2, min_steps: int = 2) -> tupl
     if real_ings < min_ings:
         return False, f"fewer than {min_ings} ingredients ({real_ings})"
     steps = recipe.get("recipeInstructions") or []
-    real_steps = 0
-    for s in steps:
-        text = s.get("text") if isinstance(s, dict) else s
-        if str(text or "").strip():
-            real_steps += 1
+    real_steps = real_instruction_count(recipe)
+    if real_steps == 0 and any(is_placeholder_step(s.get("text") if isinstance(s, dict) else s)
+                               for s in steps):
+        return False, "only a placeholder step — directions live elsewhere (aggregator/teaser)"
     if real_steps < min_steps:
         # Rich ingredient list beats the step floor (see the constants above).
         # Checked before the prose floor so a terse "combine all ingredients"

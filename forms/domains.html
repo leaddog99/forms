@@ -619,6 +619,11 @@
                and /process-selected both enforce it server-side, so it cannot be
                forgotten on the next run the way the Score-only tick can. -->
           <label class="opt">
+            <input type="checkbox" id="f_aggregator" ${Number(d.aggregator) === 1 ? 'checked' : ''}>
+            <span class="opt-t">Aggregator <span style="font-weight:400;color:var(--muted)">(index of other publishers' recipes)</span></span>
+          </label>
+          <p class="opt-h">The site's recipe pages are thin wrappers — an ingredient list, a photo and a link to the real publisher; the directions are never here (punchfork, sidechef). <b>Shut down at every door:</b> no ingesting refresh (score-only still allowed), its URLs are dropped from dish harvests before any fetch, and a save from one of its pages is refused so a teaser never lands in the real publisher's slot. Its value is the pointer to the original page — following those into the real publishers' cohorts is a later build.</p>
+          <label class="opt">
             <input type="checkbox" id="f_human_capture_only" ${Number(d.human_capture_only) === 1 ? 'checked' : ''}>
             <span class="opt-t">Human capture only <span style="font-weight:400;color:var(--muted)">(true paywall)</span></span>
           </label>
@@ -1634,6 +1639,7 @@
         render_required: $('#f_render_required').checked ? 1 : 0,
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
         human_capture_only: $('#f_human_capture_only')?.checked ? 1 : 0,   // R4 (Gated mode)
+        aggregator: $('#f_aggregator')?.checked ? 1 : 0,                   // thin-wrapper index — shut down
         extract_notes: $('#f_extract_notes').value.trim(),
         domain_authority: numOrNull($('#f_domain_authority').value),
         notes: $('#f_notes').value.trim(),

@@ -55,6 +55,7 @@ _REASON_MAP: tuple[tuple[str, str, bool], ...] = (
     ("disallowed-domain", "disallowed", False),   # curator blocklist
     ("disallowed-path",   "disallowed", False),   # curator blocklist
     ("domain-exclude",    "is_recipe",  False),   # curator per-domain exclude
+    ("aggregator-host",   "disallowed", False),   # curator: thin-wrapper index, content lives elsewhere
     ("collection-title",  "is_recipe",  False),   # it IS a roundup/listicle
     ("off-path",          "prefilter",  False),   # curator's recipe_path keep-scope (legacy)
     ("archive-url",       "prefilter",  False),   # /tag/, /category/, feeds — never a recipe
