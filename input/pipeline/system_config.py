@@ -219,6 +219,16 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "days' — 180 is the new default). Existing dishes keep their own "
                        "stored TTL; blank on a dish = manual-only.",
     },
+    {
+        "key": "dish_max_refresh_ttl_days",
+        "value": 365,
+        "type": "int",
+        "category": "Limits",
+        "label": "Max refresh TTL per dish (days)",
+        "description": "Hard cap on a dish's Refresh TTL. Creating/editing above this is "
+                       "rejected and the form's spinner stops here — guards against a "
+                       "typo like 1180 for 180 (Stuffed Mushrooms, 2026-09-10).",
+    },
     # --- Matching: recipe -> canonical-dish vector NN at save time ---
     {
         "key": "dish_match_max_distance",

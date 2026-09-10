@@ -657,6 +657,16 @@ def normalize_query_rows(raw) -> list[dict]:
     return out
 
 
+def max_ttl_days() -> int:
+    """Hard cap on refresh_ttl_days (System → Limits, dish_max_refresh_ttl_days).
+    A typo of 1180 for 180 sat on Stuffed Mushrooms until 2026-09-10."""
+    try:
+        from input.pipeline import system_config as _cfg
+        return int(_cfg.get_setting("dish_max_refresh_ttl_days", 365))
+    except Exception:
+        return 365
+
+
 def query_texts(rows) -> list[str]:
     """Just the query strings, in order — the LEGACY projection.
 
@@ -1028,6 +1038,9 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
         ttl = int(ttl_raw)
         if ttl <= 0:
             raise ValueError("refresh_ttl_days must be positive or null")
+        if ttl > max_ttl_days():
+            raise ValueError(f"refresh_ttl_days {ttl} exceeds the max of {max_ttl_days()} "
+                             f"(raise it in System → Limits)")
 
     notes = payload.get("notes")
     if notes is not None and not isinstance(notes, str):
@@ -1185,6 +1198,9 @@ def update_dish(conn: sqlite3.Connection, name: str, patch: dict) -> Optional[di
             v = int(raw)
             if v <= 0:
                 raise ValueError("refresh_ttl_days must be positive or null")
+            if v > max_ttl_days():
+                raise ValueError(f"refresh_ttl_days {v} exceeds the max of {max_ttl_days()} "
+                                 f"(raise it in System → Limits)")
             sets.append("refresh_ttl_days = ?")
             params.append(v)
 
