@@ -470,6 +470,17 @@ async def _run_one_job(job: dict, db_path: str, log_dir: Path) -> None:
         # (dishes.last_run_log_filename etc).
         job_with_log = dict(job)
         job_with_log["log_filename"] = log_filename
+        # Acquisition ledger context: every fetch this job makes carries the
+        # job id and kind (and the publisher, when the job is about one).
+        try:
+            from input.pipeline import acquisition as _acq
+            _p = job.get("params") or {}
+            if isinstance(_p, str):
+                _p = json.loads(_p) if _p.strip().startswith("{") else {}
+            _acq.set_context(job_id=job["id"], run_kind=job["type"],
+                             domain=str(_p.get("host") or _p.get("domain") or ""))
+        except Exception as _e:
+            print(f"[ACQ] context not set: {type(_e).__name__}: {_e}")
         result = await handler(job_with_log)
 
         with _connect(db_path) as conn:

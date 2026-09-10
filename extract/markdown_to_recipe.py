@@ -217,7 +217,7 @@ def markdown_to_recipe(
         print("     ERROR: extraction returned no usable recipe object")
         return None
 
-    _attach_source_metadata(json_data, source_url=source_url, title=title)
+    _attach_source_metadata(json_data, source_url=source_url, title=title, timings=timings)
 
     try:
         sanitized = sanitize_recipe_data(json_data)
@@ -267,7 +267,16 @@ def _first_recipe(data):
     return data
 
 
-def _attach_source_metadata(json_data: dict, *, source_url: str, title: str) -> None:
+def _acquired_via(timings) -> str:
+    try:
+        from input.pipeline.acquisition import technique_from_timings
+        return technique_from_timings(timings)
+    except Exception:
+        return ""
+
+
+def _attach_source_metadata(json_data: dict, *, source_url: str, title: str,
+                            timings: Optional[dict] = None) -> None:
     """Stamp _source + _scoring with normalized URL / origin / rawTitle.
 
     Same logic as the legacy `extract_content_markdown.py`, kept here so the
@@ -284,6 +293,10 @@ def _attach_source_metadata(json_data: dict, *, source_url: str, title: str) -> 
     if origin:
         existing_source["origin"] = origin
     existing_source.setdefault("type", "web")
+    # Which acquisition technique obtained the page (acquisition ledger, 2026-09-10).
+    _via = _acquired_via(timings)
+    if _via:
+        existing_source["acquiredVia"] = _via
     json_data["_source"] = existing_source
 
     if normalized:

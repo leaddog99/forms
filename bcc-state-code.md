@@ -8982,3 +8982,39 @@ spike, build **phase 2 of the acquisition ledger** — `acquisition_attempts`
 table + hooks at the four fetch functions and the walker + harvest gate
 back-fill + `python -m jobs run acquisition_report`. WRITE-ONLY, no
 behavior change; it is the BEFORE measurement the carve is judged against.
+
+## Session log — 2026-09-10 — TTL defaults · search lines for pools · acquisition ledger phase 2 SHIPPED
+
+* **Scheduled refresh explained**: the 11:00 tick refreshed four Greek
+  dishes whose 90-day TTL (set 06-12) expired — not a bug. Default TTL is
+  now a System → Limits setting (180); max TTL setting (365) enforced
+  server-side + form spinner; 61 dishes at 90/30 and 47 manual-only set to
+  180 (due = last_refreshed + 180); Stuffed Mushrooms 1180 → 180.
+* **Alpine Cookbooks / Filipino padding**: Amazon pads a thin quoted search;
+  the off-class screen was a button never pressed → now runs INSIDE every
+  collection refresh. **Product pools carry SEARCH LINES** like dishes
+  ({q, n=pages, keep}; union+dedupe by ASIN; per-line reserve seats; shared
+  forms/query-rows.js lifted from dishes_v2). Alpine re-ranked: Erickson #1.
+* **Acquisition ledger PHASE 2 SHIPPED** (docs/acquisition-ledger.md,
+  docs/acquisition-techniques.md): `acquisition_attempts` (one row per rung:
+  technique, ok, reason CLASS, cost, ms, gate, usable, saved) +
+  `acquisition_techniques` registry SEEDED FROM THE DOC (admin edit wins).
+  Hooks: the fetch ladder (cache/direct/unblocker/render/wayback), the
+  walker, the harvest structure gate (back-fill), the save endpoint
+  (saved flip), the job runner (context). `domains.acquire_last_technique`
+  stamped on success; extract records carry `_source.acquiredVia`
+  (recipe list shows "via …"). Surfaces: Corpus → Acquisition page
+  (forms/acquisition.html: stats + technique cards, editable), domain form
+  Acquisition line + ⓘ + ledger link, `python -m jobs run
+  acquisition_report [--param days=N] [--param domain=host]`, GET
+  /acquisition/{techniques,report,attempts}. WRITE-ONLY: nothing reads it
+  to decide yet. Smoke-tested: direct 200 + 404 → two rows, classes right,
+  gate back-filled, domain stamped, report printed.
+
+**START HERE addendum — 09-11**: restart OWED (endpoints + in-process
+hooks; jobs already write the ledger). Open Corpus → Acquisition after the
+restart and let a day of jobs fill it. Phase 3 = the carve (one technique
+at a time, ledger re-run after each). Domain-form flags: fetch_strategy +
+render_required become LEARNED indicators in phase 4; score_only /
+human_capture_only / trust_extraction / harvestable / url_prefilter stay
+as curator decisions.

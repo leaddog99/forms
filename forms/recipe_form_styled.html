@@ -5347,6 +5347,20 @@
             srcLine.appendChild(mark);
           }
 
+          // How the page was OBTAINED (acquisition ledger, 2026-09-10):
+          // _source.acquiredVia = cache | direct | unblocker | unblocker_render
+          // | wayback — stamped by the extract. Quiet text, hover for the
+          // long form; the full write-up lives on Corpus → Acquisition.
+          const via = r.data && r.data._source && r.data._source.acquiredVia;
+          if (via) {
+            const v = document.createElement('span');
+            v.className = 'stale-mark';
+            v.style.opacity = '.75';
+            v.textContent = 'via ' + String(via).replace('_', ' ');
+            v.title = 'Acquisition technique that obtained this page — see Corpus → Acquisition';
+            srcLine.appendChild(v);
+          }
+
           body.appendChild(srcLine);
         }
 

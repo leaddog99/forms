@@ -1086,6 +1086,22 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         _extra = " ".join(f"{k}={v}" for k, v in sorted(_src_tally.items())
                           if k not in ("direct", "unblocker", "wayback", "page-cache", "fetch-fail"))
         print(f"  [fetch-summary] {_parts}{(' ' + _extra) if _extra else ''}")
+    # Acquisition ledger back-fill (phase 2, write-only): the STRUCTURE verdict
+    # is what makes a fetch "usable" — a teaser page is a successful fetch and
+    # a failed acquisition. One pass over the decisions, one row each.
+    try:
+        from input.pipeline import acquisition as _acq
+        for _e in kept:
+            _g = "jsonld" if _e.get("jsonld_recipe") else ("trust" if _e.get("_trust_extraction") else "phrase")
+            _acq.gate(_e["url"], gate=_g, score=_e.get("recipe_score"), usable=True)
+        for _e in dropped:
+            _r = str(_e.get("_dropped_reason") or "")
+            if _r.startswith("fetch-failed") or _r.startswith("gated-suspected"):
+                continue                      # never had a body to judge
+            if _r in ("no-recipe-structure",) or _r.startswith("recipe-score") or _r.startswith("translation"):
+                _acq.gate(_e["url"], gate="phrase", score=_e.get("recipe_score"), usable=False)
+    except Exception as _ex:
+        print(f"[ACQ] gate back-fill skipped: {type(_ex).__name__}: {_ex}")
     return kept, dropped
 
 

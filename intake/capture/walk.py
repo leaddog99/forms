@@ -172,6 +172,11 @@ def walk(host: str, urls: list, *, identity: int, headed: bool, limit: int | Non
         todo.append(u)
     tally = {"captured": 0, "no-recipe": 0, "challenge": 0, "error": 0, "signed-out": 0,
              "skipped": len(urls) - len(todo)}
+    try:
+        from input.pipeline import acquisition as ACQ
+        ACQ.set_context(run_kind="capture", domain=host)
+    except Exception:
+        pass
     print(f"[capture] {host}: {len(todo)} to visit ({tally['skipped']} already captured)")
     log_line(host, f"walk start: {len(todo)} urls identity={identity}")
 
@@ -181,6 +186,7 @@ def walk(host: str, urls: list, *, identity: int, headed: bool, limit: int | Non
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         for i, url in enumerate(todo, 1):
             print(f"  [{i:>2}/{len(todo)}] visiting  {url}", flush=True)
+            _t0 = time.time()
             captured_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             cap = Capture(source_url=url, host=host, captured_at=captured_at, identity=identity)
             html = None
@@ -222,6 +228,20 @@ def walk(host: str, urls: list, *, identity: int, headed: bool, limit: int | Non
             ext = ".png" if cap.hero_source.lower().endswith(".png") else ".jpg"
             path = write_capture(cap, html=html, hero_bytes=hero_bytes, hero_ext=ext)
             tally[cap.status] += 1
+            # Acquisition ledger: the walker is a technique like any other.
+            try:
+                from input.pipeline import acquisition as ACQ
+                _ok = cap.status in ("captured", "no-recipe")
+                _reason = {"signed-out": "wall:membership (signed-out signature)",
+                           "challenge": cap.note, "error": cap.note}.get(cap.status, "")
+                _rid = ACQ.record(url, "walker", ok=_ok, rung=1, reason=_reason,
+                                  nbytes=len(html) if html else None,
+                                  ms=int((time.time() - _t0) * 1000), notes=cap.status)
+                if _ok:
+                    ACQ.gate(url, gate="jsonld" if "STRUCTURED RECIPE DATA" in (cap.body or "") else "phrase",
+                             score=None, usable=(cap.status == "captured"))
+            except Exception as _e:
+                print(f"[ACQ] walker ledger skipped: {type(_e).__name__}: {_e}")
             log_line(host, f"{cap.status:10s} {url} -> {os.path.basename(path)} {cap.note}")
             print(f"           {cap.status:10s} {os.path.basename(path)}"
                   + (f"  hero={'yes' if hero_bytes else 'no'}" if cap.status == "captured" else f"  {cap.note}"))

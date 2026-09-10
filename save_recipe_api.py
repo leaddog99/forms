@@ -9757,6 +9757,73 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
 jobs_lib.register_handler("collection_refresh", _handle_collection_refresh_job)
 
 
+# ---------------------------------------------------------------------------
+#  Acquisition ledger + technique registry (docs/acquisition-ledger.md, phase 2)
+# ---------------------------------------------------------------------------
+async def _handle_acquisition_report_job(job: dict) -> dict:
+    """`python -m jobs run acquisition_report [--days N] [--domain host]`:
+    per technique and per domain, attempts / ok / usable / saved / cost /
+    cost-per-usable / latency over the window. The BEFORE measurement the
+    ladder carve is judged against; phase 4 derives the policy from it."""
+    from input.pipeline import acquisition as acq
+    params = job.get("params") or {}
+    days = int(params.get("days") or 90)
+    domain = (params.get("domain") or params.get("host") or "").strip() or None
+    with _db() as conn:
+        rep = acq.report(conn, days=days, domain=domain)
+    acq.print_report(rep)
+    return {"days": days, "domain": domain,
+            "techniques": [{k: d[k] for k in ("technique", "n", "ok_rate", "usable_rate", "saved_n",
+                                              "cost", "cost_per_usable", "ms")} for d in rep["by_technique"]],
+            "domains": len({d["domain"] for d in rep["by_domain"]})}
+
+
+jobs_lib.register_handler("acquisition_report", _handle_acquisition_report_job)
+
+
+@app.get("/acquisition/techniques")
+def acquisition_techniques_endpoint():
+    """The registry: one row per technique, text seeded from
+    docs/acquisition-techniques.md (an admin edit in place wins over a reseed)."""
+    from input.pipeline import acquisition as acq
+    with _db() as conn:
+        return acq.list_techniques(conn)
+
+
+@app.put("/acquisition/techniques/{key}")
+async def acquisition_technique_update_endpoint(key: str, request: Request):
+    from input.pipeline import acquisition as acq
+    body = await request.json()
+    with _db() as conn:
+        ok = acq.update_technique(conn, key, body if isinstance(body, dict) else {})
+        if not ok:
+            raise HTTPException(status_code=404, detail="Technique not found or nothing to change.")
+        return next(t for t in acq.list_techniques(conn) if t["key"] == key)
+
+
+@app.get("/acquisition/report")
+def acquisition_report_endpoint(days: int = 90, domain: str = ""):
+    """Ledger stats for the System → Acquisition page and the domain form's
+    Acquisition panel (`domain=` narrows to one publisher)."""
+    from input.pipeline import acquisition as acq
+    with _db() as conn:
+        return acq.report(conn, days=max(1, min(int(days), 365)), domain=domain or None)
+
+
+@app.get("/acquisition/attempts")
+def acquisition_attempts_endpoint(domain: str = "", limit: int = 50):
+    """Recent attempt rows for one publisher — what the domain form lists."""
+    from input.pipeline import acquisition as acq
+    with _db() as conn:
+        acq.ensure_tables(conn)
+        cur = conn.execute(
+            "SELECT ts, job_id, run_kind, url_normalized, technique, rung, ok, reason, detail, "
+            "status_code, bytes, ms, cost_units, gate, gate_score, usable, saved FROM acquisition_attempts "
+            "WHERE domain = ? ORDER BY id DESC LIMIT ?", (acq._host(domain), max(1, min(int(limit), 500))))
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
 async def _handle_curated_collection_run_job(job: dict) -> dict:
     """The review-sourced selection run: a product CLASS -> the expert reviews -> ranked,
     evidenced picks -> catalog product records.
@@ -12443,6 +12510,13 @@ def _save_recipe_core(payload: dict) -> dict:
             # row though, so refresh_url_metadata.py's --refresh-stale logic
             # knows the URL is still in active use.
             if normalized_source_url:
+                # Acquisition ledger: a save is the strict success — flip it on
+                # the attempt that obtained this page (phase 2, write-only).
+                try:
+                    from input.pipeline import acquisition as _acq
+                    _acq.mark_saved(normalized_source_url)
+                except Exception:
+                    pass
                 try:
                     conn.execute(
                         "UPDATE metabase_url SET last_accessed = ? WHERE url = ?",

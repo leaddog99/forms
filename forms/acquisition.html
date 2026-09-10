@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Best Cooks Club — Admin · Acquisition</title>
+  <!-- System → Acquisition: the technique registry (seeded from
+       docs/acquisition-techniques.md; an admin edit in place wins) and the
+       acquisition ledger's numbers beside each technique. Single-page,
+       settings-style like system.html. docs/acquisition-ledger.md phase 2. -->
+  <style>
+    :root{ --warn:#b23b3b; }
+    *{ box-sizing:border-box; }
+    html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased; }
+    .wrap{ max-width:900px; margin:0 auto; padding:28px 18px 80px; }
+    h1{ font-size:1.6rem; margin:0 0 4px; letter-spacing:-.01em; }
+    .sub{ color:var(--muted); margin:0 0 22px; font-size:.95rem; line-height:1.45; }
+    .bar{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:18px; }
+    .bar input{ padding:9px 11px; border:1px solid var(--border); border-radius:9px; font:inherit; background:#fff; color:var(--ink); }
+    .bar .muted{ color:var(--muted); font-size:.85rem; }
+    table.stats{ width:100%; border-collapse:collapse; font-size:.9rem; margin:0 0 26px; }
+    table.stats th,table.stats td{ text-align:right; padding:7px 8px; border-bottom:1px solid var(--border); }
+    table.stats th:first-child,table.stats td:first-child{ text-align:left; }
+    table.stats th{ font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px 20px; margin:0 0 16px; }
+    .card h2{ margin:0 0 4px; font-size:1.12rem; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .card h2 code{ font-size:.85rem; background:var(--bg); padding:2px 7px; border-radius:6px; }
+    .card .meta{ color:var(--muted); font-size:.84rem; margin:0 0 10px; }
+    .card .pill{ display:inline-block; font-size:.74rem; padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--border); margin:0 4px 4px 0; }
+    .card .pill.off{ color:var(--warn); border-color:var(--warn); }
+    .card .desc{ font-size:.93rem; line-height:1.55; }
+    .card .desc p{ margin:0 0 10px; }
+    .card .desc code{ background:var(--bg); padding:1px 5px; border-radius:5px; font-size:.86em; }
+    .card .desc ul{ margin:0 0 10px 18px; padding:0; }
+    .card .actions{ margin-top:8px; display:flex; gap:8px; align-items:center; }
+    .card textarea{ width:100%; min-height:220px; font:inherit; font-size:.9rem; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fff; color:var(--ink); }
+    .card input.lbl{ width:100%; font:inherit; padding:8px 11px; border:1px solid var(--border); border-radius:9px; background:#fff; color:var(--ink); margin-bottom:8px; }
+    .flash{ font-size:.88rem; color:var(--muted); }
+    .flash.err{ color:var(--warn); }
+    .empty{ color:var(--muted); font-size:.9rem; padding:8px 0 18px; }
+  </style>
+  <link rel="stylesheet" href="/forms/library-shell.css?v=20260901a">
+  <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <h1></h1>
+    </div>
+  </header>
+  <div class="wrap">
+    <h1>Acquisition</h1>
+    <p class="sub">How a publisher's pages are obtained. Each <b>technique</b> below is one way of getting a page; every attempt is written to the acquisition ledger, and the numbers beside each technique come from it. The descriptions are seeded from <code>docs/acquisition-techniques.md</code>; an edit here is kept over a reseed.</p>
+    <div class="bar">
+      <label class="muted">Window</label>
+      <input id="days" type="number" min="1" max="365" value="90" style="width:80px">
+      <label class="muted">Publisher</label>
+      <input id="domain" type="text" placeholder="all publishers (or a host)" style="width:260px">
+      <button type="button" class="ed-btn" id="reload">Refresh</button>
+      <span class="flash" id="flash"></span>
+    </div>
+    <div id="stats"><p class="empty">Loading…</p></div>
+    <div id="cards"><p class="empty">Loading…</p></div>
+  </div>
+
+  <script src="/forms/library-shell.js?v=20260831b"></script>
+  <script>
+    if (window.LibraryShell && LibraryShell.initNav) {
+      LibraryShell.initNav({ currentPage: 'acquisition' });
+    }
+    const $ = (s, r=document) => r.querySelector(s);
+    const esc = (s) => escapeHtml(s ?? '');
+    let techniques = [], report = null;
+
+    // Minimal markdown for the doc sections: paragraphs, **bold**, `code`,
+    // "* " bullets. Enough for the technique text; nothing else is rendered.
+    function md(text){
+      const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+      const blocks = String(text || '').split(/\n\s*\n/);
+      return blocks.map(b => {
+        const lines = b.split('\n');
+        if (lines.every(l => /^\s*[*-]\s+/.test(l)))
+          return '<ul>' + lines.map(l => '<li>' + inline(l.replace(/^\s*[*-]\s+/, '')) + '</li>').join('') + '</ul>';
+        return '<p>' + inline(lines.join(' ')) + '</p>';
+      }).join('');
+    }
+
+    const fmt = (v, d=2) => (v == null ? '—' : (typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(d)) : v));
+    const pct = (v) => v == null ? '—' : Math.round(v * 100) + '%';
+
+    function renderStats(){
+      const rows = (report?.by_technique || []);
+      if (!rows.length){ $('#stats').innerHTML = `<p class="empty">No attempts in this window yet — the ledger fills as jobs run.</p>`; return; }
+      $('#stats').innerHTML = `<table class="stats">
+        <thead><tr><th>technique</th><th>attempts</th><th>ok</th><th>usable</th><th>saved</th><th>cost</th><th>cost / usable</th><th>avg ms</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td><code>${esc(r.technique)}</code></td><td>${r.n}</td><td>${pct(r.ok_rate)}</td><td>${pct(r.usable_rate)}</td><td>${r.saved_n}</td><td>${fmt(r.cost,1)}</td><td>${fmt(r.cost_per_usable)}</td><td>${fmt(r.ms,0)}</td></tr>`).join('')}</tbody>
+      </table>
+      ${(report.failure_classes||[]).length ? `<p class="sub"><b>Failure classes:</b> ${report.failure_classes.slice(0,12).map(f => `<span class="pill" title="${esc(f.technique)}">${esc(f.reason || 'other')} × ${f.n}</span>`).join(' ')}</p>` : ''}`;
+    }
+
+    function statFor(key){ return (report?.by_technique || []).find(r => r.technique === key); }
+
+    function renderCards(){
+      if (!techniques.length){ $('#cards').innerHTML = `<p class="empty">No techniques registered.</p>`; return; }
+      $('#cards').innerHTML = techniques.map(t => {
+        const s = statFor(t.key);
+        return `<section class="card" data-key="${esc(t.key)}">
+          <h2><code>${esc(t.key)}</code> ${esc(t.label)} ${t.enabled ? '' : '<span class="pill off">disabled</span>'}</h2>
+          <p class="meta">${t.cost_note ? `<b>Cost:</b> ${esc(t.cost_note)} ` : ''}${t.latency_note ? `· <b>Latency:</b> ${esc(t.latency_note)} ` : ''}${s ? `· <b>Last ${report.days}d:</b> ${s.n} attempts, ${pct(s.usable_rate)} usable, ${s.saved_n} saved` : '· no attempts in window'}</p>
+          <div>${(t.failure_classes||[]).map(c => `<span class="pill">${esc(c)}</span>`).join('')}</div>
+          <div class="desc" id="desc_${esc(t.key)}">${md(t.description)}</div>
+          <div class="actions">
+            <button type="button" class="ed-btn edit" data-key="${esc(t.key)}">Edit text</button>
+            <label class="muted" style="font-size:.85rem"><input type="checkbox" class="en" data-key="${esc(t.key)}" ${t.enabled ? 'checked' : ''}> enabled</label>
+            ${t.updated_at ? `<span class="muted" style="font-size:.78rem">edited ${esc(String(t.updated_at).slice(0,10))} (kept over reseed)</span>` : `<span class="muted" style="font-size:.78rem">seeded from ${esc(t.seeded_from || 'doc')}</span>`}
+          </div>
+        </section>`;
+      }).join('');
+      document.querySelectorAll('.card .edit').forEach(b => b.addEventListener('click', () => editCard(b.dataset.key)));
+      document.querySelectorAll('.card .en').forEach(cb => cb.addEventListener('change', () => save(cb.dataset.key, {enabled: cb.checked})));
+    }
+
+    function editCard(key){
+      const t = techniques.find(x => x.key === key); if (!t) return;
+      const box = $(`.card[data-key="${CSS.escape(key)}"] .desc`);
+      box.innerHTML = `<input class="lbl" id="lbl_${esc(key)}" value="${esc(t.label)}">
+        <textarea id="txt_${esc(key)}">${esc(t.description)}</textarea>
+        <div class="actions"><button type="button" class="ed-btn primary" id="sv_${esc(key)}">Save</button><button type="button" class="ed-btn" id="cx_${esc(key)}">Cancel</button></div>`;
+      $(`#sv_${CSS.escape(key)}`).addEventListener('click', () => save(key, {label: $(`#lbl_${CSS.escape(key)}`).value.trim(), description: $(`#txt_${CSS.escape(key)}`).value}));
+      $(`#cx_${CSS.escape(key)}`).addEventListener('click', renderCards);
+    }
+
+    async function save(key, patch){
+      const fl = $('#flash'); fl.textContent = 'Saving…'; fl.className = 'flash';
+      try {
+        const r = await fetch(`/acquisition/techniques/${encodeURIComponent(key)}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch) });
+        if (!r.ok) throw new Error((await r.json()).detail || 'HTTP '+r.status);
+        const t = await r.json();
+        techniques = techniques.map(x => x.key === key ? t : x);
+        renderCards(); fl.textContent = 'Saved';
+      } catch(e){ fl.textContent = 'Failed: ' + (e.message||e); fl.className = 'flash err'; }
+    }
+
+    async function load(){
+      const days = parseInt($('#days').value, 10) || 90;
+      const domain = $('#domain').value.trim();
+      try {
+        const [t, r] = await Promise.all([
+          fetch('/acquisition/techniques').then(x => x.json()),
+          fetch(`/acquisition/report?days=${days}${domain ? '&domain=' + encodeURIComponent(domain) : ''}`).then(x => x.json()),
+        ]);
+        techniques = Array.isArray(t) ? t : []; report = r;
+        renderStats(); renderCards();
+      } catch(e){ $('#stats').innerHTML = `<p class="empty">Could not load: ${esc(e.message||e)}</p>`; }
+    }
+    $('#reload').addEventListener('click', load);
+    $('#domain').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('domain')) $('#domain').value = qs.get('domain');
+    load();
+  </script>
+</body>
+</html>

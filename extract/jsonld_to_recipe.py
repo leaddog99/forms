@@ -114,6 +114,14 @@ def best_recipe_jsonld(blocks: Any) -> Optional[dict]:
     return best
 
 
+def _acquired_via(timings) -> str:
+    try:
+        from input.pipeline.acquisition import technique_from_timings
+        return technique_from_timings(timings)
+    except Exception:
+        return ""
+
+
 def _flatten_instructions(raw: Any) -> list:
     """Schema.org allows several shapes; flatten to a list of HowToStep dicts
     or strings. sanitize_recipe_data does the final coercion."""
@@ -206,6 +214,11 @@ def jsonld_to_recipe(
     if origin:
         existing_source["origin"] = origin
     existing_source.setdefault("type", "web")
+    # Which acquisition technique obtained the page (acquisition ledger,
+    # 2026-09-10): the extract record says HOW it was read, the form shows it.
+    _via = _acquired_via(timings)
+    if _via:
+        existing_source["acquiredVia"] = _via
     payload["_source"] = existing_source
 
     if normalized:

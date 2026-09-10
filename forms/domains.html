@@ -596,6 +596,15 @@
               <b>leaves this publisher alone</b> — clear the box to hand it back.
             </div>
           </div>` : ''}
+          <div class="ed-field" style="margin:4px 0 12px">
+            <label>Acquisition <button type="button" class="info-dot" data-info-title="How this publisher's pages are obtained" data-info="Every attempt to fetch one of this site&#39;s pages is written to the acquisition ledger with the <b>technique</b> used (cache · direct · unblocker · unblocker render · Wayback · walker · human), whether a usable page came back, what it cost and how long it took. The pill shows the technique that LAST obtained a page here. The full write-up of each technique, and this site&#39;s numbers, are on Corpus &rarr; Acquisition. The learned per-publisher order (phase 4) will appear beside it; the curator flags below stay as hard constraints above it.">i</button></label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              ${d.acquire_last_technique
+                ? `<span class="ed-pill" title="Last technique that obtained a page from this publisher">last obtained via <b>${escapeHtml(d.acquire_last_technique)}</b>${d.acquire_last_at ? ' · ' + escapeHtml(String(d.acquire_last_at).slice(0,10)) : ''}</span>`
+                : `<span class="muted" style="font-size:.85rem">no attempts recorded yet</span>`}
+              <a class="muted" style="font-size:.85rem" href="/forms/acquisition.html?domain=${encodeURIComponent(d.domain||'')}">ledger for this publisher →</a>
+            </div>
+          </div>
           <label class="opt">
             <input type="checkbox" id="f_trust_extraction" ${Number(d.trust_extraction) === 1 ? 'checked' : ''}>
             <span class="opt-t">Trust extraction</span>

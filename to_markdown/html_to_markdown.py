@@ -438,7 +438,7 @@ def _fetch_via_proxy_unblocker(url, provider, cfg, timeout, render):
             _circuit_note_success(url)     # pool works for this host → reset the breaker
             tag = f" (attempt {attempt + 1})" if attempt else ""
             print(f"[unblocker] {provider} fetched {url} LIVE{tag}")
-            return resp, {"source": "unblocker", "provider": provider}
+            return resp, {"source": "unblocker", "provider": provider, "render": bool(render)}
         # Non-2xx = the TARGET ORIGIN's status relayed through the proxy (a provider/account
         # failure raises above), confirmed when X-Oxylabs-Content-Status-Code echoes it — that
         # header's presence means the request reached the origin, so retrying draws a new IP
@@ -490,7 +490,7 @@ def _fetch_via_get_unblocker(url, provider, cfg, timeout, render):
     resp.url = url                          # base-url must be the TARGET, not the API
     _fix_response_encoding(resp)
     print(f"[unblocker] {provider} fetched {url} LIVE")
-    return resp, {"source": "unblocker", "provider": provider}
+    return resp, {"source": "unblocker", "provider": provider, "render": bool(render)}
 
 
 def fetch_via_unblocker(url: str, *, timeout: int = UNBLOCKER_TIMEOUT_SECONDS,
@@ -616,6 +616,21 @@ def _looks_blocked(resp: requests.Response) -> bool:
     return blocked_reason(resp) is not None
 
 
+def _acq_record(url: str, technique: str, *, ok: bool, rung: int, resp=None,
+                reason: str = "", ms: Optional[int] = None, notes: str = "") -> None:
+    """Acquisition ledger write for one rung (input/pipeline/acquisition.py,
+    phase 2 — write-only). Best-effort: never lets a ledger problem cost a fetch."""
+    try:
+        from input.pipeline import acquisition as _acq
+        status = getattr(resp, "status_code", None) if resp is not None else None
+        body = getattr(resp, "content", None) if resp is not None else None
+        nbytes = len(body) if body is not None else None
+        _acq.record(url, technique, ok=ok, rung=rung, reason=reason, status_code=status,
+                    nbytes=nbytes, ms=ms, notes=notes)
+    except Exception:
+        pass
+
+
 def fetch_with_full_fallback(url: str, *,
                               timeout: int = DEFAULT_TIMEOUT_SECONDS,
                               try_wayback: bool = True,
@@ -635,6 +650,8 @@ def fetch_with_full_fallback(url: str, *,
     if page_cache.is_enabled():
         cached = page_cache.get(url, render)
         if cached is not None:
+            _acq_record(url, "cache", ok=True, rung=0, resp=cached, ms=0,
+                        notes="render" if render else "static")
             return cached, {"source": "page-cache"}
     resp, meta = _fetch_with_full_fallback_uncached(
         url, timeout=timeout, try_wayback=try_wayback, unblocker=unblocker, render=render)
@@ -667,6 +684,15 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     render=True — none seen yet; revisit per-domain if so.)
     """
     err: Optional[Exception] = None
+    _rung = 0            # acquisition ledger: 1-based position of each rung tried
+    _t0 = time.perf_counter()
+
+    def _ms() -> int:
+        nonlocal _t0
+        now = time.perf_counter()
+        ms = int((now - _t0) * 1000)
+        _t0 = now
+        return ms
     # Render-ELIGIBLE domains (render_required / unblocker strategy): the direct
     # fetch is still probed FIRST — it is free. 2026-08-28: the old render-FIRST
     # skip ("the static fetch is known-doomed") trusted the flag blindly and paid
@@ -678,24 +704,37 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     # structure (ld+json or <article>) — a big-but-empty nav shell has neither.
     if render and unblocker and unblocker_available():
         probe_why = None
+        _rung += 1
+        _probe_resp = None
         try:
             resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
+            _probe_resp = resp
             low = (resp.text or "").lower()
             if not blocked_reason(resp) and ("ld+json" in low or "<article" in low):
+                _acq_record(url, "direct", ok=True, rung=_rung, resp=resp, ms=_ms(), notes="probe")
                 return resp, {"source": "direct", "ua_used": ua_used}
             probe_why = blocked_reason(resp) or "no ld+json / <article> — looks like a JS shell"
         except Exception as e:
             probe_why = f"{type(e).__name__}: {str(e)[:120]}"
+        _acq_record(url, "direct", ok=False, rung=_rung, resp=_probe_resp, reason=probe_why,
+                    ms=_ms(), notes="probe")
         print(f"[unblocker] render-escalating (direct probe lost: {probe_why})")
+        _rung += 1
         ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=True)
         if ub is not None:
+            _acq_record(url, "unblocker_render", ok=not bool(blocked_reason(ub[0])), rung=_rung,
+                        resp=ub[0], reason=blocked_reason(ub[0]) or "", ms=_ms())
             return ub
+        _acq_record(url, "unblocker_render", ok=False, rung=_rung, reason="unblocker returned nothing", ms=_ms())
     # PLAIN FIRST (credit-conscious): try the free direct fetch; only escalate to the PAID
     # unblocker if the page comes back as an anti-bot stub (or the fetch fails). So a page
     # that loads fine plain costs ZERO unblocker credits — the unblocker is paid only when
     # actually needed. (unblocker=True just ENABLES the escalation tier for this domain.)
+    _rung += 1
+    _direct_resp = None
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
+        _direct_resp = resp
         # BLOCK-CHECK ALWAYS, ESCALATE ONLY IF WE CAN. This used to be gated on
         # `unblocker`, so with the paid tier OFF a soft-block was returned as a
         # successful direct fetch — and a soft block is frequently 2xx. Seen
@@ -710,14 +749,19 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         elif _blocked:
             err = requests.HTTPError(f"Soft-block challenge for {url} ({_blocked}) — no unblocker; trying Wayback")
         else:
+            _acq_record(url, "direct", ok=True, rung=_rung, resp=resp, ms=_ms())
             return resp, {"source": "direct", "ua_used": ua_used}
+        _acq_record(url, "direct", ok=False, rung=_rung, resp=resp, reason=_blocked, ms=_ms())
     except requests.HTTPError as e:
         # 404/410 came from a real response.raise_for_status() → terminal.
         status = getattr(e.response, "status_code", None) if e.response is not None else None
+        _acq_record(url, "direct", ok=False, rung=_rung, resp=e.response, reason=str(e), ms=_ms())
         if status in (404, 410):
             raise
         err = e
     except Exception as e:
+        _acq_record(url, "direct", ok=False, rung=_rung, resp=_direct_resp,
+                    reason=f"{type(e).__name__}: {e}", ms=_ms())
         err = e
 
     # PAID unblocker tier — only reached when the plain fetch was blocked or failed.
@@ -727,18 +771,27 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         # positive at a glance. Curator asked "real or waste?" twice in one day;
         # the answer belongs in the log, not in a forensic session.
         print(f"[unblocker] escalating (direct lost: {str(err)[:140]})")
+        _rung += 1
         ub = fetch_via_unblocker(url, timeout=max(timeout, UNBLOCKER_TIMEOUT_SECONDS), render=False)
         if ub is not None:
+            _ub_block = blocked_reason(ub[0])
+            _acq_record(url, "unblocker", ok=not bool(_ub_block), rung=_rung, resp=ub[0],
+                        reason=_ub_block or "", ms=_ms())
             return ub
+        _acq_record(url, "unblocker", ok=False, rung=_rung, reason="unblocker returned nothing", ms=_ms())
 
     if not try_wayback:
         raise err if err is not None else requests.HTTPError(f"Direct fetch failed for {url}")
+    _rung += 1
     wb = fetch_via_wayback(url, timeout=timeout)
     if wb is None:
+        _acq_record(url, "wayback", ok=False, rung=_rung, reason="no wayback snapshot", ms=_ms())
         raise requests.HTTPError(
             f"Direct fetch failed and no Wayback snapshot available for {url}"
         )
     resp, ts = wb
+    _acq_record(url, "wayback", ok=not bool(blocked_reason(resp)), rung=_rung, resp=resp,
+                reason=blocked_reason(resp) or "", ms=_ms(), notes=f"snapshot {ts}")
     return resp, {"source": "wayback", "timestamp": ts}
 
 
@@ -1216,6 +1269,7 @@ def html_to_markdown(url: str, timings: Optional[dict] = None, *,
     if timings is not None:
         timings["fetch_ms"] = int((t_fetch - t0) * 1000)
         timings["fetch_source"] = fetch_meta.get("source")
+        timings["fetch_render"] = bool(fetch_meta.get("render"))
         if fetch_meta.get("source") == "wayback":
             timings["wayback_timestamp"] = fetch_meta.get("timestamp")
 

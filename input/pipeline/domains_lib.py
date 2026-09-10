@@ -357,6 +357,13 @@ _SEMRUSH_FILTER_COLUMNS = {
     "obtainable_n": "INTEGER",         # saves behind a positive verdict
     "obtainable_tried": "INTEGER",     # attempts behind it — n/tried is the YIELD
     "obtainable_streak": "INTEGER NOT NULL DEFAULT 0",  # consecutive runs that saved NOTHING
+    # MEASURED by the acquisition ledger (input/pipeline/acquisition.py,
+    # 2026-09-10): the technique that last obtained one of this publisher's
+    # pages, and when. Shown on the domain form and the extract record so a
+    # curator sees HOW a site is being read, not just whether. Phase 4 adds
+    # the learned per-domain policy beside it.
+    "acquire_last_technique": "TEXT",
+    "acquire_last_at": "TEXT",
     # R4. CURATED, unlike the measured columns above — it is a decision ("stop
     # paying to find out") that the measurement informs but does not make. The
     # harvest still discovers, scores and ranks; only the paid content fetch is
