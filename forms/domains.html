@@ -101,6 +101,29 @@
 
     let domains = {};        // keyed by domain (host)
     let selected = null;     // host string, or '__new__'
+    // System → Limits, for the publisher-sizing rule (keep = DA−offset to a 10,
+    // capped; records = keep × per; TTL default). Defaults mirror the seed so
+    // the rule still answers before the fetch lands.
+    const SYS = { domain_keep_da_offset: 30, domain_keep_cap: 50, domain_records_per_keep: 5, domain_harvest_ttl_default_days: 180 };
+    fetch('/system-config').then(r => r.ok ? r.json() : []).then(rows => {
+      for (const s of rows) if (s.key in SYS && s.value != null) SYS[s.key] = Number(s.value);
+    }).catch(() => {});
+    // The rule, same arithmetic as domains_lib.rule_defaults_for_da.
+    function daRule(da){
+      da = Number(da); if (!Number.isFinite(da)) return null;
+      const keep = Math.max(10, Math.min(SYS.domain_keep_cap, Math.floor((da - SYS.domain_keep_da_offset) / 10) * 10));
+      return { keep_top_n: keep, harvest_records: keep * SYS.domain_records_per_keep, harvest_ttl_days: SYS.domain_harvest_ttl_default_days };
+    }
+    // Fill keep / records / TTL from the DA on the form. A click, never automatic:
+    // stored values belong to the curator.
+    function applyDaRule(){
+      const r = daRule($('#f_domain_authority')?.value); const hint = $('#hint');
+      if (!r){ if (hint){ hint.style.color = 'var(--ed-warn)'; hint.textContent = 'Enter a DA first (or run Deep enrich).'; } return; }
+      const set = (id, v) => { const el = $('#' + id); if (el){ el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } };
+      set('f_keep_top_n', r.keep_top_n); set('f_records', r.harvest_records);
+      set('f_harvest_ttl_days_bf', r.harvest_ttl_days); set('f_harvest_ttl_days_serp', r.harvest_ttl_days);
+      if (hint){ hint.style.color = ''; hint.textContent = `DA rule applied: keep ${r.keep_top_n} · ${r.harvest_records} records · refresh every ${r.harvest_ttl_days} days — Save to keep.`; }
+    }
     let term = '';
     let sortKey = 'domain';
     // Bumped whenever the top-list should be invalidated (domain switch, Clear). A
@@ -448,6 +471,7 @@
             ${field('f_ethnicity', 'Ethnicity', d.ethnicity, { ph: 'Greek' })}
             ${field('f_fetch_strategy', 'Fetch strategy', d.fetch_strategy || 'plain', { select: STRATEGIES })}
             ${field('f_render_required', d.render_learned_at ? ('JS-rendered — render with full browser · auto-learned ' + escapeHtml(fmtDate(d.render_learned_at))) : 'JS-rendered — render with full browser (unblocker render=True)', Number(d.render_required) === 1, { checkbox: true })}
+            ${field('f_url_prefilter', 'URL-word pre-filter — skip slugs with no food word before the fetch (shared learned vocabulary; a small random share is still fetched to keep it honest). For sites whose recipe URLs carry no path clue (bhg.com).', Number(d.url_prefilter) === 1, { checkbox: true })}
             <div class="ed-field full" style="font-size:.8em;color:var(--muted);line-height:1.5;margin-top:-4px">
               When in doubt, leave <b>plain</b> + unchecked: the free direct fetch is
               <b>always probed first</b> whatever is set here, and the paid unblocker
@@ -491,6 +515,13 @@
               <span class="cfg-note">applies to every source below</span></div>
             <div class="ed-form-grid">
               ${field('f_keep_top_n', 'Keep top N', d.keep_top_n || 10, { type: 'number' })}
+              <div class="ed-field" style="justify-content:flex-end">
+                <label>&nbsp;</label>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <button type="button" class="ed-btn" id="daRuleBtn" title="Fill Keep top N, records to pull and refresh TTL from this site's DA">↺ Apply DA rule</button>
+                  <button type="button" class="info-dot" data-info-title="The DA rule" data-info="Keep top N defaults to <b>DA &minus; ${SYS.domain_keep_da_offset}</b>, rounded down to the nearest 10, floored at 10 and capped at ${SYS.domain_keep_cap} (Taste of Home at DA 84 &rarr; 50). Records to pull from the export = keep &times; ${SYS.domain_records_per_keep}; refresh every ${SYS.domain_harvest_ttl_default_days} days. Ties a site&#39;s slots to its power. Applied automatically when a NEW domain is researched; this button re-applies it here. The best sites (NYT Cooking, Allrecipes) are set above the cap by hand. On a mixed-media site the whole-domain DA overstates the cooking section &mdash; check the scored cohort&#39;s PA before trusting it.">i</button>
+                </div>
+              </div>
             </div>
             <div class="ed-field full" style="margin-top:10px">
               <label>Candidate filter — pre-fetch URL rules<button type="button" class="info-dot"
@@ -721,6 +752,7 @@
       $('#saveBtn').addEventListener('click', () => doSave(d.domain));
       $('#saveBtn').disabled = true;   // enabled by the dirty-tracker on first edit
       $('#deepEnrichBtn').addEventListener('click', () => doDeepEnrich(d.domain));
+      $('#daRuleBtn')?.addEventListener('click', applyDaRule);
       // Toggling score-only directly (not via a mode card) must restate what the
       // run button will do — the checkbox and the button are the same decision.
       $('#f_score_only')?.addEventListener('change', syncRunButton);
@@ -1639,6 +1671,7 @@
         known_for: ($('#f_known_for')?.value || '').trim(),
         fetch_strategy: $('#f_fetch_strategy').value,
         render_required: $('#f_render_required').checked ? 1 : 0,
+        url_prefilter: $('#f_url_prefilter')?.checked ? 1 : 0,           // pre-fetch slug skip (learned vocabulary)
         score_only: $('#f_score_only')?.checked ? 1 : 0,   // persists the Curate harvest-mode choice
         human_capture_only: $('#f_human_capture_only')?.checked ? 1 : 0,   // R4 (Gated mode)
         aggregator: $('#f_aggregator')?.checked ? 1 : 0,                   // thin-wrapper index — shut down

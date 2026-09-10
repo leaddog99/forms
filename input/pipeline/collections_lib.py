@@ -1077,13 +1077,25 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
         # keeps the caller's signature unchanged. mark_render_required wrote this
         # flag; until now nothing read it where it saves a credit.
         _render_upfront = False
+        _url_prefilter = False
         try:
             from input.pipeline import domains_lib as _dl
             with _dl._connect(_dl._DEFAULT_DB) as _c:
                 _row = _dl.get_domain(_c, domain)
             _render_upfront = bool((_row or {}).get("render_required"))
+            # Per-domain URL-word pre-filter (the shared self-learning vocabulary in
+            # url_word_class). The column has existed since the pre-filter shipped,
+            # and seriouseats carried a 1, but NOTHING on the publisher path ever
+            # read it — only dish batches consulted the vocabulary (found 2026-09-10
+            # setting up bhg.com, a lifestyle site whose flat slugs carry no path
+            # clue and whose traffic is mostly home/garden). Same read-here idiom as
+            # render_required above; ε-exploration inside the filter keeps labels honest.
+            _url_prefilter = bool((_row or {}).get("url_prefilter"))
         except Exception as _e:
             print(f"  [harvest] render_required lookup skipped: {type(_e).__name__}: {_e}")
+        if _url_prefilter:
+            print(f"  [harvest] {domain} has url_prefilter on — non-food slugs skipped "
+                  f"before the fetch (learned vocabulary; ε-exploration still samples them)")
         if _render_upfront:
             print(f"  [harvest] {domain} is render_required — fetching rendered up front "
                   f"(skips the known-doomed static fetch on every page)")
@@ -1093,6 +1105,7 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
             capture_provenance={"domain": domain, "discover_source": source},
             unblocker=unblocker,   # flagged anti-bot publisher → live fetch via the paid unblocker
             render=_render_upfront,
+            url_prefilter=_url_prefilter,
             exclude_words=exclude_words,
             keyword_prescreen=keyword_prescreen, prescreen_domain=domain,
             domain_lang=domain_lang,

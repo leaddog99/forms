@@ -54,6 +54,9 @@ EDITABLE_FIELDS = (
     "ethnicity",         # the publisher's cultural origin (optional; not searched yet)
     "fetch_strategy",
     "render_required",   # JS-rendered site → fetch with a real browser (unblocker render=True)
+    "url_prefilter",     # 1 = skip non-food URL slugs BEFORE the fetch (shared learned vocabulary,
+                         # url_word_class). Column pre-dates this line; first READ by the
+                         # publisher harvest 2026-09-10 (bhg.com), form checkbox added same day.
     "score_only",        # harvest MODE: 1 = Curate (score URL-only, pick manually); persists the picker choice
     "aggregator",        # CURATED: thin-wrapper index of other publishers' recipes — never ingest from it
     "extract_notes",
@@ -1093,6 +1096,26 @@ def get_domain(conn: sqlite3.Connection, domain: str) -> Optional[dict]:
     return d
 
 
+def rule_defaults_for_da(da) -> dict:
+    """The curator's publisher-sizing rule (2026-09-10), constants from System →
+    Limits: keep_top_n = (DA − offset) rounded DOWN to a 10, floored at 10 and
+    capped; harvest_records = keep × multiplier; harvest_ttl_days = the default.
+    Returns {} when DA is unknown (nothing to derive from). Fills BLANKS at create
+    and answers the form's "apply DA rule" click — never overwrites a stored
+    value on its own ([[feedback_materialize_stored_not_derived]])."""
+    from input.pipeline.system_config import get_setting
+    try:
+        da = float(da)
+    except (TypeError, ValueError):
+        return {}
+    offset = int(get_setting("domain_keep_da_offset", 30) or 30)
+    cap = int(get_setting("domain_keep_cap", 50) or 50)
+    per = int(get_setting("domain_records_per_keep", 5) or 5)
+    ttl = int(get_setting("domain_harvest_ttl_default_days", 180) or 180)
+    keep = int(max(10, min(cap, ((da - offset) // 10) * 10)))
+    return {"keep_top_n": keep, "harvest_records": keep * per, "harvest_ttl_days": ttl}
+
+
 def domain_exists(conn: sqlite3.Connection, domain: str) -> bool:
     ensure_domains_table(conn)
     return bool(conn.execute(
@@ -1112,6 +1135,19 @@ def create_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     now = _now()
     payload = {k: fields.get(k) for k in EDITABLE_FIELDS if k in fields}
     payload.setdefault("display_name", "")
+    # New-record defaults from System → Limits (the curator's rule). DA is
+    # usually unknown here — the create endpoint applies the keep/records part
+    # once the auto-enrich stamps one — but the refresh TTL needs no DA.
+    if not payload.get("harvest_ttl_days"):
+        try:
+            from input.pipeline.system_config import get_setting
+            payload["harvest_ttl_days"] = int(get_setting("domain_harvest_ttl_default_days", 180) or 180)
+        except Exception:
+            pass
+    if payload.get("domain_authority") is not None:
+        for k, v in rule_defaults_for_da(payload["domain_authority"]).items():
+            if not payload.get(k):
+                payload[k] = v
     cols = ["domain", "root_domain", "created_at", "updated_at", *payload.keys()]
     vals = [host, root_domain(host) or host, now, now, *payload.values()]
     conn.execute(

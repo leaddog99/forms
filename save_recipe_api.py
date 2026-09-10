@@ -6354,6 +6354,15 @@ def create_domain_endpoint(request: Request, payload: dict = Body(...)):
                     v = result.get(f)
                     if v:
                         sets[f] = json.dumps(v)
+                # SIZE THE NEW RECORD BY THE DA RULE (curator, 2026-09-10): keep =
+                # (DA−30) to a 10, records = 5×keep, TTL = default — from System →
+                # Limits. Only where the create left the column at its table
+                # default; a keep/records the curator typed on the create form wins.
+                _da = sets.get("domain_authority", (row or {}).get("domain_authority"))
+                for _k, _v in domains_lib.rule_defaults_for_da(_da).items():
+                    if _k in payload and payload.get(_k):
+                        continue
+                    sets[_k] = _v
                 if sets:
                     sets["enriched_at"] = datetime.now(timezone.utc).isoformat()
                     with _db() as conn:

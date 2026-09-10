@@ -59,7 +59,19 @@ from typing import Optional
 from input.pipeline import domains_lib
 from input.pipeline.url_scoring import ou_bar, ou_bar_inverse
 
-METHOD = "pa_gap_v1"
+# v2 (2026-09-10): the sample is the HARVESTED POOL (collection_members, every
+# Moz-scored recipe candidate a publisher refresh ranked, kept or cut) instead
+# of master_recipes (the kept winners). Winners are the top of the pool by
+# construction, so measuring them hid the gap this exists to find: bhg.com's
+# pool ran a median PA of 45 against 52 for Taste of Home at the same DA 84,
+# while its six saved winners averaged 55 and read as "no penalty". Both sides
+# of the comparison come from the same pool table, so the selection regime
+# still cancels; master rows remain only as a per-publisher fallback for a
+# flagged domain that has never had a publisher refresh, and the stored inputs
+# name which sample produced the number.
+METHOD = "pa_gap_v2"
+# Pool rows a flagged publisher needs before its pool is used over master rows.
+_POOL_MIN_N = 12
 
 # A publisher needs this many scored recipes before its gap is trustworthy.
 # Below it we still COMPUTE and record the number (so the curator can see it
@@ -246,27 +258,37 @@ def calibrate(conn, *, persist: bool = True) -> dict:
     if not flagged:
         return {"method": METHOD, "flagged": 0, "results": []}
 
-    # SAMPLE SOURCE: master_recipes.
+    # SAMPLE SOURCE: the harvested POOL first, master_recipes as fallback.
     #
-    # These rows ARE selected — a URL only lands here by surviving a run's cut,
-    # and that cut ranks on OU. But the requirement is not that the sample be
-    # unselected; it is that the gated publisher and its free reference pass
+    # The requirement is that the flagged publisher and its free reference pass
     # through the SAME selection regime, so the filtering cancels in the
-    # difference. master_recipes satisfies that: both sides are run survivors.
+    # difference. Two tables satisfy it, and they answer differently:
     #
-    # The candidate ledger was tried as a "pre-selection" alternative and is
-    # WORSE, measured 2026-08-12. It is ~75% rejects, so it compares a gated
-    # publisher's fresh top-traffic harvest against other runs' DISCARDS. Its
-    # free-peer pools were n=38 and n=23 averaging PA 45.3/50.3, against
-    # master's n=268/n=114 at 54.6/62.2 — and it reported cooking.nytimes.com
-    # OUTSCORING its peers by 12.7 points, which is composition, not signal.
-    # Revisit only once the ledger holds comparable harvests on BOTH sides.
+    #   * collection_members (publisher type) — every Moz-scored recipe
+    #     candidate a publisher refresh ranked, kept AND rank-cut. Traffic-
+    #     selected on both sides, then the whole scored pool. This is the
+    #     publisher's recipe section as it actually earns authority.
+    #   * master_recipes — the kept winners only. Selected on OU, i.e. on the
+    #     very quantity being measured, and only the top of each pool. A
+    #     mixed-media site's winners are exactly the pages that DID reach the
+    #     DA cohort, so the gap vanishes in the sample (bhg.com, 2026-09-10:
+    #     pool median PA 45 vs peers 52; winners avg 55 → "no penalty").
     #
-    # Residual known bias, not corrected: truncating two distributions at one
-    # OU threshold lifts the lower one more, so a survivors-only gap is
-    # COMPRESSED. The number below is therefore a conservative floor on the
-    # real paywall tax — which is the safe direction to err for a correction
-    # whose failure mode is manufacturing record-breaking scores.
+    # v2 therefore reads the pool for both sides whenever the flagged publisher
+    # has one, and falls back to master rows (both sides) only for a publisher
+    # that has never had a publisher refresh — gated sites whose rows came in
+    # through dish batches or the queue. The result records which it used.
+    #
+    # The candidate LEDGER remains the wrong source (measured 2026-08-12): it
+    # is ~75% pre-Moz rejects, so it compares a fresh top-traffic harvest
+    # against other runs' discards. The pool is post-gate, post-Moz — not that.
+    pool_rows = []
+    for key, pa, da in conn.execute(
+        "SELECT collection_key, pa, da FROM collection_members "
+        "WHERE collection_type = 'publisher' AND pa IS NOT NULL AND da IS NOT NULL"
+    ):
+        pool_rows.append({"host": domains_lib._canon_host(key or ""),
+                          "pa": float(pa), "da": float(da)})
     rows = []
     for url, pa, da in conn.execute(
         "SELECT url_normalized, "
@@ -295,6 +317,9 @@ def calibrate(conn, *, persist: bool = True) -> dict:
     for r in rows:
         r["owner"] = _owner(r)
     free_rows = [r for r in rows if r["owner"] is None]
+    for r in pool_rows:
+        r["owner"] = _owner(r)
+    free_pool = [r for r in pool_rows if r["owner"] is None]
 
     results = []
     for dom in flagged:
@@ -307,7 +332,16 @@ def calibrate(conn, *, persist: bool = True) -> dict:
                             "note": "curator-owned; calibration skipped"})
             continue
 
-        res = compute_gap([r for r in rows if r["owner"] == dom], free_rows)
+        # Per-publisher sample choice: the pool when this publisher has one,
+        # else the master rows — and the FREE reference comes from the same
+        # table, never mixed, or the composition difference becomes the "gap".
+        own_pool = [r for r in pool_rows if r["owner"] == dom]
+        if len(own_pool) >= _POOL_MIN_N:
+            res = compute_gap(own_pool, free_pool)
+            res["sample_source"] = "pool"
+        else:
+            res = compute_gap([r for r in rows if r["owner"] == dom], free_rows)
+            res["sample_source"] = "master_recipes"
         res["domain"] = dom
         res["cause"] = cause_of.get(dom, "paywall")
         res["note"] = _explain(res, res["cause"])
@@ -321,11 +355,12 @@ def calibrate(conn, *, persist: bool = True) -> dict:
                 inputs={**{k: res[k] for k in
                            ("da_measured", "avg_pa", "peer_avg_pa", "peer_n",
                             "peer_window", "pa_gap", "n")},
-                        # Which pool the gap was measured on. Recorded because
-                        # the answer moves with it (ledger vs master differed by
-                        # 7-15 PA points on the two publishers holding both), so
-                        # a stored discount is uninterpretable without it.
-                        "sample_source": "master_recipes"},
+                        # Which sample the gap was measured on. Recorded because
+                        # the answer moves with it (pool vs winners differed by
+                        # ~9 PA points on bhg.com; ledger vs master by 7-15 on
+                        # the two publishers holding both), so a stored discount
+                        # is uninterpretable without it.
+                        "sample_source": res.get("sample_source", "master_recipes")},
                 n=res["n"], note=res["note"])
         else:
             # no_rows / no_penalty / no_free_reference / low_confidence /
@@ -341,6 +376,7 @@ def calibrate(conn, *, persist: bool = True) -> dict:
     return {"method": METHOD, "flagged": len(flagged),
             "adjusted": sum(1 for r in results if r["status"] == "adjusted"),
             "corpus_rows": len(rows), "free_rows": len(free_rows),
+            "pool_rows": len(pool_rows), "free_pool": len(free_pool),
             "restamped": restamped, "results": results}
 
 

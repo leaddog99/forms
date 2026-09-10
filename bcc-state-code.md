@@ -9076,3 +9076,52 @@ as curator decisions.
 * Carried: the 55 bloggers are un-enriched (form button); the 76 at DA < 50
   stay in the CSV only. Image links in the CSV are punchfork's CDN avatars —
   pointers, not assets (image policy).
+
+## Session log — 2026-09-10 (second terminal, cont.) — bhg.com harvested; the DA rule becomes the default; calibration reads the pool
+
+* **bhg.com** (Dotdash lifestyle site, flat slugs `/slug-NNNNNNN` with no
+  path clue + a LEGACY `/recipe/<cat>/<slug>/` catalog; the two are NOT
+  duplicates — 0 near-matching titles across 101 legacy / 55 flat). Set:
+  backlinks_file (curator's 10k export), records 3000, keep 40,
+  url_prefilter ON, candidate filter = keep `url_path matches
+  ^/recipe/|-\d{5,}/?$` + drop `/best-` (curator's "dash-numeric end"
+  idea). Job 1926: 3000 → rules dropped 1651 → vocab skipped ~360 → ~900
+  free direct fetches → cascade caught 78 → pool 177 → Moz 453 rows → 20/20
+  saved (B+…C+; 19 legacy, 1 flat: old pages have the links). Job 1927
+  (process-selected, cohort ranks 21–40): 19/20 saved (corn-on-the-cob
+  2 ings), B+…C. bhg = 39 master rows.
+* **FOUND + FIXED: `domains.url_prefilter` was never read by publisher
+  harvests** (only dish batches consulted the 3,375-word `url_word_class`
+  vocabulary; seriouseats' 1 was inert). collections_lib reads it the
+  render_required way; domain form checkbox added; EDITABLE_FIELDS.
+* **Structure-gate leak on lifestyle sites**: `has_recipe_structure` matches
+  the WORDS "ingredients"/"method" anywhere ("proven ingredients like balsam
+  fir oil" → KEEP struct). Cascade catches them before Moz; not changed.
+* **punchfork as an index (corrected mid-session)**: default publisher view
+  = popularity (old catalog); `/new` = current flat-slug recipes;
+  sitemaps list 280,162 URLs (275,221 recipes, publisher name as slug
+  suffix) — 1,215 for BHG. Crawled all 1,215 → source URLs
+  (`input/bhg_recipe_urls_from_punchfork.json`: 670 legacy, 543 flat).
+  Precision vs the run: 0 of 394 flat DROPs listed, 42 of 153 flat KEEPs
+  listed → clean but incomplete. 345 of the export's 6,421 flat rows are
+  known recipes pre-fetch; 419 punchfork recipes aren't in the 10k export at
+  all. NEXT (not built): candidate-filter criterion "url in per-domain
+  known-recipe list" — inside the one filter surface, not a new source.
+* **paywall_calibration → `pa_gap_v2`**: sample = harvested POOL
+  (collection_members, both sides) not master winners; per-publisher
+  fallback to master when no pool; `sample_source` recorded. Dry run: stored
+  discounts hold (tastemade 23, barilla 18, globe 12, martha 11);
+  americastestkitchen flips to no_penalty (pool n=14, +1.6); **bhg
+  inconclusive** (gap 3.0, effect 0.59 — peers at DA 84 avg 48.8 in the
+  pool). NOT persisted; the monthly/post-harvest recal applies it.
+* **The DA rule (curator)**: keep_top_n = (DA−30) rounded DOWN to a 10,
+  cap ~50 (NYT/Allrecipes above by hand); records = 5×keep; TTL 180.
+  Memory `project_keep_top_n_rule`. Applied: 139 domains RAISED to the rule
+  (107 above it left alone), bhg + realsimple = 40 (realsimple flagged
+  mixed_media), weekendbakery 20180→20 (stray keystroke), amazon/
+  web.archive.org/share.google/cutco reverted to 10. Records NOT swept.
+  Defaults built: System → Limits `domain_keep_da_offset/keep_cap/
+  records_per_keep/harvest_ttl_default_days`; `domains_lib.
+  rule_defaults_for_da`; create seeds TTL, endpoint applies keep/records
+  after auto-enrich; form "↺ Apply DA rule" + ⓘ. Restart OWED for the
+  create-path hook.

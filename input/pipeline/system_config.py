@@ -229,6 +229,50 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "rejected and the form's spinner stops here — guards against a "
                        "typo like 1180 for 180 (Stuffed Mushrooms, 2026-09-10).",
     },
+    # --- Publisher sizing: the curator's DA rule (stated 2026-09-10) ---
+    # keep_top_n = (DA - offset) rounded DOWN to a 10, floored at the column
+    # default (10), capped; records to extract = keep x multiplier; refresh TTL
+    # default. Applied at CREATE once the auto-enrich stamps a DA, and from the
+    # domain form's "apply DA rule" control. A curator's stored value is never
+    # overwritten on a schedule — the rule fills BLANKS and answers a click.
+    {
+        "key": "domain_keep_da_offset",
+        "value": 30,
+        "type": "int",
+        "category": "Limits",
+        "label": "Publisher keep rule: DA minus",
+        "description": "A publisher's Keep top N defaults to (DA − this), rounded down to "
+                       "the nearest 10. Taste of Home at DA 84 → 50. Ties the number of "
+                       "recipes a site contributes to its power (curator, 2026-09-10).",
+    },
+    {
+        "key": "domain_keep_cap",
+        "value": 50,
+        "type": "int",
+        "category": "Limits",
+        "label": "Publisher keep rule: cap",
+        "description": "Ceiling on the rule's Keep top N. The very best sites (NYT "
+                       "Cooking, Allrecipes) are set above it by hand — 'these are the "
+                       "best recipes from the best sites so they get extra entries'.",
+    },
+    {
+        "key": "domain_records_per_keep",
+        "value": 5,
+        "type": "int",
+        "category": "Limits",
+        "label": "Publisher records to extract per kept recipe",
+        "description": "Records to pull from the SEMrush export (the harvest pool) "
+                       "default to Keep top N × this. Cookpad: keep 50 → 250 records.",
+    },
+    {
+        "key": "domain_harvest_ttl_default_days",
+        "value": 180,
+        "type": "int",
+        "category": "Limits",
+        "label": "Default refresh TTL for a new publisher (days)",
+        "description": "Pre-fills 'Refresh every' on a new domain record. Existing "
+                       "records keep their stored value.",
+    },
     # --- Matching: recipe -> canonical-dish vector NN at save time ---
     {
         "key": "dish_match_max_distance",
