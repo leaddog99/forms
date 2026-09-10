@@ -795,9 +795,29 @@ def _read_backlinks_file(domain, want, extra_dir=None):
             print(f"  [dish-keywords] capture skipped ({type(e).__name__}: {e})")
     rows.sort(key=lambda x: -x[2])   # rank desc (domains or traffic)
 
+    # TRAFFIC FLOOR (System → Limits, 2026-09-10). The pool is "top `want` by
+    # traffic"; on a Top-Pages export the tail of that pool can be pages nobody
+    # visits. Winners DO run to the edge of the pool (deepest at ~4-5× keep
+    # across 180 harvests — a smaller multiple cuts winners), so the multiple
+    # stays generous and the FLOOR is what protects the thin or mixed site:
+    # stop at the first row under N monthly visits, or at `want`, whichever
+    # comes first. Only meaningful when the file ranks by traffic.
+    _floor = 0.0
+    if rank_label == "traffic":
+        try:
+            from input.pipeline.system_config import get_setting as _gs
+            _floor = float(_gs("domain_harvest_traffic_floor", 50) or 0)
+        except Exception:
+            _floor = 0.0
+    _floor_hit = {"n": 0, "at": None}
+
     def _dedupe(keyfn):
         out, seen, meta = [], set(), {}
         for url, title, _r, traffic, tpct, seq in rows:
+            if _floor and traffic is not None and traffic < _floor:
+                _floor_hit["n"] = len(out)
+                _floor_hit["at"] = seq
+                break                          # rows are traffic-desc: nothing below qualifies
             key = keyfn(url)
             if key not in seen:
                 seen.add(key)
@@ -825,6 +845,10 @@ def _read_backlinks_file(domain, want, extra_dir=None):
                   f"path: {len(alt)} URLs")
             out, meta = alt, alt_meta
     print(f"  [harvest] SEMrush file {os.path.basename(path)}: {len(out)} URLs (by {rank_label})")
+    if _floor_hit["at"] is not None and len(out) < want:
+        print(f"  [harvest] traffic floor {_floor:.0f}/mo reached at export row "
+              f"{_floor_hit['at']} — pool stopped at {len(out)} of the {want} asked "
+              f"(System → Limits: domain_harvest_traffic_floor)")
     # File the export into the tracked archive. Here, at the point it is
     # CONSUMED, is the one place every backlinks_file harvest passes through —
     # and after a successful parse, so a corrupt download is never archived as
