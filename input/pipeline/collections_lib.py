@@ -1141,11 +1141,25 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     from input.pipeline import url_scoring as _us
     _us.reset_moz_row_stats()
     print(f"  [harvest] Moz scoring {n_rp} recipe candidate(s)…")
+    # MOZ THROUGH THE RECORD, not live (2026-09-10). metabase_url already holds a
+    # per-URL score with a 30-day refresh rule and the extract path reads it; the
+    # harvest called Moz directly, so a re-harvest re-billed every URL it had
+    # scored days before (job 1928: 423 rows for 423 URLs, 145 of them scored
+    # that morning). get_or_create_url_metadata scores only a NEW or STALE row
+    # and records what it scores, so the pool itself becomes the cache for the
+    # next run of this publisher — and for any dish batch that meets the URL.
+    _moz_cached = 0
+    from input.pipeline import domains_lib as _dlm
+    _moz_conn = _dlm._connect(_dlm._DEFAULT_DB)
     for i, (url, title) in enumerate(recipe_pass, 1):
         if should_cancel and should_cancel():
             from input.pipeline.jobs import JobCancelled
             raise JobCancelled("cancelled during Moz scoring")
-        s = score_url_via_moz(url)
+        _prior = _us.get_metabase_url(_moz_conn, url)
+        if _prior and _prior.get("page_authority") and not _us._is_moz_stale(
+                _prior.get("moz_last_scored"), _us.MOZ_REFRESH_TTL_DAYS):
+            _moz_cached += 1
+        s = _us.get_or_create_url_metadata(_moz_conn, url, fallback_title=title or "")
         if s and s.get("page_authority"):
             pa, da = s.get("page_authority"), s.get("domain_authority")
             _fm = file_meta.get(url) or {}
@@ -1192,7 +1206,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     _ms = _us.moz_row_stats()
     print(f"  [harvest] Moz rows: {_ms['rows']} billed for {_ms['calls']} URL(s) "
           f"(canonical-variant learning saved ~{_ms['saved_vs_4x']} rows vs the old "
-          f"4-variant probe; {_ms['uncrawled']} URL(s) had no Moz data)")
+          f"4-variant probe; {_ms['uncrawled']} URL(s) had no Moz data; "
+          f"{_moz_cached} of {n_rp} served from the {_us.MOZ_REFRESH_TTL_DAYS}-day record)")
 
     # A harvest that BILLS and stores NOTHING is a failure, not a result.
     #
