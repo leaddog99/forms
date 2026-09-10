@@ -9125,3 +9125,8 @@ as curator decisions.
   rule_defaults_for_da`; create seeds TTL, endpoint applies keep/records
   after auto-enrich; form "↺ Apply DA rule" + ⓘ. Restart OWED for the
   create-path hook.
+
+**Restart DONE 2026-09-10 ~16:00** — clears every "restart OWED" above
+(publisher-refresh guard, set-asin rematerialize, acquisition endpoints +
+in-process ledger hooks, aggregator save guards, the DA-rule create hook).
+System → Limits serves the four `domain_*` sizing settings live.
