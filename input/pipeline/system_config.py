@@ -265,20 +265,6 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "default to Keep top N × this. Cookpad: keep 50 → 250 records.",
     },
     {
-        "key": "domain_harvest_traffic_floor",
-        "value": 50,
-        "type": "int",
-        "category": "Limits",
-        "label": "Publisher harvest: monthly-traffic floor",
-        "description": "When a harvest reads a traffic-ordered SEMrush export, it stops "
-                       "at the first row below this many monthly visits, or at the record "
-                       "count, whichever comes first. Measured 2026-09-10 over 180 harvests: "
-                       "winners run to the edge of any pool (deepest at ~4-5× keep), so the "
-                       "multiple must stay generous; but on thin or mixed sites the deep "
-                       "rows carry no demand (bhg.com's deepest winner: 29 visits; Legal "
-                       "Seafoods': 1). The floor stops the pool there. 0 disables it.",
-    },
-    {
         "key": "domain_harvest_ttl_default_days",
         "value": 180,
         "type": "int",
