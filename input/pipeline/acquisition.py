@@ -368,11 +368,20 @@ def gate(url: str, *, gate: str, score: Optional[float], usable: bool) -> None:
         print(f"[ACQ] gate back-fill skipped: {type(e).__name__}: {e}")
 
 
-def mark_saved(url: str) -> None:
+def mark_saved(url: str, conn: Optional[sqlite3.Connection] = None) -> None:
     """A recipe was saved from this URL: flip `saved` on its latest OK attempt
-    (within a day — a bookmarklet save hours after a harvest still counts)."""
+    (within a day — a bookmarklet save hours after a harvest still counts).
+
+    `conn`: the SAVE's own connection when called from inside its transaction.
+    Found 2026-09-10 (job 1928): opening a second connection here while the
+    save's connection held its uncommitted INSERT made this wait the full
+    30 s busy timeout, fail with "database is locked", and cost EVERY save on
+    every path 30 s — the flip never landed either. On a borrowed connection
+    the UPDATE rides the caller's transaction and commits with the recipe."""
     try:
-        conn = _connect()
+        own = conn is None
+        if own:
+            conn = _connect()
         try:
             _ensure_once(conn)
             since = datetime.fromtimestamp(time.time() - 86400, timezone.utc).isoformat()
@@ -381,9 +390,11 @@ def mark_saved(url: str) -> None:
                 "ORDER BY id DESC LIMIT 1", (norm_url(url), since)).fetchone()
             if row:
                 conn.execute("UPDATE acquisition_attempts SET saved = 1, usable = 1 WHERE id = ?", (row[0],))
-                conn.commit()
+                if own:
+                    conn.commit()
         finally:
-            conn.close()
+            if own:
+                conn.close()
     except Exception as e:                                       # pragma: no cover
         print(f"[ACQ] saved flip skipped: {type(e).__name__}: {e}")
 

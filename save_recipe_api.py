@@ -12565,9 +12565,12 @@ def _save_recipe_core(payload: dict) -> dict:
             if normalized_source_url:
                 # Acquisition ledger: a save is the strict success — flip it on
                 # the attempt that obtained this page (phase 2, write-only).
+                # ON THIS CONNECTION: a second connection here waited out the
+                # 30 s busy timeout against our own uncommitted write, on every
+                # save (2026-09-10, job 1928 — 33 s per recipe).
                 try:
                     from input.pipeline import acquisition as _acq
-                    _acq.mark_saved(normalized_source_url)
+                    _acq.mark_saved(normalized_source_url, conn=conn)
                 except Exception:
                     pass
                 try:
