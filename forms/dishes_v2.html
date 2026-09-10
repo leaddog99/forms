@@ -98,7 +98,7 @@
     let selected = null;        // dish name | '__new__'
     let term = '';
     let sortKey = 'attention';
-    let _limits = { serpapi: 200, final: 200 };   // dish caps from System → Limits
+    let _limits = { serpapi: 200, final: 200, ttl: 180 };   // dish caps + new-dish TTL default from System → Limits
     let _createPrefill = null;  // set from ?create=<name>, consumed by renderCreate
     // Harvest languages. Mirrors _LANG_NAMES in intake/translate.py — that list is
     // the source of truth (it decides what the translator can actually handle), so
@@ -1449,7 +1449,7 @@
           <div class="ed-form-grid">
             <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? 25}"><div class="fetch-total" id="fetchTotal_new" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
             <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="${p?.final ?? 10}"></div>
-            <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only" value="${p?.ttl ?? ''}"></div>
+            <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" placeholder="blank = manual only" value="${p?.ttl ?? _limits.ttl ?? ''}"></div>
           </div>
         </section>
         <div class="ed-actions" style="position:static;background:none;padding:8px 0 0">
@@ -1550,6 +1550,9 @@
       const m = {}; for (const s of rows) m[s.key] = s.value;
       if (m.dish_max_serpapi != null) _limits.serpapi = m.dish_max_serpapi;
       if (m.dish_max_final != null) _limits.final = m.dish_max_final;
+      if (m.dish_refresh_ttl_default_days != null) _limits.ttl = m.dish_refresh_ttl_default_days;
+      // A new-dish form already open pre-filled before the setting arrived.
+      const nt = $('#n_ttl'); if (nt && nt.value === '') nt.value = _limits.ttl ?? '';
       // Update the max attributes IN PLACE — a full re-render here wiped
       // whatever the curator had already started typing. Future renders read
       // the updated _limits on their own.

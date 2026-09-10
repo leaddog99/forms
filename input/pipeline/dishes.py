@@ -1013,7 +1013,15 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
         raise ValueError(f"top_n_final {top_n_final} exceeds the max of {_max_final} "
                          f"(raise it in System → Limits)")
 
-    ttl_raw = payload.get("refresh_ttl_days", 30)
+    if "refresh_ttl_days" in payload:
+        ttl_raw = payload.get("refresh_ttl_days")
+    else:
+        # Omitted entirely: the admin-editable default (System → Limits).
+        try:
+            from input.pipeline import system_config as _cfg
+            ttl_raw = _cfg.get_setting("dish_refresh_ttl_default_days", 180)
+        except Exception:
+            ttl_raw = 180
     if ttl_raw is None or ttl_raw == "":
         ttl: Optional[int] = None
     else:

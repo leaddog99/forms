@@ -206,6 +206,19 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "Hard cap on a dish's top_n_final (selected rows). Same "
                        "enforcement as the SerpAPI cap.",
     },
+    {
+        "key": "dish_refresh_ttl_default_days",
+        "value": 180,
+        "type": "int",
+        "category": "Limits",
+        "label": "Default refresh TTL for a new dish (days)",
+        "description": "Pre-fills 'Refresh TTL' on the new-dish form and is the API's "
+                       "fallback when a create omits it. The scheduler re-runs a dish "
+                       "this many days after its last refresh (curator, 2026-09-10: the "
+                       "June dishes came due at 90 — 'hard to believe it's been ninety "
+                       "days' — 180 is the new default). Existing dishes keep their own "
+                       "stored TTL; blank on a dish = manual-only.",
+    },
     # --- Matching: recipe -> canonical-dish vector NN at save time ---
     {
         "key": "dish_match_max_distance",
