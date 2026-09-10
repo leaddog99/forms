@@ -9130,3 +9130,41 @@ as curator decisions.
 (publisher-refresh guard, set-asin rematerialize, acquisition endpoints +
 in-process ledger hooks, aggregator save guards, the DA-rule create hook).
 System → Limits serves the four `domain_*` sizing settings live.
+
+## START HERE — 2026-09-11 morning — SUPERSEDES every earlier START HERE
+
+Server restarted 09-10 evening after the acquisition-ledger + aggregator
+commits; endpoints verified live (/acquisition/techniques = 7 rows).
+Mirror/backups last run 09-08 night — run `.\bcc_sync_bailey.ps1 -WithDbs
+-FreshBackup` at the next close.
+
+1. **Let the ledger fill.** Every job now writes `acquisition_attempts`;
+   open Corpus → Acquisition after a day of runs and read the per-technique
+   numbers. `python -m jobs run acquisition_report --param days=7`.
+   Then **phase 3 = the carve**: one technique at a time behind
+   `attempt()`, ledger re-run after each, no ladder lesson removed silently
+   (docs/acquisition-ledger.md §7). Phase 4 = policy job + domain stamp.
+2. **mollybaz spike still owed**: `python -m intake.capture.walk --host
+   mollybaz.com --login`, then `--urls-file input/captures/mollybaz.com/
+   _urls.txt`. Read the five .md files → build `intake/capture/ingest.py`
+   (folder → /stage-markdown record → extract → save; --dry-run).
+3. **Aggregators**: punchfork + sidechef flagged; flag any other index
+   site on the domain form (never blocklist — the pointers are the future
+   "follow the source URL into the real publisher's cohort" build).
+   Watch the first dish runs for `aggregator-host` drops in the ledger.
+4. **Product pools**: add search lines to thin pools (the Alpine lesson);
+   the off-class screen now runs in every refresh; Ski Snacks was excluded
+   by the screen — restore if wanted.
+5. **Identity follow-ups**: size/capacity not scored; Carving Knife #3;
+   Apple Peeler #2; Baby Bottles #1 title flag = ack.
+6. **Chip approvals (Gate 3) — GO** (300+); "Egg Separators"→"Egg
+   Separator". · BAILEY NSSM one elevated command still staged.
+7. **Book curation** one-by-one; boundary sentences (Ina/French, Woks/Wok).
+8. **Menus next**: Option B, then C. **Next big build unchanged**: class↔
+   collection FK → render/EV Phase 1.
+9. Small carried: tripadvisor.com blacklist · search slim projection ·
+   extract-stage progress stamps · ~250 never-proposed dishes · Nutmeg dish
+   merge · Stand Mixer re-run · twins (Hand Mixer/Electric Hand Mixer) ·
+   Pistou Reserve · recipes-inherit-story · per-publisher cap · Cheese
+   Knife source refresh · domain-form flags fetch_strategy/render_required
+   → learned indicators in phase 4.
