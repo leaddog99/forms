@@ -707,7 +707,7 @@ def _recipe_full_path_key(url):
     return (root_domain(url), "/".join(s.lower() for s in segs))
 
 
-def _read_backlinks_file(domain, want, extra_dir=None):
+def _read_backlinks_file(domain, want, extra_dir=None, floor_min=0):
     """Discovery from a local SEMrush page export, ranked by REFERRING DOMAINS desc
     (distinct linking sites — a robust authority marker, harder to game than raw
     backlink count). Returns [(url, title), …] for the top `want` response-200 content
@@ -810,11 +810,19 @@ def _read_backlinks_file(domain, want, extra_dir=None):
         except Exception:
             _floor = 0.0
     _floor_hit = {"n": 0, "at": None}
+    # The floor trims the TAIL of a big pool; it must never cut the HEAD of a
+    # small one. A DA-17 Greek specialist has 14 rows over 50 visits and a
+    # curator-set keep of 30 (30daysofgreekfood, 2026-09-10) — its recipes are
+    # wanted for coverage, not demand. So the floor is only consulted once the
+    # pool already holds `floor_min` rows (the harvest passes 2 × keep: room to
+    # rank, never fewer candidates than slots).
+    _floor_min = int(floor_min or 0)
 
     def _dedupe(keyfn):
         out, seen, meta = [], set(), {}
         for url, title, _r, traffic, tpct, seq in rows:
-            if _floor and traffic is not None and traffic < _floor:
+            if (_floor and traffic is not None and traffic < _floor
+                    and len(out) >= _floor_min):
                 _floor_hit["n"] = len(out)
                 _floor_hit["at"] = seq
                 break                          # rows are traffic-desc: nothing below qualifies
@@ -936,7 +944,8 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     file_meta = {}
     if source == "backlinks_file":
         found, file_meta = _read_backlinks_file(domain, want=int(records or discover_n or 100),
-                                                extra_dir=backlinks_dir)
+                                                extra_dir=backlinks_dir,
+                                                floor_min=2 * int(keep or 0))
     elif query:
         target = root_domain("https://" + domain)
         found, seen = [], set()
