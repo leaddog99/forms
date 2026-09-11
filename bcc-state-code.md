@@ -9135,7 +9135,7 @@ System → Limits serves the four `domain_*` sizing settings live.
 
 Server restarted 09-10 evening after the acquisition-ledger + aggregator
 commits; endpoints verified live (/acquisition/techniques = 7 rows).
-Mirror/backups last run 09-08 night — run `.\bcc_sync_bailey.ps1 -WithDbs
+Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — run `.cc_sync_bailey.ps1 -WithDbs
 -FreshBackup` at the next close.
 
 1. **Let the ledger fill.** Every job now writes `acquisition_attempts`;
@@ -9168,3 +9168,31 @@ Mirror/backups last run 09-08 night — run `.\bcc_sync_bailey.ps1 -WithDbs
    Pistou Reserve · recipes-inherit-story · per-publisher cap · Cheese
    Knife source refresh · domain-form flags fetch_strategy/render_required
    → learned indicators in phase 4.
+
+## Session log — 2026-09-11 (morning) — crash #15: the CPU, not the update
+
+* **Outage read**: MARLEY_SVR froze 09-10 19:03 local — Kernel-Power 41
+  `BugcheckCode=0x101` CLOCK_WATCHDOG_TIMEOUT, processor 4 (same core as
+  6/12). Awake and idle: last job (`domain_scoring`, 1 s) finished 18:00;
+  Kestrel heartbeat stall 3.03 s at 19:03:15 = freeze onset. No dump written
+  (0x101 wedges the dump path; `AutoReboot=1` inert as documented). Dead
+  14 h 12 m until powered on by hand 09:15. Uptime before the crash: 8/30 →
+  9/10 (the 7/29 min-processor-state=100 % mitigation stretched the cadence
+  to 41 days; did not stop it). RMA route unchanged.
+* **The "Windows Update problem" was downstream**: the first boot finished
+  SSU KB5124007 (staged since 9/8) and TrustedInstaller rebooted once at
+  09:15:55 — that was the screen. Real but minor WU issue found: the Sept
+  cumulative KB5124008 FAILED 0x800F0823 (SSU required — now satisfied) and
+  KB5126052 0x80070020; both re-queued. Build still 26200.9168. Also queued:
+  "HP Inc. Firmware Driver Update 15.46.0.0" — do NOT let WU flash the BIOS
+  unattended (flash cool/idle only, host-stability doc).
+* **Post-crash checklist (doc §3) all green**: git clean + pushed,
+  `compileall` 0, `quick_check` ok / WAL, `recipes.sql.gz` OK, BCC + tunnel
+  200, 03:00 nightly caught up at startup (jobs 1932/1933). No job was
+  interrupted.
+* **BAILEY mirror**: `bcc_sync_bailey.ps1 -WithDbs -FreshBackup` run 09:25,
+  exit 0; recipes/training/media byte-for-byte equal to the ADAM backups;
+  BAILEY /auth/me 200.
+* Recorded: crash #15 in `docs/host-stability-and-watchdog.md` §2 +
+  `warranty-evidence/crash-evidence.txt` ADDENDUM (raw Event 41 fields) +
+  memory `project_host_thermal_shutdowns`.
