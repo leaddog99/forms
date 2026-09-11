@@ -1204,9 +1204,17 @@ def rule_defaults_for_da(da) -> dict:
         return {}
     offset = int(get_setting("domain_keep_da_offset", 30) or 30)
     cap = int(get_setting("domain_keep_cap", 50) or 50)
-    per = int(get_setting("domain_records_per_keep", 5) or 5)
+    per = int(get_setting("domain_records_per_keep", 6) or 6)
     ttl = int(get_setting("domain_harvest_ttl_default_days", 180) or 180)
     keep = int(max(10, min(cap, ((da - offset) // 10) * 10)))
+    # Mid-band override (curator 2026-09-11): a DA strictly between the band
+    # bounds (default 55 < DA < 60) would round down to 20 under the tens rule;
+    # the curator wants those sites at 25 — a half step the rounding cannot give.
+    band_lo = float(get_setting("domain_keep_band_lo", 55) or 0)
+    band_hi = float(get_setting("domain_keep_band_hi", 60) or 0)
+    band_n = int(get_setting("domain_keep_band_n", 25) or 0)
+    if band_n and band_lo < da < band_hi:
+        keep = min(cap, band_n)
     return {"keep_top_n": keep, "harvest_records": keep * per, "harvest_ttl_days": ttl}
 
 

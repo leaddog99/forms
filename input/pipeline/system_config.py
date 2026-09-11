@@ -261,6 +261,33 @@ SYSTEM_DEFAULTS: list[dict] = [
                        "ladder escalates to the unblocker / Wayback.",
     },
     {
+        "key": "domain_keep_band_lo",
+        "value": 55,
+        "type": "int",
+        "category": "Limits",
+        "label": "Publisher keep rule: mid-band low DA (exclusive)",
+        "description": "Sites with DA strictly ABOVE this and strictly BELOW the band "
+                       "high get the band's fixed Keep top N instead of the tens rule "
+                       "(curator 2026-09-11: 55 < DA < 60 → 25).",
+    },
+    {
+        "key": "domain_keep_band_hi",
+        "value": 60,
+        "type": "int",
+        "category": "Limits",
+        "label": "Publisher keep rule: mid-band high DA (exclusive)",
+        "description": "Upper bound of the mid band (exclusive). DA 60 itself follows "
+                       "the tens rule (→ 30).",
+    },
+    {
+        "key": "domain_keep_band_n",
+        "value": 25,
+        "type": "int",
+        "category": "Limits",
+        "label": "Publisher keep rule: mid-band Keep top N",
+        "description": "Keep top N for sites inside the mid band. 0 disables the band.",
+    },
+    {
         "key": "domain_keep_da_offset",
         "value": 30,
         "type": "int",
@@ -282,7 +309,7 @@ SYSTEM_DEFAULTS: list[dict] = [
     },
     {
         "key": "domain_records_per_keep",
-        "value": 5,
+        "value": 6,
         "type": "int",
         "category": "Limits",
         "label": "Publisher records to extract per kept recipe",
