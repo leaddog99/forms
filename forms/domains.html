@@ -1572,8 +1572,35 @@
       const chip = 'display:inline-block;margin:0 6px 6px 0;padding:4px 12px;border-radius:999px;'
         + 'background:var(--accent-soft,#f3e3d3);color:var(--accent-dark,#7a3a1a);'
         + 'font-size:.86rem;font-weight:600';
-      wrap.innerHTML = '<div style="font-size:.8rem;font-weight:600;margin-bottom:6px">Best known for <span style="font-weight:400;color:var(--muted,#8a7f72)">(demand-ranked)</span></div>'
-        + items.slice(0, 6).map(s => `<span style="${chip}">${escapeHtml(s)}</span>`).join('');
+      // HOTLINK each pill to the site's #1 page (curator 2026-09-11): the phrases are
+      // distilled from the Moz ranking keywords, and every keyword row carries the
+      // page that ranks. Match by word overlap; best = most shared words, then the
+      // higher rank, then the bigger volume. No match -> a plain pill.
+      let kws = [];
+      try { kws = JSON.parse($('#f_ranking_keywords')?.value || '[]'); } catch { kws = []; }
+      const words = (t) => new Set(String(t || '').toLowerCase().replace(/\(.*?\)/g, ' ')
+        .split(/[^a-z0-9]+/).filter(w => w.length > 2 && !/^(and|the|for|with|recipes?)$/.test(w)));
+      const linkFor = (phrase) => {
+        const pw = words(phrase); let best = null, bestScore = 0;
+        for (const k of (Array.isArray(kws) ? kws : [])){
+          if (!k || !k.ranking_page) continue;
+          let n = 0; for (const w of words(k.keyword)) if (pw.has(w)) n++;
+          if (n < Math.min(2, pw.size)) continue;   // one shared word ("pan") is not a match
+          const better = !best || n > bestScore
+            || (n === bestScore && ((k.rank ?? 99) < (best.rank ?? 99)
+                || ((k.rank ?? 99) === (best.rank ?? 99) && (k.volume || 0) > (best.volume || 0))));
+          if (better){ best = k; bestScore = n; }
+        }
+        return best;
+      };
+      const fmt = (n) => n == null ? '' : (n >= 1000 ? (n/1000).toFixed(0) + 'k' : String(n));
+      wrap.innerHTML = '<div style="font-size:.8rem;font-weight:600;margin-bottom:6px">Best known for <span style="font-weight:400;color:var(--muted,#8a7f72)">(demand-ranked · click = the #1 page)</span></div>'
+        + items.slice(0, 6).map(s => {
+            const k = linkFor(s);
+            if (!k) return `<span style="${chip}">${escapeHtml(s)}</span>`;
+            return `<a href="${escapeHtml(k.ranking_page)}" target="_blank" rel="noopener" style="${chip};text-decoration:none;cursor:pointer" `
+              + `title="#${k.rank ?? '?'} on Google for “${escapeHtml(k.keyword || '')}” · ${fmt(k.volume)}/mo — opens the ranking page">${escapeHtml(s)} ↗</a>`;
+          }).join('');
     }
 
     // Render the ranking-keywords JSON (what the site ranks for) as read-only chips.
@@ -1587,9 +1614,14 @@
         + 'border:1px solid var(--line,#d8d2c8);border-radius:999px;background:var(--bg-alt,#f7f5f1);font-size:.76rem';
       const meta = 'color:var(--muted,#8a7f72);font-variant-numeric:tabular-nums';
       wrap.innerHTML = '<div style="font-size:.76rem;color:var(--muted,#8a7f72);margin-bottom:5px">Demand evidence — top Google rankings (rank · monthly searches):</div>'
-        + kws.slice(0, 20).map(k =>
-            `<span style="${chip}" title="rank #${k.rank ?? '?'} · ${fmt(k.volume)}/mo">${escapeHtml(k.keyword || '')}`
-            + `<span style="${meta}">#${k.rank ?? '?'} · ${fmt(k.volume)}</span></span>`).join('');
+        + kws.slice(0, 20).map(k => {
+            // Each keyword row carries the page that ranks -> the chip IS the link.
+            const inner = `${escapeHtml(k.keyword || '')}<span style="${meta}">#${k.rank ?? '?'} · ${fmt(k.volume)}</span>`;
+            const title = `rank #${k.rank ?? '?'} · ${fmt(k.volume)}/mo${k.ranking_page ? ' — opens the ranking page' : ''}`;
+            return k.ranking_page
+              ? `<a href="${escapeHtml(k.ranking_page)}" target="_blank" rel="noopener" style="${chip};text-decoration:none;color:inherit;cursor:pointer" title="${title}">${inner}</a>`
+              : `<span style="${chip}" title="${title}">${inner}</span>`;
+          }).join('');
     }
 
     // Deep enrich: Moz FACTS (Brand Authority, referring domains, ranking keywords) +
@@ -1613,12 +1645,12 @@
         set('f_brand_authority', data.brand_authority);
         set('f_referring_domains', data.referring_domains);
         set('f_domain_authority', data.domain_authority);
-        const kfJson = JSON.stringify(data.known_for || []);
-        const kfEl = $('#f_known_for'); if (kfEl) kfEl.value = kfJson;
-        renderKnownFor(kfJson);
         const kwJson = JSON.stringify(data.ranking_keywords || []);
         const kwEl = $('#f_ranking_keywords'); if (kwEl) kwEl.value = kwJson;
         renderKeywords(kwJson);
+        const kfJson = JSON.stringify(data.known_for || []);
+        const kfEl = $('#f_known_for'); if (kfEl) kfEl.value = kfJson;
+        renderKnownFor(kfJson);   // after the keywords: the pills link through them
         $('#saveBtn').disabled = false;
         if (hint){
           // Say NOT SAVED explicitly. This call costs ~16 Moz rows + a Sonnet
