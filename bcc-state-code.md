@@ -9215,3 +9215,24 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
   query), greatbritishchefs.com (has export path), alisoneroman.com
   (harvested 09-08). Now 469 backlinks_file / 3 serp. **Restart OWED** for the
   create-path default (domains_lib is in-process).
+
+## Session log — 2026-09-11 (midday) — a parked domain burns 44 unblocker units; the list dots learn "fresh"
+
+* **aprettylifeinthesuburbs.com is DEAD (parked)**: every page = 114-byte JS
+  redirect → `/lander` (openresty ad lander, X-Adblock-Key, GoDaddy parking
+  NS); Wayback has real pages through 2026-04-19. SEMrush export (09-10) is a
+  stale index. Job 1941: direct saw the stub → classed `shell:js` "soft-block"
+  → escalated to the unblocker on EVERY url → 44/44 fetch-fails, 44 cost
+  units, 0 saved; curator cancelled at 44/100. Marked `harvestable=0` + dated
+  DEAD note. Borrowed (punchfork) domain — first of the 59 to die.
+* **Lesson for the ledger carve (not built)**: tiny body + JS redirect to
+  `/lander` is a PARKED-DOMAIN signature, not a bot challenge — escalating it
+  is false spend. Cheap fix = per-job circuit breaker: N consecutive identical
+  `shell:js` blocked-thin results on one host → stop the harvest, stamp the
+  domain. Belongs in phase 3 (docs/acquisition-ledger.md).
+* **Domains list dots** (curator): orange `source` dot now shows only while a
+  borrowed domain is UN-harvested (`discovery_source && !last_harvested_at`);
+  NEW green `fresh` dot when `harvest_status === 'ok'` (harvested AND the
+  TTL refresh date is ahead) — 204 domains today (5 of them borrowed, which
+  flip orange → green). Legend gained fresh / borrowed / no-extracts rows.
+  `editor-shell.css` cache-bust → v=20260911a.

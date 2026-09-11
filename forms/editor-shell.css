@@ -149,6 +149,9 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
 .ed-legend .d.ok{ background:var(--accent); }
 .ed-legend .d.warn{ background:var(--ed-warn); }
 .ed-legend .d.none{ border:1.5px solid var(--muted); }
+.ed-legend .d.fresh{ background:#3d9a4e; }
+.ed-legend .d.source{ background:#ff7a00; }
+.ed-legend .d.pending{ background:#d9a514; }
 
 .ed-list{ list-style:none; margin:0; padding:0 2px var(--ed-gap); flex:1 1 auto; min-height:0; overflow-y:auto; scrollbar-gutter:stable; scrollbar-width:thin; scrollbar-color:var(--ed-hairline) transparent; }
 .ed-list::-webkit-scrollbar{ width:8px; }
@@ -175,6 +178,7 @@ body.ed-mode-overlay.ed-drawer-open .ed-scrim{ display:block; position:fixed; in
    place through a harvest. Bright orange by the curator's request so the batch
    is visible as a batch; the title names the source. */
 .ed-item-flag.source{ background:#ff7a00; }
+.ed-item-flag.fresh{ background:#3d9a4e; }   /* harvested and the refresh date is still ahead (domains list, 2026-09-11) */
 /* Multiline by request (curator, 2026-08-28): the meta line wraps to content
    size instead of truncating — the data IS the point of the list. */
 .ed-item-meta{ margin-top:4px; font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:.73em; color:var(--muted); font-variant-numeric:tabular-nums; line-height:1.5; overflow-wrap:anywhere; }

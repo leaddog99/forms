@@ -11,7 +11,7 @@
        `domains` table is the source of truth; domain_display_names.json is
        its bootstrap seed. Cloned from chapters.html per
        memory/feedback_editor_template_not_runtime.md. -->
-  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260828b">
+  <link rel="stylesheet" href="/forms/editor-shell.css?v=20260911a">
   <link rel="stylesheet" href="/forms/tokens.css?v=20260826b">
   <link rel="stylesheet" href="/forms/components.css?v=20260813b">
 </head>
@@ -77,6 +77,9 @@
       </div>
 
       <div class="ed-legend">
+        <span><i class="d fresh"></i>harvested · fresh (refresh date ahead)</span>
+        <span><i class="d source"></i>borrowed list · not yet harvested</span>
+        <span><i class="d pending"></i>no extracts yet</span>
         <span><i class="d none"></i>poor publisher (is-recipe cascade)</span>
       </div>
 
@@ -255,7 +258,7 @@
         const li = document.createElement('li');
         li.className = 'ed-item' + (d.domain === selected ? ' selected' : '');
         li.innerHTML =
-          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.discovery_source ? `<span class="ed-item-flag source" title="Discovered via ${escapeHtml(d.discovery_source)} — borrowed from a publisher list, not yet judged by a harvest"></span>` : ''}${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or Google) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
+          `<div class="ed-item-top"><span class="ed-item-name">${escapeHtml(d.domain)}</span>${d.harvest_status === 'ok' ? `<span class="ed-item-flag fresh" title="Harvested ${escapeHtml(fmtDate(d.last_harvested_at))} — fresh until ${escapeHtml(d.next_harvest_at || '')}"></span>` : ''}${(d.discovery_source && !d.last_harvested_at) ? `<span class="ed-item-flag source" title="Discovered via ${escapeHtml(d.discovery_source)} — borrowed from a publisher list, not yet judged by a harvest"></span>` : ''}${d.never_extracted ? '<span class="ed-item-flag pending" title="No extracts yet — no harvest (SEMrush or Google) has ever kept a recipe from this domain"></span>' : ''}${isPoor(d) ? `<span class="ed-item-flag none" title="Poor publisher — ${d.poor_quality_rate != null ? Math.round(d.poor_quality_rate * 100) + '% poor_quality across ' + (d.poor_quality_samples || 0) + ' classified pages' : 'flagged by the is-recipe cascade'}"></span>` : ''}</div>` +
           `<div class="ed-item-meta">${escapeHtml(listMeta(d))}</div>`;
         // GUARDED record switch. renderDetail() rebuilds the form from scratch, so
         // clicking another domain silently destroys unsaved work — and beforeunload
