@@ -71,6 +71,28 @@ lines whose predicate is `schema:name`/`schema:headline`
 - WDC only sees pages with structured markup; forums, old blogs and most
   non-English sites are invisible to it but indexed by Google.
 
+### Addendum — WHY WDC misses half our publishers (checked 2026-09-11)
+
+Curator: "the WDC missed half of our own sites! and those were huge." Verified:
+
+- **Explicit Common Crawl blocks.** robots.txt `User-agent: CCBot / Disallow: /` at
+  cooking.nytimes.com, skinnytaste.com, food.com (post-2023 AI-training backlash).
+- **Bot-managed publishers absent entirely.** allrecipes.com, seriouseats.com,
+  simplyrecipes.com (Dotdash Meredith), foodnetwork.com, sallysbakingaddiction.com,
+  thepioneerwoman.com do not mention CCBot yet have ZERO hosts in the file — the WAF
+  turns the crawler away (foodnetwork.ca is present with 1,411 recipes; the US site is not).
+- **The miss is skewed to the head.** Of our harvestable publishers with a DA, WDC
+  caught 264 (median DA 56, 15 at DA ≥ 80) and missed 195 (median DA 55, **36 at
+  DA ≥ 80**). The missed set supplied **2,310 of our master recipes vs 2,250 from
+  the caught set** — half our corpus comes from sites Common Crawl cannot see.
+
+So WDC is not a random sample: it is systematically blind to the largest,
+best-defended publishers, which is exactly where recipe pages concentrate. As a
+CENSUS it undercounts where it matters most (the banana-bread floor stands; any
+extrapolation from its 7% host share is biased low, not merely noisy). As a
+DISCOVERY SEED it is the mirror image of SEMrush: strong on the long tail of small
+blogs that don't block bots, useless for the head — which we already hold.
+
 ## Bottom line
 
 Measured floor: **2,607 publishers** with a banana bread recipe. Google indexes
