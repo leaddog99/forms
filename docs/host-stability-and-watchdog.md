@@ -265,15 +265,12 @@ ADAM copy `recipes_2026-07-29_135240`.
   ```
 - Truncated `recipes.sql.gz` repaired and re-verified (§6).
 
-### TODO — needs admin
+### Applied 2026-09-11
 
-- **Disable Fast Startup.** For an always-on server it turns shutdown into a hibernate
-  and can wedge recovery. Requires an elevated shell (the agent cannot elevate; see
-  `memory/project_restart_zombie_port.md`):
-  ```powershell
-  Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' `
-    -Name HiberbootEnabled -Value 0
-  ```
+- **Fast Startup disabled** (`HiberbootEnabled = 0`, set by the curator in an elevated
+  shell after crash #15; verified 0 from the agent session). For an always-on server it
+  turned shutdown into a hibernate and could wedge recovery. Takes effect at the next
+  shutdown.
 
 ### TODO — needs a reboot into BIOS
 
