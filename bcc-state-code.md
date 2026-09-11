@@ -9342,3 +9342,40 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
   page; keyword chips link directly. Unmatched pills stay plain.
 * Memory: `project_domain_known_for` corrected ("auto-stamped on create" was
   never true until today).
+
+**Restart DONE 2026-09-11 18:29 local (pid 15336, health 200)** — clears every
+"restart OWED" above: the 429 pause on the direct rung, the parked-domain
+guard + harvest pre-flight, the SEMrush create-path default, the DA-rule
+mid-band + 6× multiplier on the create path and the form's "↺ Apply DA rule",
+and the `known_for` / `enriched_at` registration.
+
+## START HERE — 2026-09-12 morning — SUPERSEDES 09-11
+
+Server current as of 18:29 09-11. Host crashed 09-10 19:03 (crash #15, CPU
+defect, 14 h dead) — Fast Startup now OFF; BIOS "After Power Loss = Power On"
+and the smart-plug watchdog remain the only auto-recovery path
+(docs/host-stability-and-watchdog.md §5, §7). BAILEY mirrored 09-11 09:25.
+
+1. **Watch the ledger for the two new classes**: `block:ratelimit` (a 429 now
+   pauses + retries direct; should show pauses, not unblocker spend) and
+   `dead:parked` (pre-flight aborts before any paid fetch). `python -m jobs
+   run acquisition_report --param days=1`. If ratelimit rows keep coming,
+   build proactive per-host pacing.
+2. **47 borrowed publishers are enriched + sized and still orange** (never
+   harvested). Harvest them: each has profile/story/known_for, DA-rule keep
+   (13 in the new 25 band), records 6×keep, TTL 180. Pre-flight will catch
+   any other dead one. Five refused a direct homepage fetch
+   (kitchensanctuary, easycheesyvegetarian, thatskinnychickcanbake,
+   cookiedoughandovenmitt = 403; thekitchenismyplayground = TLS EOF) —
+   expect the ladder to escalate on those.
+3. **DA rule reading to confirm with the curator**: records multiplier 6× was
+   applied GLOBALLY (System → Limits `domain_records_per_keep`); if it was
+   meant for the 55–60 band only, flip the setting back to 5 and the band
+   keeps 25.
+4. Carried from 09-11 START HERE: ledger phase 3 carve · mollybaz walker
+   spike · aggregator follow-the-pointer · product pool search lines ·
+   identity follow-ups · chip approvals (Gate 3) · book curation · menus
+   B/C · class↔collection FK → render/EV Phase 1 · small carried list.
+5. Research kept: docs/research/banana-bread-prevalence-2026-09-11.md —
+   WDC scan/count scripts work for ANY dish; `Recipe_domain_stats.csv` is a
+   37k-host long-tail discovery seed (blind to the head; SEMrush owns that).
