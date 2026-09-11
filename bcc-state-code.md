@@ -9310,3 +9310,35 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
   ZERO unblocker calls; retries exhausted → escalates as before.
 * **Restart OWED** (ladder is in-process). Not built: proactive per-host
   pacing — revisit if `block:ratelimit` rows keep appearing.
+
+## Session log — 2026-09-11 (night) — the 47 borrowed publishers get their profiles; the DA rule gets a mid-band; two fields had never saved
+
+* **DA rule updated (curator)**: 55 < DA < 60 → keep_top_n **25** (the tens
+  rule gave 20); records = **6×keep** (was 5×; `domain_records_per_keep` set to
+  6 — read as the new global default, band-only if the curator meant otherwise);
+  TTL 180. Band bounds + N are System → Limits settings
+  (`domain_keep_band_lo/hi/n`). **Restart OWED** for the create path + the
+  form's "↺ Apply DA rule" (domains_lib is in-process).
+* **Deep enrich on every orange-dot domain** (`scripts/deep_enrich_borrowed.py`
+  — same call + same persisted field set as the create path; `--apply`,
+  `--only`, `--hosts`, `--no-size`): 47 domains, 0 failures, ~17 min/pass;
+  five homepages refused the direct fetch (403 ×4, TLS EOF on
+  thekitchenismyplayground.com) and ran on Moz facts alone. Sized by the
+  rule with before → after printed per row: 21 → 20/120/180 · 13 → 25/150/180
+  (the new band) · 11 → 30/180/180 · 2 → 40/240/180 (realsimple + tastecooking;
+  realsimple's hand-set 40 KEPT — mixed-media rows keep their stored keep).
+* **DEFECT FOUND + FIXED (5e70784)**: `known_for` and `enriched_at` were never
+  in `EDITABLE_FIELDS`, so `update_domain()` silently dropped them — from the
+  create path (bhg/realsimple/tastecooking/cleaneatingmag had `known_for=''`),
+  from the form's own Save, and from the first batch pass. Registered both;
+  re-ran the enrich for the 47 + bhg + cleaneatingmag (`--no-size`). Final:
+  49/49 rows carry profile, story, known_for, enriched_at, brand_authority.
+  Cost of the miss: one extra pass (~98 Sonnet calls total today, 171k in /
+  85k out ≈ $2; ~800 Moz rows across the two passes).
+* **Known-for pills hotlinked (c7d96ac)**: `known_for` has no URLs, but the
+  stored Moz ranking-keyword rows carry `ranking_page` (all #1s on the rows
+  checked). Pills match their phrase to a keyword by shared words (≥2 unless
+  the phrase is that short; rank then volume break ties) → open the ranking
+  page; keyword chips link directly. Unmatched pills stay plain.
+* Memory: `project_domain_known_for` corrected ("auto-stamped on create" was
+  never true until today).
