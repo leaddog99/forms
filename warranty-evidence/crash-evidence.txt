@@ -51,3 +51,36 @@ Detail : The computer has rebooted from a bugcheck.  The bugcheck was: 0x0000010
 
 
 
+
+
+============================================================
+ADDENDUM - generated 2026-09-11 09:26 from the Windows System event log
+============================================================
+
+CRASH #15 - 2026-09-10 ~19:03 local (23:03 UTC). Bugcheck recorded.
+  Last System-log event before the freeze : 09/10/2026 19:00:14
+  Application log 19:03:15 (.NET Runtime / Kestrel EventId 22): heartbeat ran 3.03 s
+    (> 1 s threshold) -> system-wide stall at the moment of the hang.
+  No job running (last job finished 18:00 local). Machine was awake and idle.
+  Dead until powered on by hand 2026-09-11 09:15:23 (~14 h 12 m). AutoReboot=1 did not fire.
+
+  Kernel-Power Event 41, 09/11/2026 09:15:26:
+    BugcheckCode = 257
+    BugcheckParameter1 = 0x8
+    BugcheckParameter2 = 0x0
+    BugcheckParameter3 = 0xffff9c818b8a2180
+    BugcheckParameter4 = 0x4
+    PowerButtonTimestamp = 0
+    BugcheckInfoFromEFI = false
+    WHEABootErrorCount = 0
+    -> 0x101 = CLOCK_WATCHDOG_TIMEOUT, processor 4 (Parameter4). Same core as 2026-06-12.
+
+  EventLog 6008, 2026-09-11 09:16:16:
+    The previous system shutdown at 6:35:51 PM on ‎9/‎10/‎2026 was unexpected.
+
+  Microcode at time of crash : 0x12F (BIOS F.45, flashed 2026-06-23)
+  Mitigation in place        : min processor state 100% on AC since 2026-07-29
+  Interval since prior crash : 41 days (2026-07-31 -> 2026-09-10). Mitigation slowed, did not stop.
+
+  Running tally: 15 Event 41 records 2026-04-14 .. 2026-09-10; 13 spontaneous after
+  excluding the two power-button events; 3 with a recorded 0x101 (6/12, 7/29, 9/10).

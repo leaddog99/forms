@@ -61,10 +61,22 @@ Kernel-Power Event 41 records; 2026-04-14 and 2026-05-21 carry a real
 ```
 4/14 16:19 · 5/10 13:12 · 5/21 12:02 · 5/30 12:51 · 6/8 00:29 · 6/12 01:34
 6/16 20:34 · 6/22 21:36 · 6/23 04:18 · 6/25 14:06 · 7/10 11:25 · 7/24 22:04 · 7/29 01:28
+7/31 ~10:00 · 9/10 19:03
 ```
 
-Only **two** recorded a bugcheck code (6/12 and 7/29, both `0x101`). The other eleven
+Only **three** recorded a bugcheck code (6/12, 7/29 and 9/10, all `0x101`). The other twelve
 logged `BugcheckCode = 0` — a total hang with nothing written at all.
+
+**2026-09-10 19:03 incident** (read 09-11): `0x101` on processor 4 (`BugcheckParameter4=0x4`,
+same core as 6/12). Last System event 19:00:14; a Kestrel heartbeat stall (3.03 s > 1 s,
+Application log 19:03:15) is the freeze onset. Idle: last job (`domain_scoring`, 1 s) had
+finished at 18:00 local. The box sat dead **14 h 12 m** until powered on by hand at 09:15;
+`AutoReboot=1` did nothing, as §"Why it never restarted" predicts. The first boot then ran
+the servicing stack that had been staged since 9/8 (KB5124007) and TrustedInstaller
+rebooted once more at 09:15:55 — that is the "Windows Update" screen the curator saw; the
+update did not cause the outage. Notable: after the 7/29 min-processor-state=100 % change
+the cadence went from days to **41 days** (7/31 → 9/10). It slowed the defect; it did not
+stop it. RMA route unchanged (§7).
 
 Run `kernel_power_check.bat` for the live table; the generated exhibit is
 `warranty-evidence/crash-evidence.txt`.
