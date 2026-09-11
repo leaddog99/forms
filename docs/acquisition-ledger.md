@@ -96,7 +96,8 @@ Deterministic first, model second, never free text:
 
 ```
 block:soft        challenge stub returned 2xx (202/197-byte, sgcaptcha meta-refresh)
-block:hard        403/429/503 from a WAF
+block:ratelimit   429 / too many requests — the origin says SLOW DOWN; the direct rung pauses + retries before any paid rung
+block:hard        403/503 from a WAF
 block:captcha     interstitial that did not clear (Cloudflare "Just a moment", sgcaptcha)
 dead:parked       registrar/ad lander answers every path (domain expired) — TERMINAL for paid rungs; pre-flight aborts the harvest
 shell:js          thin body, no JSON-LD, no <article> — needs a render

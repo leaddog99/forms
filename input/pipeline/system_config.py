@@ -235,6 +235,31 @@ SYSTEM_DEFAULTS: list[dict] = [
     # default. Applied at CREATE once the auto-enrich stamps a DA, and from the
     # domain form's "apply DA rule" control. A curator's stored value is never
     # overwritten on a schedule — the rule fills BLANKS and answers a click.
+    # 429 = "slow down", not "go away". Five hosts in two days (healthyfitnessmeals,
+    # connoisseurusveg, 40aprons, chewoutloud, babaganosh) each rate-limited a burst
+    # of ~270 direct requests/min for 45-60 s, and every URL inside that window went
+    # to the PAID unblocker (67 units) although direct worked again a minute later.
+    # A pause at the first 429, then a direct retry, costs nothing (curator 2026-09-11).
+    {
+        "key": "direct_429_pause_s",
+        "value": 60,
+        "type": "int",
+        "category": "Limits",
+        "label": "Rate-limit pause (seconds)",
+        "description": "When a publisher answers a direct fetch with HTTP 429, wait this "
+                       "long and retry direct before paying the unblocker. A Retry-After "
+                       "header wins when the site sends one. Doubles on each further 429 "
+                       "in the same run. 0 disables the pause (old behaviour: escalate at once).",
+    },
+    {
+        "key": "direct_429_retries",
+        "value": 2,
+        "type": "int",
+        "category": "Limits",
+        "label": "Rate-limit direct retries",
+        "description": "How many paused direct retries a URL gets after a 429 before the "
+                       "ladder escalates to the unblocker / Wayback.",
+    },
     {
         "key": "domain_keep_da_offset",
         "value": 30,

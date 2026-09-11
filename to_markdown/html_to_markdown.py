@@ -117,6 +117,7 @@ def fetch_with_ua_fallback(url: str, *,
     uas = user_agents or USER_AGENT_CHAIN
     last_exc: Optional[Exception] = None
     last_status: Optional[int] = None
+    last_resp = None             # last non-2xx response — carried on the synthetic error
     blocked_resp = None          # best 2xx-but-blocked answer seen, as a last resort
     blocked_ua = None
     for ua in uas:
@@ -141,6 +142,7 @@ def fetch_with_ua_fallback(url: str, *,
                     continue
                 return resp, ua
             last_status = resp.status_code
+            last_resp = resp
             # Don't retry 404 — page genuinely doesn't exist, swapping
             # UA won't conjure it. 410 (gone) similarly.
             if resp.status_code in (404, 410):
@@ -162,7 +164,8 @@ def fetch_with_ua_fallback(url: str, *,
     if last_exc is not None:
         raise last_exc
     raise requests.HTTPError(
-        f"All UAs in chain returned non-2xx (last status: {last_status}) for {url}"
+        f"All UAs in chain returned non-2xx (last status: {last_status}) for {url}",
+        response=last_resp,   # lets the ladder see a 429 (rate limit) and PAUSE, not pay
     )
 
 
@@ -673,6 +676,63 @@ def _acq_record(url: str, technique: str, *, ok: bool, rung: int, resp=None,
         pass
 
 
+# --- 429 = "slow down", not "go away" -------------------------------------
+# Measured 2026-09-11 (ledger): connoisseurusveg.com took 106 direct fetches in
+# 23 s (~270/min), answered 429 for the next 60 s, then served direct again. The
+# ladder escalated every URL inside that window to the PAID unblocker — 18 units
+# for pages the origin would have handed over a minute later. Same shape on
+# healthyfitnessmeals, 40aprons, chewoutloud, babaganosh (67 units in two days).
+# So a 429 on the direct rung now PAUSES (Retry-After if sent, else the setting,
+# doubling per further 429 in this run) and retries direct before any paid rung.
+_RATELIMIT_PAUSES: dict = {}     # host -> number of pauses taken this run (drives doubling)
+
+
+def _ratelimit_cfg() -> tuple[int, int]:
+    try:
+        from input.pipeline import system_config
+        return (int(system_config.get_setting("direct_429_pause_s", 60) or 0),
+                int(system_config.get_setting("direct_429_retries", 2) or 0))
+    except Exception:
+        return 60, 2
+
+
+def _retry_after_s(resp) -> Optional[int]:
+    try:
+        v = (resp.headers or {}).get("Retry-After") if resp is not None else None
+        return int(float(v)) if v and str(v).strip().replace(".", "", 1).isdigit() else None
+    except Exception:
+        return None
+
+
+def _fetch_direct_paced(url: str, timeout: int, *, on_429=None):
+    """fetch_with_ua_fallback, but a 429 pauses and retries instead of failing
+    straight into the paid tier. Raises the last error when retries run out.
+    `on_429(pause_s, attempt, resp)` lets the caller ledger each pause."""
+    pause_s, retries = _ratelimit_cfg()
+    host = _circuit_host(url)
+    attempt = 0
+    while True:
+        try:
+            return fetch_with_ua_fallback(url, timeout=timeout)
+        except requests.HTTPError as e:
+            status = getattr(e.response, "status_code", None) if e.response is not None else None
+            if status != 429 or pause_s <= 0 or attempt >= retries:
+                raise
+            n = _RATELIMIT_PAUSES.get(host, 0)
+            wait = _retry_after_s(e.response) or pause_s * (2 ** min(n, 3))
+            wait = max(1, min(wait, 600))
+            _RATELIMIT_PAUSES[host] = n + 1
+            attempt += 1
+            print(f"[direct] 429 from {host} — rate limit, not a block: pausing {wait}s, "
+                  f"then retrying direct (attempt {attempt}/{retries}) before any paid fetch")
+            if on_429:
+                try:
+                    on_429(wait, attempt, e.response)
+                except Exception:
+                    pass
+            time.sleep(wait)
+
+
 def fetch_with_full_fallback(url: str, *,
                               timeout: int = DEFAULT_TIMEOUT_SECONDS,
                               try_wayback: bool = True,
@@ -776,7 +836,11 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     _direct_resp = None
     _wb_only = False      # set when the direct fetch proved the domain is parked
     try:
-        resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
+        resp, ua_used = _fetch_direct_paced(
+            url, timeout,
+            on_429=lambda wait, attempt, r: _acq_record(
+                url, "direct", ok=False, rung=_rung, resp=r,
+                reason=f"429 rate-limited — paused {wait}s, retrying direct ({attempt})", ms=_ms()))
         _direct_resp = resp
         # BLOCK-CHECK ALWAYS, ESCALATE ONLY IF WE CAN. This used to be gated on
         # `unblocker`, so with the paid tier OFF a soft-block was returned as a

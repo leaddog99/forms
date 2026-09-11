@@ -98,7 +98,8 @@ def _connect() -> sqlite3.Connection:
 _CLASS_RULES = (
     (r"soft-block|challenge stub|\b202\b", "block:soft"),
     (r"sgcaptcha|just a moment|verify you are human|captcha|interstitial|did not clear", "block:captcha"),
-    (r"\b(403|429|503)\b|forbidden|too many requests|rate.?limit", "block:hard"),
+    (r"\b429\b|too many requests|rate.?limit", "block:ratelimit"),
+    (r"\b(403|503)\b|forbidden", "block:hard"),
     (r"parked domain|parking marker|/lander stub|domain is dead", "dead:parked"),
     (r"thin body|js shell|no json-ld|no <article>|too small", "shell:js"),
     (r"aggregator|content lives elsewhere|see full directions|see original recipe|visit the original", "aggregator:elsewhere"),
@@ -136,7 +137,9 @@ def classify(reason: str, status_code: Optional[int] = None) -> str:
     new class can be named rather than lost."""
     if status_code in (404, 410):
         return "gone:404"
-    if status_code in (403, 429, 503):
+    if status_code == 429:
+        return "block:ratelimit"      # "slow down": the direct rung pauses + retries
+    if status_code in (403, 503):
         return "block:hard"
     if status_code == 402:
         return "vendor:402"

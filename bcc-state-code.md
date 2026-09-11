@@ -9287,3 +9287,26 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
   — the same statistic for ANY dish, free. `Recipe_domain_stats.csv` = a
   37k-host publisher-discovery seed (like the punchfork list) + coverage
   check for `domains`. Memory `reference_web_data_commons`.
+
+## Session log — 2026-09-11 (evening) — 429 is "slow down", not "go away": the direct rung learns to pause
+
+* Curator, watching connoisseurusveg.com (job 1953): "it gets to a certain
+  point with easy directs and then goes to unblocker… if we detect that and
+  inject a pause it would go direct again." Ledger confirmed it exactly: 106
+  direct fetches in 23 s (~270/min) → HTTP 429 for 60 s → 18 URLs paid to the
+  unblocker → direct fine again (26 more direct successes). Same shape on
+  FIVE hosts in two days (healthyfitnessmeals 38 · connoisseurusveg 18 ·
+  40aprons 17 · chewoutloud 17 · babaganosh 15 direct 429s), 67 unblocker
+  units spent inside those windows for pages the origin served a minute later.
+* **Built**: `_fetch_direct_paced()` wraps the ladder's direct rung — a 429
+  pauses (Retry-After if sent, else `direct_429_pause_s` = 60 s, doubling per
+  further 429 on that host this run, cap 600) and retries direct
+  (`direct_429_retries` = 2) BEFORE any paid rung; `fetch_with_ua_fallback`'s
+  synthetic error now carries the last response so the status is visible.
+  Each pause is a ledger row, NEW class **`block:ratelimit`** (split out of
+  block:hard; `classify()` maps status 429 to it; 105 historical rows
+  reclassed so the report shows the pattern's history). Settings seeded in
+  System → Limits. Offline test: two fake 429s → 2 pauses, direct success,
+  ZERO unblocker calls; retries exhausted → escalates as before.
+* **Restart OWED** (ladder is in-process). Not built: proactive per-host
+  pacing — revisit if `block:ratelimit` rows keep appearing.
