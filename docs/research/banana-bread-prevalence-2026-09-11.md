@@ -90,8 +90,11 @@ So WDC is not a random sample: it is systematically blind to the largest,
 best-defended publishers, which is exactly where recipe pages concentrate. As a
 CENSUS it undercounts where it matters most (the banana-bread floor stands; any
 extrapolation from its 7% host share is biased low, not merely noisy). As a
-DISCOVERY SEED it is the mirror image of SEMrush: strong on the long tail of small
-blogs that don't block bots, useless for the head — which we already hold.
+DISCOVERY SEED, WDC is strong on the long tail of small blogs that don't block
+bots and useless for the head of the market. That is the opposite coverage profile
+from SEMrush, which sees the large publishers well (traffic and rankings do not
+depend on a crawler getting past the WAF) — so the two complement each other:
+SEMrush for the head, WDC for the tail.
 
 ## Bottom line
 
