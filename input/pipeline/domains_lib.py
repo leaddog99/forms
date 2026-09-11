@@ -82,6 +82,12 @@ EDITABLE_FIELDS = (
     # per-run choice is one someone has to remember every time — and forgetting it
     # costs a render per URL to rediscover a paywall we already measured.
     "human_capture_only",
+    # Deep-enrich outputs the create path and scripts/deep_enrich_borrowed.py
+    # write through update_domain(). Both were silently DROPPED until 2026-09-11
+    # because they were never registered here — every deep-enriched row carried
+    # known_for = '' and enriched_at = NULL (found on the 47 borrowed publishers).
+    "known_for",       # JSON list of demand-ranked identity phrases (LLM-authored)
+    "enriched_at",     # when the deep enrich last stamped this row (ISO)
     # MIXED MEDIA — the domain's authority is earned by content that is NOT its
     # recipes: a newspaper (washingtonpost), a general forum (wenxuecity), a
     # lifestyle portal (marthastewart), a supermarket chain (ab.gr), a restaurant

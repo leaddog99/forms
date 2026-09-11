@@ -54,13 +54,19 @@ def orange_dot_domains(conn):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
-    ap.add_argument("--only", default="")
+    ap.add_argument("--only", default="", help="restrict the orange-dot set to these hosts")
+    ap.add_argument("--hosts", default="", help="explicit hosts, orange dot or not (same per-domain path)")
+    ap.add_argument("--no-size", action="store_true", help="enrich only; leave keep/records/ttl as stored")
     args = ap.parse_args()
     only = {h.strip().lower() for h in args.only.split(",") if h.strip()}
+    hosts = [h.strip().lower() for h in args.hosts.split(",") if h.strip()]
 
     conn = domains_lib._connect(domains_lib._DEFAULT_DB)
     conn.row_factory = __import__("sqlite3").Row
-    rows = orange_dot_domains(conn)
+    if hosts:
+        rows = [dict(r) for h in hosts for r in conn.execute("SELECT * FROM domains WHERE domain = ?", (h,))]
+    else:
+        rows = orange_dot_domains(conn)
     if only:
         rows = [r for r in rows if r["domain"].lower() in only]
     print(f"{len(rows)} orange-dot domain(s) {'— APPLY' if args.apply else '— DRY RUN'}")
@@ -111,6 +117,10 @@ def main() -> int:
             rule["harvest_records"] = before["keep_top_n"] * int(get_setting("domain_records_per_keep", 6) or 6)
         after = {k: rule.get(k, before[k]) for k in SIZING}
         changed = {k: (before[k], after[k]) for k in SIZING if before[k] != after[k]}
+        if args.no_size:
+            rule = {}
+            after = dict(before)
+            changed = {}
         if args.apply:
             sets.update(rule)
             if sets:
