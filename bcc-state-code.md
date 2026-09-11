@@ -9196,3 +9196,22 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
 * Recorded: crash #15 in `docs/host-stability-and-watchdog.md` §2 +
   `warranty-evidence/crash-evidence.txt` ADDENDUM (raw Event 41 fields) +
   memory `project_host_thermal_shutdowns`.
+
+## Session log — 2026-09-11 (cosmetic) — domain textareas grow; SEMrush is the default source
+
+* **Domain editor textareas auto-grow** (story / profile / extraction notes /
+  notes): `autosizeNotes()` in forms/domains.html fits height to content on
+  render and on input, no inner scroll (`overflow hidden`, `resize none`);
+  deep-enrich `set()` now fires `input` so a filled profile refits. Static
+  page — live without restart.
+* **Default discovery source → SEMrush export, not Google.** Root cause: the
+  `domains.harvest_source` column DEFAULT was `'serp'`, so every created row
+  showed the Google radio although the UI + API fallback already favoured the
+  file. Fixed at the source: schema default `'backlinks_file'` + `create_domain`
+  sets it explicitly (live SQLite can't change a column default). DATA: 265
+  rows flipped `serp → backlinks_file` — every one had no serp_query, no
+  backlinks_dir, never harvested (list: scratch harvest_source_flip.txt,
+  265 hosts). Kept as serp (curator-touched): anitalianinmykitchen.com (has
+  query), greatbritishchefs.com (has export path), alisoneroman.com
+  (harvested 09-08). Now 469 backlinks_file / 3 serp. **Restart OWED** for the
+  create-path default (domains_lib is in-process).

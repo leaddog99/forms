@@ -386,6 +386,21 @@
              `</div>`;
     }
 
+    // Enrich-content textareas (story / profile / notes) grow to fit their content
+    // instead of scrolling inside a fixed box (curator 2026-09-11). min-height still
+    // comes from the inline style the field() helper writes.
+    function autosizeNotes(root){
+      (root || document).querySelectorAll('textarea.ed-notes').forEach(el => {
+        if (el.dataset.autosize) return;
+        el.dataset.autosize = '1';
+        el.style.overflowY = 'hidden';
+        el.style.resize = 'none';
+        const fit = () => { el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px'; };
+        el.addEventListener('input', fit);
+        fit();
+      });
+    }
+
     function field(id, label, value, opts = {}){
       const v = value == null ? '' : String(value);
       const full = opts.full ? ' full' : '';
@@ -771,6 +786,7 @@
       document.querySelectorAll('input[name=harvestSource]').forEach(r =>
         r.addEventListener('change', applySrcSelection));
       applySrcSelection();
+      autosizeNotes(panel);
       document.querySelectorAll('input[name=harvestMode]').forEach(r =>
         r.addEventListener('change', () => applyHarvestMode(r.value)));
       applyHarvestMode(inferHarvestMode(d), { dirty: false });   // initial — don't dirty on load
@@ -1582,7 +1598,7 @@
         const r = await fetch(`/domains/${encodeURIComponent(domain)}/deep-enrich`, { method: 'POST' });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-        const set = (id, v) => { if (v !== undefined && v !== null && v !== ''){ const el = $('#' + id); if (el) el.value = v; } };
+        const set = (id, v) => { if (v !== undefined && v !== null && v !== ''){ const el = $('#' + id); if (el){ el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } } };
         set('f_profile', data.profile);
         set('f_story', data.story);
         set('f_language', normLang(data.language));

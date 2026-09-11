@@ -225,7 +225,7 @@ _PAYWALL_COLUMNS = {
     # method for big sites with NO clean recipe subdir, where site: scatters and most
     # candidates are rejects). Curator-set; PERSISTED so the choice sticks across edits
     # / reloads (was previously read only at refresh time and lost). Default 'serp'.
-    "harvest_source": "TEXT NOT NULL DEFAULT 'serp'",
+    "harvest_source": "TEXT NOT NULL DEFAULT 'backlinks_file'",  # SEMrush export is the default pick (curator 2026-09-11); existing DBs keep the old column default, so create_domain sets it explicitly
     # SEMrush Rank — global ordinal by organic search TRAFFIC (rank 1 = most
     # traffic), looked up from the semrush_ranks reference table (see
     # input/pipeline/semrush_ranks.py). An independent traffic-authority signal
@@ -1135,6 +1135,10 @@ def create_domain(conn: sqlite3.Connection, domain: str, fields: dict) -> dict:
     now = _now()
     payload = {k: fields.get(k) for k in EDITABLE_FIELDS if k in fields}
     payload.setdefault("display_name", "")
+    # Discovery source defaults to the SEMrush export, not Google. The column's
+    # own DEFAULT can't be changed on a live SQLite table, so set it here.
+    if not (payload.get("harvest_source") or "").strip():
+        payload["harvest_source"] = "backlinks_file"
     # New-record defaults from System → Limits (the curator's rule). DA is
     # usually unknown here — the create endpoint applies the keep/records part
     # once the auto-enrich stamps one — but the refresh TTL needs no DA.
