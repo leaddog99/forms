@@ -9263,3 +9263,27 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
   row in docs/acquisition-ledger.md §4. Memory `project_domain_preflight`.
 * **Restart OWED** — ladder + harvest are in-process. NOT built: the
   consecutive-identical-failure circuit breaker (phase 3 policy question).
+
+## Session log — 2026-09-11 (late) — "how many websites have a banana bread recipe?" — three instruments, orders of magnitude apart
+
+* Curator's question; full write-up `docs/research/banana-bread-prevalence-2026-09-11.md`.
+  Three populations, three instruments, no registry: (1) SEMrush top-100 for
+  "banana bread recipe" = ~45 domains (half YouTube), 2.2M monthly US searches
+  on six head terms; our dish runs have seen 154 hosts. (2) Google "about N"
+  via Scale SERP (11 credits, then STOPPED at the curator's call — Google never
+  enumerates past a few hundred anyway): `intitle:"banana bread" recipe` =
+  500k pages; exact phrase 1.51M; bare mention 25M; ES 1.72M · FR 514k ·
+  DE 176k · BR 94k. (3) **Web Data Commons schema:Recipe corpus** (Oct-2024
+  crawl, 21 files, 3.84 GB) streamed end-to-end in ~10 min with zero local
+  storage: **4,908 banana-bread pages on 2,607 publishers** (en 2,380 · de 178
+  · fr 68 · es 27 · ja 9); 7% of the 37,304 recipe hosts; only 17% of those
+  publishers have exactly ONE banana-bread page ("one per site" is false).
+* **The WDC number is a FLOOR, proven from our own data**: its host list is
+  missing 200 of our 469 harvestable publishers (43%) incl. allrecipes,
+  seriouseats, NYT Cooking, Sally's; median 13 recipes/host (food.com 17k of
+  ~500k). Page-level gap to Google ≈ 100×. Verdict: well over 100k sites
+  (curator's intuition), largest publishers hold dozens–hundreds of variants.
+* Kept: `scripts/wdc_recipe_term_scan.sh` + `scripts/wdc_recipe_term_count.py`
+  — the same statistic for ANY dish, free. `Recipe_domain_stats.csv` = a
+  37k-host publisher-discovery seed (like the punchfork list) + coverage
+  check for `domains`. Memory `reference_web_data_commons`.
