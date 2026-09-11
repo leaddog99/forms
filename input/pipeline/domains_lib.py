@@ -421,6 +421,19 @@ _QUALITY_COLUMNS = {
 }
 
 
+# MEASURED by the harvest pre-flight (preflight_domain, 2026-09-11): is the
+# publisher still there at all? 'parked' = a registrar/ad lander answers every
+# path (the domain expired); 'unreachable' = DNS/connection failure; 'ok' = a
+# real page came back; 'blocked' = a bot wall on the homepage (the ladder's
+# job, not a death). aprettylifeinthesuburbs.com (job 1941) spent 44 unblocker
+# units on a lander before anyone looked — the check runs BEFORE any paid fetch.
+_SITE_STATUS_COLUMNS = {
+    "site_status": "TEXT",
+    "site_checked_at": "TEXT",
+    "site_check_detail": "TEXT",
+}
+
+
 def ensure_domains_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -482,6 +495,9 @@ def ensure_domains_table(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _QUALITY_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
+    for col, decl in _SITE_STATUS_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE domains ADD COLUMN {col} {decl}")
     for col, decl in _DISCOVERY_COLUMNS.items():
@@ -990,6 +1006,84 @@ def mark_harvested(conn: sqlite3.Connection, domain: str,
         invalidate_cache()
     except Exception:
         pass
+
+
+def preflight_domain(domain: str, conn: Optional[sqlite3.Connection] = None,
+                     *, timeout: int = 15) -> dict:
+    """ONE free direct fetch of the homepage before a harvest spends anything.
+
+    Returns {"status": 'ok'|'parked'|'unreachable'|'blocked', "detail": str,
+             "dead": bool}. Stamps site_status / site_checked_at /
+    site_check_detail on the row; a 'parked' verdict ALSO sets harvestable=0
+    and appends a dated note (the curator's standing rule: a dead domain is not
+    harvestable). Writes one acquisition-ledger row so the spend report sees
+    the check. Never raises — a pre-flight failure must not stop a harvest;
+    only a positive death verdict does (the CALLER aborts on `dead`)."""
+    host = _canon_host(domain)
+    status, detail = "ok", ""
+    url = f"https://{host}/"
+    try:
+        from to_markdown.html_to_markdown import (fetch_with_ua_fallback,
+                                                  parked_reason, blocked_reason)
+        try:
+            resp, _ua = fetch_with_ua_fallback(url, timeout=timeout)
+        except Exception as e1:
+            # Bare-http fallback: some old blogs never got a certificate.
+            try:
+                resp, _ua = fetch_with_ua_fallback(f"http://{host}/", timeout=timeout)
+            except Exception:
+                resp = getattr(e1, "response", None)
+                if resp is None:
+                    status, detail = "unreachable", f"{type(e1).__name__}: {str(e1)[:160]}"
+        if status == "ok" and resp is not None:
+            p = parked_reason(resp)
+            if p:
+                status, detail = "parked", p
+            else:
+                b = blocked_reason(resp)
+                if b:
+                    status, detail = "blocked", b
+                else:
+                    detail = f"{resp.status_code} {len(resp.text or '')} bytes"
+        try:
+            from input.pipeline import acquisition as _acq
+            _acq.record(url, "direct", ok=(status == "ok"), rung=0,
+                        reason="" if status == "ok" else detail,
+                        status_code=getattr(resp, "status_code", None) if status != "unreachable" else None,
+                        notes="preflight", stamp_domain=False)
+        except Exception:
+            pass
+    except Exception as e:                                       # pragma: no cover
+        detail = f"preflight skipped: {type(e).__name__}: {e}"
+        print(f"[DOMAIN] {host}: {detail}")
+        return {"status": "ok", "detail": detail, "dead": False}
+    dead = status in ("parked", "unreachable")
+    own = conn is None
+    if own:
+        conn = _connect(_DEFAULT_DB)
+    try:
+        ensure_domains_table(conn)
+        now = _now()
+        conn.execute("UPDATE domains SET site_status = ?, site_checked_at = ?, "
+                     "site_check_detail = ?, updated_at = ? WHERE domain = ?",
+                     (status, now, detail[:300], now, host))
+        if status == "parked":
+            row = conn.execute("SELECT harvestable, notes FROM domains WHERE domain = ?",
+                               (host,)).fetchone()
+            if row is not None and int(row[0] or 0) != 0:
+                note = ((row[1] or "").rstrip()
+                        + "\n\n" + f"DEAD {now[:10]} — pre-flight found a PARKED domain ({detail}). "
+                          "Marked not harvestable automatically; the Wayback rung is the only "
+                          "remaining source.")
+                conn.execute("UPDATE domains SET harvestable = 0, notes = ? WHERE domain = ?",
+                             (note, host))
+        conn.commit()
+    except Exception as e:
+        print(f"[DOMAIN] {host}: pre-flight stamp failed: {type(e).__name__}: {e}")
+    finally:
+        if own:
+            conn.close()
+    return {"status": status, "detail": detail, "dead": dead}
 
 
 def mark_render_required(domain: str, conn: Optional[sqlite3.Connection] = None,

@@ -558,6 +558,48 @@ _THIN_SPEND_CHARS = 15000
 _THIN_VERDICT_CHARS = 2000
 
 
+# PARKED / EXPIRED domain. Not a bot challenge: the publisher is gone and a
+# registrar or ad-parking lander answers every path. Measured 2026-09-11,
+# aprettylifeinthesuburbs.com: every URL (homepage included) returned a
+# 114-byte page whose only content was `window.location.href="/lander"`; the
+# lander was an openresty ad page (X-Adblock-Key). blocked_reason() read the
+# stub as a soft-block and the ladder escalated EVERY one of 44 URLs to the
+# paid unblocker, which fetched the same stub. Nothing on a parked domain is
+# recoverable at any price, so this is checked FIRST and never escalates.
+_PARKED_REDIRECT_RE = re.compile(
+    r"""(?:location(?:\.href)?\s*=\s*|http-equiv=["']refresh["'][^>]*url=)["']?/lander""", re.I)
+_PARKED_MARKERS = (
+    "sedoparking", "parkingcrew", "bodis.com", "hugedomains", "afternic",
+    "dan.com/buy-domain", "godaddy.com/forsale", "this domain may be for sale",
+    "this domain is for sale", "buy this domain", "domain is parked",
+    "parked free, courtesy of", "the domain owner is offering",
+)
+_PARKED_MAX_CHARS = 4000   # landers and their stubs are tiny; a real page is not
+
+
+def parked_reason(resp: requests.Response) -> Optional[str]:
+    """WHY this response looks like a parked/expired domain — or None.
+
+    Two signatures, both requiring a tiny body (a real article never fits):
+      - a JS/meta redirect to `/lander` — the ad-parking stub pattern
+      - a known registrar/parking marker in the body
+    A parked verdict is TERMINAL for the paid rungs: the unblocker fetches
+    the same lander. Wayback (free) may still hold the real page."""
+    try:
+        body = resp.text or ""
+    except Exception:
+        return None
+    if len(body) > _PARKED_MAX_CHARS:
+        return None
+    low = body.lower()
+    if _PARKED_REDIRECT_RE.search(body):
+        return f"parked domain — redirect to /lander stub ({len(body)} bytes)"
+    for m in _PARKED_MARKERS:
+        if m in low:
+            return f"parked domain — parking marker {m!r} ({len(body)} bytes)"
+    return None
+
+
 def blocked_reason(resp: requests.Response, *, strict: bool = False) -> Optional[str]:
     """WHY this response looks like a challenge/interstitial rather than the page —
     or None if it looks real.
@@ -732,6 +774,7 @@ def _fetch_with_full_fallback_uncached(url: str, *,
     # actually needed. (unblocker=True just ENABLES the escalation tier for this domain.)
     _rung += 1
     _direct_resp = None
+    _wb_only = False      # set when the direct fetch proved the domain is parked
     try:
         resp, ua_used = fetch_with_ua_fallback(url, timeout=timeout)
         _direct_resp = resp
@@ -743,15 +786,26 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         # it were the article. A block we cannot escalate should fall through to
         # Wayback, which is a real page; returning the stub is silent corruption,
         # which is worse than a clean failure.
-        _blocked = blocked_reason(resp)
-        if _blocked and unblocker and unblocker_available():
+        _parked = parked_reason(resp)
+        _blocked = None if _parked else blocked_reason(resp)
+        if _parked:
+            # Dead publisher, not a block: never pay to re-fetch a lander.
+            _acq_record(url, "direct", ok=False, rung=_rung, resp=resp, reason=_parked, ms=_ms())
+            # No raise here: the except below would catch it and carry on to the
+            # paid tier (measured 2026-09-11 — one credit leaked that way). The
+            # flag skips the unblocker; `if not try_wayback: raise err` below ends it.
+            _wb_only = True
+            err = requests.HTTPError(f"{_parked} for {url} — domain is dead; not escalating"
+                                     + ("; trying Wayback" if try_wayback else ""))
+        elif _blocked and unblocker and unblocker_available():
             err = requests.HTTPError(f"Soft-block challenge for {url} — escalating to unblocker")
         elif _blocked:
             err = requests.HTTPError(f"Soft-block challenge for {url} ({_blocked}) — no unblocker; trying Wayback")
         else:
             _acq_record(url, "direct", ok=True, rung=_rung, resp=resp, ms=_ms())
             return resp, {"source": "direct", "ua_used": ua_used}
-        _acq_record(url, "direct", ok=False, rung=_rung, resp=resp, reason=_blocked, ms=_ms())
+        if not _parked:
+            _acq_record(url, "direct", ok=False, rung=_rung, resp=resp, reason=_blocked, ms=_ms())
     except requests.HTTPError as e:
         # 404/410 came from a real response.raise_for_status() → terminal.
         status = getattr(e.response, "status_code", None) if e.response is not None else None
@@ -765,7 +819,8 @@ def _fetch_with_full_fallback_uncached(url: str, *,
         err = e
 
     # PAID unblocker tier — only reached when the plain fetch was blocked or failed.
-    if unblocker and unblocker_available():
+    # Never for a parked domain (the unblocker would fetch the same lander).
+    if unblocker and unblocker_available() and not _wb_only:
         # SAY WHY before spending, so the run log distinguishes a genuine block
         # (403s, challenge pages — money well spent) from a detector false
         # positive at a glance. Curator asked "real or waste?" twice in one day;

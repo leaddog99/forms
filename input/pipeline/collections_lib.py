@@ -877,6 +877,24 @@ def harvest_publisher_top(domain, keep=10, discover_n=80, recipe_path=None,
     # the verify OFF here regardless of what the caller passed.
     if score_only:
         check_recipe = False
+    # PRE-FLIGHT (2026-09-11): is the publisher still there? One FREE homepage
+    # fetch before discovery spends a SERP call, a Moz row or an unblocker unit.
+    # aprettylifeinthesuburbs.com had expired into an ad lander; job 1941 paid
+    # 44 unblocker units to fetch that lander 44 times. A parked/unreachable
+    # verdict aborts the harvest with the reason as the job error and stamps
+    # the domain (parked → harvestable=0). A homepage BLOCK is not a death —
+    # the ladder handles bot walls per page — so only a death aborts.
+    try:
+        from input.pipeline import domains_lib as _dlp
+        _pf = _dlp.preflight_domain(domain)
+    except Exception as _e:
+        _pf = {"status": "ok", "detail": f"preflight skipped: {_e}", "dead": False}
+    if _pf.get("dead"):
+        print(f"  [harvest] {domain} is DEAD — {_pf['status']}: {_pf['detail']}")
+        raise ValueError(
+            f"{domain} is DEAD ({_pf['status']}: {_pf['detail']}) — harvest aborted before "
+            f"any paid fetch" + (" and the domain marked not harvestable" if _pf['status'] == 'parked' else ""))
+    print(f"  [harvest] pre-flight {domain}: {_pf['status']} ({_pf['detail']})")
     # Keyword pre-screen: explicit arg wins; else fall back to the global system_config
     # default (off). One cheap Haiku pass drops confident non-recipes before the fetch +
     # whole-page translate on mixed/non-English publishers. See docs/keyword-prescreen.md.

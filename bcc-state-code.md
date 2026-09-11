@@ -9236,3 +9236,30 @@ Mirror/backups last run **09-11 09:25** (post-crash; BAILEY sizes verified) — 
   TTL refresh date is ahead) — 204 domains today (5 of them borrowed, which
   flip orange → green). Legend gained fresh / borrowed / no-extracts rows.
   `editor-shell.css` cache-bust → v=20260911a.
+
+## Session log — 2026-09-11 (afternoon) — the pre-flight: a dead domain never gets a paid fetch again
+
+* Curator: "we need to implement a check on the domain before we start
+  processing for real... we spent money for nothing there." Built two layers:
+* **Ladder guard (every job type)**: `parked_reason()` in html_to_markdown —
+  body ≤ 4000 chars AND (JS/meta redirect to `/lander` OR a registrar/parking
+  marker). Checked BEFORE `blocked_reason` on the direct rung; verdict →
+  ledger class **`dead:parked`**, `_wb_only=True` skips the PAID unblocker on
+  every path, falls to Wayback (free) or raises "domain is dead". Verified
+  live on the parked URL: unblocker=True + try_wayback=False → raise, ZERO
+  unblocker lines; try_wayback=True → Wayback snapshot 2026-04-19, 662 KB.
+  (First cut leaked ONE credit: a raise inside the direct `try` was caught by
+  the ladder's own `except HTTPError` and carried on to the paid tier — fixed
+  by flag-then-raise-after.)
+* **Harvest pre-flight**: `domains_lib.preflight_domain(host)` — one free
+  homepage fetch at the top of `harvest_publisher_top` (before SERP/Moz/
+  unblocker spend). New MEASURED columns `site_status` ('ok'|'parked'|
+  'unreachable'|'blocked') / `site_checked_at` / `site_check_detail`;
+  parked → `harvestable=0` + dated DEAD note; dead → ValueError aborts the
+  job with the reason. Homepage BLOCK ≠ death. Ledger row per check
+  (technique direct, rung 0, notes 'preflight'). Verified: suburbs → parked
+  (stamped), bakerita.com → ok (333 KB). Domain form: red **☠ DEAD** pill
+  (list API already carries the columns via SELECT *). Doc: `dead:parked`
+  row in docs/acquisition-ledger.md §4. Memory `project_domain_preflight`.
+* **Restart OWED** — ladder + harvest are in-process. NOT built: the
+  consecutive-identical-failure circuit breaker (phase 3 policy question).

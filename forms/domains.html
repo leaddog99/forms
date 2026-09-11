@@ -450,6 +450,7 @@
         <h1 class="ed-title">${escapeHtml(d.domain)}</h1>
         <div class="ed-status-strip">
           ${isPoor(d) ? `<span class="ed-pill warn" title="is-recipe cascade flagged a messy source"><i class="d"></i>⚠ Poor publisher</span>` : ''}
+          ${(d.site_status === 'parked' || d.site_status === 'unreachable') ? `<span class="ed-pill" style="border-color:#b3261e;color:#b3261e" title="Harvest pre-flight (${escapeHtml(fmtDate(d.site_checked_at))}): ${escapeHtml(d.site_check_detail || '')}"><i class="d" style="background:#b3261e"></i>☠ DEAD — ${escapeHtml(d.site_status)}</span>` : ''}
           ${d.discovery_source ? `<span class="ed-pill" style="border-color:#ff7a00" title="This record was borrowed from a publisher list and has not yet been judged by a harvest of its own"><i class="d" style="background:#ff7a00"></i>via ${escapeHtml(d.discovery_source)}</span>` : ''}
           ${d.root_domain ? `<span class="ed-pill"><i class="d"></i>root ${escapeHtml(d.root_domain)}</span>` : ''}
           ${d.domain_authority != null ? `<span class="ed-pill"><i class="d"></i>DA ${Math.round(d.domain_authority)}</span>` : ''}

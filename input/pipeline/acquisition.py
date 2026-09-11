@@ -99,6 +99,7 @@ _CLASS_RULES = (
     (r"soft-block|challenge stub|\b202\b", "block:soft"),
     (r"sgcaptcha|just a moment|verify you are human|captcha|interstitial|did not clear", "block:captcha"),
     (r"\b(403|429|503)\b|forbidden|too many requests|rate.?limit", "block:hard"),
+    (r"parked domain|parking marker|/lander stub|domain is dead", "dead:parked"),
     (r"thin body|js shell|no json-ld|no <article>|too small", "shell:js"),
     (r"aggregator|content lives elsewhere|see full directions|see original recipe|visit the original", "aggregator:elsewhere"),
     (r"members|membership|sign in|log in|try the club|subscribe", "wall:membership"),
