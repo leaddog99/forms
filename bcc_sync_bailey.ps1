@@ -49,7 +49,11 @@ if ($WithDbs) {
     Pop-Location
   }
   Write-Host "== stopping BAILEY server =="
-  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped'"""
+  # 2026-09-11 cut-over: BAILEY runs BCC as an NSSM service (AppExit=Restart),
+  # so a bare Stop-Process would be undone by nssm within seconds and the db
+  # copy would hit a locked file. Stop the SERVICE when it exists; fall back
+  # to the old process kill for a BCC-Drill-era host.
+  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""if (Get-Service BCC -ErrorAction SilentlyContinue) { Stop-Service BCC -Force; 'service stopped' } else { Stop-Process -Name python -Force -ErrorAction SilentlyContinue; 'stopped' }"""
   # WAIT for python to actually exit and release recipes.db — on 2026-08-26 the
   # copy started immediately, hit 'rename failed: permission denied' x3, and the
   # run still reported success. Poll up to 30s for zero python processes.
@@ -104,8 +108,8 @@ if ($WithDbs) {
   # reads as 'database disk image is malformed' at startup.
   & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""Remove-Item C:\Users\john\PycharmProjects\forms\*.db-wal, C:\Users\john\PycharmProjects\forms\*.db-shm -Force -ErrorAction SilentlyContinue; 'sidecars cleared'"""
   Write-Host "== restarting BAILEY server =="
-  & $ssh -o BatchMode=yes john@BAILEY "schtasks /Run /TN BCC-Drill"
-  Start-Sleep 15
+  & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""if (Get-Service BCC -ErrorAction SilentlyContinue) { Start-Service BCC; 'service started' } else { schtasks /Run /TN BCC-Drill }"""
+  Start-Sleep 40   # 2026-09-11: 15 s printed NOT ANSWERING on a healthy start
   & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""try{(Invoke-WebRequest -Uri http://127.0.0.1:8009/auth/me -UseBasicParsing -TimeoutSec 5).StatusCode}catch{'NOT ANSWERING'}"""
   if ($failed.Count -gt 0) {
     Write-Host ("!" * 70)

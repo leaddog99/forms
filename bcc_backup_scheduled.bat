@@ -53,8 +53,15 @@ REM nightly, ORDERED AFTER the backup so it ships the copies made minutes
 REM ago. Stops BAILEY's staging server, lays in the fresh set, restarts
 REM the BCC-Drill task, health-checks. Best-effort: BAILEY being off must
 REM not fail the backup run (the sync script exits nonzero on its own).
-powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\john\PycharmProjects\forms\bcc_sync_bailey.ps1" -WithDbs >> backup.log 2>&1
-echo bailey sync exit code: %ERRORLEVEL% >> backup.log
+REM 2026-09-11 cut-over: this bat now also runs ON BAILEY (same task name).
+REM The warm-standby push only makes sense FROM MARLEY_SVR — on BAILEY it
+REM would stop its own server and copy from a share it cannot reach.
+if /I not "%COMPUTERNAME%"=="MARLEY_SVR" (
+  echo bailey sync skipped: running on %COMPUTERNAME% >> backup.log
+) else (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\john\PycharmProjects\forms\bcc_sync_bailey.ps1" -WithDbs >> backup.log 2>&1
+  echo bailey sync exit code: %ERRORLEVEL% >> backup.log
+)
 REM Mirror + media + freshest training copy go OFFSITE too (2026-08-24,
 REM closes DR gap G2 — the fire scenario previously lost all three).
 REM env.backup stays OFF the cloud by policy (plaintext keys; the offsite

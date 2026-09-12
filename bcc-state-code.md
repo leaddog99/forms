@@ -9459,3 +9459,69 @@ MARLEY still serves the tunnel until the cut-over.
    from the 09-12 entry above (ledger phase 3 carve · mollybaz walker ·
    aggregators · pools · identity · chips · books · menus · class↔collection
    FK → render/EV).
+
+## Session log — 2026-09-11 (cut-over, part 1) — BAILEY gets the NSSM service and the backup task
+
+* Curator: "start the bailey cutover now, do the nssm service and backup task."
+  MARLEY still serves the tunnel; nothing user-facing moved yet.
+* **NSSM service `BCC` on BAILEY — DONE, Running, /auth/me 200.** Replicated
+  from MARLEY's registry (nssm dump needs elevation; the Parameters key
+  doesn't): venv python `-m uvicorn save_recipe_api:app --host 127.0.0.1
+  --port 8009`, AppDirectory forms/, stdout/stderr logs, LocalSystem,
+  SERVICE_AUTO_START, AppExit Restart. nssm.exe copied to the same path as
+  MARLEY (`C:\tools\nssm\nssm-2.24-101-g897c7ad\win64\`). The drill-era
+  `BCC-Drill` task ended + DISABLED (not deleted). BAILEY's SSH session is
+  elevated (High mandatory), which is why this worked over ssh.
+* **Task "BCC Recipes DB Backup" on BAILEY — CREATED (03:00 daily, SYSTEM,
+  HIGHEST) and run once.** Runtime read of `backup.log`: local
+  `recipes.sql.gz` refreshed (105.7 MB); **every ADAM step failed 1326
+  "user name or password is incorrect"** (backup_db, both robocopy mirrors);
+  **every cloud step failed** ("didn't find section gdrive" — SYSTEM reads
+  `systemprofile\AppData\Roaming\rclone\rclone.conf`, not john's); the new
+  hostname guard printed "bailey sync skipped: running on BAILEY". So the
+  task is registered but only its local half works until the identity is
+  fixed — see START HERE. (MARLEY's task runs as **john, interactive**, and
+  john holds a Windows credential `Domain:target=adam` user `admin`; BAILEY's
+  john has NO credential for Adam and a stale `B: \Adam\backups_v2` mapping.)
+* **Two scripts changed for the two-host world** (pushed to BAILEY, sizes
+  verified): `bcc_backup_scheduled.bat` — the BAILEY-sync step runs only
+  when `COMPUTERNAME==MARLEY_SVR` (on BAILEY it would stop its own server);
+  `bcc_sync_bailey.ps1` — stops/starts the **service** when `BCC` exists
+  (a bare Stop-Process is undone by nssm's AppExit=Restart within seconds →
+  locked-file copy), falls back to the process kill / BCC-Drill otherwise;
+  health wait 15 → 40 s. **MARLEY's 03:00 nightly still pushes to BAILEY**
+  — intended until the flip (keeps BAILEY fresh); the service-aware sync is
+  what makes tonight's push safe.
+* Also copied to BAILEY: `rclone.exe` + john's `rclone.conf` (gdrive OAuth +
+  the sftp remote) at the same paths as MARLEY.
+* **Found: BAILEY already runs a `Cloudflared` service** (token tunnel,
+  `C:\Program Files\cloudflared\`) — from the drill. Which tunnel/hostname it
+  serves is the first question of the domain-flip step.
+
+## START HERE — 2026-09-12 (revised 23:15 on 09-11) — cut-over in progress
+
+BAILEY: `BCC` NSSM service Running (200) · backup task registered · scripts
+two-host-safe. MARLEY: still the live host (tunnel), crash #16 tonight.
+
+1. **Curator, on BAILEY (elevated, as john) — two commands, two passwords
+   only you hold** (mirrors MARLEY's setup; fixes BOTH failures at once
+   because john's profile has the rclone config):
+   `cmdkey /add:Adam /user:admin /pass:<ADAM admin password>`
+   `schtasks /Change /TN "BCC Recipes DB Backup" /RU john /RP <john's Windows password>`
+   then `schtasks /Run /TN "BCC Recipes DB Backup"` and read `backup.log`:
+   expect `copied -> \Adam\tbotb\Backups\recipes-db\...` and cloud exit 0.
+   (Alternative if BAILEY is headless-only: keep SYSTEM and add the Adam
+   credential under SYSTEM + copy rclone.conf to the systemprofile path —
+   messier; not done.)
+2. **Domain flip** (the actual cut-over): read BAILEY's existing Cloudflared
+   service — same tunnel as MARLEY or a drill hostname? — then either move
+   MARLEY's tunnel token to BAILEY or point recipes.tbotb.com at BAILEY's.
+   Sequence: write-freeze MARLEY → `bcc_sync_bailey.ps1 -WithDbs
+   -FreshBackup` → flip → disable the MARLEY→BAILEY line in MARLEY's nightly
+   (or stop MARLEY's task) so a dead-host nightly can never overwrite the
+   live DB. Static IP + router only for direct exposure.
+3. Not moved yet: capture-walker profile + `input/captures` (excluded from
+   sync by design); `kernel_power_check.bat`/watchdog bits are MARLEY-only.
+4. Re-run the crash-interrupted work AFTER the flip on BAILEY (Pozole;
+   tastecooking; extracts for cookiesandcups/thecozycook/girlversusdough;
+   45 borrowed publishers). Everything else carried from the entries above.
