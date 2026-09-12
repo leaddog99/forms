@@ -9379,3 +9379,83 @@ and the smart-plug watchdog remain the only auto-recovery path
 5. Research kept: docs/research/banana-bread-prevalence-2026-09-11.md —
    WDC scan/count scripts work for ANY dish; `Recipe_domain_stats.csv` is a
    37k-host long-tail discovery seed (blind to the head; SEMrush owns that).
+
+## Session log — 2026-09-11 (late night) — crash #16 thirteen hours after the last boot; BAILEY becomes the main machine
+
+* **Crash #16**: MARLEY_SVR hung 22:16:36 local (EventLog 6008), Event 41
+  `0x101` CLOCK_WATCHDOG_TIMEOUT on **processor 9** (`BugcheckParameter4=0x9`
+  — a different core from the 6/12 + 9/10 pair on 4). Back at 22:31:48 —
+  **~15 min dead**, not 14 h (Fast Startup off since #15; curator at the
+  machine). Uptime before the crash **13 h 00 m** (09:16 → 22:16): shortest
+  on record, second crash in 27 h; the 100 % min-processor-state mitigation
+  is spent. **First crash under load** — six jobs were running (publisher
+  harvests 1959–1962, dish_rematch 1963, dish_refresh Pozole 1964), all
+  reaped on startup as `interrupted — owning process is gone`. Windows
+  Update ruled out on the record (nothing installed after 13:26, no pending
+  reboot, build 26200.9168 unchanged; one WHEA-Logger Id 3 informational on
+  the boot). **Curator: the top of the case was very hot** — no sensor
+  trace (HWiNFO64 installed, not running; ACPI zones need elevation).
+  Recorded: doc §2 incident paragraph + timeline + counts (four `0x101`s
+  now), `warranty-evidence/crash-evidence.txt` ADDENDUM, memory
+  `project_host_thermal_shutdowns`.
+* **Post-crash checklist (doc §3) green**: git clean + in sync with origin,
+  `compileall` 0, `quick_check` ok on recipes/page_cache/media/training
+  (first two WAL), `recipes.sql.gz` (09:25) gzip OK, BCC + Cloudflared
+  running, / + tunnel answer.
+* **What the crash interrupted** (nothing corrupted, nothing lost):
+  - **Pozole** (`dish_refresh` 1964) — a NEW dish created 22:06, first run
+    ever, died at fetch 21/61 → 0 rows, nothing deleted. Re-run.
+  - **tastecooking.com** (1962) — died mid Moz scoring 135/147; never
+    stamped `last_harvested_at`. Full re-run; per-URL Moz cache not
+    confirmed, budget a re-bill.
+  - **cookiesandcups / thecozycook / girlversusdough** (1959–1961) —
+    discovery done + `last_harvested_at` stamped, died in the extract loop:
+    9 / 30 / 2 master rows vs keeps 35 / 20 / 20. Re-run extracts.
+  - `dish_rematch` 1963 — nightly, self-heals.
+* **Ledger since the 18:29 restart reads as designed**: `block:ratelimit`
+  67 direct rows on five hosts (40aprons 17 · chewoutloud 17 ·
+  connoisseurusveg 18 · babaganosh 15) = pauses, and `dead:parked` 6 rows
+  on aprettylifeinthesuburbs with ZERO paid units. Unblocker spend: 89 units
+  on the parked domain (all BEFORE the pre-flight shipped) + 67 in the
+  pre-pause 429 windows; nothing else above 3. 45 borrowed publishers still
+  unharvested.
+* **DECISION (curator, 22:40): "this machine is reaching EOL quickly —
+  move the main machine to BAILEY."** Full sync run at 22:39:
+  `bcc_sync_bailey.ps1 -WithDbs -FreshBackup` → exit 0; backup set
+  `recipes_2026-09-11_224032.db` / `training_…_224032.db` / media_latest /
+  env.backup; every remote file SIZE-VERIFIED byte-for-byte (recipes
+  749,060,096 · training 902,881,280 · media 498,397,184 · .env 1,657);
+  BAILEY `/auth/me` + `/` = 200 (the script's own 15 s probe said NOT
+  ANSWERING — startup just took longer than 15 s; bump the wait or poll).
+  Curator's plan for 09-12: a static IP for BAILEY + "router tables".
+  **Note for that step: recipes.tbotb.com reaches the app through the
+  Cloudflare tunnel (cloudflared on MARLEY → localhost:8009), not a port
+  forward — the domain cut-over = run cloudflared with the same tunnel on
+  BAILEY; the static IP only matters for anything exposed directly.**
+* Committed: the 21 SEMrush exports from the overnight harvests (tracked
+  like the other 234).
+
+## START HERE — 2026-09-12 morning (revised 22:50 on 09-11) — SUPERSEDES the 09-12 entry above
+
+MARLEY_SVR crashed AGAIN 09-11 22:16 (crash #16, 13 h uptime, under load,
+case very hot). **Decision: BAILEY is the main machine from here.** BAILEY
+holds a byte-verified copy of everything as of 22:40 09-11 and answers 200.
+MARLEY still serves the tunnel until the cut-over.
+
+1. **Cut-over to BAILEY** (docs/disaster-recovery.md §5 is the list):
+   write-freeze MARLEY → final `bcc_sync_bailey.ps1 -WithDbs -FreshBackup`
+   → on BAILEY: NSSM service `BCC` (replaces the `BCC-Drill` task),
+   "BCC Recipes DB Backup" 03:00 task, ADAM share credentials (drill gap
+   #4 — or its own nightly chain), rclone `gdrive` remote, **cloudflared
+   with the recipes.tbotb.com tunnel** (config lives with cloudflared,
+   not in the repo), capture-walker profile + `input/captures` (excluded
+   from the sync on purpose). Static IP + router only for direct exposure.
+   Leave HWiNFO64 logging on MARLEY meanwhile.
+2. **Re-run the interrupted work** (on whichever host is primary): Pozole
+   dish_refresh; tastecooking.com harvest; extracts for cookiesandcups /
+   thecozycook / girlversusdough; then the 45 remaining borrowed publishers.
+3. Ledger watch continues (`block:ratelimit` = pauses, `dead:parked` =
+   free); DA-rule 6× multiplier reading to confirm; everything else carried
+   from the 09-12 entry above (ledger phase 3 carve · mollybaz walker ·
+   aggregators · pools · identity · chips · books · menus · class↔collection
+   FK → render/EV).

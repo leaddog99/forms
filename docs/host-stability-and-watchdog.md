@@ -61,10 +61,10 @@ Kernel-Power Event 41 records; 2026-04-14 and 2026-05-21 carry a real
 ```
 4/14 16:19 · 5/10 13:12 · 5/21 12:02 · 5/30 12:51 · 6/8 00:29 · 6/12 01:34
 6/16 20:34 · 6/22 21:36 · 6/23 04:18 · 6/25 14:06 · 7/10 11:25 · 7/24 22:04 · 7/29 01:28
-7/31 ~10:00 · 9/10 19:03
+7/31 ~10:00 · 9/10 19:03 · 9/11 22:16
 ```
 
-Only **three** recorded a bugcheck code (6/12, 7/29 and 9/10, all `0x101`). The other twelve
+Only **four** recorded a bugcheck code (6/12, 7/29, 9/10 and 9/11, all `0x101`). The other twelve
 logged `BugcheckCode = 0` — a total hang with nothing written at all.
 
 **2026-09-10 19:03 incident** (read 09-11): `0x101` on processor 4 (`BugcheckParameter4=0x4`,
@@ -77,6 +77,28 @@ rebooted once more at 09:15:55 — that is the "Windows Update" screen the curat
 update did not cause the outage. Notable: after the 7/29 min-processor-state=100 % change
 the cadence went from days to **41 days** (7/31 → 9/10). It slowed the defect; it did not
 stop it. RMA route unchanged (§7).
+
+**2026-09-11 22:16 incident** (read 22:35, minutes after the reboot): `0x101` on **processor 9**
+(`BugcheckParameter4=0x9`) — a different core from the 6/12 + 9/10 pair (processor 4). EventLog
+6008 puts the hang at 22:16:36; Event 41 was written 22:31:55 on the reboot, so the box was dead
+**~15 min**, not 14 h (Fast Startup off was the only change since #15; the curator was at the
+machine). Uptime before the crash: **13 h 00 m** (09:16 → 22:16) — the shortest interval in the
+log, and the second crash in 27 h after the 41-day stretch: the 100 % min-processor-state
+mitigation looks spent. **Not idle this time**: six jobs were running (publisher harvests
+1959–1962, dish_rematch 1963, dish_refresh Pozole 1964), all reaped on startup as
+`interrupted — owning process is gone`. First crash under load — with the cores pinned at 100 %
+since 7/29 the idle/load distinction no longer separates anything. Windows Update ruled out on
+the record: nothing installed after 13:26 (Defender + App Runtime only), no pending-reboot flag,
+build still 26200.9168; one WHEA-Logger Id 3 (informational) at 22:32:06 on the boot. Post-crash
+checklist green: git clean and in sync with origin, compileall 0, quick_check ok on all four DBs
+(recipes/page_cache WAL), `recipes.sql.gz` gzip OK (09:25 dump), BCC + Cloudflared running,
+/ and the tunnel answer. **Curator's observation: the top of the case was very hot** at power-on.
+No reading exists for the crash itself (HWiNFO64 installed, not running; ACPI zones need an
+elevated shell). Two things changed since the 64 °C reading in June: the 100 % min-processor-state
+mitigation keeps every core at full clock at idle (§7 — "costs watts and idle heat"), and this crash
+came under six running jobs. Whether heat is now a contributor or a symptom, the answer is the same:
+the mitigation has stopped buying time, and the box moves off the critical path (BAILEY cut-over).
+Before the next long run on this host, leave HWiNFO64 logging so a crash carries a temperature trace.
 
 Run `kernel_power_check.bat` for the live table; the generated exhibit is
 `warranty-evidence/crash-evidence.txt`.

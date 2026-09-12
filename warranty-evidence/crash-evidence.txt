@@ -84,3 +84,29 @@ CRASH #15 - 2026-09-10 ~19:03 local (23:03 UTC). Bugcheck recorded.
 
   Running tally: 15 Event 41 records 2026-04-14 .. 2026-09-10; 13 spontaneous after
   excluding the two power-button events; 3 with a recorded 0x101 (6/12, 7/29, 9/10).
+
+ADDENDUM 2026-09-11 22:16 local — crash #16 (read 22:35 from the agent session)
+
+  EventLog 6008, 2026-09-11 22:32:04:
+    The previous system shutdown at 10:16:36 PM on 9/11/2026 was unexpected.
+  Kernel-Power Event 41, 09/11/2026 22:31:55:
+    BugcheckCode = 257
+    BugcheckParameter1 = 0x8
+    BugcheckParameter2 = 0x0
+    BugcheckParameter3 = 0xffffbb80f19d1180
+    BugcheckParameter4 = 0x9
+    PowerButtonTimestamp = 0
+    BugcheckInfoFromEFI = false
+    WHEABootErrorCount = 0
+    -> 0x101 = CLOCK_WATCHDOG_TIMEOUT, processor 9 (Parameter4). A DIFFERENT core from 6/12 and 9/10 (4).
+  Boot before the crash      : 2026-09-11 09:16:16 (EventLog 6005) -> uptime 13 h 00 m, shortest on record
+  Interval since prior crash : 27 h (2026-09-10 19:03 -> 2026-09-11 22:16)
+  Load at the time           : six application jobs running (not idle) — first crash under load
+  Dead                       : ~15 min (22:16:36 -> boot 22:31:48)
+  Windows Update             : nothing installed after 13:26 that day; no pending reboot; build 26200.9168 unchanged
+  WHEA-Logger                : one Id 3 (Informational) at 22:32:06 on the reboot
+  Microcode / mitigation     : 0x12F (BIOS F.45); min processor state 100% since 2026-07-29; Fast Startup off since 2026-09-11
+  Curator observation        : top of the case VERY HOT at power-on (no sensor log running; HWiNFO64 installed, idle)
+
+  Running tally: 16 Event 41 records 2026-04-14 .. 2026-09-11; 14 spontaneous after
+  excluding the two power-button events; 4 with a recorded 0x101 (6/12, 7/29, 9/10, 9/11).
