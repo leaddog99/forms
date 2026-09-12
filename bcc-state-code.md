@@ -9525,3 +9525,59 @@ two-host-safe. MARLEY: still the live host (tunnel), crash #16 tonight.
 4. Re-run the crash-interrupted work AFTER the flip on BAILEY (Pozole;
    tastecooking; extracts for cookiesandcups/thecozycook/girlversusdough;
    45 borrowed publishers). Everything else carried from the entries above.
+
+## Session log — 2026-09-12 (midday) — BAILEY gets a hostname; the second sync; the tunnel map read for real
+
+* **Sync #2 run 12:14** (`-WithDbs -FreshBackup`, curator: "I've added a lot
+  of domains… and dishes"): backup set `recipes_2026-09-12_121452` + training
+  + media + env; service stopped/started by the new service-aware path
+  (nssm relaunched python at 12:17:55, health 200). The code half printed
+  `SetModTime failed: SSH_FX_FAILURE` — Windows sftp-server refuses to stamp
+  a DIRECTORY the running service holds open; rclone then **skips every
+  deletion** ("not deleting files as there were IO errors"). Fix: both
+  `rclone sync` lines in `bcc_sync_bailey.ps1` now carry
+  `--no-update-dir-modtime` (rclone 1.75) → exit 0, 0 errors. Pushed to
+  BAILEY.
+* **"What URL reaches BAILEY?"** — a long hunt, now settled:
+  - `bccorigins.pluqs.com`: no DNS record. `recipes.pluqs.com`: proxied but
+    530 (dead May tunnel). `www.bestcooks.club`: 200 — but the BODY is
+    Squarespace "Coming Soon" (CNAME → ext-sq.squarespace.com); the 200
+    fooled the first probe. Apex `bestcooks.club`: A → public IP
+    108.20.73.154, times out (no port-forward). **Lesson: verify by content.**
+  - Dashboard (curator logged in; Zero Trust → Networks → Tunnels & Mesh):
+    tunnel **`recipes`** = MARLEY (recipes.tbotb.com); tunnel
+    **`bestcooksclub`** = BAILEY's connector (ad654869…, healthy, 4 HA
+    connections) with two `bestcooks.club` routes (#1 `https://127.0.0.1:8009`
+    — wrong scheme, matches first — #2 http) and DNS never repointed, so it
+    served nothing.
+  - Curator chose **bailey.tbotb.com** (staging name; the brand domain stays
+    parked). Route added on tunnel `bestcooksclub` → `http://127.0.0.1:8009`.
+    **Proven**: 200 with the app's JSON; stop BAILEY's service → **502** while
+    recipes.tbotb.com stayed 200; start → 200 again.
+* Interim SSH forward `127.0.0.1:8010 → BAILEY:8009` (pid 1988, session-bound)
+  still up; no longer needed.
+* Curator is considering **bcc.run** as the admin domain. Fits: a Cloudflare
+  zone + one published route on whichever tunnel is primary; nothing in the
+  app hard-codes the host (public_base_url is a setting).
+
+## START HERE — 2026-09-12 (revised midday) — SUPERSEDES the 23:15 entry
+
+**BAILEY: https://bailey.tbotb.com** (NSSM `BCC`, synced 12:14, byte-verified
+last night's set + today's). **MARLEY: https://recipes.tbotb.com** (still
+live; crash #16 last night).
+
+1. **Curator, on BAILEY** — unchanged, two commands: `cmdkey /add:Adam
+   /user:admin /pass:…` and `schtasks /Change /TN "BCC Recipes DB Backup"
+   /RU john /RP …`, then run the task and read backup.log for ADAM copies +
+   cloud exit 0.
+2. **The flip** (when ready): write-freeze MARLEY → `bcc_sync_bailey.ps1
+   -WithDbs -FreshBackup` → in the dashboard move the **recipes.tbotb.com**
+   route from tunnel `recipes` to tunnel `bestcooksclub` (Published
+   application routes; delete on one, add on the other; DNS follows) →
+   verify by content + stop-window → disable the MARLEY→BAILEY line in
+   MARLEY's nightly (or the whole MARLEY task). Optional cleanup on the
+   bestcooksclub tunnel: delete the `https://` route #1.
+3. bestcooks.club (brand) + bcc.run (admin, unbought): decide after the flip.
+4. Re-run the crash-interrupted work on BAILEY after the flip (Pozole;
+   tastecooking; extracts for cookiesandcups/thecozycook/girlversusdough;
+   45 borrowed publishers). Everything else carried.

@@ -28,7 +28,10 @@ $dst   = "bailey:/C:/Users/john/PycharmProjects/forms"
 $adam  = "\\Adam\tbotb\Backups\recipes-db"
 
 Write-Host "== code + assets (incremental) =="
-& $rc sync $src $dst --stats-one-line `
+# --no-update-dir-modtime (2026-09-12): Windows sftp-server refuses SetModTime on
+# directories the running service holds open -> rclone reported 1 error every run
+# and SKIPPED ALL DELETIONS on BAILEY. Directory mtimes carry nothing we need.
+& $rc sync $src $dst --stats-one-line --no-update-dir-modtime `
   --exclude "recipes.db" --exclude "recipes.db-wal" --exclude "recipes.db-shm" `
   --exclude "page_cache.db" --exclude "media.db" --exclude "training.db" `
   --exclude "recipes.sql.gz" --exclude "recipes.sqbpro" --exclude "identifier.sqlite" `
@@ -38,7 +41,7 @@ Write-Host "== code + assets (incremental) =="
   # ^ capture walker (2026-09-08): a live Chromium profile holds LOCK files
   #   (13 rclone errors) and its cookies are a signed-in session that must
   #   stay on this machine; captures are per-machine pipeline inputs.
-& $rc sync "C:/Users/john/PycharmProjects/recipe-core" "bailey:/C:/Users/john/PycharmProjects/recipe-core" `
+& $rc sync "C:/Users/john/PycharmProjects/recipe-core" "bailey:/C:/Users/john/PycharmProjects/recipe-core" --no-update-dir-modtime `
   --exclude "__pycache__/**" --exclude "*.egg-info/**" --stats-one-line
 
 if ($WithDbs) {
