@@ -7875,6 +7875,18 @@ def cancel_job_endpoint(job_id: int):
     units (e.g. the publisher harvest checks between candidates) and aborts → status
     'cancelled'. 409 if the job isn't live."""
     with _db() as conn:
+        job = jobs_lib.get_job(conn, job_id)
+        # A 'running' row whose executor is GONE can never see the flag — the
+        # only thing that closed such rows was the reaper at server startup, so
+        # the curator saw "hung" jobs that "can't cancel" (2026-09-13: #1965 and
+        # #1992, both processes dead for a day). Close it here, the same way the
+        # startup reaper does; this process is the SYSTEM service, so pid_alive
+        # is authoritative.
+        if job and job["status"] == "running" and not jobs_lib.pid_alive(job.get("pid")):
+            jobs_lib.mark_finished(conn, job_id, status="error",
+                                   error_detail="interrupted — owning process is gone")
+            return {"job_id": job_id, "cancel_requested": False, "closed": True,
+                    "detail": "executor process was already gone — job marked interrupted"}
         ok = jobs_lib.request_cancel(conn, job_id)
     if not ok:
         raise HTTPException(status_code=409, detail="Job is not queued/running — nothing to cancel.")

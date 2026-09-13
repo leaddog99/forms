@@ -131,7 +131,13 @@ def pid_alive(pid: Optional[int]) -> bool:
             k32 = ctypes.windll.kernel32
             h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
             if not h:
-                return False
+                # ERROR_ACCESS_DENIED (5) = the process EXISTS but this caller may
+                # not open it — job runners are spawned by the SYSTEM service, so
+                # a user-shell caller gets 5 for every live job. Treating that as
+                # "dead" marked a healthy dish_refresh (#2000) interrupted on
+                # 2026-09-13. ERROR_INVALID_PARAMETER (87) is the real "no such
+                # process"; anything else is unknown → assume dead as before.
+                return k32.GetLastError() == 5
             try:
                 code = ctypes.c_ulong()
                 ok = k32.GetExitCodeProcess(h, ctypes.byref(code))

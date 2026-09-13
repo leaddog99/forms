@@ -9581,3 +9581,36 @@ live; crash #16 last night).
 4. Re-run the crash-interrupted work on BAILEY after the flip (Pozole;
    tastecooking; extracts for cookiesandcups/thecozycook/girlversusdough;
    45 borrowed publishers). Everything else carried.
+
+## Session log — 2026-09-13 (morning) — two "hung" jobs were orphans; the liveness check lied from a user shell
+
+* Curator: Pozole (#1965) and screenshot_refresh (#1992) "hung… can't cancel
+  them either." Both rows said `running`; both pids (22096, 12800) were
+  GONE — #1965's log stops 09-11 23:02:38 at Moz 19/23 (cancel flag set),
+  #1992's stops 09-12 12:02:56 mid-blob. No Application-Error/WER record at
+  either time, no repo script kills python by name, server pid 7620 ran
+  unbroken from the 22:32 boot → **cause of the two deaths undetermined**
+  (terminated, not crashed). What made them LOOK hung: jobs run out of
+  process and write their own final status; a dead executor leaves
+  `running` forever, and the only reaper (`reset_interrupted_jobs`) runs at
+  server startup. Cancel is cooperative (a flag the child polls) — a dead
+  child never sees it, so "cancel" returned OK and did nothing.
+* **Closed the two rows** with the reaper from a user shell — and it ALSO
+  marked live job **#2000 (Singapore Noodles) interrupted**. Root cause in
+  `pid_alive`: `OpenProcess` on a SYSTEM-owned runner fails with
+  **ERROR_ACCESS_DENIED (5)** from a non-SYSTEM caller, which the function
+  read as "dead". Restored #2000 within a minute (it finished `success` on
+  its own at 11:12:37 UTC — `mark_finished` is unconditional, so its write
+  landed). This is the job-784/822 pattern the docstring warns about, from a
+  new direction (caller identity, not a stray import).
+* **Fixed (restart DONE, pid 36992, 200):** (1) `pid_alive` treats
+  GetLastError()==5 as ALIVE (the pid exists); 87 / anything else stays
+  dead. Verified: server pid True from a user shell, bogus pid False.
+  (2) `POST /jobs/{id}/cancel` — a `running` job whose pid is gone is closed
+  on the spot as `interrupted — owning process is gone` (the service is
+  SYSTEM, so its pid_alive is authoritative) and returns `closed: true`;
+  live jobs still get the cooperative flag. So "hung" rows are now
+  cancellable from the UI without a server restart.
+* Lesson recorded: never run the reaper from a user shell against a SYSTEM
+  service's jobs; use the cancel endpoint (in-process) instead.
+* Pozole needs a fresh run (#1964 died in crash #16, #1965 died 23:02).
