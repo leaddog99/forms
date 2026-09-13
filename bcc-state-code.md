@@ -9614,3 +9614,33 @@ live; crash #16 last night).
 * Lesson recorded: never run the reaper from a user shell against a SYSTEM
   service's jobs; use the cancel endpoint (in-process) instead.
 * Pozole needs a fresh run (#1964 died in crash #16, #1965 died 23:02).
+
+## Session log — 2026-09-13 (late morning) — Pozole done; the Chinese query line was never reaching Google
+
+* **Pozole** re-run as job #2004 via `python -m jobs run dish_refresh --dish
+  Pozole` (the UI endpoint needs a session): success, 20/20 saved, 0
+  rejects, 70 data points, bottom OU 3.10. Third attempt after crash #16 and
+  the 23:02 orphan.
+* **Curator: "the Chinese language search was rejected"** (Xiamen Chow Mei
+  Fun, job #2008). Log: query 2 `厦门炒米粉 [gl=cn hl=zh]` → Scale SERP
+  `'hl' parameter is invalid` — Google's hl list has **no bare `zh`**, only
+  `zh-cn` / `zh-tw` (150-code list fetched and checked). The run logged it
+  and carried on with the English line alone (9/10 saved, custom-OU fit
+  skipped for lack of scored URLs).
+* **Fixed at the chokepoint (31cd022)**: `serp_search.google_hl(hl, gl)` —
+  `zh` → `zh-tw` for gl tw/hk/mo, else `zh-cn`; zh-hans/zh-hant aliases;
+  applied in `serp_search()` AND `serp_image_search()` so both vendors and
+  both call sites get it. Query rows keep the 2-letter form (the pipeline
+  compares `hl[:2]`). Runners are fresh processes → no restart needed for
+  jobs; **restart OWED** only for the server's in-process image-search use.
+* **Re-run #2009**: query 2 accepted, 25 results; 47 candidates; 10/10
+  saved, bottom OU 4.50 (was 3.38). BUT the final ten are all English: the
+  three Chinese pages that passed the recipe gate (ytower.com.tw,
+  m.xiachufang.com, mrsblackcat.pixnet.net) were **MOZ-FAIL → dropped as
+  `moz-unavailable`** — Moz has no PA/DA for them, and `_moz_score` drops
+  what it can't score. So a foreign line can be searched now but its pages
+  still can't RANK when Moz's index doesn't cover them (thin outside
+  English). Pre-existing gap, not touched; candidates for the
+  [[feedback_absent_not_zero]] treatment (absent authority ≠ drop) and the
+  [[project_fetchfail_salvage]] family. istidiningtable.com (KEEP xlate=10)
+  never reached Moz — fell at a later gate; not chased.
