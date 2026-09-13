@@ -107,6 +107,27 @@ def has_key(provider: str | None = None) -> bool:
     return bool(os.getenv("SERPAPI_KEY"))
 
 
+# Google's `hl` codes are NOT bare ISO-639 for Chinese: the vendors validate
+# against Google's list (zh-cn / zh-tw), so a query row written as hl=zh was
+# rejected outright ("'hl' parameter is invalid", Xiamen Chow Mei Fun, job #2008,
+# 2026-09-13) and the whole Chinese-language search silently contributed zero
+# results. Normalize ONCE here, at the chokepoint both providers share; the
+# query rows keep their 2-letter form (the rest of the pipeline compares hl[:2]).
+_HL_TRADITIONAL_GL = {"tw", "hk", "mo"}
+_HL_ALIASES = {"zh-hans": "zh-cn", "zh_cn": "zh-cn", "zh-hant": "zh-tw", "zh_tw": "zh-tw"}
+
+
+def google_hl(hl: str | None, gl: str | None = None) -> str | None:
+    """Map a query row's language to a code Google (and both SERP vendors) accept."""
+    if not hl:
+        return hl
+    h = hl.strip().lower()
+    h = _HL_ALIASES.get(h, h)
+    if h == "zh":
+        h = "zh-tw" if (gl or "").lower() in _HL_TRADITIONAL_GL else "zh-cn"
+    return h
+
+
 def serp_search(query: str, pages: int = 7, *, want: int | None = None,
                 gl: str | None = None, hl: str | None = None,
                 provider: str | None = None, timeout: int = 60) -> list[dict]:
@@ -115,6 +136,7 @@ def serp_search(query: str, pages: int = 7, *, want: int | None = None,
     a specific vendor (for the A/B); otherwise the configured one. Returns
     [{link, title, rank}] deduped in rank order."""
     prov = (provider or active_provider()).lower()
+    hl = google_hl(hl, gl)
     if prov in _SCALESERP_ALIASES:
         return _scaleserp(query, pages, want, gl, hl, timeout)
     return _serpapi(query, pages, want, gl, hl, timeout)
@@ -130,6 +152,7 @@ def serp_image_search(query: str, *, want: int = 5, gl: str | None = None,
     [{image, thumbnail, title, source_link, source_domain, rank}] in result order.
     1 credit/call. Empty list if the active provider's key is absent."""
     prov = (provider or active_provider()).lower()
+    hl = google_hl(hl, gl)
     if prov in _SCALESERP_ALIASES:
         return _scaleserp_images(query, want, gl, hl, timeout)
     return _serpapi_images(query, want, gl, hl, timeout)
