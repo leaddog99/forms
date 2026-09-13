@@ -240,6 +240,7 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
                 # First time we see this URL. Stamp the query list +
                 # google_rank as the position from THIS query.
                 entry["_queries"] = [query]
+                entry["_hls"] = [hl]
                 by_norm[key] = entry
                 added += 1
             else:
@@ -251,6 +252,7 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
                 #   surface different title fragments; longer is usually
                 #   more complete)
                 existing.setdefault("_queries", []).append(query)
+                existing.setdefault("_hls", []).append(hl)
                 this_rank = entry.get("google_rank")
                 if this_rank is not None and (
                     existing.get("google_rank") is None
@@ -826,7 +828,17 @@ def _is_recipe_filter(entries: list[dict], *, capture_source: str = "unknown",
         # food/recipe word BEFORE the (paid) fetch, using the shared self-learning word
         # lists. The single canonical place for the pre-fetch skip, so the harvest AND
         # the dish batch share it. See input.pipeline.url_word_lists.
-        if url_prefilter:
+        # A candidate found by a NON-base-language query line skips the pre-filter
+        # outright: the learned word lists are Latin/English, so a Chinese site's
+        # pinyin or numeric path reads as "no signal" when it is really "no
+        # vocabulary". Job #2010 (Xiamen Chow Mei Fun, Chinese-only line,
+        # 2026-09-13): 13 of 22 results URL-SKIPped before any fetch, zero
+        # candidates survived. The fetch-verify (which DOES read the page in its
+        # own language) is the judge for these; the pre-filter only ever saved a
+        # fetch. Non-latin-script paths are also let through inside the function.
+        _foreign_line = any((h or "en")[:2].lower() != _base_lang
+                            for h in (e.get("_hls") or []))
+        if url_prefilter and not _foreign_line:
             from input.pipeline.url_word_lists import url_lacks_recipe_signal
             # subject_words = what this run is FOR. A dish refresh must never
             # pre-filter away the word it searched for: Tiramisu dropped 48 of 94

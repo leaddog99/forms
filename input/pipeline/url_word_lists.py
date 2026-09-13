@@ -243,10 +243,28 @@ def url_lacks_recipe_signal(url: str, db_path: Optional[str] = None,
     never pre-filter away the very word it is searching for: whatever the dish is
     called is, for that run, a food word by definition. Passing it here fixes the
     whole class, not one word."""
+    # A path written in a non-Latin script (Chinese, Japanese, Greek, Cyrillic, …)
+    # tokenizes to NOTHING under the [a-z] splitter, so "no food token" is not a
+    # judgment — it is illiteracy. The learned lists are Latin-script only; a
+    # Chinese-only query line (Xiamen Chow Mei Fun, job #2010, 2026-09-13) had 13 of
+    # 22 results URL-SKIPped before any fetch, including real recipe pages
+    # (xiaoyu.com/cookbook, hk01 教煮, pixnet), and the run ended with zero
+    # candidates. Absent vocabulary ≠ absent signal: let the fetch-verify judge.
+    if _path_has_non_latin_letters(url):
+        return False
     food = get_word_sets(db_path)["food"]
     if extra_food:
         food = food | {w.lower() for w in extra_food if w}
     return not (path_tokens(url) & food)
+
+
+def _path_has_non_latin_letters(url: str) -> bool:
+    """Does the (percent-decoded) path carry letters outside the Latin range?"""
+    try:
+        path = unquote(urlparse(url).path)
+    except Exception:
+        return False
+    return any(ch.isalpha() and ord(ch) > 0x024F for ch in path)
 
 
 # ── sweep (occasional, out-of-process — the only place the model is called) ──
