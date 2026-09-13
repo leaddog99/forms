@@ -9644,3 +9644,29 @@ live; crash #16 last night).
   [[feedback_absent_not_zero]] treatment (absent authority ≠ drop) and the
   [[project_fetchfail_salvage]] family. istidiningtable.com (KEEP xlate=10)
   never reached Moz — fell at a later gate; not chased.
+
+## Session log — 2026-09-13 (midday) — "latest run is a mess": a Chinese-only line, three walls, three fixes
+
+* Job #2010 (curator, UI): the dish's rows were now ONLY `厦门炒米粉 gl=cn
+  hl=zh keep=5` (English line removed). 25 CN results → **13/22 URL-SKIPped
+  pre-fetch** (English-only word lists; CJK/pinyin/numeric paths = "no
+  vocabulary", read as "no signal") → 2 keeps → both **MOZ-FAIL** → zero
+  → RuntimeError; prior 10 winners untouched (guard worked).
+* **Fix 1 (f510152) — pre-filter can't judge what it can't read**:
+  `url_lacks_recipe_signal` returns False for non-Latin-script paths;
+  candidates are tagged `_hls` at SERP merge and any from a non-base-language
+  line bypass the pre-filter (fetch-verify reads the page in its language).
+  Run #2011: 0 URL-SKIPs, 5 keeps (was 2) incl. hk01 教煮 + xiaoyu cookbook.
+* **Fix 2 (curator decision: "fill the line's keep seats by Google rank")**:
+  `_handle_dish_refresh_job` — `moz-unavailable` pages from a `keep` line
+  join the pool last, `_authority_absent`, Google order, quota seat ONLY;
+  zero-guard counts them; log line + seat print say so. Run #2011: seats
+  '厦门炒米粉'=5 filled — hk01 (scored, OU −6.63 under the per-line relaxed
+  floor) then ytower / xiachufang / pixnet / xiaoyu [authority absent];
+  open=5 empty (nothing scored to claim them); 5/10 saved; rows 3–5 carry
+  pa/da/ou = **None** (absent, not 0). Delete-and-replace removed the 6
+  English winners this dish still owned — that is the line edit, not a bug;
+  put the English line back if both wanted.
+* Follow-ups (not built): batch `_moz_score` sends the RAW url — ytower with
+  `srsltid` was MOZ-FAIL in the batch but scored PA 28/DA 42 at extract time
+  (normalized url); `mozHttpCode: 0` on absent rows is a placeholder zero.

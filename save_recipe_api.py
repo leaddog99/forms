@@ -8418,6 +8418,27 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         raise  # runner records error status + stores the message
 
     entries = batch_result["entries"]
+    # AUTHORITY ABSENT ≠ AUTHORITY ZERO (curator decision 2026-09-13, Xiamen Chow
+    # Mei Fun #2010: a Chinese-only line ended at ZERO because Moz has no PA/DA
+    # for Chinese pages and _moz_score drops what it cannot score). Pages Moz
+    # cannot score stay OUT of the ranked race — they have no OU to race with —
+    # but a search line that RESERVED seats (`keep`) may fill them with its own
+    # unscored pages, in Google's own rank order, after its scored ones. They
+    # never take an open seat and never enter the top-up. Their _master row
+    # carries no pa/da/ou (absent, not 0). Lines without `keep` are unchanged.
+    _line_keep = {r["q"]: int(r.get("keep") or 0)
+                  for r in query_rows if int(r.get("keep") or 0) > 0}
+    _absent_pool = [
+        e for e in (batch_result.get("dropped_moz") or [])
+        if (e.get("_dropped_reason") == "moz-unavailable"
+            and any(_line_keep.get(q, 0) > 0 for q in (e.get("_queries") or [])))
+    ]
+    _absent_pool.sort(key=lambda e: (e.get("google_rank") is None, e.get("google_rank") or 0))
+    for e in _absent_pool:
+        e["_authority_absent"] = True
+    if _absent_pool:
+        print(f"[REFRESH-DISH] authority-absent: {len(_absent_pool)} candidate(s) Moz could "
+              f"not score are eligible for their line's reserved seats only, in Google order")
     print(f"[REFRESH-DISH] front-end yielded {len(entries)} candidates")
     # SERP page losses (retries exhausted) = ~10 candidates each, silently
     # shrinking the pool. Alert LOUDLY + email the curator (alerts.py).
@@ -8442,7 +8463,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # EXISTING dish would have wiped every kind=top winner and reported
     # success. Cheese Sauce survived only by being new. A refresh that found
     # nothing must not destroy what a working refresh found before it.
-    if not entries:
+    if not entries and not _absent_pool:
         raise RuntimeError(
             f"dish refresh for {canonical_name!r} found ZERO candidates — "
             f"likely a SERP-provider outage (check the [scaleserp] lines "
@@ -8558,7 +8579,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # Save until top_n_final winners land, backfilling from the reserve when a
     # winner fails extract/save-gate ("ensure 10 if available"). The loop stops
     # at the target, so reserve URLs are only extracted when a backfill is needed.
-    pool = list(entries) + list(batch_result.get("reserve", []))
+    pool = list(entries) + list(batch_result.get("reserve", [])) + list(_absent_pool)
     target = top_final
     saved_urls: list[str] = []
     backfilled = 0
@@ -8593,6 +8614,12 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
                 continue
             _lines = e.get("_queries") or []
             _line = next((q for q in _lines if _quotas.get(q, 0) > 0), None)
+            if e.get("_authority_absent"):
+                # No OU → no claim on an open seat and no place in the top-up;
+                # its line's reserved seat or nothing.
+                if _line is not None:
+                    yield e, _line
+                continue
             if _line is None and _open[0] <= 0:
                 deferred.append(e)
                 continue
@@ -8712,7 +8739,9 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             if _seat_line is not None and _quotas.get(_seat_line, 0) > 0:
                 _quotas[_seat_line] -= 1
                 print(f"[REFRESH-DISH] RESERVED SEAT ({_seat_line!r}, "
-                      f"{_quotas[_seat_line]} left) <- {url}")
+                      f"{_quotas[_seat_line]} left)"
+                      f"{' [authority absent — Google order]' if entry.get('_authority_absent') else ''}"
+                      f" <- {url}")
             elif _quotas:
                 _open[0] = max(0, _open[0] - 1)
             if isinstance(entry.get("ou"), (int, float)):
