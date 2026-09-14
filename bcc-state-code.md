@@ -9670,3 +9670,25 @@ live; crash #16 last night).
 * Follow-ups (not built): batch `_moz_score` sends the RAW url — ytower with
   `srsltid` was MOZ-FAIL in the batch but scored PA 28/DA 42 at extract time
   (normalized url); `mozHttpCode: 0` on absent rows is a placeholder zero.
+
+## Session log — 2026-09-14 — the app playbook; f2n v3 project created
+
+* Curator: a new version of f2n (face-to-name memory aid), reusing this app's
+  techniques/forms/auth, as a SEPARATE project. Written
+  **`docs/app-playbook.md`** — the distilled house style: app shape, the
+  conventions with their incidents, a LIFT table (auth, host_gate, jobs,
+  llm gateway, system_config, alerts, page shell, ops kit), what NOT to
+  copy (the API monolith shape, anything recipe-shaped), and the
+  cross-repo mechanics (`claude --add-dir …forms`).
+* Created `C:\Users\john\PycharmProjects\f2n` (git, master): `CLAUDE.md`
+  (standing instructions + the reference pointer + prior-art paths:
+  nameGame, namegame_V2, PyCharm f2n_*.py, OneDrive/F2N), `f2n-state.md`
+  (state file with a START HERE: design first in docs/, then lift the
+  skeleton), `api/ pipeline/ forms/ docs/`, `.gitignore`. No code yet.
+* f2n's Claude memory folder seeded with the generic `feedback_*` memories
+  (25 of 31; the six recipe-specific ones skipped) + an index. Project
+  memories stay here. Cloudflare already has a tunnel named `f2n` (down).
+* Also today: Rice Vinegar / Panko curated runs = honestly empty (no
+  source ranks pantry staples); MARLEY nightly clean incl. the
+  service-aware BAILEY push; BAILEY's own backup task still needs the two
+  credential commands.
