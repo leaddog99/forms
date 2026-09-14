@@ -9688,6 +9688,11 @@ live; crash #16 last night).
 * f2n's Claude memory folder seeded with the generic `feedback_*` memories
   (25 of 31; the six recipe-specific ones skipped) + an index. Project
   memories stay here. Cloudflare already has a tunnel named `f2n` (down).
+  Curator then supplied two documents into f2n/docs: the Rationale (49
+  sections) and the Implementation Spec (48 sections, 11 milestones, §46
+  first-build checklist); f2n's CLAUDE.md + START HERE now build around
+  Milestone 1; open question there = spec's SQLAlchemy/Alembic/Jinja2 vs
+  the house sqlite3/static-forms stack.
 * Also today: Rice Vinegar / Panko curated runs = honestly empty (no
   source ranks pantry staples); MARLEY nightly clean incl. the
   service-aware BAILEY push; BAILEY's own backup task still needs the two
