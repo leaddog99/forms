@@ -9656,6 +9656,129 @@ jobs_lib.register_handler("realrank_research", _handle_realrank_research_job)
 MEASURE_TOP_N = 30
 
 
+def _collection_refresh_sync(name: str, job_id: int, _should_cancel) -> dict:
+    """The collection_refresh job's body as a plain function — search the pool's
+    lines, replace candidates, off-class screen, widget histograms → RealRank,
+    shortlist. Shared by the job handler and the curated run's INLINE pool step
+    (2026-09-14) so there is ONE way a pool gets refreshed."""
+    from intake.products import collections_store as cst, amazon_rainforest as ep, amazon_widget as aw
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "docs" / "RealRank"))
+    from realrank_index import realrank_index, polarization
+    with _db() as conn:
+        coll = cst.get_collection(conn, name)
+    if not coll:
+        raise ValueError(f"collection {name!r} not found")
+
+    # SEARCH LINES (2026-09-09, the dish model): each row is its own
+    # Amazon search at its own page count; results union and dedupe by
+    # ASIN, each candidate remembering which lines surfaced it (the seat
+    # reservation reads that). One quoted phrase runs thin and Amazon pads
+    # the page — "alpine cookbooks" came back with ten Filipino cookbooks.
+    rows = cst.rows_of(coll)
+    if not rows:
+        raise ValueError(f"collection {name!r} has no search line")
+    by_asin: dict = {}
+    credits = {}
+    for qi, row in enumerate(rows, 1):
+        url = cst.row_search_url(row["q"])
+        pages = int(row.get("n") or coll.get("pages") or 1)
+        print(f"[COLLECTION] [LINE {qi}/{len(rows)}] {row['q']!r} pages={pages} -> {url}")
+        res = ep.search_url(url, pages=pages)
+        for w in (res.get("warnings") or []):
+            print(f"[COLLECTION] warning: {w}")
+        if not res.get("ok"):
+            raise ValueError(f"search failed for line {row['q']!r}: {res.get('error')}")
+        credits = res.get("credits") or credits
+        added = merged = 0
+        for it in res["items"]:
+            asin = (it.get("asin") or "").strip().upper()
+            if not asin:
+                continue
+            prior = by_asin.get(asin)
+            if prior is None:
+                it["_queries"] = [row["q"]]
+                by_asin[asin] = it
+                added += 1
+            else:
+                prior.setdefault("_queries", []).append(row["q"])
+                p_new, p_old = it.get("position"), prior.get("position")
+                if p_new is not None and (p_old is None or p_new < p_old):
+                    prior["position"] = p_new
+                if len(it.get("title") or "") > len(prior.get("title") or ""):
+                    prior["title"] = it["title"]
+                merged += 1
+        print(f"[COLLECTION]     -> {added} new, {merged} merged with prior lines")
+    items = list(by_asin.values())
+    print(f"[COLLECTION] {len(items)} unique ASINs across {len(rows)} line(s)")
+    res = {"credits": credits}
+    with _db() as conn:
+        cst.replace_candidates(conn, name, items)
+    # OFF-CLASS SCREEN before anything is measured or ranked (2026-09-09,
+    # Alpine Cookbooks: Amazon padded the quoted search with Filipino
+    # cookbooks that out-RealRanked the real ones). One haiku call; the
+    # excluded rows are skipped by the measure below and by the book run.
+    try:
+        _scr = _screen_offclass_sync(name)
+        if _scr.get("excluded"):
+            print(f"[COLLECTION] off-class screen excluded {len(_scr['excluded'])}: "
+                  + ", ".join(f"{o['asin']} ({o['reason']})" for o in _scr["excluded"][:8]))
+    except Exception as e:
+        print(f"[COLLECTION] off-class screen skipped: {type(e).__name__}: {e}")
+    with _db() as conn:
+        cohort = cst.list_candidates(conn, name)
+    # Measure the Wilson top-30 — wide enough that RealRank rescoring can't
+    # promote anything from below it into a top-10 pool, narrow enough to
+    # go easy on the undocumented widget endpoint. The shortlist flag stays
+    # top-keep_top_n by Wilson.
+    screen = [c for c in cohort if c.get("wilson_score") and not c.get("excluded")
+              ][:MEASURE_TOP_N]
+    # Shortlist with RESERVED SEATS per search line (a floor, not a cap —
+    # the dish refresh's seating, so a thinly-rated line still seats its
+    # own best candidates against a well-rated neighbour class).
+    _target = int(coll.get("keep_top_n") or 10)
+    shortlist = cst.pool_shortlist(screen, rows, _target)
+    _res = {r["q"]: r["keep"] for r in rows if r.get("keep")}
+    if _res:
+        print("[COLLECTION] reserved seats: "
+              + ", ".join(f"{q!r}={k}" for q, k in _res.items())
+              + f" | open={max(0, _target - sum(_res.values()))} of {_target}")
+    print(f"[COLLECTION] {len(items)} candidates kept "
+          f"(credits {res.get('credits')}) — measuring Wilson top {len(screen)}, "
+          f"shortlisting top {len(shortlist)}")
+    screened, failed = 0, 0
+    for c in screen:
+        if _should_cancel():
+            raise KeyboardInterrupt("cancelled during screening")
+        # Pacing: 0.4s back-to-back drew a widget throttle (25 straight
+        # failures, measured 2026-09-05) — batch job, a second is free.
+        time.sleep(1.0)
+        h = aw.rating_histogram(c["asin"])
+        if not h.get("ok") or not h.get("histogram"):
+            failed += 1
+            print(f"[COLLECTION]   {c['asin']} histogram unavailable: {h.get('error')}")
+            continue
+        score = round(realrank_index(h["histogram"], h["ratings_total"]), 1)
+        pol = (polarization(h["histogram"]) or {}).get("label") or ""
+        with _db() as conn:
+            cst.set_screen_result(conn, name, c["asin"], histogram=h["histogram"],
+                                  realrank_score=score, polarization=pol,
+                                  selected=c["asin"] in shortlist)
+        screened += 1
+        print(f"[COLLECTION]   {c['asin']} wilson {c['wilson_score']} -> real {score}"
+              f"{' (' + pol + ')' if pol else ''}"
+              + ("" if c["asin"] in shortlist else "  (measured, not shortlisted)"))
+    # Every histogram failing is systemic (throttled/endpoint moved), not a bad candidate.
+    if screen and failed == len(screen):
+        raise ValueError(f"all {failed} histogram fetches failed — widget may be blocked "
+                         f"or its endpoint moved; not publishing an unscored shortlist")
+    with _db() as conn:
+        conn.execute("UPDATE product_collections SET last_job_id = ? WHERE name = ?",
+                     (job_id, name))
+        conn.commit()
+    return {"collection": name, "candidates": len(items), "screened": screened,
+            "histogram_failures": failed, "credits": res.get("credits")}
+
+
 async def _handle_collection_refresh_job(job: dict) -> dict:
     """Run a product collection: the saved Amazon search URL -> the cohort -> a screened
     shortlist (intake/products/collections_store).
@@ -9688,121 +9811,7 @@ async def _handle_collection_refresh_job(job: dict) -> dict:
             return False
 
     def _run():
-        sys.path.insert(0, str(Path(__file__).resolve().parent / "docs" / "RealRank"))
-        from realrank_index import realrank_index, polarization
-        with _db() as conn:
-            coll = cst.get_collection(conn, name)
-        if not coll:
-            raise ValueError(f"collection {name!r} not found")
-
-        # SEARCH LINES (2026-09-09, the dish model): each row is its own
-        # Amazon search at its own page count; results union and dedupe by
-        # ASIN, each candidate remembering which lines surfaced it (the seat
-        # reservation reads that). One quoted phrase runs thin and Amazon pads
-        # the page — "alpine cookbooks" came back with ten Filipino cookbooks.
-        rows = cst.rows_of(coll)
-        if not rows:
-            raise ValueError(f"collection {name!r} has no search line")
-        by_asin: dict = {}
-        credits = {}
-        for qi, row in enumerate(rows, 1):
-            url = cst.row_search_url(row["q"])
-            pages = int(row.get("n") or coll.get("pages") or 1)
-            print(f"[COLLECTION] [LINE {qi}/{len(rows)}] {row['q']!r} pages={pages} -> {url}")
-            res = ep.search_url(url, pages=pages)
-            for w in (res.get("warnings") or []):
-                print(f"[COLLECTION] warning: {w}")
-            if not res.get("ok"):
-                raise ValueError(f"search failed for line {row['q']!r}: {res.get('error')}")
-            credits = res.get("credits") or credits
-            added = merged = 0
-            for it in res["items"]:
-                asin = (it.get("asin") or "").strip().upper()
-                if not asin:
-                    continue
-                prior = by_asin.get(asin)
-                if prior is None:
-                    it["_queries"] = [row["q"]]
-                    by_asin[asin] = it
-                    added += 1
-                else:
-                    prior.setdefault("_queries", []).append(row["q"])
-                    p_new, p_old = it.get("position"), prior.get("position")
-                    if p_new is not None and (p_old is None or p_new < p_old):
-                        prior["position"] = p_new
-                    if len(it.get("title") or "") > len(prior.get("title") or ""):
-                        prior["title"] = it["title"]
-                    merged += 1
-            print(f"[COLLECTION]     -> {added} new, {merged} merged with prior lines")
-        items = list(by_asin.values())
-        print(f"[COLLECTION] {len(items)} unique ASINs across {len(rows)} line(s)")
-        res = {"credits": credits}
-        with _db() as conn:
-            cst.replace_candidates(conn, name, items)
-        # OFF-CLASS SCREEN before anything is measured or ranked (2026-09-09,
-        # Alpine Cookbooks: Amazon padded the quoted search with Filipino
-        # cookbooks that out-RealRanked the real ones). One haiku call; the
-        # excluded rows are skipped by the measure below and by the book run.
-        try:
-            _scr = _screen_offclass_sync(name)
-            if _scr.get("excluded"):
-                print(f"[COLLECTION] off-class screen excluded {len(_scr['excluded'])}: "
-                      + ", ".join(f"{o['asin']} ({o['reason']})" for o in _scr["excluded"][:8]))
-        except Exception as e:
-            print(f"[COLLECTION] off-class screen skipped: {type(e).__name__}: {e}")
-        with _db() as conn:
-            cohort = cst.list_candidates(conn, name)
-        # Measure the Wilson top-30 — wide enough that RealRank rescoring can't
-        # promote anything from below it into a top-10 pool, narrow enough to
-        # go easy on the undocumented widget endpoint. The shortlist flag stays
-        # top-keep_top_n by Wilson.
-        screen = [c for c in cohort if c.get("wilson_score") and not c.get("excluded")
-                  ][:MEASURE_TOP_N]
-        # Shortlist with RESERVED SEATS per search line (a floor, not a cap —
-        # the dish refresh's seating, so a thinly-rated line still seats its
-        # own best candidates against a well-rated neighbour class).
-        _target = int(coll.get("keep_top_n") or 10)
-        shortlist = cst.pool_shortlist(screen, rows, _target)
-        _res = {r["q"]: r["keep"] for r in rows if r.get("keep")}
-        if _res:
-            print("[COLLECTION] reserved seats: "
-                  + ", ".join(f"{q!r}={k}" for q, k in _res.items())
-                  + f" | open={max(0, _target - sum(_res.values()))} of {_target}")
-        print(f"[COLLECTION] {len(items)} candidates kept "
-              f"(credits {res.get('credits')}) — measuring Wilson top {len(screen)}, "
-              f"shortlisting top {len(shortlist)}")
-        screened, failed = 0, 0
-        for c in screen:
-            if _should_cancel():
-                raise KeyboardInterrupt("cancelled during screening")
-            # Pacing: 0.4s back-to-back drew a widget throttle (25 straight
-            # failures, measured 2026-09-05) — batch job, a second is free.
-            time.sleep(1.0)
-            h = aw.rating_histogram(c["asin"])
-            if not h.get("ok") or not h.get("histogram"):
-                failed += 1
-                print(f"[COLLECTION]   {c['asin']} histogram unavailable: {h.get('error')}")
-                continue
-            score = round(realrank_index(h["histogram"], h["ratings_total"]), 1)
-            pol = (polarization(h["histogram"]) or {}).get("label") or ""
-            with _db() as conn:
-                cst.set_screen_result(conn, name, c["asin"], histogram=h["histogram"],
-                                      realrank_score=score, polarization=pol,
-                                      selected=c["asin"] in shortlist)
-            screened += 1
-            print(f"[COLLECTION]   {c['asin']} wilson {c['wilson_score']} -> real {score}"
-                  f"{' (' + pol + ')' if pol else ''}"
-                  + ("" if c["asin"] in shortlist else "  (measured, not shortlisted)"))
-        # Every histogram failing is systemic (throttled/endpoint moved), not a bad candidate.
-        if screen and failed == len(screen):
-            raise ValueError(f"all {failed} histogram fetches failed — widget may be blocked "
-                             f"or its endpoint moved; not publishing an unscored shortlist")
-        with _db() as conn:
-            conn.execute("UPDATE product_collections SET last_job_id = ? WHERE name = ?",
-                         (job_id, name))
-            conn.commit()
-        return {"collection": name, "candidates": len(items), "screened": screened,
-                "histogram_failures": failed, "credits": res.get("credits")}
+        return _collection_refresh_sync(name, job_id, _should_cancel)
 
     try:
         summary = await asyncio.to_thread(_run)
@@ -9925,8 +9934,48 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
               + (f" (amazon_pool ← {coll.get('pool_collection')})"
                  if mode == "amazon_pool" else ""))
 
+        # AMAZON OWNER REVIEWS as a standard source (curator, 2026-09-14) — the pool
+        # runs INSIDE this job rather than as a separate process: link (or create) the
+        # class's search pool, refresh it when stale, then supply its listings as one
+        # "Amazon (owner reviews)" document. The pool/curated split is flagged for a
+        # rethink; this is the bridge.
+        amazon_owners = bool(coll.get("amazon_owners")) and mode == "authorities"
+        pool = (coll.get("pool_collection") or "").strip()
+        if amazon_owners:
+            from intake.products import collections_store as cst
+            from input.pipeline import system_config as _cfg
+            ttl_days = int(_cfg.get_setting("amazon_pool_ttl_days", 7))
+            with _db() as conn:
+                if not pool:
+                    pool = name
+                    if not cst.get_collection(conn, pool):
+                        cst.create_collection(conn, {
+                            "name": pool,
+                            "query_rows": [{"q": pclass, "n": None, "keep": None}],
+                            "notes": f"auto-created by curated run {name!r} — Amazon owner "
+                                     f"reviews, inline pool"})
+                        print(f"[CURATE] Amazon owner reviews: created pool {pool!r} "
+                              f"with search line {pclass!r}")
+                    ccs.update_collection(conn, name, {"pool_collection": pool})
+                prow = cst.get_collection(conn, pool)
+            age_days = None
+            if prow and prow.get("last_run_at"):
+                try:
+                    age_days = (datetime.now(timezone.utc)
+                                - datetime.fromisoformat(prow["last_run_at"])).days
+                except Exception:
+                    age_days = None
+            if params.get("refresh") or age_days is None or age_days >= ttl_days:
+                print(f"[CURATE] Amazon owner reviews: refreshing pool {pool!r} inline "
+                      f"({'never run' if age_days is None else f'{age_days} day(s) old'})")
+                _collection_refresh_sync(pool, job_id, _should_cancel)
+            else:
+                print(f"[CURATE] Amazon owner reviews: pool {pool!r} is {age_days} day(s) old "
+                      f"— reused (TTL {ttl_days}; pass refresh to redo)")
+
         out = pipeline.run(pclass, cats, refresh=bool(params.get("refresh")),
                            reuse_raw=str(params.get("reuse_raw") or "").lower() in ("1", "true", "yes"),
+                           amazon_owners=amazon_owners, amazon_pool=pool,
                            use_network=bool(coll.get("use_network", 1)),
                            terms=coll.get("search_terms") or [],
                            editors_choice=coll.get("editors_choice") or "",

@@ -379,6 +379,7 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
         use_network: bool = True, terms: list | None = None, editors_choice: str = "",
         class_criteria: str = "", source_mode: str = "authorities",
         pool_collection: str = "", reuse_raw: bool = False,
+        amazon_owners: bool = False, amazon_pool: str = "",
         should_cancel: Callable[[], bool] | None = None) -> dict:
     """The whole pass. Returns {record, report, brief_text, sources}.
 
@@ -406,6 +407,16 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
     else:
         docs = fetch_docs(product_class, refresh=refresh, terms=terms,
                           should_cancel=should_cancel)
+        if amazon_owners:
+            # Amazon's owner reviews as a STANDARD source (curator, 2026-09-14): the
+            # class's search pool, one document, owner voice — see amazon_owners.py.
+            from intake.products.curate import amazon_owners as AO
+            from intake.products.curate import verify as V
+            if (amazon_pool or "").strip():
+                docs = list(docs) + [AO.owner_doc(product_class, amazon_pool.strip(),
+                                                  db_path=V.DB, refresh=refresh)]
+            else:
+                print(f"[CURATE] {AO.LABEL}: no pool collection linked — skipped")
     sources = {"retrieved": [d["label"] for d in docs if d.get("markdown")],
                "missing": [d["label"] for d in docs if not d.get("markdown")]}
     if source_mode == "amazon_pool":

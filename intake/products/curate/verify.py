@@ -561,11 +561,17 @@ def _verify_score_row(conn, r: dict, label: str, asin: str, report: dict,
 
     # 2. Identity: is this listing actually the product named? Brand + type noun.
     try:
-        listing = az.product_ratings(asin)
+        listing = az.product_ratings(asin, summarization=True)
     except Exception as e:
         report["notes"].append(f"{label}: listing lookup failed ({e})")
         return
     ltitle = listing.get("title") or ""
+    # Amazon's AI review summary + attributes ride with the pick (owner voice in the
+    # brief and the product record) — standard since 2026-09-14, +1 credit per pick.
+    if listing.get("customers_say_summary"):
+        r["owner_summary"] = listing["customers_say_summary"]
+    if listing.get("customers_say"):
+        r["owner_themes"] = listing["customers_say"]
     # One scorer for every path (identity.py, 2026-09-07): brand token, the
     # shared type vocabulary as a hard gate, the model number as decisive, and
     # RECALL of the pick title's distinctive words — the check that "tomatoes

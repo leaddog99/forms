@@ -9769,3 +9769,43 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   a run; pass `--entity-ref` if that matters.)
 * Curator: "we're not picking up the Amazon summary of its reviews in our
   curated analysis" — CONFIRMED, see the next entry for the assessment.
+
+## Session log — 2026-09-14 (evening) — Amazon owner reviews become a standard curate source; the pool runs inline
+
+* Curator: "we're not picking up the Amazon summary of its reviews… it should be
+  a standard review site" → "an option on the curated form to run the amazon
+  pool in the process rather than a separate process… that area needs some
+  rethink but in the meantime let's add it" → "make it a collapsible section".
+* **Built (one path, mirrors the book pipeline):**
+  - `amazon_rainforest.product_ratings(summarization=True)` returns
+    `customers_say_summary` + `customers_say` (2 credits; the book path always
+    paid it, the product path never asked).
+  - NEW `curate/amazon_owners.py`: the class's search pool → top-10 by
+    RealRank → per-ASIN listing sections (owner arithmetic, AI summary,
+    attributes, 3 top reviews) → ONE supplied doc "Amazon (owner reviews)";
+    per-ASIN cache `cache/curate/asins/`. Empty pool = honest FAILED doc.
+  - `pipeline.run(amazon_owners=, amazon_pool=)` appends it after
+    `fetch_docs`; `prompt.build_prompt` adds an OWNER VOICE rule (attribute as
+    "owners say"; never satisfies 12b; ASINs usable for amazon_link; a product
+    seen ONLY there may not be ranked).
+  - `verify._verify_score_row` fetches every pick with the summary → picks
+    carry `owner_summary` / `owner_themes` (new columns); brief renders
+    "Owners say" + "Review themes"; product record `owner.summary/themes`.
+  - `curated_collections.amazon_owners` column (EDITABLE, create/list/update);
+    form: collapsible `<details class="ed-accordion">` section with the checkbox.
+  - `_collection_refresh_sync()` carved out of the collection_refresh job so
+    the curated handler runs the pool INLINE: create+link a pool named after the
+    collection (search line = the class) when none is linked; refresh when
+    `last_run_at` is older than `amazon_pool_ttl_days` (7) or `refresh`.
+* **Proven on Dried Pasta (job #2022, `--entity-ref` set):** pool created,
+  48 ASINs (1 search credit), off-class screen −3, 30 widget-scored; owner doc
+  = 10 listings, all with summaries (Barilla / De Cecco / 365); 6/10 sources
+  retrieved; model marked "Amazon (owner reviews)" **related · used**; 3
+  placements (2 created, 1 merged). Pick #3 Barilla Spaghetti (4.8★ × 7,319)
+  carries the summary + 8 themes; picks #1 Al Bronzo (3 ratings) and #2
+  Rustichella (11) have NO Amazon summary — Amazon generates none for thin
+  listings (genuine absence, stored as empty).
+* **Restart OWED** (bcc_restart elevation failed from the agent shell): only
+  the curated LIST endpoint's explicit column list needs it; GET-by-name and
+  the job runners already serve/use the new code.
+* Earlier today: `repair_json_quotes` + `reuse_raw` (34ed775).

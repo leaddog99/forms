@@ -607,6 +607,20 @@ def build_prompt(product_class: str, categories: list, docs: list | None = None,
             parts.append(f"\n===== {d['label']} =====\nURL: {d.get('url','')}\n"
                          f"Retrieved via: {d.get('via','')}\n-----\n{d['markdown']}\n"
                          f"===== end {d['label']} =====\n")
+    if any(d.get("label") == "Amazon (owner reviews)" for d in supplied):
+        parts.append(
+            "\nOWNER VOICE — the document labeled 'Amazon (owner reviews)' is the class's Amazon "
+            "search pool: owner arithmetic, Amazon's AI summary of customer reviews, and review "
+            "attributes with mention counts, per listing. Rules:\n"
+            "- It is EVIDENCE OF OWNER EXPERIENCE, not an editorial review. Quote or paraphrase it "
+            "attributed as what \"owners say\" / \"Amazon's review summary\" — never as a tested "
+            "verdict. Use it in why_it_ranks_here, edge_over_next and important_tradeoff.\n"
+            "- It does NOT satisfy rule 12b. A rank still needs at least one independent editorial "
+            "source_link; an amazon.com link is never independent evidence.\n"
+            "- Its ASINs are verified live listings: when a ranked product appears there, use that "
+            "ASIN and https://www.amazon.com/dp/ASIN as the amazon_link.\n"
+            "- A product that appears ONLY there (no editorial source names it) may not be ranked; "
+            "it may be mentioned in also_considered.\n")
     missing = [d for d in (docs or []) if not d.get("markdown")]
     if missing:
         parts.append(

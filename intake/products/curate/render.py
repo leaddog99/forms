@@ -61,6 +61,11 @@ def _evidence(r: dict) -> list:
             else:
                 lines.append(f"    RealRank {r['realrank_score']} "
                              f"(promoters minus detractors, discounted for sample size)")
+    if r.get("owner_summary"):
+        lines.append(f"    Owners say (Amazon's review summary): {r['owner_summary']}")
+    if r.get("owner_themes"):
+        lines.append("    Review themes: " + "; ".join(
+            f"{t.get('name','')} {str(t.get('value','')).lower()}" for t in r["owner_themes"][:8]))
     if r.get("identity_warning"):
         lines.append(f"    ⚠ {r['identity_warning']}")
     if r.get("amazon_asin"):

@@ -49,10 +49,10 @@ def _dicts(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list:
 
 EDITABLE = ("display_name", "product_class", "categories", "ws_category_id", "ws_path",
             "notes", "use_network", "search_terms", "editors_choice", "class_criteria",
-            "source_mode", "pool_collection")
+            "source_mode", "pool_collection", "amazon_owners")
 
 # Columns holding JSON, decoded on read so callers never json.loads by hand.
-_JSON_PICK_FIELDS = ("source_links", "offers", "owner_histogram")
+_JSON_PICK_FIELDS = ("source_links", "offers", "owner_histogram", "owner_themes")
 
 
 def ensure_tables(conn: sqlite3.Connection) -> None:
@@ -148,7 +148,18 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         # The class↔collection FK's first live instance (START-HERE item 6):
         # the product_collections.name whose candidates form the pool.
         conn.execute("ALTER TABLE curated_collections ADD COLUMN pool_collection TEXT")
+    if "amazon_owners" not in ccols:
+        # 2026-09-14 (curator: Amazon's review summary "should be a standard review
+        # site"): when set, the curated run refreshes the class's Amazon search pool
+        # INLINE (creating + linking one named after the collection if none is
+        # linked) and supplies "Amazon (owner reviews)" as a source document.
+        # The whole pool/curated split is flagged for a rethink; this is the bridge.
+        conn.execute("ALTER TABLE curated_collections "
+                     "ADD COLUMN amazon_owners INTEGER NOT NULL DEFAULT 0")
     cols = {r[1] for r in conn.execute("PRAGMA table_info(curated_collection_picks)")}
+    if "owner_summary" not in cols:
+        conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN owner_summary TEXT")
+        conn.execute("ALTER TABLE curated_collection_picks ADD COLUMN owner_themes TEXT")
     if "excluded" not in cols:
         conn.execute("ALTER TABLE curated_collection_picks "
                      "ADD COLUMN excluded INTEGER DEFAULT 0")
@@ -204,7 +215,7 @@ def list_collections(conn: sqlite3.Connection) -> list:
         "SELECT c.name, c.display_name, c.product_class, c.categories, c.ws_path, "
         "       c.last_run_at, c.last_job_id, c.last_pick_count, c.last_error, "
         "       c.approved_by, c.approved_at, c.updated_at, "
-        "       c.source_mode, c.pool_collection, "
+        "       c.source_mode, c.pool_collection, c.amazon_owners, "
         " (SELECT COUNT(*) FROM curated_collection_picks p WHERE p.collection = c.name) "
         "   AS pick_count, "
         " (SELECT COUNT(*) FROM curated_collection_picks p WHERE p.collection = c.name "
@@ -238,8 +249,8 @@ def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
     conn.execute(
         "INSERT INTO curated_collections(name, display_name, product_class, categories, "
         "ws_category_id, ws_path, notes, use_network, search_terms, editors_choice, "
-        "class_criteria, source_mode, pool_collection, created_at, updated_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "class_criteria, source_mode, pool_collection, amazon_owners, created_at, updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (name, (patch.get("display_name") or "").strip(), pclass,
          json.dumps(_clean_categories(patch.get("categories"))),
          patch.get("ws_category_id"), (patch.get("ws_path") or ""),
@@ -248,7 +259,8 @@ def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
          (patch.get("editors_choice") or "").strip(),
          (patch.get("class_criteria") or "").strip(),
          (patch.get("source_mode") or "authorities").strip() or "authorities",
-         (patch.get("pool_collection") or "").strip(), now, now))
+         (patch.get("pool_collection") or "").strip(),
+         1 if patch.get("amazon_owners") else 0, now, now))
     conn.commit()
     return get_collection(conn, name)
 
@@ -297,7 +309,7 @@ def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict 
             v = (v or "").strip() or "authorities"
             if v not in ("authorities", "amazon_pool"):
                 raise ValueError(f"source_mode must be 'authorities' or 'amazon_pool', got {v!r}")
-        elif f == "use_network":
+        elif f in ("use_network", "amazon_owners"):
             v = 1 if v else 0
         elif f == "product_class":
             v = (v or "").strip()
@@ -435,8 +447,8 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
             "best_for, why_it_ranks_here, edge_over_next, important_tradeoff, buy_link, "
             "amazon_link, asin, asin_source, verified_title, identity_warning, source_links, "
             "offers, owner_rating, owner_count, owner_histogram, realrank_score, rating_shape, "
-            "product_id, run_at, identity_score, identity_method) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "product_id, run_at, identity_score, identity_method, owner_summary, owner_themes) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (name, slot, p.get("_section", ""), p.get("place"),
              p.get("product_title", ""), p.get("manufacturer", ""), p.get("capacity", ""),
              (p.get("model_number") or "").strip(), p.get("image", ""),
@@ -449,7 +461,8 @@ def replace_picks(conn: sqlite3.Connection, name: str, picks: list) -> int:
              p.get("owner_rating"), p.get("owner_count"),
              json.dumps(p.get("owner_histogram") or []), p.get("realrank_score"),
              p.get("rating_shape", ""), pid, now,
-             p.get("identity_score"), p.get("identity_method", "")))
+             p.get("identity_score"), p.get("identity_method", ""),
+             p.get("owner_summary", ""), json.dumps(p.get("owner_themes") or [])))
     if banned:
         print(f"[CURATE] {banned} pick(s) skipped — match a curator-excluded product")
     kept = len(picks) - banned
@@ -534,7 +547,8 @@ def apply_pick_asin(conn: sqlite3.Connection, name: str, slot: str, r: dict) -> 
         "UPDATE curated_collection_picks SET asin=?, amazon_link=?, asin_source=?, "
         "verified_title=?, identity_warning=?, warning_ack=0, image=?, model_number=?, "
         "offers=?, owner_rating=?, owner_count=?, owner_histogram=?, realrank_score=?, "
-        "rating_shape=?, identity_score=?, identity_method=? WHERE collection=? AND slot=?",
+        "rating_shape=?, identity_score=?, identity_method=?, owner_summary=?, owner_themes=? "
+        "WHERE collection=? AND slot=?",
         ((r.get("amazon_asin") or "").strip().upper(),
          r.get("amazon_link", ""), r.get("asin_source", "curator"),
          r.get("verified_title", ""), r.get("identity_warning", ""),
@@ -542,7 +556,8 @@ def apply_pick_asin(conn: sqlite3.Connection, name: str, slot: str, r: dict) -> 
          json.dumps(r.get("offers") or []), r.get("owner_rating"),
          r.get("owner_count"), json.dumps(r.get("owner_histogram") or []),
          r.get("realrank_score"), r.get("rating_shape", ""),
-         r.get("identity_score"), r.get("identity_method", ""), name, slot))
+         r.get("identity_score"), r.get("identity_method", ""),
+         r.get("owner_summary", ""), json.dumps(r.get("owner_themes") or []), name, slot))
     conn.commit()
     return cur.rowcount > 0
 

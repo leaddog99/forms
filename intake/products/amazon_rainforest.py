@@ -92,14 +92,20 @@ def find_asin(product: str, *, domain: str = DEFAULT_DOMAIN,
 
 
 def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
-                    max_reviews: int = 8) -> dict:
+                    max_reviews: int = 8, summarization: bool = False) -> dict:
     """Rating, total, 5..1 histogram and top review bodies for one ASIN.
 
     `histogram` is a list of COUNTS in 5..1 order — feed it straight to realrank_index.
     Empty list when Amazon didn't render a breakdown (rare, but then we score nothing
     rather than inventing a distribution).
     """
-    d = _get({"type": "product", "amazon_domain": domain, "asin": asin})
+    q = {"type": "product", "amazon_domain": domain, "asin": asin}
+    if summarization:
+        # Amazon's AI "Customers say" summary + per-attribute sentiment. Doubles
+        # the bill (2 credits) — the book path always paid it; the product path
+        # never asked (curator, 2026-09-14: "it should be a standard review site").
+        q["include_summarization_attributes"] = "true"
+    d = _get(q)
     p = d.get("product") or {}
     bd = p.get("rating_breakdown") or {}
     hist = [int((bd.get(k) or {}).get("count") or 0) for k in _STAR_KEYS] if bd else []
@@ -127,6 +133,10 @@ def product_ratings(asin: str, *, domain: str = DEFAULT_DOMAIN,
         "distribution_pct": {str(5 - i): (bd.get(k) or {}).get("percentage")
                              for i, k in enumerate(_STAR_KEYS)} if bd else None,
         "top_reviews": reviews,
+        "customers_say_summary": ((p.get("customers_say_summary") or {}).get("text")
+                                  or "").strip(),
+        "customers_say": [{"name": a.get("name", ""), "value": a.get("value", "")}
+                          for a in (p.get("customers_say") or []) if a.get("name")],
     }
 
 

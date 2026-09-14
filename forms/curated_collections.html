@@ -610,6 +610,24 @@
                 candidates form the pool — run its Amazon search first so it holds
                 candidates.</p></div>
           </div>
+          <details class="ed-accordion" ${v.amazon_owners?'open':''}>
+            <summary>Amazon owner reviews</summary>
+            <div class="ed-field" style="margin-top:8px">
+              <label style="display:flex;gap:8px;align-items:center">
+                <input type="checkbox" id="f_amz" style="width:auto" ${v.amazon_owners?'checked':''}>
+                Include Amazon's owner-review summary as a standard source
+              </label>
+              <p class="muted" style="font-size:.78rem;margin:5px 0 0">The run refreshes the
+                class's Amazon search pool <b>inside this job</b> (creating and linking one
+                named after this collection if none is linked above, searching the class
+                name), then supplies its top listings — owner arithmetic, Amazon's AI
+                "Customers say" summary, review attributes — as one document,
+                <b>Amazon (owner reviews)</b>, alongside the named authorities. Owner voice
+                only: it can say what owners report, never stand in for an independent
+                review. Each final pick also carries its listing's summary. The pool is
+                reused for 7 days; Refresh re-runs it.</p>
+            </div>
+          </details>
           <div class="ed-field"><label>Editor's choice — a product to pin (optional)</label>
             <input id="f_ec" value="${escapeHtml(v.editors_choice||'')}" placeholder="Breville Control Grip BSB510XL">
             <p class="muted" style="font-size:.78rem;margin:5px 0 0">A product the review sites
@@ -676,6 +694,7 @@
         source_mode: ($('#f_mode').value||'authorities'),
         pool_collection: ($('#f_pool').value||'').trim(),
         use_network: !!$('#f_net').checked,
+        amazon_owners: !!$('#f_amz').checked,
         notes: ($('#f_notes').value||'').trim(),
       };
       if (cat) { body.ws_category_id = cat.id; body.ws_path = cat.path; }

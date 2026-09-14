@@ -107,6 +107,10 @@ def _realrank_from(picks: list, collection: str) -> dict | None:
                   "histogram": src.get("owner_histogram") or [],
                   "polarization": ({"label": src.get("rating_shape")}
                                    if src.get("rating_shape") else {}),
+                  # Amazon's AI review summary + attribute sentiment — owner voice,
+                  # standard since 2026-09-14 (absent when the listing had none).
+                  "summary": src.get("owner_summary") or "",
+                  "themes": src.get("owner_themes") or [],
                   "sources": [{"source": "amazon", "listing_id": src.get("asin") or "",
                                "avg_rating": src.get("owner_rating"),
                                "count": src.get("owner_count"),
