@@ -9697,3 +9697,54 @@ live; crash #16 last night).
   source ranks pantry staples); MARLEY nightly clean incl. the
   service-aware BAILEY push; BAILEY's own backup task still needs the two
   credential commands.
+
+## Session log — 2026-09-14 (afternoon) — f2n's stack settled; f2n moves to BAILEY; recipes stays here until the flip
+
+* f2n decisions (recorded in f2n's CLAUDE.md as SETTLED): raw HTML + one
+  JSON API over Jinja (the trial screen is a timed client-side state machine;
+  spec §34 endpoints are the API) · SQLAlchemy Core + Alembic, no ORM
+  (migrations were THIS app's real pain — ad-hoc ALTERs, the live-default
+  incident, the silently-dropped fields) · **PostgreSQL 18 on BAILEY** over
+  SQLite (Postgres is already RUNNING on both hosts: 17 on MARLEY, 18 on
+  BAILEY — memory `project_postgres_migration` corrected; 17 dumps restore
+  into 18, not the reverse) · host = BAILEY, "obviously".
+* f2n repo (6 commits, both curator documents, CLAUDE.md, f2n-state.md)
+  copied to BAILEY `C:\Users\john\PycharmProjects\f2n` with .git; its seeded
+  Claude memory folder copied too. BAILEY has PyCharm 2024.1 (+2025.2
+  config) with the Claude Code plugin, Claude Code 2.1.270, Python 3.10–3.13
+  (not on the non-interactive PATH), PostgreSQL 18 (psql not on PATH), no
+  pgvector (Milestone 6), no gh. **GitHub repo NOT created** — curator
+  paused it ("until I absorb what we're doing on bailey"); nothing pushed,
+  no remote, no token read.
+* **Curator moves to PyCharm on BAILEY for f2n.** Rule until the flip: never
+  edit the recipes app on BAILEY — the 03:00 nightly is one-way MARLEY →
+  BAILEY and overwrites `forms/` there. f2n's folder is outside the sync.
+  Recipes work stays on MARLEY (this session) until the cut-over.
+* Still yours on BAILEY before f2n code: a Postgres role + the `f2n` and
+  `f2n_test` databases (superuser password).
+
+## START HERE — 2026-09-15 — SUPERSEDES the 09-12 midday entry
+
+Two apps, two hosts, for now. **Recipes = MARLEY** (https://recipes.tbotb.com,
+crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
+**f2n = BAILEY** (new; Milestone 1 not started; see f2n/f2n-state.md there).
+
+1. **Recipes cut-over to BAILEY** (unchanged, docs/disaster-recovery.md §5):
+   curator's two credential commands on BAILEY for the backup task (still
+   owed — its 03:00 run fails ADAM + cloud) → write-freeze → final
+   `bcc_sync_bailey.ps1 -WithDbs -FreshBackup` → move the recipes.tbotb.com
+   route from tunnel `recipes` to tunnel `bestcooksclub` → verify by content
+   + stop-window → disable MARLEY's nightly push. Then re-run the crash-
+   interrupted work (tastecooking; extracts for cookiesandcups / thecozycook
+   / girlversusdough; 45 borrowed publishers).
+2. **Foreign-language dish lines** now work end to end (hl=zh mapping,
+   pre-filter bypass, authority-absent reserved seats). Follow-ups: batch
+   Moz scorer should score the NORMALIZED url (ytower srsltid → MOZ-FAIL);
+   `mozHttpCode: 0` on absent rows is a placeholder zero. Xiamen Chow Mei
+   Fun currently has ONLY the Chinese line (5 winners) — add the English
+   line back if both wanted.
+3. Jobs: `pid_alive` + cancel-closes-dead-job fixes are live; the reaper
+   must never be run from a user shell against the SYSTEM service's jobs.
+4. Carried: ledger phase 3 carve · mollybaz walker · aggregators · product
+   pools · identity follow-ups · chip approvals · book curation · menus B/C
+   · class↔collection FK → render/EV · small carried list.
