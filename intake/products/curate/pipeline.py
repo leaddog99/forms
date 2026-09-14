@@ -212,7 +212,7 @@ def fetch_docs(product_class: str, *, refresh: bool = False, terms: list | None 
 
 def research(product_class: str, categories=None, *, docs: list | None = None,
              refresh: bool = False, editors_choice: str = "",
-             class_criteria: str = "",
+             class_criteria: str = "", reuse_raw: bool = False,
              should_cancel: Callable[[], bool] | None = None) -> dict:
     """Fetch the authorities ourselves, then ask the model to curate FROM THEM.
 
@@ -243,7 +243,7 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
     text = P.build_prompt(product_class, categories, docs, editors_choice=editors_choice,
                           class_criteria=class_criteria)
     data = _call_and_parse(product_class, text, operation="curate_research",
-                           model=rr.MODEL)
+                           model=rr.MODEL, reuse_raw=reuse_raw)
     # What was ASKED FOR, not merely what came back: without it a renamed, dropped or invented
     # category is indistinguishable from a requested one.
     data["categories_requested"] = categories
@@ -253,23 +253,76 @@ def research(product_class: str, categories=None, *, docs: list | None = None,
     return data
 
 
+def repair_json_quotes(s: str) -> tuple[str, int]:
+    """Escape double quotes the model left unescaped INSIDE a JSON string.
+
+    A quote ends a string only when the next non-space character is one of
+    , } ] : — any other quote is content. Dried Pasta (job #2020, 2026-09-14):
+    `Serious Eats' top ("Best Penne") tier` killed an otherwise complete 11k-char
+    reply at char 2263. Verified a no-op on all 92 cached replies that already
+    parse. Returns (repaired_text, quotes_escaped)."""
+    out = []
+    i = 0
+    n = len(s)
+    in_str = False
+    fixed = 0
+    while i < n:
+        ch = s[i]
+        if not in_str:
+            if ch == '"':
+                in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "\\":
+            out.append(s[i:i + 2])
+            i += 2
+            continue
+        if ch == '"':
+            j = i + 1
+            while j < n and s[j] in " \t\r\n":
+                j += 1
+            if j >= n or s[j] in ",}]:":
+                in_str = False
+                out.append(ch)
+            else:
+                out.append('\\"')
+                fixed += 1
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out), fixed
+
+
 def _call_and_parse(product_class: str, text: str, *, operation: str,
-                    model: str) -> dict:
-    """One research call -> parsed record. Shared by both source modes."""
+                    model: str, reuse_raw: bool = False) -> dict:
+    """One research call -> parsed record. Shared by both source modes.
+
+    `reuse_raw`: skip the model and parse the reply saved by the previous attempt
+    (`<class>.raw.txt`). The reply is saved BEFORE parsing precisely because it is
+    the expensive artifact; until 2026-09-14 nothing could consume it, so a parse
+    failure meant paying for the call again."""
     import llm
-    # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
-    with llm.stream(operation=operation, model=model, max_tokens=MAX_TOKENS,
-                    messages=[{"role": "user", "content": text}]) as s:
-        msg = s.get_final_message()
-    raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
-
-    # SAVE BEFORE PARSING — the reply is the expensive artifact.
     rawpath = cache_path(product_class, "raw.txt")
-    with open(rawpath, "w", encoding="utf-8") as f:
-        f.write(raw)
-    print(f"[CURATE] raw reply saved to {os.path.basename(rawpath)} ({len(raw)} chars)")
+    if reuse_raw and os.path.exists(rawpath):
+        with open(rawpath, encoding="utf-8") as f:
+            raw = f.read()
+        print(f"[CURATE] reusing saved reply {os.path.basename(rawpath)} ({len(raw)} chars) — no model call")
+        msg = None
+    else:
+        # No `temperature`: deprecated on current Sonnet, and passing it is a hard 400.
+        with llm.stream(operation=operation, model=model, max_tokens=MAX_TOKENS,
+                        messages=[{"role": "user", "content": text}]) as s:
+            msg = s.get_final_message()
+        raw = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
 
-    if getattr(msg, "stop_reason", None) == "max_tokens":
+        # SAVE BEFORE PARSING — the reply is the expensive artifact.
+        with open(rawpath, "w", encoding="utf-8") as f:
+            f.write(raw)
+        print(f"[CURATE] raw reply saved to {os.path.basename(rawpath)} ({len(raw)} chars)")
+
+    if msg is not None and getattr(msg, "stop_reason", None) == "max_tokens":
         raise ValueError(
             f"model hit max_tokens — the JSON is TRUNCATED, not malformed. {len(raw)} chars "
             f"written to {rawpath}. Ask for fewer categories, or raise max_tokens.")
@@ -277,7 +330,20 @@ def _call_and_parse(product_class: str, text: str, *, operation: str,
     m = re.search(r"```json\s*(\{.*?\})\s*```", raw, re.S) or re.search(r"(\{.*\})", raw, re.S)
     if not m:
         raise ValueError("no JSON in the model reply:\n" + raw[:400])
-    data = json.loads(m.group(1))
+    body = m.group(1)
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as first_err:
+        repaired, fixed = repair_json_quotes(body)
+        try:
+            data = json.loads(repaired)
+        except json.JSONDecodeError:
+            raise ValueError(
+                f"model reply is not valid JSON even after escaping {fixed} stray quote(s): "
+                f"{first_err}. Raw reply kept at {rawpath} — re-run with reuse_raw after a "
+                f"hand fix, or re-run the model.") from first_err
+        print(f"[CURATE] JSON repaired: {fixed} unescaped quote(s) inside strings "
+              f"(parser said: {first_err})")
     data.setdefault("product_class", product_class)
     return data
 
@@ -312,7 +378,7 @@ def verify_and_render(data: dict, *, use_network: bool = True,
 def run(product_class: str, categories=None, *, refresh: bool = False,
         use_network: bool = True, terms: list | None = None, editors_choice: str = "",
         class_criteria: str = "", source_mode: str = "authorities",
-        pool_collection: str = "",
+        pool_collection: str = "", reuse_raw: bool = False,
         should_cancel: Callable[[], bool] | None = None) -> dict:
     """The whole pass. Returns {record, report, brief_text, sources}.
 
@@ -351,7 +417,7 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
                                    class_criteria=class_criteria)
         print(f"[CURATE] {len(sources['retrieved'])} pool book(s) in evidence; curating…")
         data = _call_and_parse(product_class, text, operation="curate_book_research",
-                               model=rr.MODEL)
+                               model=rr.MODEL, reuse_raw=reuse_raw)
         data["categories_requested"] = []
         if (editors_choice or "").strip():
             data["editors_choice_requested"] = editors_choice.strip()
@@ -360,7 +426,8 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
         # in book_enrich is the deterministic gate here.
     else:
         data = research(product_class, categories, docs=docs, editors_choice=editors_choice,
-                        class_criteria=class_criteria, should_cancel=should_cancel)
+                        class_criteria=class_criteria, reuse_raw=reuse_raw,
+                        should_cancel=should_cancel)
         # Deterministic on-class title gate (curator suggestion 2026-09-03, layered
         # under the prompt boundary): a pick whose title names neither the class nor
         # any fallback term gets a visible identity_warning — flagged, not deleted,

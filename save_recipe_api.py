@@ -9926,6 +9926,7 @@ async def _handle_curated_collection_run_job(job: dict) -> dict:
                  if mode == "amazon_pool" else ""))
 
         out = pipeline.run(pclass, cats, refresh=bool(params.get("refresh")),
+                           reuse_raw=str(params.get("reuse_raw") or "").lower() in ("1", "true", "yes"),
                            use_network=bool(coll.get("use_network", 1)),
                            terms=coll.get("search_terms") or [],
                            editors_choice=coll.get("editors_choice") or "",

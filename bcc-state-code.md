@@ -9748,3 +9748,24 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 4. Carried: ledger phase 3 carve · mollybaz walker · aggregators · product
    pools · identity follow-ups · chip approvals · book curation · menus B/C
    · class↔collection FK → render/EV · small carried list.
+
+## Session log — 2026-09-14 (late afternoon) — Dried Pasta: one unescaped quote threw away an 11k-char reply
+
+* Job #2020 died in `_call_and_parse` on `JSONDecodeError … char 2263`: the
+  model wrote `Serious Eats' top ("Best Penne") tier` inside a JSON string.
+  Sources (5/9) and the model call had already been paid; the reply was
+  saved as `cache/curate/dried-pasta.raw.txt` ("the expensive artifact")
+  but nothing could consume it.
+* **Fixed (curate/pipeline.py)**: (1) `repair_json_quotes()` — on parse
+  failure, escape a quote inside a string (a quote ends a string only when
+  the next non-space char is `, } ] :`); verified: fixes the Dried Pasta
+  reply (2 quotes) and is a no-op on all 92 cached replies that already
+  parse; never runs when the reply parses first time; still-broken replies
+  fail loudly with the raw path. (2) **`reuse_raw`** — threaded `run →
+  research → _call_and_parse` and from the job's params — skips the model
+  and parses the saved reply. **Job #2021 (`--param reuse_raw=1`): success,
+  3 products / 3 placements, zero model cost.** (CLI generic path leaves
+  `entity_ref` None — the per-collection in-flight guard doesn't see such
+  a run; pass `--entity-ref` if that matters.)
+* Curator: "we're not picking up the Amazon summary of its reviews in our
+  curated analysis" — CONFIRMED, see the next entry for the assessment.
