@@ -9895,8 +9895,15 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   "Cast Iron Griddle", "Cast Iron Griddle and Grill" — renaming or deleting
   that collection leaves the registry entry behind. Old cache files
   `cache/curate/pasata.*` remain, harmless.
-* **Open:** re-run Tomato Paste (#2043's reply is saved — `reuse_raw=1`),
-  Chicken and Dumplings, Green Bean Casserole · the SERP breaker/queue above ·
+* **CORRECTION (09-18, later):** the three "re-run" items first listed here
+  were STALE — written from the failure rows without checking for later runs.
+  All three had already succeeded: Chicken and Dumplings #2041 (15/15, no
+  pages lost), Green Bean Casserole #2046 (15/15), Tomato Paste #2070 (3
+  picks). Not re-run. The one real gap: Tomato Paste #2 Amore had no ASIN —
+  manufacturer "Amore (Aromonte S.r.l.)", the corporate-note query bug fixed
+  above — now B001FA1KLW, verified 1.0 (4.8★ x 309), resolved for that pick
+  alone. Lesson: read the jobs table before writing an open list.
+* **Open:** the SERP breaker/queue above ·
   clean names on the other name-keyed create paths · the client PUTs
   `/curated-collections/undefined` after a failed load (seen in the log; the
   cleaner removes today's trigger, the guard is still missing).
