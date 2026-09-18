@@ -43,6 +43,11 @@ def audit(conn, verbose: bool = True) -> dict:
         "ORDER BY collection, section, place")]
     # identity reads the pick's class (a title may gloss its own class name)
     classes = dict(conn.execute("SELECT name, product_class FROM curated_collections"))
+    # Book pools are gated by the closed-world ASIN check in book_enrich, not by
+    # this scorer (a book's "manufacturer" is its author, never in the title).
+    books = {n for (n,) in conn.execute(
+        "SELECT name FROM curated_collections WHERE source_mode = 'amazon_pool'")}
+    rows = [r for r in rows if r.get("collection") not in books]
     for r in rows:
         r["product_class"] = classes.get(r.get("collection")) or ""
     bands = {"verified": 0, "weak": 0, "reject": 0, "no-listing": 0}

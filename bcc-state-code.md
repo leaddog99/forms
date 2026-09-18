@@ -9907,3 +9907,101 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   clean names on the other name-keyed create paths · the client PUTs
   `/curated-collections/undefined` after a failed load (seen in the log; the
   cleaner removes today's trigger, the guard is still missing).
+
+## Session log — 2026-09-18 (afternoon) — two wrong ASINs (mine, still live); search had been one page deep since 09-17; reserved seats were keyed on the wrong thing; a recipe now moves only to the NEARER dish
+
+* **AGENT ERROR, NOT YET UNDONE — run the restore.** Asked to fill two blank ASINs, I
+  ran resolve → enrich_one → apply_pick_asin → rematerialize and wrote two WRONG
+  listings: Ground Cinnamon #2 (Kirkland) took a **McCormick** listing (B07F1T7JW1) —
+  full title recall × the 0.6 brand-miss penalty lands exactly on VERIFIED; Utility
+  Knife #2 (Togiharu) took B00FRC9ZKC, whose Google result title said "togiharu" and
+  whose live page is a **Misono** (0.45, weak, brand absent — kept anyway).
+  Rematerialize then pushed them onto product records and, for Utility Knife, replaced
+  the Amazon offers on the three product rows that collection's picks point at — which
+  are HARDWARE utility knives (Milwaukee / DeWalt / LENOX): a pick→product conflation
+  that predates today and is still unfixed. The bulk restore was blocked by the
+  permission classifier, so it is packaged: **`python scripts/restore_2026_09_18_wrong_asins.py --apply`**
+  (dry-run by default; whole-row restore of 2 picks + 4 products from
+  `Z:\Backups\recipes-db\recipes_2026-09-18_030049.db`). The good fills stand: Tomato
+  Paste #2 Amore B001FA1KLW, Passata #2 Pomì B0C15H9P91 (both verified 1.0).
+* **Identity scorer hardened so neither can recur** (regression vs the morning's scorer:
+  234 non-book picks, 8 verdict changes, all intended): a brand-unconfirmed title match
+  is CAPPED AT WEAK, never verified; `resolve_asin` REFUSES a Google hit that is not
+  verified and lacks the brand; a live listing that is weak + brand-absent on an ASIN
+  WE found (google / corpus) is a REJECT. Brand detection: the shelf brand that LEADS
+  the title counts when the manufacturer's parenthetical names it ("Costco (Kirkland
+  Signature)", "Theppadungporn (Aroy-D)") — never "(Japan)" / "(sold via Korin)";
+  "The Spice House" is no longer the brand "the"; punctuation-insensitive on word
+  boundaries (Chef'n vs Chef’n, Nielsen-Massey vs Nielsen Massey — both went weak →
+  verified). The audit script skips book pools (author ≠ brand; books are gated by the
+  closed-world ASIN check). Newly VISIBLE for the curator's eye: Paprika #3 (Pride of
+  Szeged → an iSpice listing, curator-set), Apple Peeler #3, Fish Sauce #2.
+* **SEARCH DEPTH WAS BROKEN SINCE THE MORNING OF 09-17.** Every dish line returned ONE
+  page (10 of a 40 target), silently. Cause, measured ×4 per shape at page 2: a query
+  carrying BOTH a locale (gl/hl — every dish query) AND any exclusion operator gets an
+  intermittent EMPTY SUCCESS for page 2+ — "-roundup" + locale [10,0,0,10]; 10 sites +
+  locale [0,10,0,0]; 10 sites, NO locale [10,10,10,10]; plain + locale [10,9,10,9]. My
+  first read (site exclusions only) was wrong — a single good page proves nothing, the
+  fault is intermittent. **Fix: `serp_exclude_blocklist=false` in system_config**
+  (`_filter_disallowed` removes those domains downstream anyway); the same lookup now
+  returns 40 URLs over 5 pages. Why it matters, from `run_candidates` over 218 healthy
+  runs: only **29% of winners come from Google's page 1** (1023 of 3525); a healthy run
+  sees ~83 candidates. **RE-RUN OWED (8 dishes refreshed one page deep):** Chicken Cordon
+  Bleu, Chicken Kiev, Apple Crisp, Apple Crumble (6/15), Apricot Jam, Five Spice Powder
+  (7/10), Welsh Rarebit, Galette.
+* **The pager burned credits:** a SUCCESSFUL empty page fell through and kept paging —
+  pages 3..20, one billed credit each (19 wasted per search line; 09-17 = 255 credits,
+  09-18 = 297 incl. ~60 of my testing). Now: empty success = end of results, stop; an
+  empty FIRST page gets one retry.
+* **Reserved seats (`keep`) did not work for blended dishes — two defects.** (1) Seats
+  were keyed on the query TEXT: "Pasta al Forno" (us/en) and "Pasta al Forno" (it/it,
+  keep=5) are one text, so English pages spent the Italian seats — job #2050 gave all 5
+  to American blogs. NEW `dishes.line_key(row)` = text + locale (default locale keeps the
+  bare text); entries carry `_lines` in discovery order. (2) The save loop only ever saw
+  the top 2N by blend, and a reserved line exists because its pages LOSE that race —
+  `_rank_blended(line_quotas=)` now carries each reserved line's own best (3× seats)
+  into the reserve. **Proven live, job #2128: 20/20 saved, 5/5 reserved seats Italian**
+  (misya.info, fattoincasadabenedetta, giallozafferano ×2, soniaperonaci); lines returned
+  40/40/10. **Capture (curator's ask):** `_master.search_line` = the FIRST line (row
+  order) that found the recipe, `_master.lines` = all, `_master.seat_line` = the line
+  whose reserved seat it took; on MasterMetadata and the dish-results rows.
+* **"Fewer recipes in the last-updated view than the dish page shows" — explained.** Not
+  a save-time loss (371 runs: 5,505 claimed saves vs 5,507 distinct ids; five logs match
+  the DB exactly). The **dish results page is a SNAPSHOT** (the run's selection ledger
+  joined by URL); the **recipes query is LIVE** (the single `_master.dish` label). 126
+  pages win in 2+ dishes; the label went to whichever dish refreshed LAST (120 of 121).
+  137 dishes showed fewer on the recipe side (gap 315).
+* **THE RULE (curator): a recipe moves only to the dish it is CLOSER to** — the
+  suggested-dish judgment. NEW `dish_match.label_holder()` (stored vectors, no model
+  call; name-exact likelyDish beats distance; ties and unmeasurable pairs behave as
+  before) + `move_margin()` = setting `dish_label_move_min_margin`, default **0.05**. The
+  refresh asks it before stamping; when the other dish keeps the label its `_master`
+  block is untouched and the recipe is still this run's winner. Logs `LABEL STAYS` /
+  `LABEL MOVES` with both distances. **One-time pass run on all 94 shared recipes**
+  (`scripts/relabel_shared_recipes.py`, dry-run default, per-row audit block
+  `_master.relabelled`, undo files `logs/relabel_2026-09-18T19-36-51.json` +
+  `…T19-45-33.json` — logs/ is gitignored, they are LOCAL ONLY): 39 moved, 55 stayed.
+  **Graded by a blind LLM judge** (title + ingredients + shuffled contenders; never the
+  distances or likelyDish): agreement 50/94 before → **83/94 after**; 37 of 39 moves
+  upheld. My first judge run fed it titles only (wrong field — ingredients are
+  `recipeIngredient`); re-run before reporting. Correction to an earlier claim: "Chicken
+  Cacciatore" was not being emptied — that dish no longer exists (orphan snapshot).
+* **What the judge still disputes is TWIN DISHES, not the rule:** Horiatiki vs Greek
+  Salad (embed texts near word-for-word identical — one Horiatiki recipe moved
+  specific→general at margin 0.059, high-confidence wrong, left in place because the
+  refresh would repeat it); Clafoutis vs Cherry Clafoutis (the GENERAL dish's text is
+  written around cherries; three cherry recipes stay general via name-exact likelyDish
+  "Clafoutis"); Matzo Ball Soup vs Chicken Soup with Matzo Balls. Curator: the two
+  Strawberries dishes "are begging for a narrower dish… strawberry cake and maybe
+  breakfast bars" — both are ~0.8–0.9 from the recipes they hold. No dishes created.
+* Also found, NOT fixed: a winner seated WITHOUT an authority score has no selection-
+  ledger row, so the dish results page omits it (Apricot Jam: saved 10, page shows 9);
+  reserved seats have no right-dish check (Apricot Jam's French seats went to an apricot
+  clafoutis and a tarte tatin).
+* **Restart OWED** (agent shell cannot elevate): name cleaner on create, class on
+  set-asin, search_line on dish-results rows. Jobs already run the new code.
+* **Open:** RUN THE ASIN RESTORE · re-run the 8 thin dishes · Utility Knife pick→product
+  conflation · twin-dish descriptions/aliases (Horiatiki, Clafoutis, Matzo) · narrower
+  strawberry dishes · unscored winners missing from the dish page · right-dish check on
+  reserved seats · SERP breaker/queue (09-14 entry) · name cleaner on the other
+  name-keyed create paths.

@@ -304,6 +304,23 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
                     if not ri.get("success"):  # real error (e.g. out of credits), not a silent 0
                         print(f"  [scaleserp] page {p}: {msg or 'unsuccessful response'}")
                     break
+            else:
+                # A SUCCESSFUL page with no organic results is the END of the
+                # results. This branch used to fall through and keep paging: a
+                # query whose page 2 came back empty went on to request pages
+                # 3..20, one billed credit each, for nothing (Pasta al Forno,
+                # 2026-09-18: 19 wasted credits per search line). Say so, stop.
+                if p == 1:
+                    # An empty FIRST page is not an ending, it is suspicious
+                    # (Apple Crumble, 2026-09-17: "0 URLs"). One more look.
+                    time.sleep(2.0)
+                    data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
+                                          label="scaleserp", page=p)
+                    org = (data or {}).get("organic_results") or []
+                if not org:
+                    print(f"  [scaleserp] page {p}: no organic results — end of results "
+                          f"({len(out)} collected)")
+                    break
         for it in org:
             link = it.get("link") or it.get("url") or ""
             if link and link not in seen:

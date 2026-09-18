@@ -452,6 +452,9 @@ class MasterMetadata(BaseModel):
     refreshed_at: Optional[str] = None            # ISO-8601 UTC; top-kind only
     rank: Optional[int] = None                    # within dish, top-kind only
     queries: Optional[List[str]] = None           # queries that surfaced this URL
+    search_line: Optional[str] = None             # the line that CAPTURED it: first in row order, text + locale
+    lines: Optional[List[str]] = None             # every line (text + locale) that surfaced it
+    seat_line: Optional[str] = None               # line whose RESERVED seat it took; absent = won an open seat
     batch_source: Optional[str] = None            # provenance debug
 
 # Pipeline-side metadata. Defaults are empty so interactive saves don't have to

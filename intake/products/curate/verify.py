@@ -421,6 +421,12 @@ def resolve_asin(conn, r: dict, *, label: str = "pick", prior_asin: str = "",
         if use_network:
             cands = [c for c in ID.google_candidates(r) if c["asin"] not in skip]
             best, info = ID.best_candidate(r, cands)
+            if best and info["verdict"] != "verified" and not info.get("brand_ok"):
+                # A listing WE searched for, that names neither the brand nor
+                # all of the product, is a guess. Blank is the correct answer.
+                print(f"[identity] {label}: best google hit refused "
+                      f"({info['score']} — {info['why']})")
+                best = None
             if best:
                 r["asin_source"] = "google" + (f" (replaced {prior_asin})" if prior_asin else "")
     if not best:
@@ -585,6 +591,12 @@ def _verify_score_row(conn, r: dict, label: str, asin: str, report: dict,
                           listing.get("model_number") or "")
     r["identity_score"] = info["score"]
     r["identity_method"] = info["method"]
+    found_by_us = str(r.get("asin_source") or "").startswith(("google", "our review corpus"))
+    if info["verdict"] == "weak" and not info.get("brand_ok") and found_by_us:
+        # Search said yes, the LIVE listing says another maker (Google's result
+        # title read "togiharu Pro Petty"; the page was a Misono — 2026-09-18).
+        # Nobody vouched for this ASIN, so a partial match is a rejection.
+        info = {**info, "verdict": "reject"}
     if info["verdict"] == "reject":
         r["identity_warning"] = (
             f"ASIN {asin} looks like a different product ({info['why']}): {ltitle[:60]}")

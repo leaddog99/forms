@@ -221,6 +221,90 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
     return out
 
 
+DEFAULT_MOVE_MARGIN = 0.05
+_MOVE_MARGIN_SETTING = "dish_label_move_min_margin"
+
+
+def move_margin(conn: sqlite3.Connection) -> float:
+    """How much CLOSER the challenger dish must be before a label moves.
+
+    Measured 2026-09-18 on the first 50 relabels, graded by a blind judge (title
+    + ingredients, no distances): every move with a margin >= 0.11 was right;
+    the one clearly wrong move had 0.021 (a Horiatiki recipe pulled to the more
+    GENERAL Greek Salad) and a coin-flip had 0.036 (two Strawberries dishes,
+    both ~0.9 away - neither a home). Closer-by-a-hair is embedding noise.
+    Read through the connection's own file so no app import is triggered."""
+    try:
+        from input.pipeline import system_config as _cfg
+        path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), None)
+        if path:
+            return float(_cfg.get_setting(_MOVE_MARGIN_SETTING, DEFAULT_MOVE_MARGIN,
+                                          db_path=path))
+    except Exception:
+        pass
+    return DEFAULT_MOVE_MARGIN
+
+
+def label_holder(conn: sqlite3.Connection, rec_vec, current: str, challenger: str,
+                 *, likely_dish: str = "", names: Optional[dict] = None) -> dict:
+    """Which of two dishes should HOLD a recipe both of them picked?
+
+    A recipe page can win in more than one dish (Cacciatore and Chicken
+    Cacciatore, Quiche and Quiche Lorraine). The library row carries ONE dish
+    label, and a refresh used to stamp its own name on every winner it saved -
+    so the label went to whichever dish refreshed LAST. Measured 2026-09-18 on
+    121 shared winners: 120 sat with the most recently refreshed dish; 28 of
+    the moves ran general -> specific (intended) and 37 ran specific -> general
+    (Chicken Cacciatore emptied by a later Cacciatore refresh).
+
+    Curator's rule: a recipe moves only to the dish it is CLOSER to - the same
+    nearest-neighbour judgment the suggested-dish match makes, with the same
+    override: a likelyDish that IS one of the two (name / display / alias,
+    folded) is a literal identity claim and beats distance. Replayed over the
+    shared winners it corrects 41 of 93 labels (a Galaktoboureko under Bougatsa,
+    Quiche Lorraine under Quiche, Swedish Meatballs under Meatballs); median
+    margin 0.30, so it is not deciding on noise.
+
+    -> {"holder", "method", "current", "challenger"} with the two distances.
+    Anything unmeasurable (no vector, a dish with no embedding, a current dish
+    that no longer exists) hands the label to the challenger - the prior
+    behaviour, so nothing is ever stranded on a dish that cannot be compared."""
+    out = {"holder": challenger, "method": "unmeasured", "current": None, "challenger": None}
+    if not current or current == challenger:
+        out["method"] = "same-dish"
+        return out
+    names_idx = names if names is not None else name_index(conn)
+    hit = names_idx.get(_fold_name(likely_dish)) if likely_dish else None
+    if hit in (current, challenger):
+        out.update(holder=hit, method="name-exact")
+    if rec_vec is None:
+        return out
+    try:
+        import numpy as np
+        vec = np.asarray(rec_vec, dtype="float32")
+        dist = {}
+        for name in (current, challenger):
+            row = conn.execute("SELECT embedding FROM dishes WHERE name = ?", (name,)).fetchone()
+            blob = row[0] if row else None
+            if not blob:
+                return out
+            dvec = np.asarray(bytes_to_vec(blob), dtype="float32")
+            if dvec.shape != vec.shape:
+                return out
+            dist[name] = round(float(np.linalg.norm(vec - dvec)), 4)
+    except Exception:
+        return out
+    out["current"], out["challenger"] = dist[current], dist[challenger]
+    if out["method"] != "name-exact":
+        # Clearly closer moves it - by at least move_margin(); closer-by-a-hair
+        # and ties stay put (no churn between siblings, no noise moves).
+        margin = move_margin(conn)
+        out["margin"] = round(dist[current] - dist[challenger], 4)
+        out["holder"] = challenger if out["margin"] >= margin else current
+        out["method"] = "distance"
+    return out
+
+
 def same_verdict(old: Optional[dict], new: Optional[dict]) -> bool:
     """Do two `_match` blocks say the same thing? `matched_at` is excluded on
     purpose — it changes every run and is not part of the verdict, so including

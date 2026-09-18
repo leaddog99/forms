@@ -657,6 +657,21 @@ def normalize_query_rows(raw) -> list[dict]:
     return out
 
 
+def line_key(row: dict) -> str:
+    """Identity of ONE search line: its text AND its locale.
+
+    Query TEXT is not identity in a blended dish: "Pasta al Forno" (us/en) and
+    "Pasta al Forno" (it/it, keep=5) are two lines with one text. Reserved seats
+    were keyed on the text, so English pages found by the US line spent the
+    Italian line's seats - job #2050 gave all 5 "Italian" seats to American
+    blogs (found 2026-09-18). The default locale keeps the bare text, so every
+    single-locale dish reads exactly as before."""
+    q = (row.get("q") or "").strip()
+    gl = (row.get("gl") or "us").lower()
+    hl = (row.get("hl") or "en").lower()
+    return q if (gl, hl) == ("us", "en") else f"{q} [gl={gl} hl={hl}]"
+
+
 def max_ttl_days() -> int:
     """Hard cap on refresh_ttl_days (System → Limits, dish_max_refresh_ttl_days).
     A typo of 1180 for 180 sat on Stuffed Mushrooms until 2026-09-10."""

@@ -164,6 +164,17 @@ def _serpapi_lookup(query: str, target_n: int,
     # search TERMS (the precedence trap the note above warns about), and
     # _filter_disallowed stays as the downstream safety net. Config-gated +
     # capped (Google's query length is finite). Coexists with a `site:gr` query.
+    #
+    # SWITCHED OFF in system_config 2026-09-18 (serp_exclude_blocklist=false).
+    # Since ~09-17 the provider returns an EMPTY SUCCESS for page 2+ on a query
+    # that carries BOTH a locale (gl/hl — every dish query) AND any exclusion
+    # operator, intermittently: measured at page 2, x4 each — "-roundup" +
+    # locale [10,0,0,10]; 10 sites + locale [0,10,0,0]; 10 sites, NO locale
+    # [10,10,10,10]; plain + locale [10,9,10,9]. Every dish line was silently
+    # cut from 40 candidates to ~10 (Apple Crumble, Five Spice Powder, Pasta al
+    # Forno #2127: 24 candidates for a 20-seat dish). A wasted slot on page 1 is
+    # cheap; losing pages 2-4 is not. Before switching it back on, re-run that
+    # x4 test — a single good page proves nothing, the fault is intermittent.
     try:
         from input.pipeline import system_config as _cfg
         if _cfg.get_setting("serp_exclude_blocklist", True):
@@ -198,6 +209,11 @@ def _serpapi_lookup(query: str, target_n: int,
         })
     print(f"  [SERP:{active_provider()}] {len(out)} URLs (target {target_n})")
     return out[:target_n]
+
+
+def _line_key(row: dict) -> str:
+    from input.pipeline.dishes import line_key
+    return line_key(row)
 
 
 def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[dict]:
@@ -241,6 +257,9 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
                 # google_rank as the position from THIS query.
                 entry["_queries"] = [query]
                 entry["_hls"] = [hl]
+                # Line identity = text + locale (dishes.line_key), in DISCOVERY
+                # order: _lines[0] is the line that captured this page.
+                entry["_lines"] = [_line_key(row)]
                 by_norm[key] = entry
                 added += 1
             else:
@@ -253,6 +272,8 @@ def _multi_query_lookup(query_rows: list[dict], top_n_per_query: int) -> list[di
                 #   more complete)
                 existing.setdefault("_queries", []).append(query)
                 existing.setdefault("_hls", []).append(hl)
+                if _line_key(row) not in existing.setdefault("_lines", []):
+                    existing["_lines"].append(_line_key(row))
                 this_rank = entry.get("google_rank")
                 if this_rank is not None and (
                     existing.get("google_rank") is None
@@ -1565,7 +1586,8 @@ def _min_ou_filter(entries: list[dict], *,
 
 
 def _rank_blended(entries: list[dict], top_n_final: int,
-                  reserve_n: int = 0) -> tuple[list[dict], list[dict]]:
+                  reserve_n: int = 0,
+                  line_quotas: Optional[dict] = None) -> tuple[list[dict], list[dict]]:
     """Final ranking: the canonical OU/power percentile blend (see
     input.pipeline.blend.rank_by_blend). Returns (winners, reserve): the top
     top_n_final winners, plus the next `reserve_n` ranked as a backfill pool
@@ -1577,7 +1599,28 @@ def _rank_blended(entries: list[dict], top_n_final: int,
     ranked = rank_by_blend(entries)
     for rank, e in enumerate(ranked, start=1):
         e["rank"] = rank
-    return ranked[:top_n_final], ranked[top_n_final:top_n_final + reserve_n]
+    final = ranked[:top_n_final]
+    reserve = ranked[top_n_final:top_n_final + reserve_n]
+    # A RESERVED line's candidates must REACH the save loop to be seated. The
+    # pool was the top 2N by blend and nothing else - and a reserved line exists
+    # precisely because its pages LOSE that race (the language tax), so its
+    # seats could be promised and never offered. Carry each reserved line's own
+    # best through: 3x its seats, margin for extract/save failures. They sit at
+    # the END of the reserve in blend order, so they claim only their line's
+    # seats (or a seat nobody else could fill).
+    if line_quotas:
+        in_pool = {id(e) for e in final} | {id(e) for e in reserve}
+        for line, seats in line_quotas.items():
+            mine = [e for e in ranked if line in (e.get("_lines") or [])]
+            have = sum(1 for e in mine if id(e) in in_pool)
+            extra = [e for e in mine if id(e) not in in_pool][:max(0, seats * 3 - have)]
+            print(f"      reserved line {line!r}: {len(mine)} scored candidate(s), "
+                  f"{have} already in the pool, +{len(extra)} carried through "
+                  f"for its {seats} seat(s)")
+            for e in extra:
+                in_pool.add(id(e))
+                reserve.append(e)
+    return final, reserve
 
 
 def _predict_pa_from_fit(ou_fit: dict, da: float) -> Optional[float]:
@@ -1881,7 +1924,10 @@ def build_batch(
           f"percentile), keep top {top_n_final}")
     # Keep a reserve (the next top_n_final ranked) so the save loop can backfill
     # to top_n_final when a winner fails extract/save — "ensure 10 if available".
-    final, reserve = _rank_blended(entries, top_n_final, reserve_n=top_n_final)
+    _line_quotas = {_line_key(r): int(r.get("keep") or 0)
+                    for r in (query_rows or []) if int(r.get("keep") or 0) > 0}
+    final, reserve = _rank_blended(entries, top_n_final, reserve_n=top_n_final,
+                                   line_quotas=_line_quotas)
     print(f"      -> final batch: {len(final)} URLs (+{len(reserve)} reserve for backfill)")
 
     # Phase A — salvage FETCH-FAILS (likely anti-bot blocks). They were dropped

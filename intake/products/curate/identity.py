@@ -113,7 +113,8 @@ def _tok_hit(t: str, have: set) -> bool:
 
 def _brand_token(manufacturer: str) -> str:
     raw = _fold(manufacturer).split("(")[0].strip().lower()
-    return next((w for w in raw.split() if len(w) >= 3), raw)
+    # "The Spice House" is not the brand "the" — that token is in every listing.
+    return next((w for w in raw.split() if len(w) >= 3 and w not in _STOP), raw)
 
 
 def clean_model_number(raw: str) -> str:
@@ -190,10 +191,27 @@ def identity_score(pick: dict, listing_title: str, listing_brand: str = "",
                 "why": type_why}
 
     brand = _brand_token(pick.get("manufacturer", ""))
+    # The maker and the SHELF brand differ when the manufacturer field names a
+    # parent: "Costco (Kirkland Signature)", "Theppadungporn Coconut Co.
+    # (Aroy-D)", "McCormick & Company (Frank's RedHot)". The listing carries the
+    # shelf brand, which is the word the product title LEADS with — accepted
+    # only when the manufacturer field names it too, so "(Japan)" or "(sold via
+    # Korin)" can never stand in for a brand.
+    brands = {brand} if brand else set()
+    lead = next(iter(_norm_tokens(pick.get("product_title", ""))), "")
+    noted = set(_norm_tokens(" ".join(_PAREN.findall(pick.get("manufacturer", "") or ""))))
+    if lead and len(lead) >= 3 and lead in noted:
+        brands.add(lead)
     # A pick with no brand cannot be verified against anything — the model
     # named a generic ("Greek Oregano") and any jar would pass. Unbranded is
     # scored like a brand miss, not like a match.
-    brand_ok = bool(brand) and brand in hay
+    # Punctuation is not identity: "Chef'n" vs Amazon's "Chef’n", "Nielsen-Massey"
+    # vs "Nielsen Massey". Compare flattened, on WORD boundaries (one word or two
+    # adjacent words) — a bare substring would find OXO inside "box of".
+    words = [re.sub(r"[^a-z0-9]", "", w) for w in re.findall(r"[^\s,;:/|()]+", hay)]
+    words = [w for w in words if w]
+    flat = set(words) | {a + b for a, b in zip(words, words[1:])}
+    brand_ok = any(b in hay or re.sub(r"[^a-z0-9]", "", b) in flat for b in brands)
     brand_why = ("pick names no brand" if not brand
                  else f"brand '{brand}' not in listing" if not brand_ok else "")
 
@@ -255,6 +273,15 @@ def identity_score(pick: dict, listing_title: str, listing_brand: str = "",
 
     score = round(score, 2)
     verdict = "verified" if score >= VERIFIED else ("weak" if score >= WEAK else "reject")
+    if verdict == "verified" and not brand_ok:
+        # Words alone never VERIFY. Full recall x the 0.6 brand penalty lands
+        # exactly on VERIFIED, so a generic title matched any maker: a Kirkland
+        # "Organic Ground Saigon Cinnamon" pick took McCormick's listing at 0.6,
+        # silently (2026-09-18). Still not a veto (Pulltex sells "Pulltap's") —
+        # weak: listed with a warning when someone vouched for the ASIN, and
+        # refused outright when WE went looking for it (verify.resolve_asin).
+        verdict = "weak"
+        why += "; capped at weak — brand unconfirmed"
     return {"score": score, "verdict": verdict, "method": "title", "brand_ok": brand_ok,
             "why": why}
 

@@ -5274,6 +5274,8 @@ def list_dish_top_recipes(name: str):
                         source.get("siteName"), source.get("originalUrl")),
                     "bcc_url": _bcc_link_permalink(recipe_uuid),
                     "queries": master.get("queries") or [],
+                    "search_line": master.get("search_line"),
+                    "seat_line": master.get("seat_line"),
                     "grade": exc.get("grade"),
                     "exc_score": exc.get("score"),
                     "exc_basis": exc.get("basis") or {},
@@ -8427,12 +8429,14 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     # unscored pages, in Google's own rank order, after its scored ones. They
     # never take an open seat and never enter the top-up. Their _master row
     # carries no pa/da/ou (absent, not 0). Lines without `keep` are unchanged.
-    _line_keep = {r["q"]: int(r.get("keep") or 0)
+    # Lines are identified by text + locale (dishes.line_key), never text alone.
+    _line_keep = {dishes_lib.line_key(r): int(r.get("keep") or 0)
                   for r in query_rows if int(r.get("keep") or 0) > 0}
     _absent_pool = [
         e for e in (batch_result.get("dropped_moz") or [])
         if (e.get("_dropped_reason") == "moz-unavailable"
-            and any(_line_keep.get(q, 0) > 0 for q in (e.get("_queries") or [])))
+            and any(_line_keep.get(q, 0) > 0
+                    for q in (e.get("_lines") or e.get("_queries") or [])))
     ]
     _absent_pool.sort(key=lambda e: (e.get("google_rank") is None, e.get("google_rank") or 0))
     for e in _absent_pool:
@@ -8596,7 +8600,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
     #   an exhausted line leaves seats empty. Seats are consumed on SAVE
     #   SUCCESS only, so extract/save failures backfill exactly as before.
     #   No line reserves → everything above is a no-op (open = target).
-    _quotas = {r["q"]: int(r.get("keep") or 0)
+    _quotas = {dishes_lib.line_key(r): int(r.get("keep") or 0)
                for r in query_rows if int(r.get("keep") or 0) > 0}
     _open = [max(0, target - sum(_quotas.values()))]
     if _quotas:
@@ -8613,7 +8617,7 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             if not _quotas:
                 yield e, None
                 continue
-            _lines = e.get("_queries") or []
+            _lines = e.get("_lines") or e.get("_queries") or []
             _line = next((q for q in _lines if _quotas.get(q, 0) > 0), None)
             if e.get("_authority_absent"):
                 # No OU → no claim on an open seat and no place in the top-up;
@@ -8694,8 +8698,16 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             # takes the next slot rather than showing its raw blend rank).
             "rank": saved_count + 1,
             "queries": entry.get("_queries") or [],
+            # WHICH search line captured this recipe: the first line (row order)
+            # whose results carried it, text + locale. `lines` = every line that
+            # did. `seat_line` = the line whose RESERVED seat it took; absent
+            # when it won an open seat on merit.
+            "search_line": ((entry.get("_lines") or entry.get("_queries") or [None])[0]),
+            "lines": entry.get("_lines") or [],
             "batch_source": "/dishes/refresh",
         }
+        if _seat_line is not None and _quotas.get(_seat_line, 0) > 0:
+            master_block["seat_line"] = _seat_line
         # Exceptionalism grade was computed in _compute_custom_ou at the
         # batch step. Stamp it onto _master so the row carries its grade
         # forever (the cohort's σ is also persisted on dish.last_ou_fit
@@ -8706,6 +8718,39 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
         if exc:
             master_block["exceptionalism"] = exc
         payload["_master"] = master_block
+        # A recipe ANOTHER dish already holds moves here only if this dish is
+        # its nearer neighbour (dish_match.label_holder - the suggested-dish
+        # judgment). When the other dish keeps it, its _master block is left
+        # exactly as it was: the recipe is still THIS run's winner (the
+        # selection ledger says so, and the dish results page reads the ledger),
+        # its content is still refreshed, only the label does not move.
+        try:
+            from input.pipeline import dish_match as _dmh
+            from input.pipeline.embeddings import bytes_to_vec as _b2v
+            _norm = normalize_url(url) or url
+            with _db() as _hc:
+                _held = _hc.execute(
+                    "SELECT data, embedding FROM master_recipes "
+                    "WHERE url_normalized = ? AND user_id = 0", (_norm,)).fetchone()
+                _prior = (json.loads(_held[0]).get("_master") or {}) if _held else {}
+                if (_prior.get("kind") == "top" and _prior.get("dish")
+                        and _prior["dish"] != canonical_name):
+                    _v = _b2v(_held[1]) if _held[1] else None
+                    _who = _dmh.label_holder(
+                        _hc, _v, _prior["dish"], canonical_name,
+                        likely_dish=((recipe_dict.get("_identity") or {}).get("likelyDish") or ""))
+                    if _who["holder"] == _prior["dish"]:
+                        payload["_master"] = _prior
+                        print(f"[REFRESH-DISH] LABEL STAYS with {_prior['dish']!r} "
+                              f"({_who['method']}: {_prior['dish']}={_who['current']} vs "
+                              f"{canonical_name}={_who['challenger']})  {url}")
+                    else:
+                        print(f"[REFRESH-DISH] LABEL MOVES {_prior['dish']!r} -> "
+                              f"{canonical_name!r} ({_who['method']}: "
+                              f"{_prior['dish']}={_who['current']} vs "
+                              f"{canonical_name}={_who['challenger']})  {url}")
+        except Exception as _he:
+            print(f"[REFRESH-DISH] label-holder check skipped: {type(_he).__name__}: {_he}")
         # Stamp the DISH-COHORT scoring (in-cohort percentiles + field context +
         # competitiveness) onto _scoring. This is the LIVE refresh path — it does
         # NOT use pre_scored_from_entry, so the cohort signals must be merged here,
