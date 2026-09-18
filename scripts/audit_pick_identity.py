@@ -41,6 +41,10 @@ def audit(conn, verbose: bool = True) -> dict:
     rows = [dict(r) for r in conn.execute(
         "SELECT * FROM curated_collection_picks WHERE COALESCE(excluded,0)=0 "
         "ORDER BY collection, section, place")]
+    # identity reads the pick's class (a title may gloss its own class name)
+    classes = dict(conn.execute("SELECT name, product_class FROM curated_collections"))
+    for r in rows:
+        r["product_class"] = classes.get(r.get("collection")) or ""
     bands = {"verified": 0, "weak": 0, "reject": 0, "no-listing": 0}
     flagged = []
     for r in rows:
@@ -80,7 +84,7 @@ def fix(conn, rows: list, dry: bool = False) -> None:
             continue
         label = f"{r['collection']}/{r['slot']}"
         pick = {k: r.get(k) or "" for k in ("manufacturer", "product_title", "capacity",
-                                             "model_number", "buy_link")}
+                                             "model_number", "buy_link", "product_class")}
         found = V.resolve_asin(conn, pick, label=label, prior_asin=r.get("asin") or "")
         if not found:
             print(f"[fix] {label}: no listing matched — leaving as is")

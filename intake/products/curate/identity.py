@@ -26,6 +26,7 @@ reject. A blank ASIN is a correct answer; a guess is not.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from intake.products.product_types import same_type
 
@@ -80,9 +81,17 @@ _MODEL_TOKEN = re.compile(r"^[A-Z]{1,6}-?\d+[A-Z0-9-]*$")
 _ASIN_IN_URL = re.compile(r"/(?:dp|gp/product|clp|gp/aw/d)/([A-Z0-9]{10})(?:[/?#]|$)")
 
 
+def _fold(text: str) -> str:
+    """Accents off: the model writes "Pomì" / "Grand Maître", Amazon titles say
+    "Pomi" / "Grand Maitre" — the accent read as a brand miss and the right
+    listing scored weak (Passata #2, 2026-09-18)."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text or "")
+                   if not unicodedata.combining(ch))
+
+
 def _norm_tokens(text: str) -> list:
     out = []
-    for w in re.findall(r"[A-Za-z0-9]+", (text or "").replace("'s", "").replace("’s", "").lower()):
+    for w in re.findall(r"[A-Za-z0-9]+", _fold(text).replace("'s", "").replace("’s", "").lower()):
         w = _CANON.get(w, _UNITS.get(w, w))
         if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
             w = w[:-1]
@@ -103,7 +112,7 @@ def _tok_hit(t: str, have: set) -> bool:
 
 
 def _brand_token(manufacturer: str) -> str:
-    raw = (manufacturer or "").split("(")[0].strip().lower()
+    raw = _fold(manufacturer).split("(")[0].strip().lower()
     return next((w for w in raw.split() if len(w) >= 3), raw)
 
 
@@ -135,12 +144,42 @@ def _model_keys(pick: dict) -> set:
     return keys
 
 
+_PAREN = re.compile(r"\(([^()]*)\)")
+
+
+def _class_gloss_want(pick: dict, brand_toks: set) -> list:
+    """The alternate reading of a title that GLOSSES its own class name.
+
+    "Mutti Tomato Puree (Passata)" in the class Passata says the two names are
+    one thing, and the listing uses only one of them: "Mutti, Passata, 24.5
+    Ounce" scored 1/3 and the right ASIN was withheld (job #2069, 2026-09-15).
+    When one side of "A (B)" is EXACTLY the class name, the other side is its
+    translation, so the class name alone is a complete title — the same shape
+    as a pick written "Bianco DiNapoli Passata", which is already accepted.
+
+    Exact match only: "(Premium)", "(14-Cup)", "(KSM70SK)" are qualifiers, not
+    names, and must keep counting. -> the alternate want-list, or [] when the
+    title is not a class gloss. The class rides on the pick as product_class
+    (run rows: _product_class, stamped by verify.enrich)."""
+    cls = set(_norm_tokens(pick.get("product_class") or pick.get("_product_class") or ""))
+    title = pick.get("product_title") or ""
+    inner = _PAREN.findall(title)
+    if not cls or not inner:
+        return []
+    outer = _PAREN.sub(" ", title)
+    for side in [outer] + inner:
+        toks = [t for t in _norm_tokens(side) if t not in brand_toks]
+        if toks and set(toks) == cls:
+            return toks
+    return []
+
+
 def identity_score(pick: dict, listing_title: str, listing_brand: str = "",
                    listing_model: str = "") -> dict:
     """-> {score, verdict, method, why}. `pick` carries manufacturer,
     product_title, capacity, model_number as the research model wrote them."""
     ltitle = listing_title or ""
-    hay = f"{listing_brand or ''} {ltitle} {listing_model or ''}".lower()
+    hay = _fold(f"{listing_brand or ''} {ltitle} {listing_model or ''}").lower()
     hay_flat = re.sub(r"[^A-Z0-9]", "", hay.upper())
     pick_title = f"{pick.get('manufacturer', '')} {pick.get('product_title', '')}".strip()
 
@@ -176,8 +215,17 @@ def identity_score(pick: dict, listing_title: str, listing_brand: str = "",
                 "method": "brand-only", "brand_ok": brand_ok,
                 "why": "title carries no distinctive words" + (f"; {brand_why}" if brand_why else "")}
     hits = [t for t in want if _tok_hit(t, have)]
+    gloss = _class_gloss_want(pick, brand_toks)
+    gloss_note = ""
+    if gloss and brand_ok and all(_tok_hit(t, have) for t in gloss) and len(hits) < len(want):
+        # The title translates its own class name and the listing uses the
+        # class name: score the class-name reading, not the translation. Brand
+        # required — a one-word reading without the brand would verify any
+        # maker's passata.
+        want, hits = gloss, list(gloss)
+        gloss_note = " (title glosses the class name; listing names the class)"
     score = len(hits) / len(want)
-    why = f"{len(hits)}/{len(want)} distinctive words in listing"
+    why = f"{len(hits)}/{len(want)} distinctive words in listing" + gloss_note
     missing = [t for t in want if t not in hits]
     if missing:
         why += f" (missing: {', '.join(missing[:4])})"
@@ -227,7 +275,11 @@ def google_candidates(pick: dict, *, retailer: str = "amazon.com", want: int = 1
     except Exception:
         return []
     title = pick.get("product_title", "") or ""
-    brand = pick.get("manufacturer", "") or ""
+    # The maker's name only: a corporate note in the manufacturer field
+    # ("Pomì (Parmalat/OP Group)", "Ninja (SharkNinja)") sent Google a query
+    # no listing answers — zero candidates, ASIN left blank (Passata #2,
+    # 2026-09-18). _brand_token reads the field the same way.
+    brand = (pick.get("manufacturer", "") or "").split("(")[0].strip()
     if brand and title.lower().startswith(brand.lower()):
         brand = ""                                   # "Pastene Pastene …" once is enough
     q = " ".join(x for x in (brand, clean_model_number(pick.get("model_number", "")),

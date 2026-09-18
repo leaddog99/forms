@@ -299,7 +299,8 @@ def _rows_and_url(patch: dict, *, fallback_url: str = "") -> tuple:
 
 def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
     ensure_tables(conn)
-    name = (patch.get("name") or "").strip()
+    from intake.products.naming import clean_key_name
+    name = clean_key_name(patch.get("name"))
     if not name:
         raise ValueError("name is required")
     rows_json, url = _rows_and_url(patch)

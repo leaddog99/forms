@@ -451,6 +451,10 @@
             ${p.why_it_ranks_here?`<p class="pk-why">${escapeHtml(p.why_it_ranks_here)}</p>`:''}
             ${p.important_tradeoff?`<div class="pk-line"><b>The catch:</b> ${escapeHtml(p.important_tradeoff)}</div>`:''}
             ${p.edge_over_next?`<div class="pk-line"><b>Ahead of the next:</b> ${escapeHtml(p.edge_over_next)}</div>`:''}
+            ${p.owner_summary?`<div class="pk-line"><b>Owners say</b> <span class="muted">(Amazon's review summary)</span><b>:</b> ${escapeHtml(p.owner_summary)}</div>`:''}
+            ${(Array.isArray(p.owner_themes)&&p.owner_themes.length)?`<div class="pk-line muted" style="font-size:.82em"><b>Review themes:</b> ${
+              p.owner_themes.slice(0,8).map(t=>`${escapeHtml(t.name||'')} <span title="${escapeHtml(String(t.value||''))}">${
+                ({POSITIVE:'▲',NEGATIVE:'▼',MIXED:'◆'})[String(t.value||'').toUpperCase()]||''}</span>`).join(' · ')}</div>`:''}
             ${p.identity_warning && !p.warning_ack?`<div class="pk-line warn"><b>⚠</b> ${escapeHtml(p.identity_warning)}
                 <label style="margin-left:8px;white-space:nowrap;font-weight:400;cursor:pointer"><input type="checkbox" class="pk-ack" data-slot="${escapeHtml(p.slot)}" style="width:auto;vertical-align:middle"> looks right — dismiss</label></div>`:''}
             ${p.identity_warning && p.warning_ack?`<div class="pk-line muted" style="font-size:.82em">warning reviewed &amp; dismissed by curator
@@ -576,6 +580,7 @@
     function renderForm(c){
       const isEdit = !!c;
       const v = c || {};
+      const amzOn = c ? !!v.amazon_owners : true;   // standard source: on for a NEW collection
       $('#page').innerHTML = `
         <div class="ed-kicker"><button type="button" class="ed-purpose-toggle" id="cancel">← Cancel</button></div>
         <h1 class="ed-title">${isEdit ? 'Edit class' : 'Add a class'}</h1>
@@ -610,11 +615,11 @@
                 candidates form the pool — run its Amazon search first so it holds
                 candidates.</p></div>
           </div>
-          <details class="ed-accordion" ${v.amazon_owners?'open':''}>
+          <details class="ed-accordion" ${amzOn?'open':''}>
             <summary>Amazon owner reviews</summary>
             <div class="ed-field" style="margin-top:8px">
               <label style="display:flex;gap:8px;align-items:center">
-                <input type="checkbox" id="f_amz" style="width:auto" ${v.amazon_owners?'checked':''}>
+                <input type="checkbox" id="f_amz" style="width:auto" ${amzOn?'checked':''}>
                 Include Amazon's owner-review summary as a standard source
               </label>
               <p class="muted" style="font-size:.78rem;margin:5px 0 0">The run refreshes the

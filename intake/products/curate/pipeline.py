@@ -411,7 +411,6 @@ def run(product_class: str, categories=None, *, refresh: bool = False,
             # Amazon's owner reviews as a STANDARD source (curator, 2026-09-14): the
             # class's search pool, one document, owner voice — see amazon_owners.py.
             from intake.products.curate import amazon_owners as AO
-            from intake.products.curate import verify as V
             if (amazon_pool or "").strip():
                 docs = list(docs) + [AO.owner_doc(product_class, amazon_pool.strip(),
                                                   db_path=V.DB, refresh=refresh)]

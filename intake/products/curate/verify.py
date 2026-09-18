@@ -443,9 +443,12 @@ def enrich(data: dict, *, use_network: bool = True) -> dict:
         report["notes"].append(f"enrichment unavailable: {e}")
         return report
 
+    pclass = (data.get("product_class") or "").strip()
     for label, r in rows_of(data):
         title = f"{r.get('manufacturer','')} {r.get('product_title','')}".strip()
         asin = str(r.get("amazon_asin") or "").strip().upper()
+        if pclass:      # identity reads it: a title may gloss its own class name
+            r.setdefault("_product_class", pclass)
 
         # 1. Blank ASIN: corpus buy links, then Google scoped to amazon.com,
         #    every candidate scored against the pick's name (resolve_asin).

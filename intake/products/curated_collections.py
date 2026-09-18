@@ -237,8 +237,9 @@ def create_collection(conn: sqlite3.Connection, patch: dict) -> dict:
     class verbatim and a slug to hang picks off.
     """
     ensure_tables(conn)
-    pclass = (patch.get("product_class") or patch.get("name") or "").strip()
-    name = (patch.get("name") or "").strip() or pclass
+    from intake.products.naming import clean_key_name
+    pclass = clean_key_name(patch.get("product_class") or patch.get("name"))
+    name = clean_key_name(patch.get("name")) or pclass
     if not name:
         raise ValueError("name (or product_class) is required")
     if not pclass:
@@ -312,7 +313,8 @@ def update_collection(conn: sqlite3.Connection, name: str, patch: dict) -> dict 
         elif f in ("use_network", "amazon_owners"):
             v = 1 if v else 0
         elif f == "product_class":
-            v = (v or "").strip()
+            from intake.products.naming import clean_key_name
+            v = clean_key_name(v)
             if not v:
                 raise ValueError("product_class cannot be blank — it is what gets researched")
         sets.append(f"{f} = ?")

@@ -4743,7 +4743,8 @@ def curated_pick_set_asin_endpoint(name: str, slot: str, payload: dict = Body(de
              "model_number": pick.get("model_number") or "",
              "amazon_asin": asin,
              "amazon_link": f"https://www.amazon.com/dp/{asin}",
-             "asin_source": "curator"}
+             "asin_source": "curator",
+             "product_class": (ccs.get_collection(conn, name) or {}).get("product_class") or ""}
         report = cvf.enrich_one(conn, r, label=slot)
         ccs.apply_pick_asin(conn, name, slot, r)
         # Propagate to the catalog row the pick materialized — until 2026-09-08

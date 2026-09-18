@@ -9809,3 +9809,94 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   the curated LIST endpoint's explicit column list needs it; GET-by-name and
   the job runners already serve/use the new code.
 * Earlier today: `repair_json_quotes` + `reuse_raw` (34ed775).
+
+## Session log — 2026-09-14 (night) → 09-18 — SERP timeouts are the provider, not us; a shadowed import killed three curated runs; names get cleaned at birth; identity learns glosses, accents and corporate notes
+
+* **"Server won't start" (09-14 night)** — it was up: service Running, one
+  listener on 8009, 200 locally and through the tunnel. A manual second
+  uvicorn on 8009 fails "address in use" because the service holds the port.
+* **SERP timeouts — NOT a concurrency penalty.** Seven dish refreshes ran at
+  once and every one logged Scale SERP `ReadTimeout` at the 60s limit (11
+  pages lost; Chicken and Dumplings #2036 found ZERO candidates and failed by
+  design; Green Bean Casserole #2038 cancelled at 0). Evidence against
+  throttling: the vendor throttles with an immediate HTTP 429 (their docs),
+  not a 60s silence; the SAME timeouts hit jobs that ran completely alone
+  (Tomato Paste #2017, Dried Pasta #2020, and four sequential refreshes on
+  09-10 climbing 1 → 7); credits trivial (3189/10000). Timeouts appear on
+  09-01, 08, 09, 10, 13, 14 — 09-14 night was the worst episode. Provider
+  had recovered minutes later (search 5.4s).
+  **NOT BUILT, recommended:** (1) cap concurrent SERP jobs at 2-3 by queueing
+  — for blast radius (one bad hour damaged 7 dishes) and SQLite writer
+  contention, not because it cures timeouts; (2) a shared provider circuit
+  breaker like the 429 "slow down" rung (09-11): one page timeout pauses
+  every SERP caller, instead of each job burning 3 x 60s; (3) shorter first
+  attempt (20s x 4, not 60s x 3); (4) log the HTTP status — `_serp_get_json`
+  never inspects it, so a real 429 would be indistinguishable from a hang.
+* **Three curated runs died on my 09-14 change** — Tomato Paste #2043, Small
+  Sheet Pan #2056, Pasata #2063: `UnboundLocalError: V`. The owner-reviews
+  commit added a function-LOCAL `import verify as V` inside
+  `if amazon_owners:`; Python then treats `V` as local for the whole of
+  `pipeline.run`, so every collection with the flag OFF crashed at the title
+  gate — AFTER the paid model call. Dried Pasta (flag on) was the only
+  success, which is why it passed its proof run. Fix: delete the local
+  import. Small Sheet Pan re-run from its saved reply (`reuse_raw`, job
+  #2068): 3 verified picks, zero model cost. Lesson: prove a new flag with it
+  OFF as well as on.
+* **Pasata → Passata.** Renamed collection + class, deleted the misspelled
+  registry stub and term-map cache row. Fresh run #2069: 4/9 sources (Consumer
+  Reports matched a VW Passat, BestReviews car humidifiers), two picks —
+  Mutti, Pomì — honestly thin: nobody ranks passata brands.
+* **Identity scorer — three fixes, one regression pass (240 stored picks, 5
+  changed, all correct):**
+  - CLASS GLOSS: "Mutti Tomato Puree (Passata)" vs listing "Mutti, Passata,
+    24.5 Ounce" scored 1/3 and the right ASIN was withheld. When one side of
+    "A (B)" is EXACTLY the class name, the other side is its translation and
+    the class name alone is a complete title (`_class_gloss_want`). Exact
+    match only — "(Premium)", "(14-Cup)", "(KSM70SK)" still count — and the
+    brand must be present (a one-word reading without it verified any maker's
+    passata at exactly 0.6). The class reaches the scorer as `product_class`
+    on the pick: `verify.enrich` stamps `_product_class`, the set-asin endpoint
+    and `scripts/audit_pick_identity.py` pass it.
+  - ACCENTS: `_fold()` — "Pomì"/"Wüsthof"/"Grand Maître" vs Amazon's
+    unaccented titles read as a brand miss. Wüsthof Fillet Knife weak 0.48 →
+    verified 0.8; Santoku 0.6 → 1.0.
+  - GOOGLE QUERY: the manufacturer's corporate note went into the query
+    verbatim ("Pomì (Parmalat/OP Group) Pomì Strained Tomatoes…") → zero
+    candidates. Query now uses the maker's name only, as `_brand_token` does.
+  - Result: Passata #1 Mutti B00BBSTMQS verified 1.0 (4.8★ x 265; asin_source
+    says "curator" because it went through the set-asin path); #2 Pomì
+    B0C15H9P91 verified 1.0 via google (4.6★ x 104).
+* **"I can't delete it" — a slash in a key name.** "Cast Iron Griddle / Grill":
+  the server decodes %2F BEFORE routing, the path splits, and every GET / PUT
+  / DELETE on `/curated-collections/{name}` answers 404 (the client encodes
+  correctly; nothing it can do). Curator: "you should edit the name… kinda
+  101 stuff." NEW `intake/products/naming.py` `clean_key_name()` — slash or
+  backslash → " and ", control chars out, whitespace collapsed, idempotent —
+  applied where names are BORN: `curated_collections.create_collection` (name
+  + product_class), `update_collection` (product_class),
+  `collections_store.create_collection` (so the inline pool is covered). The
+  stuck row renamed through the same cleaner → "Cast Iron Griddle and Grill"
+  (empty stub, no dependents). It was the only slash name in any name-keyed
+  table. Nineteen routes share the `/{name}` shape (dishes, chapters, product
+  classes, affiliate programs/stores, scheduled jobs) — their create paths do
+  NOT use the cleaner yet.
+* **Amazon review summary "isn't used anywhere" — half true.** As a SOURCE it
+  was an opt-in checkbox defaulting OFF: on for 1 of 100 collections. Per
+  pick, the summary has been fetched since 09-14 (13 picks carry one) but was
+  rendered only inside the collapsed written brief. Now: pick cards show
+  "Owners say (Amazon's review summary)" + review themes with ▲▼◆; the
+  checkbox defaults ON for a NEW collection (stored value wins on edit; the
+  99 existing collections untouched). Cost when on: ~1 search credit + up to
+  ~20 listing credits per run, cached per ASIN.
+* **Restart OWED** (agent shell cannot elevate): the running server still
+  lacks the name cleaner on create and the class on set-asin. Jobs and the
+  static page already use the new code (hard refresh).
+* Side effects to know: catalog seeding registered classes "Ricer",
+  "Cast Iron Griddle", "Cast Iron Griddle and Grill" — renaming or deleting
+  that collection leaves the registry entry behind. Old cache files
+  `cache/curate/pasata.*` remain, harmless.
+* **Open:** re-run Tomato Paste (#2043's reply is saved — `reuse_raw=1`),
+  Chicken and Dumplings, Green Bean Casserole · the SERP breaker/queue above ·
+  clean names on the other name-keyed create paths · the client PUTs
+  `/curated-collections/undefined` after a failed load (seen in the log; the
+  cleaner removes today's trigger, the guard is still missing).
