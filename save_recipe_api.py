@@ -1196,6 +1196,42 @@ def init_db():
                 for _fc in ("cuisine", "ethnicity", "chapter", "recipe_name"):
                     conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_{_fc} "
                                  f"ON {_tbl}(user_id, {_fc})")
+                # THE HOTLIST index (2026-09-19). The hotlist sort SELECTS one
+                # flagship page per publisher with a window over (source_host,
+                # traffic_pct, traffic) - three VIRTUAL columns, so every one of
+                # ~11k rows had its ~16 KB JSON parsed to read them: 341 ms, and
+                # the search issues that selection SIX times per request (count,
+                # page, four facet tallies) = ~2.1 s for 7 rows, worse on a cold
+                # cache (the morning iPad "drag"). This index holds exactly those
+                # columns, in the window's own order, for only the qualifying
+                # rows: the selection reads the index and never opens `data`.
+                # PARTIAL: the WHERE must be restated VERBATIM by the query
+                # (_recipes_search_impl) or the planner cannot use it.
+                # SORT indexes (2026-09-19): each mirrors one SORT_SQL order
+                # EXACTLY, owner first. The sort keys are virtual columns, so an
+                # unfiltered authority sort parsed every row's JSON and then
+                # sorted ~11k rows to return 60: ~390 ms warm, far worse cold.
+                # With the order already in an index the page is read straight
+                # off it (ou_desc: 352 ms -> <1 ms). DESC NULLS LAST is SQLite's
+                # natural DESC order, so the index satisfies it. Keep these in
+                # step with SORT_SQL - an order that drifts silently falls back
+                # to the slow path, it does not break.
+                for _sn, _cols in (
+                    # chapter_asc orders by chapter then name: both in one index
+                    # so the id-only inner query is covered.
+                    ("sort_chapter", "chapter, recipe_name, id"),
+                    ("sort_ou", "ou_score DESC, traffic DESC, id"),
+                    ("sort_pa", "page_authority DESC, traffic DESC, id"),
+                    ("sort_power", "power DESC, page_authority DESC, traffic DESC, id"),
+                    ("sort_quality", "ou_score DESC, recipe_score DESC, updated_at DESC, "
+                                     "traffic DESC, id"),
+                ):
+                    conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_{_sn} "
+                                 f"ON {_tbl}(user_id, {_cols})")
+                conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{_tbl}_hotlist ON {_tbl}"
+                    f"(user_id, source_host, traffic_pct DESC, traffic DESC) "
+                    f"WHERE traffic >= 1000 AND traffic_pct IS NOT NULL")
             # Same source-of-truth embedding on USER recipes: every save embeds
             # the recipe so its vector is available for dish-matching, "find
             # similar", dedup, and recommendations (not single-use). 2026-06-02.
@@ -8687,6 +8723,34 @@ async def _handle_dish_refresh_job(job: dict) -> dict:
             _record_reject(entry, f"qualifier-contradiction: recipe text says {_sib}")
             continue
 
+        # RIGHT-DISH GUARD: a stranger Google padded the results with (kimchi in
+        # Apple Crumble, 2026-09-18) is far from the dish AND never names it -
+        # dish_match.off_dish wants both. Uses the row's stored vector when the
+        # page is already in the library, else embeds the same text the save
+        # will. Dropped like any other reject; the slot backfills.
+        try:
+            from input.pipeline import dish_match as _dmo
+            from input.pipeline.embeddings import (bytes_to_vec as _ob2v,
+                                                   compose_recipe_text as _octxt,
+                                                   embed_text as _oemb)
+            with _db() as _oc:
+                _orow = _oc.execute(
+                    "SELECT embedding FROM master_recipes WHERE url_normalized = ? "
+                    "AND user_id = 0", (normalize_url(url) or url,)).fetchone()
+                _ovec = _ob2v(_orow[0]) if (_orow and _orow[0]) else None
+                if _ovec is None:
+                    _otxt = _octxt(recipe_dict)
+                    _ovec = _oemb(_otxt) if _otxt.strip() else None
+                _stranger = _dmo.off_dish(_oc, _ovec, canonical_name, recipe_dict)
+        except Exception as _oe:
+            _stranger = None
+            print(f"[REFRESH-DISH] right-dish guard skipped: {type(_oe).__name__}: {_oe}")
+        if _stranger:
+            print(f"[REFRESH-DISH] OFF-DISH-DROP {_stranger}  "
+                  f"{(recipe_dict.get('name') or '')[:60]!r}  {url}")
+            _record_reject(entry, _stranger)
+            continue
+
         payload = dict(recipe_dict)
         payload["recipe_id"] = extract_result.get("recipe_id") or recipe_dict.get("id")
         payload["user_id"] = 0
@@ -11668,14 +11732,21 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
     # per measured publisher. Applied to matched-count, rows AND facet counts
     # so "N of total" and the dropdowns all describe the same set. user_id is
     # a framework-validated int, safe to inline.
+    # RESOLVED ONCE per request into temp.hot_ids (2026-09-19), like the text
+    # match: the selection used to be inlined into all SIX queries a search
+    # issues, so its cost was paid six times (6 x 341 ms = 2.1 s for 7 rows).
+    # The WHERE below restates idx_<table>_hotlist's partial predicate verbatim
+    # - that is what lets the planner use the index.
     extra_where = ""
+    hot_sql = ""
     if sort == "hotlist":
-        extra_where = (
-            f" AND id IN (SELECT id FROM ("
+        hot_sql = (
+            f"CREATE TEMP TABLE hot_ids AS SELECT id FROM ("
             f"SELECT id, ROW_NUMBER() OVER (PARTITION BY source_host "
             f"ORDER BY traffic_pct DESC, traffic DESC) rn "
             f"FROM {table} WHERE user_id = {int(user_id)} "
-            f"AND traffic >= 1000 AND traffic_pct IS NOT NULL) WHERE rn = 1)")
+            f"AND traffic >= 1000 AND traffic_pct IS NOT NULL) WHERE rn = 1")
+        extra_where = " AND id IN (SELECT id FROM temp.hot_ids)"
     limit = max(1, min(int(limit or 200), 1000))
     offset = max(0, int(offset or 0))
 
@@ -11683,6 +11754,9 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
         with _db() as conn:
             if q:
                 _materialise_text_match(conn, user_id, q)
+            if hot_sql:
+                conn.execute("DROP TABLE IF EXISTS temp.hot_ids")
+                conn.execute(hot_sql)
             where, params = _search_where(user_id, filters, q)
             where += extra_where
             matched = conn.execute(
@@ -11698,10 +11772,22 @@ def _recipes_search_impl(*, user_id: int, q: str, cuisine: str, ethnicity: str,
             # can SEE why a row placed where it did. NULL when no query.
             rel_col = (f", (SELECT rel FROM temp.q_match WHERE id = {table}.id)"
                        if q else ", NULL")
+            # TWO STEPS, so the optimizer can choose well ON ITS OWN (2026-09-19).
+            # Selecting `data` means no index can ever cover the page query, so
+            # the planner picks among the owner-led indexes blind to the one cost
+            # that matters here: a virtual column read from a ~16 KB JSON. After
+            # an ANALYZE it moved the name sort onto an index without recipe_name
+            # and the sort went 44 ms -> 395 ms (every row's JSON parsed to sort
+            # 11k names). The inner query asks only for ids, so an index that
+            # carries the sort key COVERS it and wins on the planner's own
+            # costing; the outer query then opens `data` for one page of rows.
+            # No INDEXED BY: a hint would break under filters and on rename.
             rows = conn.execute(
                 f"SELECT id, recipe_id, user_id, data, source_changed_at, "
-                f"created_at, updated_at{rel_col} FROM {table} WHERE {where} "
-                f"ORDER BY {order_by} LIMIT ? OFFSET ?",
+                f"created_at, updated_at{rel_col} FROM {table} WHERE id IN ("
+                f"SELECT id FROM {table} WHERE {where} "
+                f"ORDER BY {order_by} LIMIT ? OFFSET ?) "
+                f"ORDER BY {order_by}",
                 [*params, limit, offset],
             ).fetchall()
 

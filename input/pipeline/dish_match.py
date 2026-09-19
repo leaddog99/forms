@@ -221,6 +221,83 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
     return out
 
 
+DEFAULT_OFFDISH_DISTANCE = 1.0
+_OFFDISH_SETTING = "dish_offdish_min_distance"
+_GENERIC_DISH_WORDS = {"recipe", "recipes", "best", "easy", "the", "and", "with", "for",
+                       "style", "fresh", "homemade", "classic"}
+
+
+def off_dish(conn: sqlite3.Connection, rec_vec, dish_name: str, recipe: dict) -> Optional[str]:
+    """Is this recipe a STRANGER to the dish about to claim it? -> a reason, or None.
+
+    A refresh trusted Google's relevance completely, and Google (or the SERP
+    vendor) pads a thin query with popular strangers: an easy-kimchi and a smash
+    burger were saved as Apple Crumble winners, a vegan pesto as Chicken Cordon
+    Bleu, chicken adobo as Chicken Kiev (2026-09-18) - real recipes on strong
+    sites, so is-recipe and the authority ranking both wave them through.
+
+    Rejected only when BOTH hold, because either alone is wrong:
+      * FAR: distance to the dish >= the setting (1.0). Measured on 4,872 older
+        winners: p99 = 0.95; the strangers sat at 1.01-1.21, real galettes 0.70-0.81.
+      * NEVER NAMES IT: title + ingredients + keywords + likelyDish carry less
+        than most of the distinctive words of the dish's name, display name and
+        every alias. Distance alone would evict honest members of ingredient
+        dishes - "Dijon Potato Salad" is 1.11 from Dijon and plainly belongs.
+    Unmeasurable (no vector, no dish embedding, a name with no ASCII word) -> None:
+    when unsure the recipe stays, as before."""
+    if rec_vec is None or not dish_name:
+        return None
+    try:
+        import numpy as np
+        row = conn.execute("SELECT embedding, display_name, aliases FROM dishes WHERE name = ?",
+                           (dish_name,)).fetchone()
+        if not row or not row[0]:
+            return None
+        vec = np.asarray(rec_vec, dtype="float32")
+        dvec = np.asarray(bytes_to_vec(row[0]), dtype="float32")
+        if dvec.shape != vec.shape:
+            return None
+        dist = float(np.linalg.norm(vec - dvec))
+        limit = DEFAULT_OFFDISH_DISTANCE
+        try:
+            from input.pipeline import system_config as _cfg
+            path = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), None)
+            if path:
+                limit = float(_cfg.get_setting(_OFFDISH_SETTING, limit, db_path=path))
+        except Exception:
+            pass
+        if dist < limit:
+            return None
+        names = [dish_name, row[1] or ""]
+        try:
+            al = json.loads(row[2]) if row[2] else []
+            names += [a for a in (al if isinstance(al, list) else []) if isinstance(a, str)]
+        except Exception:
+            pass
+        ident = recipe.get("_identity") or {}
+        hay = _fold_text(" ".join(str(x) for x in (
+            [recipe.get("name") or "", ident.get("likelyDish") or "",
+             recipe.get("keywords") or "", recipe.get("recipeCategory") or ""]
+            + list(recipe.get("recipeIngredient") or []))))
+        squashed = re.sub(r"\s+", "", hay)
+        judged = False
+        for nm in names:
+            stems = list(dict.fromkeys(
+                w[:5] for w in re.findall(r"[a-z]{3,}", _fold_text(nm))
+                if w not in _GENERIC_DISH_WORDS))
+            if not stems:
+                continue
+            judged = True
+            # "Traybake" vs "Breakfast Tray Bake": spacing is not identity.
+            if sum((st in hay or st in squashed) for st in stems) * 2 > len(stems):
+                return None                      # it names the dish
+        if not judged:
+            return None
+        return f"off-dish: {dist:.2f} from {dish_name!r} and never names it"
+    except Exception:
+        return None
+
+
 DEFAULT_MOVE_MARGIN = 0.05
 _MOVE_MARGIN_SETTING = "dish_label_move_min_margin"
 

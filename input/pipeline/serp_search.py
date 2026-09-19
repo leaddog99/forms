@@ -60,6 +60,43 @@ def pop_page_losses() -> list[dict]:
     return out
 
 
+# Words that say nothing about WHICH dish a query is after.
+_GENERIC_Q = {"recipe", "recipes", "best", "easy", "how", "make", "the", "and", "with",
+              "for", "homemade", "classic", "simple", "quick", "authentic", "traditional"}
+
+
+def _off_topic_page(query: str, org: list) -> bool:
+    """Is this result page about something ELSE?
+
+    Since ~2026-09-17 the provider's localized deep pages intermittently come back
+    as a full, successful page for a DIFFERENT query: page 2 of "Chicken Cordon
+    Bleu Recipe" (gl=us hl=en) returned "1 Hour of Lazy Recipes", "The Recipe
+    Critic: Best Recipes", "The Best Neapolitan Pizza" - 0 of 10 about the dish,
+    while pages 1 and 3 of the same query were 6/6 and 9/10. Those strangers are
+    real recipes on strong sites, so they pass is-recipe, outrank honest pages on
+    authority and get SAVED as winners: an easy-kimchi and a banana pudding became
+    Apple Crumble and Chicken Cordon Bleu winners (jobs #2129/#2132, 2026-09-18).
+
+    A page is off-topic when NOT ONE result mentions any distinctive query word in
+    its title, link or snippet. Exclusion operators, site: scopes and generic words
+    ("recipe", "best") are not distinctive. Non-ASCII queries are never judged (a
+    Chinese title need not repeat the query string), nor are queries left with no
+    distinctive word - when unsure, the page stands."""
+    words = [w for w in re.findall(r"[a-z]{3,}", re.sub(r"(^|\s)-\S+|\bsite:\S+", " ", query.lower()))
+             if w not in _GENERIC_Q]
+    if not words or not query.isascii() or len(org) < 4:
+        return False
+    # On-topic = a result carrying MOST of the distinctive words, not just one:
+    # the strangers served for "Best Chicken Kiev" were chicken parmesan, chicken
+    # adobo and chicken salad - every one says "chicken", none says "kiev".
+    stems = list(dict.fromkeys(w[:5] for w in words))
+    for it in org:
+        hay = " ".join(str(it.get(k) or "") for k in ("title", "link", "snippet")).lower()
+        if sum(st in hay for st in stems) * 2 > len(stems):
+            return False
+    return True
+
+
 def _serp_get_json(endpoint, params, timeout, *, label: str, page) -> dict | None:
     """GET + parse JSON for one SERP page, with retries on TRANSIENT network errors
     (Timeout / ConnectionError). Returns the parsed dict, or None if the page exhausted
@@ -321,6 +358,41 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
                     print(f"  [scaleserp] page {p}: no organic results — end of results "
                           f"({len(out)} collected)")
                     break
+        if _off_topic_page(query, org):
+            # A stranger's results. Ask again; a page that stays off-topic is
+            # DROPPED (its ten URLs never enter the pool) and recorded as a lost
+            # page so the run alerts - then paging continues, the next page is
+            # usually fine.
+            # A GLITCH changes when asked again; a REAL Google page does not. The
+            # one honest page the guard flags in 730 replayed pages was
+            # '"Macaroni and Cheese"' page 2, all "Mac and Cheese" titles - the
+            # same ten links every time. Same links back = Google's real answer:
+            # keep it, as before, and let the downstream filters judge it.
+            attempts, backoff = _serp_retry_cfg()
+            first = {it.get("link") for it in org if it.get("link")}
+            stable = False
+            for extra in range(2, attempts + 1):
+                print(f"  [scaleserp] page {p}: OFF-TOPIC results (none mention the query) "
+                      f"- retry {extra}/{attempts} in {backoff}s")
+                time.sleep(backoff)
+                data = _serp_get_json(SCALESERP_ENDPOINT, params, timeout,
+                                      label="scaleserp", page=p)
+                org = (data or {}).get("organic_results") or []
+                if org and not _off_topic_page(query, org):
+                    break
+                again = {it.get("link") for it in org if it.get("link")}
+                if first and len(first & again) * 10 >= len(first) * 7:
+                    stable = True
+                    print(f"  [scaleserp] page {p}: same results on retry - Google's real "
+                          f"page, kept")
+                    break
+            if stable:
+                pass
+            elif not org or _off_topic_page(query, org):
+                print(f"  [scaleserp] page {p}: still off-topic - page DROPPED")
+                _page_losses.append({"label": "scaleserp", "page": p, "query": query,
+                                     "error": "off-topic results (provider served another query)"})
+                continue
         for it in org:
             link = it.get("link") or it.get("url") or ""
             if link and link not in seen:

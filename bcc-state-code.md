@@ -10005,3 +10005,85 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   strawberry dishes · unscored winners missing from the dish page · right-dish check on
   reserved seats · SERP breaker/queue (09-14 entry) · name cleaner on the other
   name-keyed create paths.
+
+## Session log — 2026-09-18 (evening) → 09-19 — the eight thin dishes re-run; strangers in the winners (two guards); the hotlist was 2 seconds of JSON parsing
+
+* **The eight one-page-deep dishes re-run at full depth, two at a time** (#2129–#2136):
+  every line hit its target (40 / 39 / 25). Apple Crumble 6/15 → 15/15, Five Spice Powder
+  7/10 → 10/10, Apple Crisp 9/10 → 10/10; the rest full.
+* **But depth let STRANGERS in.** Off-dish winners were ~0% through 09-17 and 17% in
+  those re-runs: easy kimchi + a smash burger + banana pudding saved under Apple Crumble,
+  vegan pesto / pizza dough / kimchi under Chicken Cordon Bleu, chicken adobo + parmesan
+  under Chicken Kiev, pancakes + sugar cookies under Galette. Real recipes on strong
+  sites, so is-recipe AND the authority ranking both wave them through. TWO sources:
+  (1) **provider glitch** — a full, successful page of results for a DIFFERENT query
+  (page 2 of "Chicken Cordon Bleu Recipe", gl=us hl=en: 0 of 10 about the dish,
+  total_results 64 vs 105 on pages 1 and 3) — the same fault family as the empty page 2;
+  (2) **Google's own padding** of a thin query on deep pages ("Best Chicken Kiev" page 4
+  = generic chicken, identical on retry).
+* **Guard 1 — `serp_search._off_topic_page`** (the chokepoint): a page where NO result
+  carries MOST of the query's distinctive words (exclusions, site: and generic words like
+  recipe/best ignored; non-ASCII queries never judged) is retried; **same links back =
+  Google's real page, kept**; still off-topic and different = DROPPED and recorded as a
+  lost page (alerts). Replayed over 730 healthy pages (09-01..09-16): 4 flagged — three
+  real junk (Kokokari Salad, "Apricot Preserves" = State Preserves / Arizona
+  Diamondbacks), one honest ('"Macaroni and Cheese"' page of "Mac and Cheese" titles)
+  which the same-links rule keeps. Live: fired 11 times across the six re-runs, eight
+  came back on-topic on retry, three were stable real pages, none dropped.
+* **Guard 2 — `dish_match.off_dish`** (the save step): a refresh drops a recipe that is
+  BOTH ≥ `dish_offdish_min_distance` (setting, 1.0) from the dish AND never names the
+  dish / display name / any alias in title + ingredients + keywords + likelyDish (most
+  of the distinctive words; spacing-insensitive — "Traybake" vs "Tray Bake"). Both,
+  because distance alone evicts honest members of ingredient dishes ("Dijon Potato
+  Salad" is 1.11 from Dijon). Measured on 4,872 older winners: p99 = 0.95; the strangers
+  sat at 1.01–1.21, real galettes 0.70–0.81. Replay: catches all 7 of the day's
+  strangers; flags 10 older winners, mostly genuine (Shakshuka under Pasta al Forno,
+  Cacio e Pepe under Tuscan White Bean Soup, Thai Cashew Chicken under Moo Goo Gai Pan) —
+  NOT removed, they go at their dish's next refresh. Logs `OFF-DISH-DROP`; lands in the
+  dish's Rejects. Uses the stored vector when the page is already in the library, else
+  embeds the same text the save will.
+* **Second re-run of the six affected dishes (#2137–#2142): clean.** CCB: two sugar-cookie
+  recipes (from the misspelled line) reached the final batch and were dropped at 1.15, a
+  reserve page took the seat — saved 12/13. **Left as is:** Apricot Jam kept a strawberry
+  and a blueberry preserves (its "Apricot Preserves" line; near neighbours pass a
+  gross-stranger cutoff); strangers under 1.0 (an apple pie in Apple Crisp's run) still
+  take a snapshot seat though their LABEL stays home. **Typo NOT fixed (curator's data):**
+  Chicken Cordon Bleu's third search line reads "Bext Chicken Cordon Bleu".
+* **"Hotlist + Greek dragged on the iPad" — not the filters.** Cuisine / ethnicity /
+  chapter each have an owner-led index and the planner uses them (Greek alone: 37 ms);
+  nothing forces a path. The hotlist is a SELECTION (one flagship page per publisher, a
+  window over source_host / traffic_pct / traffic) and those are VIRTUAL columns: every
+  one of 10,938 rows had its ~16 KB JSON parsed — 341 ms — and the selection was inlined
+  into all SIX statements a search issues (count, page, four facet tallies; a seventh for
+  the total) = **~2,070 ms for 7 rows**, far worse on a cold cache (≈180 MB of JSON off
+  disk: slow in the morning, fine later on the desktop). Six statements, not a chain:
+  each is one fully composed WHERE … AND …; SQLite plans each alone and shares nothing.
+  - `idx_<tbl>_hotlist` — PARTIAL, `(user_id, source_host, traffic_pct DESC, traffic DESC)
+    WHERE traffic >= 1000 AND traffic_pct IS NOT NULL` (the query restates it verbatim):
+    341 → 71 ms, identical 159 rows.
+  - the selection is resolved ONCE per request into `temp.hot_ids` (like `temp.q_match`).
+  - **Result through the real function: 2,070 → 81 ms.**
+* **The ranking sorts had the same disease:** ou / pa / power / quality / chapter parsed
+  every row's JSON and sorted ~11k rows to return 60 (~390–420 ms unfiltered). Composite
+  indexes mirroring each SORT_SQL order, owner first (`sort_ou`, `sort_pa`, `sort_power`,
+  `sort_quality`, `sort_chapter`): → ~19 ms (chapter 55). Pages verified identical
+  (same ids, same order). `batch_rank` unchanged at ~400 ms — it orders by a raw
+  `json_extract` with no column. Keep the indexes in step with SORT_SQL: a drifted order
+  falls back to the slow path silently, it does not break.
+* **A planner trap, caught in the act ([[reference_sqlite_analyze]]):** statistics were
+  stale (7,924 vs 10,938 rows). Refreshing them moved the NAME sort onto an index without
+  recipe_name: 44 → 395 ms. The optimizer cannot see that a virtual column read from JSON
+  is expensive, and because the page query selects `data` no index can cover it. Fix is a
+  query SHAPE, not a hint: the page is now two steps in ONE statement — inner `SELECT id …
+  ORDER BY … LIMIT` (coverable, so the right index wins on the planner's own costing),
+  outer opens `data` for one page. No INDEXED BY. **UNTIL THE RESTART the live server
+  runs the old one-step query against the new statistics, so the name sort is ~395 ms.**
+* Indexes + ANALYZE are LIVE in recipes.db (and in startup code for fresh installs);
+  the endpoint changes and both guards' server paths need the restart. Jobs already run
+  the new code.
+* **Open (carried + new):** RUN THE ASIN RESTORE (`scripts/restore_2026_09_18_wrong_asins.py
+  --apply`) · RESTART · the "Bext" search line · a right-dish check for strangers UNDER
+  the 1.0 cutoff and for reserved seats · `batch_rank` needs a generated column to be
+  indexable · the 10 older stranger winners · twin-dish descriptions (Horiatiki /
+  Clafoutis / Matzo) · narrower strawberry dishes · Utility Knife pick→product
+  conflation · unscored winners missing from the dish page · SERP breaker/queue.
