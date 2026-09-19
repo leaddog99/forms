@@ -1025,13 +1025,22 @@ def validate_create_payload(payload: dict) -> tuple[str, list[str], int, int, Op
     # dish's top_n_serpapi. Returns rows; create_dish stores them.
     queries = validate_query_rows(payload.get("query_rows", payload.get("queries")),
                                   max_n=_max_serp)
-    top_n_serpapi = int(payload.get("top_n_serpapi", 25))
+    # Omitted counts fall back to the NEW-DISH PROFILE in the system record
+    # (dish_default_top_n_*), the same numbers the Add form pre-fills - not the
+    # 25/10 that used to be hard-coded here and disagreed with the coverage page.
+    def _profile(key: str, fallback: int) -> int:
+        try:
+            from input.pipeline import system_config as _cfgp
+            return int(_cfgp.get_setting(key, fallback) or fallback)
+        except Exception:
+            return fallback
+    top_n_serpapi = int(payload.get("top_n_serpapi") or _profile("dish_default_top_n_serpapi", 40))
     if top_n_serpapi <= 0:
         raise ValueError("top_n_serpapi must be positive")
     if top_n_serpapi > _max_serp:
         raise ValueError(f"top_n_serpapi {top_n_serpapi} exceeds the max of {_max_serp} "
                          f"(raise it in System → Limits)")
-    top_n_final = int(payload.get("top_n_final", 10))
+    top_n_final = int(payload.get("top_n_final") or _profile("dish_default_top_n_final", 15))
     if top_n_final <= 0:
         raise ValueError("top_n_final must be positive")
     if top_n_final > _max_final:

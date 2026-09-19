@@ -134,7 +134,7 @@
 
     <div class="notes">
       <span><b>Recipes</b> = master rows whose identity card names the dish; <b>Tracked traffic</b> is directional ordering, not search volume.<button type="button" class="info-dot" data-info-title="Reading the columns" data-info="<code>dish_keywords</code> holds one row per harvested URL — that URL&#39;s top-ranking keyword and its estimated traffic — across only the publishers we have run exports for. So the traffic column reads &#39;traffic flowing to pages about this, among the publishers we track&#39;. A dish that is big on sites we have never harvested reads low or zero, and the name match is a substring (<i>Chili</i> catches <i>sweet chili sauce</i>). Seasonal dishes read low out of season. Treat it as directional ordering, never as a number.">i</button></span>
-      <span>The <b>relation</b> tag says which of three problems an overlap is — they want different actions.<button type="button" class="info-dot" data-info-title="Split / Variant / Alias" data-info="<b>Split</b> — genuinely different dishes sharing a word (<i>Pasta alla Gricia</i> against <i>alla Norma</i>): create the dish. <b>Variant</b> — the same identity, narrower (<i>Peach Cobbler</i> against <i>Cobbler</i>): a judgement call, because <code>docs/collections.md</code> §11 is explicit that variants are NOT the M2M case — you want one winner per identity, since pooling the cohorts mis-grades the minority. <b>Alias</b> — the same dish under another spelling: a synonym, not a dish — add it on the existing dish&#39;s Aliases field. This page reports; it never creates — the per-row <b>➕ dish</b> opens the dish editor with a prefilled New Dish form (this name, two search lines, 40 results per line, 15 kept winners, 180-day refresh) which you adjust before pressing Create.">i</button></span>
+      <span>The <b>relation</b> tag says which of three problems an overlap is — they want different actions.<button type="button" class="info-dot" data-info-title="Split / Variant / Alias" data-info="<b>Split</b> — genuinely different dishes sharing a word (<i>Pasta alla Gricia</i> against <i>alla Norma</i>): create the dish. <b>Variant</b> — the same identity, narrower (<i>Peach Cobbler</i> against <i>Cobbler</i>): a judgement call, because <code>docs/collections.md</code> §11 is explicit that variants are NOT the M2M case — you want one winner per identity, since pooling the cohorts mis-grades the minority. <b>Alias</b> — the same dish under another spelling: a synonym, not a dish — add it on the existing dish&#39;s Aliases field. This page reports; it never creates — the per-row <b>➕ dish</b> opens the dish editor with a prefilled New Dish form (this name plus the standard new-dish profile — search lines, results per line, kept winners and refresh days, all set in System → Limits) which you adjust before pressing Create.">i</button></span>
     </div>
 
     <h2 style="margin:34px 0 6px;font-size:1.05rem">Catalog holes — weakest links</h2>
@@ -160,14 +160,12 @@
     LibraryShell.initNav({ currentPage: 'dish-coverage' });
 
     const $ = s => document.querySelector(s);
-    // The coverage→create profile. THIS page owns these numbers (the editor's
-    // ?create= deep link just reads whatever params arrive; bare ?create= gets
-    // the editor's own defaults) — keep the legend paragraph below in step.
-    const CREATE_PROFILE = { serp: 40, final: 15, ttl: 180 };
-    const createHref = (dish) =>
-      '/forms/dishes_v2.html?create=' + encodeURIComponent(dish)
-      + '&q=' + encodeURIComponent(dish + ' Recipe')
-      + `&serp=${CREATE_PROFILE.serp}&final=${CREATE_PROFILE.final}&ttl=${CREATE_PROFILE.ttl}`;
+    // The new-dish PROFILE (search lines, results per line, kept winners, refresh
+    // days) is ONE definition now: System → Limits, dish_default_*. This page used
+    // to own its own copy (40/15/180 + "<dish> Recipe") while the editor's bare Add
+    // form said 25/10 - so a dish got a different profile depending on which door
+    // it came through. The link carries only the name; the editor applies the rest.
+    const createHref = (dish) => '/forms/dishes_v2.html?create=' + encodeURIComponent(dish);
     let DATA = [], filter = 'all', chapter = '', q = '', sortKey = 'traffic', sortDir = -1;
     const fmt = n => n ? n.toLocaleString('en-US') : '—';
     // What each relation MEANS, said where the reader is looking at it.

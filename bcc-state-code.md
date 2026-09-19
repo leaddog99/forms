@@ -10193,3 +10193,77 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   public-pages decisions · ask-the-library design doc · carried: twin-dish descriptions,
   narrower strawberry dishes, Utility Knife conflation, unscored winners missing from the
   dish page, right-dish check under the 1.0 cutoff, SERP breaker/queue.
+
+## Session log — 2026-09-19 (evening) — ten duplicate dishes merged into aliases; the new-dish profile becomes ONE definition; the Add form fills itself from the name
+
+* **THE DUPLICATE DISHES ARE GONE (curator: "delete the 11 duplicates and add the
+  aliases").** Aliases added FIRST (so the name-exact match claims the recipes at once),
+  then each dish deleted through the app's own path (`orphan_master_rows_for_dish` +
+  `delete_dish` — recipes are RELEASED, never deleted), then a free rematch (#2175, 187
+  labels changed). Catalog 379 → **368**, dishes_vec in step. Dry run first: none of the
+  targets carried product links or editor's picks.
+
+  | deleted | alias now on | released | resolving to keeper |
+  |---|---|---|---|
+  | Pastitcio (Greece) | Pastitsio | 9 | 9 |
+  | Boeuf Bourguignon | Beef Bourguignon | 11 | 11 |
+  | Grilled Corn | Grilled Corn on the Cob | 3 | 3 |
+  | Spaghetti al Tonno | Pasta al Tonno | 9 | 9 |
+  | Chicken Soup with Matzo Balls | Matzo Ball Soup | 16 | 16 |
+  | Gricia | Pasta alla Gricia | 13 | 13 |
+  | Scarpariello | Chicken Scarpariello | 5 | 5 |
+  | Cacciatore | Chicken Cacciatore | 11 | 11 |
+  | Schwarma (curator had already deleted it) | Chicken Shawarma | 1 | 0 |
+  | Horiatiki | Greek Salad | 9 | 9 |
+  | Strawberries | Strawberries  (Fresh) | 8 | 0 |
+
+  86 of 95 on their keeper, **0 orphaned**. Curator's point stands as the mechanism:
+  released rows lose the `_master` STAMP until the keeper's next refresh re-selects them;
+  meanwhile they resolve to the keeper through the match (`dish_effective`). The eight
+  Strawberries recipes went where the vectors put them (three strawberry cakes →
+  Chocolate Cake, two pies → Strawberry Rhubarb Pie…) — neither catch-all was ever near
+  them; a Strawberry Cake dish would collect the cakes. Which row belonged to which
+  deleted dish: `logs/dish_dedupe_2026-09-19.json` (local only).
+  - **One row still stamped to a dish that no longer exists:** id 8234 "Beef Shawarma",
+    `kind=harvest` (hand-rescued from rejects 08-17) → 'Schwarma'. Dish delete releases
+    only `kind=top` rows. Left alone: it is BEEF and the keeper is Chicken Shawarma. It
+    is the only such row in the library. Needs a general Shawarma dish or its stamp
+    cleared. Note the alias "Schwarma" now routes a bare "Schwarma" identity to the
+    chicken dish.
+  - NOT done (not asked): the deleted dishes' search lines were not merged into the
+    keepers; Clafoutis/Cherry Clafoutis, Arroz/Mexican Rice (8 product links on Arroz) and
+    the Marinara "Tomato Sauce Recipe" search line are untouched.
+* **THE NEW-DISH PROFILE IS ONE DEFINITION NOW (curator: "do what the coverage and holes
+  does but wait for the dish name… 40 not 25, a 15 keep and a 180 life… perhaps we should
+  modify [the system record] to adhere to this").** It lived in three places that
+  disagreed — coverage page 40/15/180 + "<dish> Recipe" hard-coded, the editor's bare Add
+  form 25/10, POST /dishes' fallbacks 25/10 — so a dish's profile depended on which door
+  it came through. System → Limits gains `dish_default_top_n_serpapi` (40),
+  `dish_default_top_n_final` (15), `dish_default_query_patterns` (["{name}", "{name}
+  Recipe"], an editable list) beside the existing `dish_refresh_ttl_default_days` (180).
+  The Add form, the coverage page's "+ dish" link (now carries ONLY the name) and
+  `validate_create_payload`'s fallbacks all read them. **Singular "Recipe" is deliberate**
+  — curator confirmed; it matches what the coverage page generated and the recent dishes.
+  - **Add form:** the search lines fill from the name as it is typed and keep FOLLOWING it
+    until a line is edited by hand, after which they are left alone (a deep link that
+    brings its own `&q=` lines counts as hand-edited).
+  - **Early duplicate warning:** NEW `GET /dishes/name-check?name=` (declared before
+    `/dishes/{name}`) — the same recipe evidence as the create gate, asked 700 ms after the
+    name settles, so "looks like the existing dish X" is heard before the rest is filled
+    in, not only on Create. Typing again disarms an armed "Create anyway".
+  - **`?dish=<name>`** now opens the editor on that dish; the duplicate messages link
+    there (the 409 link shipped earlier today pointed at a parameter the editor ignored).
+  - Verified: settings read 40 / 15 / patterns / 180; the API falls back to 40/15/180
+    when a create omits the counts; name-check: Caponata → Eggplant Caponata (same, 100%,
+    0.204), Crème Brûlée → nothing, Pastitsio → exists; route order holds. NOT seen in a
+    browser — needs the restart.
+* **Restart STILL OWED.** It now carries: the name-triggered defaults + name-check, the
+  duplicate gate, the coverage-page evidence, the Batch-rank removal, the two-step page
+  query (live name sort ~395 ms until then), the name cleaner on create, the class on
+  set-asin.
+* **Open:** RESTART · Beef Shawarma's dangling stamp · the three judgment-call pairs ·
+  aliases for the naming-variant holes (Tabbouleh, Chicken Parmesan, Mac and Cheese,
+  Crepes…) · narrower strawberry dishes · the six public-pages decisions + closing the
+  open recipe API · ask-the-library design · BAILEY-side backup check · carried: twin-dish
+  descriptions, Utility Knife conflation, unscored winners missing from the dish page,
+  right-dish check under the 1.0 cutoff, SERP breaker/queue.

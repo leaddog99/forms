@@ -3633,6 +3633,24 @@ def delete_user(user_id: int):
 # step) — it imports build_query_batch in-process to do the actual work.
 
 
+@app.get("/dishes/name-check")
+def dish_name_check_endpoint(request: Request, name: str = ""):
+    """Is this NAME already in the catalog under another name? The Add-a-dish form
+    asks as soon as the name is typed, so the curator hears it before filling in the
+    rest - the same recipe evidence the create gate uses (dish_match.coverage_evidence).
+    Declared BEFORE /dishes/{name} so it is not read as a dish called 'name-check'."""
+    _require_perm(request, "manage_dishes")
+    name = (name or "").strip()
+    if not name:
+        return {"name": name, "exists": False, "similar": None}
+    from input.pipeline import dish_match as _dmn
+    with _db() as conn:
+        exists = dishes_lib.get_dish(conn, name) is not None
+        ev = None if exists else _dmn.coverage_evidence(conn, name)
+    return {"name": name, "exists": exists,
+            "similar": ev if (ev and ev.get("tier")) else None}
+
+
 @app.get("/dishes/gap-report")
 def dish_gap_report_endpoint(request: Request, min_group: int = 3, limit: int = 100):
     """The weakest-link holes (input/pipeline/dish_gaps.py) for the coverage

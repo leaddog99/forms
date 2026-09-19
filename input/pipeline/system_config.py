@@ -206,6 +206,40 @@ SYSTEM_DEFAULTS: list[dict] = [
         "description": "Hard cap on a dish's top_n_final (selected rows). Same "
                        "enforcement as the SerpAPI cap.",
     },
+    # --- The NEW-DISH PROFILE (curator, 2026-09-19). One definition, read by the
+    # dish editor's Add form, the coverage page's "+ dish" link and POST /dishes'
+    # fallbacks. It used to live in three places that disagreed: the coverage page
+    # hard-coded 40/15/180, the editor's bare Add form 25/10, the API 25/10.
+    {
+        "key": "dish_default_top_n_serpapi",
+        "value": 40,
+        "type": "int",
+        "category": "Limits",
+        "label": "New dish: default results per search line",
+        "description": "Pre-fills 'Default results per line' on the Add-a-dish form and "
+                       "is the API's fallback when a create omits it. 40 = four pages of "
+                       "Google per line; measured 2026-09-19, only 29% of winners come "
+                       "from page one. Existing dishes keep their own stored value.",
+    },
+    {
+        "key": "dish_default_top_n_final",
+        "value": 15,
+        "type": "int",
+        "category": "Limits",
+        "label": "New dish: default kept winners",
+        "description": "Pre-fills 'Kept winners' on the Add-a-dish form and is the API's "
+                       "fallback when a create omits it. Existing dishes keep their own.",
+    },
+    {
+        "key": "dish_default_query_patterns",
+        "value": ["{name}", "{name} Recipe"],
+        "type": "list",
+        "category": "Limits",
+        "label": "New dish: default Google search lines",
+        "description": "One search line per entry, `{name}` replaced by the dish name as "
+                       "soon as it is typed on the Add-a-dish form. The lines stay "
+                       "editable, and follow the name until you edit them by hand.",
+    },
     {
         "key": "dish_refresh_ttl_default_days",
         "value": 180,

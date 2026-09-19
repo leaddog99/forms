@@ -98,7 +98,11 @@
     let selected = null;        // dish name | '__new__'
     let term = '';
     let sortKey = 'attention';
-    let _limits = { serpapi: 200, final: 200, ttl: 180, ttlMax: 365 };   // dish caps + TTL default/max from System → Limits
+    let _limits = { serpapi: 200, final: 200, ttl: 180, ttlMax: 365,     // dish caps + TTL default/max from System → Limits
+                    // The NEW-DISH PROFILE (System → Limits: dish_default_*). These are
+                    // only the seed until /system-config answers.
+                    serpDefault: 40, finalDefault: 15, patterns: ['{name}', '{name} Recipe'] };
+    let _autoLines = null;   // the search lines last generated FROM the name; null = the curator has edited them
     let _createPrefill = null;  // set from ?create=<name>, consumed by renderCreate
     // Harvest languages. Mirrors _LANG_NAMES in intake/translate.py — that list is
     // the source of truth (it decides what the translator can actually handle), so
@@ -1447,8 +1451,8 @@
           <div class="ed-field full" style="margin-bottom:16px"><label for="n_name">Dish name <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(immutable join key)</span></label><input id="n_name" type="text" placeholder="e.g. Spaghetti and Meat Sauce" autocomplete="off" value="${escapeHtml(p?.name || '')}"></div>
           <div class="ed-field full" style="margin-bottom:16px"><label>Google search lines <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(each line = its own search, at its own result count &amp; locale; results merge)</span></label>${queryRowsBlockHtml('qrows_new')}</div>
           <div class="ed-form-grid">
-            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? 25}"><div class="fetch-total" id="fetchTotal_new" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
-            <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="${p?.final ?? 10}"></div>
+            <div class="ed-field"><label for="n_serp">Default results per line <span style="text-transform:none;letter-spacing:0;color:var(--muted)">(lines with “Results” blank use this)</span></label><input id="n_serp" type="number" min="1" max="${_limits.serpapi}" value="${p?.serp ?? _limits.serpDefault}"><div class="fetch-total" id="fetchTotal_new" style="font-size:.78em;color:var(--muted,#6b5b4f);margin-top:3px"></div></div>
+            <div class="ed-field"><label for="n_final">Kept winners</label><input id="n_final" type="number" min="1" max="${_limits.final}" value="${p?.final ?? _limits.finalDefault}"></div>
             <div class="ed-field"><label for="n_ttl">Refresh TTL (days)</label><input id="n_ttl" type="number" min="1" max="${_limits.ttlMax}" placeholder="blank = manual only" value="${p?.ttl ?? _limits.ttl ?? ''}"></div>
           </div>
         </section>
@@ -1459,6 +1463,47 @@
         </div>`;
       initQueryRows('qrows_new', p?.rows || []);
       paintFetchTotal('qrows_new', 'n_serp', 'fetchTotal_new');
+      // NAME DRIVES THE SEARCH LINES (curator, 2026-09-19): as soon as a name is
+      // typed the lines fill from the profile's patterns ("Name", "Name Recipe"),
+      // and keep following the name - until the curator edits a line by hand, after
+      // which they are left alone. A deep link that brought its own lines counts as
+      // hand-edited unless they are exactly what the patterns would have produced.
+      const linesFor = (nm) => nm ? _limits.patterns.map(pt => pt.split('{name}').join(nm).trim()).filter(Boolean) : [];
+      const currentLines = () => { const c = collectQueryRows('qrows_new'); return (c.rows || []).map(r => r.q); };
+      const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+      _autoLines = (!p?.rows?.length || same(p.rows.map(r => r.q), linesFor(p.name || ''))) ? (p?.rows || []).map(r => r.q) : null;
+      let _nameTimer = null;
+      const syncLines = () => {
+        const nm = $('#n_name').value.trim();
+        if (_autoLines === null) return;                       // hand-edited: hands off
+        if (!same(currentLines(), _autoLines)) { _autoLines = null; return; }   // edited since we last wrote
+        _autoLines = nm ? linesFor(nm) : [];
+        initQueryRows('qrows_new', _autoLines.map(q => ({ q })));
+        paintFetchTotal('qrows_new', 'n_serp', 'fetchTotal_new');
+      };
+      // Early duplicate warning - the same evidence the Create gate uses, asked
+      // once the name settles, so it is heard before the rest is filled in.
+      const checkName = async () => {
+        const nm = $('#n_name').value.trim(); const hint = $('#hint');
+        if (!nm || !hint) return;
+        try {
+          const r = await fetch('/dishes/name-check?name=' + encodeURIComponent(nm));
+          if (!r.ok || $('#n_name').value.trim() !== nm) return;
+          const d = await r.json();
+          if (d.exists) { hint.style.color = '#b45309'; hint.textContent = `“${nm}” already exists.`; return; }
+          if (d.similar) {
+            const s = d.similar, k = Math.round(s.share * s.n);
+            hint.style.color = '#b45309';
+            hint.innerHTML = `${escapeHtml(nm)} looks like the existing dish <a href="/forms/dishes_v2.html?dish=${encodeURIComponent(s.dish)}" target="_blank" rel="noopener">${escapeHtml(s.dish)} ↗</a> — ${k} of ${s.n} recipes that call themselves “${escapeHtml(nm)}” sit closest to it (${s.median}). ${s.tier === 'same' ? 'Consider an alias on that dish instead.' : 'Check it first.'}`;
+          } else if (hint.style.color) { hint.style.color = ''; hint.textContent = ''; }
+        } catch (_) { /* advisory only */ }
+      };
+      $('#n_name').addEventListener('input', () => {
+        syncLines();
+        clearTimeout(_nameTimer); _nameTimer = setTimeout(checkName, 700);
+        const b = $('#createBtn'); if (b && b.dataset.armedFor) { delete b.dataset.armedFor; b.textContent = 'Create'; }
+      });
+      if (p?.name) { syncLines(); checkName(); }
       $('#n_name').focus();
       $('#cancelBtn').addEventListener('click', () => { const first = sortedDishes()[0]; selected = first ? first.name : null; renderList(); renderMain(); });
       $('#createBtn').addEventListener('click', doCreate);
@@ -1566,6 +1611,9 @@
       if (m.dish_max_serpapi != null) _limits.serpapi = m.dish_max_serpapi;
       if (m.dish_max_final != null) _limits.final = m.dish_max_final;
       if (m.dish_refresh_ttl_default_days != null) _limits.ttl = m.dish_refresh_ttl_default_days;
+      if (m.dish_default_top_n_serpapi != null) _limits.serpDefault = m.dish_default_top_n_serpapi;
+      if (m.dish_default_top_n_final != null) _limits.finalDefault = m.dish_default_top_n_final;
+      if (Array.isArray(m.dish_default_query_patterns) && m.dish_default_query_patterns.length) _limits.patterns = m.dish_default_query_patterns;
       if (m.dish_max_refresh_ttl_days != null) _limits.ttlMax = m.dish_max_refresh_ttl_days;
       // A new-dish form already open pre-filled before the setting arrived.
       const nt = $('#n_ttl'); if (nt && nt.value === '') nt.value = _limits.ttl ?? '';
@@ -1588,13 +1636,17 @@
       const num = (k) => { const v = parseInt(_params.get(k), 10); return Number.isFinite(v) && v > 0 ? v : null; };
       _createPrefill = {
         name: _createName,
-        rows: [_createName, ..._params.getAll('q')].filter(Boolean).map(q => ({ q })),
+        // Explicit &q= lines are the caller's own; a bare ?create=<name> gets the
+        // profile's lines generated from the name (renderCreate).
+        rows: _params.getAll('q').length ? [_createName, ..._params.getAll('q')].filter(Boolean).map(q => ({ q })) : [],
         serp: num('serp'), final: num('final'), ttl: num('ttl'),
       };
       selected = '__new__';
     }
 
-    loadDishes();
+    // ?dish=<name> opens the editor ON that dish - the duplicate warnings link
+    // here ("looks like the existing dish X") so X is one click away.
+    loadDishes(_createName ? undefined : ((_params.get('dish') || '').trim() || undefined));
   </script>
 </body>
 </html>
