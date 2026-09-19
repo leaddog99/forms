@@ -10087,3 +10087,109 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   indexable · the 10 older stranger winners · twin-dish descriptions (Horiatiki /
   Clafoutis / Matzo) · narrower strawberry dishes · Utility Knife pick→product
   conflation · unscored winners missing from the dish page · SERP breaker/queue.
+
+## Session log — 2026-09-19 (afternoon) — the wrong ASINs restored; the backup gets a watcher; the holes list was manufacturing duplicate dishes; two designs (public pages, ask-the-library)
+
+* **The two wrong ASINs are UNDONE.** Curator ran `scripts/restore_2026_09_18_wrong_asins.py
+  --apply` (through the agent; a dry run first confirmed the 09-18 03:00 backup was still
+  on ADAM and the diff was the same 6 rows — the 09-19 nightly already held the bad data).
+  Ground Cinnamon #2 and Utility Knife #2 are blank again (correct: neither has a verified
+  listing); Kirkland no longer wears McCormick's rating; Milwaukee / DeWalt / LENOX have
+  their own Amazon offers back; a second dry run shows zero differences. STILL OPEN: the
+  Utility Knife collection's kitchen-knife picks point at hardware-store product records.
+* **Chicken Cordon Bleu:** search line "Bext…" → "Best Chicken Cordon Bleu" (the only dish
+  with it), re-run #2174: 13/13, all on-dish. The two sugar-cookie pages came back anyway —
+  they are Google's real page 3 for "Best …" (identical on retry, kept), reached the final
+  batch, and the right-dish guard dropped them at 1.15. Saved count across the three runs:
+  11 → 12 → 13.
+* **"Batch rank" sort REMOVED (curator).** It ordered by `$._batch.rank`, a field of the
+  pre-dish-refresh import pipeline: 21 of 10,940 master rows, none written since 05-28 — it
+  listed those 21, then everything by name. `_master.rank` is a place WITHIN one dish, not
+  a global order, so it was not repointed. Server `SORT_SQL` + the form's `SORT_ORDERS`;
+  the form's remembered-sort restore now ignores a value that is no longer offered (a
+  removed sort would have blanked the menu).
+* **NIGHTLY BACKUP / BAILEY SYNC — verified, two faults fixed, a watcher added.** The sync
+  ran clean every night 09-13..09-19 and BAILEY held last night's snapshot to the recipe
+  (10,867). But: (1) **Windows KILLED the 09-19 run** — the task had a 30-minute limit, the
+  run passed 40 (result 0x41306); the last offsite step was mid-retry against a Google
+  Drive rate limit and never logged its exit. Limit raised to **2 hours** (DBs are now
+  ~800 / 950 / 520 MB). (2) **the sync's "wait for python to exit" loop never checked
+  anything**: the nightly runs under Windows PowerShell 5.1, which passes the remote
+  command's `|` through to BAILEY's cmd.exe → "'Measure-Object).Count' is not recognized"
+  on every poll; the loop was a blind 30 s sleep. Reproduced under 5.1, replaced with the
+  pipe-free `@(Get-Process python …).Count`. (BAILEY runs 6 pythons incl. f2n, so the
+  count still never reaches 0 — counting only the recipes server is a further step.) The
+  verify step's exit 1 on 09-13 / 09-16 were races, not corruption (1–19 rows written
+  while the dump ran).
+  - **NEW `backup_check.py` + `bcc_backup_check.bat`, scheduled task "BCC Backup Check"
+    07:00** — its OWN task, because a check at the end of a killed script never runs. It
+    trusts OUTCOMES, not the backup's exit codes: ADAM files < 26 h old, not shrunken, the
+    snapshot OPENS; backup.log's last block reached its FINAL stage; Task Scheduler result
+    0; **BAILEY serves exactly the snapshot's recipe count**; Google Drive holds last
+    night's dump. Any failure → one email via `alert_curator`; silent when clean
+    (`--always-email` for a heartbeat). Proven end to end through Task Scheduler — it
+    emailed the three real problems of 09-19. NOT covered: MARLEY itself being down (would
+    need the same check run from BAILEY).
+* **DUPLICATE DISHES — and why the holes list made them.** Asked which dishes are near
+  twins: distance between all 379 dish vectors + shared winners → **11 true duplicate
+  pairs** (Pastitsio/Pastitcio, Beef/Boeuf Bourguignon, Grilled Corn/…on the Cob, Spaghetti
+  /Pasta al Tonno, Matzo Ball Soup/Chicken Soup with Matzo Balls, Gricia/Pasta alla Gricia,
+  Scarpariello/Chicken Scarpariello, Cacciatore/Chicken Cacciatore, Schwarma/Chicken
+  Shawarma, Horiatiki/Greek Salad, Strawberries/Strawberries (Fresh)), judgment calls
+  (Clafoutis/Cherry Clafoutis, Arroz/Mexican Rice — Arroz carries 8 product links;
+  Marinara/Tomato Sauce = remove one search line, no delete), and pairs to KEEP (general/
+  specific, the chicken-thigh siblings, genuinely different dishes that share winners
+  through loose searches). **DELETES AWAIT THE CURATOR**; every delete should leave the
+  name as an ALIAS on the keeper. Seven of the duplicates were created THAT DAY from the
+  coverage/holes page.
+  - **Root cause:** `/dish-coverage` decides "covered" by comparing the WORDS in names.
+    "Boeuf"≠"Beef", "Pasta al Tonno"≠"Spaghetti al Tonno", "Mexican Rice" shares nothing
+    with "Arroz", "Shawarma" nothing with the misspelt "Schwarma" — each reported as a
+    genuine gap, "create the dish".
+  - **Fix — ask the recipes, not the names** (`dish_match.coverage_evidence` +
+    `evidence_tier`, no model call): the recipes whose identity card says the name each
+    vote for their nearest OTHER dish. Calibrated on the week's 18 new dishes: flags 6 of
+    7 duplicates (82–100% agreement, median 0.42–0.56), none of the 9 genuinely new ones.
+    Tiers: `same` (≥60% agree, median ≤0.6) and `look` (≥80%, ≤0.75 — the Mexican
+    Rice→Arroz shape). **POST /dishes now answers 409** with the evidence unless
+    `force=true`; the editor shows it with a link to the existing dish and arms "Create
+    anyway" (two-click). **The coverage page** shows "⚠ probably already covered by X" per
+    row, read from each recipe's stored `_match.candidates[0]` in the scan it already does.
+    Gate tested over HTTP with the create step stubbed: 409, create never reached, no dish
+    made; override and a no-match name pass through. Of the 60 biggest current holes, 56
+    already point at an existing dish (Tabbouleh→Tabouleh, Chicken Parmesan→Chicken
+    Parmigiana, Mac and Cheese→Macaroni and Cheese, Crepes→Crêpes…) — most want an ALIAS.
+  - It cannot tell a duplicate from a narrower dish the curator wants (Chicken Cacciatore
+    vs Cacciatore and Buttermilk Biscuits vs Biscuits both score ~0.55) — hence a warning
+    with an override, never a block.
+* **DESIGN — `docs/public-recipe-pages.md`** (curator: JSON-LD for Google, "limit it to
+  copies of our OWN recipes… from copies of our extracts"). Implements the 08-10 ruling
+  (extracts get ItemList+Review, never Recipe; recipes we author get Recipe). A **public
+  edition** = a frozen COPY in its own table, rendered server-side from its payload only;
+  an eligibility gate (our method, our headnote, an image we OWN, human approval);
+  JSON-LD built once and stored, `isBasedOn` the source, the publisher's ratings omitted;
+  the no-index shield lifted per PATH; six decisions for the curator. Supply is the
+  constraint: 53 reworked, all with our headnote, only **20 with an image we own**.
+  - **Found while testing LLM access:** pages are JS shells (an assistant, like Google,
+    sees nothing) BUT `GET /recipes/<id>` on the tunnel host returns the FULL recipe —
+    the publisher's verbatim method — to anyone, no login. `noindex`/robots are requests,
+    not locks; the teaser is enforced in the browser only. Recorded in the doc as a
+    PREREQUISITE before any path goes public.
+* **PROTOTYPE (throwaway, scratch only) — "ask the library".** Curator's question, verbatim
+  ("Halloween party… appetizers… fall flavor… ten 50-somethings"): plan (LLM) → retrieve by
+  meaning over the vectors every recipe already has → reason over ~70 recipe cards (LLM,
+  told to pick only from the cards). 7 picks, all real ids, quantities + make-ahead advice,
+  and an unprompted gap report ("no pumpkin/squash finger food — all soups, breads,
+  sides"). 38 s as built (mostly model thinking); pennies per question. A real version
+  needs: speed (~10 s), facts-only cards (the prototype quoted publisher descriptions),
+  occasion/make-ahead attributes, a hand-off to Menus, and the gap report LOGGED as harvest
+  demand. Curator: "we'll come back to that."
+* **Restart STILL OWED** — now also for: the duplicate gate, the coverage-page evidence,
+  the Batch-rank removal, and the two-step page query (until then the live name sort runs
+  ~395 ms against the refreshed statistics).
+* **Open:** approve/decline the 11 duplicate deletes (+ aliases) · aliases for the naming-
+  variant holes · RESTART · BAILEY-side backup check · count only the recipes server in the
+  sync wait · close the open recipe API before anything goes public · rule on the six
+  public-pages decisions · ask-the-library design doc · carried: twin-dish descriptions,
+  narrower strawberry dishes, Utility Knife conflation, unscored winners missing from the
+  dish page, right-dish check under the 1.0 cutoff, SERP breaker/queue.

@@ -4032,7 +4032,6 @@
       traffic:       { get: r => (r.data && r.data._scoring && r.data._scoring.traffic),               type: 'num' },
       updated_at:    { get: r => r.updated_at,                                                          type: 'date' },
       created_at:    { get: r => r.created_at,                                                          type: 'date' },
-      rank:          { get: r => (r.data && r.data._batch && r.data._batch.rank),                      type: 'num' },
       // Raw authority = DA + PA. DERIVED, not read from `_scoring.power`: that stored
       // field is present on only 149/412 personal rows (and was one of the manufactured
       // zeros stripped 2026-08-06), whereas 341 carry both DA and PA — so computing it
@@ -4071,8 +4070,6 @@
       // Composite "quality" sort: best OU first, tie-break on recipe-text
       // score (in-page recipe phrasing), then most-recently-updated.
       quality:       { label: "Quality blend",            order: [["ouScore", "desc"], ["recipeScore", "desc"], ["updated_at", "desc"]] },
-      // Batch-oriented: within a chapter group, by rank ascending.
-      batch_rank:    { label: "Batch rank",               order: [["rank", "asc"], ["name", "asc"]] },
       // The Hotlist: publisher flagships by share of their own site's tracked
       // traffic (SEMrush trafficPct, on publisher-harvest rows). The server
       // adds a volume floor so micro-site artifacts sink; the client
@@ -4165,7 +4162,11 @@
           const v = localStorage.getItem('sidebar:' + id);
           if (v == null) return;
           const el = document.getElementById(id);
-          if (el) el.value = v;
+          if (!el) return;
+          // A remembered choice that is no longer offered (a removed sort, e.g.
+          // "batch_rank") must not blank the menu - keep the default instead.
+          if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) return;
+          el.value = v;
         } catch (e) { /* private mode / disabled */ }
       });
     }

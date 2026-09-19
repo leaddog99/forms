@@ -221,6 +221,72 @@ def build_match(conn: sqlite3.Connection, rec_vec, *, max_dist: float,
     return out
 
 
+def evidence_tier(share: float, median: float, n: int) -> Optional[str]:
+    """How strongly do a NAME's recipes say "this dish already exists"?
+
+    Calibrated 2026-09-19 on the 18 dishes created that week, each one's recipes
+    voted to their nearest OTHER dish: the seven duplicates scored 82-100% agreement
+    at median 0.42-0.56 (Boeuf Bourguignon -> Beef Bourguignon 94% / 0.42; Pasta alla
+    Gricia -> Gricia 92% / 0.46); the genuinely new dishes scattered (Galette 16%,
+    Poke Bowl 39% / 0.97, Kibbeh 85% but 0.79 away). "same" = a confident majority
+    sitting INSIDE the match bar (0.6). "look" = near-unanimous but further out -
+    the Mexican Rice -> Arroz shape (100% / 0.74), where the existing dish is vague
+    rather than identical. Under 3 recipes is no evidence at all."""
+    if n < 3:
+        return None
+    if share >= 0.6 and median <= 0.6:
+        return "same"
+    if share >= 0.8 and median <= 0.75:
+        return "look"
+    return None
+
+
+def coverage_evidence(conn: sqlite3.Connection, name: str) -> Optional[dict]:
+    """Is `name` already in the catalog under ANOTHER name? Asked of the recipes.
+
+    Names lie: the coverage page compares WORDS, so "Boeuf" vs "Beef", "Pasta al
+    Tonno" vs "Spaghetti al Tonno", "Shawarma" vs a misspelt "Schwarma" and "Mexican
+    Rice" vs "Arroz" all read as genuine gaps - and seven duplicate dishes were
+    created from the holes list in one afternoon (2026-09-19). The recipes do not
+    lie: every one already has a vector. Take the recipes whose identity card says
+    `name`, send each to its nearest dish OTHER than `name`, and see whether they
+    agree. No model call, no embedding call.
+
+    -> {dish, share, median, n, tier} for the best-supported existing dish, or None."""
+    try:
+        import numpy as np
+        rows = conn.execute(
+            "SELECT embedding FROM master_recipes WHERE embedding IS NOT NULL AND "
+            "(json_extract(data,'$._identity.likelyDish') = ? COLLATE NOCASE "
+            " OR dish_effective = ? COLLATE NOCASE)", (name, name)).fetchall()
+        if len(rows) < 3:
+            return None
+        dishes = [(n, bytes_to_vec(e)) for n, e in conn.execute(
+            "SELECT name, embedding FROM dishes WHERE embedding IS NOT NULL "
+            "AND name != ? COLLATE NOCASE", (name,))]
+        if not dishes:
+            return None
+        mat = np.vstack([np.asarray(v, dtype="float32") for _, v in dishes])
+        votes: dict = defaultdict(list)
+        for (blob,) in rows:
+            v = np.asarray(bytes_to_vec(blob), dtype="float32")
+            if v.shape[0] != mat.shape[1]:
+                continue
+            d = np.linalg.norm(mat - v, axis=1)
+            j = int(d.argmin())
+            votes[dishes[j][0]].append(float(d[j]))
+        if not votes:
+            return None
+        top = max(votes, key=lambda k: len(votes[k]))
+        n = sum(len(x) for x in votes.values())
+        share = len(votes[top]) / n
+        median = float(np.median(votes[top]))
+        return {"dish": top, "share": round(share, 2), "median": round(median, 3), "n": n,
+                "tier": evidence_tier(share, median, n)}
+    except Exception:
+        return None
+
+
 DEFAULT_OFFDISH_DISTANCE = 1.0
 _OFFDISH_SETTING = "dish_offdish_min_distance"
 _GENERIC_DISH_WORDS = {"recipe", "recipes", "best", "easy", "the", "and", "with", "for",

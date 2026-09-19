@@ -1481,11 +1481,26 @@
         top_n_final: final,
         refresh_ttl_days: $('#n_ttl').value.trim() === '' ? null : parseInt($('#n_ttl').value, 10),
       };
+      // Second click on an armed "Create anyway" overrides the duplicate gate.
+      if (btn.dataset.armedFor === name) body.force = true;
       hint.style.color = ''; btn.disabled = true; btn.textContent = 'Creating…';
       try {
         const r = await fetch('/dishes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.detail || `Create failed (HTTP ${r.status})`);
+        // DUPLICATE GATE: the catalog already seems to hold this dish under
+        // another name. Say which, link to it, and ARM the button (house
+        // two-click standard) - changing the name disarms it.
+        if (r.status === 409 && data.detail && data.detail.similar) {
+          const sim = data.detail.similar;
+          btn.disabled = false; btn.textContent = 'Create anyway';
+          btn.dataset.armedFor = name;
+          hint.style.color = '#b45309';
+          hint.innerHTML = escapeHtml(data.detail.message) + ' <a href="/forms/dishes_v2.html?dish='
+            + encodeURIComponent(sim.dish) + '" target="_blank" rel="noopener">Open '
+            + escapeHtml(sim.dish) + ' ↗</a>';
+          return;
+        }
+        if (!r.ok) throw new Error((data.detail && data.detail.message) || data.detail || `Create failed (HTTP ${r.status})`);
         await loadDishes(data.name || name);
         flash('Dish created — refresh it to populate winners');
       } catch (e) {

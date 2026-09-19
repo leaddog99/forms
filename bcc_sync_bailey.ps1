@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 # bcc_sync_bailey.ps1 — ONE-WAY incremental sync MARLEY -> BAILEY.
 #
 # Keeps the BAILEY staging instance fresh during the soak without a full
@@ -62,7 +62,12 @@ if ($WithDbs) {
   # run still reported success. Poll up to 30s for zero python processes.
   $deadline = (Get-Date).AddSeconds(30)
   while ((Get-Date) -lt $deadline) {
-    $left = & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""(Get-Process python -ErrorAction SilentlyContinue | Measure-Object).Count"""
+    # NO PIPE in the remote command (2026-09-19). The nightly runs this file under
+    # Windows PowerShell 5.1, which hands native exes the inner quotes differently
+    # from pwsh 7: BAILEY's cmd.exe saw the bare "|" and answered "'Measure-Object)
+    # .Count' is not recognized" on every poll - so $left was never "0" and this
+    # loop was a blind 30s sleep, not a check. @(...).Count needs no pipe.
+    $left = & $ssh -o BatchMode=yes john@BAILEY "powershell -NoProfile -Command ""@(Get-Process python -ErrorAction SilentlyContinue).Count"""
     if ("$left".Trim() -eq "0") { break }
     Start-Sleep 3
   }

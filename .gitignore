@@ -159,3 +159,4 @@ scripts/.class_match_embed_cache.json
 # are pipeline inputs, the browser profile holds a live session. Never source.
 input/captures/
 data/browser_profiles/
+backup_check.log

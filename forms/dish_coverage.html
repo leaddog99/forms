@@ -208,6 +208,7 @@
         <tr>
           <td><span class="dish">${esc(r.dish)}</span>
             ${r.alias_of ? `<span class="absorbed">${REL[r.relation] || 'overlaps'} ${esc(r.alias_of)}</span>` : ''}
+            ${r.covered_by ? `<span class="absorbed" style="color:#b45309" title="Where this name's own recipes already point: ${Math.round(r.covered_by.share*r.covered_by.n)} of ${r.covered_by.n} sit closest to ${esc(r.covered_by.dish)}, typical distance ${r.covered_by.median}. Names compare words; this compares the recipes.">${r.covered_by.tier === 'same' ? '⚠ probably already covered by' : '⚠ check first:'} ${esc(r.covered_by.dish)} — ${Math.round(r.covered_by.share*100)}% of its recipes · ${r.covered_by.median}</span>` : ''}
             ${r.queried_by ? `<span class="absorbed" title="An existing dish's search phrase already contains these words">searched by ${esc(r.queried_by.dish)} &mdash; “${esc(r.queried_by.phrase)}”</span>` : ''}
             ${r.top_keyword ? `<span class="kw">${esc(r.top_keyword)}</span>` : ''}</td>
           <td class="r">${r.recipes}</td>

@@ -3812,9 +3812,16 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
         counts: dict = {}
         chapters: dict = {}
         # Indexed by idx_mr_likelydish.
-        for ld, ch in conn.execute(
+        # RECIPE EVIDENCE (2026-09-19): where do this name's recipes already
+        # point? `_match.candidates[0]` is each recipe's stored nearest dish; an
+        # uncovered name is by definition not a dish, so the nearest IS "another
+        # dish". Accumulated in this one scan - no vectors loaded, no extra pass.
+        near: dict = {}
+        for ld, ch, nd, ndist in conn.execute(
                 "SELECT json_extract(data,'$._identity.likelyDish'), "
-                "       json_extract(data,'$.classification.chapter') "
+                "       json_extract(data,'$.classification.chapter'), "
+                "       json_extract(data,'$._match.candidates[0].dish'), "
+                "       json_extract(data,'$._match.candidates[0].distance') "
                 "  FROM master_recipes "
                 " WHERE json_extract(data,'$._identity.likelyDish') IS NOT NULL"):
             k = (ld or "").strip()
@@ -3824,6 +3831,8 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
             if _kt and _kt in covered_toksets:
                 continue   # same dish by token set — covered, title spelling aside
             counts[k] = counts.get(k, 0) + 1
+            if nd and isinstance(ndist, (int, float)):
+                near.setdefault(k, {}).setdefault(nd, []).append(float(ndist))
             if ch:
                 chapters.setdefault(k, {})
                 chapters[k][ch] = chapters[k].get(ch, 0) + 1
@@ -3886,7 +3895,21 @@ def dish_coverage_endpoint(request: Request, min_recipes: int = 2):
                 if _nt2 and _nt2 < _qts:
                     queried_by = {"dish": _qdish, "phrase": _qph}
                     break
+            covered = None
+            _votes = near.get(name) or {}
+            if _votes:
+                from input.pipeline.dish_match import evidence_tier as _tier
+                _top = max(_votes, key=lambda d_: len(_votes[d_]))
+                _tot = sum(len(v_) for v_ in _votes.values())
+                _ds = sorted(_votes[_top])
+                _med = _ds[len(_ds) // 2]
+                _sh = len(_ds) / _tot
+                _t = _tier(_sh, _med, _tot)
+                if _t:
+                    covered = {"dish": _top, "share": round(_sh, 2),
+                               "median": round(_med, 3), "n": _tot, "tier": _t}
             out.append({
+                "covered_by": covered,
                 "queried_by": queried_by,
                 "dish": name,
                 "recipes": n,
@@ -4068,6 +4091,28 @@ async def create_dish_endpoint(request: Request):
             dishes_lib.validate_create_payload(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    # DUPLICATE GATE (2026-09-19): does the catalog already hold this dish under
+    # another name? Asked of the recipes' own vectors (dish_match.coverage_evidence),
+    # because names cannot tell "Boeuf" from "Beef". A hit stops the create with a
+    # 409 the editor turns into "add an alias instead / create anyway"; the curator
+    # overrides with force=true. Never blocks on a failure to measure.
+    if not payload.get("force"):
+        try:
+            from input.pipeline import dish_match as _dmc
+            with _db() as _gc:
+                _ev = _dmc.coverage_evidence(_gc, name)
+        except Exception as _ge:
+            _ev = None
+            print(f"[CREATE-DISH] duplicate gate skipped: {type(_ge).__name__}: {_ge}")
+        if _ev and _ev.get("tier"):
+            _k = round(_ev["share"] * _ev["n"])
+            _msg = (f"{name!r} looks like the existing dish {_ev['dish']!r}: {_k} of "
+                    f"{_ev['n']} recipes that call themselves {name!r} sit closest to it "
+                    f"(typical distance {_ev['median']}). "
+                    + ("Add it as an alias on that dish instead" if _ev["tier"] == "same"
+                       else "Check that dish first")
+                    + ", or create it anyway.")
+            raise HTTPException(status_code=409, detail={"message": _msg, "similar": _ev})
     try:
         with _db() as conn:
             created = dishes_lib.create_dish(
@@ -11431,7 +11476,6 @@ def _recipe_list_data(d: dict) -> dict:
 # one until something other than this sort reads it.
 _NAME_SQL = "bcc_sortkey(recipe_name)"
 _CHAPTER_SQL = "bcc_sortkey(chapter)"
-_RANK_SQL = "json_extract(data,'$._batch.rank')"
 
 
 # EVERY sort ends in a total order. Measured over the 5,435 master rows, the
@@ -11467,7 +11511,11 @@ SORT_SQL = {
     "chapter_asc":  f"{_CHAPTER_SQL} ASC NULLS LAST, {_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
     "quality":      f"ou_score DESC NULLS LAST, recipe_score DESC NULLS LAST, "
                     f"updated_at DESC, {_AUTHORITY_TAIL}",
-    "batch_rank":   f"{_RANK_SQL} ASC NULLS LAST, {_NAME_SQL} ASC NULLS LAST, {_TOTAL}",
+    # "batch_rank" REMOVED 2026-09-19 (curator): it ordered by $._batch.rank, a field
+    # of the pre-dish-refresh import pipeline that 21 of 10,940 master rows carry,
+    # none written since 2026-05-28 - so it listed those 21 and then everything else
+    # by name. Its successor, _master.rank, is a recipe's place WITHIN one dish and
+    # is not a global order. A stale client asking for it falls back to the default.
     # THE HOTLIST (curator, 2026-08-24): publisher flagships — the pages that
     # ARE a site, ordered by their share of the publisher's tracked traffic.
     # The leading CASE sinks micro-site artifacts (a 2-visit page can be 100%
