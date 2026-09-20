@@ -10267,3 +10267,76 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   open recipe API · ask-the-library design · BAILEY-side backup check · carried: twin-dish
   descriptions, Utility Knife conflation, unscored winners missing from the dish page,
   right-dish check under the 1.0 cutoff, SERP breaker/queue.
+
+## Session log — 2026-09-19 (night) → 09-20 — restart done and the Add form proven in a browser; twelve aliases for the naming-variant holes; the first clean morning backup check
+
+* **RESTART DONE (curator, 17:57 on 09-19).** Verified by PID start time (after the 17:23
+  commit), by the three `dish_default_*` settings being served, and by
+  `/dishes/name-check` existing and answering 401 without a login. Everything that was
+  waiting is live: the name-triggered Add form + name-check, the duplicate create gate,
+  the coverage-page evidence, the Batch-rank removal, the two-step page query (the name
+  sort is no longer on the slow path), the name cleaner on create, the class on set-asin,
+  the off-topic and right-dish guards' server paths.
+* **The new Add form — proven in a REAL browser** (Chrome, against the restarted server):
+  - bare "+": 40 results per line / 15 kept winners / 180 days, no lines yet;
+  - typing "Creme Brulee" with real keystrokes → lines "Creme Brulee" + "Creme Brulee
+    Recipe", total "2 lines × 40 ≈ 80 candidates fetched per run";
+  - the lines FOLLOW the name (Tarte → Tarte Tatin), clear when the name is cleared,
+    refill for a new name;
+  - a hand-edited line is respected — after editing line 2, renaming the dish left both
+    lines exactly as they were;
+  - the coverage page's door, `?create=Caponata` alone → both lines + 40/15/180;
+  - no console errors.
+  - **The duplicate warning was verified in two halves, not end to end:** the test
+    browser's session had expired, so name-check answered 401 there (correctly). Its
+    DISPLAY was proven by feeding the form the exact response the server returned in the
+    signed-in test ("Caponata looks like the existing dish Eggplant Caponata ↗ — 15 of 15
+    recipes… (0.204). Consider an alias on that dish instead.", amber, linking
+    `?dish=Eggplant%20Caponata`). The live round trip WHILE SIGNED IN is the one step not
+    seen — type "Caponata" into the Add form to see it.
+  - A lesson from the test itself: my first scripted run executed silently and left the
+    form hand-edited, so a second run read "nothing follows the name" — contaminated, not
+    a bug. Re-ran from a fresh form. Reset state before asserting on it.
+  - Side effect worth knowing: a signed-out tab now shows the "session expired" banner as
+    soon as a name is typed, because name-check is the first request needing a login.
+* **TWELVE ALIASES for the naming-variant holes (curator: "add the aliases").** The real
+  list was far smaller than the rough one quoted earlier: on the actual holes page 56
+  names carry recipe evidence of an existing dish, 22 strongly — several names cited
+  before (Tabbouleh, Chicken Parmesan, Crepes) are not holes at all, the page already
+  counts them covered. An alias BEATS distance, so one was added only where the name is
+  the SAME dish under another name, the recipes agree unanimously, and no other dish or
+  alias already answers to it (checked against `name_index`; no conflicts):
+  Mac and Cheese → Macaroni and Cheese · Minestrone → Minestrone Soup · Shrimp Saganaki →
+  Shrimp with Tomatoes and Feta · Lamb Kleftiko → Kleftiko · Spaghetti Carbonara →
+  Carbonara · Ragù alla Bolognese → Bolognese · Beef Stroganoff → Stroganoff · Pesto alla
+  Genovese → Pesto · Greek Salad (Horiatiki) → Greek Salad · Cinnamon Buns → Cinnamon
+  Roll · Stuffed Bell Peppers → Stuffed Peppers · Shortbread → Shortbread Cookies.
+  None of the twelve is listed as a hole any more.
+  - **Deliberately NOT aliased** — the evidence pairs them and an alias would be wrong:
+    DIFFERENT dishes (Croque Monsieur/Croque Madame, Pumpkin Soup/Butternut Squash Soup,
+    Lo Mein/Chow Mein, Corn/Squash Casserole, Fried Catfish/Fried Chicken); NARROWER
+    dishes the curator may want as their own (Roasted Brussels Sprouts — 28 recipes, the
+    biggest — Roasted Broccoli, Pozole Rojo, New York Cheesecake, Italian Meatballs, Beef
+    Chili, Buffalo Chicken Wings, Buttermilk Pancakes, Chocolate Bundt Cake, Dutch Apple
+    Pie: an alias would stop them ever becoming a dish; the create gate warns and can be
+    overridden); BROADER than the existing dish (Baked Beans/Boston Baked Beans, Chicken
+    Soup/Chicken Noodle Soup, Chicken Chili/White Chicken Chili, Pizza/Pizza Dough).
+    Borderline, left for the curator: Shortcrust Pastry/Pie Crust (0.68), Buffalo
+    Wings/Chicken Wings. This is why aliases are reviewed, never applied from evidence.
+  - Rematch: the curator created Breakfast Bars moments later, which auto-started #2176
+    (38 changed) after the aliases were in — a second run was correctly entity-skipped.
+    Catalog now 375 dishes.
+* **THE BACKUP WATCHER'S FIRST UNATTENDED RUN — CLEAN (09-20 07:00, exit 0).** Both of
+  yesterday's fixes are confirmed by it: the backup task finished with result 0 (the
+  2-hour limit held; no 0x41306), and the BAILEY sync section is clean — the pipe-free
+  wait command produced no "not recognized" lines. BAILEY serves last night's snapshot
+  exactly (10,996 recipes), the offsite dump is present, and the dump verifier's one-row
+  `jobs` race was correctly reported as a note, not an alarm. No email was sent, as
+  designed.
+* **Open:** the signed-in round trip of the duplicate warning · Beef Shawarma's dangling
+  stamp · the three judgment-call pairs (Clafoutis, Arroz + its 8 product links, the
+  Marinara search line) · the narrower-dish holes above, Roasted Brussels Sprouts first ·
+  narrower strawberry dishes · the six public-pages decisions + closing the open recipe
+  API · ask-the-library design · BAILEY-side backup check (MARLEY-down is still unwatched)
+  · carried: twin-dish descriptions, Utility Knife conflation, unscored winners missing
+  from the dish page, right-dish check under the 1.0 cutoff, SERP breaker/queue.
