@@ -9581,7 +9581,8 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
     it had no screenshot before.
 
     params: {mode: "all"|"missing"|"stale", limit: int, max_age_days: int,
-             tables: ["master_recipes","recipes"]}
+             tables: ["master_recipes","recipes"],
+             host: "williams-sonoma.com"   (optional: only that publisher's rows)}
     Wall time is Playwright-bound, ~4s/row, so `limit` is the real control —
     a nightly schedule with limit ~200 keeps the corpus fresh without ever
     running long.
@@ -9591,6 +9592,11 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
     limit = int(p.get("limit") or 0)
     max_age_days = int(p.get("max_age_days", 365))
     tables = p.get("tables") or ["master_recipes", "recipes"]
+    # An AIMED backfill. Without it a "missing" run walks the library in table
+    # order and spends its whole limit before reaching the publisher it was run
+    # for: #2251 (2026-09-24) used 89 captures on a Greek site and the Washington
+    # Post and never touched one Williams Sonoma row.
+    host = str(p.get("host") or "").strip().lower().removeprefix("www.")
 
     def _run():
         from input.pipeline.screenshot_pipeline import screenshot_id_for
@@ -9605,9 +9611,15 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
         cutoff = now - timedelta(days=max_age_days) if max_age_days > 0 else None
         with _db() as conn:
             for table in tables:
-                rows = conn.execute(
-                    f"SELECT id, data, url_normalized, source_changed_at FROM {table}"
-                ).fetchall()
+                if host:
+                    rows = conn.execute(
+                        f"SELECT id, data, url_normalized, source_changed_at FROM {table} "
+                        f"WHERE url_normalized LIKE ? OR url_normalized LIKE ?",
+                        (f"https://{host}/%", f"https://%.{host}/%")).fetchall()
+                else:
+                    rows = conn.execute(
+                        f"SELECT id, data, url_normalized, source_changed_at FROM {table}"
+                    ).fetchall()
                 for rid, dj, url_norm, changed_at in rows:
                     if limit and counts["captured"] >= limit:
                         break
