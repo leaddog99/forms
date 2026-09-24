@@ -10455,3 +10455,50 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   public-pages decisions + closing the open recipe API · ask-the-library design ·
   BAILEY-side backup check · carried: twin-dish descriptions, Utility Knife
   conflation, unscored winners missing from the dish page, SERP breaker/queue.
+
+## Session log — 2026-09-24 (evening) — the backfill's misses: a cancel that was never checked, a capture that could hang forever, two more interstitial shapes, a bad certificate, and a run that never reached its publisher
+
+* **The first backfill (#2250) was "lots of misses" (curator) and could not be
+  cancelled.** Two bugs of mine. (1) `screenshot_refresh` checked `cancel_requested`
+  NOWHERE — the curator's cancel set the flag and the job ran on. Now checked between
+  captures. (2) The job had sat inside ONE capture for over an hour: the worker has a
+  timeout, but on Windows a timed-out `subprocess.run` kills only the worker script; its
+  Chromium grandchildren keep the stdout pipe open and the wait never returns. Now
+  `Popen` + `communicate(timeout)` with `taskkill /T` on expiry — the whole tree goes
+  and the loop moves on. I stopped the four stuck processes and marked #2250 cancelled
+  (37 captures made).
+* **The misses themselves:** 20 of #2250's 37 "stores" were timoleondiamantis.gr's
+  "Please wait…" spinner — a phrase not in my list, stored again with a "nearly blank,
+  stored anyway" warning. Given more time the spinner resolves into Cloudflare's managed
+  challenge ("Performing security verification… verifies you are not a bot"), also not
+  in the list. Both added, plus a rule: a page whose ENTIRE visible text is under 40
+  chars is an interstitial whatever it says. The 21 spinner blobs deleted, their recipe
+  refs cleared. That site's own unblocker fetch times out, so it is now REFUSED, not
+  stored — the honest state.
+* **edibleboston.com (curator spotted it):** `ERR_CERT_COMMON_NAME_INVALID`. We store the
+  normalised BARE host; that host serves Squarespace's own certificate and redirects to
+  www., which is fine — but a browser refuses the cert before it can follow. The fetch
+  path already runs `verify=False`. The capture browser now sets
+  `ignore_https_errors=True` (a screenshot is a picture, not a trust decision).
+  Re-tested: 156 KB capture. Its 9 recipes come through the nightly.
+* **The second backfill (#2251) stored 89 real pages and never reached a single
+  Williams Sonoma row.** A "missing" run walks the library in TABLE ORDER with a limit on
+  captures: 40 went to the Greek site (through the unblocker — 40 credits), 31 attempts
+  on washingtonpost.com all failed (`ERR_HTTP2_PROTOCOL_ERROR`; each row now carries one
+  failure mark, the latch stops them at two). NEW `host=` param on `screenshot_refresh`
+  aims a backfill at one publisher. **#2252 aimed at williams-sonoma.com, limit 80, is
+  RUNNING** at the time of writing: 39 stored (all via the unblocker's copy), 2 failed,
+  35 recipes still to go — ~1 credit and ~30 s per page. Confirm its final counts.
+* Commits: `7cb2b70` (cancel, tree-kill, spinner/Cloudflare phrases), `be64faa`
+  (certificate), `294982a` (host filter). Jobs pick these up on their next run; the
+  server needs no restart for any of it.
+* Lesson recorded for the watcher I built earlier and this one: a "stored" line is not
+  proof of a picture. The blank detector judged pixels, the phrase list judged words I
+  happened to know; the minimum-text rule is the general form.
+* **Open:** confirm #2252 · Yogurt / Smoothie decisions · Williams Sonoma's
+  fetch_strategy still 'plain' (works via the global fallback) · the signed-in round
+  trip of the duplicate warning · Beef Shawarma's dangling stamp · the three
+  judgment-call pairs · the other narrower-dish holes · narrower strawberry dishes ·
+  the six public-pages decisions + closing the open recipe API · ask-the-library design
+  · BAILEY-side backup check · carried: twin-dish descriptions, Utility Knife
+  conflation, unscored winners missing from the dish page, SERP breaker/queue.
