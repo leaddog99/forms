@@ -10404,3 +10404,54 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   ask-the-library design · BAILEY-side backup check · carried: twin-dish descriptions,
   Utility Knife conflation, unscored winners missing from the dish page, SERP
   breaker/queue.
+
+## Session log — 2026-09-24 (afternoon) — "none of the Williams Sonoma extracts got a screenshot": they got 72 pictures of a block page; the capture now refuses interstitials and renders the unblocker's copy
+
+* **Curator's report was right, and the cause was worse than "missing".** The 07:19
+  publisher refresh (#2249, 300 discovered → 271 recipe → 70 extracted, all with real
+  content and real thumbnails) logged 72 `[SCREENSHOT] stored blob` lines. Every blob was
+  **3,809 bytes, identical**: "Sorry, due to website restrictions we are unable to
+  display the requested page." The extract path reaches the page through the unblocker;
+  the screenshot's headless Chromium, at our own address, never did.
+* **Why it was STORED:** the blank detector judges PIXELS (luminance stddev, refuse
+  under 2.0). A block page has a logo and a sentence — stddev 7.2 — and passes. Sorting
+  the whole store by size found **305 such images across 10 hosts**, stored over weeks:
+  williams-sonoma.com 84 (the block page), smittenkitchen.com 62 ("Checking your
+  browser"), alexguarnaschelli.com 40, a Greek site 20 (a "Please wait" spinner),
+  instantpot.com 19 (Cloudflare "Your connection needs to be verified"),
+  bakefromscratch.com 10, plus a nationalgeographic.com page shot before it loaded.
+* **Fix 1 — the worker reads the page's WORDS** (`_is_interstitial` in
+  `scripts/_capture_screenshot_worker.py`): after settling, a body under 600 chars
+  carrying a known block/bot-check phrase gets one more wait (a bot check sometimes
+  clears; a block page never does), then **exit 7 = nothing stored**. No screenshot is
+  honest and re-capturable; the nightly refresh's failure latch (2 strikes, 90-day
+  retry) paces the retries. Live: smittenkitchen, instantpot and nationalgeographic all
+  capture full pages now (100–158 KB) — their checks clear given the extra wait.
+* **Fix 2 — the unblocker rung (curator: "use the unblocker")**: on an interstitial,
+  `_unblocker_html` fetches the page's rendered HTML through `fetch_via_unblocker` (the
+  extract's rung as is — credits, circuit breaker) and the SAME browser draws that
+  document via a route on the document request; images/CSS/fonts still load from the
+  site. Gated by the extract path's own per-domain rule (fetch_strategy 'unblocker', or
+  `extract_unblocker_fallback` for a domain not marked skip/bookmarklet_only — the rule
+  that got the 70 extracts through), so a screenshot never spends where an extract
+  would not. One unblocker credit per escalated capture. **Verified live:** the
+  Williams Sonoma block page → a real above-fold capture of the Buttermilk-Brined
+  Turkey page, 38 KB. Committed `8a896ad`.
+* **Cleanup (data):** the 305 interstitial blobs deleted from media.db; the screenshot
+  reference cleared on the 275 recipes pointing at them (262 master, 13 personal;
+  list in `logs/screenshot_interstitial_cleanup_2026-09-24.json`, local). They read as
+  never-captured, so the nightly refresh (100/night) re-shoots them under the new rules
+  over ~3 nights. Failure counters were left alone — the latch decides from real
+  attempts.
+* **Williams Sonoma backfill IN PROGRESS** at the time of writing: `screenshot_refresh`
+  #2250, mode=missing, limit 90 — ~70 unblocker credits. Two real captures (41–52 KB)
+  had landed when this was written; confirm with the job's result
+  (`captured`/`failed` counts) and `page_screenshots` sizes for the host.
+* Not done: Williams Sonoma's stored fetch_strategy is still 'plain' (it works through
+  the global fallback); marking it 'unblocker' would make the policy explicit.
+* **Open:** confirm #2250 · Yogurt / Smoothie decisions · the signed-in round trip of
+  the duplicate warning · Beef Shawarma's dangling stamp · the three judgment-call
+  pairs · the other narrower-dish holes · narrower strawberry dishes · the six
+  public-pages decisions + closing the open recipe API · ask-the-library design ·
+  BAILEY-side backup check · carried: twin-dish descriptions, Utility Knife
+  conflation, unscored winners missing from the dish page, SERP breaker/queue.
