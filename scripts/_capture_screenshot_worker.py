@@ -109,6 +109,13 @@ def main() -> int:
                 "--disable-blink-features=AutomationControlled",
             ])
             context = browser.new_context(
+                # A screenshot is a picture of a page, not a trust decision. The
+                # stored URL is the normalised BARE host, and some sites serve a
+                # wrong certificate there and redirect to www. (edibleboston.com
+                # answers with Squarespace's own cert, 2026-09-24): strict TLS
+                # refused before it could follow the redirect. The fetch path
+                # already runs verify=False for the same reason.
+                ignore_https_errors=True,
                 viewport={"width": viewport_w, "height": viewport_h},
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
