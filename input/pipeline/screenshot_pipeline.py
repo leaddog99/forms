@@ -138,9 +138,51 @@ def _key_for(recipe_id: str) -> str:
     return f"recipe-screens/{recipe_id}-{sha8}.jpg"
 
 
-def _capture_raw_bytes(url: str) -> Optional[bytes]:
+def _unblocker_html(url: str) -> Optional[str]:
+    """The page's rendered HTML through the paid unblocker, for a site that
+    serves headless Chromium a block page (williams-sonoma.com, 2026-09-24:
+    72 of 72 captures were "unable to display the requested page"). Reuses the
+    extract path's rung as is - credits, circuit breaker - under the SAME
+    per-domain rule the extract uses: a domain whose fetch_strategy is
+    'unblocker', or any domain not marked skip/bookmarklet_only when the
+    `extract_unblocker_fallback` setting is on (the rule that got the 70
+    Williams Sonoma extracts through). A screenshot never spends where an
+    extract would not."""
+    try:
+        import sqlite3 as _sq
+        from urllib.parse import urlparse
+        from input.pipeline import domains_lib
+        from input.pipeline.system_config import get_setting
+        from to_markdown.html_to_markdown import fetch_via_unblocker, unblocker_available
+        if not unblocker_available():
+            return None
+        host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+        root = ".".join(host.split(".")[-2:]) if host.count(".") > 1 else host
+        db = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), "recipes.db")
+        with _sq.connect(db, timeout=30) as conn:
+            row = domains_lib.get_domain(conn, host) or domains_lib.get_domain(conn, root) or {}
+        strategy = (row.get("fetch_strategy") or "")
+        allowed = strategy == "unblocker" or (
+            strategy not in ("skip", "bookmarklet_only")
+            and bool(get_setting("extract_unblocker_fallback", True, db_path=db)))
+        if not allowed:
+            return None
+        got = fetch_via_unblocker(url, render=True)
+        if not got:
+            return None
+        resp, _meta = got
+        return resp.text or None
+    except Exception as e:
+        print(f"[screenshot] unblocker html failed for {url!r}: {e}")
+        return None
+
+
+def _capture_raw_bytes(url: str, html: Optional[str] = None) -> Optional[bytes]:
     """Drive headless Chromium (in a subprocess) and return the raw
     above-fold screenshot bytes for `url`. None on any failure.
+
+    `html`: render THIS document instead of navigating (the unblocker rung).
 
     Viewport / capture-height / settle / timeout come from _screenshot_cfg()
     (system_config-backed, defaults = the module constants). The resolved
@@ -188,10 +230,26 @@ def _capture_raw_bytes(url: str) -> Optional[bytes]:
                 str(cfg["settle_ms"]),
                 str(cfg["nav_timeout_ms"]),
             ],
+            input=(html.encode("utf-8") if html else b""),
             capture_output=True,
             timeout=(cfg["nav_timeout_ms"] // 1000) + 15,  # buffer for browser+settle
             env=child_env,
         )
+        if result.returncode == 7:
+            # The page was a block notice / bot check, not the recipe. One rung
+            # up: the unblocker's rendered HTML, drawn by the same browser - for
+            # a domain whose policy allows it. Otherwise nothing is stored (honest
+            # and re-capturable) and the nightly refresh's failure latch paces the
+            # retries (see _handle_screenshot_refresh_job).
+            why = result.stderr.decode('utf-8', errors='replace').strip()[:120]
+            if html is None:
+                via = _unblocker_html(url)
+                if via:
+                    print(f"[screenshot] interstitial for {url!r} ({why}) - "
+                          f"rendering the unblocker's copy")
+                    return _capture_raw_bytes(url, html=via)
+            print(f"[screenshot] REFUSED an interstitial for {url!r}: {why}")
+            return None
         if result.returncode != 0:
             print(f"[screenshot] worker exit {result.returncode} for "
                   f"{url!r}: {result.stderr.decode('utf-8', errors='replace')[:200]}")

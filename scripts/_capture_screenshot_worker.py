@@ -6,12 +6,61 @@ breaks `sync_playwright()` when called inside uvicorn's worker threads.
 Usage (not for direct user invocation):
   python -m scripts._capture_screenshot_worker <url> <viewport_w> <viewport_h> <capture_h> <settle_ms> <nav_timeout_ms>
 
+With HTML on STDIN, the browser renders THAT document (base URL = <url>, so relative
+images and stylesheets still resolve) instead of navigating to the site - the
+unblocker rung: the page was fetched through the paid unblocker, which solved the
+site's bot check; a headless Chromium at our own address never could.
+
 Writes raw JPEG bytes (quality=90) to stdout on success.
 Writes nothing + non-zero exit on any failure (caller treats as None).
+Exit 7 = the page was an INTERSTITIAL (a block notice or a bot check), not the
+recipe: nothing is written, so no screenshot is stored - see _is_interstitial.
 """
 from __future__ import annotations
 
 import sys
+
+
+# Words a BLOCK PAGE or BOT CHECK says, and a real recipe page never does above
+# the fold. Measured 2026-09-24: williams-sonoma.com served "Sorry, due to
+# website restrictions we are unable to display the requested page" to all 72
+# captures of a run (every blob 3,809 bytes, identical), smittenkitchen.com
+# "Checking your browser", instantpot.com Cloudflare's "Your connection needs to
+# be verified" - 305 such blobs across 10 hosts had been STORED as screenshots,
+# because a block page has enough contrast to pass the blank detector (stddev
+# 7-14 against a refuse line of 2). A stored block page is a permanent wrong
+# answer on every surface; NO screenshot is honest and re-capturable, and the
+# nightly refresh's failure latch then paces the retries.
+_INTERSTITIAL = (
+    "unable to display the requested page", "due to website restrictions",
+    "checking your browser", "verify you are human", "verify you are a human",
+    "connection needs to be verified", "just a moment", "attention required",
+    "access denied", "access to this page has been denied", "request blocked",
+    "please enable cookies", "enable javascript and cookies to continue",
+    "are you a robot", "bot detection", "captcha", "press and hold",
+    "pardon our interruption", "why do i have to complete a captcha",
+    "this site can't be reached", "503 service", "403 forbidden",
+)
+# A real page carries far more text than this above the fold even before its
+# images load; an interstitial is a sentence or two.
+_INTERSTITIAL_MAX_CHARS = 600
+
+
+def _is_interstitial(page) -> str:
+    """The matched phrase when the rendered page is a block/bot-check
+    interstitial rather than content, else ''. Judged on the page's own visible
+    words: short body text carrying one of the known phrases."""
+    try:
+        text = page.evaluate("() => (document.body && document.body.innerText) || ''")
+    except Exception:
+        return ""
+    body = " ".join(str(text).split()).lower()
+    if len(body) > _INTERSTITIAL_MAX_CHARS:
+        return ""
+    for phrase in _INTERSTITIAL:
+        if phrase in body:
+            return phrase
+    return ""
 
 
 def main() -> int:
@@ -19,6 +68,13 @@ def main() -> int:
         print(f"usage error: {sys.argv}", file=sys.stderr)
         return 2
     _, url, vw, vh, ch, settle, nav_to = sys.argv
+    html_in = None
+    if not sys.stdin.isatty():
+        try:
+            data = sys.stdin.buffer.read()
+            html_in = data.decode("utf-8", errors="replace") if data else None
+        except Exception:
+            html_in = None
     try:
         viewport_w = int(vw)
         viewport_h = int(vh)
@@ -51,9 +107,25 @@ def main() -> int:
             )
             page = context.new_page()
             try:
+                if html_in:
+                    # Route the DOCUMENT request to the supplied HTML; every
+                    # sub-resource (images, CSS, fonts) still loads from the
+                    # site, which serves assets to anyone.
+                    page.route(url, lambda route: route.fulfill(
+                        status=200, content_type="text/html; charset=utf-8", body=html_in))
                 page.goto(url, wait_until="domcontentloaded",
                           timeout=nav_timeout_ms)
                 page.wait_for_timeout(settle_ms)
+                hit = _is_interstitial(page)
+                if hit:
+                    # A bot check sometimes clears itself given a few more
+                    # seconds; a block page never does. One more wait, one
+                    # more look, then refuse.
+                    page.wait_for_timeout(min(4000, max(1500, settle_ms)))
+                    hit = _is_interstitial(page)
+                if hit:
+                    print(f"interstitial: {hit!r}", file=sys.stderr)
+                    return 7
                 raw = page.screenshot(
                     type="jpeg",
                     quality=90,
