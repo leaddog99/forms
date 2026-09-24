@@ -323,7 +323,11 @@ def _scaleserp(query, pages, want, gl, hl, timeout) -> list[dict]:
                 # network errors get; only a non-transient message (credits,
                 # bad request) stops on first sight.
                 msg = str(ri.get("message") or data.get("error") or "")
-                if re.search(r"rate|limit|overload|temporar|try again|timeout|busy",
+                # "unable to fulfil your request at this time, please retry. You
+                # have not been charged" (Strawberry Cake #2185, 2026-09-20) matched
+                # none of these words and ended the query at 7 of 40 URLs.
+                if re.search(r"rate|limit|overload|temporar|try again|timeout|busy|"
+                             r"please retry|unable to fulfil|not been charged",
                              msg, re.I):
                     attempts, backoff = _serp_retry_cfg()
                     for extra in range(2, attempts + 1):

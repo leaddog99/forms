@@ -10340,3 +10340,67 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   API · ask-the-library design · BAILEY-side backup check (MARLEY-down is still unwatched)
   · carried: twin-dish descriptions, Utility Knife conflation, unscored winners missing
   from the dish page, right-dish check under the 1.0 cutoff, SERP breaker/queue.
+
+## Session log — 2026-09-21 → 09-24 — Roasted Brussels Sprouts; the off-dish cutoff to 0.925; a three-day log sweep (one pager fix, two watcher false alarms fixed)
+
+* **Roasted Brussels Sprouts created (curator)** through the create endpoint on the
+  standard profile (two lines, 40/15/180, chapter Vegetables). The duplicate gate
+  objected as designed — "28 of 28 recipes that call themselves 'Roasted Brussels
+  Sprouts' sit closest to 'Brussels Sprouts' (0.295)" — and was overridden with
+  `force`, the curator having asked for the dish by name. Auto-rematch #2205 moved 14
+  labels. The hourly scheduler refreshed it at 04:07 on 09-21 (#2212) before a manual
+  run was needed: both lines 40/40, off-topic guard 2 retries (both recovered),
+  right-dish guard dropped 3 (a roasted eggplant lentil salad among them), 15/15 saved,
+  4 labels moved from Brussels Sprouts on name-exact, 2 stayed. Ten of the fifteen are
+  exactly the dish; five near-misses came through UNDER the 1.0 cutoff (herb roasted
+  potatoes 0.95, a sprout dip 0.80, a quinoa salad 0.82, a mac and cheese 0.87).
+* **`dish_offdish_min_distance` = 0.925 (curator: "try .925").** The setting had never
+  been written — the guard was on its code default of 1.0. Replayed over every current
+  winner: 17 flagged at 1.0 → 26 at 0.925; the 16 in the new band are almost all plainly
+  wrong for their dish (the potatoes, rosemary radishes + a green tomato soup under
+  Roasted Vegetables, a gingerbread house under Butter Cookies, a sardine linguine under
+  Pasta alla Gricia); the only two to hesitate over are two mussel recipes under Mussels
+  & Moules (0.93/0.94). Asked for an opinion: LEAVE IT — the older winners' distance to
+  their own dish has p98 = 0.90 and p99 = 0.95, so 0.925 cuts in the top 1-2% where the
+  strays live, and 0.90 would start eating real recipes. The guard's second condition
+  (never names the dish or an alias) is what protects ingredient dishes like Dijon. A
+  wanted recipe that gets dropped wants an ALIAS, not a higher cutoff. Existing winners
+  are untouched; each drops at its dish's next refresh.
+* **Three-day log sweep (curator: "check the recent logs… correct as necessary").**
+  66 jobs since 09-20, one non-success (General Tso's #2207 — cancelled by the curator);
+  18 dish refreshes at full depth bar one line; off-topic guard 14 fires, 13 recovered on
+  retry, 1 page dropped; right-dish guard 17 drops (8 on Butter Cookies alone: latkes,
+  pancakes, tortillas, a hollandaise — all correct); nightly BAILEY sync clean three
+  nights; no server errors since 09-20 (the log's HTTP 500s all predate it); SERP credits
+  93-472/day, 4,788 of 10,000, reset 09-26. Three real findings:
+  - **FIXED — a free provider retry going unclaimed.** Strawberry Cake #2185 line 1
+    returned 7 of 40 URLs: page 2 answered "Scale SERP was unable to fulfil your request
+    at this time, please retry. You have not been charged" and the pager's transient
+    pattern (rate/limit/overload/temporar/try again/timeout/busy) matched none of it, so
+    the query ended. Pattern now includes `please retry|unable to fulfil|not been
+    charged`. Once in three days.
+  - **FIXED — two backup-watcher FALSE ALARMS** (emails on 09-21 and 09-23; the backups
+    themselves were fine). (1) "training database is 48h old": the copy was fresh — 270
+    rows the previous night's lacked — but `shutil.copy2` preserves the SOURCE mtime,
+    and a SQLite file's mtime moves only when pages are rewritten. The checker now dates
+    a copy by the stamp in its FILENAME, and sorts dated files by name. (2) "row-count
+    mismatch is NOT a small race": every mismatched table had MORE rows in the dump than
+    live — rows deleted between dump and verify, i.e. the curator's work — but a 3-row
+    change on the 277-row picks table crossed the 0.5% line. The rule now also accepts a
+    difference of ≤ 20 rows. Re-run: all good; the 09-24 07:00 run on the fixed code:
+    all good, no email.
+  - **FOR THE CURATOR — two dishes a fixed gate cannot serve (nothing changed):**
+    Yogurt saved 6/15 — fourteen good pages rejected by the save gate's "fewer than 3
+    ingredients" (`save_gate_min_ingredients`, global, in bcc_config.json): homemade
+    yogurt has two (milk + starter). Options: a per-dish override for the minimum, or
+    accept 6. Smoothie saved 6/20 — 56 of 64 candidates dropped as COLLECTION pages
+    ("30 Healthy Smoothie Recipes"), which is the right verdict; the bare line
+    "Smoothie" returns roundups. Options: specific lines ("green smoothie recipe",
+    "strawberry banana smoothie"), or fewer kept winners than 20.
+* **Open:** Yogurt / Smoothie decisions · the signed-in round trip of the duplicate
+  warning · Beef Shawarma's dangling stamp · the three judgment-call pairs · the other
+  narrower-dish holes (Roasted Broccoli, Pozole Rojo, New York Cheesecake…) · narrower
+  strawberry dishes · the six public-pages decisions + closing the open recipe API ·
+  ask-the-library design · BAILEY-side backup check · carried: twin-dish descriptions,
+  Utility Knife conflation, unscored winners missing from the dish page, SERP
+  breaker/queue.

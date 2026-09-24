@@ -70,7 +70,22 @@ class Report:
         self.fails.append(msg)
 
 
+_STAMP = re.compile(r"_(\d{4})-(\d\d)-(\d\d)_(\d\d)(\d\d)(\d\d)")
+
+
 def _age_h(p: Path) -> float:
+    """Age of a backup file, from the timestamp IN ITS NAME when it has one.
+
+    The copies are made with shutil.copy2, which preserves the SOURCE file's
+    modification time - and a SQLite file's mtime moves only when its pages are
+    rewritten, not on every insert. training.db read as "48h old" on 2026-09-23
+    while last night's copy held 270 rows the previous one lacked: a fresh copy
+    of a file whose mtime was two days old. The name's stamp is when the copy
+    was made; the mtime is when the source last changed shape."""
+    m = _STAMP.search(p.name)
+    if m:
+        y, mo, d, hh, mm, ss = map(int, m.groups())
+        return (dt.datetime.now() - dt.datetime(y, mo, d, hh, mm, ss)).total_seconds() / 3600
     return (dt.datetime.now().timestamp() - p.stat().st_mtime) / 3600
 
 
@@ -81,7 +96,7 @@ def check_adam(r: Report) -> int | None:
         return None
     for pattern, label in (("recipes_*.db", "recipes database"), ("recipes_*.sql.gz", "SQL dump"),
                            ("training_*.db", "training database")):
-        files = sorted(ADAM.glob(pattern), key=lambda p: p.stat().st_mtime)
+        files = sorted(ADAM.glob(pattern), key=lambda p: p.name)   # dated names sort by copy time
         if not files:
             r.fail(f"ADAM has no {label} at all ({pattern})")
             continue
@@ -100,7 +115,7 @@ def check_adam(r: Report) -> int | None:
         r.fail("media_latest.db missing or stale on ADAM")
     else:
         r.ok(f"media_latest.db, {media.stat().st_size / 1e6:.0f} MB, {_age_h(media):.1f}h old")
-    dbs = sorted(ADAM.glob("recipes_*.db"), key=lambda p: p.stat().st_mtime)
+    dbs = sorted(ADAM.glob("recipes_*.db"), key=lambda p: p.name)
     if not dbs:
         return None
     try:
@@ -156,8 +171,13 @@ def check_log(r: Report) -> None:
     first = re.search(r"^exit code:\s*(\d+)", body, re.M)
     if first and int(first.group(1)) == 1:
         mism = re.findall(r"ROW COUNT MISMATCH (\w+): restored (\d+) vs live (\d+)", body)
+        # A race, not corruption, when every table moved by a handful of rows
+        # (<0.5% OR <= 20 rows: a 3-row change on a 277-row picks table is 1.1%
+        # and set off the 2026-09-21 alarm). Corruption reads as a table missing
+        # or a count off by hundreds.
         worst = max((abs(int(a) - int(b)) / max(int(b), 1) for _, a, b in mism), default=1.0)
-        if mism and worst < 0.005 and "integrity_check: ok" in body:
+        biggest = max((abs(int(a) - int(b)) for _, a, b in mism), default=10 ** 9)
+        if mism and (worst < 0.005 or biggest <= 20) and "integrity_check: ok" in body:
             r.note("dump verifier saw " + ", ".join(f"{t} {a}/{b}" for t, a, b in mism)
                    + " — rows written while the backup ran, not corruption")
         else:
