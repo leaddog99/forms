@@ -40,7 +40,17 @@ _INTERSTITIAL = (
     "are you a robot", "bot detection", "captcha", "press and hold",
     "pardon our interruption", "why do i have to complete a captcha",
     "this site can't be reached", "503 service", "403 forbidden",
+    # A bot check that never clears for a headless browser: the whole page is
+    # a spinner and two words (timoleondiamantis.gr, 20 of 20 captures, 2026-09-24).
+    "please wait", "loading...", "one moment", "redirecting",
+    # Cloudflare's managed challenge, once the spinner resolves.
+    "performing security verification", "security service to protect against",
+    "verifies you are not a bot", "verifies that you are not a bot",
+    "checking if the site connection is secure", "needs to review the security",
 )
+# A page whose ENTIRE visible text is this short is not a recipe page, whatever
+# it says: a spinner, a logo, a cookie wall with no content behind it.
+_INTERSTITIAL_MIN_CHARS = 40
 # A real page carries far more text than this above the fold even before its
 # images load; an interstitial is a sentence or two.
 _INTERSTITIAL_MAX_CHARS = 600
@@ -60,6 +70,8 @@ def _is_interstitial(page) -> str:
     for phrase in _INTERSTITIAL:
         if phrase in body:
             return phrase
+    if len(body) < _INTERSTITIAL_MIN_CHARS:
+        return f"almost no text ({len(body)} chars)"
     return ""
 
 

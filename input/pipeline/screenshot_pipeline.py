@@ -178,6 +178,19 @@ def _unblocker_html(url: str) -> Optional[str]:
         return None
 
 
+def _kill_tree(pid: int) -> None:
+    """Kill a process AND its descendants (the worker's Chromium)."""
+    try:
+        import subprocess as _sp
+        if os.name == "nt":
+            _sp.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True, timeout=15)
+        else:
+            os.killpg(os.getpgid(pid), 9)
+    except Exception as e:
+        print(f"[screenshot] kill tree {pid} failed: {e}")
+
+
 def _capture_raw_bytes(url: str, html: Optional[str] = None) -> Optional[bytes]:
     """Drive headless Chromium (in a subprocess) and return the raw
     above-fold screenshot bytes for `url`. None on any failure.
@@ -221,7 +234,12 @@ def _capture_raw_bytes(url: str, html: Optional[str] = None) -> Optional[bytes]:
         child_env["PLAYWRIGHT_BROWSERS_PATH"] = bpath
 
     try:
-        result = subprocess.run(
+        # Popen + communicate(timeout) rather than subprocess.run: on Windows a
+        # timed-out run() kills only the worker, and its Chromium grandchildren
+        # keep the stdout pipe open, so the wait never returns - job #2250 sat
+        # inside one capture for an hour and ignored its cancel (2026-09-24).
+        # On timeout the WHOLE tree goes (taskkill /T), then we move on.
+        proc = subprocess.Popen(
             [
                 _sys.executable, str(worker_path),
                 url,
@@ -230,11 +248,21 @@ def _capture_raw_bytes(url: str, html: Optional[str] = None) -> Optional[bytes]:
                 str(cfg["settle_ms"]),
                 str(cfg["nav_timeout_ms"]),
             ],
-            input=(html.encode("utf-8") if html else b""),
-            capture_output=True,
-            timeout=(cfg["nav_timeout_ms"] // 1000) + 15,  # buffer for browser+settle
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             env=child_env,
         )
+        try:
+            out, err = proc.communicate(
+                input=(html.encode("utf-8") if html else b""),
+                timeout=(cfg["nav_timeout_ms"] // 1000) + 15)  # buffer for browser+settle
+        except subprocess.TimeoutExpired:
+            _kill_tree(proc.pid)
+            try:
+                proc.communicate(timeout=5)
+            except Exception:
+                pass
+            raise
+        result = subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
         if result.returncode == 7:
             # The page was a block notice / bot check, not the recipe. One rung
             # up: the unblocker's rendered HTML, drawn by the same browser - for

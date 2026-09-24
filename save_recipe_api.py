@@ -9611,6 +9611,14 @@ async def _handle_screenshot_refresh_job(job: dict) -> dict:
                 for rid, dj, url_norm, changed_at in rows:
                     if limit and counts["captured"] >= limit:
                         break
+                    # Cancel is honoured between captures. It was never checked
+                    # here at all: the curator's cancel of #2250 (2026-09-24) set
+                    # the flag and the job ran on regardless.
+                    if jobs_lib.is_cancel_requested(conn, job["id"]):
+                        counts["cancelled"] = True
+                        print("[SCREENSHOT-REFRESH] cancel requested — stopping "
+                              f"after {counts['captured']} capture(s)")
+                        return counts
                     counts["scanned"] += 1
                     try:
                         d = json.loads(dj)
