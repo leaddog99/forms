@@ -10787,9 +10787,15 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   `get_bytes` returns a 52 KB WebP, `is_publicly_readable` is False (objects stay
   private, as f2n's model requires), client built by the kit with the trust-store
   bundle. Both apps now store through `imagekit.storage`.
-* **Open:** the four pre-existing f2n test failures (theirs, not the store's) · **BCC on
-  MARLEY** (`bcc_restart.bat`) owes one more restart to pick up `is_ours` (`88f2fdc`);
-  f2n on BAILEY is current · the four direct-to-`generated/` routes onto the
+* **BCC on MARLEY restarted (17:06:59) and `is_ours` verified.** A plain re-extract proved
+  nothing — the speculative cache fast-path answers before the image block runs — so the
+  proof is the revalidate path (page fetched, cached recipe reused, image block reached
+  with the cached S3 hero as `previewImage`): no `[OG-IMAGE] cooped` line, the hero
+  stays `…/og-thumbs/1625ff6712ec72ba.webp`, the bucket's `og-thumbs/` count is 4 before
+  and after. The old substring test would have coopted the S3 URL into a fifth object.
+  The service process postdates both changed files, so it runs the same code. Both
+  services current: BCC on MARLEY, f2n on BAILEY.
+* **Open:** the four pre-existing f2n test failures (theirs, not the store's) · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
