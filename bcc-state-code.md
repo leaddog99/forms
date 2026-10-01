@@ -10738,8 +10738,10 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   orphans on disk (`og-thumbs` swept 09-30, `recipe-screens` today); `delete()` on S3 is
   a logged no-op until the IAM grant. Commits today: kit `5df7024`; recipes `0423a67`
   `641e181` `3e3fa61` `9c8cc4d` + state.
-* **Open:** `s3:DeleteObject` for bcc-app, then delete the probe object and the bucket's
-  manifest copy · restart · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
+* **`s3:DeleteObject` granted** (curator, inline policy) and verified: the probe object and
+  the bucket's manifest copy deleted, a put-then-delete round trip through the kit leaves
+  nothing. The bucket now holds only real images.
+* **Open:** restart · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
   Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
