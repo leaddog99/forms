@@ -10814,12 +10814,16 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   uploads idempotent (skip existing keys, so a stop resumes); rows rewritten only for
   confirmed uploads, by exact substitution in the JSON text, 500 per transaction;
   undo file `logs/image_backfill_undo_<stamp>.json` with every (table, id, old, new).
-  Local JPEGs are NOT deleted — separate step. At this writing: 5,250 / 11,280
-  uploaded, 0 failed, ~0.4 s per file, ~40 min left, then the row rewrite.
+  Local JPEGs are NOT deleted — separate step. **Done 22:44 UTC: 11,280 uploaded, 0
+  failed, 1,762 MB in 73 min; 11,768 rows rewritten (11,188 master / 394 dishes / 186
+  recipes); undo `logs/image_backfill_undo_2026-10-01T213123Z.json` (2.5 MB).**
+  Verified: zero rows still carry a local `og-thumbs`/`recipe-screens` address; every
+  rewritten master row is valid JSON; five random rewritten URLs fetch anonymously as
+  `image/webp` (66–176 KB). The 2.6 GB of local JPEGs stay on disk until the curator
+  has looked.
   Honest note recorded in the script: a second-generation encode (JPEG q85 → WebP
   q82); the originals were never kept.
-* **Open:** backfill completion + verification (anonymous GET on a rewritten row's
-  URL, counts) · BCC on MARLEY restart for the four routes · delete the local JPEGs
+* **Open:** BCC on MARLEY restart for the four routes · delete the local JPEGs
   once looked at · the heroes pass · the four pre-existing f2n test failures (theirs,
   not the store's) · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
