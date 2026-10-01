@@ -40,7 +40,6 @@ from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
-from PIL import Image, ImageOps
 
 from input.pipeline.image_store import get_image_store
 
@@ -224,35 +223,27 @@ def _img_config():
     return q, land, port
 
 
-def _open_oriented(raw: bytes) -> "Image.Image":
-    """Open + apply EXIF orientation (straighten rotated phone photos)."""
-    return ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
-
-
-def _to_rgb(img: "Image.Image") -> "Image.Image":
-    """Flatten alpha / paletted modes onto white → RGB (JPEG requirement)."""
-    if img.mode in ("RGB", "L"):
-        return img
-    if img.mode in ("RGBA", "LA", "P"):
-        bg = Image.new("RGB", img.size, (255, 255, 255))
-        if img.mode == "P":
-            img = img.convert("RGBA")
-        bg.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
-        return bg
-    return img.convert("RGB")
-
-
-def _fit_and_encode(img, quality, land, port):
-    """Center-crop+scale to the landscape/portrait bucket, encode progressive
-    JPEG (EXIF stripped). Returns (bytes, out_w, out_h). Used for the CORPUS
-    og:image coopt, where a uniform two-bucket crop gives the dish/recipe pages
-    a deliberate visual rhythm. NOT for a user's hero image — see _contain_and_encode."""
-    aspect = img.width / img.height if img.height else 1.0
-    target = land if aspect >= LANDSCAPE_ASPECT_THRESHOLD else port
-    img = ImageOps.fit(img, target, method=Image.LANCZOS, centering=(0.5, 0.5))
-    out = io.BytesIO()
-    img.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
-    return out.getvalue(), img.width, img.height
+# ---------------------------------------------------------------------------
+# PIXELS: imagekit (sibling repo, `pip install -e ../imagekit`), adopted
+# 2026-09-30 per imagekit/docs/adopting-in-recipes.md. It replaced four private
+# helpers here (_open_oriented / _to_rgb / _fit_and_encode / _contain_and_encode)
+# that were one of EIGHT copies of decode-validate-resize-encode across the two
+# apps, with quality values that disagreed. imagekit owns: EXIF orientation
+# (always, before anything), alpha flattening onto a background when the target
+# is opaque, metadata stripping, a never-upscale `contain`, a cover crop, a
+# pixel-bomb cap and a format allow-list. Storage, URLs and the landscape /
+# portrait BUCKET choice stay here - those are product decisions.
+#
+# PHASE 1 (this): same OUTPUT as before - progressive JPEG at the configured
+# quality, 1500x1000 / 1000x1500 cover for the corpus, contain-to-max_px for a
+# hero - only the engine changed. PHASE 2 (a separate decision): WebP + a
+# display size; that touches every stored file's extension and the manifest.
+# ---------------------------------------------------------------------------
+def _bucket_for(width: int, height: int, land, port):
+    """Landscape or portrait target box for a source of this shape. The
+    product rule, unchanged: aspect >= LANDSCAPE_ASPECT_THRESHOLD -> landscape."""
+    aspect = width / height if height else 1.0
+    return land if aspect >= LANDSCAPE_ASPECT_THRESHOLD else port
 
 
 def _hero_max_px():
@@ -264,60 +255,71 @@ def _hero_max_px():
         return 1600
 
 
-def _contain_and_encode(img, quality, max_px):
-    """Resize PRESERVING the whole image (no crop) and PRESERVING orientation —
-    a portrait stays portrait, a landscape stays landscape. Scales down so the
-    longest edge is <= max_px; NEVER upscales a smaller source (Image.thumbnail
-    only shrinks), so a small paste stays sharp at its own size instead of being
-    blown up + cropped. This is the right treatment for a hero image the user
-    chose. Returns (bytes, out_w, out_h)."""
-    img = img.copy()
-    img.thumbnail((max_px, max_px), Image.LANCZOS)
-    out = io.BytesIO()
-    img.save(out, format="JPEG", quality=quality, optimize=True, progressive=True)
-    return out.getvalue(), img.width, img.height
+def _probe(raw: bytes):
+    """imagekit.inspect with THIS app's limits (the 10 MB download guard kept;
+    the pixel cap and format allow-list are new, deliberately). Raises
+    imagekit.ImageRejected (a ValueError) with a message written for a person."""
+    from imagekit import inspect as ik_inspect
+    return ik_inspect(raw, max_bytes=MAX_DOWNLOAD_BYTES)
 
 
 def process_thumbnail(raw: bytes, *, quality=None, landscape=None, portrait=None) -> Optional[bytes]:
     """Process raw image bytes into a consistently-sized cookbook-grade JPEG
     (one of two buckets), EXIF stripped. Config-driven (quality/targets) unless
-    explicitly overridden. None when Pillow can't open the input."""
+    explicitly overridden. None when the input is not a usable image."""
     try:
+        from imagekit import derive
         q, land, port = _img_config()
-        data, _w, _h = _fit_and_encode(
-            _to_rgb(_open_oriented(raw)),
-            quality if quality is not None else q,
-            landscape if landscape is not None else land,
-            portrait if portrait is not None else port,
-        )
-        return data
+        _probe(raw)                       # the guards: not-an-image, pixel bomb, format
+        # The bucket is chosen from the ORIENTED shape - what a person sees -
+        # not the stored header's: a phone photo saved sideways with an EXIF
+        # rotation is a portrait, and the old code (exif_transpose first) got
+        # that right. A cheap contain pass at the source's own size reports
+        # the oriented dimensions without resampling anything.
+        shape = derive(raw, width=10 ** 6, fit="contain", fmt="JPEG", quality=30,
+                       keep_alpha=False)
+        tw, th = _bucket_for(shape.source_width, shape.source_height,
+                             landscape if landscape is not None else land,
+                             portrait if portrait is not None else port)
+        # cover = centre-crop-and-fill to exactly the box, upscaling if the
+        # source is smaller - what ImageOps.fit did. keep_alpha=False
+        # composites onto white, what _to_rgb did.
+        d = derive(raw, width=tw, height=th, fit="cover", fmt="JPEG",
+                   quality=quality if quality is not None else q, keep_alpha=False)
+        return d.data
     except Exception as e:
-        print(f"[image_pipeline] Pillow process failed: {e}")
+        print(f"[image_pipeline] imagekit process failed: {e}")
         return None
 
 
 def standardize_and_meta(raw: bytes, *, source_url: Optional[str] = None,
                          localized: bool = True) -> tuple[Optional[bytes], dict]:
     """Phase-1 capture step: standardize raw image bytes (config-driven) AND
-    return an `imageMeta` block describing the result. The meta earns its keep —
+    return an `imageMeta` block describing the result. The meta earns its keep -
     it drives quality warnings (too-small hero), variant-readiness, dedup, and
-    the capture log. `bytes` is None if Pillow can't open the input (caller may
-    fall back to storing raw)."""
+    the capture log. `bytes` is None if the input is not a usable image (caller
+    may fall back to storing raw)."""
     meta: dict = {"source_url": source_url, "localized": bool(localized),
                   "bytes_in": len(raw) if raw else 0}
     try:
-        opened = Image.open(io.BytesIO(raw))
-        meta["orig_format"] = ((opened.format or "").lower() or None)  # .format is lost after transpose
-        src = ImageOps.exif_transpose(opened)
-        meta["orig_width"], meta["orig_height"] = src.width, src.height
+        from imagekit import derive
+        probe = _probe(raw)
+        meta["orig_format"] = (probe.format or "").lower() or None
         q, _land, _port = _img_config()
         # Hero image: CONTAIN (preserve whole image + orientation, no crop, no
-        # upscale) — not the corpus crop bucket. A small paste stays its own size.
-        data, ow, oh = _contain_and_encode(_to_rgb(src), q, _hero_max_px())
-        meta.update(width=ow, height=oh, format="jpeg", bytes=len(data),
+        # upscale) - not the corpus crop bucket. A small paste stays its own size.
+        # The longest-edge cap: imagekit's `width` is a ceiling on width only, so
+        # a tall portrait gets its height capped by also passing height.
+        cap = _hero_max_px()
+        d = derive(raw, width=cap, height=cap, fit="contain", fmt="JPEG",
+                   quality=q, keep_alpha=False)
+        # The ORIENTED source size (what the user sees), not the stored header's.
+        meta["orig_width"], meta["orig_height"] = d.source_width, d.source_height
+        ow, oh = d.width, d.height
+        meta.update(width=ow, height=oh, format="jpeg", bytes=len(d.data),
                     orientation=("portrait" if oh > ow else "square" if oh == ow else "landscape"),
                     upscaled=False, standardized=True)
-        return data, meta
+        return d.data, meta
     except Exception as e:
         print(f"[image_pipeline] standardize failed: {e}")
         meta["standardized"] = False
