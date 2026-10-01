@@ -10562,3 +10562,85 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   signed-in duplicate-warning round trip · Beef Shawarma's stamp · judgment-call pairs
   · narrower-dish holes · strawberry dishes · public-pages decisions + the open API ·
   ask-the-library design · BAILEY-side backup check · carried items.
+
+## Session log — 2026-09-30 (late) → 10-01 — imagekit adopted (JPEG-identical, then WebP); S3 has never been on and there are no keys; llmkit adopted under the gateway; nine calls still bypass it; Postgres + BAILEY become one move
+
+* **imagekit, phase 1 (`21de2e6`)** — `process_thumbnail` and `standardize_and_meta` now
+  run on imagekit (sibling repo, github.com/leaddog99/imagekit, editable, recorded in
+  requirements beside recipe-core). The four private helpers are gone; all six callers
+  go through the two public functions, so none changed. Output kept IDENTICAL on
+  purpose: verified against the previous implementation (pulled from git) on 48 inputs
+  — 40 real thumbnails + rotations, alpha, tiny, junk — same size, format and mode on
+  both paths. The comparison caught my one bug before commit: the first draft chose the
+  landscape/portrait bucket from the stored header, BEFORE EXIF rotation; a sideways
+  phone photo would have been cropped landscape. Fixed to read the oriented shape via a
+  cheap contain pass (imagekit's probe has no orientation field). New, deliberately: a
+  decoded-pixel cap and a format allow-list; the 10 MB download guard kept.
+* **imagekit, phase 2 (`d0f429c`) — WebP, size unchanged** (curator: "leave size as is
+  and let webp compress… use the levels used in f2n"): f2n's `DISPLAY_QUALITY = 82`,
+  imagekit's default. Measured on 30 real thumbnails at the same 1500×1000 bucket:
+  JPEG 85 avg 242 KB → WebP 82 avg 158 KB (65%). Setting renamed `image_webp_quality`.
+  The coopt key is a hash of the SOURCE url, so an existing `.jpg` is REUSED (either
+  extension counts as "have it") — the 11,183 JPEGs are never re-fetched; only new
+  sources become `.webp`. Three hero upload paths and the AI-generated hero had `.jpg`
+  hard-coded; they name the file by the format actually encoded. media.db screenshot
+  blobs keep their own JPEG encoder. Verified: existing JPEG reused by hash; new source
+  → WEBP 1500×1000 117 KB; hero path reports webp. NOT done: converting the 11k
+  existing JPEGs (~1.1 GB saving; rewrites files + URLs — its own backfill).
+* **S3 — "I thought they were to be in S3": they were meant to be, and it has NEVER
+  been on.** Two reasons, not one. (1) The store reads `BCC_IMAGE_STORE_BACKEND` /
+  `BCC_S3_BUCKET`; `.env` has `S3_BUCKET` / `S3_REGION` (no prefix) and no backend
+  line, so it falls to "local" — the server log says `using LocalStore`. (2) Behind
+  that, **all four S3 lines in `.env` are EMPTY** (0 chars), no AWS CLI, no shared
+  credentials, no bucket named anywhere in config or docs. The adoption doc assumed
+  values were filled in; wrong. f2n on BAILEY HAS a working set: bucket `f2nv02`,
+  us-east-1, a key scoped to that bucket only (it cannot list others) — f2n's, not
+  ours. Recommended a separate recipes bucket + scoped IAM user rather than sharing.
+  **Curator will do it tomorrow; exact steps given** (bucket, public-read object
+  policy, IAM user with a bucket-scoped inline policy, access key, five `.env` lines
+  under the `BCC_` names, restart). Then verify end to end. Caveats restated: objects
+  become public URLs; existing local files stay local until a backfill; the nightly
+  `.env` copy to ADAM carries the keys in plaintext, as it does every key.
+* **llmkit — assessed, then phase 1 done (`03ab4a2`).** The fourth kit: a thin gateway
+  over the Anthropic/OpenAI SDKs that COUNTS every call from the provider's reply,
+  failures included, and hands a `Usage` to the app's own sink. No storage, no budget,
+  no model choices — which is why f2n being Postgres does not touch it: our sink
+  writes through our own DB layer. Its adoption doc for recipes (09-30) is accurate on
+  the swap but **undersells the real problem, which I measured**: 31 files route
+  through `llm.py`, but **17 modules construct their own SDK client and 9 call the
+  provider directly**, bypassing the gateway — `identity_card` (3,741 rows, journalled
+  by hand), `recipe_anchor` (cook rework, our priciest call, journalled elsewhere),
+  `defect_pass`, `enrich_recipe`, `voice_agent`, two measurement passes (hand-
+  journalled), and **`image_gen_openai`, `cook_tts`, `cook_stt` — NOT counted at
+  all**. The 354 "gpt" rows in the journal predate the Anthropic migration. Zero
+  failure rows existed, which cannot be true. The doc also miscounts (44 files; it is
+  31) and misses WHY `identity_card` bypasses: it runs in the save core, which opens
+  no gateway context.
+  - **Phase 1:** `llm.create` / `llm.stream` delegate to `llmkit.anthropic_create` /
+    `anthropic_stream`; a sink turns `Usage` into the exact row `bcc_token_journal`
+    has always held, buffered on our `_Ctx` and flushed in one transaction as before,
+    so every reader is unchanged. The per-key client cache now lives in the kit.
+    **Two deliberate behaviour changes:** retries OFF (the SDK retried twice silently —
+    one journalled call could be three billed attempts; the batch jobs' own loops are
+    the visible retries), and a FAILED call leaves a row (`ok=false`, zero tokens, the
+    error in meta). Verified live: counted create, counted stream, a bad-model call
+    that raised AND left its row, and a real `chapter_classify` (3,287 in / 34 out).
+    A false start worth remembering: "Brussels Sprouts" hit the classifier's keyword
+    shortcut and never called a model — the classifier working, my test not.
+  - **Phase 2 (not started):** the nine direct callers onto the gateway — one line
+    each for the Anthropic ones plus deleting their hand-rolled journalling; the three
+    OpenAI paths need the kit's `openai_images`/chat, and speech + transcription are
+    not in the kit yet. `identity_card` needs a gateway context opened on the save
+    path. Then pricing (`prices=`), so the ledger reports dollars.
+* **Postgres + BAILEY (curator: "bite the bullet").** Groundwork from August stands:
+  step-0 DB factory shipped, inventory done, big-bang plan rehearsed on BAILEY,
+  stalled at go/no-go. Do them as ONE move: cut recipes over to BAILEY first (still
+  pending from 09-15), then Postgres ON BAILEY's 18. **Order is forced:** MARLEY runs
+  PG 17, BAILEY 18, and a 17 dump restores into 18 but not the reverse — the migration
+  lands on BAILEY directly, never through MARLEY. Wants a planning session: sequence
+  matters more than code.
+* Restart owed again (image upload paths, the gateway's request paths).
+* **Open:** S3 keys from the curator → verify · llmkit phase 2 · Postgres+BAILEY
+  planning session · the 11k-JPEG → WebP backfill · imagekit's browser half (image-
+  well.js) · orphan-thumb nightly sweep · rclone client ID · Yogurt / Smoothie ·
+  Williams Sonoma's last 7 screenshots · carried items.
