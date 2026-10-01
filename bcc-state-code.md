@@ -10690,10 +10690,50 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   against is covered. **Dropped (`3e3fa61`, curator: "drop the manifest").** Callers
   still pass `meta=`; accepted and ignored. The local file stays on disk, untouched; the
   two-line copy in the bucket is inert.
+* **Manifest purge, in full (`9c8cc4d`, curator: "do a detailed job").** Code: `coopt_image`
+  lost `manifest_meta`, the screenshot path its meta dict, `image_store.py` is now the
+  kit's `Store` + the one-process factory + the legacy env-name map (75 lines). Data:
+  audited the 13,587-line file against the DB first — 11,051 of 13,575 files referenced
+  by a recipe / master / dish row; 2,524 entries for files no row references (deleted or
+  refreshed recipes; 494 still on disk, 488 of them legacy `recipe-screens/` from before
+  media.db — NOT deleted, listed only); 229 DB-referenced files it never had. It knew
+  nothing the rows do not. Archived to `logs/image_manifest_retired_2026-10-01.jsonl.gz`
+  (local), deleted; both mirrors are sync/MIR so ADAM and Drive drop it tonight; the
+  two-line copy in the bucket waits on `s3:DeleteObject`.
+* **"Why such a diff between f2n and bcc" — read both, side by side.** The identical
+  part (decode → validate → resize → encode; env → client → put/get/exists/url) is now
+  the kit, and that is ~half of each app's image code. The rest differs for FOUR reasons,
+  three legitimate and one not:
+  1. *What is kept.* f2n preserves the ORIGINAL untouched (its spec's invariant 7) and
+     writes derivatives beside it, so a re-crop or a new width is a re-derive with no
+     spend; recipes keeps only the 1500×1000 derived copy and discards the source — a
+     coopted third-party photo is a thumbnail by policy, not an archive. Legitimate.
+  2. *Where it comes from.* f2n: uploads, URL import with redirect checks, AI-generated
+     mnemonics, face detection for the crop. Recipes: scraped `og:image` behind an
+     unblocker fallback, and Playwright screenshots. Different inputs, different
+     ingest code. Legitimate.
+  3. *Who serves it.* f2n serves through its own endpoint with a local cache that
+     hydrates from S3 on a miss, because latency is its product (a timed game);
+     recipes hands the browser the store's public URL. Cheaper, fine for a card.
+     Legitimate.
+  4. *What the row holds.* **This one is not.** f2n's row holds a LOGICAL KEY
+     (content hash); the URL is built in ONE function at serve time and carries the
+     derive settings, so moving to S3 took "no migration and no column" and a
+     re-derive reaches the browser through the year-long cache. Recipes writes the
+     store's PUBLIC URL into the recipe JSON at coopt time — **11,254 master rows
+     carry a literal `/generated/og-thumbs/…` path** — and nine files know that shape.
+     The backend's address is baked into the data, which is exactly why "turn S3 on"
+     could only cover NEW images and why the 11k backfill must rewrite rows. Recipes'
+     was written 05-28 as a dev utility with "S3 later"; f2n's in August against a
+     spec with invariants. **Recommendation:** when the backfill runs, fold the fix
+     in — store the key, build the URL in one place (`url_for`) at read time — so the
+     JPEG→WebP, local→S3 and URL-shape changes are one row rewrite, not three.
 * Restart still owed (`bcc_restart.bat`): the running server is the 09-19 process, so
   form uploads, screenshots from the UI and the gateway's request paths are on the old
   code; jobs already use the new.
-* **Open:** `s3:DeleteObject` for bcc-app + delete the probe · f2n
+* **Open:** `s3:DeleteObject` for bcc-app + delete the probe and the bucket manifest ·
+  488 legacy `recipe-screens/` files (listed, not deleted) · key-not-URL in the row,
+  folded into the backfill · f2n
   onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning session · the
   11k-JPEG → WebP/S3 backfill · imagekit's browser half · orphan-thumb nightly sweep ·
   rclone client ID · Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
