@@ -1,356 +1,142 @@
-"""Backend-agnostic image storage for cooped previews + AI-generated tiles + page screenshots.
+"""Where cooped previews, AI-generated tiles and page screenshots live.
 
-Two backends:
-  - LocalStore: writes to forms/generated/ on local disk, served by the
-    existing /generated static mount. Dev-friendly and zero config.
-  - S3Store: uploads to an S3 bucket via boto3 + returns the public URL.
-    Production-friendly, scales with traffic, doesn't bottleneck on the
-    home machine. Needs AWS credentials (AWS_ACCESS_KEY_ID +
-    AWS_SECRET_ACCESS_KEY) and a bucket name (BCC_S3_BUCKET).
+The backends - a local folder served by `/generated`, or the S3 bucket -
+are imagekit's (`imagekit.storage`, adopted 2026-10-01). Two apps had each
+written that layer and each copy had a bug the other lacked: this one read an
+env name its own docs did not use and fell silently to local for months; f2n
+had the Windows trust-store workaround this host needs. The kit owns the
+config resolution, the client, the retry/timeout posture, the no-ACL rule and
+the loud failure when S3 is asked for without a bucket. See its docstring.
 
-Backend selection is config-driven (`image_store_backend` in
-bcc_config.json, default "local"). Code that calls get_image_store()
-gets back the right backend with no awareness of which one is active —
-the only contract is `.put(key, bytes, content_type)` returns a URL
-the recipe can store and the form can display.
+What stays HERE, because it is this app's and not the kit's:
+
+  * the manifest - an append-only JSONL beside the files (`_manifest.jsonl`)
+    recording every put with the caller's meta (source_url, recipe_id, ...),
+    so the file -> recipe mapping survives the database;
+  * the `put(key, data, content_type, meta=)` signature the six callers use;
+  * one process-wide store, built once.
+
+Configuration is `.env`, under the kit's names with the app prefix:
+
+    BCC_IMAGE_STORE=local|s3     (the older BCC_IMAGE_STORE_BACKEND still works)
+    BCC_S3_BUCKET, BCC_S3_REGION, BCC_S3_PREFIX, BCC_S3_PUBLIC_BASE_URL
+    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 
 Key shape (single source of truth across backends):
-  recipe-thumbs/<recipe_id>.jpg     — per-recipe preview thumbnails
-  og-thumbs/<sha8>.jpg               — content-hashed for reuse across recipes
-  generated/<name>.png               — AI-generated dish images
-
-All thumbnails are JPEG q=85, EXIF stripped, capped at a max width so
-the storage footprint stays small (~30KB each). Pillow handles the
-processing; pillow_processor.py wraps the pipeline.
+  og-thumbs/<hash>.webp          - cooped thumbnails (older ones are .jpg)
+  recipe-thumbs/<recipe_id>.webp - per-recipe previews
+  generated/<name>.webp|png      - AI-generated dish images
+  screenshots/...                - page screenshots
 """
 from __future__ import annotations
 
+import json
 import os
-from pathlib import Path
+import threading
+from datetime import datetime, timezone
 from typing import Optional, Protocol
 
+from imagekit import storage as _storage
+from imagekit.storage import LocalStore, S3Store, StoreError  # noqa: F401  (re-exported)
 
-# === Configuration ==========================================================
-# Read from bcc_config.json with env-var override. The env-var path is
-# the production-friendly one (set in the deploy environment, not in a
-# checked-in config file).
+_PREFIX = "BCC"
+_MANIFEST_NAME = "_manifest.jsonl"
 
-def _config_value(key: str, default: str) -> str:
-    """Try env var first, then bcc_config.json, then default. Env wins
-    so production deploys don't have to edit config files."""
-    # The documented env names are the SHORT ones (BCC_S3_BUCKET, BCC_S3_REGION,
-    # BCC_S3_KEY_PREFIX, BCC_S3_PUBLIC, BCC_S3_PUBLIC_BASE_URL - see get_image_store
-    # and the module docstring). The resolver only ever looked for the full
-    # config key with BCC_ in front (BCC_IMAGE_STORE_S3_BUCKET), so a correctly
-    # written .env fell through to "bucket unset" and LocalStore - found the day
-    # the first bucket was created (2026-10-01). Both spellings are accepted.
-    candidates = ["BCC_" + key.upper()]
-    if key.startswith("image_store_"):
-        candidates.append("BCC_" + key[len("image_store_"):].upper())
-    for env_name in candidates:
-        env_val = os.environ.get(env_name)
-        if env_val:
-            return env_val
-    try:
-        from input.pipeline.config import _load_bcc_config
-        cfg = _load_bcc_config()
-        if cfg.get(key) is not None:
-            return str(cfg[key])
-    except Exception:
-        pass
-    return default
+# The names this app used before the kit's. Mapped once, at import, so one
+# .env keeps working across the switch; the kit never sees the old names.
+_LEGACY_ENV = {
+    "BCC_IMAGE_STORE_BACKEND": "BCC_IMAGE_STORE",
+    "BCC_S3_KEY_PREFIX": "BCC_S3_PREFIX",
+    "BCC_IMAGE_STORE_LOCAL_ROOT": "BCC_LOCAL_ROOT",
+    "BCC_IMAGE_STORE_LOCAL_PUBLIC_PREFIX": "BCC_LOCAL_PUBLIC_PREFIX",
+}
 
 
-# === Protocol ===============================================================
+def _map_legacy_env() -> None:
+    for old, new in _LEGACY_ENV.items():
+        if os.environ.get(old) and not os.environ.get(new):
+            os.environ[new] = os.environ[old]
 
 
 class ImageStore(Protocol):
     """A backend that takes bytes + a key, returns a public URL."""
 
-    def put(self, key: str, data: bytes,
-            content_type: str = "image/jpeg",
+    def put(self, key: str, data: bytes, content_type: str = "image/webp",
             meta: Optional[dict] = None) -> str: ...
-
     def url_for(self, key: str) -> str: ...
-
     def exists(self, key: str) -> bool: ...
-
     def delete(self, key: str) -> None: ...
 
 
-# Manifest file: append-only JSONL written next to the stored files
-# (LocalStore) or as an S3 object (S3Store) so that if the recipes
-# DB is ever blown up, the file → recipe mapping is recoverable from
-# the storage backend alone. Each line is one put().
-#
-# Schema per line:
-#   {"file": "og-thumbs/abc.jpg",
-#    "url":  "/generated/og-thumbs/abc.jpg",
-#    "ts":   "2026-05-28T16:42:00Z",
-#    "meta": {... whatever the caller passed: source_url, recipe_id, …}}
-#
-# Append-only; nothing prunes it. At our scale (354 recipes × maybe
-# 2-3 artifacts each = ~1000 lines, ~200KB) it never gets big.
-_MANIFEST_NAME = "_manifest.jsonl"
-
-
-def _manifest_line(key: str, public_url: str,
-                    meta: Optional[dict]) -> str:
-    import json as _json
-    from datetime import datetime as _dt, timezone as _tz
-    entry = {
-        "file": key,
-        "url":  public_url,
-        "ts":   _dt.now(_tz.utc).isoformat(),
-    }
+def _manifest_line(key: str, public_url: str, meta: Optional[dict]) -> str:
+    entry = {"file": key, "url": public_url, "ts": datetime.now(timezone.utc).isoformat()}
     if meta:
         entry["meta"] = meta
-    return _json.dumps(entry, ensure_ascii=False) + "\n"
+    return json.dumps(entry, ensure_ascii=False) + "\n"
 
 
-# === LocalStore ============================================================
+class ManifestStore:
+    """imagekit's store plus this app's manifest. Every put appends one line;
+    the manifest itself is recovery-oriented, never read-hot, so on S3 it is a
+    get-append-put of a small file and a failure to write it only logs."""
 
+    def __init__(self, inner):
+        self.inner = inner
+        self._lock = threading.Lock()
 
-class LocalStore:
-    """Writes to forms/generated/<key> and serves via the existing
-    /generated static mount. Public URL is the relative path under
-    the app origin — callers compose with the host as needed.
-
-    bcc_config option: `image_store_local_root` (default
-    "forms/generated"). bcc_config option: `image_store_public_prefix`
-    (default "/generated") — must match the FastAPI static mount.
-    """
-
-    def __init__(self, root: str = "generated",
-                 public_prefix: str = "/generated"):
-        self.root = Path(root)
-        self.public_prefix = public_prefix.rstrip("/")
-        self.root.mkdir(parents=True, exist_ok=True)
-
-    def _path_for(self, key: str) -> Path:
-        # Defensive: refuse path-traversal keys.
-        safe = key.replace("\\", "/").lstrip("/")
-        if ".." in safe.split("/"):
-            raise ValueError(f"unsafe key: {key!r}")
-        full = self.root / safe
-        full.parent.mkdir(parents=True, exist_ok=True)
-        return full
-
-    def put(self, key: str, data: bytes,
-            content_type: str = "image/jpeg",
+    def put(self, key: str, data: bytes, content_type: str = "image/webp",
             meta: Optional[dict] = None) -> str:
-        path = self._path_for(key)
-        path.write_bytes(data)
-        url = self.url_for(key)
+        url = self.inner.put(key, data, content_type=content_type)
         try:
-            manifest_path = self.root / _MANIFEST_NAME
-            with manifest_path.open("a", encoding="utf-8") as fh:
-                fh.write(_manifest_line(key, url, meta))
-        except Exception as e:
-            print(f"[image_store/local] manifest append failed: {e}")
+            self._append_manifest(_manifest_line(key, url, meta))
+        except Exception as e:  # noqa: BLE001
+            print(f"[image_store] manifest append failed: {e}")
         return url
 
-    def url_for(self, key: str) -> str:
-        safe = key.lstrip("/")
-        return f"{self.public_prefix}/{safe}"
-
-    def exists(self, key: str) -> bool:
-        try:
-            return self._path_for(key).exists()
-        except Exception:
-            return False
-
-    def delete(self, key: str) -> None:
-        try:
-            p = self._path_for(key)
-            if p.exists():
-                p.unlink()
-        except Exception:
-            pass
-
-
-# === S3Store ===============================================================
-
-
-class S3Store:
-    """Uploads bytes to an S3 bucket. Public-read bucket (or a
-    CloudFront distribution in front) so URLs are openable without
-    signing. Falls back to presigned URLs when public-read is off
-    (set `image_store_s3_public=false` in config).
-
-    Required config:
-      - BCC_S3_BUCKET (env) or `image_store_s3_bucket` (bcc_config.json)
-    Optional:
-      - BCC_S3_REGION / `image_store_s3_region` (default boto3 default)
-      - BCC_S3_KEY_PREFIX / `image_store_s3_key_prefix` (default "" — all
-        objects sit at the bucket root; set to e.g. "bcc/" to share a
-        bucket with other apps)
-      - BCC_S3_PUBLIC / `image_store_s3_public` (default true — public
-        URLs; set false to get presigned)
-      - BCC_S3_PUBLIC_BASE_URL — when set, used as the URL prefix
-        (CDN/CloudFront domain). When unset, falls back to the
-        s3.amazonaws.com path-style URL.
-
-    Credentials come from the standard boto3 chain: env vars
-    (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), shared credentials
-    file (~/.aws/credentials), IAM role on EC2, etc.
-    """
-
-    def __init__(self, *,
-                 bucket: str,
-                 region: Optional[str] = None,
-                 key_prefix: str = "",
-                 public: bool = True,
-                 public_base_url: Optional[str] = None):
-        import boto3
-        self.bucket = bucket
-        self.key_prefix = key_prefix.lstrip("/").rstrip("/") + "/" if key_prefix else ""
-        self.public = public
-        self.public_base_url = (public_base_url or "").rstrip("/") or None
-        self.region = region
-        self._client = boto3.client("s3", region_name=region) if region else boto3.client("s3")
-
-    def _full_key(self, key: str) -> str:
-        return f"{self.key_prefix}{key.lstrip('/')}"
-
-    def put(self, key: str, data: bytes,
-            content_type: str = "image/jpeg",
-            meta: Optional[dict] = None) -> str:
-        full_key = self._full_key(key)
-        extra_args = {
-            "ContentType": content_type,
-            "CacheControl": "public, max-age=31536000, immutable",
-        }
-        # No per-object ACL. Buckets created since 2023 default to "bucket owner
-        # enforced": ACLs are disabled and a PutObject carrying one is REFUSED
-        # (AccessControlListNotSupported - bccv02, 2026-10-01). Public reads come
-        # from the bucket POLICY (a GetObject grant to *), which is also the
-        # better model: one place says what is public, not every upload. A
-        # legacy bucket that still relies on ACLs can set BCC_S3_OBJECT_ACL=public-read.
-        _acl = os.environ.get("BCC_S3_OBJECT_ACL", "").strip()
-        if self.public and _acl:
-            extra_args["ACL"] = _acl
-        self._client.put_object(
-            Bucket=self.bucket,
-            Key=full_key,
-            Body=data,
-            **extra_args,
-        )
-        url = self.url_for(key)
-        # Manifest append via a read-modify-write GET/PUT roundtrip.
-        # At our volume (a few thousand entries) this is fast enough
-        # and S3-eventually-consistent reads are OK since the manifest
-        # is recovery-oriented, not read-hot.
-        try:
-            import json as _json
-            manifest_key = self._full_key(_MANIFEST_NAME)
-            existing = b""
-            try:
-                obj = self._client.get_object(Bucket=self.bucket, Key=manifest_key)
-                existing = obj["Body"].read()
-            except Exception:
-                pass  # first put — no manifest yet
-            new_line = _manifest_line(key, url, meta).encode("utf-8")
-            self._client.put_object(
-                Bucket=self.bucket,
-                Key=manifest_key,
-                Body=existing + new_line,
-                ContentType="application/jsonl",
-                # Manifest is NOT cache-immutable — it grows on every put.
-                CacheControl="no-cache",
-                **({"ACL": _acl} if (self.public and _acl) else {}),
-            )
-        except Exception as e:
-            print(f"[image_store/s3] manifest update failed: {e}")
-        return url
+    def _append_manifest(self, line: str) -> None:
+        if isinstance(self.inner, LocalStore):
+            with (self.inner.root / _MANIFEST_NAME).open("a", encoding="utf-8") as fh:
+                fh.write(line)
+            return
+        with self._lock:
+            existing = self.inner.get(_MANIFEST_NAME) or b""
+            # Not cache-immutable: it grows on every put.
+            self.inner.put(_MANIFEST_NAME, existing + line.encode("utf-8"),
+                           content_type="application/jsonl", cache_control="no-cache")
 
     def url_for(self, key: str) -> str:
-        full_key = self._full_key(key)
-        if self.public:
-            if self.public_base_url:
-                return f"{self.public_base_url}/{full_key}"
-            # path-style fallback (works with default public buckets)
-            if self.region and self.region != "us-east-1":
-                return f"https://s3.{self.region}.amazonaws.com/{self.bucket}/{full_key}"
-            return f"https://{self.bucket}.s3.amazonaws.com/{full_key}"
-        # presigned (1 day default)
-        return self._client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": self.bucket, "Key": full_key},
-            ExpiresIn=86400,
-        )
+        return self.inner.url_for(key)
 
     def exists(self, key: str) -> bool:
-        try:
-            self._client.head_object(
-                Bucket=self.bucket, Key=self._full_key(key)
-            )
-            return True
-        except Exception:
-            return False
+        return self.inner.exists(key)
 
     def delete(self, key: str) -> None:
-        try:
-            self._client.delete_object(
-                Bucket=self.bucket, Key=self._full_key(key)
-            )
-        except Exception:
-            pass
+        self.inner.delete(key)
+
+    def __repr__(self) -> str:
+        return f"ManifestStore({self.inner!r})"
 
 
-# === Factory ===============================================================
-
-
-_store: Optional[ImageStore] = None
+_store: Optional[ManifestStore] = None
+_store_lock = threading.Lock()
 
 
 def get_image_store() -> ImageStore:
-    """Return the configured image store, instantiating once.
-
-    Selection precedence: env `BCC_IMAGE_STORE_BACKEND` → bcc_config
-    `image_store_backend` → default 'local'. Setting it to 's3'
-    requires `BCC_S3_BUCKET` (or `image_store_s3_bucket` in config) to
-    be set; without it, falls back to LocalStore with a warning.
-    """
+    """The configured store, built once per process. Asking for S3 without a
+    bucket RAISES (the kit's rule): the old quiet fall-back to local is how new
+    pictures lived on one disk for months with nothing in any log."""
     global _store
-    if _store is not None:
-        return _store
-
-    backend = _config_value("image_store_backend", "local").strip().lower()
-
-    if backend == "s3":
-        bucket = _config_value("image_store_s3_bucket", "")
-        if not bucket:
-            print("[image_store] backend=s3 but BCC_S3_BUCKET unset — "
-                  "falling back to LocalStore")
-            backend = "local"
-
-    if backend == "s3":
-        region = _config_value("image_store_s3_region", "") or None
-        key_prefix = _config_value("image_store_s3_key_prefix", "")
-        public_str = _config_value("image_store_s3_public", "true").strip().lower()
-        public = public_str not in ("false", "0", "no")
-        public_base = _config_value("image_store_s3_public_base_url", "") or None
-        try:
-            _store = S3Store(
-                bucket=bucket, region=region, key_prefix=key_prefix,
-                public=public, public_base_url=public_base,
-            )
-            print(f"[image_store] using S3Store bucket={bucket!r} "
-                  f"region={region!r} prefix={key_prefix!r}")
-        except Exception as e:
-            print(f"[image_store] S3Store init failed: {e} — using LocalStore")
-            _store = LocalStore()
-    else:
-        root = _config_value("image_store_local_root", "generated")
-        prefix = _config_value("image_store_local_public_prefix", "/generated")
-        _store = LocalStore(root=root, public_prefix=prefix)
-        print(f"[image_store] using LocalStore root={root!r} prefix={prefix!r}")
-
+    if _store is None:
+        with _store_lock:
+            if _store is None:
+                _map_legacy_env()
+                inner = _storage.from_env(_PREFIX)
+                print(f"[image_store] using {inner!r}")
+                _store = ManifestStore(inner)
     return _store
 
 
 def reset_image_store_for_test() -> None:
-    """Test hook — drop the cached store so a re-init picks up new env."""
+    """Test hook - drop the cached store so a re-init picks up new env."""
     global _store
     _store = None
