@@ -10644,3 +10644,55 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   planning session · the 11k-JPEG → WebP backfill · imagekit's browser half (image-
   well.js) · orphan-thumb nightly sweep · rclone client ID · Yogurt / Smoothie ·
   Williams Sonoma's last 7 screenshots · carried items.
+
+## Session log — 2026-10-01 — S3 is ON and verified end to end; imagekit grows a storage module and recipes runs on it; the manifest has no reader
+
+* **S3 live (`0423a67`, then verified).** The curator created `bccv02` (us-east-1, SSE-S3,
+  versioning off, Object Lock off, public access block OFF so a bucket policy can grant
+  anonymous GetObject), IAM user `bcc-app` with a bucket-scoped inline policy and no
+  console, and five `.env` lines. Three things stood between that and a working store:
+  the resolver read `BCC_IMAGE_STORE_S3_BUCKET` while the docs said `BCC_S3_BUCKET`
+  (both now accepted); PutObject carried `ACL=public-read`, which a 2023+ bucket REFUSES
+  (`AccessControlListNotSupported`) — dropped; anonymous reads were 403 until the
+  bucket POLICY granted GetObject to `*` (the curator pasted it into IAM first — "IDENTITY
+  _POLICY does not support Principal" — then into the bucket, then a missing brace).
+  Verified: fresh process selects S3Store; new coopt → `.webp` in the bucket; anonymous
+  GET 200 `image/webp` with the immutable cache header. Existing local files stay local
+  until the backfill; only NEW images go to S3.
+* **"imagekit should do the store too" — done (kit `5df7024`, recipes `641e181`).** The
+  kit's rule was "no storage"; the honest version was that the storage MODELS differ
+  (f2n: S3 is the record, local cache in front; recipes: URL in the row, manifest
+  beside the files) while the layer UNDER them — env → bucket → client → put with
+  content type and cache header → get → public URL — was written twice with different
+  bugs in each copy (ours fell silently to local for months on an env-name mismatch;
+  f2n carried the Windows trust-store workaround this hardware needs). `imagekit.storage`
+  now owns that layer: `from_env("BCC")` / `from_env("F2N")`, `LocalStore`, `S3Store`,
+  13 tests against a fake client, boto3 as an optional extra. Rules with reasons in its
+  docstring: s3-without-bucket RAISES (never a quiet fall-back); no per-object ACL (the
+  bucket policy is the one place that says what is public); writes fail loudly, reads
+  softly; bounded retries + connect timeout; OS certificate store on Windows. Recipes'
+  `image_store.py` went 356 → 130 lines: the manifest, the `meta=` signature and the
+  one-process store stay; the old `.env` names are mapped to the kit's at import so
+  nothing in `.env` had to change. Verified again on `bccv02` through the kit, including
+  a real `coopt_image` → WebP → bucket → anonymous read. **f2n not yet moved** onto it
+  (its `object_store.py` is the next consumer; its own tests should pass unchanged).
+* **Surfaced by the kit's logging where the old code swallowed it:** `bcc-app` has no
+  `s3:DeleteObject`. `delete()` is a no-op on S3 until the inline policy grants it; the
+  orphan-thumb sweep will need it. One 5-byte probe object (`og-thumbs/_storage_probe_
+  *.txt`) sits in the bucket because of this — delete it after the grant.
+* **The manifest (curator: "I don't recall needing it").** Added 2026-05-28 at the
+  curator's own request — file → recipe traceability if the DB link were lost. **Nothing
+  reads it**: no script, job or doc consumes `_manifest.jsonl`; the 09-30 orphan sweep
+  found its orphans from the DB, not from it. Locally it is 13,587 lines / 3.7 MB. On
+  S3 every put is a get-append-put of the whole file, so it grows linearly in cost per
+  upload. The recipe row already holds the URL, the og-thumb key is the hash of a URL
+  in the row, and the DB is backed up three ways nightly — the scenario it insures
+  against is covered. Recommend dropping it (one class in `image_store.py`); kept in
+  this commit pending the word.
+* Restart still owed (`bcc_restart.bat`): the running server is the 09-19 process, so
+  form uploads, screenshots from the UI and the gateway's request paths are on the old
+  code; jobs already use the new.
+* **Open:** manifest decision · `s3:DeleteObject` for bcc-app + delete the probe · f2n
+  onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning session · the
+  11k-JPEG → WebP/S3 backfill · imagekit's browser half · orphan-thumb nightly sweep ·
+  rclone client ID · Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
