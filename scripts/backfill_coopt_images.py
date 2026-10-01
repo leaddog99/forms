@@ -63,7 +63,8 @@ OG_THUMBS_DIR = PROJECT_ROOT / "generated" / "og-thumbs"
 def _is_local_url(u: str) -> bool:
     """True when the URL points at our own image store (already
     cooped). Used so --force gates re-cooping our own thumbnails."""
-    return u.startswith("/generated/") or u.startswith("/og-thumbs/")
+    from input.pipeline.image_store import is_ours
+    return is_ours(u)
 
 
 def _pick_source(d: dict) -> str:

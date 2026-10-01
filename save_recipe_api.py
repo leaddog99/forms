@@ -14236,7 +14236,11 @@ def extract_recipe_from_url(
         # path (the JSON-LD fast lane is skipped for translation), which is one of
         # the paths that pre-fills previewImage.
         _prev = (src.get("previewImage") or "").strip()
-        _ours = ("/generated/" in _prev) or _prev.startswith("/screenshot/")
+        # "Ours" is whatever the store serves - /generated/ in the local days,
+        # the bucket now. Checking for "/generated/" alone made every S3-hosted
+        # hero look foreign on re-extract and coopted it again under a new hash.
+        from input.pipeline.image_store import is_ours as _store_is_ours
+        _ours = _store_is_ours(_prev)
         _coopt_target = _prev if (_prev and not _ours) else og_image_url
         if _coopt_target and not _ours:
             try:

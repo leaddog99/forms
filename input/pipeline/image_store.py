@@ -74,6 +74,22 @@ def get_image_store() -> ImageStore:
     return _store
 
 
+def is_ours(url: str) -> bool:
+    """True when `url` points into our own store - local mount or the bucket -
+    so a re-extract keeps it instead of coopting our own copy into a second
+    object under a new hash. Any backend the app has ever used counts: a row
+    written in the local days still says /generated/... after S3 is on."""
+    u = (url or "").strip()
+    if not u:
+        return False
+    if u.startswith("/generated/") or u.startswith("/og-thumbs/") or u.startswith("/screenshot/"):
+        return True
+    try:
+        return u.startswith(get_image_store().base_url())
+    except Exception:  # noqa: BLE001  - unconfigured store: only the local shapes count
+        return False
+
+
 def reset_image_store_for_test() -> None:
     """Test hook - drop the cached store so a re-init picks up new env."""
     global _store
