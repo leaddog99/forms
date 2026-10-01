@@ -8,13 +8,16 @@ had the Windows trust-store workaround this host needs. The kit owns the
 config resolution, the client, the retry/timeout posture, the no-ACL rule and
 the loud failure when S3 is asked for without a bucket. See its docstring.
 
-What stays HERE, because it is this app's and not the kit's:
+What stays HERE: the `put(key, data, content_type, meta=)` signature the six
+callers use, and one process-wide store, built once.
 
-  * the manifest - an append-only JSONL beside the files (`_manifest.jsonl`)
-    recording every put with the caller's meta (source_url, recipe_id, ...),
-    so the file -> recipe mapping survives the database;
-  * the `put(key, data, content_type, meta=)` signature the six callers use;
-  * one process-wide store, built once.
+The manifest is gone (2026-10-01, curator: "drop the manifest"). From
+2026-05-28 every put appended a line to `_manifest.jsonl` so the file ->
+recipe mapping could be recovered without the database. Nothing ever read it;
+the recipe row holds the URL, the og-thumb key is the hash of a URL in that
+row, and the database is backed up nightly three ways. On S3 it had become a
+get-append-put of a growing file on every upload. The local file
+(`generated/_manifest.jsonl`, 13,587 lines) is left on disk, not deleted.
 
 Configuration is `.env`, under the kit's names with the app prefix:
 
@@ -30,19 +33,16 @@ Key shape (single source of truth across backends):
 """
 from __future__ import annotations
 
-import json
 import os
 import threading
-from datetime import datetime, timezone
 from typing import Optional, Protocol
 
 from imagekit import storage as _storage
 from imagekit.storage import LocalStore, S3Store, StoreError  # noqa: F401  (re-exported)
 
 _PREFIX = "BCC"
-_MANIFEST_NAME = "_manifest.jsonl"
 
-# The names this app used before the kit's. Mapped once, at import, so one
+# The names this app used before the kit's. Mapped once, at first use, so one
 # .env keeps working across the switch; the kit never sees the old names.
 _LEGACY_ENV = {
     "BCC_IMAGE_STORE_BACKEND": "BCC_IMAGE_STORE",
@@ -68,41 +68,17 @@ class ImageStore(Protocol):
     def delete(self, key: str) -> None: ...
 
 
-def _manifest_line(key: str, public_url: str, meta: Optional[dict]) -> str:
-    entry = {"file": key, "url": public_url, "ts": datetime.now(timezone.utc).isoformat()}
-    if meta:
-        entry["meta"] = meta
-    return json.dumps(entry, ensure_ascii=False) + "\n"
-
-
-class ManifestStore:
-    """imagekit's store plus this app's manifest. Every put appends one line;
-    the manifest itself is recovery-oriented, never read-hot, so on S3 it is a
-    get-append-put of a small file and a failure to write it only logs."""
+class AppStore:
+    """imagekit's store under this app's signature. `meta` is accepted and
+    ignored: the callers still pass source_url / recipe_id from the manifest
+    days, and those values already live in the recipe row."""
 
     def __init__(self, inner):
         self.inner = inner
-        self._lock = threading.Lock()
 
     def put(self, key: str, data: bytes, content_type: str = "image/webp",
             meta: Optional[dict] = None) -> str:
-        url = self.inner.put(key, data, content_type=content_type)
-        try:
-            self._append_manifest(_manifest_line(key, url, meta))
-        except Exception as e:  # noqa: BLE001
-            print(f"[image_store] manifest append failed: {e}")
-        return url
-
-    def _append_manifest(self, line: str) -> None:
-        if isinstance(self.inner, LocalStore):
-            with (self.inner.root / _MANIFEST_NAME).open("a", encoding="utf-8") as fh:
-                fh.write(line)
-            return
-        with self._lock:
-            existing = self.inner.get(_MANIFEST_NAME) or b""
-            # Not cache-immutable: it grows on every put.
-            self.inner.put(_MANIFEST_NAME, existing + line.encode("utf-8"),
-                           content_type="application/jsonl", cache_control="no-cache")
+        return self.inner.put(key, data, content_type=content_type)
 
     def url_for(self, key: str) -> str:
         return self.inner.url_for(key)
@@ -114,10 +90,10 @@ class ManifestStore:
         self.inner.delete(key)
 
     def __repr__(self) -> str:
-        return f"ManifestStore({self.inner!r})"
+        return f"AppStore({self.inner!r})"
 
 
-_store: Optional[ManifestStore] = None
+_store: Optional[AppStore] = None
 _store_lock = threading.Lock()
 
 
@@ -132,7 +108,7 @@ def get_image_store() -> ImageStore:
                 _map_legacy_env()
                 inner = _storage.from_env(_PREFIX)
                 print(f"[image_store] using {inner!r}")
-                _store = ManifestStore(inner)
+                _store = AppStore(inner)
     return _store
 
 
