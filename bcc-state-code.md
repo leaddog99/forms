@@ -10760,7 +10760,25 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   `/recipes/{id}/generate-image`) and `/extract-from-image` write straight to
   `generated/` and never touch the store — they are local-only regardless of S3. The
   store is used by the extract-time coopt, the screenshot pipeline and the backfill.
-* **Open:** next restart picks up `is_ours` · the four direct-to-`generated/` routes onto the
+* **f2n onto `imagekit.storage` — done (f2n `239884a` on BAILEY, pushed; kit `f672abb`).**
+  Its `object_store.py` keeps every public name the app and its tests use — `config`,
+  `is_configured`, `object_key`, `put_file`, `get_bytes`, `exists`, `public_url`,
+  `is_publicly_readable`, `check`, the durability guard, `_s3`/`reset_client` as the
+  test seam — and the S3 mechanics underneath are the kit's `S3Store` over the module's
+  cached client. The kit grew `ca_bundle()` and `s3_client()` as public names because
+  f2n's Polly client and its `head_bucket` health check want the same trust-store and
+  retry posture; `tts.py` now imports the bundle from the kit. BAILEY's imagekit clone
+  pulled forward over the share (it was at `147efc1`, before `storage` existed).
+  **Verified from MARLEY** (no WinRM on BAILEY): f2n copied to the scratchpad minus
+  `.venv`/`data`/`.env`, a throwaway venv with the four kits, `tests/unit/
+  test_object_store.py` + `test_durability_guard.py` = 15 passed against the new
+  module; the pre-commit hook (ruff F821/F822/F811/E9 via BAILEY's venv python, which
+  runs from here on the same 3.13 base) ran and passed on the commit. **Not run:** the
+  rest of f2n's suite (needs fsrs/lameenc/yaml and Postgres) — curator runs `pytest`
+  on BAILEY before f2n's next restart. One deliberate difference kept: f2n's "no bucket
+  = local-only" (its DB-backed guard is the loud version) versus the kit's
+  `from_env` which raises; f2n does not call `from_env`.
+* **Open:** `pytest` on BAILEY + f2n restart · next restart here picks up `is_ours` · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
