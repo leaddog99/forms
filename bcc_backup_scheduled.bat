@@ -67,7 +67,14 @@ REM closes DR gap G2 — the fire scenario previously lost all three).
 REM env.backup stays OFF the cloud by policy (plaintext keys; the offsite
 REM key copy is the password manager). Training uses a 2-day age window
 REM so the cloud holds the newest copy or two, not the whole dated trail.
-"C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\forms-mirror" "gdrive:BCC-Backups/forms-mirror" --stats-one-line >> backup.log 2>&1
+REM og-thumbs EXCLUDED from the cloud tier (2026-09-30): 13,261 files / 3.1 GB of
+REM regenerable publisher thumbnails (re-cooped from the source pages), 93% of
+REM the mirror's bulk. Listing a directory that size trips Google Drive's query
+REM quota and rclone then retries for HOURS - the 09-19 and 09-29 runs were
+REM killed at the task's time limit with the core work long done. The ADAM
+REM mirror above still carries them. The user hero uploads live elsewhere in
+REM generated\ and stay in the cloud copy. Retries are bounded for the same reason.
+"C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\forms-mirror" "gdrive:BCC-Backups/forms-mirror" --exclude "generated/og-thumbs/**" --retries 2 --low-level-retries 5 --stats-one-line >> backup.log 2>&1
 echo cloud mirror exit code: %ERRORLEVEL% >> backup.log
 "C:\Users\john\bin\rclone.exe" sync "\\Adam\tbotb\Backups\recipes-db" "gdrive:BCC-Backups/db-latest" --include "media_latest.db" --include "training_*.db" --max-age 2d --delete-excluded --stats-one-line >> backup.log 2>&1
 echo cloud media/training exit code: %ERRORLEVEL% >> backup.log

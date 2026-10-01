@@ -10502,3 +10502,63 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   the six public-pages decisions + closing the open recipe API · ask-the-library design
   · BAILEY-side backup check · carried: twin-dish descriptions, Utility Knife
   conflation, unscored winners missing from the dish page, SERP breaker/queue.
+
+## Session log — 2026-09-30 — the offsite mirror's time bomb; 13k "thumbnails" that are print-size JPEGs; imagekit exists on BAILEY and recipes does not use it
+
+* **Backups since 09-23 (curator: "did the backups have issues"):** core work succeeded
+  every night — dump verified, ADAM copy, BAILEY sync clean. The watcher emailed twice:
+  09-23 (a false alarm, fixed that day) and **09-29, real**: Windows killed the backup
+  task at its 2-hour limit. The core work was done by 03:07; the project-folder mirror
+  to Google Drive then hit Drive's query quota and rclone sat RETRYING UNTIL 11:42 —
+  its retry had just succeeded as the kill arrived. Nothing lost (the mirror ran clean
+  the night before and after), but the same thing killed 09-19, and raising the limit
+  only hides it.
+* **Cause: `generated/og-thumbs`** — 13,261 files, 3.1 GB, 93% of the mirror's bulk.
+  Listing a Drive directory that size trips the quota. **Excluded from the cloud tier**
+  (`--exclude "generated/og-thumbs/**"`, retries bounded to 2 / low-level 5) in
+  `bcc_backup_scheduled.bat`; the ADAM mirror still carries them. The exclusion alone
+  was not enough: the files were already IN the Drive copy and rclone must LIST the
+  remote folder to decide deletes — even a dry run was rate-limited. **Purged the Drive
+  folder once, throttled** (`rclone purge … --tpslimit 4`): 13,268 objects, 2.97 GB,
+  done. Tonight's mirror runs against a small folder.
+* **"Why do we have so many thumbs… we only have 12k recipes":** the COUNT is right —
+  11,183 referenced, one per recipe (keyed by the source image URL, so shared photos
+  share a file) — plus **2,078 ORPHANS** from deleted/refreshed recipes that nothing
+  cleans up (0.5 GB). Re-verified against the live DB, then **deleted** (list:
+  `logs/og_thumb_orphans_2026-09-30.json`, local). 11,183 files left = the referenced
+  set exactly. **The SIZE is the real finding:** these are not thumbnails — every one is
+  a 1500×1000 "cookbook-grade" JPEG, median 230 KB, the print-ready bucket. A display
+  thumbnail at ~400 px would be ~a tenth. Curator asked about WebP: no, JPEG; WebP is
+  worth 25–35% at the same quality, dimensions are the bigger lever. Both are the same
+  decision — what the extract STORES — not made.
+* **Nothing cleans orphans up.** A refresh deletes recipe rows and leaves their files.
+  Worth a nightly sweep (the same referenced-set query); not built.
+* **"Are we using the new image subroutine?" — NO.** It is **`imagekit`**, a sibling repo
+  on BAILEY (`C:\Users\john\PycharmProjects\imagekit`, beside authkit/llmkit/voicekit —
+  the playbook's kit shape), built from f2n: inspect (header check, pixel-bomb cap,
+  format allow-list) + derive (never upscales, keeps alpha, strips EXIF, honours
+  orientation, **WebP by default**), no opinion about storage. The browser image-well
+  moved there 09-27 and f2n loads ONE copy. Its README names recipes as the app that
+  "had written it eight times, with quality values that disagreed." On MARLEY: not
+  installed, no copy of the repo, zero references; `image_pipeline.py` still encodes its
+  own JPEG at 85; the form still loads `forms/image-well.js`.
+  - **A written adoption plan is waiting:** `imagekit/docs/adopting-in-recipes.md`
+    (09-20, read-only look at recipes). Replace the BODY of `process_thumbnail` and both
+    callers follow; delete `_open_oriented`; wrap `ImageRejected` at the boundary; mount
+    the kit's static dir and drop our image-well.js. Three behaviour changes to decide:
+    quality converges to one number; `contain` stops upscaling (ours sometimes does);
+    a format allow-list appears. It also found the **S3 store is built but reads config
+    under the wrong names** (`BCC_S3_BUCKET` vs `.env`'s `S3_BUCKET`), so it has been
+    silently falling back to local files — two `.env` lines turn it on, and
+    `S3Store.put()` returns PUBLIC URLs, so be deliberate.
+  - Adopting it IS the thumbnail-size decision: the natural moment to pick a display
+    size + WebP. Needs the repo pulled to MARLEY and a recipes session.
+* **rclone's shared Google Drive client_id is being retired during 2026** (its own
+  NOTICE on every call). The offsite tier stops working at some point this year unless
+  we register our own client ID — an account task, not code.
+* **Open:** adopt imagekit (+ the three behaviour decisions, + S3 on/off) · orphan-thumb
+  nightly sweep · rclone client ID · Yogurt / Smoothie · Williams Sonoma's 7 remaining
+  screenshots (unblocker timeouts; one more nightly attempt each, then latched) · the
+  signed-in duplicate-warning round trip · Beef Shawarma's stamp · judgment-call pairs
+  · narrower-dish holes · strawberry dishes · public-pages decisions + the open API ·
+  ask-the-library design · BAILEY-side backup check · carried items.
