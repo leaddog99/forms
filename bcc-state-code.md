@@ -10741,7 +10741,27 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
 * **`s3:DeleteObject` granted** (curator, inline policy) and verified: the probe object and
   the bucket's manifest copy deleted, a put-then-delete round trip through the kit leaves
   nothing. The bucket now holds only real images.
-* **Open:** restart · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
+* **Restarted (16:30) and the form path verified on the live server:** `POST
+  /extract-from-url` for a fresh Serious Eats recipe → `[OG-IMAGE] cooped … →
+  https://bccv02.s3.amazonaws.com/og-thumbs/1625ff6712ec72ba.webp`, anonymous GET 200,
+  WebP 1500×1000. The server log shows `using S3Store` on first use. **Found and fixed
+  on the way (`88f2fdc`, kit `ede600c`):** the extract path judged "already ours" by the
+  substring `/generated/`, so with S3 on every bucket-hosted hero looked foreign on
+  re-extract and would have been coopted AGAIN under a new hash. `image_store.is_ours()`
+  now asks the store for its `base_url()` and also accepts the three historical local
+  shapes; the coopt backfill uses the same function. Not yet in the running server
+  (needs the next restart; harmless until a bucket-hosted recipe is re-extracted).
+  **Also confirmed for the curator ("the word generated worries me"):** the purge
+  touched only `_manifest.jsonl` and 488 files INSIDE `generated/recipe-screens/`
+  (every deleted name is in the log, all screenshot-shaped). The 553 top-level files —
+  50 AI-generated `<uuid>.*`, 502 `upload_*` — are intact, oldest from 05-26, and every
+  top-level file a row references is on disk (0 missing).
+  **Note for the backfill:** the three hero upload routes (`/images`, `/images/fetch`,
+  `/recipes/{id}/generate-image`) and `/extract-from-image` write straight to
+  `generated/` and never touch the store — they are local-only regardless of S3. The
+  store is used by the extract-time coopt, the screenshot pipeline and the backfill.
+* **Open:** next restart picks up `is_ours` · the four direct-to-`generated/` routes onto the
+  store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
   Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
