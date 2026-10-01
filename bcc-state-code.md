@@ -10787,8 +10787,9 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   `get_bytes` returns a 52 KB WebP, `is_publicly_readable` is False (objects stay
   private, as f2n's model requires), client built by the kit with the trust-store
   bundle. Both apps now store through `imagekit.storage`.
-* **Open:** the four pre-existing f2n test failures (theirs, not the store's) · next
-  restart here picks up `is_ours` · the four direct-to-`generated/` routes onto the
+* **Open:** the four pre-existing f2n test failures (theirs, not the store's) · **BCC on
+  MARLEY** (`bcc_restart.bat`) owes one more restart to pick up `is_ours` (`88f2fdc`);
+  f2n on BAILEY is current · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
