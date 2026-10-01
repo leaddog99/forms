@@ -7399,7 +7399,9 @@
         const result = await res.json().catch(() => ({}));
         if (!res.ok) { showFeedback(`Generate failed: ${(typeof result.detail === 'string' ? result.detail : JSON.stringify(result))}`, 'error'); return null; }
         showFeedback(`Image generated (${Math.round((result.elapsed_ms || 0) / 1000)}s). Save to persist on this recipe.`, 'success');
-        return `${window.location.origin}${result.url}?t=${Date.now()}`;
+        // The store answers with an absolute URL when it is S3; only a
+        // local /generated/ path needs this page's origin in front.
+        return `${/^https?:\/\//i.test(result.url) ? '' : window.location.origin}${result.url}?t=${Date.now()}`;
       },
     });
     window.heroWell = heroWell;

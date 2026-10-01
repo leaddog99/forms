@@ -2657,15 +2657,19 @@ async def fetch_image_from_url(request: Request):
     # own (no hotlink). Pillow failure → fall back to storing the raw bytes.
     from input.pipeline.image_pipeline import standardize_and_meta
     processed, meta = standardize_and_meta(bytes(buf), source_url=source_url, localized=True)
+    # Through the store (2026-10-01): the bucket when S3 is on, generated/ when
+    # it is not. These routes wrote straight to GENERATED_DIR before, so a hero
+    # uploaded from the form stayed on this disk whatever the store said.
+    from input.pipeline.image_store import get_image_store as _store
     if processed:
         # The extension follows what was actually encoded (WebP since 2026-09-30).
         filename = f"upload_{uuid.uuid4()}.{meta.get('format') or 'webp'}"
-        (GENERATED_DIR / filename).write_bytes(processed)
+        url = _store().put(f"heroes/{filename}", processed,
+                           content_type=f"image/{meta.get('format') or 'webp'}")
     else:
         filename = f"upload_{uuid.uuid4()}{ext}"
-        (GENERATED_DIR / filename).write_bytes(bytes(buf))
-    url = f"/generated/{filename}"
-    print(f"[IMGFETCH] {source_url} -> {filename} | imageMeta={meta}")
+        url = _store().put(f"heroes/{filename}", bytes(buf))
+    print(f"[IMGFETCH] {source_url} -> {url} | imageMeta={meta}")
     return {"url": url, "bytes": meta.get("bytes", len(buf)),
             "source_url": source_url, "imageMeta": meta}
 
@@ -2709,14 +2713,15 @@ async def upload_image(image: UploadFile = File(...)):
     # + log. Pillow failure → fall back to storing the raw upload unchanged.
     from input.pipeline.image_pipeline import standardize_and_meta
     processed, meta = standardize_and_meta(content, source_url=None, localized=True)
+    from input.pipeline.image_store import get_image_store as _store
     if processed:
         filename = f"upload_{uuid.uuid4()}.{meta.get('format') or 'webp'}"
-        (GENERATED_DIR / filename).write_bytes(processed)
+        url = _store().put(f"heroes/{filename}", processed,
+                           content_type=f"image/{meta.get('format') or 'webp'}")
     else:
         filename = f"upload_{uuid.uuid4()}{ext}"
-        (GENERATED_DIR / filename).write_bytes(content)
-    url = f"/generated/{filename}"
-    print(f"[IMGUP] {filename} | imageMeta={meta}")
+        url = _store().put(f"heroes/{filename}", content)
+    print(f"[IMGUP] {url} | imageMeta={meta}")
     return {"url": url, "bytes": meta.get("bytes", len(content)), "imageMeta": meta}
 
 
@@ -2823,10 +2828,12 @@ async def generate_recipe_image_endpoint(
     # raw fallback is PNG from the image model. Name the file by what it holds.
     from input.pipeline.image_pipeline import THUMB_EXT as _text
     _ext = _text if img_bytes[:4] == b"RIFF" else (".png" if img_bytes[:8] == bytes.fromhex("89504e470d0a1a0a") else ".jpg")
-    out_path = GENERATED_DIR / f"{recipe_id}{_ext}"
-    out_path.write_bytes(img_bytes)
-    url = f"/generated/{recipe_id}{_ext}"
-    print(f"[IMGGEN] OK {recipe_id} -> {out_path} ({len(img_bytes)} bytes, {dt_ms}ms)")
+    from input.pipeline.image_store import get_image_store as _store
+    _ctype = {".webp": "image/webp", ".png": "image/png"}.get(_ext, "image/jpeg")
+    # The key carries a stamp: the same recipe can be regenerated, and an
+    # immutable-cached address must not quietly hold different bytes.
+    url = _store().put(f"ai/{recipe_id}-{int(time.time())}{_ext}", img_bytes, content_type=_ctype)
+    print(f"[IMGGEN] OK {recipe_id} -> {url} ({len(img_bytes)} bytes, {dt_ms}ms)")
     return {
         "url": url,
         "bytes": len(img_bytes),
@@ -13421,13 +13428,14 @@ async def extract_from_image_endpoint(
         try:
             from input.pipeline.image_pipeline import standardize_and_meta
             processed, _smeta = standardize_and_meta(content, source_url=None, localized=True)
+            from input.pipeline.image_store import get_image_store as _store
             if processed:
                 src_name = f"upload_{uuid.uuid4()}.{_smeta.get('format') or 'webp'}"
-                (GENERATED_DIR / src_name).write_bytes(processed)
+                src_url = _store().put(f"heroes/{src_name}", processed,
+                                       content_type=f"image/{_smeta.get('format') or 'webp'}")
             else:
                 src_name = f"upload_{uuid.uuid4()}{file_ext}"
-                (GENERATED_DIR / src_name).write_bytes(content)
-            src_url = f"/generated/{src_name}"
+                src_url = _store().put(f"heroes/{src_name}", content)
             recipe["sourceImage"] = [src_url]
             if not recipe.get("image"):
                 recipe["image"] = [src_url]  # hero defaults to the original; editable later

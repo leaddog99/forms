@@ -149,7 +149,7 @@
       const res = await fetch(`${api}/images`, { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'upload failed');
-      return { url: `${window.location.origin}${j.url}?t=${Date.now()}`, meta: j.imageMeta || null };
+      return { url: `${/^https?:\/\//i.test(j.url) ? '' : window.location.origin}${j.url}?t=${Date.now()}`, meta: j.imageMeta || null };
     };
     // Resolve a URL string to a (preferably localized) image URL. Coopt via
     // /images/fetch; on any failure fall back to the original (hotlink).
@@ -160,7 +160,7 @@
           body: JSON.stringify({ url: s }),
         });
         const j = await res.json().catch(() => ({}));
-        if (res.ok && j.url) return { url: `${window.location.origin}${j.url}?t=${Date.now()}`, meta: j.imageMeta || null };
+        if (res.ok && j.url) return { url: `${/^https?:\/\//i.test(j.url) ? '' : window.location.origin}${j.url}?t=${Date.now()}`, meta: j.imageMeta || null };
       } catch (e) { /* fall through to hotlink */ }
       return { url: s, meta: null };  // hotlink fallback, no local meta
     };
