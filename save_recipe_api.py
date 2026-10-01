@@ -2658,7 +2658,8 @@ async def fetch_image_from_url(request: Request):
     from input.pipeline.image_pipeline import standardize_and_meta
     processed, meta = standardize_and_meta(bytes(buf), source_url=source_url, localized=True)
     if processed:
-        filename = f"upload_{uuid.uuid4()}.jpg"
+        # The extension follows what was actually encoded (WebP since 2026-09-30).
+        filename = f"upload_{uuid.uuid4()}.{meta.get('format') or 'webp'}"
         (GENERATED_DIR / filename).write_bytes(processed)
     else:
         filename = f"upload_{uuid.uuid4()}{ext}"
@@ -2709,7 +2710,7 @@ async def upload_image(image: UploadFile = File(...)):
     from input.pipeline.image_pipeline import standardize_and_meta
     processed, meta = standardize_and_meta(content, source_url=None, localized=True)
     if processed:
-        filename = f"upload_{uuid.uuid4()}.jpg"
+        filename = f"upload_{uuid.uuid4()}.{meta.get('format') or 'webp'}"
         (GENERATED_DIR / filename).write_bytes(processed)
     else:
         filename = f"upload_{uuid.uuid4()}{ext}"
@@ -2818,9 +2819,13 @@ async def generate_recipe_image_endpoint(
         raise HTTPException(status_code=500,
                             detail=f"Image generation failed: {type(e).__name__}: {e}") from e
 
-    out_path = GENERATED_DIR / f"{recipe_id}.jpg"
+    # process_thumbnail (inside generate_*) encodes WebP since 2026-09-30; the
+    # raw fallback is PNG from the image model. Name the file by what it holds.
+    from input.pipeline.image_pipeline import THUMB_EXT as _text
+    _ext = _text if img_bytes[:4] == b"RIFF" else (".png" if img_bytes[:8] == bytes.fromhex("89504e470d0a1a0a") else ".jpg")
+    out_path = GENERATED_DIR / f"{recipe_id}{_ext}"
     out_path.write_bytes(img_bytes)
-    url = f"/generated/{recipe_id}.jpg"
+    url = f"/generated/{recipe_id}{_ext}"
     print(f"[IMGGEN] OK {recipe_id} -> {out_path} ({len(img_bytes)} bytes, {dt_ms}ms)")
     return {
         "url": url,
@@ -13417,7 +13422,7 @@ async def extract_from_image_endpoint(
             from input.pipeline.image_pipeline import standardize_and_meta
             processed, _smeta = standardize_and_meta(content, source_url=None, localized=True)
             if processed:
-                src_name = f"upload_{uuid.uuid4()}.jpg"
+                src_name = f"upload_{uuid.uuid4()}.{_smeta.get('format') or 'webp'}"
                 (GENERATED_DIR / src_name).write_bytes(processed)
             else:
                 src_name = f"upload_{uuid.uuid4()}{file_ext}"

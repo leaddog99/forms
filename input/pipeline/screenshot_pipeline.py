@@ -135,7 +135,8 @@ def _key_for(recipe_id: str) -> str:
     ts = datetime.now(timezone.utc).isoformat()
     salt = (recipe_id or "") + "|" + ts
     sha8 = hashlib.sha256(salt.encode("utf-8")).hexdigest()[:8]
-    return f"recipe-screens/{recipe_id}-{sha8}.jpg"
+    from input.pipeline.image_pipeline import THUMB_EXT
+    return f"recipe-screens/{recipe_id}-{sha8}{THUMB_EXT}"
 
 
 def _unblocker_html(url: str) -> Optional[str]:
@@ -318,7 +319,7 @@ def capture_screenshot(url: str, recipe_id: str) -> Optional[str]:
     # process_thumbnail's center-crop (the slight aspect difference
     # adds a thin matching padding band).
     try:
-        from input.pipeline.image_pipeline import process_thumbnail
+        from input.pipeline.image_pipeline import process_thumbnail, THUMB_CONTENT_TYPE
         processed = process_thumbnail(raw_bytes)
     except Exception as e:
         print(f"[screenshot] post-process failed: {e}")
@@ -338,7 +339,7 @@ def capture_screenshot(url: str, recipe_id: str) -> Optional[str]:
             "kind": "page-screenshot",
         }
         return store.put(key, processed,
-                          content_type="image/jpeg", meta=meta)
+                          content_type=THUMB_CONTENT_TYPE, meta=meta)
     except Exception as e:
         print(f"[screenshot] store put failed: {e}")
         return None

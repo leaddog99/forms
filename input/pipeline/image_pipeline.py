@@ -67,6 +67,17 @@ PORTRAIT_TARGET = (1000, 1500)    # 2:3 portrait
 # media post," landscape reads as "editorial").
 LANDSCAPE_ASPECT_THRESHOLD = 0.95   # source.width / source.height
 THUMB_JPEG_QUALITY = 85
+# PHASE 2 (2026-09-30, curator: "leave size as is and let webp compress"):
+# the stored copy is WebP, at the quality f2n uses on BAILEY (its
+# DISPLAY_QUALITY = 82, imagekit's default). Measured on 30 real thumbnails
+# at the same 1500x1000 bucket: JPEG q85 avg 242 KB -> WebP q82 avg 158 KB,
+# 65%. Every browser decodes WebP; the cookbook exporter does not read these.
+# An existing .jpg is REUSED, never re-fetched: the key is a hash of the
+# source URL, so the same picture would otherwise be stored twice.
+THUMB_FORMAT = "WEBP"
+THUMB_EXT = ".webp"
+THUMB_CONTENT_TYPE = "image/webp"
+THUMB_WEBP_QUALITY = 82
 # Legacy alias — kept so any caller still reading THUMB_MAX_WIDTH gets
 # the landscape width (effectively unchanged behavior for unaware
 # callers).
@@ -212,10 +223,10 @@ def _img_config():
     config (cached), falling back to the module defaults when config/DB isn't
     available (early boot, tests). Keeps the bake parameters out of code so a
     portable instance can tune them in the System admin (memory/project_system_config)."""
-    q, land, port = THUMB_JPEG_QUALITY, LANDSCAPE_TARGET, PORTRAIT_TARGET
+    q, land, port = THUMB_WEBP_QUALITY, LANDSCAPE_TARGET, PORTRAIT_TARGET
     try:
         from input.pipeline import system_config as cfg
-        q = int(cfg.get_setting("image_jpeg_quality", q))
+        q = int(cfg.get_setting("image_webp_quality", q))
         land = _parse_dims(cfg.get_setting("image_landscape_target", None), land)
         port = _parse_dims(cfg.get_setting("image_portrait_target", None), port)
     except Exception:
@@ -264,7 +275,7 @@ def _probe(raw: bytes):
 
 
 def process_thumbnail(raw: bytes, *, quality=None, landscape=None, portrait=None) -> Optional[bytes]:
-    """Process raw image bytes into a consistently-sized cookbook-grade JPEG
+    """Process raw image bytes into a consistently-sized cookbook-grade WebP
     (one of two buckets), EXIF stripped. Config-driven (quality/targets) unless
     explicitly overridden. None when the input is not a usable image."""
     try:
@@ -284,7 +295,7 @@ def process_thumbnail(raw: bytes, *, quality=None, landscape=None, portrait=None
         # cover = centre-crop-and-fill to exactly the box, upscaling if the
         # source is smaller - what ImageOps.fit did. keep_alpha=False
         # composites onto white, what _to_rgb did.
-        d = derive(raw, width=tw, height=th, fit="cover", fmt="JPEG",
+        d = derive(raw, width=tw, height=th, fit="cover", fmt=THUMB_FORMAT,
                    quality=quality if quality is not None else q, keep_alpha=False)
         return d.data
     except Exception as e:
@@ -311,12 +322,12 @@ def standardize_and_meta(raw: bytes, *, source_url: Optional[str] = None,
         # The longest-edge cap: imagekit's `width` is a ceiling on width only, so
         # a tall portrait gets its height capped by also passing height.
         cap = _hero_max_px()
-        d = derive(raw, width=cap, height=cap, fit="contain", fmt="JPEG",
+        d = derive(raw, width=cap, height=cap, fit="contain", fmt=THUMB_FORMAT,
                    quality=q, keep_alpha=False)
         # The ORIENTED source size (what the user sees), not the stored header's.
         meta["orig_width"], meta["orig_height"] = d.source_width, d.source_height
         ow, oh = d.width, d.height
-        meta.update(width=ow, height=oh, format="jpeg", bytes=len(d.data),
+        meta.update(width=ow, height=oh, format=THUMB_FORMAT.lower(), bytes=len(d.data),
                     orientation=("portrait" if oh > ow else "square" if oh == ow else "landscape"),
                     upscaled=False, standardized=True)
         return d.data, meta
@@ -364,16 +375,19 @@ def coopt_image(url: str, *,
 
     if reuse_by_url_hash:
         url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
-        key = f"{key_prefix}/{url_hash}.jpg"
-        if store.exists(key):
-            return store.url_for(key)
+        # Either extension counts as "already have it": the 11k JPEGs stored
+        # before the WebP switch stay valid and are never re-fetched.
+        for ext in (THUMB_EXT, ".jpg"):
+            if store.exists(f"{key_prefix}/{url_hash}{ext}"):
+                return store.url_for(f"{key_prefix}/{url_hash}{ext}")
+        key = f"{key_prefix}/{url_hash}{THUMB_EXT}"
         raw = _fetch_image_bytes(url)
         if not raw:
             return None
         processed = process_thumbnail(raw)
         if not processed:
             return None
-        return store.put(key, processed, content_type="image/jpeg",
+        return store.put(key, processed, content_type=THUMB_CONTENT_TYPE,
                           meta=full_meta)
 
     # Content-hash variant: we have to process before keying
@@ -384,8 +398,8 @@ def coopt_image(url: str, *,
     if not processed:
         return None
     c_hash = _content_hash(processed)
-    key = f"{key_prefix}/{c_hash}.jpg"
+    key = f"{key_prefix}/{c_hash}{THUMB_EXT}"
     if store.exists(key):
         return store.url_for(key)
-    return store.put(key, processed, content_type="image/jpeg",
+    return store.put(key, processed, content_type=THUMB_CONTENT_TYPE,
                       meta=full_meta)

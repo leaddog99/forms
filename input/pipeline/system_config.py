@@ -150,13 +150,15 @@ SYSTEM_DEFAULTS: list[dict] = [
     },
     # --- Images: standardization knobs for the coopt/upload pipeline ---
     {
-        "key": "image_jpeg_quality",
-        "value": 85,
+        "key": "image_webp_quality",
+        "value": 82,
         "type": "int",
         "category": "Images",
-        "label": "JPEG quality",
-        "description": "Quality (1–95) for standardized hero/cooped images. "
-                       "Higher = sharper + bigger. 85 ≈ cookbook-grade.",
+        "label": "WebP quality",
+        "description": "Quality (1–95) for standardized hero/cooped images, stored as "
+                       "WebP since 2026-09-30 (the same 82 f2n uses). Measured on 30 "
+                       "real thumbnails at 1500×1000: JPEG 85 ≈ 242 KB, WebP 82 ≈ 158 KB. "
+                       "Higher = sharper + bigger.",
     },
     {
         "key": "image_hero_max_px",
