@@ -8,16 +8,10 @@ had the Windows trust-store workaround this host needs. The kit owns the
 config resolution, the client, the retry/timeout posture, the no-ACL rule and
 the loud failure when S3 is asked for without a bucket. See its docstring.
 
-What stays HERE: the `put(key, data, content_type, meta=)` signature the six
-callers use, and one process-wide store, built once.
-
-The manifest is gone (2026-10-01, curator: "drop the manifest"). From
-2026-05-28 every put appended a line to `_manifest.jsonl` so the file ->
-recipe mapping could be recovered without the database. Nothing ever read it;
-the recipe row holds the URL, the og-thumb key is the hash of a URL in that
-row, and the database is backed up nightly three ways. On S3 it had become a
-get-append-put of a growing file on every upload. The local file
-(`generated/_manifest.jsonl`, 13,587 lines) is left on disk, not deleted.
+What stays HERE: one process-wide store, built once, and the mapping of this
+app's older .env names onto the kit's. (A per-put manifest sidecar lived here
+from 2026-05-28 to 2026-10-01; nothing read it and it was removed with its
+data - see the state log for that date.)
 
 Configuration is `.env`, under the kit's names with the app prefix:
 
@@ -35,10 +29,10 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Optional, Protocol
+from typing import Optional
 
 from imagekit import storage as _storage
-from imagekit.storage import LocalStore, S3Store, StoreError  # noqa: F401  (re-exported)
+from imagekit.storage import LocalStore, S3Store, Store, StoreError  # noqa: F401  (re-exported)
 
 _PREFIX = "BCC"
 
@@ -58,42 +52,11 @@ def _map_legacy_env() -> None:
             os.environ[new] = os.environ[old]
 
 
-class ImageStore(Protocol):
-    """A backend that takes bytes + a key, returns a public URL."""
+# The interface is the kit's: put(key, data, *, content_type) -> url,
+# get, exists, delete, url_for.
+ImageStore = Store
 
-    def put(self, key: str, data: bytes, content_type: str = "image/webp",
-            meta: Optional[dict] = None) -> str: ...
-    def url_for(self, key: str) -> str: ...
-    def exists(self, key: str) -> bool: ...
-    def delete(self, key: str) -> None: ...
-
-
-class AppStore:
-    """imagekit's store under this app's signature. `meta` is accepted and
-    ignored: the callers still pass source_url / recipe_id from the manifest
-    days, and those values already live in the recipe row."""
-
-    def __init__(self, inner):
-        self.inner = inner
-
-    def put(self, key: str, data: bytes, content_type: str = "image/webp",
-            meta: Optional[dict] = None) -> str:
-        return self.inner.put(key, data, content_type=content_type)
-
-    def url_for(self, key: str) -> str:
-        return self.inner.url_for(key)
-
-    def exists(self, key: str) -> bool:
-        return self.inner.exists(key)
-
-    def delete(self, key: str) -> None:
-        self.inner.delete(key)
-
-    def __repr__(self) -> str:
-        return f"AppStore({self.inner!r})"
-
-
-_store: Optional[AppStore] = None
+_store: Optional[Store] = None
 _store_lock = threading.Lock()
 
 
@@ -106,9 +69,8 @@ def get_image_store() -> ImageStore:
         with _store_lock:
             if _store is None:
                 _map_legacy_env()
-                inner = _storage.from_env(_PREFIX)
-                print(f"[image_store] using {inner!r}")
-                _store = AppStore(inner)
+                _store = _storage.from_env(_PREFIX)
+                print(f"[image_store] using {_store!r}")
     return _store
 
 

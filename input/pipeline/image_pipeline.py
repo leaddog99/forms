@@ -247,8 +247,8 @@ def _img_config():
 #
 # PHASE 1 (this): same OUTPUT as before - progressive JPEG at the configured
 # quality, 1500x1000 / 1000x1500 cover for the corpus, contain-to-max_px for a
-# hero - only the engine changed. PHASE 2 (a separate decision): WebP + a
-# display size; that touches every stored file's extension and the manifest.
+# hero - only the engine changed. PHASE 2 (2026-09-30): WebP at the same
+# size; new files take the .webp extension, existing .jpg are reused by hash.
 # ---------------------------------------------------------------------------
 def _bucket_for(width: int, height: int, land, port):
     """Landscape or portrait target box for a source of this shape. The
@@ -346,8 +346,7 @@ def _content_hash(data: bytes) -> str:
 
 def coopt_image(url: str, *,
                  key_prefix: str = "og-thumbs",
-                 reuse_by_url_hash: bool = True,
-                 manifest_meta: Optional[dict] = None) -> Optional[str]:
+                 reuse_by_url_hash: bool = True) -> Optional[str]:
     """Full pipeline: fetch → process → store → return public URL.
 
     Keying strategy:
@@ -365,14 +364,6 @@ def coopt_image(url: str, *,
         return None
     store = get_image_store()
 
-    # Default manifest meta lets backfills + saves attribute files to
-    # recipes even when nobody passed explicit meta. Always include
-    # the source URL so a future audit can reverse-engineer "where
-    # did this image come from."
-    full_meta = {"source_url": url}
-    if manifest_meta:
-        full_meta.update(manifest_meta)
-
     if reuse_by_url_hash:
         url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
         # Either extension counts as "already have it": the 11k JPEGs stored
@@ -387,8 +378,7 @@ def coopt_image(url: str, *,
         processed = process_thumbnail(raw)
         if not processed:
             return None
-        return store.put(key, processed, content_type=THUMB_CONTENT_TYPE,
-                          meta=full_meta)
+        return store.put(key, processed, content_type=THUMB_CONTENT_TYPE)
 
     # Content-hash variant: we have to process before keying
     raw = _fetch_image_bytes(url)
@@ -401,5 +391,4 @@ def coopt_image(url: str, *,
     key = f"{key_prefix}/{c_hash}{THUMB_EXT}"
     if store.exists(key):
         return store.url_for(key)
-    return store.put(key, processed, content_type=THUMB_CONTENT_TYPE,
-                      meta=full_meta)
+    return store.put(key, processed, content_type=THUMB_CONTENT_TYPE)

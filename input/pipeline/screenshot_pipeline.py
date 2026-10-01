@@ -39,7 +39,6 @@ empty; the UI just doesn't show the screenshot well for that row.
 from __future__ import annotations
 
 import hashlib
-import io
 import os
 from datetime import datetime, timezone
 from typing import Optional
@@ -333,13 +332,7 @@ def capture_screenshot(url: str, recipe_id: str) -> Optional[str]:
         from input.pipeline.image_store import get_image_store
         store = get_image_store()
         key = _key_for(recipe_id)
-        meta = {
-            "recipe_id": recipe_id,
-            "source_url": url,
-            "kind": "page-screenshot",
-        }
-        return store.put(key, processed,
-                          content_type=THUMB_CONTENT_TYPE, meta=meta)
+        return store.put(key, processed, content_type=THUMB_CONTENT_TYPE)
     except Exception as e:
         print(f"[screenshot] store put failed: {e}")
         return None
@@ -485,7 +478,6 @@ def store_screenshot_blob(db_path: str, url_normalized: str, jpeg_bytes: bytes) 
         return None
     sid = screenshot_id_for(url_normalized)
     try:
-        import sqlite3 as _sqlite3
         from input.pipeline.db import connect as db_connect
         with db_connect(db_path, timeout=30) as conn:
             ensure_page_screenshots_table(conn)
@@ -511,7 +503,6 @@ def read_screenshot_blob(db_path: str, screenshot_id: str) -> Optional[bytes]:
     if not screenshot_id:
         return None
     try:
-        import sqlite3 as _sqlite3
         from input.pipeline.db import connect as db_connect
         with db_connect(db_path, timeout=30) as conn:
             ensure_page_screenshots_table(conn)
