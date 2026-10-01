@@ -10687,12 +10687,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   S3 every put is a get-append-put of the whole file, so it grows linearly in cost per
   upload. The recipe row already holds the URL, the og-thumb key is the hash of a URL
   in the row, and the DB is backed up three ways nightly — the scenario it insures
-  against is covered. Recommend dropping it (one class in `image_store.py`); kept in
-  this commit pending the word.
+  against is covered. **Dropped (`3e3fa61`, curator: "drop the manifest").** Callers
+  still pass `meta=`; accepted and ignored. The local file stays on disk, untouched; the
+  two-line copy in the bucket is inert.
 * Restart still owed (`bcc_restart.bat`): the running server is the 09-19 process, so
   form uploads, screenshots from the UI and the gateway's request paths are on the old
   code; jobs already use the new.
-* **Open:** manifest decision · `s3:DeleteObject` for bcc-app + delete the probe · f2n
+* **Open:** `s3:DeleteObject` for bcc-app + delete the probe · f2n
   onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning session · the
   11k-JPEG → WebP/S3 backfill · imagekit's browser half · orphan-thumb nightly sweep ·
   rclone client ID · Yogurt / Smoothie · Williams Sonoma's last 7 · carried items.
