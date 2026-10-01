@@ -10778,7 +10778,17 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   on BAILEY before f2n's next restart. One deliberate difference kept: f2n's "no bucket
   = local-only" (its DB-backed guard is the loud version) versus the kit's
   `from_env` which raises; f2n does not call `from_env`.
-* **Open:** `pytest` on BAILEY + f2n restart · next restart here picks up `is_ours` · the four direct-to-`generated/` routes onto the
+* **f2n verified after the curator's `pytest` + restart (16:57 on BAILEY).** The pytest
+  cache shows today's run left the SAME four pre-existing failures as 09-29 (three
+  `evidence_adapter` mapping cases, one `usage` journal case — none touch the store);
+  the server log since restart has no error, no refusal, no `[s3]` warning, and 45
+  image requests all 200. Direct proof through the new module with f2n's own
+  config: `check()` → `f2nv02 in us-east-1`; a real display key exists in the bucket,
+  `get_bytes` returns a 52 KB WebP, `is_publicly_readable` is False (objects stay
+  private, as f2n's model requires), client built by the kit with the trust-store
+  bundle. Both apps now store through `imagekit.storage`.
+* **Open:** the four pre-existing f2n test failures (theirs, not the store's) · next
+  restart here picks up `is_ours` · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
