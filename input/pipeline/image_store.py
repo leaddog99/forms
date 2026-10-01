@@ -38,10 +38,19 @@ from typing import Optional, Protocol
 def _config_value(key: str, default: str) -> str:
     """Try env var first, then bcc_config.json, then default. Env wins
     so production deploys don't have to edit config files."""
-    env_name = "BCC_" + key.upper()
-    env_val = os.environ.get(env_name)
-    if env_val:
-        return env_val
+    # The documented env names are the SHORT ones (BCC_S3_BUCKET, BCC_S3_REGION,
+    # BCC_S3_KEY_PREFIX, BCC_S3_PUBLIC, BCC_S3_PUBLIC_BASE_URL - see get_image_store
+    # and the module docstring). The resolver only ever looked for the full
+    # config key with BCC_ in front (BCC_IMAGE_STORE_S3_BUCKET), so a correctly
+    # written .env fell through to "bucket unset" and LocalStore - found the day
+    # the first bucket was created (2026-10-01). Both spellings are accepted.
+    candidates = ["BCC_" + key.upper()]
+    if key.startswith("image_store_"):
+        candidates.append("BCC_" + key[len("image_store_"):].upper())
+    for env_name in candidates:
+        env_val = os.environ.get(env_name)
+        if env_val:
+            return env_val
     try:
         from input.pipeline.config import _load_bcc_config
         cfg = _load_bcc_config()
@@ -212,8 +221,15 @@ class S3Store:
             "ContentType": content_type,
             "CacheControl": "public, max-age=31536000, immutable",
         }
-        if self.public:
-            extra_args["ACL"] = "public-read"
+        # No per-object ACL. Buckets created since 2023 default to "bucket owner
+        # enforced": ACLs are disabled and a PutObject carrying one is REFUSED
+        # (AccessControlListNotSupported - bccv02, 2026-10-01). Public reads come
+        # from the bucket POLICY (a GetObject grant to *), which is also the
+        # better model: one place says what is public, not every upload. A
+        # legacy bucket that still relies on ACLs can set BCC_S3_OBJECT_ACL=public-read.
+        _acl = os.environ.get("BCC_S3_OBJECT_ACL", "").strip()
+        if self.public and _acl:
+            extra_args["ACL"] = _acl
         self._client.put_object(
             Bucket=self.bucket,
             Key=full_key,
@@ -242,7 +258,7 @@ class S3Store:
                 ContentType="application/jsonl",
                 # Manifest is NOT cache-immutable — it grows on every put.
                 CacheControl="no-cache",
-                **({"ACL": "public-read"} if self.public else {}),
+                **({"ACL": _acl} if (self.public and _acl) else {}),
             )
         except Exception as e:
             print(f"[image_store/s3] manifest update failed: {e}")
