@@ -28,12 +28,8 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
-import sqlite3
 from input.pipeline.db import connect as db_connect
-import threading
 from typing import Any, Iterator, Optional
-
-import anthropic
 
 from input.pipeline.token_journal import build_usage_entry, write_usage_entries
 
@@ -143,12 +139,21 @@ def _journal(operation: str, model: str, response: Any) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Client cache — one Anthropic client per distinct api_key (incl. the ambient
-# env key under "__env__"). Keeps BYOK per-tenant keys working without churning
-# a new client per call.
+# THE ENGINE: llmkit (sibling repo, `pip install -e ../llmkit[anthropic]`),
+# adopted 2026-10-01 per llmkit/docs/adopting-in-recipes.md. The kit makes
+# the call and COUNTS it - from the provider's own reply, failures included -
+# and hands a `Usage` record to the sink below, which writes exactly the row
+# this journal has always written. The create()/stream() signatures are
+# unchanged, so no call site changed. What the kit changed, deliberately:
+#   * retries are OFF (the SDK retried twice, silently: one journalled call
+#     could be three billed attempts). A flaky moment now surfaces as the
+#     exception it always was; the batch jobs' own retry loops are the
+#     visible retries.
+#   * a FAILED call leaves a row (ok=false in meta, zero tokens) - a call
+#     that errored may still have been billed. The table had no such rows.
+#   * a per-api_key client cache lives in the kit (`anthropic_client`).
 # --------------------------------------------------------------------------- #
-_clients: dict[str, anthropic.Anthropic] = {}
-_clients_lock = threading.Lock()
+import llmkit
 
 
 def _resolve_key(api_key: Optional[str]) -> Optional[str]:
@@ -158,43 +163,57 @@ def _resolve_key(api_key: Optional[str]) -> Optional[str]:
     return ctx.api_key if ctx is not None else None
 
 
-def _client(api_key: Optional[str]) -> anthropic.Anthropic:
-    key = api_key or "__env__"
-    cli = _clients.get(key)
-    if cli is None:
-        with _clients_lock:
-            cli = _clients.get(key)
-            if cli is None:
-                cli = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-                _clients[key] = cli
-    return cli
+def _sink(u: "llmkit.Usage") -> None:
+    """llmkit.Usage -> the entry write_usage_entries expects, buffered on the
+    active context (flushed in one transaction when it exits) or written now.
+    The row shape matches build_usage_entry's so every reader of
+    bcc_token_journal is unchanged: `meta.usage` carries the provider's own
+    usage block when the call succeeded."""
+    usage_block = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                   "cache_creation_input_tokens": u.cache_write_tokens,
+                   "cache_read_input_tokens": u.cache_read_tokens}
+    meta: dict = {"usage": usage_block, "ok": bool(u.ok)}
+    if u.error:
+        meta["error"] = str(u.error)[:300]
+    if u.meta:
+        for k in ("response_id", "finish_reason", "stop_reason"):
+            if k in u.meta:
+                meta[k] = u.meta[k]
+    if u.cost_usd is not None:
+        meta["cost_usd"] = u.cost_usd
+    entry = {"operation": u.operation, "model": u.model,
+             "input_tokens": int(u.input_tokens or 0),
+             "output_tokens": int(u.output_tokens or 0), "meta": meta}
+    ctx = _current.get()
+    if ctx is not None:
+        ctx.buffer.append(entry)
+        return
+    try:
+        with db_connect(_DB_PATH) as conn:
+            write_usage_entries(conn, user_id=PLACEHOLDER_USER_ID, recipe_id=None, entries=[entry])
+    except Exception as e:  # noqa: BLE001
+        print(f"[llm] immediate journal failed: {e}")
+
+
+llmkit.configure(journal=_sink)
 
 
 # --------------------------------------------------------------------------- #
-# The wrapped calls — pass SDK kwargs through verbatim, return the SAME objects.
+# The wrapped calls - pass SDK kwargs through verbatim, return the SAME objects.
 # --------------------------------------------------------------------------- #
 def create(*, operation: str, model: str, api_key: Optional[str] = None, **kwargs) -> Any:
     """Wrap `client.messages.create`; journal usage; return the SAME response.
     `operation` is the journal label; all other kwargs (system/messages/max_tokens/
     tools/tool_choice/temperature/...) pass through unchanged."""
-    resp = _client(_resolve_key(api_key)).messages.create(model=model, **kwargs)
-    _journal(operation, model, resp)
-    return resp
+    return llmkit.anthropic_create(operation=operation, model=model,
+                                   api_key=_resolve_key(api_key), **kwargs)
 
 
 @contextlib.contextmanager
 def stream(*, operation: str, model: str, api_key: Optional[str] = None, **kwargs) -> Iterator[Any]:
     """Wrap `client.messages.stream`; yield the SDK stream object (use .text_stream
-    / iterate / .get_final_message()). Journals the FINAL message's usage on exit —
-    so callers don't have to. Best-effort on aborted/partial streams."""
-    with _client(_resolve_key(api_key)).messages.stream(model=model, **kwargs) as s:
-        try:
-            yield s
-        finally:
-            final = None
-            try:
-                final = s.get_final_message()
-            except Exception:  # noqa: BLE001 — aborted/partial stream
-                final = None
-            if final is not None:
-                _journal(operation, model, final)
+    / iterate / .get_final_message()). The kit journals the FINAL message's usage
+    on exit - so callers don't have to. Best-effort on aborted/partial streams."""
+    with llmkit.anthropic_stream(operation=operation, model=model,
+                                 api_key=_resolve_key(api_key), **kwargs) as s:
+        yield s

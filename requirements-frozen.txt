@@ -110,6 +110,8 @@ rdflib==7.1.4
 -e c:/users/john/pycharmprojects/recipe-core
 # Sibling repo, github.com/leaddog99/imagekit - the pixel code shared with f2n (2026-09-30)
 -e c:/users/john/pycharmprojects/imagekit
+# Sibling repo, github.com/leaddog99/llmkit - the counted LLM gateway shared with f2n (2026-10-01)
+-e c:/users/john/pycharmprojects/llmkit
 # (forward slashes on purpose: modern pip eats backslashes in requirements
 #  files as escapes — found by the 2026-08-24 BAILEY restore drill)
 recipe_scrapers==15.7.1
