@@ -10795,7 +10795,33 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   and after. The old substring test would have coopted the S3 URL into a fifth object.
   The service process postdates both changed files, so it runs the same code. Both
   services current: BCC on MARLEY, f2n on BAILEY.
-* **Open:** the four pre-existing f2n test failures (theirs, not the store's) · the four direct-to-`generated/` routes onto the
+* **The 11k backfill — confirmed, then started (curator: "go for it").** Plan confirmed
+  first with two decisions: rows get the DIRECT S3 URL (not a key behind a redirect —
+  the per-image hop through this machine and the tunnel is what S3 was chosen to
+  avoid; I reversed my earlier key-not-URL recommendation and said so), and the 553
+  user-owned heroes (absolute tunnel-host URLs in `image` arrays) are a SEPARATE later
+  pass. **Part 1 shipped (`e6ce4b6`, kit `96c82e7`):** the four routes that wrote
+  straight into `generated/` (`/images`, `/images/fetch`, generate-image,
+  extract-from-image) go through the store — `heroes/` and `ai/<id>-<stamp>` keys;
+  the form and image-well stop prepending the page origin to an absolute URL.
+  Verified in-process; **BCC on MARLEY owes a restart for it.** **Part 2, dry run
+  (`4e713a3`, `scripts/backfill_images_to_s3.py`):** 11,286 files on disk, 11,280
+  referenced (11,212 og-thumbs incl. 35 already WebP, 68 recipe-screens), 6
+  unreferenced left alone, 0 referenced-but-missing; rows to rewrite 11,188 master /
+  394 dishes / 186 recipes; 20-sample re-encode at 56% of JPEG size, sizes unchanged.
+  **Part 3, applying (started 21:31 UTC):** page-level DB copy to
+  `logs/recipes_before_image_backfill_2026-10-01T213123Z.db` (841 MB, local) first;
+  uploads idempotent (skip existing keys, so a stop resumes); rows rewritten only for
+  confirmed uploads, by exact substitution in the JSON text, 500 per transaction;
+  undo file `logs/image_backfill_undo_<stamp>.json` with every (table, id, old, new).
+  Local JPEGs are NOT deleted — separate step. At this writing: 5,250 / 11,280
+  uploaded, 0 failed, ~0.4 s per file, ~40 min left, then the row rewrite.
+  Honest note recorded in the script: a second-generation encode (JPEG q85 → WebP
+  q82); the originals were never kept.
+* **Open:** backfill completion + verification (anonymous GET on a rewritten row's
+  URL, counts) · BCC on MARLEY restart for the four routes · delete the local JPEGs
+  once looked at · the heroes pass · the four pre-existing f2n test failures (theirs,
+  not the store's) · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
   backfill · f2n onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning
   session · imagekit's browser half · orphan-thumb nightly sweep · rclone client ID ·
