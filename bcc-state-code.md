@@ -10696,7 +10696,9 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   audited the 13,587-line file against the DB first — 11,051 of 13,575 files referenced
   by a recipe / master / dish row; 2,524 entries for files no row references (deleted or
   refreshed recipes; 494 still on disk, 488 of them legacy `recipe-screens/` from before
-  media.db — NOT deleted, listed only); 229 DB-referenced files it never had. It knew
+  media.db — recounted against the live DB and **deleted** on the curator's word, 75.5 MB;
+  the 68 a row still names stay; list in `logs/recipe_screens_legacy_deleted_2026-10-01.json`);
+  229 DB-referenced files it never had. It knew
   nothing the rows do not. Archived to `logs/image_manifest_retired_2026-10-01.jsonl.gz`
   (local), deleted; both mirrors are sync/MIR so ADAM and Drive drop it tonight; the
   two-line copy in the bucket waits on `s3:DeleteObject`.
@@ -10732,7 +10734,7 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   form uploads, screenshots from the UI and the gateway's request paths are on the old
   code; jobs already use the new.
 * **Open:** `s3:DeleteObject` for bcc-app + delete the probe and the bucket manifest ·
-  488 legacy `recipe-screens/` files (listed, not deleted) · key-not-URL in the row,
+  key-not-URL in the row,
   folded into the backfill · f2n
   onto `imagekit.storage` · llmkit phase 2 · Postgres+BAILEY planning session · the
   11k-JPEG → WebP/S3 backfill · imagekit's browser half · orphan-thumb nightly sweep ·
