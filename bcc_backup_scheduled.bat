@@ -56,12 +56,21 @@ REM not fail the backup run (the sync script exits nonzero on its own).
 REM 2026-09-11 cut-over: this bat now also runs ON BAILEY (same task name).
 REM The warm-standby push only makes sense FROM MARLEY_SVR — on BAILEY it
 REM would stop its own server and copy from a share it cannot reach.
+REM 2026-10-03: BAILEY has no DHCP reservation. After a reboot it came back on
+REM a new address and MARLEY's resolver kept serving the old one for the whole
+REM window (eleven "connection failed" attempts). Flush the cache so the
+REM 'bailey' rclone remote (configured by HOSTNAME) resolves fresh each night.
+REM Delayed expansion: %%ERRORLEVEL%% inside a ( ) block is expanded when cmd
+REM PARSES the block, before the sync runs - it printed 0 on every failure.
+setlocal enabledelayedexpansion
 if /I not "%COMPUTERNAME%"=="MARLEY_SVR" (
   echo bailey sync skipped: running on %COMPUTERNAME% >> backup.log
 ) else (
+  ipconfig /flushdns >nul 2>&1
   powershell -NoProfile -ExecutionPolicy Bypass -File "C:\Users\john\PycharmProjects\forms\bcc_sync_bailey.ps1" -WithDbs >> backup.log 2>&1
-  echo bailey sync exit code: %ERRORLEVEL% >> backup.log
+  echo bailey sync exit code: !ERRORLEVEL! >> backup.log
 )
+endlocal
 REM Mirror + media + freshest training copy go OFFSITE too (2026-08-24,
 REM closes DR gap G2 — the fire scenario previously lost all three).
 REM env.backup stays OFF the cloud by policy (plaintext keys; the offsite
