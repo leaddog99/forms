@@ -10823,7 +10823,13 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   has looked.
   Honest note recorded in the script: a second-generation encode (JPEG q85 → WebP
   q82); the originals were never kept.
-* **Open:** BCC on MARLEY restart for the four routes · delete the local JPEGs
+* **10-03: BCC on MARLEY restarted (08:21) — the upload routes verified on the live
+  server:** `POST /images` (bytes) and `POST /images/fetch` (by URL) both answer a
+  `heroes/upload_<uuid>.webp` address in the bucket; anonymous GET 200 `image/webp`;
+  both `[IMGUP]`/`[IMGFETCH]` lines in the server log name the bucket. Test objects
+  removed. Generate-image and extract-from-image share the same put path and were
+  verified in-process on 10-01; not re-driven live (one costs an image-model call).
+* **Open:** delete the local JPEGs
   once looked at · the heroes pass · the four pre-existing f2n test failures (theirs,
   not the store's) · the four direct-to-`generated/` routes onto the
   store (with the backfill) · key-not-URL in the row, folded into the 11k-JPEG → WebP/S3
