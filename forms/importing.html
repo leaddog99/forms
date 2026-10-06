@@ -201,7 +201,9 @@
       });
     })();
     let shownPct = 0.02;
+    let outcomeShown = false;   // once an outcome is on screen, a late poll tick must not write over it
     function setProgress(pct, phaseText) {
+      if (outcomeShown) return;
       pct = Math.max(shownPct, Math.min(1, pct || 0));   // never runs backwards
       shownPct = pct;
       $('fill').style.width = Math.max(2, Math.round(pct * 100)) + '%';
@@ -239,6 +241,7 @@
     // ---- outcome states ------------------------------------------------
     function showOutcome({ title, text, got, actions }) {
       stage.dataset.state = stage.dataset.state === 'thin' ? 'thin' : 'failed';
+      outcomeShown = true;
       flavorStop();
       $('phase').textContent = '';
       $('sheet').hidden = true;
@@ -493,7 +496,7 @@
           title: STR.thin.title,
           text: (captureSource && captureSource.thin_result_note) || STR.retryHint,
           got: STR.got(nIng, nStep),
-          actions: [linkAction, { label: STR.openEditorAnyway, onClick: () => handOff(payload) }].filter(Boolean).map((a, i) => i === 0 ? { ...a, primary: true } : a),
+          actions: [linkAction, { label: STR.openEditorAnyway, onClick: () => handOff({ ...payload, acknowledged_thin: true }) }].filter(Boolean).map((a, i) => i === 0 ? { ...a, primary: true } : a),
         });
         return;
       }

@@ -8193,7 +8193,8 @@
     // (2026-10-06) because the in-progress page (forms/importing.html) now runs
     // the extraction for bookmarklet grabs and hands the RESULT here through
     // sessionStorage — the same handling, whichever page paid for the call.
-    async function applyExtractResult(result, httpOk) {
+    async function applyExtractResult(result, httpOk, opts) {
+        opts = opts || {};
         if (httpOk && result.success) {
           // Coopt the hero image: if the bookmarklet captured + uploaded
           // the source page's hero image (paywall-aware client-side
@@ -8218,6 +8219,14 @@
             if (!result.recipe.name || !result.recipe.name.trim()) missing.push('name');
             if (!result.recipe.recipeIngredient || !result.recipe.recipeIngredient.length) missing.push('ingredients');
             if (!result.recipe.recipeInstructions || !result.recipe.recipeInstructions.length) missing.push('instructions');
+            // A social capture the person ALREADY saw was thin (the in-progress
+            // page said what it found and they chose "open anyway"): no
+            // screenshot exists for a capture and the incomplete dialog would
+            // repeat what they were just told. Say it once, plainly, and stop.
+            if (opts.quietIncomplete) {
+              showFeedback(`Opened with what the post had — no ${missing.join(' or ')}. Add the rest by hand, or import from the linked page.`, 'info');
+              return;
+            }
             // Auto-fall back to the bookmarklet screenshot before bothering
             // the user — matches the URL-extract path. Only show the manual
             // dialog if there's no staged screenshot or it didn't pan out.
@@ -8976,7 +8985,8 @@
         applyHarvestLock(stagedBccHints);
       }
       try {
-        await applyExtractResult(payload.result || {}, !!payload.ok);
+        await applyExtractResult(payload.result || {}, !!payload.ok,
+                                 { quietIncomplete: !!payload.acknowledged_thin });
       } catch (err) {
         console.error('Imported result error:', err);
         showFeedback('Could not apply the imported recipe: ' + (err && err.message ? err.message : err), 'error');

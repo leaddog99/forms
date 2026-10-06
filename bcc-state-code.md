@@ -10905,7 +10905,17 @@ crash-prone; BAILEY mirror at https://bailey.tbotb.com refreshed nightly).
   - Design note: `docs/capture-sources.md`. Open: attribution (page as author, not
     facebook.com — f2n's link cards already do this); try one real page each for the
     five unverified kinds; Instagram's recipe-in-the-picture is a vision problem.
-* **Not yet live:** BCC on MARLEY still runs the 10-03 code — `bcc_restart.bat` needs
-  the UAC approval (cannot elevate from the session). A session-token mint for a
-  localhost test was declined by the tool classifier; the live, signed-in run on the
-  reel is the remaining verification.
+* **LIVE and verified on the reel (restart 13:2x, curator approved the UAC).** The v4
+  loader body run in the signed-in Chrome tab → `importing.html#capture=` on
+  recipes.tbotb.com: the page showed "A Facebook reel" + the user note, the coopted
+  poster (`heroes/upload_…webp` in the bucket) and the real title while the bar read
+  "Reading the recipe… 10%"; result → the THIN state: "We found 12 ingredients and
+  0 steps", primary action **Import from ketosl.com instead**, secondary "Open in the
+  editor anyway". Editor hand-off: name, 12 ingredients, hero, `_source.capture`
+  `{kind:facebook, structure:reel, via:loader, comments:1, links:[ketosl…]}`. The
+  linked-page path (`?url=ketosl.com/5564-2/`) → the full recipe, 12 ingredients +
+  10 steps. Server log: `[CAPTURE] staged … links=1` and `[CAPTURE] result …
+  ingredients=12 steps=0`. Two glitches fixed after: a late progress poll overwrote
+  the outcome's phase line ("Done — opening the editor…" under the thin card);
+  "open anyway" no longer waits 45 s for a bookmarklet screenshot that a capture
+  never has (`acknowledged_thin` → `applyExtractResult(..., {quietIncomplete})`).
